@@ -28,6 +28,31 @@ pub mod benchmark_integration;
 pub mod alphaflow_compat;
 pub mod prism_bench;
 
+// GNM-enhanced cryptic site detection
+pub mod cryptic_sites;
+
+// Scientific integrity and audit trail (BLAKE3 hashing)
+pub mod integrity;
+
+// Cryptic site validation metrics (PR AUC, Success Rate, Ranking)
+pub mod cryptic_metrics;
+
+// Native physics-based druggability scoring
+pub mod druggability;
+
+// PocketMiner benchmark dataset handling
+pub mod pocketminer_dataset;
+
+// ANM-based conformational ensemble generation
+pub mod anm_ensemble;
+
+// Ensemble pocket detector for cryptic site identification
+pub mod ensemble_pocket_detector;
+
+// Production-quality cryptic detection (requires 'cryptic' feature)
+#[cfg(feature = "cryptic")]
+pub mod cryptic_production;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
