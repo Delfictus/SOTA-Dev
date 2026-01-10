@@ -84,3 +84,17 @@ path = "src/bin/run_prism_bench.rs"
 name = "prism-bench-real"
 path = "src/bin/run_prism_bench_real.rs"
 required-features = ["simulation"]
+
+[[bin]]
+name = "run-dynamics-bench"
+path = "src/bin/run_dynamics_bench.rs"
+required-features = ["prism-physics"]
+
+[[bin]]
+name = "acquire-data"
+path = "src/bin/acquire_data.rs"
+
+[[bin]]
+name = "run-heterogeneous-bench"
+path = "src/bin/run_heterogeneous_bench.rs"
+required-features = ["prism-physics"]

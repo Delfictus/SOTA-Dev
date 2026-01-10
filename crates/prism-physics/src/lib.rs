@@ -26,6 +26,58 @@ pub mod amber_ff14sb;
 pub mod gnm;
 pub use gnm::{GaussianNetworkModel, AnisotropicNetworkModel, GnmResult};
 
+// GPU-accelerated GNM (uses Lanczos for large matrices)
+pub mod gnm_gpu;
+pub use gnm_gpu::{GpuGnm, GpuGnmResult};
+
+// Structural analysis modules for enhanced RMSF prediction
+pub mod secondary_structure;
+pub mod sidechain_analysis;
+pub mod tertiary_analysis;
+pub mod gnm_enhanced;
+
+// Unified dynamics engine - togglable interface for all dynamics modes
+pub mod dynamics_engine;
+
+// NMR ensemble analysis for experimental grounding (positional variability, NOT "RMSF")
+pub mod nmr_ensemble;
+
+// Heterogeneous evaluation framework (ATLAS MD + NMR + Functional)
+pub mod evaluation_framework;
+
+// Pocket-centric functional metrics for drug discovery (Layer 3)
+pub mod pocket_metrics;
+pub use pocket_metrics::{
+    PocketMetricsCalculator, Layer3Result, PocketFlexibilityAnalysis,
+    CrypticPocketCandidate, AllostericSiteCandidate, FlexibilityClass,
+};
+
+// Re-export NMR ensemble types
+pub use nmr_ensemble::{
+    NmrEnsemble, NmrModel, TrueRmsf,
+    load_nmr_ensemble, parse_nmr_ensemble,
+    CURATED_NMR_PDBS,
+};
+
+// Re-export evaluation framework types
+pub use evaluation_framework::{
+    HeterogeneousEvaluationResult, MdComparabilityResult, ExperimentalGroundingResult,
+    FunctionalRelevanceResult, SotaComparison, BaselineComparison,
+    get_published_baselines, create_defensibility_summary, calculate_defensibility_score,
+};
+
+// Re-export enhanced GNM types
+pub use gnm_enhanced::{EnhancedGnm, EnhancedGnmConfig, EnhancedGnmResult};
+pub use secondary_structure::{SecondaryStructure, SecondaryStructureAnalyzer};
+pub use sidechain_analysis::{SidechainAnalyzer, flexibility_factor};
+pub use tertiary_analysis::{TertiaryAnalyzer, TertiarySummary};
+
+// Re-export dynamics engine types
+pub use dynamics_engine::{
+    DynamicsEngine, DynamicsConfig, DynamicsMode, DynamicsResult,
+    StructureInput, TrajectoryFrame,
+};
+
 /// CMA-ES (Covariance Matrix Adaptation Evolution Strategy) configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CmaEsConfig {

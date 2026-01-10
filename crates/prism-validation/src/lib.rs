@@ -28,6 +28,9 @@ pub mod benchmark_integration;
 pub mod alphaflow_compat;
 pub mod prism_bench;
 
+// Heterogeneous data acquisition (ATLAS, NMR, MISATO)
+pub mod data_acquisition;
+
 #[cfg(feature = "simulation")]
 pub mod simulation_runner;
 
