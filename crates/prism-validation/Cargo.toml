@@ -103,3 +103,12 @@ required-features = ["prism-physics"]
 name = "gnm-ablation"
 path = "src/bin/gnm_ablation.rs"
 required-features = ["prism-physics"]
+
+[[bin]]
+name = "gnm-breakthrough"
+path = "src/bin/gnm_breakthrough.rs"
+
+[[bin]]
+name = "gnm-chemistry-bench"
+path = "src/bin/gnm_chemistry_bench.rs"
+required-features = ["prism-physics"]

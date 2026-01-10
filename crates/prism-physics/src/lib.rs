@@ -36,6 +36,10 @@ pub mod sidechain_analysis;
 pub mod tertiary_analysis;
 pub mod gnm_enhanced;
 
+// Chemistry-Aware GNM for improved RMSF prediction
+pub mod residue_chemistry;
+pub mod gnm_chemistry;
+
 // Unified dynamics engine - togglable interface for all dynamics modes
 pub mod dynamics_engine;
 
@@ -71,6 +75,10 @@ pub use gnm_enhanced::{EnhancedGnm, EnhancedGnmConfig, EnhancedGnmResult};
 pub use secondary_structure::{SecondaryStructure, SecondaryStructureAnalyzer};
 pub use sidechain_analysis::{SidechainAnalyzer, flexibility_factor};
 pub use tertiary_analysis::{TertiaryAnalyzer, TertiarySummary};
+
+// Re-export Chemistry-Aware GNM types
+pub use residue_chemistry::{get_flexibility_factor, enhanced_pair_stiffness, ResidueClass, AA_ORDER};
+pub use gnm_chemistry::{ChemistryGnm, ChemistryGnmConfig, ChemistryGnmResult, ContactType};
 
 // Re-export dynamics engine types
 pub use dynamics_engine::{
