@@ -53,6 +53,32 @@ pub struct EnsemblePocketConfig {
     /// SASA variance threshold for cryptic site detection
     /// High variance = residue changes exposure significantly across ensemble
     pub sasa_variance_threshold: f64,
+
+    // === Active Inference Parameters ===
+
+    /// Enable Active Inference EFE scoring (improves ranking for class imbalance)
+    pub use_active_inference: bool,
+
+    /// Prior probability of pocket formation (goal prior)
+    /// Lower values = more selective, higher precision
+    pub pocket_formation_prior: f64,
+
+    /// Weight for epistemic value (information gain / ambiguity reduction)
+    pub epistemic_weight: f64,
+
+    /// Weight for pragmatic value (goal achievement)
+    pub pragmatic_weight: f64,
+
+    // === Spatial Clustering Parameters ===
+
+    /// Enable RLS spatial clustering to reduce false positives
+    pub use_spatial_clustering: bool,
+
+    /// Distance threshold for clustering predictions (Å)
+    pub cluster_distance: f64,
+
+    /// Minimum cluster size to report
+    pub min_cluster_size: usize,
 }
 
 impl Default for EnsemblePocketConfig {
@@ -65,6 +91,17 @@ impl Default for EnsemblePocketConfig {
             neighbor_cutoff: 8.0,          // Å for neighbor detection
             min_neighbors_for_burial: 12,  // Typical for core residues
             sasa_variance_threshold: 100.0, // Å² variance threshold
+
+            // Active Inference defaults (enabled by default for better ranking)
+            use_active_inference: true,
+            pocket_formation_prior: 0.07,  // ~7% of residues are cryptic (class prior)
+            epistemic_weight: 0.4,         // Weight for uncertainty reduction
+            pragmatic_weight: 0.6,         // Weight for goal achievement
+
+            // Spatial clustering defaults (enabled for precision improvement)
+            use_spatial_clustering: true,
+            cluster_distance: 8.0,         // Å - typical pocket radius
+            min_cluster_size: 2,           // At least 2 residues per cluster
         }
     }
 }
@@ -83,6 +120,25 @@ pub struct PocketDetectionResult {
 
     /// Number of residues in detected pockets
     pub n_pocket_residues: usize,
+}
+
+/// A cluster of spatially related cryptic residue predictions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrypticCluster {
+    /// Residue IDs in this cluster
+    pub residues: Vec<i32>,
+
+    /// Cluster centroid position [x, y, z]
+    pub centroid: [f64; 3],
+
+    /// Aggregate cluster score (max or mean of member scores)
+    pub score: f64,
+
+    /// Representative residue (highest scoring in cluster)
+    pub representative: i32,
+
+    /// Cluster radius (max distance from centroid)
+    pub radius: f64,
 }
 
 /// Result of cryptic site detection across ensemble
@@ -109,6 +165,25 @@ pub struct CrypticSiteResult {
     pub n_apo_pocket: usize,
     pub n_cryptic: usize,
     pub mean_cryptic_score: f64,
+
+    // === Active Inference Results ===
+
+    /// EFE scores per residue (if Active Inference enabled)
+    pub efe_scores: HashMap<i32, f64>,
+
+    /// Epistemic value per residue (information gain)
+    pub epistemic_values: HashMap<i32, f64>,
+
+    /// Pragmatic value per residue (goal alignment)
+    pub pragmatic_values: HashMap<i32, f64>,
+
+    // === Clustering Results ===
+
+    /// Spatial clusters of cryptic predictions
+    pub clusters: Vec<CrypticCluster>,
+
+    /// Clustered predictions (representative residue per cluster)
+    pub clustered_predictions: Vec<(i32, f64)>,
 }
 
 /// Ensemble Pocket Detector
@@ -193,6 +268,11 @@ impl EnsemblePocketDetector {
         let mut cryptic_scores: HashMap<i32, f64> = HashMap::new();
         let mut cryptic_residues = Vec::new();
         let mut sasa_variance: HashMap<i32, f64> = HashMap::new();
+
+        // Active Inference score components
+        let mut efe_scores: HashMap<i32, f64> = HashMap::new();
+        let mut epistemic_values: HashMap<i32, f64> = HashMap::new();
+        let mut pragmatic_values: HashMap<i32, f64> = HashMap::new();
 
         // Compute RMSF from ensemble
         let rmsf: Vec<f64> = (0..n_residues)
@@ -299,20 +379,64 @@ impl EnsemblePocketDetector {
                 (1.0 - (diff / width).min(1.0)).max(0.0)
             };
 
-            // Cryptic score: combine all features
-            let cryptic_score = burial * 0.35
-                + combined_neighbor_flex * 0.35
-                + burial_potential_score * 0.2
-                + variance_score * 0.1;
+            // === Active Inference EFE Scoring ===
+            // EFE = -Epistemic_Value + Pragmatic_Value (we minimize EFE, so negate for scoring)
+            //
+            // Epistemic Value: How much does observing this residue reduce uncertainty?
+            // - High variance = high information gain (reduces ambiguity)
+            // - Rare features (high burial + high flex neighbors) = more informative
+            //
+            // Pragmatic Value: How well does this residue align with pocket formation goal?
+            // - Matches prior expectation of cryptic sites (buried + flexible neighbors)
+            // - Penalize common patterns (surface residues)
 
-            // Store all non-trivial scores for ROC/AUC computation
+            let (cryptic_score, epistemic_val, pragmatic_val) = if self.config.use_active_inference {
+                // Epistemic value: information gain from observing this residue
+                // High when: variance is high, features are rare/surprising
+                let rarity = 1.0 - (burial * 0.3 + combined_neighbor_flex * 0.7);
+                let surprise = variance_score * (1.0 + rarity);  // Variance weighted by rarity
+                let epistemic = surprise * (1.0 - self.config.pocket_formation_prior);
+
+                // Pragmatic value: alignment with pocket formation goal
+                // Goal prior P(pocket|features) approximated by our feature model
+                let posterior = burial * 0.35 + combined_neighbor_flex * 0.35
+                    + burial_potential_score * 0.2 + variance_score * 0.1;
+
+                // KL divergence from goal prior (prefer high posterior)
+                // D_KL = posterior * log(posterior / prior)
+                let prior = self.config.pocket_formation_prior;
+                let kl_div = if posterior > 0.01 && prior > 0.01 {
+                    posterior * (posterior / prior).ln()
+                } else {
+                    0.0
+                };
+                let pragmatic = posterior + kl_div.max(0.0) * 0.1;
+
+                // Combined EFE score (higher = more likely cryptic)
+                // We MAXIMIZE score, so: score = epistemic_weight * epistemic + pragmatic_weight * pragmatic
+                let efe_score = self.config.epistemic_weight * epistemic
+                    + self.config.pragmatic_weight * pragmatic;
+
+                (efe_score, epistemic, pragmatic)
+            } else {
+                // Fallback to original linear scoring
+                let score = burial * 0.35
+                    + combined_neighbor_flex * 0.35
+                    + burial_potential_score * 0.2
+                    + variance_score * 0.1;
+                (score, 0.0, score)
+            };
+
+            // Store scores
             if cryptic_score > 0.01 {
                 cryptic_scores.insert(res_id, cryptic_score);
+                efe_scores.insert(res_id, cryptic_score);
+                epistemic_values.insert(res_id, epistemic_val);
+                pragmatic_values.insert(res_id, pragmatic_val);
             }
 
-            // Mark as cryptic only if score above a stringent threshold
-            // Top ~20% of scores typically correspond to cryptic regions
-            if cryptic_score >= 0.5 {
+            // Mark as cryptic if score above threshold
+            if cryptic_score >= 0.3 {
                 cryptic_residues.push(res_id);
             }
         }
@@ -323,6 +447,24 @@ impl EnsemblePocketDetector {
             let score_b = cryptic_scores.get(b).unwrap_or(&0.0);
             score_b.partial_cmp(score_a).unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // === Step 4: Spatial Clustering (RLS-inspired) ===
+        // Group nearby predictions to reduce false positives
+        let (clusters, clustered_predictions) = if self.config.use_spatial_clustering {
+            self.cluster_predictions(
+                &cryptic_residues,
+                &cryptic_scores,
+                &ensemble.original_coords,
+                residue_map,
+            )
+        } else {
+            // No clustering - return all predictions
+            let predictions: Vec<(i32, f64)> = cryptic_residues
+                .iter()
+                .map(|&r| (r, *cryptic_scores.get(&r).unwrap_or(&0.0)))
+                .collect();
+            (Vec::new(), predictions)
+        };
 
         // Compute summary statistics
         let mean_cryptic_score = if cryptic_scores.is_empty() {
@@ -335,8 +477,9 @@ impl EnsemblePocketDetector {
         let n_cryptic = cryptic_residues.len();
 
         log::info!(
-            "Found {} cryptic residues (threshold: {:.1}%)",
+            "Found {} cryptic residues, {} clusters (threshold: {:.1}%)",
             n_cryptic,
+            clusters.len(),
             self.config.min_pocket_frequency * 100.0
         );
 
@@ -350,7 +493,142 @@ impl EnsemblePocketDetector {
             n_apo_pocket,
             n_cryptic,
             mean_cryptic_score,
+            efe_scores,
+            epistemic_values,
+            pragmatic_values,
+            clusters,
+            clustered_predictions,
         })
+    }
+
+    /// Cluster predictions by spatial proximity (RLS-inspired aggregation)
+    ///
+    /// This reduces false positives by grouping nearby predictions and
+    /// reporting only cluster representatives.
+    fn cluster_predictions(
+        &self,
+        residues: &[i32],
+        scores: &HashMap<i32, f64>,
+        coords: &[[f32; 3]],
+        residue_map: &HashMap<usize, i32>,
+    ) -> (Vec<CrypticCluster>, Vec<(i32, f64)>) {
+        if residues.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        // Build reverse map: residue_id -> index
+        let reverse_map: HashMap<i32, usize> = residue_map
+            .iter()
+            .map(|(&idx, &res_id)| (res_id, idx))
+            .collect();
+
+        // Simple greedy clustering
+        let mut assigned: HashSet<i32> = HashSet::new();
+        let mut clusters: Vec<CrypticCluster> = Vec::new();
+
+        for &seed_res in residues {
+            if assigned.contains(&seed_res) {
+                continue;
+            }
+
+            let seed_idx = match reverse_map.get(&seed_res) {
+                Some(&idx) => idx,
+                None => continue,
+            };
+            let seed_pos = coords[seed_idx];
+
+            // Find all unassigned residues within cluster_distance
+            let mut cluster_members: Vec<i32> = vec![seed_res];
+            assigned.insert(seed_res);
+
+            for &other_res in residues {
+                if assigned.contains(&other_res) {
+                    continue;
+                }
+
+                let other_idx = match reverse_map.get(&other_res) {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
+                let other_pos = coords[other_idx];
+
+                let dx = (other_pos[0] - seed_pos[0]) as f64;
+                let dy = (other_pos[1] - seed_pos[1]) as f64;
+                let dz = (other_pos[2] - seed_pos[2]) as f64;
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+                if dist <= self.config.cluster_distance {
+                    cluster_members.push(other_res);
+                    assigned.insert(other_res);
+                }
+            }
+
+            // Skip clusters smaller than minimum size
+            if cluster_members.len() < self.config.min_cluster_size {
+                continue;
+            }
+
+            // Compute cluster properties
+            let mut centroid = [0.0f64; 3];
+            let mut max_score = 0.0f64;
+            let mut representative = seed_res;
+
+            for &res in &cluster_members {
+                if let Some(&idx) = reverse_map.get(&res) {
+                    centroid[0] += coords[idx][0] as f64;
+                    centroid[1] += coords[idx][1] as f64;
+                    centroid[2] += coords[idx][2] as f64;
+                }
+
+                let score = *scores.get(&res).unwrap_or(&0.0);
+                if score > max_score {
+                    max_score = score;
+                    representative = res;
+                }
+            }
+
+            let n = cluster_members.len() as f64;
+            centroid[0] /= n;
+            centroid[1] /= n;
+            centroid[2] /= n;
+
+            // Compute radius
+            let mut max_dist = 0.0f64;
+            for &res in &cluster_members {
+                if let Some(&idx) = reverse_map.get(&res) {
+                    let dx = coords[idx][0] as f64 - centroid[0];
+                    let dy = coords[idx][1] as f64 - centroid[1];
+                    let dz = coords[idx][2] as f64 - centroid[2];
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                    max_dist = max_dist.max(dist);
+                }
+            }
+
+            clusters.push(CrypticCluster {
+                residues: cluster_members,
+                centroid,
+                score: max_score,
+                representative,
+                radius: max_dist,
+            });
+        }
+
+        // Sort clusters by score
+        clusters.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Generate clustered predictions (one per cluster)
+        let clustered_predictions: Vec<(i32, f64)> = clusters
+            .iter()
+            .map(|c| (c.representative, c.score))
+            .collect();
+
+        log::debug!(
+            "Clustered {} residues into {} clusters",
+            assigned.len(),
+            clusters.len()
+        );
+
+        (clusters, clustered_predictions)
     }
 
     /// Compute neighbor counts for each residue (proxy for burial)

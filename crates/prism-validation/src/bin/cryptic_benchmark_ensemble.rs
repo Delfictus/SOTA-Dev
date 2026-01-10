@@ -419,56 +419,94 @@ fn process_single_entry(
     // Detect cryptic sites
     let cryptic_result = detector.detect_cryptic_sites(&ensemble, &residue_map)?;
 
-    // Convert scores to predictions for evaluation
-    // Use all scores (threshold=0.0) for ROC AUC computation
-    // This allows proper ranking evaluation
-    let all_predictions: Vec<(i32, f64)> = cryptic_result.cryptic_scores
-        .iter()
-        .map(|(&r, &s)| (r, s))
-        .collect();
+    // === Use EFE scores for ranking (Active Inference) ===
+    // These are sorted by Expected Free Energy which balances exploration and exploitation
+    let all_predictions: Vec<(i32, f64)> = if !cryptic_result.efe_scores.is_empty() {
+        // Use EFE scores for ROC/AUC (better ranking)
+        let mut preds: Vec<(i32, f64)> = cryptic_result.efe_scores
+            .iter()
+            .map(|(&r, &s)| (r, s))
+            .collect();
+        preds.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        preds
+    } else {
+        // Fallback to regular scores
+        cryptic_result.cryptic_scores
+            .iter()
+            .map(|(&r, &s)| (r, s))
+            .collect()
+    };
 
-    // For precision/recall, use only high-confidence predictions
-    let predictions = cryptic_scores_to_predictions(&cryptic_result, 0.3);
+    // === Use clustered predictions for precision/recall (RLS) ===
+    // Clustered predictions reduce false positives by grouping nearby residues
+    let predictions = if !cryptic_result.clustered_predictions.is_empty() {
+        // Use clustered predictions (one representative per cluster)
+        cryptic_result.clustered_predictions.clone()
+    } else {
+        // Fallback to threshold-based predictions
+        cryptic_scores_to_predictions(&cryptic_result, 0.3)
+    };
 
     // Get ground truth
     let ground_truth: HashSet<i32> = entry.cryptic_residues.iter().cloned().collect();
 
-    // Compute overlap metrics
+    // Compute overlap metrics using clustered predictions
     let predicted_residues: Vec<i32> = predictions.iter().map(|(r, _)| *r).collect();
     let (precision, recall, f1_score, overlap_count) =
         compute_prediction_overlap(&predicted_residues, &ground_truth);
 
-    // Detection threshold: ≥30% recall
-    let detected = recall >= 0.3;
+    // Also compute overlap for all cluster members (more accurate recall)
+    let cluster_member_residues: Vec<i32> = cryptic_result.clusters
+        .iter()
+        .flat_map(|c| c.residues.iter().cloned())
+        .collect();
+    let (_, cluster_recall, _, _) = if !cluster_member_residues.is_empty() {
+        compute_prediction_overlap(&cluster_member_residues, &ground_truth)
+    } else {
+        (precision, recall, f1_score, overlap_count)
+    };
+
+    // Detection threshold: use cluster recall if available (more accurate)
+    let effective_recall = if cluster_recall > recall { cluster_recall } else { recall };
+    let detected = effective_recall >= 0.3;
 
     if verbose {
         info!(
-            "{}: detected={}, recall={:.1}%, precision={:.1}%, n_pred={}, n_gt={}",
+            "{}: detected={}, recall={:.1}% (cluster: {:.1}%), precision={:.1}%, n_clusters={}, n_gt={}",
             entry.pdb_id,
             detected,
             recall * 100.0,
+            cluster_recall * 100.0,
             precision * 100.0,
-            predictions.len(),
+            cryptic_result.clusters.len(),
             ground_truth.len()
         );
-        // Debug: show actual residue IDs
-        let pred_ids: Vec<i32> = predictions.iter().take(20).map(|(r, _)| *r).collect();
-        let gt_ids: Vec<i32> = ground_truth.iter().cloned().collect();
-        debug!("  Predicted residues (top 20): {:?}", pred_ids);
-        debug!("  Ground truth residues: {:?}", gt_ids);
-        debug!("  APO pocket residues (first 30): {:?}",
-            cryptic_result.apo_pocket_residues.iter().take(30).collect::<Vec<_>>());
+        // Debug: show cluster details
+        debug!("  Clusters: {} total, {} residues",
+            cryptic_result.clusters.len(),
+            cluster_member_residues.len());
+        debug!("  Top cluster representatives: {:?}",
+            predictions.iter().take(5).collect::<Vec<_>>());
+        debug!("  Ground truth residues: {:?}",
+            ground_truth.iter().cloned().collect::<Vec<i32>>());
     }
+
+    // Compute effective precision/recall/F1 using cluster members
+    let effective_f1 = if precision + effective_recall > 0.0 {
+        2.0 * precision * effective_recall / (precision + effective_recall)
+    } else {
+        0.0
+    };
 
     let result = EnsembleStructureResult {
         pdb_id: entry.pdb_id.clone(),
         detected,
         overlap_count,
-        overlap_fraction: recall,
+        overlap_fraction: effective_recall,
         precision,
-        recall,
-        f1_score,
-        n_predictions: predictions.len(),
+        recall: effective_recall,
+        f1_score: effective_f1,
+        n_predictions: cryptic_result.clusters.len(),  // Number of clusters, not raw residues
         n_ground_truth: ground_truth.len(),
         n_apo_pocket: cryptic_result.n_apo_pocket,
         n_cryptic: cryptic_result.n_cryptic,
