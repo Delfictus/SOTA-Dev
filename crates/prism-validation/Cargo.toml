@@ -98,3 +98,8 @@ path = "src/bin/acquire_data.rs"
 name = "run-heterogeneous-bench"
 path = "src/bin/run_heterogeneous_bench.rs"
 required-features = ["prism-physics"]
+
+[[bin]]
+name = "gnm-ablation"
+path = "src/bin/gnm_ablation.rs"
+required-features = ["prism-physics"]

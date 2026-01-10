@@ -94,16 +94,22 @@ pub struct EnhancedGnmConfig {
 
 impl Default for EnhancedGnmConfig {
     fn default() -> Self {
+        // OPTIMIZED based on ablation study (2026-01-09):
+        // - Distance weighting ALONE: +0.009 ✅ (BEST)
+        // - Multi-cutoff ALONE: +0.007
+        // - Combined MC + DW: +0.004 (they interfere!)
+        // - Secondary structure: -0.080 ❌
+        // - Sidechain factors: -0.090 ❌
         Self {
             use_distance_weighting: true,
             distance_sigma: 5.0, // Gaussian width for distance weighting
-            use_multi_cutoff: true,
+            use_multi_cutoff: false,  // DISABLED: interferes with distance weighting
             ensemble_cutoffs: vec![6.0, 7.0, 8.0, 10.0],
             ensemble_weights: vec![0.15, 0.35, 0.35, 0.15],
-            use_secondary_structure: true,
-            use_sidechain_factors: true,
-            use_sasa_modulation: true,
-            use_long_range_contacts: false, // Optional, can be expensive
+            use_secondary_structure: false,  // DISABLED: hurts accuracy by -0.08
+            use_sidechain_factors: false,    // DISABLED: hurts accuracy by -0.09
+            use_sasa_modulation: false,      // DISABLED: neutral but adds noise
+            use_long_range_contacts: false,
             detect_domains: false,
             n_domains: 2,
         }
@@ -135,19 +141,27 @@ impl EnhancedGnmConfig {
         }
     }
 
-    /// Create config with all enhancements enabled
-    pub fn full() -> Self {
+    /// Create config with all enhancements enabled (EXPERIMENTAL)
+    /// WARNING: Secondary structure and sidechain factors are miscalibrated
+    /// and may hurt accuracy. Use default() for best performance.
+    pub fn full_experimental() -> Self {
         Self {
             use_distance_weighting: true,
             use_multi_cutoff: true,
-            use_secondary_structure: true,
-            use_sidechain_factors: true,
+            use_secondary_structure: true,  // WARNING: -0.08 accuracy
+            use_sidechain_factors: true,    // WARNING: -0.09 accuracy
             use_sasa_modulation: true,
             use_long_range_contacts: true,
             detect_domains: true,
             n_domains: 2,
             ..Default::default()
         }
+    }
+
+    /// Optimized config based on ablation study
+    /// Uses only enhancements that improve accuracy
+    pub fn optimized() -> Self {
+        Self::default()  // Default is now optimized
     }
 
     /// Create config with NO enhancements (plain GNM baseline)
@@ -767,7 +781,7 @@ pub fn ablation_study(
     results.push(("multi_cutoff", gnm_multi.compute_rmsf(ca_positions, None).rmsf));
 
     // Full enhancements
-    let gnm_full = EnhancedGnm::with_config(EnhancedGnmConfig::full());
+    let gnm_full = EnhancedGnm::with_config(EnhancedGnmConfig::full_experimental());
     results.push(("full_enhanced", gnm_full.compute_rmsf(ca_positions, residue_names).rmsf));
 
     results
@@ -868,7 +882,7 @@ mod tests {
             })
             .collect();
 
-        let gnm = EnhancedGnm::with_config(EnhancedGnmConfig::full());
+        let gnm = EnhancedGnm::with_config(EnhancedGnmConfig::full_experimental());
         let result = gnm.compute_rmsf(&positions, Some(&residue_names));
 
         // All enhancements should be applied

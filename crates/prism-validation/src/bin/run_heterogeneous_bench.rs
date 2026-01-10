@@ -54,6 +54,10 @@ struct Args {
     /// Dynamics mode: enhanced-gnm (default), transfer-entropy
     #[arg(long, default_value = "enhanced-gnm")]
     mode: String,
+
+    /// GNM cutoff distance in Angstroms (default: 10.0 for plain-gnm)
+    #[arg(long)]
+    cutoff: Option<f64>,
 }
 
 /// ATLAS target with MD RMSF
@@ -145,6 +149,7 @@ async fn main() -> Result<()> {
     let dynamics_mode = match args.mode.as_str() {
         "plain-gnm" => DynamicsMode::PlainGnm,
         "transfer-entropy" => DynamicsMode::TransferEntropyGnm,
+        "cg" | "coarse-grained" => DynamicsMode::CoarseGrainedAnm,
         "enhanced-gnm" | _ => DynamicsMode::EnhancedGnm,
     };
     info!("  🔬 Dynamics Mode: {:?}", dynamics_mode);
@@ -166,6 +171,7 @@ async fn main() -> Result<()> {
                 "Same 82 proteins used in AlphaFlow paper for direct SOTA comparison",
                 args.limit,
                 dynamics_mode,
+                args.cutoff,
             )?);
         } else {
             info!("  ⚠️  AlphaFlow data not found at {:?}", alphaflow_dir);
@@ -186,6 +192,7 @@ async fn main() -> Result<()> {
                 "Different 82 proteins to test generalization (not in AlphaFlow set)",
                 args.limit,
                 dynamics_mode,
+                args.cutoff,
             )?);
         } else {
             info!("  ⚠️  Classic ATLAS data not found at {:?}", classic_dir);
@@ -246,6 +253,7 @@ fn run_protein_set(
     description: &str,
     limit: Option<usize>,
     dynamics_mode: DynamicsMode,
+    cutoff: Option<f64>,
 ) -> Result<ProteinSetSummary> {
     info!("");
     info!("  Loading targets from {:?}...", data_dir);
@@ -262,17 +270,17 @@ fn run_protein_set(
     let n_targets = limit.unwrap_or(targets.len()).min(targets.len());
     info!("  Found {} targets, evaluating {}", targets.len(), n_targets);
 
-    // Create engines
+    // Create engines with OPTIMIZED settings (ablation study 2026-01-09)
+    // Only distance_weighting and multi_cutoff help; SS/sidechain/SASA hurt
     let config = DynamicsConfig {
         mode: dynamics_mode,
-        use_distance_weighting: true,
-        use_multi_cutoff: true,
-        use_secondary_structure: true,
-        use_sidechain_factors: true,
-        use_sasa_modulation: true,
-        ..Default::default()
+        gnm_cutoff: cutoff.unwrap_or(9.0),  // Optimal cutoff from benchmark
+        ..Default::default()  // Uses optimized defaults (SS/sidechain/SASA disabled)
     };
     let engine = DynamicsEngine::new(config)?;
+    if let Some(c) = cutoff {
+        info!("  Using GNM cutoff: {}Å", c);
+    }
     info!("  Using dynamics mode: {}", dynamics_mode.name());
     let pocket_calc = PocketMetricsCalculator::new();
 
