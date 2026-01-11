@@ -570,38 +570,110 @@ pub mod control_structures {
         fusion_peptide_end: 833,
     };
 
-    /// 2VWD - HIV-1 gp120 Core
+    /// 2VWD - Nipah Virus G Protein (Attachment Glycoprotein)
+    ///
+    /// The Nipah virus attachment glycoprotein (G) is responsible for
+    /// binding to host cell receptors (ephrin-B2/B3). It forms a tetramer
+    /// in its biological assembly.
+    ///
+    /// # Key Antibodies
+    /// - **m102.4**: Broadly neutralizing human mAb that binds the central cavity
+    ///   (PDB: 3D11 for complex structure)
+    /// - Targets residues 507-532 in the receptor binding pocket
     pub const CONTROL_2VWD: ControlStructure = ControlStructure {
         pdb_id: "2VWD",
-        name: "HIV-1 gp120 Core (CD4-bound state)",
-        organism: "HIV-1",
-        resolution: 3.3, // Angstroms
-        n_chains: 1,
-        n_residues_per_chain: 420,
+        name: "Nipah Virus G Protein (Attachment Glycoprotein)",
+        organism: "Nipah virus",
+        resolution: 3.5, // Angstroms
+        n_chains: 2, // Dimer in asymmetric unit, tetramer in biological assembly
+        n_residues_per_chain: 419,
         rcsb_url: "https://www.rcsb.org/structure/2VWD",
 
-        // Key structural regions
-        rbd_start: 0, // Not applicable in same way
-        rbd_end: 0,
-        ntd_start: 0,
+        // Key structural regions for NiV G
+        rbd_start: 183,  // Receptor binding domain start
+        rbd_end: 602,    // Receptor binding domain end
+        ntd_start: 0,    // Not applicable
         ntd_end: 0,
-        s2_start: 0,
+        s2_start: 0,     // Not applicable (no S2 in paramyxovirus)
         s2_end: 0,
 
-        // Known epitope classes
+        // Known epitope classes for Nipah G
+        // Based on m102.4 antibody studies (Xu et al., 2008; PNAS)
+        // and structural analysis of ephrin binding site
         epitope_classes: &[
-            EpitopeClass { name: "CD4 binding site", residues: &[124, 125, 126, 127, 279, 280, 281, 365, 366, 367, 368, 369, 370, 371, 427, 428, 429, 430, 431, 432, 455, 456, 457, 458, 459, 460, 469, 470, 471, 472, 473, 474] },
-            EpitopeClass { name: "V1/V2 loop", residues: &[126, 127, 128, 129, 130, 131, 132, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196] },
-            EpitopeClass { name: "V3 loop", residues: &[296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331] },
-            EpitopeClass { name: "Bridging sheet", residues: &[418, 419, 420, 421, 422, 423, 424, 425, 426] },
+            // m102.4 antibody epitope - central cavity (validated therapeutic target)
+            // This is the PRIMARY validation target for cryptic site detection
+            EpitopeClass {
+                name: "m102.4 Central Cavity",
+                residues: &[507, 508, 509, 510, 511, 512, 529, 530, 531, 532, 533]
+            },
+            // Ephrin-B2/B3 receptor binding site
+            EpitopeClass {
+                name: "Ephrin Binding Site",
+                residues: &[236, 239, 240, 458, 459, 460, 504, 505, 506, 507, 530, 531]
+            },
+            // Dimeric interface (cryptic - only exposed in monomer)
+            EpitopeClass {
+                name: "Dimeric Interface",
+                residues: &[252, 253, 254, 255, 256, 257, 258, 268, 269, 270, 271]
+            },
+            // Beta-propeller blades (structural core)
+            EpitopeClass {
+                name: "Beta-Propeller Core",
+                residues: &[376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396]
+            },
         ],
 
-        // Key escape mutation positions
-        key_escape_positions: &[169, 197, 276, 279, 281, 362, 363, 364, 429, 456, 457, 458, 471],
+        // Key escape mutation positions from Henipavirus studies
+        // These are positions where mutations reduce antibody binding
+        key_escape_positions: &[236, 239, 458, 507, 508, 509, 530, 531],
 
-        fusion_peptide_start: 512, // gp41 fusion peptide
-        fusion_peptide_end: 527,
+        fusion_peptide_start: 0, // Fusion peptide is in F protein, not G
+        fusion_peptide_end: 0,
     };
+
+    /// m102.4 antibody binding site residues (primary validation target)
+    ///
+    /// m102.4 is a broadly neutralizing human monoclonal antibody that
+    /// targets the central cavity of Nipah/Hendra virus G proteins.
+    /// It blocks receptor binding by occupying the ephrin binding pocket.
+    ///
+    /// Structure: PDB 3D11 (NiV G + m102.4 Fab complex)
+    /// Reference: Xu K, et al. (2008) PNAS 105(29):9953-9958
+    pub const M102_4_EPITOPE: &[usize] = &[
+        // Core epitope (directly contacted by m102.4 CDRs)
+        507, 508, 509, 510, 511, 512,
+        529, 530, 531, 532, 533,
+        // Extended epitope (within 5Å of antibody)
+        504, 505, 506, 513, 514,
+        527, 528, 534, 535,
+    ];
+
+    /// Antibody validation dataset for Henipavirus
+    #[derive(Debug, Clone)]
+    pub struct AntibodyBinding {
+        pub name: &'static str,
+        pub pdb_complex: &'static str,  // PDB ID of antibody-antigen complex
+        pub target: &'static str,        // Target protein
+        pub epitope_residues: &'static [usize],
+        pub kd_nm: Option<f64>,          // Binding affinity (nanomolar)
+        pub neutralizing: bool,
+        pub reference: &'static str,
+    }
+
+    /// Known antibodies for validation
+    pub const HENIPAVIRUS_ANTIBODIES: &[AntibodyBinding] = &[
+        AntibodyBinding {
+            name: "m102.4",
+            pdb_complex: "3D11",
+            target: "NiV G",
+            epitope_residues: M102_4_EPITOPE,
+            kd_nm: Some(0.04), // 40 pM, extremely potent
+            neutralizing: true,
+            reference: "Xu K, et al. (2008) PNAS 105(29):9953",
+        },
+        // Additional antibodies can be added here as validation expands
+    ];
 
     /// Control structure definition
     #[derive(Debug, Clone, Copy)]

@@ -77,6 +77,12 @@ pub mod escape_resistance_scorer;
 // Blind validation pipeline for 6VXX and 2VWD (Phase 4)
 pub mod blind_validation_pipeline;
 
+// Oligomer topology: biological assembly parsing and interface detection
+pub mod oligomer_topology;
+
+// Antibody binding site validation (m102.4 and others)
+pub mod antibody_validation;
+
 // Production-quality cryptic detection (requires 'cryptic' feature)
 #[cfg(feature = "cryptic")]
 pub mod cryptic_production;
