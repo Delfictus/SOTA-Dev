@@ -64,7 +64,9 @@ simulation = ["prism-gpu", "prism-physics", "prism-physics/cuda", "cudarc"]
 # Self-contained implementation (no prism-lbs dependency to avoid broken whcr chain)
 cryptic = ["prism-physics"]
 # GPU-accelerated cryptic detection (requires CUDA)
-cryptic-gpu = ["prism-physics", "prism-physics/cuda", "prism-gpu", "cudarc"]
+# Includes cryptic feature for HMC refinement + GPU for ZrO scoring
+# NOTE: Includes 'cuda' feature to enable GPU mega-fused HMC kernel
+cryptic-gpu = ["cryptic", "cuda", "prism-physics/cuda", "prism-gpu/cuda", "prism-gpu", "cudarc"]
 
 [[bin]]
 name = "prism-validate"
@@ -154,3 +156,12 @@ path = "src/bin/download_pocketminer.rs"
 [[bin]]
 name = "cryptic-benchmark-ensemble"
 path = "src/bin/cryptic_benchmark_ensemble.rs"
+
+[[bin]]
+name = "cryptic-benchmark-v2"
+path = "src/bin/cryptic_benchmark_v2.rs"
+required-features = ["cryptic-gpu"]
+
+[[bin]]
+name = "run-blind-validation"
+path = "src/bin/run_blind_validation.rs"

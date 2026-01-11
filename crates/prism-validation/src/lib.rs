@@ -46,8 +46,36 @@ pub mod pocketminer_dataset;
 // ANM-based conformational ensemble generation
 pub mod anm_ensemble;
 
+// ANM-based conformational ensemble generation v2 (enhanced for cryptic detection)
+pub mod anm_ensemble_v2;
+
 // Ensemble pocket detector for cryptic site identification
 pub mod ensemble_pocket_detector;
+
+// Ensemble pocket detector v2 (adaptive threshold, dynamic prior, graph clustering)
+pub mod ensemble_pocket_detector_v2;
+
+// HMC-refined ensemble generation (Phase 2.1)
+// Requires prism-physics for AmberSimulator
+#[cfg(feature = "cryptic")]
+pub mod hmc_refined_ensemble;
+
+// PRISM-ZrO cryptic site scorer (Phase 2.2)
+// Requires prism-gpu for DendriticSNNReservoir (GPU-accelerated 512-neuron reservoir)
+#[cfg(feature = "cryptic-gpu")]
+pub mod prism_zro_cryptic_scorer;
+
+// Runtime observability for benchmark reports
+pub mod observability;
+
+// Kabsch alignment for accurate displacement computation (Phase 4.1)
+pub mod kabsch_alignment;
+
+// Escape resistance scoring for cryptic binding sites (Phase 4.2)
+pub mod escape_resistance_scorer;
+
+// Blind validation pipeline for 6VXX and 2VWD (Phase 4)
+pub mod blind_validation_pipeline;
 
 // Production-quality cryptic detection (requires 'cryptic' feature)
 #[cfg(feature = "cryptic")]

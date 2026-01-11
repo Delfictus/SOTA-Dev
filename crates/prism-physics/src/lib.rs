@@ -22,6 +22,10 @@ pub mod molecular_dynamics;
 // AMBER ff14SB force field implementation
 pub mod amber_ff14sb;
 
+// AMBER all-atom dynamics (HMC/Langevin integration)
+pub mod amber_dynamics;
+pub use amber_dynamics::{AmberSimulator, AmberSimConfig, AmberSimResult, TrajectoryFrame as AmberTrajectoryFrame};
+
 // Gaussian Network Model for protein flexibility prediction
 pub mod gnm;
 pub use gnm::{GaussianNetworkModel, AnisotropicNetworkModel, GnmResult};

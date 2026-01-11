@@ -17,6 +17,12 @@ pub mod active_inference;
 pub mod bio_chemistry_gpu;
 pub mod prism_nova;
 
+// AMBER ff14SB bonded force calculator
+pub mod amber_forces;
+
+// Mega-fused AMBER HMC dynamics (full GPU acceleration)
+pub mod amber_mega_fused;
+
 // Essential exports
 pub use context::{GpuContext, GpuInfo, GpuSecurityConfig};
 pub use global_context::{GlobalGpuContext, GlobalGpuError};
@@ -30,7 +36,10 @@ pub use polycentric_immunity::{PolycentricImmunityGpu, N_EPITOPE_CENTERS, N_PK_S
 pub use active_inference::{ActiveInferenceGpu, ActiveInferencePolicy};
 pub use bio_chemistry_gpu::{BiochemistryGpu, GpuAtomicMetadata, MAX_ATOMS as BIO_MAX_ATOMS};
 pub use prism_nova::{PrismNova, NovaConfig, NovaStepResult, RESERVOIR_SIZE as NOVA_RESERVOIR_SIZE};
+pub use amber_forces::{AmberBondedForces, TopologyBuilder, BondParam, AngleParam, DihedralParam, EnergyComponents};
+pub use amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, build_exclusion_lists as build_amber_exclusions, MAX_EXCLUSIONS as AMBER_MAX_EXCLUSIONS};
 pub use memory::{VramGuard, VramInfo, VramGuardError, init_global_vram_guard, global_vram_guard};
+pub use whcr::{WhcrGpu, RepairResult as WhcrRepairResult};
 
 // Commented out unused modules to isolate benchmark requirements
 // pub mod aatgs;
@@ -58,7 +67,7 @@ pub mod memory;
 // pub mod thermodynamic;
 // pub mod transfer_entropy;
 // pub mod ultra_kernel;
-// pub mod whcr;
+pub mod whcr;  // Re-enabled for prism-whcr dependency
 // pub mod batch_tda;
 // pub mod mega_fused_integrated;
 // pub mod training;
