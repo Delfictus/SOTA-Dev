@@ -115,6 +115,10 @@ pub mod pdb_sanitizer;
 // Strangler pattern migration with shadow pipeline validation
 pub mod sampling;
 
+// Phase 6 Week 3-4: Apo-holo conformational change benchmark
+// 15 classic pairs demonstrating cryptic site opening
+pub mod apo_holo_benchmark;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
