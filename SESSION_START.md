@@ -1,154 +1,187 @@
-# Starting a New Claude Code Session for PRISM Phase 6
+# Starting a New Claude Code Session for PRISM
 
 ## Quick Start
 
-### Option 1: Run Initialization Script (Recommended)
+### Step 1: Run Initialization Script
 
 ```bash
 cd /home/diddy/Desktop/PRISM4D-bio
 ./scripts/init_phase6_session.sh
 ```
 
-Then copy the provided prompt into Claude Code.
+This reads the Obsidian vault and outputs a ready-to-use prompt with current state.
 
-### Option 2: Manual Initialization
+### Step 2: Copy the Generated Prompt
 
-Start Claude Code and paste this prompt:
+The script outputs a prompt like:
+
+```
+Continue Phase 6 implementation.
+
+**Read these files first:**
+1. .obsidian/vault/Sessions/Current Session.md
+2. .obsidian/vault/Progress/implementation_status.json
+3. CLAUDE.md
+
+**Current State:**
+- Phase: 6
+- Week: 0
+- Progress: 0%
+- Completed: 0 / 15 files
+
+**Next Target:** `cryptic_features.rs`
+**Plan Section:** 4.1
+
+Read the vault files, confirm the current state, and proceed with implementation.
+Update vault files as you work.
+```
+
+### Step 3: Paste into Claude Code
+
+Open Claude Code in the project directory and paste the prompt.
+
+---
+
+## What Claude Does Each Session
+
+### On Start
+1. Reads vault files for context
+2. Confirms current state
+3. Identifies next file
+4. Requests permission to proceed
+
+### During Work
+1. Implements one file at a time
+2. Runs tests after each file
+3. Updates `Current Session.md` with progress
+4. Commits code changes
+
+### On End
+1. Updates `implementation_status.json` with completion
+2. Updates `PRISM Dashboard.md` with summary
+3. Updates `Current Session.md` with continuation context
+4. Commits vault changes
+
+---
+
+## Obsidian Vault Structure
+
+```
+.obsidian/vault/
+├── PRISM Dashboard.md          # Overview (human-readable)
+├── Sessions/
+│   ├── Current Session.md      # Active session context
+│   └── Session Template.md     # Template for logs
+├── Progress/
+│   └── implementation_status.json  # Machine-readable status
+├── Architecture/
+│   └── Architecture Overview.md    # System design
+├── Plans/
+└── Daily/
+```
+
+### Key Files
+
+| File | Purpose | Updated By |
+|------|---------|------------|
+| `implementation_status.json` | Progress tracking | Claude (after each file) |
+| `Current Session.md` | Session context | Claude (during session) |
+| `PRISM Dashboard.md` | Overview | Claude (end of session) |
+
+---
+
+## Progress Tracking (JSON Schema)
+
+```json
+{
+  "current_phase": 6,
+  "current_week": 0,
+  "overall_progress_percent": 0,
+  "next_action": {
+    "file": "cryptic_features.rs",
+    "plan_section": "4.1",
+    "week": "1-2"
+  },
+  "files": {
+    "week_1_2": [
+      {"name": "file.rs", "status": "pending|completed", "commit": "hash"}
+    ]
+  },
+  "checkpoints": {
+    "week_2": {"status": "pending|passed", "requirements": {...}}
+  }
+}
+```
+
+---
+
+## If Context Drifts
+
+Signs:
+- Wrong file order
+- Wrong parameters
+- Skipping tests
+
+Recovery:
+```bash
+./scripts/phase6_compliance_check.sh
+```
+
+Then tell Claude:
+```
+Stop. Read .obsidian/vault/Progress/implementation_status.json
+Current target is: [file from JSON]
+Resume from there.
+```
+
+---
+
+## Opening Obsidian
+
+To view the vault in Obsidian:
+
+1. Open Obsidian
+2. "Open folder as vault"
+3. Select `/home/diddy/Desktop/PRISM4D-bio/.obsidian/vault`
+4. View Dashboard, progress, session logs
+
+---
+
+## Manual Session Start (No Script)
+
+If the script isn't available:
 
 ```
 Begin Phase 6 implementation session.
 
-1. Read CLAUDE.md for project instructions
-2. Read results/phase6_sota_plan.md for implementation plan
-3. Run: ./scripts/phase6_checkpoint.sh auto
-4. Identify and implement the next file in order
-5. Follow atomic implementation units (one file at a time)
+Read these files:
+1. .obsidian/vault/Progress/implementation_status.json
+2. .obsidian/vault/Sessions/Current Session.md
+3. CLAUDE.md
 
-What is the current checkpoint status and next implementation target?
+Parse next_action from the JSON. State the current target.
+Implement, test, commit. Update vault files after completion.
 ```
-
----
-
-## What Claude Will Do
-
-When properly initialized, Claude will:
-
-1. **Read CLAUDE.md** - Contains all constraints, architecture, and implementation order
-2. **Read the Phase 6 plan** - Full specifications for each file
-3. **Check current progress** - Determine which files are done
-4. **Identify next target** - Pick the next file in the required order
-5. **Request confirmation** - Ask before implementing
-
----
-
-## Implementation Order (Phase 6)
-
-Claude MUST implement files in this exact order:
-
-### Week 0: Setup
-- Environment verification
-- Dataset download
-
-### Weeks 1-2: Core Scoring
-1. `cryptic_features.rs`
-2. `gpu_zro_cryptic_scorer.rs`
-3. `tests/gpu_scorer_tests.rs`
-
-### Weeks 3-4: Parallel Sampling
-4. `pdb_sanitizer.rs`
-5. `sampling/contract.rs`
-6. `sampling/paths/nova_path.rs`
-7. `sampling/paths/amber_path.rs`
-8. `sampling/router/mod.rs`
-9. `sampling/shadow/comparator.rs`
-10. `sampling/migration/feature_flags.rs`
-11. `apo_holo_benchmark.rs`
-
-### Weeks 5-6: Benchmarking
-12. `cryptobench_dataset.rs`
-13. `ablation.rs`
-14. `failure_analysis.rs`
-
-### Weeks 7-8: Publication
-15. `publication_outputs.rs`
-
----
-
-## Verification Commands
-
-After each file, Claude should run:
-
-```bash
-# Compile check
-cargo check -p prism-validation --features cuda
-
-# Run tests for the module
-cargo test --release -p prism-validation --features cuda [module_name]
-
-# Check compliance
-./scripts/phase6_compliance_check.sh
-```
-
----
-
-## If Claude Loses Context
-
-Signs of context drift:
-- Implementing files out of order
-- Using wrong parameter values (neurons != 512, lambda != 0.99)
-- Skipping tests
-- Not following AMBER-primary architecture
-
-Recovery steps:
-1. Stop Claude
-2. Run `./scripts/phase6_compliance_check.sh`
-3. Restart with the initialization prompt above
-4. Point Claude to the specific plan section needed
-
----
-
-## Key Documents
-
-| Document | Purpose |
-|----------|---------|
-| `CLAUDE.md` | Session instructions, constraints, order |
-| `results/phase6_sota_plan.md` | Full Phase 6 specifications |
-| `results/phase7_8_sota_plan.md` | Future phases (don't implement yet) |
-| `scripts/phase6_checkpoint.sh` | Gate verification |
-| `scripts/phase6_compliance_check.sh` | Code quality checks |
 
 ---
 
 ## Architecture Reminders
 
 ```
-AMBER-PRIMARY:
-- AMBER is the main physics engine (all structures)
-- NOVA optional for small proteins (≤512 atoms)
-- Parallel paths with shadow pipeline
-
-CORE FEATURES:
-- Betti numbers (beta_0, beta_1, beta_2) for TDA
-- Blake3 hashing for integrity/caching
-- RLS online learning (lambda=0.99)
-- 512-neuron reservoir
-
-ZERO POLICIES:
-- Zero CPU fallback (explicit GPU error)
-- Zero external ML dependencies
-- Zero mock implementations
-- Zero data leakage
+AMBER-PRIMARY: AMBER is main physics engine
+BETTI NUMBERS: β₀, β₁, β₂ for TDA topology
+BLAKE3: Hashing for integrity and caching
+RESERVOIR: 512 neurons, RLS λ=0.99
+NOVA LIMIT: 512 atoms maximum
+ZERO FALLBACK: Explicit GPU error required
 ```
 
 ---
 
-## Success Metrics
+## Success Criteria
 
-Phase 6 is complete when:
-
-| Metric | Minimum |
-|--------|---------|
-| ROC AUC | ≥ 0.70 |
-| PR AUC | ≥ 0.20 |
-| Success Rate | ≥ 80% |
-| All tests | Passing |
+Phase 6 complete when:
+- ROC AUC ≥ 0.70
+- All 15 files implemented
+- All checkpoints passed
+- `results/PHASE6_FINAL.json` exists

@@ -448,6 +448,73 @@ At the END of every session (or after each unit), Claude MUST:
 - Results: `results/`
 - Compliance: `scripts/phase6_*.sh`
 
+## Obsidian Vault (REQUIRED for Progress Tracking)
+
+Location: `.obsidian/vault/`
+
+**Claude MUST read and update these files:**
+
+| File | Purpose | When to Update |
+|------|---------|----------------|
+| `Sessions/Current Session.md` | Active work context | Every significant action |
+| `Progress/implementation_status.json` | Machine-readable status | After each file completion |
+| `PRISM Dashboard.md` | Human-readable overview | End of session |
+
+### Session Start Protocol (Updated)
+
+At the START of every session, Claude MUST:
+
+```
+1. Read .obsidian/vault/Sessions/Current Session.md
+2. Read .obsidian/vault/Progress/implementation_status.json
+3. Parse next_action from status JSON
+4. State current target and context
+5. Request confirmation to proceed
+```
+
+### Session End Protocol (Updated)
+
+At the END of every session, Claude MUST:
+
+```
+1. Update .obsidian/vault/Sessions/Current Session.md with:
+   - Work completed
+   - Context for continuation
+   - Next target
+   - Any blocking issues
+
+2. Update .obsidian/vault/Progress/implementation_status.json with:
+   - File completion status
+   - Checkpoint progress
+   - Metrics if available
+   - next_action field
+
+3. Update .obsidian/vault/PRISM Dashboard.md with:
+   - Overall progress percentage
+   - Recent session summary
+   - Next action
+
+4. Commit vault changes:
+   git add .obsidian/vault/ && git commit -m "vault: Update progress"
+```
+
+### Vault Update Commands
+
+```bash
+# After completing a file
+Claude should update implementation_status.json:
+- Set file status to "completed"
+- Set completed_at to current timestamp
+- Set commit to the commit hash
+- Update next_action to next file
+
+# After passing a checkpoint
+Claude should update:
+- checkpoints.week_X.status to "passed"
+- checkpoints.week_X.passed_at to timestamp
+- current_week to next week number
+```
+
 ## Future: Phase 7-8 (After Phase 6 Complete)
 
 **DO NOT IMPLEMENT UNTIL PHASE 6 GATES PASS**
