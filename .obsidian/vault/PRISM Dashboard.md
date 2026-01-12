@@ -98,25 +98,30 @@
 
 ---
 
-## Key Files (External)
+## Key Files
 
 | File | Description |
 |------|-------------|
 | `CLAUDE.md` | Implementation constraints + sync protocol |
-| `results/phase6_sota_plan.md` | Full Phase 6 plan |
-| `results/phase7_8_sota_plan.md` | Full Phase 7-8 plan |
 
 ---
 
-## Master Plan Documents
+## Full Implementation Plans (IN VAULT)
 
-| Document | Location |
-|----------|----------|
-| Phase 6 Part 1 | `/home/diddy/Downloads/files(6)/PRISM_PHASE6_PLAN_PART1.md` |
-| Phase 6 Part 2 | `/home/diddy/Downloads/files(6)/PRISM_PHASE6_PLAN_PART2.md` |
-| Phase 7-8 Part 1 | `/home/diddy/Downloads/files(8)/PRISM_PHASE7_8_PLAN_PART1.md` |
-| Architecture | `/home/diddy/Downloads/files(8)/PRISM_PARALLEL_IMPLEMENTATION_ARCHITECTURE.md` |
-| Trajectory | `/home/diddy/Downloads/files(8)/PRISM_MASTER_IMPLEMENTATION_TRAJECTORY.md` |
+All authoritative plans are now **inside the Obsidian vault** for zero confusion:
+
+| Document | Vault Link |
+|----------|------------|
+| Phase 6 Part 1 | [[Plans/Full/PRISM_PHASE6_PLAN_PART1\|Phase 6 Part 1]] |
+| Phase 6 Part 2 | [[Plans/Full/PRISM_PHASE6_PLAN_PART2\|Phase 6 Part 2]] |
+| Phase 6 Quick Ref | [[Plans/Full/PRISM_PHASE6_QUICK_REFERENCE\|Quick Reference]] |
+| Phase 7-8 Part 1 | [[Plans/Full/PRISM_PHASE7_8_PLAN_PART1\|Phase 7-8 Part 1]] |
+| Phase 7-8 Part 2 | [[Plans/Full/PRISM_PHASE7_8_PLAN_PART2\|Phase 7-8 Part 2]] |
+| Phase 7-8 Quick Ref | [[Plans/Full/PRISM_PHASE7_8_QUICK_REFERENCE\|Quick Reference]] |
+| Parallel Architecture | [[Plans/Full/PRISM_PARALLEL_IMPLEMENTATION_ARCHITECTURE\|Architecture]] |
+| Master Trajectory | [[Plans/Full/PRISM_MASTER_IMPLEMENTATION_TRAJECTORY\|Trajectory]] |
+
+Also available in `docs/plans/` for Claude and external tools.
 
 ---
 

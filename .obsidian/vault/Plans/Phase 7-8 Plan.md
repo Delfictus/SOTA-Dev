@@ -1,9 +1,20 @@
-# Phase 7-8: Enhancement Implementation Plan
+# Phase 7-8: SOTA Enhancement Plan
 
-> **Full Plan**: `results/phase7_8_sota_plan.md`
-> **Prerequisites**: Phase 6 Complete (ROC AUC >= 0.70)
+> **Status**: PENDING (Requires Phase 6 completion)
+> **Prerequisites**: Phase 6 ROC AUC >= 0.70
 > **Timeline**: 16 Weeks (Phase 7: 8 weeks, Phase 8: 8 weeks)
 > **Target**: ROC AUC >= 0.90, PR AUC >= 0.40
+
+---
+
+## Full Implementation Plans (IN VAULT)
+
+| Document | Vault Path | Content |
+|----------|------------|---------|
+| **Part 1** | [[Plans/Full/PRISM_PHASE7_8_PLAN_PART1\|Phase 7-8 Part 1]] | Phase 7 detailed spec |
+| **Part 2** | [[Plans/Full/PRISM_PHASE7_8_PLAN_PART2\|Phase 7-8 Part 2]] | Phase 8 detailed spec |
+| **Quick Reference** | [[Plans/Full/PRISM_PHASE7_8_QUICK_REFERENCE\|Phase 7-8 Quick Ref]] | Summary card |
+| **Master Trajectory** | [[Plans/Full/PRISM_MASTER_IMPLEMENTATION_TRAJECTORY\|Trajectory]] | Overall roadmap |
 
 ---
 
@@ -128,11 +139,11 @@ WHAT PHASE 7-8 ENHANCES:
 
 ## Links
 
-- [[Phase 6 Plan]]
-- [[Architecture Overview]]
-- [[Current Session]]
-- [[PRISM Dashboard]]
+- [[Plans/Phase 6 Plan|Phase 6 Plan]]
+- [[Architecture/Architecture Overview|Architecture Overview]]
+- [[Sessions/Current Session|Current Session]]
+- [[PRISM Dashboard|Dashboard]]
 
 ---
 
-*See `results/phase7_8_sota_plan.md` for complete implementation details.*
+*DO NOT IMPLEMENT until Phase 6 gates pass. Full specifications in the linked plan documents above.*

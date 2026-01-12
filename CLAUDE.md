@@ -5,7 +5,9 @@ This file contains instructions for Claude Code when working on this project.
 ## ACTIVE IMPLEMENTATION: Phase 6 SOTA Cryptic Site Detection
 
 **Mandatory Reference**: Before ANY implementation work, Claude MUST read and follow:
-- `results/phase6_sota_plan.md` (v2.0 - the authoritative specification)
+- `docs/plans/PRISM_PHASE6_PLAN_PART1.md` - Weeks 0-2 detailed specification
+- `docs/plans/PRISM_PHASE6_PLAN_PART2.md` - Weeks 3-8 detailed specification
+- `docs/plans/PRISM_PARALLEL_IMPLEMENTATION_ARCHITECTURE.md` - NOVA/AMBER parallel paths
 
 ## Non-Negotiable Constraints
 
@@ -274,7 +276,7 @@ All commits must:
 
 ## When Stuck or Uncertain
 
-1. Re-read `results/phase6_sota_plan.md` section for current task
+1. Re-read `docs/plans/PRISM_PHASE6_PLAN_PART1.md` section for current task
 2. Check existing code patterns in `crates/prism-validation/src/`
 3. Ask user for clarification rather than guessing
 4. Never skip a checkpoint - if tests fail, fix before proceeding
@@ -312,7 +314,7 @@ To maintain context and alignment, Claude MUST:
 ### Mandatory Context Refresh
 
 Before starting ANY new file, Claude MUST:
-1. Read the relevant section of `results/phase6_sota_plan.md`
+1. Read the relevant section of `docs/plans/PRISM_PHASE6_PLAN_PART1.md`
 2. Read existing related files in `crates/prism-validation/src/`
 3. State the specific code from the plan being implemented
 
@@ -440,8 +442,23 @@ At the END of every session (or after each unit), Claude MUST:
 
 ## File Locations
 
-- Phase 6 Plan: `results/phase6_sota_plan.md`
-- Phase 7-8 Plan: `results/phase7_8_sota_plan.md`
+### Master Implementation Plans (AUTHORITATIVE)
+
+These are the comprehensive, authoritative plan documents:
+
+| Document | Path | Purpose |
+|----------|------|---------|
+| Phase 6 Part 1 | `docs/plans/PRISM_PHASE6_PLAN_PART1.md` | Weeks 0-2 detailed spec |
+| Phase 6 Part 2 | `docs/plans/PRISM_PHASE6_PLAN_PART2.md` | Weeks 3-8 detailed spec |
+| Phase 6 Quick Ref | `docs/plans/PRISM_PHASE6_QUICK_REFERENCE.md` | Quick reference |
+| Phase 7-8 Part 1 | `docs/plans/PRISM_PHASE7_8_PLAN_PART1.md` | Phase 7 detailed spec |
+| Phase 7-8 Part 2 | `docs/plans/PRISM_PHASE7_8_PLAN_PART2.md` | Phase 8 detailed spec |
+| Phase 7-8 Quick Ref | `docs/plans/PRISM_PHASE7_8_QUICK_REFERENCE.md` | Quick reference |
+| Parallel Architecture | `docs/plans/PRISM_PARALLEL_IMPLEMENTATION_ARCHITECTURE.md` | NOVA/AMBER paths |
+| Master Trajectory | `docs/plans/PRISM_MASTER_IMPLEMENTATION_TRAJECTORY.md` | Overall roadmap |
+
+### Project Directories
+
 - Implementation: `crates/prism-validation/src/`
 - Tests: `crates/prism-validation/src/tests/`
 - Data: `data/benchmarks/`
@@ -708,7 +725,7 @@ ls ".obsidian/vault/Plans/Phase 6 Plan.md"
 
 **DO NOT IMPLEMENT UNTIL PHASE 6 GATES PASS**
 
-Reference: `results/phase7_8_sota_plan.md`
+Reference: `docs/plans/PRISM_PHASE7_8_PLAN_PART1.md`
 
 Phase 7-8 builds on the AMBER-primary foundation with:
 - Hierarchical reservoir (1,280 neurons)
