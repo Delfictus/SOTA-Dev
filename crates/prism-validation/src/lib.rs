@@ -87,6 +87,21 @@ pub mod antibody_validation;
 #[cfg(feature = "cryptic")]
 pub mod cryptic_production;
 
+// GPU-accelerated spatial clustering for site merging
+pub mod spatial_clustering_gpu;
+
+// TDA-guided conformational sampling for cryptic site detection (Phase 5.1)
+// Uses void proxies (burial variance, neighbor fluctuations) instead of full Betti-2
+pub mod tda_guided_sampling;
+
+// PRISM-ZrO SNN-based adaptive cryptic scoring (Phase 5.3)
+// Uses reservoir computing with RLS readout for online learning
+pub mod zro_cryptic_integration;
+
+// Phase 6: Cryptic site feature vectors (16-dim + velocity)
+// Foundation for GPU-accelerated ZrO scorer
+pub mod cryptic_features;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
