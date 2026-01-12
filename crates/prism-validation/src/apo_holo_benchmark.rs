@@ -28,6 +28,7 @@
 //! ```
 
 use anyhow::{Context, Result};
+use nalgebra::{Matrix3, Vector3, SVD};
 use serde::{Deserialize, Serialize};
 
 use crate::pdb_sanitizer::{sanitize_pdb, SanitizedStructure};
@@ -698,11 +699,102 @@ impl ApoHoloBenchmark {
     }
 }
 
-/// Compute RMSD between two conformations (Cα coordinates)
+/// Compute RMSD between two conformations WITH Kabsch superposition
 ///
-/// Uses standard RMSD formula without superposition.
-/// For proper comparison, structures should be pre-aligned.
+/// This is the primary RMSD function - it optimally aligns conf1 to conf2
+/// using the Kabsch algorithm (SVD-based rotation) before computing RMSD.
+/// This gives the true structural difference regardless of coordinate frame.
 fn compute_rmsd(conf1: &[[f32; 3]], conf2: &[[f32; 3]]) -> f32 {
+    compute_rmsd_kabsch(conf1, conf2)
+}
+
+/// Compute RMSD with Kabsch alignment (superposition)
+///
+/// Implements the Kabsch algorithm:
+/// 1. Center both point sets at origin
+/// 2. Compute covariance matrix H = P^T * Q
+/// 3. SVD decomposition: H = U * S * V^T
+/// 4. Optimal rotation: R = V * U^T
+/// 5. Handle reflection (det(R) < 0)
+/// 6. Apply rotation and compute RMSD
+fn compute_rmsd_kabsch(conf1: &[[f32; 3]], conf2: &[[f32; 3]]) -> f32 {
+    if conf1.len() != conf2.len() || conf1.is_empty() {
+        return 0.0;
+    }
+
+    let n = conf1.len();
+
+    // Step 1: Center both conformations
+    let center1 = compute_centroid(conf1);
+    let center2 = compute_centroid(conf2);
+
+    let centered1: Vec<Vector3<f64>> = conf1
+        .iter()
+        .map(|p| Vector3::new(
+            (p[0] - center1[0]) as f64,
+            (p[1] - center1[1]) as f64,
+            (p[2] - center1[2]) as f64,
+        ))
+        .collect();
+
+    let centered2: Vec<Vector3<f64>> = conf2
+        .iter()
+        .map(|p| Vector3::new(
+            (p[0] - center2[0]) as f64,
+            (p[1] - center2[1]) as f64,
+            (p[2] - center2[2]) as f64,
+        ))
+        .collect();
+
+    // Step 2: Compute covariance matrix H = P^T * Q
+    // H[i][j] = sum_k(P[k][i] * Q[k][j])
+    let mut h = Matrix3::<f64>::zeros();
+    for k in 0..n {
+        let p = &centered1[k];
+        let q = &centered2[k];
+        for i in 0..3 {
+            for j in 0..3 {
+                h[(i, j)] += p[i] * q[j];
+            }
+        }
+    }
+
+    // Step 3: SVD decomposition
+    let svd = SVD::new(h, true, true);
+    let u = svd.u.unwrap();
+    let v_t = svd.v_t.unwrap();
+
+    // Step 4: Compute rotation matrix R = V * U^T
+    let mut r = v_t.transpose() * u.transpose();
+
+    // Step 5: Handle reflection (ensure proper rotation, not reflection)
+    let det = r.determinant();
+    if det < 0.0 {
+        // Flip sign of last column of V (or equivalently, last row of V^T)
+        let mut v_t_corrected = v_t;
+        for j in 0..3 {
+            v_t_corrected[(2, j)] = -v_t_corrected[(2, j)];
+        }
+        r = v_t_corrected.transpose() * u.transpose();
+    }
+
+    // Step 6: Apply rotation to centered1 and compute RMSD
+    let mut sum_sq = 0.0;
+    for k in 0..n {
+        let rotated = r * centered1[k];
+        let diff = rotated - centered2[k];
+        sum_sq += diff.norm_squared();
+    }
+
+    (sum_sq / n as f64).sqrt() as f32
+}
+
+/// Compute RMSD without alignment (raw coordinate comparison)
+///
+/// This should only be used when structures are already aligned
+/// or for debugging purposes.
+#[allow(dead_code)]
+fn compute_rmsd_no_align(conf1: &[[f32; 3]], conf2: &[[f32; 3]]) -> f32 {
     if conf1.len() != conf2.len() || conf1.is_empty() {
         return 0.0;
     }
@@ -720,35 +812,6 @@ fn compute_rmsd(conf1: &[[f32; 3]], conf2: &[[f32; 3]]) -> f32 {
         .sum();
 
     (sum_sq / n).sqrt()
-}
-
-/// Compute RMSD with Kabsch alignment (superposition)
-///
-/// This provides a more accurate comparison by first
-/// optimally superposing the structures.
-#[allow(dead_code)]
-fn compute_rmsd_aligned(conf1: &[[f32; 3]], conf2: &[[f32; 3]]) -> f32 {
-    if conf1.len() != conf2.len() || conf1.is_empty() {
-        return 0.0;
-    }
-
-    // Center both conformations
-    let center1 = compute_centroid(conf1);
-    let center2 = compute_centroid(conf2);
-
-    let centered1: Vec<[f32; 3]> = conf1
-        .iter()
-        .map(|p| [p[0] - center1[0], p[1] - center1[1], p[2] - center1[2]])
-        .collect();
-
-    let centered2: Vec<[f32; 3]> = conf2
-        .iter()
-        .map(|p| [p[0] - center2[0], p[1] - center2[1], p[2] - center2[2]])
-        .collect();
-
-    // For now, use simple RMSD after centering
-    // Full Kabsch would require SVD which adds complexity
-    compute_rmsd(&centered1, &centered2)
 }
 
 /// Compute centroid of a conformation
@@ -815,11 +878,36 @@ mod tests {
 
     #[test]
     fn test_compute_rmsd_different() {
+        // Two colinear point sets with different scales
         let conf1 = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let conf2 = vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
         let rmsd = compute_rmsd(&conf1, &conf2);
-        // Expected: sqrt((0 + 1) / 2) = sqrt(0.5) ≈ 0.707
-        assert!((rmsd - 0.707).abs() < 0.01);
+        // After Kabsch alignment (centering + optimal rotation):
+        // centered1: [-0.5, 0, 0], [0.5, 0, 0]
+        // centered2: [-1.0, 0, 0], [1.0, 0, 0]
+        // RMSD = sqrt(((0.5)^2 + (0.5)^2) / 2) = sqrt(0.25) = 0.5
+        assert!((rmsd - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_rmsd_with_translation() {
+        // Same structure, just translated - Kabsch should give ~0 RMSD
+        let conf1 = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let conf2 = vec![[50.0, 50.0, 50.0], [51.0, 50.0, 50.0], [50.0, 51.0, 50.0]];
+        let rmsd = compute_rmsd(&conf1, &conf2);
+        // After centering, structures are identical -> RMSD ≈ 0
+        assert!(rmsd < 0.001, "Kabsch RMSD should be ~0 for translated structure, got {}", rmsd);
+    }
+
+    #[test]
+    fn test_compute_rmsd_with_rotation() {
+        // Same structure, 90° rotation around Z axis
+        let conf1 = vec![[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]];
+        // 90° rotation: (x,y,z) -> (-y, x, z)
+        let conf2 = vec![[0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let rmsd = compute_rmsd(&conf1, &conf2);
+        // Kabsch should find optimal rotation -> RMSD ≈ 0
+        assert!(rmsd < 0.001, "Kabsch RMSD should be ~0 for rotated structure, got {}", rmsd);
     }
 
     #[test]

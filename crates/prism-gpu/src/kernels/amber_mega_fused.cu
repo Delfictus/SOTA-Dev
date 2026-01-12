@@ -45,6 +45,7 @@
 #define MAX_ANGLES 30000
 #define MAX_DIHEDRALS 50000
 #define MAX_EXCLUSIONS_PER_ATOM 32
+#define MAX_14_PAIRS_PER_ATOM 16
 
 // Physical constants
 #define KCAL_TO_INTERNAL 1.0f
@@ -63,8 +64,9 @@
 #define MAX_VELOCITY 0.05f
 
 // Maximum force magnitude before capping (kcal/(mol·Å))
-// Typical bond forces are ~100-500, but steric clashes can hit 10000+
-#define MAX_FORCE 5000.0f
+// AGGRESSIVE CLAMPING: 1000 prevents explosion on severe steric clashes
+// This enables faster minimization with larger step sizes (0.01 Å)
+#define MAX_FORCE 1000.0f
 
 // Soft limiting transition width (for smooth tanh-based limiting)
 #define SOFT_LIMIT_STEEPNESS 2.0f
@@ -1156,6 +1158,11 @@ __device__ void compute_nonbonded_neighbor_list(
  *
  * DEPRECATED: Use compute_nonbonded_neighbor_list for O(N) performance.
  * This O(N²) version is kept as fallback for small systems (<1000 atoms).
+ *
+ * Now includes proper 1-4 pair scaling (AMBER ff14SB):
+ * - 1-2 and 1-3 pairs: fully excluded (no interaction)
+ * - 1-4 pairs: scaled (LJ * 0.5, Coulomb * 0.833)
+ * - All other pairs: full interaction
  */
 __device__ void compute_nonbonded_tiled_flat(
     const float* __restrict__ pos,
@@ -1166,7 +1173,9 @@ __device__ void compute_nonbonded_tiled_flat(
     const float* __restrict__ charge,
     const int* __restrict__ excl_list,
     const int* __restrict__ n_excl,
-    int max_excl, int n_atoms, int tid
+    const int* __restrict__ pair14_list,
+    const int* __restrict__ n_pairs14,
+    int max_excl, int max_14, int n_atoms, int tid
 ) {
     // CRITICAL: Do NOT return early! Must participate in __syncthreads() below.
     // Use a flag to skip work while still participating in block syncs.
@@ -1185,6 +1194,8 @@ __device__ void compute_nonbonded_tiled_flat(
     float my_q = 0.0f;
     int my_n_excl = 0;
     int excl_base = 0;
+    int my_n_14 = 0;
+    int pair14_base = 0;
 
     if (is_active) {
         my_pos = make_float3(pos[tid*3], pos[tid*3+1], pos[tid*3+2]);
@@ -1193,6 +1204,8 @@ __device__ void compute_nonbonded_tiled_flat(
         my_q = charge[tid];
         my_n_excl = n_excl[tid];
         excl_base = tid * max_excl;
+        my_n_14 = n_pairs14[tid];
+        pair14_base = tid * max_14;
     }
 
     float3 my_force = make_float3(0.0f, 0.0f, 0.0f);
@@ -1233,7 +1246,7 @@ __device__ void compute_nonbonded_tiled_flat(
                 // Skip if outside cutoff (most pairs) - saves expensive exclusion check
                 if (r2 >= NB_CUTOFF_SQ || r2 <= 1e-6f) continue;
 
-                // Check exclusion list only for pairs within cutoff
+                // Check exclusion list (1-2 and 1-3 pairs)
                 bool excluded = false;
                 for (int e = 0; e < my_n_excl; e++) {
                     if (excl_list[excl_base + e] == j) {
@@ -1241,7 +1254,20 @@ __device__ void compute_nonbonded_tiled_flat(
                         break;
                     }
                 }
-                if (excluded) continue;
+                if (excluded) continue;  // Skip 1-2 and 1-3 pairs completely
+
+                // Check if this is a 1-4 pair (needs scaled interaction)
+                bool is_14_pair = false;
+                for (int p = 0; p < my_n_14; p++) {
+                    if (pair14_list[pair14_base + p] == j) {
+                        is_14_pair = true;
+                        break;
+                    }
+                }
+
+                // Determine scaling factors
+                float lj_scale = is_14_pair ? LJ_14_SCALE : 1.0f;
+                float coul_scale = is_14_pair ? COUL_14_SCALE : 1.0f;
 
                 // Pair is within cutoff and not excluded - compute forces
                 {
@@ -1264,15 +1290,15 @@ __device__ void compute_nonbonded_tiled_flat(
                 float r6_soft_inv = inv_r2_soft * inv_r2_soft * inv_r2_soft;
                 float sigma6_r6 = sigma6 * r6_soft_inv;
 
-                // LJ force with soft-core denominator
-                float lj_force = 24.0f * eps_ij * (2.0f * sigma6_r6 * sigma6_r6 - sigma6_r6) / r2_soft;
-                float lj_energy = 4.0f * eps_ij * sigma6_r6 * (sigma6_r6 - 1.0f);
+                // LJ force with soft-core denominator, SCALED for 1-4 pairs
+                float lj_force = lj_scale * 24.0f * eps_ij * (2.0f * sigma6_r6 * sigma6_r6 - sigma6_r6) / r2_soft;
+                float lj_energy = lj_scale * 4.0f * eps_ij * sigma6_r6 * (sigma6_r6 - 1.0f);
 
-                // Coulomb force (also softened slightly for stability)
+                // Coulomb force (also softened slightly for stability), SCALED for 1-4 pairs
                 float q_ij = my_q * s_q[k];
                 float inv_r_coul = 1.0f / (r + 0.1f);  // Small softening
-                float coul_force = COULOMB_CONST * q_ij * inv_r_coul * inv_r_coul / (r + 0.1f);
-                float coul_energy = COULOMB_CONST * q_ij * inv_r_coul;
+                float coul_force = coul_scale * COULOMB_CONST * q_ij * inv_r_coul * inv_r_coul / (r + 0.1f);
+                float coul_energy = coul_scale * COULOMB_CONST * q_ij * inv_r_coul;
 
                 // Cap forces to prevent explosion
                 float total_force = lj_force + coul_force;
@@ -1338,7 +1364,9 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
     const float* __restrict__ nb_mass,   // [n_atoms]
     const int* __restrict__ excl_list,   // [n_atoms * max_excl]
     const int* __restrict__ n_excl,      // [n_atoms]
-    int max_excl,
+    const int* __restrict__ pair14_list, // [n_atoms * max_14] - 1-4 pairs for scaled interaction
+    const int* __restrict__ n_pairs14,   // [n_atoms]
+    int max_excl, int max_14,
 
     // Configuration
     int n_atoms, int n_bonds, int n_angles, int n_dihedrals,
@@ -1371,11 +1399,12 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
     );
     __syncthreads();
 
-    // Non-bonded forces
+    // Non-bonded forces (with proper 1-4 pair scaling)
     compute_nonbonded_tiled_flat(
         positions, forces, total_energy,
         nb_sigma, nb_epsilon, nb_charge,
-        excl_list, n_excl, max_excl, n_atoms, tid
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
     );
     __syncthreads();
 
@@ -1625,7 +1654,9 @@ extern "C" __global__ void amber_steepest_descent_step(
     const float* __restrict__ nb_charge,
     const int* __restrict__ excl_list,
     const int* __restrict__ n_excl,
-    int max_excl,
+    const int* __restrict__ pair14_list,
+    const int* __restrict__ n_pairs14,
+    int max_excl, int max_14,
 
     // Configuration
     int n_atoms, int n_bonds, int n_angles, int n_dihedrals,
@@ -1657,7 +1688,8 @@ extern "C" __global__ void amber_steepest_descent_step(
     compute_nonbonded_tiled_flat(
         positions, forces, total_energy,
         nb_sigma, nb_epsilon, nb_charge,
-        excl_list, n_excl, max_excl, n_atoms, tid
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
     );
     __syncthreads();
 
@@ -1668,24 +1700,37 @@ extern "C" __global__ void amber_steepest_descent_step(
         float fy = forces[tid * 3 + 1];
         float fz = forces[tid * 3 + 2];
 
-        // Soft limit forces to prevent huge jumps
-        soft_limit_force3(&fx, &fy, &fz, MAX_FORCE, SOFT_LIMIT_STEEPNESS);
-
-        // Normalize and scale by step size
-        float f_mag = sqrtf(fx*fx + fy*fy + fz*fz) + 1e-10f;
-        float scale = step_size / f_mag;
-
-        // Cap maximum displacement per step
-        float max_disp = 0.1f;  // 0.1 Å max per step
-        if (scale * f_mag > max_disp) {
-            scale = max_disp / f_mag;
+        // 1. FORCE CLAMPING: Prevent infinity/NaN from severe clashes
+        float force_mag = sqrtf(fx*fx + fy*fy + fz*fz);
+        if (force_mag > MAX_FORCE) {
+            float scale = MAX_FORCE / force_mag;
+            fx *= scale;
+            fy *= scale;
+            fz *= scale;
         }
 
-        // Update positions (move DOWN the gradient = along force direction)
-        // Note: Force = -gradient, so x += step * F moves toward minimum
-        positions[tid * 3]     += scale * fx;
-        positions[tid * 3 + 1] += scale * fy;
-        positions[tid * 3 + 2] += scale * fz;
+        // 2. Calculate proposed displacement
+        float dx = fx * step_size;
+        float dy = fy * step_size;
+        float dz = fz * step_size;
+
+        // 3. DISPLACEMENT CLAMPING: Prevent teleportation
+        // SOTA Practice: Never move more than 0.2 Å per minimization step
+        // Low force regions: move freely (fast relaxation)
+        // High force regions: clamped to safe distance (steady clash resolution)
+        float disp_mag = sqrtf(dx*dx + dy*dy + dz*dz);
+        const float MAX_DISP = 0.2f;
+        if (disp_mag > MAX_DISP) {
+            float scale = MAX_DISP / disp_mag;
+            dx *= scale;
+            dy *= scale;
+            dz *= scale;
+        }
+
+        // 4. Update positions
+        positions[tid * 3]     += dx;
+        positions[tid * 3 + 1] += dy;
+        positions[tid * 3 + 2] += dz;
     }
 }
 
@@ -1854,7 +1899,9 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
     const float* __restrict__ nb_mass,
     const int* __restrict__ excl_list,
     const int* __restrict__ n_excl,
-    int max_excl,
+    const int* __restrict__ pair14_list,
+    const int* __restrict__ n_pairs14,
+    int max_excl, int max_14,
 
     // Configuration
     int n_atoms, int n_bonds, int n_angles, int n_dihedrals,
@@ -1917,11 +1964,12 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
     }
     __syncthreads();
 
-    // Non-bonded → slow_forces
+    // Non-bonded → slow_forces (with 1-4 pair scaling)
     compute_nonbonded_tiled_flat(
         positions, slow_forces, total_energy,
         nb_sigma, nb_epsilon, nb_charge,
-        excl_list, n_excl, max_excl, n_atoms, tid
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
     );
     __syncthreads();
 
@@ -2013,7 +2061,8 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
     compute_nonbonded_tiled_flat(
         positions, slow_forces, total_energy,
         nb_sigma, nb_epsilon, nb_charge,
-        excl_list, n_excl, max_excl, n_atoms, tid
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
     );
     __syncthreads();
 
@@ -2293,7 +2342,9 @@ extern "C" __global__ void amber_tda_biased_hmc_step_flat(
     const float* __restrict__ nb_mass,
     const int* __restrict__ excl_list,
     const int* __restrict__ n_excl,
-    int max_excl,
+    const int* __restrict__ pair14_list,
+    const int* __restrict__ n_pairs14,
+    int max_excl, int max_14,
 
     // Configuration
     int n_atoms, int n_bonds, int n_angles, int n_dihedrals,
@@ -2363,11 +2414,12 @@ extern "C" __global__ void amber_tda_biased_hmc_step_flat(
     __syncthreads();
 
     // ===== COMPUTE PHYSICAL FORCES + BIAS =====
-    // Non-bonded → slow_forces
+    // Non-bonded → slow_forces (with 1-4 pair scaling)
     compute_nonbonded_tiled_flat(
         positions, slow_forces, total_energy,
         nb_sigma, nb_epsilon, nb_charge,
-        excl_list, n_excl, max_excl, n_atoms, tid
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
     );
     __syncthreads();
 
@@ -2465,7 +2517,8 @@ extern "C" __global__ void amber_tda_biased_hmc_step_flat(
     compute_nonbonded_tiled_flat(
         positions, slow_forces, total_energy,
         nb_sigma, nb_epsilon, nb_charge,
-        excl_list, n_excl, max_excl, n_atoms, tid
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
     );
     __syncthreads();
 

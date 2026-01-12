@@ -375,6 +375,8 @@ pub fn get_bond_param(type1: AmberAtomType, type2: AmberAtomType) -> Option<Bond
         // Charged residue bonds
         (CT, N3) => (1.471, 367.0),     // Lysine: CT=2 < N3=9
         (CT, N2) => (1.463, 337.0),     // Arginine: CT=2 < N2=8
+        (H, N2) => (1.010, 434.0),      // Arginine guanidinium N-H: H=1 < N2=8
+        (N3, HP) => (1.010, 434.0),     // Lysine charged amino N-H: N3=9 < HP=17
 
         // Histidine specific (CT=2, NA=19, NB=20, CC=21, CR=22, CV=23)
         (CT, CC) => (1.504, 317.0),     // CT=2 < CC=21
@@ -1412,12 +1414,18 @@ impl AmberTopology {
 
         // Step 2: Build atom lookup by (residue_id, chain_id, atom_name)
         let mut atom_lookup: HashMap<(i32, char, String), usize> = HashMap::new();
+        let mut h_atoms_count = 0;
         for (i, atom) in atoms.iter().enumerate() {
+            let name = atom.name.trim().to_string();
+            if name.starts_with('H') {
+                h_atoms_count += 1;
+            }
             atom_lookup.insert(
-                (atom.residue_id, atom.chain_id, atom.name.trim().to_string()),
+                (atom.residue_id, atom.chain_id, name),
                 i,
             );
         }
+        log::info!("Topology: {} total atoms, {} hydrogen atoms in lookup", atoms.len(), h_atoms_count);
 
         // Step 3: Detect bonds
         let mut bond_set: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
@@ -1436,9 +1444,19 @@ impl AmberTopology {
                     let key1 = (*res_id, *chain_id, name1.to_string());
                     let key2 = (*res_id, *chain_id, name2.to_string());
 
-                    if let (Some(&idx1), Some(&idx2)) = (atom_lookup.get(&key1), atom_lookup.get(&key2)) {
-                        let (a, b) = if idx1 < idx2 { (idx1 as u32, idx2 as u32) } else { (idx2 as u32, idx1 as u32) };
+                    let idx1 = atom_lookup.get(&key1);
+                    let idx2 = atom_lookup.get(&key2);
+
+                    if let (Some(&i1), Some(&i2)) = (idx1, idx2) {
+                        let (a, b) = if i1 < i2 { (i1 as u32, i2 as u32) } else { (i2 as u32, i1 as u32) };
                         bond_set.insert((a, b));
+                    } else if name1.starts_with('H') || name2.starts_with('H') {
+                        // Log failed hydrogen bond lookups (first few only)
+                        static LOGGED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                        if LOGGED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5 {
+                            log::warn!("H bond lookup failed: res {} chain {} atoms {}-{} (found: {:?}, {:?})",
+                                res_id, chain_id, name1, name2, idx1.is_some(), idx2.is_some());
+                        }
                     }
                 }
             }
@@ -1488,11 +1506,29 @@ impl AmberTopology {
         }
 
         // Convert bonds to vectors with parameters
+        let mut h_bonds_found = 0;
+        let mut h_bonds_missing_params = 0;
+
         for (a, b) in &bond_set {
             let type1 = topo.atom_types[*a as usize];
             let type2 = topo.atom_types[*b as usize];
 
-            let param = get_bond_param(type1, type2).unwrap_or(BondParam {
+            // Track hydrogen bonds
+            let is_h_bond = matches!(type1, AmberAtomType::H | AmberAtomType::H1 | AmberAtomType::HC | AmberAtomType::HP | AmberAtomType::HA | AmberAtomType::HO)
+                || matches!(type2, AmberAtomType::H | AmberAtomType::H1 | AmberAtomType::HC | AmberAtomType::HP | AmberAtomType::HA | AmberAtomType::HO);
+
+            let param = get_bond_param(type1, type2);
+
+            if is_h_bond {
+                if param.is_some() {
+                    h_bonds_found += 1;
+                } else {
+                    h_bonds_missing_params += 1;
+                    log::warn!("Missing bond param for H bond: {:?}-{:?}", type1, type2);
+                }
+            }
+
+            let param = param.unwrap_or(BondParam {
                 r0: 1.5,
                 k: 300.0,  // Default values if not found
             });
@@ -1500,6 +1536,9 @@ impl AmberTopology {
             topo.bonds.push((*a, *b));
             topo.bond_params.push(param);
         }
+
+        log::info!("Topology: {} bonds total, {} H-bonds with params, {} H-bonds missing params",
+            bond_set.len(), h_bonds_found, h_bonds_missing_params);
 
         // Step 4: Build bond graph for angle/dihedral detection
         let mut bond_graph: HashMap<u32, Vec<u32>> = HashMap::new();

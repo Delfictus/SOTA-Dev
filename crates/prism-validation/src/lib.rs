@@ -119,6 +119,9 @@ pub mod sampling;
 // 15 classic pairs demonstrating cryptic site opening
 pub mod apo_holo_benchmark;
 
+// Chemistry module: Protonation, hydrogen placement for all-atom force fields
+pub mod chemistry;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
