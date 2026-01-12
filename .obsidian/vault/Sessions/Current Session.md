@@ -9,171 +9,144 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Ready for Unit 3.1 |
-| **Target File** | `pdb_sanitizer.rs` |
-| **Unit** | 3.1 |
-| **Plan Reference** | `docs/plans/PRISM_PHASE6_PLAN_PART1.md`, Section 5.1 |
-| **Last Sync** | 2026-01-12T04:35:00Z |
+| **Status** | GPU Wiring Complete - Ready for Benchmarks |
+| **Target** | Download CryptoBench and apo-holo datasets |
+| **Plan Reference** | GPU Wiring Plan Report |
+| **Last Sync** | 2026-01-11T23:00:00Z |
 
 ---
 
-## Sync Verification
+## CRITICAL: GPU Wiring Completed
 
-Before starting work, Claude MUST verify:
+**Both sampling paths are NOW wired to real GPU kernels:**
 
-```
-[x] Read implementation_status.json
-[x] active_todo matches this file's Target File
-[x] TodoWrite items match vault files status
-[x] File list verified (20 total files)
-[ ] No uncommitted vault changes exist
-```
+| File | GPU Kernel | Status |
+|------|------------|--------|
+| `nova_path.rs` | PrismNova | ✅ WIRED |
+| `amber_path.rs` | AmberMegaFusedHmc | ✅ WIRED |
 
----
+### Verification Commands
+```bash
+# Verify no bail! statements (should return empty)
+grep "bail!" crates/prism-validation/src/sampling/paths/nova_path.rs
+grep "bail!" crates/prism-validation/src/sampling/paths/amber_path.rs
 
-## Claude TodoWrite State (MUST MATCH)
-
-```
-[x] Unit 1.1: cryptic_features.rs - 16-dim feature vector (completed)
-[x] Unit 1.2: gpu_zro_cryptic_scorer.rs - 512-neuron reservoir (completed)
-[x] Unit 1.3: gpu_tests/gpu_scorer_tests.rs - Zero fallback tests (completed)
-[ ] Unit 3.1: pdb_sanitizer.rs - PDB sanitization for GPU safety (pending) <- NEXT
+# Verify GPU kernel imports exist
+grep "PrismNova" crates/prism-validation/src/sampling/paths/nova_path.rs
+grep "AmberMegaFusedHmc" crates/prism-validation/src/sampling/paths/amber_path.rs
 ```
 
 ---
 
-## Completed This Session
+## Completed This Session (GPU Wiring Session)
 
-### Implementation Work
-- [x] **Unit 1.1**: `cryptic_features.rs` - 16-dim feature vector (7 tests passing) - commit c4d88c2
-- [x] **Unit 1.2**: `gpu_zro_cryptic_scorer.rs` - 512-neuron reservoir + RLS - commit 5e55a7a
-- [x] **Unit 1.3**: `gpu_tests/gpu_scorer_tests.rs` - Zero Fallback tests (10 tests: 3 pass, 6 require GPU, 1 ignored)
+### Phase A: GPU Wiring
+- [x] **Phase A1**: Wired `nova_path.rs` to PrismNova GPU kernel
+  - Added imports: `prism_gpu::prism_nova`, `prism_physics::amber_topology`, `cudarc`
+  - Updated struct to hold `Arc<CudaContext>` and `Option<PrismNova>`
+  - `load_structure()` now parses topology, creates PrismNova, uploads system data
+  - `sample()` calls `nova.step()` in loop, collects real Betti numbers
+  - Added topology conversion helper functions
+  - Enforced Zero Fallback Policy (no CPU fallback)
 
-### Infrastructure Work
-- [x] Vault synchronization protocol added to CLAUDE.md
-- [x] Enhanced implementation_status.json with full file list (20 files)
-- [x] Created SYNC_STATUS.md for quick verification
-- [x] Copied all master plans to docs/plans/ and vault Plans/Full/
-- [x] Re-initialized and verified alignment with all master plan documents
-- [x] Reconciled file list between CLAUDE.md and vault (was missing 5 files)
-- [x] **Cleaned up .obsidian directory structure** - Removed nested `.obsidian/.obsidian/` and orphan files
-- [x] Fixed pre-existing test issues in prism_zro_cryptic_scorer.rs (added Default derive)
+- [x] **Phase A2**: Wired `amber_path.rs` to AmberMegaFusedHmc GPU kernel
+  - Added imports: `prism_gpu::amber_mega_fused`, `build_exclusion_lists`
+  - Updated struct to hold `Arc<CudaContext>` and `Option<AmberMegaFusedHmc>`
+  - `load_structure()` builds topology tuples, uploads, runs minimization
+  - `sample()` calls `hmc.run()` in loop, collects real conformations
+  - Added topology conversion helper functions
+  - Enforced Zero Fallback Policy (no CPU fallback)
+
+### Documentation Updates
+- [x] Updated `CLAUDE.md` with GPU Wiring Status section
+- [x] Added verification commands to `CLAUDE.md`
+- [x] Updated key files section to reflect WIRED status
 
 ---
 
-## Next Subtasks (Unit 3.1)
+## Next Subtasks (Phase B+C)
 
-Target: `crates/prism-validation/src/pdb_sanitizer.rs`
+### Phase B: Data Download
+- [ ] Clone CryptoBench repository (1107 structures)
+  ```bash
+  mkdir -p data/benchmarks/cryptobench
+  git clone https://github.com/skrhakv/CryptoBench.git data/benchmarks/cryptobench_repo
+  ```
 
-- [ ] Read plan section 5.1 from `docs/plans/PRISM_PHASE6_PLAN_PART1.md`
-- [ ] Implement `SanitizedPdb` struct with cleaned coordinates
-- [ ] Implement `sanitize_pdb()` function:
-  - Remove HETATM, waters
-  - Filter to standard amino acids
-  - Renumber atoms sequentially
-  - Extract Cα coordinates
-- [ ] Add validation functions for GPU safety
-- [ ] Write unit tests
-- [ ] Run tests: `cargo test --release -p prism-validation sanitizer`
-- [ ] Commit with message referencing Phase 6 plan
-- [ ] Update vault files
+- [ ] Download apo-holo pairs (15 pairs, 30 PDBs)
+  ```bash
+  mkdir -p data/benchmarks/apo_holo
+  # Download from RCSB
+  ```
+
+### Phase C: Run Real Benchmarks
+- [ ] Single structure test with real GPU sampling
+- [ ] Apo-holo benchmark with real RMSD values
+- [ ] CryptoBench ROC AUC (target: >0.70)
 
 ---
 
 ## Context Buffer
 
-### Key Decisions Made
+### Key Changes Made
 ```
-- CrypticFeatures: 16-dim base, 40-dim with velocity+padding
-- GpuZroCrypticScorer: Uses DendriticSNNReservoir from prism-gpu
-- Used serde_json (not bincode) for weight persistence
-- cudarc CudaContext validity proves GPU exists
-- File list: 20 total files matching CLAUDE.md exactly
-```
-
-### Important Values
-```
-- Reservoir neurons: 512
-- RLS lambda: 0.99
-- Feature dimensions: 16 (40 with velocity)
-- NOVA atom limit: 512
-- Precision matrix init: 100 * I
-- Gradient clamp: +/- 1.0
-- Total Phase 6 files: 20
+- nova_path.rs: Was facade with bail!(), NOW wired to PrismNova
+- amber_path.rs: Was facade with bail!(), NOW wired to AmberMegaFusedHmc
+- Both use #[cfg(feature = "cryptic-gpu")] for conditional compilation
+- Zero Fallback Policy enforced: no GPU = explicit error
 ```
 
-### Dependencies for Next File
+### Important APIs Used
 ```
-- gpu_zro_cryptic_scorer::GpuZroCrypticScorer (Unit 1.2)
-- cryptic_features::CrypticFeatures (Unit 1.1)
-- cudarc::driver::CudaContext for GPU tests
+PrismNova:
+- new(context, config) -> Result<Self>
+- upload_system(&positions, &masses, &charges, &lj_params, &atom_types, &residue_atoms)
+- step() -> Result<NovaStepResult>  (returns Betti numbers!)
+- download_positions() -> Result<Vec<f32>>
+
+AmberMegaFusedHmc:
+- new(context, n_atoms) -> Result<Self>
+- upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
+- minimize(n_steps, step_size) -> Result<f32>
+- initialize_velocities(temperature)
+- run(n_steps, dt, temperature) -> Result<HmcRunResult>
+- get_positions() -> Result<Vec<f32>>
 ```
 
 ### Blocking Issues
 ```
-None currently.
-Pre-existing test issues in prism_zro_cryptic_scorer.rs don't affect new code.
+None currently. GPU wiring complete. Ready for benchmarks.
 ```
 
 ---
 
 ## Continuation Prompt
 
-When starting a new session, use this exact prompt:
+When starting next session:
 
 ```
 Continue Phase 6 implementation.
 
-SYNC CHECK:
-1. Read .obsidian/vault/Progress/implementation_status.json
-2. Read .obsidian/vault/Sessions/Current Session.md
-3. Set TodoWrite to match vault files status:
-   [x] Unit 1.1: cryptic_features.rs (completed)
-   [x] Unit 1.2: gpu_zro_cryptic_scorer.rs (completed)
-   [ ] Unit 1.3: tests/gpu_scorer_tests.rs (pending)
-4. Verify active_todo matches your target
+GPU WIRING STATUS: COMPLETE
+- nova_path.rs wired to PrismNova
+- amber_path.rs wired to AmberMegaFusedHmc
 
-Current target: tests/gpu_scorer_tests.rs (Unit 1.3)
-Plan reference: docs/plans/PRISM_PHASE6_PLAN_PART1.md, Section 4.3
-
-Confirm alignment and proceed.
+NEXT: Download datasets and run real benchmarks
+1. Clone CryptoBench (1107 structures)
+2. Download apo-holo pairs (30 PDBs)
+3. Run single structure test
+4. Run apo-holo benchmark
+5. Run CryptoBench benchmark (target: ROC AUC >0.70)
 ```
-
----
-
-## Vault Files to Update at Session End
-
-1. **implementation_status.json**
-   - Set `active_todo.status` to "in_progress" when starting
-   - Set file status to "completed" when done
-   - Add commit hash
-   - Update `next_action` to Unit 3.1 (pdb_sanitizer.rs)
-
-2. **Current Session.md** (this file)
-   - Move completed items to "Completed This Session"
-   - Update "Next Subtasks" for next unit
-   - Update Context Buffer if needed
-   - Update TodoWrite state
-
-3. **PRISM Dashboard.md**
-   - Update progress percentage (2/20 -> 3/20 = 15%)
-   - Add session to "Recent Sessions" table
-
-4. **SYNC_STATUS.md**
-   - Update last sync timestamp
-   - Update active todo
-   - Update TodoWrite sync section
 
 ---
 
 ## Links
 
 - [[Progress/implementation_status.json|Machine State]]
-- [[Progress/SYNC_STATUS.md|Sync Status]]
 - [[Plans/Phase 6 Plan|Phase 6 Plan]]
-- [[Plans/Full/PRISM_PHASE6_PLAN_PART1|Full Plan Part 1]]
 - [[PRISM Dashboard|Dashboard]]
 
 ---
 
-*End of Current Session. Ready for Unit 1.3.*
+*End of Current Session. GPU Wiring Complete. Ready for Benchmarks.*

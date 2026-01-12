@@ -9,6 +9,36 @@ This file contains instructions for Claude Code when working on this project.
 - `docs/plans/PRISM_PHASE6_PLAN_PART2.md` - Weeks 3-8 detailed specification
 - `docs/plans/PRISM_PARALLEL_IMPLEMENTATION_ARCHITECTURE.md` - NOVA/AMBER parallel paths
 
+## GPU WIRING STATUS (COMPLETED 2026-01-11)
+
+**CRITICAL**: The sampling paths are NOW wired to real GPU kernels. No more facade implementations.
+
+| Component | Status | GPU Kernel |
+|-----------|--------|------------|
+| nova_path.rs | ✅ WIRED | PrismNova (TDA + Active Inference) |
+| amber_path.rs | ✅ WIRED | AmberMegaFusedHmc (AMBER ff14SB MD) |
+
+### GPU Wiring Verification (MUST PASS)
+```bash
+# Verify no bail! statements (should return empty)
+grep "bail!" crates/prism-validation/src/sampling/paths/nova_path.rs
+grep "bail!" crates/prism-validation/src/sampling/paths/amber_path.rs
+
+# Verify GPU kernel imports exist
+grep "PrismNova" crates/prism-validation/src/sampling/paths/nova_path.rs
+grep "AmberMegaFusedHmc" crates/prism-validation/src/sampling/paths/amber_path.rs
+
+# Zero Fallback Policy test (MUST FAIL - proves no CPU fallback)
+CUDA_VISIBLE_DEVICES="" cargo test -p prism-validation test_no_cpu_fallback
+```
+
+### Current Focus: Run Real Benchmarks
+With GPU wiring complete, the focus is now on:
+1. Download CryptoBench dataset (1107 structures)
+2. Download apo-holo pairs (15 pairs, 30 PDBs)
+3. Run actual benchmarks with real GPU sampling
+4. Generate real metrics (ROC AUC, PR AUC, success rate)
+
 ## Non-Negotiable Constraints
 
 ### 1. Zero Fallback Policy
@@ -176,12 +206,18 @@ THE CONTRACT (sampling/contract.rs):
 Key Files for Parallel Implementation:
 ```
 sampling/contract.rs        - THE LAW (trait definition)
-sampling/paths/nova_path.rs - Greenfield implementation
-sampling/paths/amber_path.rs - Stable implementation
+sampling/paths/nova_path.rs - WIRED to PrismNova GPU kernel (TDA + Active Inference)
+sampling/paths/amber_path.rs - WIRED to AmberMegaFusedHmc GPU kernel (AMBER ff14SB)
 sampling/shadow/comparator.rs - Output comparison
 sampling/migration/feature_flags.rs - Rollout control
 sampling/router/mod.rs      - Entry point
 ```
+
+**GPU Integration Status (PRODUCTION):**
+- `nova_path.rs`: Calls `PrismNova::step()` for real GPU sampling with Betti numbers
+- `amber_path.rs`: Calls `AmberMegaFusedHmc::run()` for real AMBER MD sampling
+- Both paths use `#[cfg(feature = "cryptic-gpu")]` for conditional compilation
+- Zero Fallback Policy enforced: no GPU = explicit error, no silent CPU fallback
 
 ## Phase 6 Implementation Order
 
