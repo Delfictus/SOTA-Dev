@@ -193,8 +193,8 @@ fn test_weight_persistence() {
         scorer1.score_and_learn(&features, i % 2 == 0).unwrap();
     }
 
-    // Save
-    let tmp_path = "/tmp/prism_test_weights.json";
+    // Save (binary format via bincode)
+    let tmp_path = "/tmp/prism_test_weights.bin";
     scorer1.save_weights(tmp_path).unwrap();
 
     // Load into new scorer

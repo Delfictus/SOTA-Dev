@@ -309,21 +309,27 @@ impl GpuZroCrypticScorer {
         self.reservoir.reset_state().ok();
     }
 
-    /// Save learned weights to file (JSON format)
+    /// Save learned weights to file (binary format via bincode)
+    ///
+    /// Uses bincode for compact, fast, precision-preserving serialization.
+    /// This is the production-grade format for neural network weights.
     pub fn save_weights(&self, path: &str) -> Result<()> {
-        let data = serde_json::to_string(&self.readout_weights)
+        let data = bincode::serialize(&self.readout_weights)
             .context("Failed to serialize weights")?;
         std::fs::write(path, data).context("Failed to write weights file")?;
 
-        log::info!("Saved weights to {} ({} updates)", path, self.update_count);
+        log::info!("Saved weights to {} ({} updates, {} bytes)",
+                   path, self.update_count, self.readout_weights.len() * 4);
         Ok(())
     }
 
-    /// Load pre-trained weights from file (JSON format)
+    /// Load pre-trained weights from file (binary format via bincode)
+    ///
+    /// Expects weights saved with `save_weights()` in bincode format.
     pub fn load_weights(&mut self, path: &str) -> Result<()> {
-        let data = std::fs::read_to_string(path).context("Failed to read weights file")?;
+        let data = std::fs::read(path).context("Failed to read weights file")?;
         self.readout_weights =
-            serde_json::from_str(&data).context("Failed to deserialize weights")?;
+            bincode::deserialize(&data).context("Failed to deserialize weights")?;
 
         if self.readout_weights.len() != RESERVOIR_SIZE {
             bail!(

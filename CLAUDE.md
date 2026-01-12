@@ -41,7 +41,27 @@ REQUIRED:
 - Betti numbers (beta_0, beta_1, beta_2) for TDA
 ```
 
-### 2.1 Core PRISM Features (MAINTAINED ALL PHASES)
+### 2.1 Serialization Standards (PRODUCTION QUALITY)
+```
+NEURAL NETWORK WEIGHTS & BINARY DATA:
+- ALWAYS use bincode for weight persistence
+- NEVER use serde_json for weights, tensors, or numerical arrays
+- Binary format provides: compact size, fast I/O, exact precision
+
+HUMAN-READABLE DATA:
+- serde_json is acceptable ONLY for:
+  - Configuration files (manifest.json, config.json)
+  - Reports and summaries (human inspection)
+  - Dataset manifests (interchange format)
+- NEVER use serde_json for trained model weights
+
+COMPLIANCE CHECK:
+- Weight files MUST use .bin extension
+- save_weights() MUST use bincode::serialize()
+- load_weights() MUST use bincode::deserialize()
+```
+
+### 2.2 Core PRISM Features (MAINTAINED ALL PHASES)
 ```
 BETTI NUMBERS (TDA Topology):
 - beta_0: Connected components
