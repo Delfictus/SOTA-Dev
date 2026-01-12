@@ -37,7 +37,56 @@ REQUIRED:
 - PRISM-NOVA (HMC + AMBER) for sampling
 ```
 
-### 3. Zero Data Leakage
+### 3. Hybrid Sampler Architecture (CRITICAL)
+
+PRISM has full-atom AMBER ff14SB with bonds, angles, dihedrals already implemented.
+Phase 6 uses a HYBRID approach for conformational sampling:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  HYBRID SAMPLING ROUTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  Input: Sanitized Structure                                  │
+│              │                                               │
+│              ▼                                               │
+│     ┌────────────────────┐                                  │
+│     │ n_atoms <= 512 ?   │                                  │
+│     └────────────────────┘                                  │
+│         │           │                                        │
+│        YES          NO                                       │
+│         │           │                                        │
+│         ▼           ▼                                        │
+│  ┌────────────┐  ┌─────────────────┐                        │
+│  │ PrismNova  │  │ AmberMegaFused  │                        │
+│  │            │  │                 │                        │
+│  │ + TDA β₂   │  │ Full MD engine  │                        │
+│  │ + Active   │  │ (no TDA, but    │                        │
+│  │   Inference│  │  proven AMBER)  │                        │
+│  └────────────┘  └─────────────────┘                        │
+│         │           │                                        │
+│         └─────┬─────┘                                        │
+│               ▼                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │         Unified Conformation Output                  │    │
+│  │         (Same format regardless of backend)          │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+
+NOVA_ATOM_LIMIT = 512 (due to shared memory constraints)
+
+Coverage:
+- ~40% of CryptoBench: PrismNova (TDA + Active Inference)
+- ~60% of CryptoBench: AmberMegaFusedHmc (full MD, no TDA)
+- 100% of structures processable
+
+Existing AMBER Components (DO NOT REIMPLEMENT):
+- prism_gpu::AmberMegaFusedHmc    - Full HMC with O(N) neighbor lists
+- prism_gpu::AmberBondedForces    - GPU bond/angle/dihedral forces
+- prism_physics::amber_topology   - Topology generator from PDB
+- prism_gpu::amber_bonded.cu      - CUDA kernels for bonded terms
+```
+
+### 4. Zero Data Leakage
 ```
 FORBIDDEN:
 - Using test set structures during training

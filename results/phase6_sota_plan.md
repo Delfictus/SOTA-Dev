@@ -2243,7 +2243,7 @@ All experiments were performed on:
 
 ## 8. Complete File Manifest
 
-### New Files (14 total)
+### New Files (15 total)
 
 | File | Purpose | Week |
 |------|---------|------|
@@ -2253,7 +2253,8 @@ All experiments were performed on:
 | `ensemble_quality_metrics.rs` | Sampling validation | 1 |
 | `tests/gpu_scorer_tests.rs` | GPU scorer tests | 2 |
 | `pdb_sanitizer.rs` | PDB preprocessing | 3 |
-| `nova_cryptic_sampler.rs` | NOVA HMC wrapper | 3 |
+| `hybrid_sampler.rs` | **Routes to NOVA (≤512 atoms) or AMBER (>512)** | 3 |
+| `nova_cryptic_sampler.rs` | NOVA HMC wrapper (uses HybridSampler) | 3 |
 | `apo_holo_benchmark.rs` | Conformational validation | 4 |
 | `cryptobench_dataset.rs` | Dataset loader | 5 |
 | `cryptobench_benchmark.rs` | Full benchmark runner | 5 |
