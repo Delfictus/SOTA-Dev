@@ -141,9 +141,18 @@ Resume from there.
 To view the vault in Obsidian:
 
 1. Open Obsidian
-2. "Open folder as vault"
-3. Select `/home/diddy/Desktop/PRISM4D-bio/.obsidian/vault`
-4. View Dashboard, progress, session logs
+2. Click "Open folder as vault" (or "Open" → "Open folder as vault")
+3. Navigate to and select: `/home/diddy/Desktop/PRISM4D-bio/.obsidian/vault`
+4. Click "Open"
+5. The PRISM Dashboard should open automatically
+
+**First time setup note:** Obsidian may ask about "Safe Mode" - you can enable it since we don't need community plugins.
+
+The vault is pre-configured with:
+- File explorer on the left
+- Dashboard as the home page
+- Daily notes pointed to Sessions folder
+- Templates configured
 
 ---
 
