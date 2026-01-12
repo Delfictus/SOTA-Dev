@@ -111,6 +111,10 @@ pub mod gpu_zro_cryptic_scorer;
 // Removes HETATM, waters, non-standard residues; renumbers atoms sequentially
 pub mod pdb_sanitizer;
 
+// Phase 6 Week 3-4: Parallel sampling architecture (NOVA + AMBER)
+// Strangler pattern migration with shadow pipeline validation
+pub mod sampling;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
