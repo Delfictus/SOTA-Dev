@@ -107,6 +107,10 @@ pub mod cryptic_features;
 #[cfg(feature = "cryptic-gpu")]
 pub mod gpu_zro_cryptic_scorer;
 
+// Phase 6 Week 3-4: PDB sanitization for GPU safety
+// Removes HETATM, waters, non-standard residues; renumbers atoms sequentially
+pub mod pdb_sanitizer;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
