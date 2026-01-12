@@ -515,6 +515,195 @@ Claude should update:
 - current_week to next week number
 ```
 
+## OBSIDIAN VAULT SYNCHRONIZATION PROTOCOL (MANDATORY)
+
+### Purpose
+
+The Obsidian vault is the **SINGLE SOURCE OF TRUTH** for project state. Claude's internal todos and plan mode MUST always be synchronized with the vault. This ensures:
+- Perfect session continuity across context boundaries
+- Human-readable progress tracking in Obsidian
+- Machine-readable state in implementation_status.json
+- No drift between Claude's understanding and actual project state
+
+### Synchronization Rules
+
+#### Rule 1: Vault Read Before ANY Work
+```
+BEFORE starting any implementation work, Claude MUST:
+1. Read .obsidian/vault/Progress/implementation_status.json
+2. Read .obsidian/vault/Sessions/Current Session.md
+3. Read .obsidian/vault/PRISM Dashboard.md
+4. Sync internal todos with implementation_status.json.files
+5. Confirm alignment before proceeding
+```
+
+#### Rule 2: TodoWrite ↔ Vault Sync
+```
+When Claude uses TodoWrite tool:
+- Each todo item MUST correspond to a file in implementation_status.json
+- Todo status (pending/in_progress/completed) MUST match file status
+- After TodoWrite, vault MUST be updated to match
+
+Mapping:
+  TodoWrite status    →  implementation_status.json status
+  ─────────────────────────────────────────────────────────
+  pending             →  "pending"
+  in_progress         →  "in_progress"
+  completed           →  "completed"
+```
+
+#### Rule 3: Plan Mode → Vault Plans
+```
+When Claude enters plan mode:
+1. Read .obsidian/vault/Plans/Phase 6 Plan.md (or relevant phase)
+2. Plan content MUST align with vault plan
+3. New plans MUST be written to vault before implementation
+4. Exit plan mode MUST update vault with any plan changes
+```
+
+#### Rule 4: Real-Time Vault Updates
+```
+During implementation, update vault at these checkpoints:
+- File started → Set status to "in_progress" in JSON
+- File compiles → Note in Current Session.md
+- Tests pass → Note test count in JSON and Session
+- File committed → Set status to "completed", add commit hash
+- Checkpoint passed → Update checkpoints section in JSON
+```
+
+#### Rule 5: Session Boundary Sync
+```
+At session START:
+1. Parse implementation_status.json.next_action
+2. Set TodoWrite items to match JSON file list
+3. Mark current target as in_progress
+4. Read Current Session.md for context buffer
+
+At session END:
+1. Update ALL vault files to reflect work done
+2. Set next_action in JSON to next pending file
+3. Update Current Session.md with continuation context
+4. Update PRISM Dashboard.md progress percentage
+5. Commit vault changes
+```
+
+### Vault File Specifications
+
+#### implementation_status.json (Machine State)
+```json
+{
+  "last_updated": "ISO-8601 timestamp",
+  "last_updated_by": "session identifier",
+  "current_phase": 6,
+  "current_week": 1,
+  "overall_progress_percent": 13,
+
+  "active_todo": {
+    "file": "current file being worked on",
+    "unit": "unit identifier (e.g., 1.3)",
+    "status": "in_progress",
+    "started_at": "ISO-8601 timestamp"
+  },
+
+  "checkpoints": { ... },
+  "files": { ... },
+  "metrics": { ... },
+  "next_action": {
+    "file": "next file to work on",
+    "action": "what to do",
+    "plan_section": "reference to plan",
+    "week": "week number"
+  }
+}
+```
+
+#### Current Session.md (Context Buffer)
+```markdown
+# Current Session
+
+## Session Status
+**Status**: [Current state]
+**Target File**: [file being worked on]
+**Plan Section**: [reference]
+
+## Completed This Session
+- [x] Item 1
+- [x] Item 2
+
+## Next Subtasks
+- [ ] Subtask 1
+- [ ] Subtask 2
+
+## Context Buffer
+[Key decisions, values, dependencies, blocking issues]
+
+## Continuation Prompt
+[Exact prompt for next session to use]
+```
+
+#### PRISM Dashboard.md (Human Overview)
+```markdown
+# PRISM Implementation Dashboard
+
+> **Last Updated**: [date]
+> **Current Phase**: [phase]
+> **Overall Progress**: [percent]%
+
+## Quick Status
+[Table of metrics]
+
+## Implementation Progress
+[Checklist of all files with status]
+
+## Recent Sessions
+[Table of recent work]
+
+## Next Action
+> **File**: [next file]
+> **Task**: [description]
+```
+
+### Verification Commands
+
+Claude should verify sync with these checks:
+```bash
+# Verify vault exists and is readable
+ls -la .obsidian/vault/Progress/implementation_status.json
+
+# Parse current state
+jq '.next_action' .obsidian/vault/Progress/implementation_status.json
+
+# Check for uncommitted vault changes
+git status .obsidian/vault/
+```
+
+### Recovery from Desync
+
+If Claude detects misalignment between internal state and vault:
+```
+1. STOP current work immediately
+2. Read ALL vault files fresh
+3. Reset internal todos to match vault
+4. Report desync to user
+5. Request confirmation before proceeding
+6. Update vault with sync timestamp
+```
+
+### Link Integrity
+
+All Obsidian links MUST use this format for portability:
+```markdown
+[[Plans/Phase 6 Plan|Phase 6 Plan]]     # Correct (relative path)
+[[Phase 6 Plan]]                         # Wrong (may break)
+```
+
+Verify links work by checking file exists at path:
+```bash
+ls ".obsidian/vault/Plans/Phase 6 Plan.md"
+```
+
+---
+
 ## Future: Phase 7-8 (After Phase 6 Complete)
 
 **DO NOT IMPLEMENT UNTIL PHASE 6 GATES PASS**
