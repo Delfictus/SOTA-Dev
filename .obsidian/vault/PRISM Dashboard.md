@@ -1,8 +1,8 @@
 # PRISM Implementation Dashboard
 
-> **Last Updated**: 2026-01-12T03:30:00Z
+> **Last Updated**: 2026-01-12T05:00:00Z
 > **Current Phase**: 6
-> **Overall Progress**: 10% (2/20 files)
+> **Overall Progress**: 15% (3/20 files)
 > **Sync Status**: FULLY ALIGNED
 
 ---
@@ -11,19 +11,19 @@
 
 | Metric | Current | Target | Status |
 |--------|---------|--------|--------|
-| Phase 6 Files | 2/20 | 20 | In Progress |
+| Phase 6 Files | 3/20 | 20 | In Progress |
 | ROC AUC | - | >=0.70 | Pending |
 | Tests Passing | 114/114 | 100% | PASS |
-| Checkpoints | 0/4 | 4 | Week 1-2 |
+| Checkpoints | 0/4 | 4 | Week 3-4 |
 
 ---
 
 ## Active Todo
 
-> **File**: `tests/gpu_scorer_tests.rs`
-> **Unit**: 1.3
-> **Task**: Create GPU scorer unit tests including zero-fallback verification
-> **Plan Reference**: `docs/plans/PRISM_PHASE6_PLAN_PART1.md`, Section 4.3
+> **File**: `pdb_sanitizer.rs`
+> **Unit**: 3.1
+> **Task**: Implement PDB sanitization for GPU safety
+> **Plan Reference**: `docs/plans/PRISM_PHASE6_PLAN_PART1.md`, Section 5.1
 
 ---
 
@@ -32,7 +32,8 @@
 ```
 [x] Unit 1.1: cryptic_features.rs (completed)
 [x] Unit 1.2: gpu_zro_cryptic_scorer.rs (completed)
-[ ] Unit 1.3: tests/gpu_scorer_tests.rs (pending) <- ACTIVE
+[x] Unit 1.3: gpu_tests/gpu_scorer_tests.rs (completed)
+[ ] Unit 3.1: pdb_sanitizer.rs (pending) <- ACTIVE
 ```
 
 ---
@@ -44,13 +45,13 @@
 - [ ] CryptoBench downloaded (1107 structures)
 - [ ] Apo-holo pairs downloaded (15 pairs)
 
-### Weeks 1-2: Core Scoring (3 files)
+### Weeks 1-2: Core Scoring (3 files) - COMPLETE
 - [x] `cryptic_features.rs` - Unit 1.1 - 16-dim feature vector (7 tests) - commit: c4d88c2
 - [x] `gpu_zro_cryptic_scorer.rs` - Unit 1.2 - 512-neuron reservoir + RLS - commit: 5e55a7a
-- [ ] `tests/gpu_scorer_tests.rs` - Unit 1.3 - Zero fallback tests **<- ACTIVE**
+- [x] `gpu_tests/gpu_scorer_tests.rs` - Unit 1.3 - Zero fallback tests (10 tests) - commit: 959f435
 
 ### Week 3: Core Architecture (8 files)
-- [ ] `pdb_sanitizer.rs` - Unit 3.1 - Structure preprocessing
+- [ ] `pdb_sanitizer.rs` - Unit 3.1 - Structure preprocessing **<- ACTIVE**
 - [ ] `sampling/mod.rs` - Unit 3.2 - Module exports
 - [ ] `sampling/contract.rs` - Unit 3.3 - SamplingBackend trait (THE LAW)
 - [ ] `sampling/result.rs` - Unit 3.4 - Result types
@@ -92,6 +93,7 @@
 
 | Date | Session | Files Completed | Tests | Notes |
 |------|---------|-----------------|-------|-------|
+| 2026-01-12 | unit_1_3 | gpu_tests/gpu_scorer_tests.rs | 3+6 | Unit 1.3 complete, Zero Fallback Policy enforced |
 | 2026-01-12 | final_alignment | - | 114 pass | Reconciled file lists, full alignment complete |
 | 2026-01-12 | plan_consolidation | - | 114 pass | Copied plans to docs/plans/ and vault |
 | 2026-01-12 | alignment | cryptic_features.rs, gpu_zro_cryptic_scorer.rs | 114 pass | Units 1.1-1.2 complete |
