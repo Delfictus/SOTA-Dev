@@ -2241,10 +2241,176 @@ All experiments were performed on:
 
 ---
 
-## 8. Complete File Manifest
+## 8. Parallel Implementation Architecture
 
-### New Files (15 total)
+### Overview: Side-by-Side Implementation with Shadow Pipeline
 
+Phase 6 uses a **parallel implementation** pattern to safely develop the greenfield NOVA path while maintaining the stable AMBER path. This enables:
+
+1. **Isolated development** - NOVA and AMBER never import from each other
+2. **Shadow validation** - Run both, compare outputs, validate before promotion
+3. **Gradual migration** - Strangler pattern with automatic rollback
+4. **Contract enforcement** - Both backends implement the same trait
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PRISM SAMPLING ARCHITECTURE                              │
+│                    Parallel Implementation with Shadow Pipeline              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         ROUTER LAYER                                │   │
+│  │  (Decides which path, can run shadow comparisons)                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                              │
+│              ┌───────────────┼───────────────┐                             │
+│              │               │               │                             │
+│              ▼               ▼               ▼                             │
+│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐              │
+│  │   NOVA PATH     │ │   AMBER PATH    │ │  SHADOW PATH    │              │
+│  │   (Greenfield)  │ │   (Stable)      │ │  (Comparison)   │              │
+│  │                 │ │                 │ │                 │              │
+│  │ • TDA + AI      │ │ • Proven MD     │ │ • Runs both     │              │
+│  │ • ≤512 atoms    │ │ • No atom limit │ │ • Compares      │              │
+│  │ • Experimental  │ │ • Production    │ │ • Logs diffs    │              │
+│  └─────────────────┘ └─────────────────┘ └─────────────────┘              │
+│              │               │               │                             │
+│              └───────────────┼───────────────┘                             │
+│                              ▼                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    UNIFIED OUTPUT LAYER                             │   │
+│  │  (Same format regardless of path taken)                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### File Structure
+
+```
+crates/prism-validation/src/
+├── sampling/
+│   ├── mod.rs                    # Public API + trait contract
+│   ├── contract.rs               # SamplingBackend trait (THE LAW)
+│   ├── result.rs                 # Unified result types
+│   │
+│   ├── paths/                    # PARALLEL IMPLEMENTATIONS
+│   │   ├── mod.rs
+│   │   ├── nova_path.rs          # Greenfield: TDA + Active Inference
+│   │   ├── amber_path.rs         # Stable: Proven AMBER MD
+│   │   └── mock_path.rs          # Testing: Deterministic fake
+│   │
+│   ├── router/                   # ROUTING LAYER
+│   │   ├── mod.rs
+│   │   ├── auto_router.rs        # Size-based routing
+│   │   ├── shadow_runner.rs      # Shadow pipeline comparison
+│   │   └── strategy.rs           # Routing strategies
+│   │
+│   ├── shadow/                   # SHADOW PIPELINE
+│   │   ├── mod.rs
+│   │   ├── comparator.rs         # Output comparison logic
+│   │   ├── divergence_log.rs     # Log differences
+│   │   └── metrics.rs            # Shadow run metrics
+│   │
+│   └── migration/                # STRANGLER PATTERN SUPPORT
+│       ├── mod.rs
+│       ├── feature_flags.rs      # Gradual rollout control
+│       ├── rollback.rs           # Quick rollback capability
+│       └── promotion.rs          # Promote greenfield to stable
+```
+
+### The Contract (THE LAW)
+
+Both NOVA and AMBER paths MUST implement this trait exactly:
+
+```rust
+/// THE CONTRACT: All sampling backends must implement this trait
+pub trait SamplingBackend: Send + Sync {
+    /// Unique identifier for this backend
+    fn id(&self) -> BackendId;
+
+    /// What this backend can do
+    fn capabilities(&self) -> BackendCapabilities;
+
+    /// Load and validate structure
+    fn load_structure(&mut self, structure: &SanitizedStructure) -> Result<()>;
+
+    /// Run sampling with given configuration
+    fn sample(&mut self, config: &SamplingConfig) -> Result<SamplingResult>;
+
+    /// Reset state for reuse with new structure
+    fn reset(&mut self) -> Result<()>;
+
+    /// Estimate VRAM usage in MB for given atom count
+    fn estimate_vram_mb(&self, n_atoms: usize) -> f32;
+}
+```
+
+### Migration Stages (Strangler Pattern)
+
+```
+StableOnly → Shadow → Canary(10%) → Canary(50%) → GreenfieldPrimary → GreenfieldOnly
+     ↑___________________________________________↓ (auto-rollback on failures)
+```
+
+| Stage | Description | NOVA Usage | AMBER Usage |
+|-------|-------------|------------|-------------|
+| `StableOnly` | AMBER only, NOVA not used | 0% | 100% |
+| `Shadow` | Run both, use AMBER, compare | 0% (shadow) | 100% |
+| `Canary(N%)` | N% to NOVA, rest to AMBER | N% | 100-N% |
+| `GreenfieldPrimary` | NOVA primary, AMBER fallback | ~100% | Fallback |
+| `GreenfieldOnly` | NOVA only, AMBER deprecated | 100% | 0% |
+
+### Shadow Comparison Metrics
+
+```rust
+pub struct DivergenceMetrics {
+    /// Mean RMSD between corresponding conformations
+    pub mean_rmsd: f32,
+
+    /// Max RMSD between any pair
+    pub max_rmsd: f32,
+
+    /// Energy correlation coefficient
+    pub energy_correlation: f32,
+
+    /// Fraction of conformations within tolerance
+    pub conformations_within_tolerance: f32,
+}
+
+pub enum Assessment {
+    Equivalent,           // Ready for promotion
+    MinorDivergence,      // Acceptable
+    SignificantDivergence, // Investigate
+    CriticalDivergence,   // Do NOT promote
+}
+```
+
+### Feature Flags (Cargo.toml)
+
+```toml
+[features]
+default = ["hybrid-sampler"]
+
+# Individual backends (can be enabled separately for testing)
+nova-backend = []
+amber-backend = []
+
+# Combined hybrid (default for production)
+hybrid-sampler = ["nova-backend", "amber-backend"]
+
+# Testing features
+test-nova-only = ["nova-backend"]
+test-amber-only = ["amber-backend"]
+```
+
+---
+
+## 9. Complete File Manifest
+
+### New Files (28 total)
+
+#### Core Scoring (Week 1-2)
 | File | Purpose | Week |
 |------|---------|------|
 | `cryptic_features.rs` | Feature vector definition | 1 |
@@ -2252,28 +2418,53 @@ All experiments were performed on:
 | `ensemble_cryptic_model.rs` | Ensemble weight learning | 1 |
 | `ensemble_quality_metrics.rs` | Sampling validation | 1 |
 | `tests/gpu_scorer_tests.rs` | GPU scorer tests | 2 |
+
+#### Sampling Architecture (Week 3-4)
+| File | Purpose | Week |
+|------|---------|------|
+| `sampling/mod.rs` | Public API + re-exports | 3 |
+| `sampling/contract.rs` | **SamplingBackend trait (THE LAW)** | 3 |
+| `sampling/result.rs` | Unified result types | 3 |
+| `sampling/paths/mod.rs` | Path module exports | 3 |
+| `sampling/paths/nova_path.rs` | **Greenfield: TDA + Active Inference** | 3 |
+| `sampling/paths/amber_path.rs` | **Stable: Proven AMBER MD** | 3 |
+| `sampling/paths/mock_path.rs` | Testing: Deterministic fake | 3 |
+| `sampling/router/mod.rs` | Router entry point | 3 |
+| `sampling/router/auto_router.rs` | Size-based routing | 3 |
+| `sampling/shadow/mod.rs` | Shadow module exports | 4 |
+| `sampling/shadow/comparator.rs` | **Output comparison logic** | 4 |
+| `sampling/shadow/divergence_log.rs` | Difference logging | 4 |
+| `sampling/migration/mod.rs` | Migration module exports | 4 |
+| `sampling/migration/feature_flags.rs` | **Gradual rollout control** | 4 |
 | `pdb_sanitizer.rs` | PDB preprocessing | 3 |
-| `hybrid_sampler.rs` | **Routes to NOVA (≤512 atoms) or AMBER (>512)** | 3 |
-| `nova_cryptic_sampler.rs` | NOVA HMC wrapper (uses HybridSampler) | 3 |
 | `apo_holo_benchmark.rs` | Conformational validation | 4 |
+
+#### Benchmarking (Week 5-6)
+| File | Purpose | Week |
+|------|---------|------|
 | `cryptobench_dataset.rs` | Dataset loader | 5 |
 | `cryptobench_benchmark.rs` | Full benchmark runner | 5 |
 | `ablation.rs` | Ablation study framework | 5 |
 | `failure_analysis.rs` | Failure categorization | 6 |
+
+#### Publication (Week 7-8)
+| File | Purpose | Week |
+|------|---------|------|
 | `publication_outputs.rs` | LaTeX/figure generation | 7 |
 | `scripts/generate_figures.py` | Plotting scripts | 8 |
 
-### Files to Modify (3)
+### Files to Modify (4)
 
 | File | Changes |
 |------|---------|
-| `blind_validation_pipeline.rs` | Add GPU scorer, NOVA options |
-| `lib.rs` | Export Phase 6 modules |
-| `Cargo.toml` | Add `cuda` feature, dependencies |
+| `blind_validation_pipeline.rs` | Add GPU scorer, use SamplingRouter |
+| `lib.rs` | Export Phase 6 modules including sampling/ |
+| `Cargo.toml` | Add `cuda` feature, feature flags for backends |
+| `tests/backend_integration.rs` | Add contract compliance tests |
 
 ---
 
-## 9. Verification Commands
+## 10. Verification Commands
 
 ```bash
 # Week 0: Setup verification
@@ -2311,7 +2502,7 @@ cargo run --release -p prism-validation --bin generate-publication -- \
 
 ---
 
-## 10. Risk Mitigation
+## 11. Risk Mitigation
 
 | Risk | Prevention | Recovery |
 |------|------------|----------|
@@ -2324,7 +2515,7 @@ cargo run --release -p prism-validation --bin generate-publication -- \
 
 ---
 
-## 11. Appendix: Quick Reference & Task List
+## 12. Appendix: Quick Reference & Task List
 
 ### Claude Code Task List by Week
 

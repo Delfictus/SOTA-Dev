@@ -98,6 +98,48 @@ REQUIRED:
 - All metrics computed on test set only
 ```
 
+### 5. Parallel Implementation Architecture (CRITICAL)
+
+Phase 6 uses a **side-by-side implementation with shadow pipeline** pattern:
+
+```
+ARCHITECTURE:
+- NOVA Path (Greenfield): TDA + Active Inference, ≤512 atoms
+- AMBER Path (Stable): Proven MD, no atom limit
+- Shadow Pipeline: Run both, compare outputs, validate before promotion
+- Router: Selects path based on structure size and migration stage
+
+ISOLATION RULES:
+- nova_path.rs MUST NEVER import from amber_path.rs
+- amber_path.rs MUST NEVER import from nova_path.rs
+- Both MUST implement SamplingBackend trait exactly
+- Changes to contract.rs require updates to BOTH paths
+
+MIGRATION STAGES (Strangler Pattern):
+  StableOnly → Shadow → Canary(10%) → Canary(50%) → GreenfieldPrimary → GreenfieldOnly
+       ↑___________________________________________↓ (auto-rollback on failures)
+
+THE CONTRACT (sampling/contract.rs):
+  trait SamplingBackend {
+    fn id(&self) -> BackendId;
+    fn capabilities(&self) -> BackendCapabilities;
+    fn load_structure(&mut self, structure: &SanitizedStructure) -> Result<()>;
+    fn sample(&mut self, config: &SamplingConfig) -> Result<SamplingResult>;
+    fn reset(&mut self) -> Result<()>;
+    fn estimate_vram_mb(&self, n_atoms: usize) -> f32;
+  }
+```
+
+Key Files for Parallel Implementation:
+```
+sampling/contract.rs        - THE LAW (trait definition)
+sampling/paths/nova_path.rs - Greenfield implementation
+sampling/paths/amber_path.rs - Stable implementation
+sampling/shadow/comparator.rs - Output comparison
+sampling/migration/feature_flags.rs - Rollout control
+sampling/router/mod.rs      - Entry point
+```
+
 ## Phase 6 Implementation Order
 
 Claude MUST implement in this EXACT order:
@@ -121,16 +163,50 @@ cargo test --release -p prism-validation --features cuda gpu_scorer
 CUDA_VISIBLE_DEVICES="" cargo test test_no_cpu_fallback  # MUST FAIL
 ```
 
-### Weeks 3-4: PRISM-NOVA Integration
+### Weeks 3-4: Parallel Sampling Implementation
 Files to create IN ORDER:
+
+**Week 3: Core Architecture**
 1. `crates/prism-validation/src/pdb_sanitizer.rs`
-2. `crates/prism-validation/src/nova_cryptic_sampler.rs`
-3. `crates/prism-validation/src/apo_holo_benchmark.rs`
+2. `crates/prism-validation/src/sampling/mod.rs`
+3. `crates/prism-validation/src/sampling/contract.rs` (THE LAW)
+4. `crates/prism-validation/src/sampling/result.rs`
+5. `crates/prism-validation/src/sampling/paths/mod.rs`
+6. `crates/prism-validation/src/sampling/paths/nova_path.rs` (GREENFIELD)
+7. `crates/prism-validation/src/sampling/paths/amber_path.rs` (STABLE)
+8. `crates/prism-validation/src/sampling/router/mod.rs`
+
+**Week 4: Shadow Pipeline + Migration**
+9. `crates/prism-validation/src/sampling/shadow/mod.rs`
+10. `crates/prism-validation/src/sampling/shadow/comparator.rs`
+11. `crates/prism-validation/src/sampling/migration/mod.rs`
+12. `crates/prism-validation/src/sampling/migration/feature_flags.rs`
+13. `crates/prism-validation/src/apo_holo_benchmark.rs`
+
+ISOLATION CHECK (CRITICAL):
+```bash
+# Verify nova_path.rs does NOT import from amber_path.rs
+grep -r "amber_path" crates/prism-validation/src/sampling/paths/nova_path.rs
+# Expected: No output (empty)
+
+# Verify amber_path.rs does NOT import from nova_path.rs
+grep -r "nova_path" crates/prism-validation/src/sampling/paths/amber_path.rs
+# Expected: No output (empty)
+```
+
+CONTRACT COMPLIANCE CHECK:
+```bash
+# Both paths must implement SamplingBackend
+cargo test --release -p prism-validation --features hybrid-sampler contract_tests
+```
 
 CHECKPOINT: Must pass before proceeding:
 ```bash
 cargo run --release -p prism-validation --bin apo-holo-single -- --apo 1AKE --holo 4AKE
 # Expected: min RMSD < 3.5A
+
+# Shadow comparison must show Equivalent or MinorDivergence
+cargo run --release -p prism-validation --bin shadow-compare -- --pdb test.pdb
 ```
 
 ### Weeks 5-6: CryptoBench & Ablation
