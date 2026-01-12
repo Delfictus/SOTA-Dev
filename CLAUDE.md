@@ -35,6 +35,27 @@ REQUIRED:
 - Native Rust/CUDA implementations only
 - PRISM-ZrO (SNN + RLS) for learning
 - PRISM-NOVA (HMC + AMBER) for sampling
+- Blake3 hashing for integrity/caching
+- Betti numbers (beta_0, beta_1, beta_2) for TDA
+```
+
+### 2.1 Core PRISM Features (MAINTAINED ALL PHASES)
+```
+BETTI NUMBERS (TDA Topology):
+- beta_0: Connected components
+- beta_1: Loops/tunnels (pocket indicators)
+- beta_2: Voids/cavities (cryptic site signatures)
+- Computed via prism_gpu::tda module
+- GPU-accelerated alpha complex filtration
+
+BLAKE3 HASHING (Integrity & Caching):
+- Structure fingerprinting (unique PDB identification)
+- Conformation cache keys (avoid recomputation)
+- Result integrity verification
+- Reproducibility checksums for all outputs
+
+These features are MAINTAINED throughout all phases.
+Phase 7 EXTENDS Betti to full persistence diagrams.
 ```
 
 ### 3. Hybrid Sampler Architecture (CRITICAL)
@@ -419,9 +440,33 @@ At the END of every session (or after each unit), Claude MUST:
 
 ## File Locations
 
-- Plan: `results/phase6_sota_plan.md`
+- Phase 6 Plan: `results/phase6_sota_plan.md`
+- Phase 7-8 Plan: `results/phase7_8_sota_plan.md`
 - Implementation: `crates/prism-validation/src/`
 - Tests: `crates/prism-validation/src/tests/`
 - Data: `data/benchmarks/`
 - Results: `results/`
 - Compliance: `scripts/phase6_*.sh`
+
+## Future: Phase 7-8 (After Phase 6 Complete)
+
+**DO NOT IMPLEMENT UNTIL PHASE 6 GATES PASS**
+
+Reference: `results/phase7_8_sota_plan.md`
+
+Phase 7-8 builds on the AMBER-primary foundation with:
+- Hierarchical reservoir (1,280 neurons)
+- Full persistence diagrams (extends Betti numbers)
+- Ensemble voting (5 reservoirs)
+- Transfer learning (family backbones)
+- Uncertainty quantification
+
+Target: ROC AUC 0.90 (exceeds SOTA 0.87)
+
+**Gate Requirements to begin Phase 7:**
+```
+[ ] Phase 6 ROC AUC >= 0.70
+[ ] All Phase 6 tests passing
+[ ] results/PHASE6_FINAL.json exists
+[ ] User approval to proceed
+```
