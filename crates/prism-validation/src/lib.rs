@@ -113,6 +113,10 @@ pub mod data_acquisition;
 #[cfg(feature = "simulation")]
 pub mod simulation_runner;
 
+// GPU scorer integration tests (require cryptic-gpu feature)
+#[cfg(test)]
+mod gpu_tests;
+
 // Re-export AlphaFlow compatibility for easy access
 pub use alphaflow_compat::{
     AlphaFlowEnsemble, AlphaFlowMetrics, AtlasBenchmarkRunner,

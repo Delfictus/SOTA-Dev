@@ -9,11 +9,11 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Ready for Unit 1.3 |
-| **Target File** | `tests/gpu_scorer_tests.rs` |
-| **Unit** | 1.3 |
-| **Plan Reference** | `docs/plans/PRISM_PHASE6_PLAN_PART1.md`, Section 4.3 |
-| **Last Sync** | 2026-01-12T03:30:00Z |
+| **Status** | Ready for Unit 3.1 |
+| **Target File** | `pdb_sanitizer.rs` |
+| **Unit** | 3.1 |
+| **Plan Reference** | `docs/plans/PRISM_PHASE6_PLAN_PART1.md`, Section 5.1 |
+| **Last Sync** | 2026-01-12T04:35:00Z |
 
 ---
 
@@ -36,7 +36,8 @@ Before starting work, Claude MUST verify:
 ```
 [x] Unit 1.1: cryptic_features.rs - 16-dim feature vector (completed)
 [x] Unit 1.2: gpu_zro_cryptic_scorer.rs - 512-neuron reservoir (completed)
-[ ] Unit 1.3: tests/gpu_scorer_tests.rs - Zero fallback tests (pending) <- NEXT
+[x] Unit 1.3: gpu_tests/gpu_scorer_tests.rs - Zero fallback tests (completed)
+[ ] Unit 3.1: pdb_sanitizer.rs - PDB sanitization for GPU safety (pending) <- NEXT
 ```
 
 ---
@@ -46,6 +47,7 @@ Before starting work, Claude MUST verify:
 ### Implementation Work
 - [x] **Unit 1.1**: `cryptic_features.rs` - 16-dim feature vector (7 tests passing) - commit c4d88c2
 - [x] **Unit 1.2**: `gpu_zro_cryptic_scorer.rs` - 512-neuron reservoir + RLS - commit 5e55a7a
+- [x] **Unit 1.3**: `gpu_tests/gpu_scorer_tests.rs` - Zero Fallback tests (10 tests: 3 pass, 6 require GPU, 1 ignored)
 
 ### Infrastructure Work
 - [x] Vault synchronization protocol added to CLAUDE.md
@@ -54,23 +56,27 @@ Before starting work, Claude MUST verify:
 - [x] Copied all master plans to docs/plans/ and vault Plans/Full/
 - [x] Re-initialized and verified alignment with all master plan documents
 - [x] Reconciled file list between CLAUDE.md and vault (was missing 5 files)
+- [x] **Cleaned up .obsidian directory structure** - Removed nested `.obsidian/.obsidian/` and orphan files
+- [x] Fixed pre-existing test issues in prism_zro_cryptic_scorer.rs (added Default derive)
 
 ---
 
-## Next Subtasks (Unit 1.3)
+## Next Subtasks (Unit 3.1)
 
-Target: `crates/prism-validation/src/tests/gpu_scorer_tests.rs`
+Target: `crates/prism-validation/src/pdb_sanitizer.rs`
 
-- [ ] Read plan section 4.3 from `docs/plans/PRISM_PHASE6_PLAN_PART1.md`
-- [ ] Create tests/ directory if needed
-- [ ] Implement `test_no_cpu_fallback` (CRITICAL - must fail without GPU)
-- [ ] Implement `test_rls_stability_1000_updates` (no NaN/Inf)
-- [ ] Implement `test_weight_persistence` (save/load roundtrip)
-- [ ] Implement `bench_gpu_scorer_throughput` (>10k residues/sec)
-- [ ] Run tests with GPU: `cargo test --release -p prism-validation --features cuda gpu_scorer`
-- [ ] Verify zero fallback: `CUDA_VISIBLE_DEVICES="" cargo test test_no_cpu_fallback` (MUST FAIL)
+- [ ] Read plan section 5.1 from `docs/plans/PRISM_PHASE6_PLAN_PART1.md`
+- [ ] Implement `SanitizedPdb` struct with cleaned coordinates
+- [ ] Implement `sanitize_pdb()` function:
+  - Remove HETATM, waters
+  - Filter to standard amino acids
+  - Renumber atoms sequentially
+  - Extract Cα coordinates
+- [ ] Add validation functions for GPU safety
+- [ ] Write unit tests
+- [ ] Run tests: `cargo test --release -p prism-validation sanitizer`
 - [ ] Commit with message referencing Phase 6 plan
-- [ ] Update vault files (implementation_status.json, this file, Dashboard)
+- [ ] Update vault files
 
 ---
 
