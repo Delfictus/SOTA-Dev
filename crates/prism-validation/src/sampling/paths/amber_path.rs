@@ -247,12 +247,11 @@ impl SamplingBackend for AmberPath {
         let target_temp = 310.0;
 
         for sample_idx in 0..config.n_samples {
-            // Rescale velocities to target temperature before each trajectory
-            // This maintains the canonical ensemble by compensating for numerical drift
-            hmc.rescale_velocities(target_temp)
-                .with_context(|| format!("AmberPath: Velocity rescaling failed at sample {}", sample_idx))?;
+            // NOTE: Velocity rescaling REMOVED - BAOAB Langevin thermostat in the GPU kernel
+            // handles temperature control continuously via friction + thermal noise.
+            // External rescaling would fight the Langevin dynamics and cause instability.
 
-            // Run HMC for decorrelation steps
+            // Run HMC for decorrelation steps (BAOAB Langevin maintains T=310K internally)
             let result = hmc.run(config.steps_per_sample, timestep_fs, target_temp)
                 .with_context(|| format!("AmberPath: HMC run failed at sample {}", sample_idx))?;
 

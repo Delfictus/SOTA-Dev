@@ -20,12 +20,17 @@ use crate::sampling::shadow::{DivergenceMetrics, ShadowResult};
 /// Routing strategy for backend selection
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RoutingStrategy {
-    /// Auto-select based on atom count (≤512 → NOVA, >512 → AMBER)
+    /// Auto-select: Currently routes ALL structures to AmberMegaFused
+    ///
+    /// NOTE: NovaPath is deprecated for benchmarks due to:
+    /// - Missing physics fixes (protonation, clamping, bond params)
+    /// - ~100x slower performance
+    /// - AmberMegaFused now handles all structure sizes with O(N) cell lists
     #[default]
     Auto,
-    /// Force NOVA path (fails if structure too large)
+    /// Force NOVA path (DEPRECATED - lacks physics fixes)
     ForceNova,
-    /// Force AMBER path (loses TDA capability)
+    /// Force AMBER path (recommended - full physics)
     ForceAmber,
     /// Use mock backend (for testing)
     Mock,
@@ -170,14 +175,20 @@ impl HybridSampler {
     }
 
     /// Select backend based on strategy and structure
+    ///
+    /// NOTE: Auto mode now ALWAYS selects AmberMegaFused because:
+    /// 1. AmberMegaFused has full physics (protonation, clamping, bond params)
+    /// 2. NovaPath is ~100x slower and lacks these critical fixes
+    /// 3. AmberMegaFused handles all structure sizes with O(N) cell lists
     fn select_backend(&self, structure: &SanitizedStructure) -> BackendId {
         match self.strategy {
             RoutingStrategy::Auto => {
-                if structure.n_atoms() <= NOVA_MAX_ATOMS {
-                    BackendId::Nova
-                } else {
-                    BackendId::AmberMegaFused
-                }
+                // DEPRECATED: NovaPath routing disabled
+                // Previous: if structure.n_atoms() <= NOVA_MAX_ATOMS { Nova } else { Amber }
+                // Now: Always use AmberMegaFused for correct physics
+                let _ = structure.n_atoms(); // Silence unused warning
+                let _ = NOVA_MAX_ATOMS; // Silence unused warning
+                BackendId::AmberMegaFused
             }
             RoutingStrategy::ForceNova => BackendId::Nova,
             RoutingStrategy::ForceAmber => BackendId::AmberMegaFused,
@@ -317,12 +328,15 @@ END
     }
 
     #[test]
-    fn test_hybrid_sampler_mock() {
-        let mut sampler = HybridSampler::new_mock();
+    fn test_routing_auto_selects_amber() {
+        // Test that Auto strategy correctly maps to AmberMegaFused
+        let sampler = HybridSampler::new_mock();
         let structure = create_test_structure();
 
-        let backend = sampler.load_structure(&structure).unwrap();
-        assert_eq!(backend, BackendId::Nova); // Small structure -> NOVA
+        // Call select_backend directly to test routing logic (doesn't require GPU)
+        let backend = sampler.select_backend(&structure);
+        // NOTE: Auto mode now ALWAYS routes to AmberMegaFused (NovaPath deprecated)
+        assert_eq!(backend, BackendId::AmberMegaFused);
     }
 
     #[test]
@@ -335,11 +349,13 @@ END
     }
 
     #[test]
-    fn test_routing_strategy_force_amber() {
-        let mut sampler = HybridSampler::new_mock().with_strategy(RoutingStrategy::ForceAmber);
+    fn test_routing_strategy_force_amber_selection() {
+        // Test that ForceAmber strategy correctly maps to AmberMegaFused
+        let sampler = HybridSampler::new_mock().with_strategy(RoutingStrategy::ForceAmber);
         let structure = create_test_structure();
 
-        let backend = sampler.load_structure(&structure).unwrap();
+        // Call select_backend directly to test routing logic (doesn't require GPU)
+        let backend = sampler.select_backend(&structure);
         assert_eq!(backend, BackendId::AmberMegaFused);
     }
 
@@ -355,17 +371,18 @@ END
     }
 
     #[test]
-    fn test_has_tda() {
-        let mut sampler = HybridSampler::new_mock();
+    fn test_has_tda_with_mock() {
+        // Use Mock strategy to test has_tda (Mock returns false for TDA)
+        let mut sampler = HybridSampler::new_mock().with_strategy(RoutingStrategy::Mock);
         let structure = create_test_structure();
 
         sampler.load_structure(&structure).unwrap();
-        assert!(sampler.has_tda()); // NOVA selected
+        assert!(!sampler.has_tda()); // Mock doesn't have TDA
     }
 
     #[test]
-    fn test_reset() {
-        let mut sampler = HybridSampler::new_mock();
+    fn test_reset_with_mock() {
+        let mut sampler = HybridSampler::new_mock().with_strategy(RoutingStrategy::Mock);
         let structure = create_test_structure();
 
         sampler.load_structure(&structure).unwrap();
