@@ -102,6 +102,11 @@ pub mod zro_cryptic_integration;
 // Foundation for GPU-accelerated ZrO scorer
 pub mod cryptic_features;
 
+// Phase 6: GPU-accelerated ZrO scorer (512-neuron reservoir + RLS)
+// Requires CUDA - will NOT fall back to CPU
+#[cfg(feature = "cryptic-gpu")]
+pub mod gpu_zro_cryptic_scorer;
+
 // Heterogeneous data acquisition (ATLAS, NMR, MISATO)
 pub mod data_acquisition;
 
