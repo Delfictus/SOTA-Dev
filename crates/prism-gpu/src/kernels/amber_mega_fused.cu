@@ -92,10 +92,11 @@
 
 // Maximum force magnitude before capping (kcal/(mol·Å))
 // REDUCED from 1000 to 200 to limit velocity kicks:
-// For H (m=1): a = 200 * 4.184e-4 / 1 = 0.084 Å/fs²
-// In half-kick (0.15fs): Δv = 0.013 Å/fs (manageable)
-// Steric clashes generate 10,000+ kcal/mol/Å forces - need strong limiting
-#define MAX_FORCE 200.0f
+// For H (m=1): a = 300 * 4.184e-4 / 1 = 0.125 Å/fs²
+// In half-kick (0.1fs): Δv = 0.0125 Å/fs (manageable)
+// Balanced between stability (200) and full dynamics (500)
+// 200 gave 65% temp, 500 gave 200-400% temp, trying 300
+#define MAX_FORCE 300.0f
 
 // Soft limiting transition width (for smooth tanh-based limiting)
 #define SOFT_LIMIT_STEEPNESS 2.0f
