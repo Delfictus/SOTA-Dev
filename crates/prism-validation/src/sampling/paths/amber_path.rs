@@ -31,6 +31,28 @@ use prism_gpu::amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, build_exclusi
 #[cfg(feature = "cryptic-gpu")]
 use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_angle_param, get_dihedral_params, get_lj_param};
 
+// ============================================================================
+// LANGEVIN FRICTION COEFFICIENTS (SOTA Configurable Thermostat)
+// ============================================================================
+// τ_relax = 1/γ determines how fast the system equilibrates to target temperature.
+// BAOAB Langevin thermostat applies friction + noise every step for stable NVT.
+
+/// Heating friction: γ = 2.0 fs⁻¹ (2000 ps⁻¹) - AGGRESSIVE
+/// - τ = 0.5 fs - strongly overdamped Brownian dynamics
+/// - Forces pump energy faster than weak friction can remove
+/// - Need high γ to dissipate force-induced velocity
+const GAMMA_HEATING: f32 = 2.0;
+
+/// Equilibration friction: γ = 2.0 fs⁻¹ (2000 ps⁻¹) - AGGRESSIVE
+/// - Heavily overdamped to prevent PE explosion
+/// - Sacrifices natural dynamics for stability
+const GAMMA_EQUILIBRATION: f32 = 2.0;
+
+/// Production friction: γ = 1.0 fs⁻¹ (1000 ps⁻¹)
+/// - Slightly less aggressive than heating/equilibration
+/// - Still strongly damped to maintain temperature control
+const GAMMA_PRODUCTION: f32 = 1.0;
+
 /// AMBER Path - Stable sampling with proven AMBER ff14SB
 ///
 /// This path handles any structure size and provides:
@@ -157,7 +179,22 @@ impl SamplingBackend for AmberPath {
         // Parse topology from structure
         let pdb_content = structure.to_pdb_string();
         let pdb_atoms = parse_pdb_to_atoms(&pdb_content);
-        let topology = AmberTopology::from_pdb_atoms(&pdb_atoms);
+        let mut topology = AmberTopology::from_pdb_atoms(&pdb_atoms);
+
+        // ========================================================================
+        // ELASTIC NETWORK MODEL (ENM): Add native contact bonds for stability
+        // ========================================================================
+        // Implicit solvent lacks the "cage effect" of explicit water, causing
+        // proteins to unfold at physiological temperature. ENM adds weak harmonic
+        // restraints between non-local CA atoms that are close in the native
+        // structure, effectively encoding a "memory" of the fold.
+        //
+        // This is a standard technique (Gō-model) that:
+        // - Stabilizes tertiary structure (prevents RMSD drift to 15+ Å)
+        // - Preserves local flexibility (sidechains still move freely)
+        // - Allows cryptic pockets to open (weak k = 1.0 kcal/mol/Å²)
+        let enm_bonds = add_native_contacts(&pdb_atoms, &mut topology);
+        log::info!("🔗 ENM: Added {} native contact bonds (k=1.0, cutoff=8.0Å)", enm_bonds);
 
         // Create AmberMegaFusedHmc GPU kernel
         let mut hmc = AmberMegaFusedHmc::new(self.context.clone(), n_atoms)
@@ -197,18 +234,44 @@ impl SamplingBackend for AmberPath {
         hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
             .context("AmberPath: Failed to upload topology to GPU")?;
 
-        // Minimize to relax steric clashes (CRITICAL before HMC)
-        // Using 5000 steps @ 0.01 Å for aggressive clash resolution
-        // CUDA kernel has dual safety: force clamping (1000) + displacement clamping (0.2 Å)
-        // This enables fast minimization without explosion or teleportation
-        log::info!("AmberPath: Running energy minimization (5000 steps, 0.01 Å)...");
-        let final_energy = hmc.minimize(5000, 0.01)
+        // =========================================================================
+        // STAGED INITIALIZATION: Minimize → Gradual Heating → Equilibration
+        // =========================================================================
+        // This prevents "hot start" issues where severe clashes cause explosive dynamics.
+        // The Langevin thermostat works best when starting from a relaxed state.
+
+        // Stage 1: Energy Minimization (10000 steps @ 0.001 Å)
+        // - Small step size (0.001 Å) for stability per SOTA recommendation
+        // - CUDA kernel has dual safety: force clamping (1000) + displacement clamping (0.2 Å)
+        log::info!("AmberPath: Stage 1/3 - Energy minimization (10000 steps, 0.001 Å)...");
+        let final_energy = hmc.minimize(10000, 0.001)
             .context("AmberPath: Energy minimization failed")?;
         log::info!("AmberPath: Minimization complete, PE = {:.2} kcal/mol", final_energy);
 
-        // Initialize velocities at target temperature
-        hmc.initialize_velocities(310.0)
-            .context("AmberPath: Failed to initialize velocities")?;
+        // Stage 2: Linear Heating Ramp (50K → 310K over 200 steps)
+        // - 50 steps per temperature stage with very high friction (γ=1.0 fs⁻¹)
+        // - τ = 1 fs means system tracks target temperature within ~3 steps
+        // - Linear ramp prevents thermal shock that causes PE explosion
+        log::info!("AmberPath: Stage 2/3 - Linear heating (50K → 310K, γ={} fs⁻¹)...", GAMMA_HEATING);
+        const HEATING_STEPS_PER_STAGE: usize = 50;
+        let heating_temps = [50.0f32, 100.0, 150.0, 200.0, 250.0, 310.0];
+        for temp in heating_temps {
+            // Very high friction + small timestep for stability during heating
+            let result = hmc.run(HEATING_STEPS_PER_STAGE, 0.1, temp, GAMMA_HEATING)
+                .with_context(|| format!("AmberPath: Heating at {}K failed", temp))?;
+            log::info!("  Heating {}K: PE={:.1} kcal/mol, T_avg={:.1}K",
+                temp, result.potential_energy, result.avg_temperature);
+        }
+        log::info!("AmberPath: Heating complete, system at 310K");
+
+        // Stage 3: Full Equilibration (10000 steps at 310K with high friction)
+        // - 10000 steps * 0.1 fs = 1000 fs (1 ps) total equilibration time
+        // - Small dt=0.1 fs for stability, high γ=2.0 for temperature control
+        log::info!("AmberPath: Stage 3/3 - Equilibration (10000 steps at 310K, γ={} fs⁻¹)...", GAMMA_EQUILIBRATION);
+        let eq_result = hmc.run(10000, 0.1, 310.0, GAMMA_EQUILIBRATION)
+            .context("AmberPath: Equilibration failed")?;
+        log::info!("AmberPath: Equilibration complete, PE = {:.2} kcal/mol, T_avg = {:.1}K",
+            eq_result.potential_energy, eq_result.avg_temperature);
 
         self.structure = Some(structure);
         self.hmc = Some(hmc);
@@ -238,22 +301,45 @@ impl SamplingBackend for AmberPath {
             config.steps_per_sample
         );
 
-        // Sample conformations
-        // Using 0.1 fs timestep for numerical stability with explicit hydrogens
-        // Hydrogen C-H bond vibrates at ~3000 cm⁻¹ (period ~10 fs)
-        // Need 50-100 points per oscillation for accurate integration
-        // 0.1 fs gives 100 points per H oscillation = stable dynamics
-        let timestep_fs = 0.1;
+        // Sample conformations with PRODUCTION friction
+        // - timestep: 0.2 fs for stability (smaller than 0.3 for better force accuracy)
+        // - gamma: GAMMA_PRODUCTION (1.0 fs⁻¹) strong coupling for temperature control
+        // - C-H bond vibrates at ~3000 cm⁻¹ (period ~10 fs), ~50 points/oscillation
+        let timestep_fs = 0.2;
+
+        // PHYSIOLOGICAL TEMPERATURE: 310K (37°C)
+        // Previous 500K caused thermal denaturation (proteins unfold above ~343K)
         let target_temp = 310.0;
 
-        for sample_idx in 0..config.n_samples {
-            // NOTE: Velocity rescaling REMOVED - BAOAB Langevin thermostat in the GPU kernel
-            // handles temperature control continuously via friction + thermal noise.
-            // External rescaling would fight the Langevin dynamics and cause instability.
+        log::info!("AmberPath: Production sampling (dt={}fs, γ={} fs⁻¹, τ={:.1} fs, T_target={}K)",
+            timestep_fs, GAMMA_PRODUCTION, 1.0 / GAMMA_PRODUCTION, target_temp);
 
-            // Run HMC for decorrelation steps (BAOAB Langevin maintains T=310K internally)
-            let result = hmc.run(config.steps_per_sample, timestep_fs, target_temp)
-                .with_context(|| format!("AmberPath: HMC run failed at sample {}", sample_idx))?;
+        // Pulse Heating: Break trajectory into chunks with velocity rescaling
+        // 25 chunks of 20 steps = 500 total steps per sample (rescale every 6 fs)
+        const PULSE_CHUNK_STEPS: usize = 20;
+        const PULSE_CHUNKS: usize = 25;
+
+        for sample_idx in 0..config.n_samples {
+            let mut last_result = None;
+            let mut chunk_temps = Vec::new();
+            let mut chunk_energies = Vec::new();
+
+            // Pulse heating: 25 chunks of 20 steps with velocity rescaling
+            for chunk in 0..PULSE_CHUNKS {
+                // Rescale velocities to 310K before each chunk (pulse heating)
+                hmc.rescale_velocities(target_temp)
+                    .with_context(|| format!("AmberPath: Velocity rescale failed at sample {}, chunk {}", sample_idx, chunk))?;
+
+                // Run 20 steps with Langevin thermostat
+                let result = hmc.run(PULSE_CHUNK_STEPS, timestep_fs, target_temp, GAMMA_PRODUCTION)
+                    .with_context(|| format!("AmberPath: HMC run failed at sample {}, chunk {}", sample_idx, chunk))?;
+
+                chunk_temps.push(result.avg_temperature);
+                chunk_energies.push(result.potential_energy);
+                last_result = Some(result);
+            }
+
+            let result = last_result.expect("At least one chunk must run");
 
             // Collect conformation
             let positions = hmc.get_positions()
@@ -261,15 +347,15 @@ impl SamplingBackend for AmberPath {
             conformations.push(flat_to_3d(&positions, structure.n_residues()));
             energies.push(result.potential_energy as f32);
 
-            if sample_idx % 10 == 0 {
-                log::debug!(
-                    "AmberPath: Sample {}/{}, PE = {:.2}, T_avg = {:.1}K",
-                    sample_idx + 1,
-                    config.n_samples,
-                    result.potential_energy,
-                    result.avg_temperature
-                );
-            }
+            // Per-sample logging for diagnostics
+            let avg_temp: f64 = chunk_temps.iter().sum::<f64>() / chunk_temps.len() as f64;
+            let avg_pe: f64 = chunk_energies.iter().sum::<f64>() / chunk_energies.len() as f64;
+            log::info!(
+                "  Sample {}/{}: PE={:.1} (avg={:.1}) kcal/mol, T_avg={:.1}K (target={}K)",
+                sample_idx + 1, config.n_samples,
+                result.potential_energy, avg_pe,
+                avg_temp, target_temp
+            );
         }
 
         let elapsed_ms = start_time.elapsed().as_millis() as u64;
@@ -453,8 +539,11 @@ fn topology_to_nb_params(topology: &AmberTopology) -> Vec<(f32, f32, f32, f32)> 
 
     (0..n).map(|i| {
         let lj = &topology.lj_params[i];
-        // rmin_half needs to be converted to sigma: sigma = 2^(1/6) * rmin_half * 2
-        let sigma = lj.rmin_half * 2.0 * 1.122_462_f32; // 2^(1/6) ≈ 1.122462
+        // rmin_half to sigma conversion:
+        // rmin = 2 * rmin_half (LB combining rule)
+        // sigma = rmin / 2^(1/6) = 2 * rmin_half / 2^(1/6)
+        // 2^(1/6) ≈ 1.122462, so sigma = rmin_half * 2 / 1.122462 ≈ rmin_half * 1.7818
+        let sigma = lj.rmin_half * 2.0 / 1.122_462_f32;
         (sigma, lj.epsilon, topology.charges[i], topology.masses[i])
     }).collect()
 }
@@ -466,6 +555,102 @@ fn flat_to_3d(flat: &[f32], n_residues: usize) -> Vec<[f32; 3]> {
         .take(n_residues)
         .map(|c| [c[0], c[1], c[2]])
         .collect()
+}
+
+// ============================================================================
+// ELASTIC NETWORK MODEL (ENM) - Native Contact Bonds
+// ============================================================================
+// Adds weak harmonic restraints between non-local CA atoms to stabilize
+// tertiary structure in implicit solvent simulations.
+//
+// Parameters (standard Gō-model):
+// - Distance cutoff: 8.0 Å (typical CA-CA contact distance)
+// - Sequence separation: >= 3 residues (skip local neighbors)
+// - Force constant: 1.0 kcal/mol/Å² (weak, allows flexibility)
+// - Equilibrium distance: native CA-CA distance (structure-specific)
+
+/// ENM parameters
+const ENM_CUTOFF: f32 = 8.0;           // Å - max CA-CA distance for contact
+const ENM_SEQ_SEP: i32 = 3;            // min residue separation
+const ENM_FORCE_CONSTANT: f32 = 1.0;   // kcal/mol/Å² - weak restraint
+
+/// Add native contact bonds between CA atoms for structural stability
+///
+/// This implements the Elastic Network Model (ENM) / Gō-model approach:
+/// - Find all CA atoms and their positions
+/// - For each pair with |i-j| >= 3 (sequence separation)
+/// - If distance < 8.0 Å, add a harmonic bond
+///
+/// # Arguments
+/// * `pdb_atoms` - Parsed PDB atoms with positions
+/// * `topology` - Mutable topology to add bonds to
+///
+/// # Returns
+/// Number of native contact bonds added
+#[cfg(feature = "cryptic-gpu")]
+fn add_native_contacts(pdb_atoms: &[PdbAtom], topology: &mut AmberTopology) -> usize {
+    // Step 1: Find all CA atoms with their indices, residue IDs, and positions
+    struct CaAtom {
+        atom_idx: usize,
+        res_id: i32,
+        x: f32,
+        y: f32,
+        z: f32,
+    }
+
+    let ca_atoms: Vec<CaAtom> = pdb_atoms
+        .iter()
+        .enumerate()
+        .filter(|(_, atom)| atom.name == "CA")
+        .map(|(idx, atom)| CaAtom {
+            atom_idx: idx,
+            res_id: atom.residue_id,
+            x: atom.x,
+            y: atom.y,
+            z: atom.z,
+        })
+        .collect();
+
+    log::debug!("ENM: Found {} CA atoms", ca_atoms.len());
+
+    // Step 2: Find native contacts (pairwise search)
+    let mut contacts_added = 0;
+
+    for i in 0..ca_atoms.len() {
+        for j in (i + 1)..ca_atoms.len() {
+            let ca_i = &ca_atoms[i];
+            let ca_j = &ca_atoms[j];
+
+            // Check sequence separation (skip local neighbors)
+            let seq_sep = (ca_i.res_id - ca_j.res_id).abs();
+            if seq_sep < ENM_SEQ_SEP {
+                continue;
+            }
+
+            // Calculate Euclidean distance
+            let dx = ca_i.x - ca_j.x;
+            let dy = ca_i.y - ca_j.y;
+            let dz = ca_i.z - ca_j.z;
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+            // Check distance cutoff
+            if dist > ENM_CUTOFF {
+                continue;
+            }
+
+            // Add native contact bond
+            // Bond: (atom_i, atom_j) with params (k, r0)
+            topology.bonds.push((ca_i.atom_idx as u32, ca_j.atom_idx as u32));
+            topology.bond_params.push(prism_physics::amber_ff14sb::BondParam {
+                k: ENM_FORCE_CONSTANT,
+                r0: dist,  // Native distance as equilibrium
+            });
+
+            contacts_added += 1;
+        }
+    }
+
+    contacts_added
 }
 
 #[cfg(test)]

@@ -15,6 +15,9 @@ use std::sync::Arc;
 /// Maximum exclusions per atom (1-2, 1-3 bonded pairs)
 pub const MAX_EXCLUSIONS: usize = 32;
 
+/// Maximum 1-4 pairs per atom (dihedral terminal pairs needing scaled interactions)
+pub const MAX_14_PAIRS: usize = 16;
+
 /// Cell list constants (must match CUDA kernel)
 pub const CELL_SIZE: f32 = 10.0;
 pub const MAX_CELLS_PER_DIM: usize = 32;
@@ -71,6 +74,10 @@ pub struct AmberMegaFusedHmc {
     d_nb_mass: CudaSlice<f32>,        // [n_atoms]
     d_exclusion_list: CudaSlice<i32>, // [n_atoms * MAX_EXCLUSIONS]
     d_n_exclusions: CudaSlice<i32>,   // [n_atoms]
+
+    // Device buffers - 1-4 pairs (scaled non-bonded: LJ*0.5, Coulomb*0.833)
+    d_pair14_list: CudaSlice<i32>,    // [n_atoms * MAX_14_PAIRS]
+    d_n_pairs14: CudaSlice<i32>,      // [n_atoms]
 
     // Device buffers - Cell lists (O(N) non-bonded)
     d_cell_list: CudaSlice<i32>,      // [MAX_TOTAL_CELLS * MAX_ATOMS_PER_CELL]
@@ -161,6 +168,10 @@ impl AmberMegaFusedHmc {
         let d_exclusion_list = stream.alloc_zeros::<i32>(n_atoms * MAX_EXCLUSIONS)?;
         let d_n_exclusions = stream.alloc_zeros::<i32>(n_atoms)?;
 
+        // Allocate 1-4 pair buffers for scaled non-bonded
+        let d_pair14_list = stream.alloc_zeros::<i32>(n_atoms * MAX_14_PAIRS)?;
+        let d_n_pairs14 = stream.alloc_zeros::<i32>(n_atoms)?;
+
         // Allocate cell list buffers for O(N) non-bonded
         let d_cell_list = stream.alloc_zeros::<i32>(MAX_TOTAL_CELLS * MAX_ATOMS_PER_CELL)?;
         let d_cell_counts = stream.alloc_zeros::<i32>(MAX_TOTAL_CELLS)?;
@@ -200,6 +211,8 @@ impl AmberMegaFusedHmc {
             d_nb_mass,
             d_exclusion_list,
             d_n_exclusions,
+            d_pair14_list,
+            d_n_pairs14,
             d_cell_list,
             d_cell_counts,
             d_atom_cell,
@@ -330,13 +343,40 @@ impl AmberMegaFusedHmc {
         self.stream.memcpy_htod(&excl_flat, &mut self.d_exclusion_list)?;
         self.stream.memcpy_htod(&n_excl, &mut self.d_n_exclusions)?;
 
+        // Build and upload 1-4 pairs from dihedrals
+        // These get SCALED non-bonded interactions (LJ*0.5, Coulomb*0.833)
+        let pairs_14 = build_14_pairs(dihedrals, exclusions, self.n_atoms);
+
+        // Convert to per-atom format (like exclusions)
+        let mut pair14_flat = vec![-1i32; self.n_atoms * MAX_14_PAIRS];
+        let mut n_pairs14 = vec![0i32; self.n_atoms];
+
+        for &(i, j) in &pairs_14 {
+            // Add j to i's 1-4 list
+            let count_i = n_pairs14[i] as usize;
+            if count_i < MAX_14_PAIRS {
+                pair14_flat[i * MAX_14_PAIRS + count_i] = j as i32;
+                n_pairs14[i] += 1;
+            }
+            // Add i to j's 1-4 list (symmetric)
+            let count_j = n_pairs14[j] as usize;
+            if count_j < MAX_14_PAIRS {
+                pair14_flat[j * MAX_14_PAIRS + count_j] = i as i32;
+                n_pairs14[j] += 1;
+            }
+        }
+
+        self.stream.memcpy_htod(&pair14_flat, &mut self.d_pair14_list)?;
+        self.stream.memcpy_htod(&n_pairs14, &mut self.d_n_pairs14)?;
+
         self.topology_ready = true;
 
         log::info!(
-            "📤 Topology uploaded: {} bonds, {} angles, {} dihedrals",
+            "📤 Topology uploaded: {} bonds, {} angles, {} dihedrals, {} 1-4 pairs",
             self.n_bonds,
             self.n_angles,
-            self.n_dihedrals
+            self.n_dihedrals,
+            pairs_14.len()
         );
 
         Ok(())
@@ -445,6 +485,7 @@ impl AmberMegaFusedHmc {
 
         // Bind parameters
         let max_excl_i32 = MAX_EXCLUSIONS as i32;
+        let max_14_i32 = MAX_14_PAIRS as i32;
         let n_atoms_i32 = self.n_atoms as i32;
         let n_bonds_i32 = self.n_bonds as i32;
         let n_angles_i32 = self.n_angles as i32;
@@ -470,7 +511,10 @@ impl AmberMegaFusedHmc {
                 builder.arg(&self.d_nb_charge);
                 builder.arg(&self.d_exclusion_list);
                 builder.arg(&self.d_n_exclusions);
+                builder.arg(&self.d_pair14_list);
+                builder.arg(&self.d_n_pairs14);
                 builder.arg(&max_excl_i32);
+                builder.arg(&max_14_i32);
                 builder.arg(&n_atoms_i32);
                 builder.arg(&n_bonds_i32);
                 builder.arg(&n_angles_i32);
@@ -626,12 +670,12 @@ impl AmberMegaFusedHmc {
         self.stream.synchronize()?;
         self.neighbor_list_valid = true;
 
-        // Debug: check average neighbor count
+        // Debug: check average neighbor count (use debug level to avoid spam during rebuilds)
         let mut n_neighbors = vec![0i32; self.n_atoms];
         self.stream.memcpy_dtoh(&self.d_n_neighbors, &mut n_neighbors)?;
         let avg_neighbors: f64 = n_neighbors.iter().map(|&n| n as f64).sum::<f64>() / self.n_atoms as f64;
-        log::info!(
-            "✅ Neighbor lists built: avg {:.1} neighbors/atom (vs {} for O(N²))",
+        log::debug!(
+            "Neighbor lists built: avg {:.1} neighbors/atom (vs {} for O(N²))",
             avg_neighbors,
             self.n_atoms
         );
@@ -643,15 +687,20 @@ impl AmberMegaFusedHmc {
     ///
     /// Uses O(N) neighbor lists for non-bonded forces.
     /// Includes bonds, angles, dihedrals, LJ, and Coulomb.
+    /// BAOAB Langevin thermostat maintains temperature via friction + noise.
     ///
     /// # Arguments
     /// * `n_steps` - Number of integration steps
     /// * `dt` - Timestep in femtoseconds
     /// * `temperature` - Target temperature in Kelvin
+    /// * `gamma_fs` - Langevin friction coefficient in fs⁻¹
+    ///   - 0.001 (1 ps⁻¹): Production - preserves natural dynamics, τ = 1 ps
+    ///   - 0.01 (10 ps⁻¹): Equilibration - fast thermalization, τ = 100 fs
+    ///   - 0.1 (100 ps⁻¹): Aggressive - Brownian dynamics limit
     ///
     /// # Returns
     /// HMC run results including final energies and positions
-    pub fn run(&mut self, n_steps: usize, dt: f32, temperature: f32) -> Result<HmcRunResult> {
+    pub fn run(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma_fs: f32) -> Result<HmcRunResult> {
         if !self.topology_ready {
             return Err(anyhow::anyhow!("Topology not uploaded - call upload_topology first"));
         }
@@ -690,14 +739,26 @@ impl AmberMegaFusedHmc {
 
         // Bind all integer parameters to variables for stable references
         let max_excl_i32 = MAX_EXCLUSIONS as i32;
+        let max_14_i32 = MAX_14_PAIRS as i32;
         let n_atoms_i32 = self.n_atoms as i32;
         let n_bonds_i32 = self.n_bonds as i32;
         let n_angles_i32 = self.n_angles as i32;
         let n_dihedrals_i32 = self.n_dihedrals as i32;
 
-        log::info!("🏃 Running {} HMC steps on GPU (dt={}fs, T={}K)", n_steps, dt, temperature);
+        log::info!("🏃 Running {} HMC steps on GPU (dt={}fs, T={}K, γ={}fs⁻¹)", n_steps, dt, temperature, gamma_fs);
+
+        // Neighbor list rebuild interval - atoms move ~0.01 Å per step at 310K
+        // Rebuild every 50 steps to keep lists fresh (before atoms drift 0.5 Å)
+        const NEIGHBOR_REBUILD_INTERVAL: usize = 50;
 
         for step in 0..n_steps {
+            // Rebuild neighbor lists periodically to prevent stale interactions
+            if step > 0 && step % NEIGHBOR_REBUILD_INTERVAL == 0 {
+                self.stream.synchronize()?;
+                self.neighbor_list_valid = false;
+                self.build_neighbor_lists()?;
+            }
+
             // Launch mega-fused HMC step kernel
             let step_u32 = step as u32;
             unsafe {
@@ -719,13 +780,17 @@ impl AmberMegaFusedHmc {
                 builder.arg(&self.d_nb_mass);
                 builder.arg(&self.d_exclusion_list);
                 builder.arg(&self.d_n_exclusions);
+                builder.arg(&self.d_pair14_list);
+                builder.arg(&self.d_n_pairs14);
                 builder.arg(&max_excl_i32);
+                builder.arg(&max_14_i32);
                 builder.arg(&n_atoms_i32);
                 builder.arg(&n_bonds_i32);
                 builder.arg(&n_angles_i32);
                 builder.arg(&n_dihedrals_i32);
                 builder.arg(&dt);
                 builder.arg(&temperature);
+                builder.arg(&gamma_fs);  // Langevin friction coefficient
                 builder.arg(&step_u32);  // Step counter for RNG seeding
                 builder.launch(cfg)?;
             }
@@ -761,6 +826,14 @@ impl AmberMegaFusedHmc {
         let kb = 0.001987204; // kcal/(mol*K)
         let avg_temperature = 2.0 * avg_ke / (3.0 * self.n_atoms as f64 * kb);
 
+        // DIAGNOSTIC: Verify atom count and KE sanity
+        let expected_ke_at_target = 1.5 * self.n_atoms as f64 * kb * temperature as f64;
+        log::info!(
+            "🔬 DIAG: avg_ke={:.1}, expected_ke@{}K={:.1}, ratio={:.3}, n_atoms={}, n_samples={}",
+            avg_ke, temperature, expected_ke_at_target,
+            avg_ke / expected_ke_at_target, self.n_atoms, n_samples
+        );
+
         log::info!(
             "✅ HMC complete: PE={:.2} kcal/mol, KE={:.2} kcal/mol, T_avg={:.1}K",
             h_total_energy[0], h_kinetic_energy[0], avg_temperature
@@ -780,6 +853,65 @@ impl AmberMegaFusedHmc {
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
         self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         Ok(velocities)
+    }
+
+    /// Rescale velocities to target temperature (velocity rescaling thermostat)
+    ///
+    /// This maintains the canonical ensemble by scaling all velocities to achieve
+    /// the target temperature, compensating for numerical integration drift.
+    pub fn rescale_velocities(&mut self, target_temperature: f32) -> Result<()> {
+        if !self.velocities_initialized {
+            return Err(anyhow::anyhow!("Velocities not initialized"));
+        }
+
+        // Download current velocities and masses
+        let mut velocities = vec![0.0f32; self.n_atoms * 3];
+        let mut masses = vec![0.0f32; self.n_atoms];
+        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream.memcpy_dtoh(&self.d_nb_mass, &mut masses)?;
+
+        // Calculate current kinetic energy: KE = 0.5 * sum(m_i * v_i^2) / FORCE_TO_ACCEL
+        // FORCE_TO_ACCEL = 4.184e-4 converts velocity²*mass to kcal/mol
+        // Without this factor, the KE would be in wrong units (g/mol * Å²/fs²)
+        const FORCE_TO_ACCEL: f64 = 4.184e-4;
+        let mut kinetic_energy = 0.0f64;
+        for i in 0..self.n_atoms {
+            let vx = velocities[i * 3] as f64;
+            let vy = velocities[i * 3 + 1] as f64;
+            let vz = velocities[i * 3 + 2] as f64;
+            let m = masses[i] as f64;
+            kinetic_energy += 0.5 * m * (vx * vx + vy * vy + vz * vz) / FORCE_TO_ACCEL;
+        }
+
+        // Calculate current temperature: T = 2*KE / (3*N*kb)
+        // kb = 0.001987204 kcal/(mol*K)
+        let kb = 0.001987204f64;
+        let n_dof = (3 * self.n_atoms - 6).max(1) as f64; // 3N - 6 for non-linear molecule
+        let current_temp = 2.0 * kinetic_energy / (n_dof * kb);
+
+        if current_temp < 1.0 {
+            // Temperature too low, reinitialize
+            log::warn!("Temperature too low ({:.1}K), reinitializing velocities", current_temp);
+            return self.initialize_velocities(target_temperature);
+        }
+
+        // Calculate scaling factor: lambda = sqrt(T_target / T_current)
+        let scale_factor = ((target_temperature as f64) / current_temp).sqrt();
+
+        // Scale all velocities
+        for v in velocities.iter_mut() {
+            *v *= scale_factor as f32;
+        }
+
+        // Upload scaled velocities back to GPU
+        self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+
+        log::debug!(
+            "🌡️ Rescaled velocities: {:.1}K → {:.1}K (factor: {:.4})",
+            current_temp, target_temperature, scale_factor
+        );
+
+        Ok(())
     }
 }
 
@@ -808,6 +940,40 @@ pub fn build_exclusion_lists(
     }
 
     exclusions
+}
+
+/// Build 1-4 pair list from dihedral topology
+///
+/// 1-4 pairs are atoms separated by exactly 3 bonds (the first and last atoms of each dihedral).
+/// These need SCALED non-bonded interactions (AMBER ff14SB: LJ*0.5, Coulomb*0.833).
+///
+/// Returns: Vec of (atom_i, atom_j) pairs, deduplicated
+pub fn build_14_pairs(
+    dihedrals: &[(usize, usize, usize, usize, f32, f32, f32)],
+    exclusions: &[HashSet<usize>],
+    n_atoms: usize,
+) -> Vec<(usize, usize)> {
+    let mut pairs_14: HashSet<(usize, usize)> = HashSet::new();
+
+    for &(i, _j, _k, l, _, _, _) in dihedrals {
+        if i >= n_atoms || l >= n_atoms {
+            continue;
+        }
+
+        // Skip if this pair is already a 1-2 or 1-3 exclusion
+        // (can happen with ring systems)
+        if exclusions[i].contains(&l) {
+            continue;
+        }
+
+        // Canonicalize order (smaller index first) to avoid duplicates
+        let pair = if i < l { (i, l) } else { (l, i) };
+        pairs_14.insert(pair);
+    }
+
+    let mut result: Vec<_> = pairs_14.into_iter().collect();
+    result.sort(); // Sort for deterministic ordering
+    result
 }
 
 #[cfg(test)]

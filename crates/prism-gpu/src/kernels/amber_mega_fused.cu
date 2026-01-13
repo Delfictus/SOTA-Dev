@@ -70,9 +70,11 @@
 //
 // TUNING HISTORY:
 //   0.25 (ε=4r): Too weak - proteins unfold, RMSD drifts to ~15Å
-//   0.50 (ε=2r): Balanced - maintains H-bonds while preventing crunch
+//   0.35 (ε=2.9r): Testing with full protonation (more H charges)
+//   0.50 (ε=2r): Balanced - but PE explosion with full protonation
+//   1.00 (ε=1r): Too strong - causes structural collapse, PE explosion
 // ============================================================================
-#define IMPLICIT_SOLVENT_SCALE 0.5f  // 1/(2r) factor: 1/2 = 0.5 (stronger glue)
+#define IMPLICIT_SOLVENT_SCALE 0.25f  // ε=4r - standard implicit solvent screening
 
 // AKMA unit conversion for MD integration (MATCHING CPU amber_dynamics.rs)
 // Time in FEMTOSECONDS, velocities in Å/fs
@@ -82,13 +84,18 @@
 // σ[Å/fs] = sqrt(kB × T × 4.184e-4 / m)
 #define FORCE_TO_ACCEL 4.184e-4f
 
-// Maximum velocity to prevent numerical explosion (from CPU: 0.05 Å/fs)
-#define MAX_VELOCITY 0.05f
+// Maximum velocity to prevent numerical explosion
+// For hydrogen at 310K: σ_v = sqrt(kB*T*FORCE_TO_ACCEL/m) = 0.016 Å/fs
+// 0.2 Å/fs = 12σ → very rare in thermal motion, safe limit
+// This allows thermal motion while preventing runaway from force kicks
+#define MAX_VELOCITY 0.2f
 
 // Maximum force magnitude before capping (kcal/(mol·Å))
-// AGGRESSIVE CLAMPING: 1000 prevents explosion on severe steric clashes
-// This enables faster minimization with larger step sizes (0.01 Å)
-#define MAX_FORCE 1000.0f
+// REDUCED from 1000 to 200 to limit velocity kicks:
+// For H (m=1): a = 200 * 4.184e-4 / 1 = 0.084 Å/fs²
+// In half-kick (0.15fs): Δv = 0.013 Å/fs (manageable)
+// Steric clashes generate 10,000+ kcal/mol/Å forces - need strong limiting
+#define MAX_FORCE 200.0f
 
 // Soft limiting transition width (for smooth tanh-based limiting)
 #define SOFT_LIMIT_STEEPNESS 2.0f
@@ -865,7 +872,8 @@ __device__ void compute_all_bonded_forces_flat(
             float phi = atan2f(sin_phi, cos_phi);
 
             // V = k * (1 + cos(n*phi - phase))
-            float dV_dphi = pk * n * sinf(n * phi - phase);
+            // dV/dphi = -k * n * sin(n*phi - phase)  [note the negative!]
+            float dV_dphi = -pk * n * sinf(n * phi - phase);
             atomicAdd(energy, pk * (1.0f + cosf(n * phi - phase)));
 
             // Simplified force application (approximate)
@@ -1399,6 +1407,7 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
     // Configuration
     int n_atoms, int n_bonds, int n_angles, int n_dihedrals,
     float dt, float temperature,
+    float gamma_fs,    // Langevin friction coefficient in fs⁻¹ (typical: 0.001 for production, 0.01 for equilibration)
     unsigned int step  // Step counter for RNG seeding
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1453,8 +1462,12 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
     //
     // Reference: Leimkuhler & Matthews, "Molecular Dynamics" (2015)
     //
-    // Friction coefficient: γ = 1 ps⁻¹ = 0.001 fs⁻¹ (typical for proteins)
-    const float gamma_fs = 0.001f;  // 1/ps = 0.001/fs
+    // Friction coefficient γ is now a CONFIGURABLE PARAMETER (passed from Rust)
+    // Typical values:
+    //   γ = 0.001 fs⁻¹ (1 ps⁻¹)  - Production: preserves natural dynamics
+    //   γ = 0.01  fs⁻¹ (10 ps⁻¹) - Equilibration: fast thermalization (~100 steps)
+    //   γ = 0.1   fs⁻¹ (100 ps⁻¹)- Aggressive: Brownian dynamics limit
+    // gamma_fs is passed as kernel argument
     const float c = expf(-gamma_fs * dt);  // Ornstein-Uhlenbeck decay
     const float c2 = 1.0f - c * c;
 
@@ -1537,8 +1550,10 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
         vy += 0.5f * dt * ay;
         vz += 0.5f * dt * az;
 
-        // Soft limit velocities as final safety
-        soft_limit_velocity3(&vx, &vy, &vz, MAX_VELOCITY, SOFT_LIMIT_STEEPNESS);
+        // NOTE: Removed soft_limit_velocity3 - it's NOT energy-conserving and acts as
+        // an energy sink. When PE converts to KE (atoms relax), the soft limiter clips
+        // velocities and that energy is LOST. The Langevin friction (O-step) naturally
+        // controls velocities via the dissipation-fluctuation theorem.
 
         // Store velocities
         velocities[tid * 3] = vx;
@@ -1985,7 +2000,8 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
             float3 m1 = cross3(n1, b2);
             float sin_phi = dot3(m1, n2) / (norm3(m1) * norm_n2 + 1e-10f);
             float phi = atan2f(sin_phi, cos_phi);
-            float dV_dphi = pk * n * sinf(n * phi - phase);
+            // dV/dphi = -k * n * sin(n*phi - phase)  [note the negative!]
+            float dV_dphi = -pk * n * sinf(n * phi - phase);
             atomicAdd(total_energy, pk * (1.0f + cosf(n * phi - phase)));
             // Note: dihedral force contribution to slow_forces (simplified)
         }
@@ -2056,20 +2072,14 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
             velocities[tid * 3 + 1] += 0.5f * dt_inner * ffy * accel_factor;
             velocities[tid * 3 + 2] += 0.5f * dt_inner * ffz * accel_factor;
 
-            // Soft limit velocities
+            // Drift: x += dt_inner * v (soft limiting removed - not energy conserving)
             float vx = velocities[tid * 3];
             float vy = velocities[tid * 3 + 1];
             float vz = velocities[tid * 3 + 2];
-            soft_limit_velocity3(&vx, &vy, &vz, MAX_VELOCITY, SOFT_LIMIT_STEEPNESS);
 
-            // Drift: x += dt_inner * v
             positions[tid * 3] += dt_inner * vx;
             positions[tid * 3 + 1] += dt_inner * vy;
             positions[tid * 3 + 2] += dt_inner * vz;
-
-            velocities[tid * 3] = vx;
-            velocities[tid * 3 + 1] = vy;
-            velocities[tid * 3 + 2] = vz;
 
             // Inner half-kick: v += 0.5 * dt_inner * a_fast
             velocities[tid * 3] += 0.5f * dt_inner * ffx * accel_factor;
@@ -2111,16 +2121,10 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
         velocities[tid * 3 + 1] += 0.5f * dt_outer * sfy * accel_factor;
         velocities[tid * 3 + 2] += 0.5f * dt_outer * sfz * accel_factor;
 
-        // Final soft velocity limiting
+        // Compute kinetic energy (soft velocity limiting removed - not energy conserving)
         float vx = velocities[tid * 3];
         float vy = velocities[tid * 3 + 1];
         float vz = velocities[tid * 3 + 2];
-        soft_limit_velocity3(&vx, &vy, &vz, MAX_VELOCITY, SOFT_LIMIT_STEEPNESS);
-        velocities[tid * 3] = vx;
-        velocities[tid * 3 + 1] = vy;
-        velocities[tid * 3 + 2] = vz;
-
-        // Compute kinetic energy
         float v2 = vx*vx + vy*vy + vz*vz;
         float ke = 0.5f * mass * v2 / FORCE_TO_ACCEL;
         atomicAdd(kinetic_energy, ke);
@@ -2522,10 +2526,10 @@ extern "C" __global__ void amber_tda_biased_hmc_step_flat(
             velocities[tid * 3 + 1] += 0.5f * dt_inner * ffy * accel_factor;
             velocities[tid * 3 + 2] += 0.5f * dt_inner * ffz * accel_factor;
 
+            // Drift using current velocities (soft limiting removed - not energy conserving)
             float vx = velocities[tid * 3];
             float vy = velocities[tid * 3 + 1];
             float vz = velocities[tid * 3 + 2];
-            soft_limit_velocity3(&vx, &vy, &vz, MAX_VELOCITY, SOFT_LIMIT_STEEPNESS);
 
             positions[tid * 3] += dt_inner * vx;
             positions[tid * 3 + 1] += dt_inner * vy;
@@ -2564,14 +2568,10 @@ extern "C" __global__ void amber_tda_biased_hmc_step_flat(
         velocities[tid * 3 + 1] += 0.5f * dt_outer * sfy * accel_factor;
         velocities[tid * 3 + 2] += 0.5f * dt_outer * sfz * accel_factor;
 
+        // Compute KE (soft velocity limiting removed - not energy conserving)
         float vx = velocities[tid * 3];
         float vy = velocities[tid * 3 + 1];
         float vz = velocities[tid * 3 + 2];
-        soft_limit_velocity3(&vx, &vy, &vz, MAX_VELOCITY, SOFT_LIMIT_STEEPNESS);
-        velocities[tid * 3] = vx;
-        velocities[tid * 3 + 1] = vy;
-        velocities[tid * 3 + 2] = vz;
-
         float v2 = vx*vx + vy*vy + vz*vz;
         float ke = 0.5f * mass * v2 / FORCE_TO_ACCEL;
         atomicAdd(kinetic_energy, ke);

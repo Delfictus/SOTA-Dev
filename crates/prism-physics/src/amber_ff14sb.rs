@@ -248,7 +248,10 @@ impl AmberAtomType {
                 "CZ" => AmberAtomType::CA,
                 "NH1" | "NH2" => AmberAtomType::N2,
                 "HH11" | "HH12" | "HH21" | "HH22" => AmberAtomType::H,
-                _ => AmberAtomType::CT,
+                _ => {
+                    log::warn!("⚠️ UNKNOWN ATOM in ARG: '{}' → defaulting to CT", atom);
+                    AmberAtomType::CT
+                }
             },
 
             "HIS" | "HID" | "HIE" | "HIP" => match atom {
@@ -263,10 +266,20 @@ impl AmberAtomType {
                 "HE2" => AmberAtomType::H,
                 "CD2" => AmberAtomType::CV,
                 "HD2" => AmberAtomType::H,
-                _ => AmberAtomType::CC,
+                _ => {
+                    log::warn!("⚠️ UNKNOWN ATOM in HIS: '{}' → defaulting to CC", atom);
+                    AmberAtomType::CC
+                }
             },
 
-            _ => AmberAtomType::CT, // Default fallback
+            _ => {
+                // DEBUG: This catch-all may be hiding the real problem!
+                log::warn!(
+                    "⚠️ UNKNOWN RESIDUE/ATOM: res='{}' atom='{}' → defaulting to CT",
+                    res, atom
+                );
+                AmberAtomType::CT
+            }
         }
     }
 }
@@ -338,7 +351,7 @@ pub fn get_bond_param(type1: AmberAtomType, type2: AmberAtomType) -> Option<Bond
         (type2, type1)
     };
 
-    let (r0, k) = match (t1, t2) {
+    let result = match (t1, t2) {
         // Backbone bonds
         (N, H) | (N, HP) => (1.010, 434.0),
         (N, CT) => (1.449, 337.0),      // N-CA
@@ -366,6 +379,7 @@ pub fn get_bond_param(type1: AmberAtomType, type2: AmberAtomType) -> Option<Bond
         (CA, CA) => (1.400, 469.0),
         (CA, HA) => (1.080, 367.0),
         (CT, CA) => (1.510, 317.0),     // CT=2 < CA=15
+        (CT, CB) => (1.510, 317.0),     // CT=2 < CB=25 - aliphatic to aromatic β-carbon (PHE/TYR/TRP)
         (OH, CA) => (1.364, 450.0),     // Tyrosine: OH=10 < CA=15
         (N2, CA) => (1.340, 481.0),     // Arginine guanidinium: N2=8 < CA=15
         (CA, CB) => (1.404, 469.0),     // CA=15 < CB=25
@@ -383,6 +397,7 @@ pub fn get_bond_param(type1: AmberAtomType, type2: AmberAtomType) -> Option<Bond
         (NA, CC) => (1.385, 422.0),     // NA=19 < CC=21
         (NB, CC) => (1.394, 410.0),     // NB=20 < CC=21
         (CC, CV) => (1.375, 512.0),     // CC=21 < CV=23
+        (NB, CV) => (1.350, 488.0),     // NB=20 < CV=23 - HIS ring NB-CV bond (AMBER standard)
         (NA, CR) => (1.343, 477.0),     // NA=19 < CR=22
         (NB, CR) => (1.335, 488.0),     // NB=20 < CR=22
         (H, CR) => (1.080, 367.0),      // H=1 < CR=22
@@ -396,10 +411,17 @@ pub fn get_bond_param(type1: AmberAtomType, type2: AmberAtomType) -> Option<Bond
         (CA, CN) => (1.400, 469.0),     // CA=15 < CN=24
         (NA, CN) => (1.380, 428.0),     // NA=19 < CN=24
 
-        _ => return None,
+        _ => {
+            // DEBUG: Log every failed bond parameter lookup
+            log::warn!(
+                "⚠️ MISSING BOND PARAM: {:?}-{:?} (canonicalized from {:?}-{:?})",
+                t1, t2, type1, type2
+            );
+            return None;
+        }
     };
 
-    Some(BondParam { r0, k })
+    Some(BondParam { r0: result.0, k: result.1 })
 }
 
 /// Get angle parameters for a triplet of atom types
@@ -411,100 +433,133 @@ pub fn get_angle_param(type1: AmberAtomType, type2: AmberAtomType, type3: AmberA
 
     let (theta0_deg, k) = match (type1, type2, type3) {
         // Backbone angles
-        (H, N, CT) | (HP, N, CT) => (118.0, 50.0),
+        (H, N, CT) | (HP, N, CT) | (CT, N, H) | (CT, N, HP) => (118.0, 50.0),  // symmetric
         (CT, N, C) => (121.9, 50.0),     // CA-N-C (peptide)
         (H, N, C) => (119.8, 50.0),
-        (N, CT, C) => (110.1, 63.0),     // N-CA-C
-        (N, CT, CT) => (109.7, 80.0),    // N-CA-CB
-        (CT, CT, C) => (111.1, 63.0),    // CB-CA-C
-        (CT, C, O) => (120.4, 80.0),     // CA-C=O
-        (CT, C, N) => (116.6, 70.0),     // CA-C-N
-        (O, C, N) => (122.9, 80.0),      // O=C-N
+        (N, CT, C) | (C, CT, N) => (110.1, 63.0),     // N-CA-C (symmetric)
+        (N, CT, CT) | (CT, CT, N) => (109.7, 80.0),    // N-CA-CB (symmetric)
+        (CT, CT, C) | (C, CT, CT) => (111.1, 63.0),    // CB-CA-C (symmetric)
+        (CT, C, O) | (O, C, CT) => (120.4, 80.0),     // CA-C=O (symmetric)
+        (CT, C, N) | (N, C, CT) => (116.6, 70.0),     // CA-C-N (symmetric)
+        (O, C, N) | (N, C, O) => (122.9, 80.0),      // O=C-N (symmetric)
         (C, N, CT) => (121.9, 50.0),     // C-N-CA (next)
+        (CT, N, CT) => (118.0, 70.0),    // Proline ring N
 
-        // Alpha hydrogen
-        (N, CT, H1) => (109.5, 50.0),
-        (C, CT, H1) => (109.5, 50.0),
-        (H1, CT, CT) => (109.5, 50.0),
+        // Alpha hydrogen (symmetric)
+        (N, CT, H1) | (H1, CT, N) => (109.5, 50.0),
+        (C, CT, H1) | (H1, CT, C) => (109.5, 50.0),
+        (H1, CT, CT) | (CT, CT, H1) => (109.5, 50.0),
         (H1, CT, H1) => (109.5, 35.0),
+        (N, CT, HC) | (HC, CT, N) => (109.5, 50.0),  // Backbone N to sidechain H
+        (C, CT, HC) | (HC, CT, C) => (109.5, 50.0),  // Carbonyl to methyl H
 
         // Aliphatic angles
         (CT, CT, CT) => (109.5, 40.0),
-        (CT, CT, HC) => (109.5, 50.0),
+        (CT, CT, HC) | (HC, CT, CT) => (109.5, 50.0),
         (HC, CT, HC) => (109.5, 35.0),
-        (CT, CT, H1) => (109.5, 50.0),
 
         // Carboxylate angles
         (CT, C, O2) => (117.0, 70.0),
         (O2, C, O2) => (126.0, 80.0),
 
         // Hydroxyl angles
-        (CT, CT, OH) => (109.5, 50.0),
-        (CT, OH, HO) => (108.5, 55.0),
-        (H1, CT, OH) => (109.5, 50.0),
+        (CT, CT, OH) | (OH, CT, CT) => (109.5, 50.0),
+        (CT, OH, HO) | (HO, OH, CT) => (108.5, 55.0),
+        (H1, CT, OH) | (OH, CT, H1) => (109.5, 50.0),
 
-        // Sulfur angles
-        (CT, CT, SH) => (108.6, 50.0),
-        (CT, SH, HS) => (96.0, 43.0),
-        (CT, CT, S) => (114.7, 50.0),
+        // Sulfur angles (symmetric)
+        (CT, CT, SH) | (SH, CT, CT) => (108.6, 50.0),
+        (CT, SH, HS) | (HS, SH, CT) => (96.0, 43.0),
+        (CT, CT, S) | (S, CT, CT) => (114.7, 50.0),
         (CT, S, CT) => (98.9, 62.0),
-        (CT, S, S) => (103.7, 68.0),     // Disulfide
+        (CT, S, S) | (S, S, CT) => (103.7, 68.0),     // Disulfide
+        (H1, CT, S) | (S, CT, H1) => (109.5, 50.0),   // Sulfur-alpha H
+        (H1, CT, SH) | (SH, CT, H1) => (109.5, 50.0), // Thiol-alpha H
 
-        // Aromatic angles
+        // Aromatic angles (symmetric)
         (CA, CA, CA) => (120.0, 63.0),
-        (CA, CA, HA) => (120.0, 50.0),
-        (CA, CA, CT) => (120.0, 70.0),
-        (CA, CA, OH) => (120.0, 70.0),
-        (CT, CA, CA) => (120.0, 70.0),
-        (CA, OH, HO) => (113.0, 50.0),
+        (CA, CA, HA) | (HA, CA, CA) => (120.0, 50.0),
+        (CA, CA, CT) | (CT, CA, CA) => (120.0, 70.0),
+        (CA, CA, OH) | (OH, CA, CA) => (120.0, 70.0),
+        (CA, OH, HO) | (HO, OH, CA) => (113.0, 50.0),
+        (CT, CT, CA) | (CA, CT, CT) => (109.5, 63.0), // Aliphatic to aromatic
+        (HC, CT, CA) | (CA, CT, HC) => (109.5, 50.0), // H on CB next to aromatic
 
-        // Charged sidechain angles
-        (CT, CT, N3) => (111.2, 80.0),   // Lysine
-        (CT, N3, HP) => (109.5, 50.0),
+        // Charged sidechain angles (symmetric)
+        (CT, CT, N3) | (N3, CT, CT) => (111.2, 80.0),   // Lysine
+        (CT, N3, HP) | (HP, N3, CT) => (109.5, 50.0),
         (HP, N3, HP) => (109.5, 35.0),
-        (CT, CT, N2) => (111.2, 80.0),   // Arginine
-        (CT, N2, H) => (118.4, 50.0),
-        (CA, N2, H) => (120.0, 50.0),
+        (HC, CT, N3) | (N3, CT, HC) => (109.5, 50.0),   // Lysine CE-H to NZ (CT-centered)
+        (CT, N3, HC) | (HC, N3, CT) => (109.5, 50.0),   // Lysine C-N-H (N3-centered)
+        (CT, CT, N2) | (N2, CT, CT) => (111.2, 80.0),   // Arginine
+        (CT, N2, H) | (H, N2, CT) => (118.4, 50.0),
+        (CA, N2, H) | (H, N2, CA) => (120.0, 50.0),
         (N2, CA, N2) => (120.0, 70.0),
-        (CT, N2, CA) => (123.2, 50.0),
+        (CT, N2, CA) | (CA, N2, CT) => (123.2, 50.0),
+        (HC, CT, N2) | (N2, CT, HC) => (109.5, 50.0),   // Arginine CD-H to NE (CT-centered)
+        (CT, N2, HC) | (HC, N2, CT) => (120.0, 50.0),   // Arginine C-N-H (N2-centered)
+        (H, N2, H) => (120.0, 35.0),                     // Guanidinium H-N-H
+        (H, N2, HC) | (HC, N2, H) => (120.0, 35.0),     // Guanidinium mixed H
 
-        // Histidine angles
-        (CT, CC, NA) => (120.0, 70.0),
-        (CT, CC, CV) => (120.0, 70.0),
-        (CT, CC, NB) => (120.0, 70.0),
-        (NA, CC, CV) => (120.0, 70.0),
-        (NA, CC, NB) => (120.0, 70.0),
-        (CC, NA, CR) => (105.4, 70.0),
-        (CC, NA, H) => (126.4, 50.0),
-        (CR, NA, H) => (128.2, 50.0),
-        (NA, CR, NB) => (111.6, 70.0),
-        (NA, CR, H) => (124.2, 50.0),
-        (NB, CR, H) => (124.2, 50.0),
-        (CC, NB, CR) => (103.8, 70.0),
-        (CC, CV, H) => (130.0, 50.0),
-        (NB, CV, H) => (120.0, 50.0),
-        (CC, CV, NB) => (110.0, 70.0),
+        // Histidine angles (symmetric)
+        (CT, CT, CC) | (CC, CT, CT) => (109.5, 63.0),  // CA-CB-CG angle
+        (CT, CC, NA) | (NA, CC, CT) => (120.0, 70.0),
+        (CT, CC, CV) | (CV, CC, CT) => (120.0, 70.0),
+        (CT, CC, NB) | (NB, CC, CT) => (120.0, 70.0),
+        (NA, CC, CV) | (CV, CC, NA) => (120.0, 70.0),
+        (NA, CC, NB) | (NB, CC, NA) => (120.0, 70.0),
+        (CC, NA, CR) | (CR, NA, CC) => (105.4, 70.0),
+        (CC, NA, H) | (H, NA, CC) => (126.4, 50.0),
+        (CR, NA, H) | (H, NA, CR) => (128.2, 50.0),
+        (NA, CR, NB) | (NB, CR, NA) => (111.6, 70.0),
+        (NA, CR, H) | (H, CR, NA) => (124.2, 50.0),
+        (NB, CR, H) | (H, CR, NB) => (124.2, 50.0),
+        (CC, NB, CR) | (CR, NB, CC) => (103.8, 70.0),
+        (CC, NB, CV) | (CV, NB, CC) => (105.0, 70.0),  // HIS ring NB-CV connection
+        (CR, NB, CV) | (CV, NB, CR) => (110.0, 70.0),  // HIS ring
+        (CC, CV, H) | (H, CV, CC) => (130.0, 50.0),
+        (NB, CV, H) | (H, CV, NB) => (120.0, 50.0),
+        (CC, CV, NB) | (NB, CV, CC) => (110.0, 70.0),
+        (HC, CT, CC) | (CC, CT, HC) => (109.5, 50.0),  // HIS CB-H angles
 
         // Amide angles (ASN, GLN) - note: some patterns covered above
         (C, N, H) => (119.8, 50.0),
         (H, N, H) => (120.0, 35.0),
 
-        // Tryptophan angles
-        (CA, CB, CB) => (117.0, 63.0),
-        (CA, CB, CW) => (133.0, 63.0),
-        (CB, CB, CN) => (116.0, 63.0),
-        (CB, CW, NA) => (108.7, 70.0),
-        (CB, CW, H) => (130.0, 50.0),
-        (NA, CW, H) => (121.0, 50.0),
-        (CW, NA, CN) => (111.6, 70.0),
-        (CW, NA, H) => (125.0, 50.0),
-        (CN, NA, H) => (123.0, 50.0),
-        (NA, CN, CA) => (132.0, 70.0),
-        (NA, CN, CB) => (108.0, 70.0),
-        (CA, CN, CB) => (120.0, 63.0),
-        (CN, CA, CA) => (120.0, 63.0),
+        // Tryptophan angles (with symmetric patterns)
+        (CA, CB, CB) | (CB, CB, CA) => (117.0, 63.0),      // CB-centered: CA and CB outer
+        (CA, CB, CW) | (CW, CB, CA) => (133.0, 63.0),      // CB-centered: CA and CW outer
+        (CT, CB, CB) | (CB, CB, CT) => (117.0, 63.0),      // CB-centered: CT and CB outer (backbone junction)
+        (CT, CB, CW) | (CW, CB, CT) => (126.0, 63.0),      // CB-centered: CT and CW outer (TRP Cβ)
+        (CN, CB, CA) | (CA, CB, CN) => (117.0, 63.0),      // CB-centered: CN and CA outer
+        (CB, CB, CN) | (CN, CB, CB) => (116.0, 63.0),      // CB-centered: CB and CN outer
+        (CB, CW, NA) | (NA, CW, CB) => (108.7, 70.0),      // CW-centered
+        (CB, CW, H) | (H, CW, CB) => (130.0, 50.0),        // CW-centered
+        (NA, CW, H) | (H, CW, NA) => (121.0, 50.0),        // CW-centered
+        (CW, NA, CN) | (CN, NA, CW) => (111.6, 70.0),      // NA-centered
+        (CW, NA, H) | (H, NA, CW) => (125.0, 50.0),        // NA-centered
+        (CN, NA, H) | (H, NA, CN) => (123.0, 50.0),        // NA-centered
+        (NA, CN, CA) | (CA, CN, NA) => (132.0, 70.0),      // CN-centered
+        (NA, CN, CB) | (CB, CN, NA) => (108.0, 70.0),      // CN-centered
+        (CA, CN, CB) | (CB, CN, CA) => (120.0, 63.0),      // CN-centered
+        (CN, CA, CA) | (CA, CA, CN) => (120.0, 63.0),      // CA-centered
 
-        _ => return None,
+        // Aromatic CB with aliphatic CT (PHE/TYR/TRP Cα-Cβ junction)
+        (CT, CT, CB) | (CB, CT, CT) => (109.5, 63.0),      // CT-centered: backbone to aromatic
+        (CB, CT, HC) | (HC, CT, CB) => (109.5, 50.0),      // CT-centered: H on CT next to aromatic CB
+        (CB, CA, HA) | (HA, CA, CB) => (120.0, 50.0),      // CA-centered: aromatic ring H
+        (CB, CA, CA) | (CA, CA, CB) => (120.0, 63.0),      // CA-centered: CB to CA aromatic ring
+        (CN, CA, HA) | (HA, CA, CN) => (120.0, 50.0),      // CA-centered: TRP ring junction
+        (CW, CB, CB) | (CB, CB, CW) => (107.0, 63.0),      // CB-centered: TRP 5-ring/6-ring junction
+
+        _ => {
+            // DEBUG: Log every failed angle parameter lookup
+            log::warn!(
+                "⚠️ MISSING ANGLE PARAM: {:?}-{:?}-{:?}",
+                type1, type2, type3
+            );
+            return None;
+        }
     };
 
     Some(AngleParam {
