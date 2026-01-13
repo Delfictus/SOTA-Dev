@@ -43,20 +43,17 @@ use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_an
 // γ = 0.5 fs⁻¹, dt = 0.1 fs → c = exp(-0.05) ≈ 0.951 (good damping)
 // γ = 0.1 fs⁻¹, dt = 0.2 fs → c = exp(-0.02) ≈ 0.980 (light damping)
 
-/// Heating friction: γ = 0.2 fs⁻¹ (200 ps⁻¹) - moderate damping for heating
-/// - τ = 5 fs - allows temperature to reach target
-/// - Balanced between stability and thermostat effectiveness
-const GAMMA_HEATING: f32 = 0.2;
+/// Heating friction: γ = 1.0 fs⁻¹ - strong damping for heating
+/// - τ = 1 fs - forces system to target temperature quickly
+const GAMMA_HEATING: f32 = 1.0;
 
-/// Equilibration friction: γ = 0.5 fs⁻¹ (500 ps⁻¹) - moderate-strong damping
-/// - τ = 2 fs - prevents energy spikes
-/// - Gradually stabilizes after heating
-const GAMMA_EQUILIBRATION: f32 = 0.5;
+/// Equilibration friction: γ = 1.0 fs⁻¹ - strong damping
+/// - τ = 1 fs - prevents energy spikes
+const GAMMA_EQUILIBRATION: f32 = 1.0;
 
-/// Production friction: γ = 0.35 fs⁻¹ (350 ps⁻¹) - moderate-strong damping
-/// - τ = ~3 fs - balanced temperature control and dynamics
-/// - Prevents runaway heating while allowing some thermal motion
-const GAMMA_PRODUCTION: f32 = 0.35;
+/// Production friction: γ = 1.0 fs⁻¹ - strong damping for temperature control
+/// - τ = 1 fs - prioritize temperature stability over dynamics
+const GAMMA_PRODUCTION: f32 = 1.0;
 
 /// AMBER Path - Stable sampling with proven AMBER ff14SB
 ///
@@ -201,6 +198,7 @@ impl SamplingBackend for AmberPath {
         let enm_bonds = add_native_contacts(&pdb_atoms, &mut topology);
         log::info!("🔗 ENM: Added {} native contact bonds (k={}, cutoff={}Å)", enm_bonds, ENM_FORCE_CONSTANT, ENM_CUTOFF);
 
+
         // Create AmberMegaFusedHmc GPU kernel
         let mut hmc = AmberMegaFusedHmc::new(self.context.clone(), n_atoms)
             .context("AmberPath: Failed to initialize AmberMegaFusedHmc GPU kernel")?;
@@ -236,6 +234,28 @@ impl SamplingBackend for AmberPath {
         }
         log::info!("✅ Physics Check: All {} bonds valid ({} H-bonds verified)", bonds.len(), h_bonds_checked);
 
+        // ========================================================================
+        // BOUNDS CHECK: Verify all atom indices are valid
+        // ========================================================================
+        let mut max_bond_idx = 0usize;
+        for (ai, aj, _, _) in &bonds {
+            max_bond_idx = max_bond_idx.max(*ai).max(*aj);
+        }
+        let mut max_angle_idx = 0usize;
+        for (ai, aj, ak, _, _) in &angles {
+            max_angle_idx = max_angle_idx.max(*ai).max(*aj).max(*ak);
+        }
+        let mut max_dihedral_idx = 0usize;
+        for (ai, aj, ak, al, _, _, _) in &dihedrals {
+            max_dihedral_idx = max_dihedral_idx.max(*ai).max(*aj).max(*ak).max(*al);
+        }
+        log::info!("🔍 Bounds Check: n_atoms={}, max_bond_idx={}, max_angle_idx={}, max_dihedral_idx={}",
+            n_atoms, max_bond_idx, max_angle_idx, max_dihedral_idx);
+        if max_bond_idx >= n_atoms || max_angle_idx >= n_atoms || max_dihedral_idx >= n_atoms {
+            bail!("CRITICAL: Atom index out of bounds! n_atoms={}, max indices: bond={}, angle={}, dihedral={}",
+                n_atoms, max_bond_idx, max_angle_idx, max_dihedral_idx);
+        }
+
         hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
             .context("AmberPath: Failed to upload topology to GPU")?;
 
@@ -245,38 +265,30 @@ impl SamplingBackend for AmberPath {
         // This prevents "hot start" issues where severe clashes cause explosive dynamics.
         // The Langevin thermostat works best when starting from a relaxed state.
 
-        // Stage 1: Energy Minimization (10000 steps @ 0.001 Å)
-        // - Small step size (0.001 Å) for stability per SOTA recommendation
-        // - CUDA kernel has dual safety: force clamping (1000) + displacement clamping (0.2 Å)
-        log::info!("AmberPath: Stage 1/3 - Energy minimization (10000 steps, 0.001 Å)...");
-        let final_energy = hmc.minimize(10000, 0.001)
+        // Stage 1: Energy Minimization (10000 steps @ 0.0001 Å)
+        // - VERY small step size (0.0001 Å) for debugging
+        // - CUDA kernel has dual safety: force clamping (300) + displacement clamping (0.2 Å)
+        log::info!("AmberPath: Stage 1/3 - Energy minimization (10000 steps, 0.0001 Å)...");
+        let final_energy = hmc.minimize(10000, 0.0001)
             .context("AmberPath: Energy minimization failed")?;
         log::info!("AmberPath: Minimization complete, PE = {:.2} kcal/mol", final_energy);
 
-        // Stage 2: Linear Heating Ramp (50K → 310K over 200 steps)
-        // - 50 steps per temperature stage with very high friction (γ=1.0 fs⁻¹)
-        // - τ = 1 fs means system tracks target temperature within ~3 steps
-        // - Linear ramp prevents thermal shock that causes PE explosion
-        log::info!("AmberPath: Stage 2/3 - Linear heating (50K → 280K, γ={} fs⁻¹)...", GAMMA_HEATING);
-        const HEATING_STEPS_PER_STAGE: usize = 50;
-        let heating_temps = [50.0f32, 100.0, 150.0, 200.0, 250.0, 280.0];
+        // Stage 2: Gentle Heating to LOW temperature (50K → 100K)
+        // Using very low temperature to prevent unfolding in implicit solvent
+        log::info!("AmberPath: Stage 2/3 - Gentle heating (50K → 100K, γ={} fs⁻¹)...", GAMMA_HEATING);
+        const HEATING_STEPS_PER_STAGE: usize = 200;
+        let heating_temps = [50.0f32, 75.0, 100.0];
         for temp in heating_temps {
-            // Very high friction + small timestep for stability during heating
-            let result = hmc.run(HEATING_STEPS_PER_STAGE, 0.1, temp, GAMMA_HEATING)
+            let result = hmc.run(HEATING_STEPS_PER_STAGE, 0.05, temp, GAMMA_HEATING)
                 .with_context(|| format!("AmberPath: Heating at {}K failed", temp))?;
             log::info!("  Heating {}K: PE={:.1} kcal/mol, T_avg={:.1}K",
                 temp, result.potential_energy, result.avg_temperature);
         }
-        log::info!("AmberPath: Heating complete, system at 310K");
+        log::info!("AmberPath: Heating complete (target 100K for implicit solvent stability)");
 
-        // Stage 3: Brief Equilibration (2000 steps at 310K)
-        // - 2000 steps * 0.1 fs = 200 fs equilibration time
-        // - Short equilibration prevents PE explosion from force field artifacts
-        log::info!("AmberPath: Stage 3/3 - Equilibration (2000 steps at 280K, γ={} fs⁻¹)...", GAMMA_EQUILIBRATION);
-        let eq_result = hmc.run(2000, 0.1, 280.0, GAMMA_EQUILIBRATION)
-            .context("AmberPath: Equilibration failed")?;
-        log::info!("AmberPath: Equilibration complete, PE = {:.2} kcal/mol, T_avg = {:.1}K",
-            eq_result.potential_energy, eq_result.avg_temperature);
+        // Stage 3: SKIP EQUILIBRATION - go straight to production
+        // Equilibration causes PE explosion in implicit solvent
+        log::info!("AmberPath: Stage 3/3 - SKIPPED (PE explosion issue)");
 
         self.structure = Some(structure);
         self.hmc = Some(hmc);
@@ -307,14 +319,13 @@ impl SamplingBackend for AmberPath {
         );
 
         // Sample conformations with PRODUCTION friction
-        // - timestep: 0.2 fs for stability (smaller than 0.3 for better force accuracy)
+        // - timestep: 0.05 fs for maximum stability
         // - gamma: GAMMA_PRODUCTION (1.0 fs⁻¹) strong coupling for temperature control
-        // - C-H bond vibrates at ~3000 cm⁻¹ (period ~10 fs), ~50 points/oscillation
-        let timestep_fs = 0.2;
+        let timestep_fs = 0.05;
 
-        // REDUCED TEMPERATURE: 280K for implicit solvent stability
-        // 310K causes unfolding in implicit solvent; 280K balances dynamics and stability
-        let target_temp = 280.0;
+        // VERY LOW TEMPERATURE: 100K for implicit solvent stability
+        // Higher temperatures cause unfolding; 100K provides minimal dynamics while stable
+        let target_temp = 100.0;
 
         log::info!("AmberPath: Production sampling (dt={}fs, γ={} fs⁻¹, τ={:.1} fs, T_target={}K)",
             timestep_fs, GAMMA_PRODUCTION, 1.0 / GAMMA_PRODUCTION, target_temp);
@@ -557,7 +568,7 @@ fn flat_to_3d(flat: &[f32], n_residues: usize) -> Vec<[f32; 3]> {
 /// ENM parameters - tuned for implicit solvent stability
 const ENM_CUTOFF: f32 = 12.0;          // Å - max CA-CA distance for contact (captures more tertiary contacts)
 const ENM_SEQ_SEP: i32 = 4;            // min residue separation (skip nearest neighbors)
-const ENM_FORCE_CONSTANT: f32 = 20.0;  // kcal/mol/Å² - strong restraint (prevents unfolding at 310K)
+const ENM_FORCE_CONSTANT: f32 = 0.1;  // kcal/mol/Å² - weak restraint
 
 /// Add native contact bonds between CA atoms for structural stability
 ///

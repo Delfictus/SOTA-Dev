@@ -531,6 +531,24 @@ impl AmberMegaFusedHmc {
 
                 if step == 0 {
                     log::info!("  Step 0: PE = {:.2} kcal/mol", energy[0]);
+                    // Download and analyze forces
+                    let mut forces = vec![0.0f32; self.n_atoms * 3];
+                    self.stream.memcpy_dtoh(&self.d_forces, &mut forces)?;
+                    let mut max_force = 0.0f32;
+                    let mut total_force_mag = 0.0f32;
+                    let mut n_large = 0;
+                    for i in 0..self.n_atoms {
+                        let fx = forces[i * 3];
+                        let fy = forces[i * 3 + 1];
+                        let fz = forces[i * 3 + 2];
+                        let mag = (fx*fx + fy*fy + fz*fz).sqrt();
+                        if mag > max_force { max_force = mag; }
+                        total_force_mag += mag;
+                        if mag > 100.0 { n_large += 1; }
+                    }
+                    let avg_force = total_force_mag / self.n_atoms as f32;
+                    log::info!("  Force stats: max={:.1}, avg={:.1}, n_large(>100)={}/{}",
+                        max_force, avg_force, n_large, self.n_atoms);
                 } else if step == n_steps - 1 {
                     log::info!("  Step {}: PE = {:.2} kcal/mol (final)", step, energy[0]);
                 }
