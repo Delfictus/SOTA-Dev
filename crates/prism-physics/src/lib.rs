@@ -22,6 +22,14 @@ pub mod molecular_dynamics;
 // AMBER ff14SB force field implementation
 pub mod amber_ff14sb;
 
+// TIP3P water model for explicit solvent
+pub mod water_model;
+pub use water_model::{TIP3PWater, WaterMolecule, Ion, IonType};
+
+// Solvation box builder for explicit solvent simulations
+pub mod solvation;
+pub use solvation::{SolvationBox, SolvationConfig};
+
 // AMBER all-atom dynamics (HMC/Langevin integration)
 pub mod amber_dynamics;
 pub use amber_dynamics::{AmberSimulator, AmberSimConfig, AmberSimResult, TrajectoryFrame as AmberTrajectoryFrame};

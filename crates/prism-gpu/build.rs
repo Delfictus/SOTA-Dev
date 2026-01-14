@@ -32,6 +32,10 @@ fn main() {
         return;
     }
 
+    // Link cuFFT library (part of CUDA toolkit, not an external dependency)
+    println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
+    println!("cargo:rustc-link-lib=cufft");
+
     // Locate nvcc compiler
     let nvcc = find_nvcc().expect("nvcc not found. Ensure CUDA toolkit is installed.");
 
@@ -244,6 +248,46 @@ fn main() {
         "src/kernels/prism_nova.cu",
         &ptx_dir.join("prism_nova.ptx"),
         &target_ptx_dir.join("prism_nova.ptx"),
+    );
+
+    // Compile AMBER Bonded Forces kernel (ff14SB force field - bonds, angles, dihedrals, 1-4)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/amber_bonded.cu",
+        &ptx_dir.join("amber_bonded.ptx"),
+        &target_ptx_dir.join("amber_bonded.ptx"),
+    );
+
+    // Compile AMBER Mega-Fused HMC kernel (full AMBER ff14SB + BAOAB Langevin thermostat)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/amber_mega_fused.cu",
+        &ptx_dir.join("amber_mega_fused.ptx"),
+        &target_ptx_dir.join("amber_mega_fused.ptx"),
+    );
+
+    // Compile PME kernel (Particle Mesh Ewald long-range electrostatics)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/pme.cu",
+        &ptx_dir.join("pme.ptx"),
+        &target_ptx_dir.join("pme.ptx"),
+    );
+
+    // Compile SETTLE kernel (rigid water constraint solver)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/settle.cu",
+        &ptx_dir.join("settle.ptx"),
+        &target_ptx_dir.join("settle.ptx"),
+    );
+
+    // Compile H-bond Constraints kernel (analytic SHAKE/RATTLE for protein X-H bonds)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/h_constraints.cu",
+        &ptx_dir.join("h_constraints.ptx"),
+        &target_ptx_dir.join("h_constraints.ptx"),
     );
 
     println!("cargo:info=PTX compilation completed successfully");

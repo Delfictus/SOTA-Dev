@@ -2,6 +2,9 @@
 //!
 //! Complete molecular dynamics in a single GPU kernel launch.
 //! Uses flat arrays for GPU transfer compatibility.
+//!
+//! Supports both implicit solvent (distance-dependent dielectric) and
+//! explicit solvent (TIP3P water with PME electrostatics and SETTLE constraints).
 
 use anyhow::{Context, Result};
 use cudarc::driver::{
@@ -11,6 +14,11 @@ use cudarc::driver::{
 use cudarc::nvrtc::Ptx;
 use std::collections::HashSet;
 use std::sync::Arc;
+
+// Explicit solvent components
+use crate::pme::PME;
+use crate::settle::Settle;
+use crate::h_constraints::{HConstraints, HConstraintCluster};
 
 /// Maximum exclusions per atom (1-2, 1-3 bonded pairs)
 pub const MAX_EXCLUSIONS: usize = 32;
@@ -51,6 +59,14 @@ pub struct AmberMegaFusedHmc {
     // Cell list kernels (O(N) non-bonded)
     build_cell_list_kernel: CudaFunction,
     build_neighbor_list_kernel: CudaFunction,
+
+    // PBC kernel (for explicit solvent)
+    set_pbc_box_kernel: CudaFunction,
+
+    // Velocity Verlet kernels (proper 2-force-eval integrator)
+    compute_forces_kernel: CudaFunction,
+    vv_step1_kernel: CudaFunction,
+    vv_step2_kernel: CudaFunction,
 
     // Device buffers - State (as flat f32 arrays)
     d_positions: CudaSlice<f32>,      // [n_atoms * 3]
@@ -102,6 +118,24 @@ pub struct AmberMegaFusedHmc {
     topology_ready: bool,
     velocities_initialized: bool,
     neighbor_list_valid: bool,
+
+    // Periodic boundary conditions (for explicit solvent)
+    pbc_enabled: bool,
+    box_dimensions: [f32; 3],
+
+    // Explicit solvent components (optional)
+    pme: Option<PME>,
+    settle: Option<Settle>,
+    d_old_positions: Option<CudaSlice<f32>>,  // For SETTLE constraint projection
+
+    // H-bond constraints for protein (optional)
+    h_constraints: Option<HConstraints>,
+
+    // Position restraints (for stabilizing protein in implicit solvent)
+    d_restrained_atoms: Option<CudaSlice<i32>>,
+    d_ref_positions: Option<CudaSlice<f32>>,
+    n_restrained: usize,
+    k_restraint: f32,
 }
 
 impl AmberMegaFusedHmc {
@@ -143,7 +177,23 @@ impl AmberMegaFusedHmc {
             .load_function("build_neighbor_list")
             .context("Failed to load build_neighbor_list")?;
 
-        log::info!("📦 Cell list kernels loaded for O(N) non-bonded");
+        // Load PBC kernel for explicit solvent
+        let set_pbc_box_kernel = module
+            .load_function("set_pbc_box")
+            .context("Failed to load set_pbc_box")?;
+
+        // Load velocity Verlet kernels (proper 2-force-eval integrator)
+        let compute_forces_kernel = module
+            .load_function("compute_forces_only")
+            .context("Failed to load compute_forces_only")?;
+        let vv_step1_kernel = module
+            .load_function("velocity_verlet_step1")
+            .context("Failed to load velocity_verlet_step1")?;
+        let vv_step2_kernel = module
+            .load_function("velocity_verlet_step2")
+            .context("Failed to load velocity_verlet_step2")?;
+
+        log::info!("📦 Cell list, PBC, and Velocity Verlet kernels loaded");
 
         // Allocate state buffers
         let d_positions = stream.alloc_zeros::<f32>(n_atoms * 3)?;
@@ -194,6 +244,10 @@ impl AmberMegaFusedHmc {
             minimize_kernel,
             build_cell_list_kernel,
             build_neighbor_list_kernel,
+            set_pbc_box_kernel,
+            compute_forces_kernel,
+            vv_step1_kernel,
+            vv_step2_kernel,
             d_positions,
             d_velocities,
             d_forces,
@@ -229,6 +283,16 @@ impl AmberMegaFusedHmc {
             topology_ready: false,
             velocities_initialized: false,
             neighbor_list_valid: false,
+            pbc_enabled: false,
+            box_dimensions: [0.0, 0.0, 0.0],
+            pme: None,
+            settle: None,
+            d_old_positions: None,
+            h_constraints: None,
+            d_restrained_atoms: None,
+            d_ref_positions: None,
+            n_restrained: 0,
+            k_restraint: 0.0,
         })
     }
 
@@ -408,6 +472,253 @@ impl AmberMegaFusedHmc {
         self.topology_ready
     }
 
+    /// Enable periodic boundary conditions
+    ///
+    /// Sets the box dimensions on the GPU and enables PBC wrapping
+    /// during integration.
+    ///
+    /// # Arguments
+    /// * `dims` - Box dimensions [Lx, Ly, Lz] in Angstroms
+    /// * `use_pme` - If true, use PME electrostatics (explicit solvent)
+    ///               If false, use implicit solvent (ε=4r) with PBC for geometry only
+    pub fn set_pbc_box_with_pme(&mut self, dims: [f32; 3], use_pme: bool) -> Result<()> {
+        if dims[0] <= 0.0 || dims[1] <= 0.0 || dims[2] <= 0.0 {
+            return Err(anyhow::anyhow!(
+                "Invalid box dimensions: {:?} - must be positive",
+                dims
+            ));
+        }
+
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let use_pme_flag: i32 = if use_pme { 1 } else { 0 };
+
+        // Call the kernel to set PBC box on GPU
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.set_pbc_box_kernel);
+            builder.arg(&dims[0]);
+            builder.arg(&dims[1]);
+            builder.arg(&dims[2]);
+            builder.arg(&use_pme_flag);
+            builder.launch(cfg)?;
+        }
+
+        self.stream.synchronize()?;
+        self.pbc_enabled = true;
+        self.box_dimensions = dims;
+
+        log::info!(
+            "📦 PBC enabled: box = {:.1} × {:.1} × {:.1} Å, PME = {}",
+            dims[0], dims[1], dims[2], use_pme
+        );
+
+        Ok(())
+    }
+
+    /// Enable periodic boundary conditions (implicit solvent, no PME)
+    ///
+    /// Sets the box dimensions on the GPU and enables PBC wrapping
+    /// during integration. Uses implicit solvent (ε=4r) electrostatics.
+    /// For explicit solvent with PME, use `enable_explicit_solvent` instead.
+    ///
+    /// # Arguments
+    /// * `dims` - Box dimensions [Lx, Ly, Lz] in Angstroms
+    pub fn set_pbc_box(&mut self, dims: [f32; 3]) -> Result<()> {
+        // Use implicit solvent (no PME) by default - PME requires explicit solvent setup
+        self.set_pbc_box_with_pme(dims, false)
+    }
+
+    /// Check if PBC is enabled
+    pub fn is_pbc_enabled(&self) -> bool {
+        self.pbc_enabled
+    }
+
+    /// Get current box dimensions
+    pub fn get_box_dimensions(&self) -> Option<[f32; 3]> {
+        if self.pbc_enabled {
+            Some(self.box_dimensions)
+        } else {
+            None
+        }
+    }
+
+    /// Enable explicit solvent with PME electrostatics
+    ///
+    /// This initializes:
+    /// - PME for long-range electrostatics (reciprocal space)
+    /// - PBC for periodic boundary conditions
+    /// - Old positions buffer for SETTLE constraint projection
+    ///
+    /// # Arguments
+    /// * `box_dims` - Periodic box dimensions [Lx, Ly, Lz] in Angstroms
+    pub fn enable_explicit_solvent(&mut self, box_dims: [f32; 3]) -> Result<()> {
+        log::info!(
+            "🌊 Enabling explicit solvent: box = {:.1} × {:.1} × {:.1} Å",
+            box_dims[0], box_dims[1], box_dims[2]
+        );
+
+        // Set up periodic boundary conditions WITH PME enabled
+        self.set_pbc_box_with_pme(box_dims, true)?;
+
+        // Initialize PME for long-range electrostatics
+        let pme = PME::new(self.context.clone(), self.n_atoms, box_dims)?;
+        self.pme = Some(pme);
+
+        // Allocate old positions buffer for SETTLE
+        let d_old_positions = self.stream.alloc_zeros::<f32>(self.n_atoms * 3)?;
+        self.d_old_positions = Some(d_old_positions);
+
+        log::info!("✅ Explicit solvent enabled with PME");
+        Ok(())
+    }
+
+    /// Set up SETTLE constraints for rigid water molecules
+    ///
+    /// # Arguments
+    /// * `water_oxygen_indices` - Indices of oxygen atoms in each water molecule.
+    ///   Hydrogens are assumed to be at consecutive indices (O+1, O+2).
+    pub fn set_water_molecules(&mut self, water_oxygen_indices: &[usize]) -> Result<()> {
+        if water_oxygen_indices.is_empty() {
+            log::info!("No water molecules - SETTLE constraints not needed");
+            return Ok(());
+        }
+
+        log::info!(
+            "🌊 Setting up SETTLE constraints for {} water molecules",
+            water_oxygen_indices.len()
+        );
+
+        let settle = Settle::new(
+            self.context.clone(),
+            water_oxygen_indices,
+            self.n_atoms,
+        )?;
+        self.settle = Some(settle);
+
+        log::info!("✅ SETTLE constraints initialized");
+        Ok(())
+    }
+
+    /// Check if explicit solvent is enabled
+    pub fn is_explicit_solvent(&self) -> bool {
+        self.pme.is_some()
+    }
+
+    /// Get reference to PME (if enabled)
+    pub fn pme(&self) -> Option<&PME> {
+        self.pme.as_ref()
+    }
+
+    /// Get reference to SETTLE (if enabled)
+    pub fn settle(&self) -> Option<&Settle> {
+        self.settle.as_ref()
+    }
+
+    /// Set H-bond constraints for protein X-H bonds
+    ///
+    /// This enables analytic constraints for fast H-bond vibrations,
+    /// allowing larger timesteps (2.0 fs vs 0.25 fs without constraints).
+    ///
+    /// # Arguments
+    /// * `clusters` - H-bond cluster definitions from topology preparation
+    pub fn set_h_constraints(&mut self, clusters: &[HConstraintCluster]) -> Result<()> {
+        if clusters.is_empty() {
+            log::info!("No H-bond clusters - H-constraints not needed");
+            return Ok(());
+        }
+
+        log::info!(
+            "🔗 Setting up H-bond constraints for {} clusters",
+            clusters.len()
+        );
+
+        let h_constraints = HConstraints::new(self.context.clone(), clusters)?;
+        self.h_constraints = Some(h_constraints);
+
+        log::info!("✅ H-bond constraints initialized");
+        Ok(())
+    }
+
+    /// Get reference to H-constraints (if enabled)
+    pub fn h_constraints(&self) -> Option<&HConstraints> {
+        self.h_constraints.as_ref()
+    }
+
+    /// Set up position restraints to prevent protein unfolding
+    ///
+    /// Applies harmonic restraints to selected atoms toward their initial positions.
+    /// Useful for stabilizing proteins in implicit solvent simulations.
+    ///
+    /// # Arguments
+    /// * `restrained_atoms` - Indices of atoms to restrain (e.g., all backbone heavy atoms)
+    /// * `k_restraint` - Spring constant in kcal/(mol*Å²). Typical values:
+    ///   - 100.0: Very strong (essentially frozen)
+    ///   - 10.0: Strong (limits motion to ~0.3 Å)
+    ///   - 1.0: Moderate (allows ~1 Å fluctuations)
+    ///   - 0.1: Weak (allows ~3 Å fluctuations)
+    pub fn set_position_restraints(&mut self, restrained_atoms: &[usize], k_restraint: f32) -> Result<()> {
+        if !self.topology_ready {
+            return Err(anyhow::anyhow!("Topology not uploaded - call upload_topology first"));
+        }
+
+        if restrained_atoms.is_empty() {
+            log::info!("No atoms to restrain - position restraints not enabled");
+            return Ok(());
+        }
+
+        // Get current positions as reference
+        let mut positions = vec![0.0f32; self.n_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
+
+        // Extract reference positions for restrained atoms only
+        let mut ref_positions = Vec::with_capacity(restrained_atoms.len() * 3);
+        for &atom_idx in restrained_atoms {
+            if atom_idx >= self.n_atoms {
+                return Err(anyhow::anyhow!("Atom index {} out of range (n_atoms={})", atom_idx, self.n_atoms));
+            }
+            ref_positions.push(positions[atom_idx * 3]);
+            ref_positions.push(positions[atom_idx * 3 + 1]);
+            ref_positions.push(positions[atom_idx * 3 + 2]);
+        }
+
+        // Upload restraint data to GPU
+        let restrained_i32: Vec<i32> = restrained_atoms.iter().map(|&x| x as i32).collect();
+        let mut d_restrained = self.stream.alloc_zeros::<i32>(restrained_atoms.len())?;
+        let mut d_ref = self.stream.alloc_zeros::<f32>(ref_positions.len())?;
+        self.stream.memcpy_htod(&restrained_i32, &mut d_restrained)?;
+        self.stream.memcpy_htod(&ref_positions, &mut d_ref)?;
+
+        self.d_restrained_atoms = Some(d_restrained);
+        self.d_ref_positions = Some(d_ref);
+        self.n_restrained = restrained_atoms.len();
+        self.k_restraint = k_restraint;
+
+        log::info!(
+            "⚓ Position restraints enabled: {} atoms with k={:.1} kcal/(mol*Å²)",
+            self.n_restrained, self.k_restraint
+        );
+
+        Ok(())
+    }
+
+    /// Get number of restrained atoms
+    pub fn n_restrained(&self) -> usize {
+        self.n_restrained
+    }
+
+    /// Disable position restraints
+    pub fn disable_position_restraints(&mut self) {
+        self.d_restrained_atoms = None;
+        self.d_ref_positions = None;
+        self.n_restrained = 0;
+        self.k_restraint = 0.0;
+        log::info!("Position restraints disabled");
+    }
+
     /// Initialize velocities from Maxwell-Boltzmann distribution
     pub fn initialize_velocities(&mut self, temperature: f32) -> Result<()> {
         if !self.topology_ready {
@@ -495,6 +806,21 @@ impl AmberMegaFusedHmc {
 
         let mut last_energy = f32::MAX;
         for step in 0..n_steps {
+            // 1. Zero forces before integration (CRITICAL: GPU memory persists!)
+            self.stream.memset_zeros(&mut self.d_forces)?;
+
+            // 2. Compute PME (CRITICAL: Minimizer must see long-range forces)
+            // Without PME, system relaxes to a state invalid for the full physics engine
+            if let Some(ref mut pme) = self.pme {
+                self.stream.synchronize()?;
+                let _ = pme.compute(
+                    &self.d_positions,
+                    &self.d_nb_charge,
+                    &mut self.d_forces,
+                )?;
+            }
+
+            // 3. Launch Minimize Kernel (Accumulates Short-Range + Moves Atoms)
             unsafe {
                 let mut builder = self.stream.launch_builder(&minimize_kernel);
                 builder.arg(&self.d_positions);
@@ -777,6 +1103,87 @@ impl AmberMegaFusedHmc {
                 self.build_neighbor_lists()?;
             }
 
+            // Save positions BEFORE integration for SETTLE constraint projection
+            if let Some(ref mut settle) = self.settle {
+                settle.save_positions(&self.d_positions)?;
+            }
+
+            // ============================================================
+            // FORCE PREPARATION: Zero + PME before kernel
+            // ============================================================
+            // The kernel ACCUMULATES forces (no internal zeroing), so we must:
+            // 1. Zero forces first (CRITICAL: GPU memory persists between steps!)
+            // 2. Add position restraint forces (if enabled)
+            // 3. Add PME reciprocal forces (if explicit solvent)
+            // 4. Then kernel adds bonded + short-range NB
+            self.stream.memset_zeros(&mut self.d_forces)?;
+
+            // Add position restraint forces (if enabled)
+            if self.n_restrained > 0 {
+                if let (Some(ref d_restrained), Some(ref d_ref)) =
+                    (&self.d_restrained_atoms, &self.d_ref_positions)
+                {
+                    let restraint_kernel = self.module
+                        .load_function("apply_position_restraints")
+                        .context("Failed to load apply_position_restraints kernel")?;
+
+                    let threads = 256;
+                    let blocks = (self.n_restrained + threads - 1) / threads;
+                    let cfg = LaunchConfig {
+                        grid_dim: (blocks as u32, 1, 1),
+                        block_dim: (threads as u32, 1, 1),
+                        shared_mem_bytes: 0,
+                    };
+
+                    let n_restrained_i32 = self.n_restrained as i32;
+                    unsafe {
+                        let mut builder = self.stream.launch_builder(&restraint_kernel);
+                        builder.arg(&self.d_forces);
+                        builder.arg(&self.d_total_energy);
+                        builder.arg(&self.d_positions);
+                        builder.arg(d_ref);
+                        builder.arg(d_restrained);
+                        builder.arg(&n_restrained_i32);
+                        builder.arg(&self.k_restraint);
+                        builder.launch(cfg)?;
+                    }
+                }
+            }
+
+            // Add PME reciprocal forces BEFORE kernel
+            if let Some(ref mut pme) = self.pme {
+                self.stream.synchronize()?;
+                let pme_energy = pme.compute(
+                    &self.d_positions,
+                    &self.d_nb_charge,
+                    &mut self.d_forces,
+                )?;
+
+                // DIAGNOSTIC: Check PME force magnitudes on first few steps
+                if step < 5 {
+                    self.stream.synchronize()?;
+                    let mut forces = vec![0.0f32; self.n_atoms * 3];
+                    self.stream.memcpy_dtoh(&self.d_forces, &mut forces)?;
+                    let mut max_f = 0.0f32;
+                    let mut sum_f2 = 0.0f32;
+                    for i in 0..self.n_atoms {
+                        let fx = forces[i * 3];
+                        let fy = forces[i * 3 + 1];
+                        let fz = forces[i * 3 + 2];
+                        let f2 = fx * fx + fy * fy + fz * fz;
+                        sum_f2 += f2;
+                        if f2 > max_f * max_f {
+                            max_f = f2.sqrt();
+                        }
+                    }
+                    let rms_f = (sum_f2 / self.n_atoms as f32).sqrt();
+                    log::info!(
+                        "🔍 Step {} PME: E={:.2} kcal/mol, max_F={:.2}, rms_F={:.2} kcal/(mol·Å)",
+                        step, pme_energy, max_f, rms_f
+                    );
+                }
+            }
+
             // Launch mega-fused HMC step kernel
             let step_u32 = step as u32;
             unsafe {
@@ -817,12 +1224,91 @@ impl AmberMegaFusedHmc {
             // control continuously via friction + thermal noise (O step).
             // External thermostat would fight the Langevin dynamics.
 
+            // DIAGNOSTIC: Check total force magnitudes on first few steps
+            if step < 5 {
+                self.stream.synchronize()?;
+                let mut forces = vec![0.0f32; self.n_atoms * 3];
+                self.stream.memcpy_dtoh(&self.d_forces, &mut forces)?;
+                let mut max_f = 0.0f32;
+                let mut sum_f2 = 0.0f32;
+                let mut max_idx = 0;
+                for i in 0..self.n_atoms {
+                    let fx = forces[i * 3];
+                    let fy = forces[i * 3 + 1];
+                    let fz = forces[i * 3 + 2];
+                    let f2 = fx * fx + fy * fy + fz * fz;
+                    sum_f2 += f2;
+                    if f2 > max_f * max_f {
+                        max_f = f2.sqrt();
+                        max_idx = i;
+                    }
+                }
+                let rms_f = (sum_f2 / self.n_atoms as f32).sqrt();
+                log::info!(
+                    "🔍 Step {} TOTAL: max_F={:.2} (atom {}), rms_F={:.2} kcal/(mol·Å)",
+                    step, max_f, max_idx, rms_f
+                );
+
+                // Also log velocities
+                let mut velocities = vec![0.0f32; self.n_atoms * 3];
+                self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+                let mut max_v = 0.0f32;
+                for i in 0..self.n_atoms {
+                    let vx = velocities[i * 3];
+                    let vy = velocities[i * 3 + 1];
+                    let vz = velocities[i * 3 + 2];
+                    let v2 = vx * vx + vy * vy + vz * vz;
+                    if v2 > max_v * max_v {
+                        max_v = v2.sqrt();
+                    }
+                }
+                log::info!(
+                    "🔍 Step {} VEL: max_v={:.4} Å/fs",
+                    step, max_v
+                );
+            }
+
+            // ============================================================
+            // SETTLE CONSTRAINTS (after integration)
+            // ============================================================
+            // SETTLE is applied AFTER integration to fix water geometry,
+            // projecting positions back onto the rigid TIP3P constraint surface.
+            // PME was already applied BEFORE the kernel (see above).
+            // ============================================================
+
+            // Apply SETTLE constraints for water molecules
+            if let Some(ref mut settle) = self.settle {
+                self.stream.synchronize()?;
+                settle.apply(&mut self.d_positions, dt)?;
+            }
+
+            // Apply H-bond constraints for protein X-H bonds
+            // This freezes fast vibrations (~10 fs period), enabling larger timesteps
+            if let Some(ref h_constraints) = self.h_constraints {
+                h_constraints.apply(&mut self.d_positions, &mut self.d_velocities, dt)?;
+            }
+
             // Accumulate kinetic energy for average temperature
             if step % 10 == 0 {
                 self.stream.synchronize()?;
                 let mut ke = vec![0.0f32; 1];
                 self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut ke)?;
                 total_ke += ke[0] as f64;
+            }
+
+            // DIAGNOSTIC: Log energy every 100 steps to track explosion
+            if step % 100 == 0 || step < 10 {
+                self.stream.synchronize()?;
+                let mut pe = vec![0.0f32; 1];
+                let mut ke = vec![0.0f32; 1];
+                self.stream.memcpy_dtoh(&self.d_total_energy, &mut pe)?;
+                self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut ke)?;
+                let kb = 0.001987204f32;
+                let inst_temp = 2.0 * ke[0] / (3.0 * self.n_atoms as f32 * kb);
+                log::info!(
+                    "📊 Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K",
+                    step, pe[0], ke[0], inst_temp
+                );
             }
         }
 
@@ -866,11 +1352,391 @@ impl AmberMegaFusedHmc {
         })
     }
 
+    /// Run proper velocity Verlet integration with TWO force evaluations per step.
+    ///
+    /// This is the correct symplectic integrator that conserves energy in NVE:
+    /// 1. compute_forces_only at x(t)
+    /// 2. velocity_verlet_step1: v += (dt/2)*a; x += dt*v
+    /// 3. compute_forces_only at x(t+dt)  [SECOND FORCE EVAL]
+    /// 4. velocity_verlet_step2: v += (dt/2)*a; O-step
+    ///
+    /// This is 2x slower than the mega-fused kernel but conserves energy properly.
+    pub fn run_verlet(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma_fs: f32) -> Result<HmcRunResult> {
+        if !self.topology_ready {
+            return Err(anyhow::anyhow!("Topology not uploaded - call upload_topology first"));
+        }
+
+        // Build neighbor lists for O(N) non-bonded
+        if !self.neighbor_list_valid {
+            log::info!("📦 Building neighbor lists for O(N) non-bonded...");
+            self.build_neighbor_lists()?;
+        }
+
+        // Initialize velocities if not done
+        if !self.velocities_initialized {
+            self.initialize_velocities(temperature)?;
+        }
+
+        let threads = 256;
+        let blocks = (self.n_atoms + threads - 1) / threads;
+
+        let cfg = LaunchConfig {
+            grid_dim: (blocks as u32, 1, 1),
+            block_dim: (threads as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        // Config for force kernel (needs more threads for bonds/angles)
+        let max_n = self.n_atoms.max(self.n_bonds).max(self.n_angles).max(self.n_dihedrals);
+        let force_blocks = (max_n + threads - 1) / threads;
+        let force_cfg = LaunchConfig {
+            grid_dim: (force_blocks as u32, 1, 1),
+            block_dim: (threads as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        // Bind integer params
+        let n_atoms_i32 = self.n_atoms as i32;
+        let n_bonds_i32 = self.n_bonds as i32;
+        let n_angles_i32 = self.n_angles as i32;
+        let n_dihedrals_i32 = self.n_dihedrals as i32;
+        let max_excl_i32 = MAX_EXCLUSIONS as i32;
+        let max_14_i32 = MAX_14_PAIRS as i32;
+
+        let mut total_ke = 0.0f64;
+        const NEIGHBOR_REBUILD_INTERVAL: usize = 50;
+
+        log::info!("🏃 Running {} Velocity Verlet steps (2-force-eval per step)", n_steps);
+
+        for step in 0..n_steps {
+            // Rebuild neighbor lists periodically
+            if step > 0 && step % NEIGHBOR_REBUILD_INTERVAL == 0 {
+                self.stream.synchronize()?;
+                self.neighbor_list_valid = false;
+                self.build_neighbor_lists()?;
+            }
+
+            // Save positions for SETTLE (if enabled)
+            if let Some(ref mut settle) = self.settle {
+                settle.save_positions(&self.d_positions)?;
+            }
+
+            // ============================================================
+            // STEP 1: Compute forces at x(t)
+            // ============================================================
+            self.stream.memset_zeros(&mut self.d_forces)?;
+
+            // Add position restraints (if enabled)
+            if self.n_restrained > 0 {
+                if let (Some(ref d_restrained), Some(ref d_ref)) =
+                    (&self.d_restrained_atoms, &self.d_ref_positions)
+                {
+                    let restraint_kernel = self.module
+                        .load_function("apply_position_restraints")
+                        .context("Failed to load apply_position_restraints kernel")?;
+
+                    let n_restrained_i32 = self.n_restrained as i32;
+                    let r_blocks = (self.n_restrained + threads - 1) / threads;
+                    let r_cfg = LaunchConfig {
+                        grid_dim: (r_blocks as u32, 1, 1),
+                        block_dim: (threads as u32, 1, 1),
+                        shared_mem_bytes: 0,
+                    };
+                    unsafe {
+                        let mut builder = self.stream.launch_builder(&restraint_kernel);
+                        builder.arg(&self.d_forces);
+                        builder.arg(&self.d_total_energy);
+                        builder.arg(&self.d_positions);
+                        builder.arg(d_ref);
+                        builder.arg(d_restrained);
+                        builder.arg(&n_restrained_i32);
+                        builder.arg(&self.k_restraint);
+                        builder.launch(r_cfg)?;
+                    }
+                }
+            }
+
+            // Compute bonded + non-bonded forces
+            unsafe {
+                let mut builder = self.stream.launch_builder(&self.compute_forces_kernel);
+                builder.arg(&self.d_positions);
+                builder.arg(&self.d_forces);
+                builder.arg(&self.d_total_energy);
+                builder.arg(&self.d_bond_atoms);
+                builder.arg(&self.d_bond_params);
+                builder.arg(&self.d_angle_atoms);
+                builder.arg(&self.d_angle_params);
+                builder.arg(&self.d_dihedral_atoms);
+                builder.arg(&self.d_dihedral_params);
+                builder.arg(&self.d_nb_sigma);
+                builder.arg(&self.d_nb_epsilon);
+                builder.arg(&self.d_nb_charge);
+                builder.arg(&self.d_exclusion_list);
+                builder.arg(&self.d_n_exclusions);
+                builder.arg(&self.d_pair14_list);
+                builder.arg(&self.d_n_pairs14);
+                builder.arg(&max_excl_i32);
+                builder.arg(&max_14_i32);
+                builder.arg(&n_atoms_i32);
+                builder.arg(&n_bonds_i32);
+                builder.arg(&n_angles_i32);
+                builder.arg(&n_dihedrals_i32);
+                builder.launch(force_cfg)?;
+            }
+
+            // ============================================================
+            // STEP 2: First half-kick + drift: v += (dt/2)*a; x += dt*v
+            // ============================================================
+            unsafe {
+                let mut builder = self.stream.launch_builder(&self.vv_step1_kernel);
+                builder.arg(&self.d_positions);
+                builder.arg(&self.d_velocities);
+                builder.arg(&self.d_forces);
+                builder.arg(&self.d_nb_mass);
+                builder.arg(&n_atoms_i32);
+                builder.arg(&dt);
+                builder.launch(cfg)?;
+            }
+
+            // ============================================================
+            // STEP 3: Compute forces at x(t+dt) [SECOND FORCE EVALUATION]
+            // ============================================================
+            self.stream.memset_zeros(&mut self.d_forces)?;
+
+            // Add position restraints again at new positions
+            if self.n_restrained > 0 {
+                if let (Some(ref d_restrained), Some(ref d_ref)) =
+                    (&self.d_restrained_atoms, &self.d_ref_positions)
+                {
+                    let restraint_kernel = self.module
+                        .load_function("apply_position_restraints")
+                        .context("Failed to load apply_position_restraints kernel")?;
+
+                    let n_restrained_i32 = self.n_restrained as i32;
+                    let r_blocks = (self.n_restrained + threads - 1) / threads;
+                    let r_cfg = LaunchConfig {
+                        grid_dim: (r_blocks as u32, 1, 1),
+                        block_dim: (threads as u32, 1, 1),
+                        shared_mem_bytes: 0,
+                    };
+                    unsafe {
+                        let mut builder = self.stream.launch_builder(&restraint_kernel);
+                        builder.arg(&self.d_forces);
+                        builder.arg(&self.d_total_energy);
+                        builder.arg(&self.d_positions);
+                        builder.arg(d_ref);
+                        builder.arg(d_restrained);
+                        builder.arg(&n_restrained_i32);
+                        builder.arg(&self.k_restraint);
+                        builder.launch(r_cfg)?;
+                    }
+                }
+            }
+
+            // Compute bonded + non-bonded forces at new positions
+            unsafe {
+                let mut builder = self.stream.launch_builder(&self.compute_forces_kernel);
+                builder.arg(&self.d_positions);
+                builder.arg(&self.d_forces);
+                builder.arg(&self.d_total_energy);
+                builder.arg(&self.d_bond_atoms);
+                builder.arg(&self.d_bond_params);
+                builder.arg(&self.d_angle_atoms);
+                builder.arg(&self.d_angle_params);
+                builder.arg(&self.d_dihedral_atoms);
+                builder.arg(&self.d_dihedral_params);
+                builder.arg(&self.d_nb_sigma);
+                builder.arg(&self.d_nb_epsilon);
+                builder.arg(&self.d_nb_charge);
+                builder.arg(&self.d_exclusion_list);
+                builder.arg(&self.d_n_exclusions);
+                builder.arg(&self.d_pair14_list);
+                builder.arg(&self.d_n_pairs14);
+                builder.arg(&max_excl_i32);
+                builder.arg(&max_14_i32);
+                builder.arg(&n_atoms_i32);
+                builder.arg(&n_bonds_i32);
+                builder.arg(&n_angles_i32);
+                builder.arg(&n_dihedrals_i32);
+                builder.launch(force_cfg)?;
+            }
+
+            // ============================================================
+            // STEP 4: Second half-kick + O-step: v += (dt/2)*a; thermostat
+            // ============================================================
+            let step_u32 = step as u32;
+            unsafe {
+                let mut builder = self.stream.launch_builder(&self.vv_step2_kernel);
+                builder.arg(&self.d_velocities);
+                builder.arg(&self.d_kinetic_energy);
+                builder.arg(&self.d_forces);
+                builder.arg(&self.d_nb_mass);
+                builder.arg(&n_atoms_i32);
+                builder.arg(&dt);
+                builder.arg(&temperature);
+                builder.arg(&gamma_fs);
+                builder.arg(&step_u32);
+                builder.launch(cfg)?;
+            }
+
+            // Apply SETTLE constraints (if enabled)
+            if let Some(ref mut settle) = self.settle {
+                self.stream.synchronize()?;
+                settle.apply(&mut self.d_positions, dt)?;
+            }
+
+            // Apply H-bond constraints (if enabled)
+            if let Some(ref h_constraints) = self.h_constraints {
+                h_constraints.apply(&mut self.d_positions, &mut self.d_velocities, dt)?;
+            }
+
+            // Sample KE for temperature
+            if step % 10 == 0 {
+                self.stream.synchronize()?;
+                let mut ke = vec![0.0f32; 1];
+                self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut ke)?;
+                total_ke += ke[0] as f64;
+            }
+
+            // Diagnostic logging
+            if step % 100 == 0 || step < 10 {
+                self.stream.synchronize()?;
+                let mut pe = vec![0.0f32; 1];
+                let mut ke = vec![0.0f32; 1];
+                self.stream.memcpy_dtoh(&self.d_total_energy, &mut pe)?;
+                self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut ke)?;
+                let kb = 0.001987204f32;
+                let inst_temp = 2.0 * ke[0] / (3.0 * self.n_atoms as f32 * kb);
+                log::info!("📊 VV Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K TE={:>10.2}",
+                    step, pe[0], ke[0], inst_temp, pe[0] + ke[0]);
+            }
+        }
+
+        self.stream.synchronize()?;
+
+        // Download final results
+        let mut h_total_energy = vec![0.0f32; 1];
+        let mut h_kinetic_energy = vec![0.0f32; 1];
+        self.stream.memcpy_dtoh(&self.d_total_energy, &mut h_total_energy)?;
+        self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut h_kinetic_energy)?;
+
+        let positions = self.get_positions()?;
+        let mut velocities = vec![0.0f32; self.n_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+
+        // Average temperature
+        let n_samples = (n_steps / 10).max(1);
+        let avg_ke = total_ke / n_samples as f64;
+        let kb = 0.001987204;
+        let avg_temperature = 2.0 * avg_ke / (3.0 * self.n_atoms as f64 * kb);
+
+        log::info!("✅ Velocity Verlet complete: PE={:.2}, KE={:.2}, T_avg={:.1}K",
+            h_total_energy[0], h_kinetic_energy[0], avg_temperature);
+
+        Ok(HmcRunResult {
+            potential_energy: h_total_energy[0] as f64,
+            kinetic_energy: h_kinetic_energy[0] as f64,
+            positions,
+            velocities,
+            avg_temperature,
+        })
+    }
+
     /// Get current velocities
     pub fn get_velocities(&self) -> Result<Vec<f32>> {
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
         self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         Ok(velocities)
+    }
+
+    /// Compute forces on current positions and return max force magnitude
+    ///
+    /// This is useful for checking if a structure is well-minimized before dynamics.
+    /// Forces should be < 50 kcal/(mol·Å) for stable dynamics.
+    pub fn get_max_force(&mut self) -> Result<f32> {
+        if !self.topology_ready {
+            return Err(anyhow::anyhow!("Topology not uploaded"));
+        }
+
+        let threads_per_block = 256;
+        let num_blocks = (self.n_atoms.max(self.n_bonds).max(self.n_angles).max(self.n_dihedrals)
+            + threads_per_block - 1) / threads_per_block;
+
+        let cfg = LaunchConfig {
+            grid_dim: (num_blocks as u32, 1, 1),
+            block_dim: (threads_per_block as u32, 1, 1),
+            shared_mem_bytes: 6 * 64 * 4,
+        };
+
+        // Load minimize kernel (computes forces without integrating)
+        let force_kernel = self.module
+            .load_function("amber_steepest_descent_step")
+            .context("Failed to load amber_steepest_descent_step")?;
+
+        // Zero forces
+        self.stream.memset_zeros(&mut self.d_forces)?;
+
+        // Add PME forces if enabled
+        if let Some(ref mut pme) = self.pme {
+            self.stream.synchronize()?;
+            pme.compute(&self.d_positions, &self.d_nb_charge, &mut self.d_forces)?;
+        }
+
+        // Compute bonded + NB forces (with step_size=0 to not move atoms)
+        let max_excl_i32 = MAX_EXCLUSIONS as i32;
+        let max_14_i32 = MAX_14_PAIRS as i32;
+        let n_atoms_i32 = self.n_atoms as i32;
+        let n_bonds_i32 = self.n_bonds as i32;
+        let n_angles_i32 = self.n_angles as i32;
+        let n_dihedrals_i32 = self.n_dihedrals as i32;
+        let step_size = 0.0f32; // Don't move atoms
+
+        unsafe {
+            let mut builder = self.stream.launch_builder(&force_kernel);
+            builder.arg(&self.d_positions);
+            builder.arg(&self.d_forces);
+            builder.arg(&self.d_total_energy);
+            builder.arg(&self.d_bond_atoms);
+            builder.arg(&self.d_bond_params);
+            builder.arg(&self.d_angle_atoms);
+            builder.arg(&self.d_angle_params);
+            builder.arg(&self.d_dihedral_atoms);
+            builder.arg(&self.d_dihedral_params);
+            builder.arg(&self.d_nb_sigma);
+            builder.arg(&self.d_nb_epsilon);
+            builder.arg(&self.d_nb_charge);
+            builder.arg(&self.d_exclusion_list);
+            builder.arg(&self.d_n_exclusions);
+            builder.arg(&self.d_pair14_list);
+            builder.arg(&self.d_n_pairs14);
+            builder.arg(&max_excl_i32);
+            builder.arg(&max_14_i32);
+            builder.arg(&n_atoms_i32);
+            builder.arg(&n_bonds_i32);
+            builder.arg(&n_angles_i32);
+            builder.arg(&n_dihedrals_i32);
+            builder.arg(&step_size);
+            builder.launch(cfg)?;
+        }
+
+        self.stream.synchronize()?;
+
+        // Download forces and compute max
+        let mut forces = vec![0.0f32; self.n_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_forces, &mut forces)?;
+
+        let mut max_f2 = 0.0f32;
+        for i in 0..self.n_atoms {
+            let fx = forces[i * 3];
+            let fy = forces[i * 3 + 1];
+            let fz = forces[i * 3 + 2];
+            let f2 = fx * fx + fy * fy + fz * fz;
+            if f2 > max_f2 {
+                max_f2 = f2;
+            }
+        }
+
+        Ok(max_f2.sqrt())
     }
 
     /// Rescale velocities to target temperature (velocity rescaling thermostat)

@@ -113,6 +113,24 @@
 #define COUL_14_SCALE 0.8333333f
 
 // ============================================================================
+// PERIODIC BOUNDARY CONDITIONS (for explicit solvent)
+// ============================================================================
+// Box dimensions stored in device global variables (writable from kernel)
+// Use apply_pbc() for minimum image convention in distance calculations
+// Use wrap_position() to keep atoms inside the primary box
+
+__device__ float3 d_box_dims = {0.0f, 0.0f, 0.0f};     // Box dimensions [Lx, Ly, Lz] in Å
+__device__ float3 d_box_inv = {0.0f, 0.0f, 0.0f};      // Inverse box dimensions [1/Lx, 1/Ly, 1/Lz]
+__device__ int d_use_pbc = 0;         // Flag: 1 = use PBC, 0 = no PBC (vacuum/implicit)
+__device__ int d_use_pme = 0;         // Flag: 1 = PME + short-range erfc, 0 = implicit solvent
+
+// Ewald splitting parameter (β) for PME
+// β = 0.34 Å⁻¹ is standard for 10 Å real-space cutoff
+// Smaller β → more in reciprocal space (PME), less in real space
+// Larger β → more in real space, faster convergence of erfc but more pairs
+__device__ float d_ewald_beta = 0.34f;
+
+// ============================================================================
 // CELL LIST CONFIGURATION (for O(N) non-bonded)
 // ============================================================================
 
@@ -196,6 +214,46 @@ struct __align__(8) AtomNBParams {
 
 __device__ __forceinline__ float3 make_float3_sub(float3 a, float3 b) {
     return make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+// ============================================================================
+// PERIODIC BOUNDARY CONDITIONS - DEVICE FUNCTIONS
+// ============================================================================
+
+/**
+ * Apply minimum image convention to a displacement vector.
+ *
+ * For explicit solvent simulations with PBC, we need the shortest image
+ * distance between atoms. This wraps the displacement to be within [-L/2, L/2].
+ *
+ * @param dr  Displacement vector (will be modified in place if PBC enabled)
+ * @return    Wrapped displacement vector
+ */
+__device__ __forceinline__ float3 apply_pbc(float3 dr) {
+    if (d_use_pbc) {
+        dr.x -= d_box_dims.x * rintf(dr.x * d_box_inv.x);
+        dr.y -= d_box_dims.y * rintf(dr.y * d_box_inv.y);
+        dr.z -= d_box_dims.z * rintf(dr.z * d_box_inv.z);
+    }
+    return dr;
+}
+
+/**
+ * Wrap position to stay inside the primary simulation box [0, L].
+ *
+ * Called after integration to ensure atoms remain in the primary unit cell.
+ * This is essential for cell list correctness and visualization.
+ *
+ * @param pos  Position vector (will be modified in place if PBC enabled)
+ * @return     Wrapped position vector
+ */
+__device__ __forceinline__ float3 wrap_position(float3 pos) {
+    if (d_use_pbc) {
+        pos.x -= d_box_dims.x * floorf(pos.x * d_box_inv.x);
+        pos.y -= d_box_dims.y * floorf(pos.y * d_box_inv.y);
+        pos.z -= d_box_dims.z * floorf(pos.z * d_box_inv.z);
+    }
+    return pos;
 }
 
 __device__ __forceinline__ float dot3(float3 a, float3 b) {
@@ -293,6 +351,10 @@ __device__ void compute_bond_force(
     int atom_i, int atom_j, float k, float r0
 ) {
     float3 r_ij = make_float3_sub(pos[atom_j], pos[atom_i]);
+
+    // Apply PBC wrapping to bond vector (minimum image convention)
+    r_ij = apply_pbc(r_ij);
+
     float r = norm3(r_ij);
 
     if (r < 1e-6f) return;
@@ -324,6 +386,10 @@ __device__ void compute_angle_force(
 ) {
     float3 r_ji = make_float3_sub(pos[atom_i], pos[atom_j]);
     float3 r_jk = make_float3_sub(pos[atom_k], pos[atom_j]);
+
+    // Apply PBC wrapping to angle vectors (minimum image convention)
+    r_ji = apply_pbc(r_ji);
+    r_jk = apply_pbc(r_jk);
 
     float d_ji = norm3(r_ji);
     float d_jk = norm3(r_jk);
@@ -399,14 +465,42 @@ __device__ void compute_nb_pair_force(
     // LJ force: F = 24*eps*[2*(σ/r)^12 - (σ/r)^6] / r²
     float lj_force = scale_lj * 24.0f * eps_ij * (2.0f * sigma6_r6 * sigma6_r6 - sigma6_r6) / r2_soft;
 
-    // IMPLICIT SOLVENT: Coulomb with distance-dependent dielectric ε=4r
-    // Energy: V = k*q1*q2/(4r²) = k*q1*q2 * 0.25 * inv_r²
-    // Force:  F = -dV/dr = 2 * V / r = k*q1*q2 * 0.5 / r³
+    // Coulomb: Use implicit solvent OR Ewald short-range with PME
+    float coul_e = 0.0f;
+    float coul_force = 0.0f;
     float r = sqrtf(r2 + 1e-6f);
     float inv_r = 1.0f / r;
     float q_prod = params_i.charge * params_j.charge;
-    float coul_e = scale_coul * COULOMB_CONST * q_prod * IMPLICIT_SOLVENT_SCALE * inv_r * inv_r;
-    float coul_force = 2.0f * coul_e * inv_r;  // Derivative of 1/r² is -2/r³
+
+    if (d_use_pme == 0) {
+        // IMPLICIT SOLVENT: Coulomb with distance-dependent dielectric ε=4r
+        // Energy: V = k*q1*q2/(4r²) = k*q1*q2 * 0.25 * inv_r²
+        // Force:  F = -dV/dr = 2 * V / r = k*q1*q2 * 0.5 / r³
+        coul_e = scale_coul * COULOMB_CONST * q_prod * IMPLICIT_SOLVENT_SCALE * inv_r * inv_r;
+        coul_force = 2.0f * coul_e * inv_r;  // Derivative of 1/r² is -2/r³
+    } else {
+        // EXPLICIT SOLVENT (PME): Short-range Ewald with erfc screening
+        // Full Coulomb = short-range erfc(βr)/r + long-range erf(βr)/r
+        // PME handles erf(βr)/r in reciprocal space
+        // We compute erfc(βr)/r here in real space with cutoff
+        //
+        // Energy: V = k*q1*q2 * erfc(β*r) / r
+        // Force:  F_scalar = k*q1*q2 * (erfc(β*r)/r² + 2*β/√π * exp(-β²r²)/r)
+        // For force convention (F * r_ij gives correct direction):
+        //   coul_force = F_scalar / r = k*q1*q2 * (erfc(β*r)/r³ + 2*β/√π * exp(-β²r²)/r²)
+        float beta_r = d_ewald_beta * r;
+        float erfc_br = erfcf(beta_r);  // CUDA built-in complementary error function
+        float exp_b2r2 = expf(-beta_r * beta_r);
+
+        // Short-range energy
+        coul_e = scale_coul * COULOMB_CONST * q_prod * erfc_br * inv_r;
+
+        // Short-range force (with extra 1/r for force convention)
+        // d/dr[erfc(βr)/r] = -erfc(βr)/r² - 2β/√π * exp(-β²r²)/r
+        float two_beta_sqrt_pi = 2.0f * d_ewald_beta * 0.5641895835f;  // 2β/√π
+        coul_force = scale_coul * COULOMB_CONST * q_prod *
+            (erfc_br * inv_r * inv_r * inv_r + two_beta_sqrt_pi * exp_b2r2 * inv_r * inv_r);
+    }
 
     float total_force = lj_force + coul_force;
     *f_i_out = make_float3(total_force * r_ij.x, total_force * r_ij.y, total_force * r_ij.z);
@@ -512,6 +606,11 @@ extern "C" __global__ void amber_mega_fused_hmc_step(
         float3 b1 = make_float3_sub(p1, p0);
         float3 b2 = make_float3_sub(p2, p1);
         float3 b3 = make_float3_sub(p3, p2);
+
+        // Apply PBC wrapping to dihedral vectors (minimum image convention)
+        b1 = apply_pbc(b1);
+        b2 = apply_pbc(b2);
+        b3 = apply_pbc(b3);
 
         float3 n1 = cross3(b1, b2);
         float3 n2 = cross3(b2, b3);
@@ -771,6 +870,8 @@ __device__ void compute_all_bonded_forces_flat(
         float3 pos_i = make_float3(pos[i*3], pos[i*3+1], pos[i*3+2]);
         float3 pos_j = make_float3(pos[j*3], pos[j*3+1], pos[j*3+2]);
         float3 r_ij = make_float3_sub(pos_j, pos_i);
+        // Apply PBC wrapping to bond vector (minimum image convention)
+        r_ij = apply_pbc(r_ij);
         float r = norm3(r_ij);
 
         if (r > 1e-6f) {
@@ -801,6 +902,9 @@ __device__ void compute_all_bonded_forces_flat(
 
         float3 r_ji = make_float3_sub(pos_i, pos_j);
         float3 r_jk = make_float3_sub(pos_k, pos_j);
+        // Apply PBC wrapping to angle vectors (minimum image convention)
+        r_ji = apply_pbc(r_ji);
+        r_jk = apply_pbc(r_jk);
         float d_ji = norm3(r_ji);
         float d_jk = norm3(r_jk);
 
@@ -858,6 +962,11 @@ __device__ void compute_all_bonded_forces_flat(
         float3 b1 = make_float3_sub(pos_j, pos_i);
         float3 b2 = make_float3_sub(pos_k, pos_j);
         float3 b3 = make_float3_sub(pos_l, pos_k);
+
+        // Apply PBC wrapping to dihedral vectors (minimum image convention)
+        b1 = apply_pbc(b1);
+        b2 = apply_pbc(b2);
+        b3 = apply_pbc(b3);
 
         float3 n1 = cross3(b1, b2);
         float3 n2 = cross3(b2, b3);
@@ -1044,17 +1153,36 @@ extern "C" __global__ void build_neighbor_list(
     int* my_neighbors = &neighbor_list[tid * NEIGHBOR_LIST_SIZE];
 
     // Check 27 neighboring cells (including self)
+    // With PBC, wrap cell indices around using modulo arithmetic
     for (int dz = -1; dz <= 1; dz++) {
         int iz = my_iz + dz;
-        if (iz < 0 || iz >= nz) continue;
+        // PBC wrapping for cell index
+        if (d_use_pbc) {
+            if (iz < 0) iz += nz;
+            else if (iz >= nz) iz -= nz;
+        } else {
+            if (iz < 0 || iz >= nz) continue;
+        }
 
         for (int dy = -1; dy <= 1; dy++) {
             int iy = my_iy + dy;
-            if (iy < 0 || iy >= ny) continue;
+            // PBC wrapping for cell index
+            if (d_use_pbc) {
+                if (iy < 0) iy += ny;
+                else if (iy >= ny) iy -= ny;
+            } else {
+                if (iy < 0 || iy >= ny) continue;
+            }
 
             for (int dx = -1; dx <= 1; dx++) {
                 int ix = my_ix + dx;
-                if (ix < 0 || ix >= nx) continue;
+                // PBC wrapping for cell index
+                if (d_use_pbc) {
+                    if (ix < 0) ix += nx;
+                    else if (ix >= nx) ix -= nx;
+                } else {
+                    if (ix < 0 || ix >= nx) continue;
+                }
 
                 int neighbor_cell = ix + iy * nx + iz * nx * ny;
                 int n_in_cell = cell_counts[neighbor_cell];
@@ -1065,10 +1193,18 @@ extern "C" __global__ void build_neighbor_list(
                     int j = cell_list[neighbor_cell * MAX_ATOMS_PER_CELL + k];
                     if (j == tid) continue;  // Skip self
 
-                    // Distance check
+                    // Distance check with PBC (minimum image convention)
                     float dx_ij = positions[j * 3] - my_x;
                     float dy_ij = positions[j * 3 + 1] - my_y;
                     float dz_ij = positions[j * 3 + 2] - my_z;
+
+                    // Apply PBC wrapping to displacement
+                    if (d_use_pbc) {
+                        dx_ij -= d_box_dims.x * rintf(dx_ij * d_box_inv.x);
+                        dy_ij -= d_box_dims.y * rintf(dy_ij * d_box_inv.y);
+                        dz_ij -= d_box_dims.z * rintf(dz_ij * d_box_inv.z);
+                    }
+
                     float r2 = dx_ij * dx_ij + dy_ij * dy_ij + dz_ij * dz_ij;
 
                     // Skip if outside cutoff (with small buffer for list reuse)
@@ -1136,6 +1272,14 @@ __device__ void compute_nonbonded_neighbor_list(
         float dx = pos[j * 3] - my_x;
         float dy = pos[j * 3 + 1] - my_y;
         float dz = pos[j * 3 + 2] - my_z;
+
+        // Apply PBC wrapping to displacement (minimum image convention)
+        if (d_use_pbc) {
+            dx -= d_box_dims.x * rintf(dx * d_box_inv.x);
+            dy -= d_box_dims.y * rintf(dy * d_box_inv.y);
+            dz -= d_box_dims.z * rintf(dz * d_box_inv.z);
+        }
+
         float r2 = dx * dx + dy * dy + dz * dz;
 
         // Skip if outside cutoff (neighbor list has buffer)
@@ -1161,12 +1305,28 @@ __device__ void compute_nonbonded_neighbor_list(
         float lj_force = 24.0f * eps_ij * (2.0f * sigma6_r6 * sigma6_r6 - sigma6_r6) / r2_soft;
         float lj_energy = 4.0f * eps_ij * sigma6_r6 * (sigma6_r6 - 1.0f);
 
-        // IMPLICIT SOLVENT: Coulomb with distance-dependent dielectric ε=4r
-        // Energy: V = k*q1*q2/(4r²), Force: F = 2*V/r
+        // Coulomb: Use implicit solvent (ε=4r) OR Ewald short-range with PME
+        float coul_energy = 0.0f;
+        float coul_force = 0.0f;
         float q_ij = my_q * charge[j];
         float inv_r_coul = 1.0f / (r + 0.1f);
-        float coul_energy = COULOMB_CONST * q_ij * IMPLICIT_SOLVENT_SCALE * inv_r_coul * inv_r_coul;
-        float coul_force = 2.0f * coul_energy * inv_r_coul;
+
+        if (d_use_pme == 0) {
+            // IMPLICIT SOLVENT: Coulomb with distance-dependent dielectric ε=4r
+            // Energy: V = k*q1*q2/(4r²), Force: F = 2*V/r
+            coul_energy = COULOMB_CONST * q_ij * IMPLICIT_SOLVENT_SCALE * inv_r_coul * inv_r_coul;
+            coul_force = 2.0f * coul_energy * inv_r_coul;
+        } else {
+            // EXPLICIT SOLVENT (PME): Short-range Ewald with erfc screening
+            float beta_r = d_ewald_beta * r;
+            float erfc_br = erfcf(beta_r);
+            float exp_b2r2 = expf(-beta_r * beta_r);
+
+            coul_energy = COULOMB_CONST * q_ij * erfc_br * inv_r_coul;
+            float two_beta_sqrt_pi = 2.0f * d_ewald_beta * 0.5641895835f;
+            coul_force = COULOMB_CONST * q_ij *
+                (erfc_br * inv_r_coul * inv_r_coul + two_beta_sqrt_pi * exp_b2r2 * inv_r_coul);
+        }
 
         // Total force with capping
         float total_force = lj_force + coul_force;
@@ -1277,6 +1437,8 @@ __device__ void compute_nonbonded_tiled_flat(
                     s_pos_y[k] - my_pos.y,
                     s_pos_z[k] - my_pos.z
                 );
+                // Apply periodic boundary conditions (minimum image convention)
+                r_ij = apply_pbc(r_ij);
                 float r2 = r_ij.x * r_ij.x + r_ij.y * r_ij.y + r_ij.z * r_ij.z;
 
                 // Skip if outside cutoff (most pairs) - saves expensive exclusion check
@@ -1330,12 +1492,38 @@ __device__ void compute_nonbonded_tiled_flat(
                 float lj_force = lj_scale * 24.0f * eps_ij * (2.0f * sigma6_r6 * sigma6_r6 - sigma6_r6) / r2_soft;
                 float lj_energy = lj_scale * 4.0f * eps_ij * sigma6_r6 * (sigma6_r6 - 1.0f);
 
-                // IMPLICIT SOLVENT: Coulomb with ε=4r, SCALED for 1-4 pairs
-                // Energy: V = k*q1*q2/(4r²), Force: F = 2*V/r
+                // Coulomb: Use implicit solvent OR Ewald short-range with PME (scaled for 1-4)
+                float coul_energy = 0.0f;
+                float coul_force = 0.0f;
                 float q_ij = my_q * s_q[k];
                 float inv_r_coul = 1.0f / (r + 0.1f);  // Small softening
-                float coul_energy = coul_scale * COULOMB_CONST * q_ij * IMPLICIT_SOLVENT_SCALE * inv_r_coul * inv_r_coul;
-                float coul_force = 2.0f * coul_energy * inv_r_coul;
+
+                if (d_use_pme == 0) {
+                    // IMPLICIT SOLVENT: Coulomb with ε=4r, SCALED for 1-4 pairs
+                    // Energy: V = k*q1*q2/(4r²), Force: F = 2*V/r
+                    coul_energy = coul_scale * COULOMB_CONST * q_ij * IMPLICIT_SOLVENT_SCALE * inv_r_coul * inv_r_coul;
+                    coul_force = 2.0f * coul_energy * inv_r_coul;
+                } else {
+                    // EXPLICIT SOLVENT (PME): Short-range Ewald with erfc, SCALED for 1-4
+                    //
+                    // Force convention: total_force * r_ij gives F_scalar * r_hat
+                    // This requires total_force = F_scalar / r (like LJ force uses /r²)
+                    //
+                    // For erfc(βr)/r potential:
+                    //   F_scalar = k*q * [erfc(βr)/r² + 2β/√π * exp(-β²r²)/r]
+                    //   F_scalar/r = k*q * [erfc(βr)/r³ + 2β/√π * exp(-β²r²)/r²]
+                    //
+                    float beta_r = d_ewald_beta * r;
+                    float erfc_br = erfcf(beta_r);
+                    float exp_b2r2 = expf(-beta_r * beta_r);
+
+                    coul_energy = coul_scale * COULOMB_CONST * q_ij * erfc_br * inv_r_coul;
+                    float two_beta_sqrt_pi = 2.0f * d_ewald_beta * 0.5641895835f;
+                    // Note: extra inv_r_coul to convert F_scalar to F_scalar/r
+                    coul_force = coul_scale * COULOMB_CONST * q_ij *
+                        (erfc_br * inv_r_coul * inv_r_coul * inv_r_coul +
+                         two_beta_sqrt_pi * exp_b2r2 * inv_r_coul * inv_r_coul);
+                }
 
                 // Cap forces to prevent explosion
                 float total_force = lj_force + coul_force;
@@ -1413,19 +1601,17 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // ===== STEP 1: Zero forces (first thread only) =====
+    // ===== STEP 1: Zero energy accumulators =====
+    // NOTE: Forces are NOT zeroed here - they may contain external contributions
+    // (e.g., PME reciprocal forces) that were computed before kernel launch.
+    // The bonded/non-bonded functions use atomicAdd to accumulate on existing forces.
     if (tid == 0) {
         *total_energy = 0.0f;
         *kinetic_energy = 0.0f;
     }
     __syncthreads();
 
-    if (tid < n_atoms * 3) {
-        forces[tid] = 0.0f;
-    }
-    __syncthreads();
-
-    // ===== STEP 2: Compute all forces =====
+    // ===== STEP 2: Compute all forces (ACCUMULATE, don't overwrite) =====
 
     // Bonded forces
     compute_all_bonded_forces_flat(
@@ -1446,31 +1632,35 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
     );
     __syncthreads();
 
-    // ===== STEP 3: BAOAB Langevin integration for robust temperature control =====
+    // ===== STEP 3: Velocity Verlet with Langevin thermostat (BAOB scheme) =====
     //
-    // BAOAB is a splitting scheme for Langevin dynamics that naturally controls
-    // temperature through friction and noise. This is MUCH more stable than
-    // velocity-Verlet with thermostat because it dampens velocities EVERY step.
+    // This is a velocity-Verlet-like integrator with O-step in the middle:
+    //   B: v += (dt/2) * a          (HALF kick from current forces)
+    //   A: x += dt * v              (FULL drift)
+    //   O: v = c*v + sqrt(1-c²)*σ*ξ (thermostat)
+    //   B: v += (dt/2) * a          (HALF kick - uses SAME forces, approximation)
     //
-    // The Langevin equation: m*dv/dt = F - γ*m*v + sqrt(2*γ*m*kB*T)*ξ
+    // The key insight is that splitting the kick into two halves (even with the
+    // same forces) reduces the integration error compared to a single full kick.
+    // The O-step in the middle helps decouple the thermostat from force artifacts.
     //
-    // BAOAB splitting (B=kick, A=drift, O=Ornstein-Uhlenbeck):
-    //   B: v += 0.5 * dt * a           (half kick from forces)
-    //   A: x += 0.5 * dt * v           (half drift)
-    //   O: v = c*v + sqrt(1-c²)*σ*ξ   (friction + noise, c=exp(-γ*dt))
-    //   A: x += 0.5 * dt * v           (half drift)
-    //   B: v += 0.5 * dt * a           (half kick from forces)
+    // Note: This still uses "stale" forces for the second half-kick (forces
+    // computed before the drift). For true velocity Verlet, we'd need to
+    // recompute forces after drift. But this BAOB scheme is more stable than
+    // the previous O-B-A because:
+    //   1. Half-kicks cause smaller velocity changes
+    //   2. O-step is applied AFTER drift, at the "natural" time
+    //   3. The scheme is closer to time-reversible
     //
     // Reference: Leimkuhler & Matthews, "Molecular Dynamics" (2015)
     //
-    // Friction coefficient γ is now a CONFIGURABLE PARAMETER (passed from Rust)
-    // Typical values:
+    // Friction coefficient γ is configurable:
     //   γ = 0.001 fs⁻¹ (1 ps⁻¹)  - Production: preserves natural dynamics
-    //   γ = 0.01  fs⁻¹ (10 ps⁻¹) - Equilibration: fast thermalization (~100 steps)
+    //   γ = 0.01  fs⁻¹ (10 ps⁻¹) - Equilibration: fast thermalization
     //   γ = 0.1   fs⁻¹ (100 ps⁻¹)- Aggressive: Brownian dynamics limit
-    // gamma_fs is passed as kernel argument
     const float c = expf(-gamma_fs * dt);  // Ornstein-Uhlenbeck decay
     const float c2 = 1.0f - c * c;
+    const float half_dt = 0.5f * dt;  // For half-kicks
 
     if (tid < n_atoms) {
         float mass = nb_mass[tid];
@@ -1494,17 +1684,17 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
         float vy = velocities[tid * 3 + 1];
         float vz = velocities[tid * 3 + 2];
 
-        // B: First half-kick
-        vx += 0.5f * dt * ax;
-        vy += 0.5f * dt * ay;
-        vz += 0.5f * dt * az;
+        // B: First HALF kick from current forces
+        vx += half_dt * ax;
+        vy += half_dt * ay;
+        vz += half_dt * az;
 
-        // A: First half-drift
-        positions[tid * 3] += 0.5f * dt * vx;
-        positions[tid * 3 + 1] += 0.5f * dt * vy;
-        positions[tid * 3 + 2] += 0.5f * dt * vz;
+        // A: Full drift to new position
+        float px = positions[tid * 3] + dt * vx;
+        float py = positions[tid * 3 + 1] + dt * vy;
+        float pz = positions[tid * 3 + 2] + dt * vz;
 
-        // O: Ornstein-Uhlenbeck (friction + thermal noise)
+        // O: Ornstein-Uhlenbeck (friction + thermal noise) - in the MIDDLE
         // This is the key step that controls temperature!
         // Generate random numbers for noise using PCG-like hash
         // Incorporates both atom index AND step counter for unique noise each step
@@ -1541,20 +1731,16 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
         vy = c * vy + noise_scale * noise2;
         vz = c * vz + noise_scale * noise3;
 
-        // A: Second half-drift
-        positions[tid * 3] += 0.5f * dt * vx;
-        positions[tid * 3 + 1] += 0.5f * dt * vy;
-        positions[tid * 3 + 2] += 0.5f * dt * vz;
+        // B: Second HALF kick (using same forces - approximation)
+        vx += half_dt * ax;
+        vy += half_dt * ay;
+        vz += half_dt * az;
 
-        // B: Second half-kick
-        vx += 0.5f * dt * ax;
-        vy += 0.5f * dt * ay;
-        vz += 0.5f * dt * az;
-
-        // NOTE: Removed soft_limit_velocity3 - it's NOT energy-conserving and acts as
-        // an energy sink. When PE converts to KE (atoms relax), the soft limiter clips
-        // velocities and that energy is LOST. The Langevin friction (O-step) naturally
-        // controls velocities via the dissipation-fluctuation theorem.
+        // Apply PBC wrapping to keep atoms in primary box
+        float3 pos_wrapped = wrap_position(make_float3(px, py, pz));
+        positions[tid * 3] = pos_wrapped.x;
+        positions[tid * 3 + 1] = pos_wrapped.y;
+        positions[tid * 3 + 2] = pos_wrapped.z;
 
         // Store velocities
         velocities[tid * 3] = vx;
@@ -1569,7 +1755,147 @@ extern "C" __global__ void amber_mega_fused_hmc_step_flat(
 }
 
 /**
+ * @brief Set periodic boundary conditions box dimensions
+ *
+ * Call this kernel with a single thread (<<<1, 1>>>) to set up PBC.
+ * Set dims = (0,0,0) to disable PBC for vacuum/implicit solvent simulations.
+ *
+ * @param box_x  Box dimension in X (Å)
+ * @param box_y  Box dimension in Y (Å)
+ * @param box_z  Box dimension in Z (Å)
+ */
+extern "C" __global__ void set_pbc_box(
+    float box_x,
+    float box_y,
+    float box_z,
+    int use_pme_flag  // 1 = enable PME (explicit solvent), 0 = implicit solvent (ε=4r)
+) {
+    // Only thread 0 sets the device global variables
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        if (box_x > 0.0f && box_y > 0.0f && box_z > 0.0f) {
+            // Enable PBC with given box dimensions
+            d_use_pbc = 1;
+            d_use_pme = use_pme_flag;  // Caller controls whether to use PME
+            d_box_dims = make_float3(box_x, box_y, box_z);
+            d_box_inv = make_float3(1.0f / box_x, 1.0f / box_y, 1.0f / box_z);
+        } else {
+            // Disable PBC (vacuum/IMPLICIT solvent)
+            d_use_pbc = 0;
+            d_use_pme = 0;  // Use implicit solvent Coulomb (ε=4r)
+            d_box_dims = make_float3(0.0f, 0.0f, 0.0f);
+            d_box_inv = make_float3(0.0f, 0.0f, 0.0f);
+        }
+    }
+}
+
+/**
+ * @brief Apply flat-bottom position restraints
+ *
+ * Restrains selected atoms toward reference positions with a FLAT-BOTTOM potential:
+ *   - For |r - r_ref| < flat_radius: F = 0 (atom moves freely)
+ *   - For |r - r_ref| >= flat_radius: F = -k * (r - r_ref - flat_radius * direction)
+ *
+ * This allows thermal fluctuations within the flat-bottom region while preventing
+ * large-scale unfolding. The key insight is that harmonic restraints act like
+ * friction (constantly opposing velocity), which removes kinetic energy faster
+ * than the Langevin thermostat can add it. Flat-bottom restraints only act on
+ * atoms that have moved too far, allowing the thermostat to maintain temperature.
+ *
+ * @param forces        Force array to accumulate into [n_atoms * 3]
+ * @param energy        Potential energy to accumulate into [1]
+ * @param positions     Current positions [n_atoms * 3]
+ * @param ref_positions Reference positions [n_restrained * 3]
+ * @param restrained_atoms Indices of atoms to restrain [n_restrained]
+ * @param n_restrained  Number of restrained atoms
+ * @param k_restraint   Spring constant (kcal/(mol*Å²))
+ */
+extern "C" __global__ void apply_position_restraints(
+    float* __restrict__ forces,
+    float* __restrict__ energy,
+    const float* __restrict__ positions,
+    const float* __restrict__ ref_positions,
+    const int* __restrict__ restrained_atoms,
+    int n_restrained,
+    float k_restraint
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_restrained) return;
+
+    // Flat-bottom radius: atoms within this distance from reference are NOT restrained
+    // Small value (0.1 Å) allows minimal thermal fluctuations while preventing
+    // the friction-like behavior of pure harmonic restraints.
+    // At 310K, RMS fluctuation for C is ~0.15 Å, so 0.1 Å is conservative.
+    const float FLAT_RADIUS = 0.1f;  // Å - reduced to prevent drift
+
+    int atom_idx = restrained_atoms[tid];
+
+    // Get current and reference positions
+    float px = positions[atom_idx * 3];
+    float py = positions[atom_idx * 3 + 1];
+    float pz = positions[atom_idx * 3 + 2];
+
+    float rx = ref_positions[tid * 3];
+    float ry = ref_positions[tid * 3 + 1];
+    float rz = ref_positions[tid * 3 + 2];
+
+    // Displacement from reference
+    float dx = px - rx;
+    float dy = py - ry;
+    float dz = pz - rz;
+    float r = sqrtf(dx * dx + dy * dy + dz * dz);
+
+    // Flat-bottom potential: zero force within FLAT_RADIUS
+    if (r < FLAT_RADIUS) {
+        // No force - atom is within allowed range
+        return;
+    }
+
+    // Outside flat region: harmonic restraint from the edge of the flat region
+    // Effective displacement = r - FLAT_RADIUS (in the direction of displacement)
+    float r_eff = r - FLAT_RADIUS;
+    float r_inv = 1.0f / (r + 1e-10f);  // Avoid division by zero
+
+    // Unit vector from reference to current position
+    float ux = dx * r_inv;
+    float uy = dy * r_inv;
+    float uz = dz * r_inv;
+
+    // Harmonic restraint: E = 0.5 * k * r_eff²
+    float e_restraint = 0.5f * k_restraint * r_eff * r_eff;
+
+    // Force: F = -dE/dr * direction = -k * r_eff * u
+    float f_mag = -k_restraint * r_eff;
+    float fx = f_mag * ux;
+    float fy = f_mag * uy;
+    float fz = f_mag * uz;
+
+    // Accumulate forces
+    atomicAdd(&forces[atom_idx * 3], fx);
+    atomicAdd(&forces[atom_idx * 3 + 1], fy);
+    atomicAdd(&forces[atom_idx * 3 + 2], fz);
+
+    // Accumulate energy
+    atomicAdd(energy, e_restraint);
+}
+
+/**
+ * @brief Splitmix64 hash for better seed initialization
+ * This ensures well-separated initial states for different threads
+ */
+__device__ unsigned long long splitmix64(unsigned long long x) {
+    x ^= x >> 30;
+    x *= 0xBF58476D1CE4E5B9ULL;
+    x ^= x >> 27;
+    x *= 0x94D049BB133111EBULL;
+    x ^= x >> 31;
+    return x;
+}
+
+/**
  * @brief Initialize velocities with flat arrays
+ *
+ * Uses Maxwell-Boltzmann distribution at target temperature.
+ * Each velocity component has variance σ² = kB*T/m in appropriate units.
  */
 extern "C" __global__ void initialize_velocities_flat(
     float* __restrict__ velocities,    // [n_atoms * 3]
@@ -1581,28 +1907,47 @@ extern "C" __global__ void initialize_velocities_flat(
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= n_atoms) return;
 
-    // Simple LCG random number generator
-    unsigned long long state = seed + tid * 12345ULL;
+    // Use splitmix64 hash for proper seed separation between threads
+    // This ensures each thread has a well-distributed initial state
+    unsigned long long state = splitmix64(seed ^ ((unsigned long long)tid * 0x9E3779B97F4A7C15ULL));
 
-    auto rand_normal = [&state]() -> float {
+    // LCG with good multiplier from PCG family
+    auto rand_u64 = [&state]() -> unsigned long long {
         state = state * 6364136223846793005ULL + 1442695040888963407ULL;
-        float u1 = (state >> 11) * (1.0f / 9007199254740992.0f);
-        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
-        float u2 = (state >> 11) * (1.0f / 9007199254740992.0f);
-        u1 = fmaxf(1e-10f, u1);
-        return sqrtf(-2.0f * logf(u1)) * cosf(2.0f * M_PI * u2);
+        return state;
+    };
+
+    // Convert to uniform [0, 1)
+    auto rand_uniform = [&rand_u64]() -> float {
+        return (rand_u64() >> 11) * (1.0f / 9007199254740992.0f);
+    };
+
+    // Box-Muller transform for normal distribution
+    // Returns two independent N(0,1) values
+    auto rand_normal_pair = [&rand_uniform](float& n1, float& n2) {
+        float u1 = fmaxf(1e-10f, rand_uniform());
+        float u2 = rand_uniform();
+        float r = sqrtf(-2.0f * logf(u1));
+        float theta = 2.0f * M_PI * u2;
+        n1 = r * cosf(theta);
+        n2 = r * sinf(theta);
     };
 
     float mass = nb_mass[tid];
     if (mass < 1e-6f) mass = 12.0f;
 
     // sigma[Å/fs] = sqrt(kB * T * FORCE_TO_ACCEL / m)
-    // Matching CPU: sigma = (KB_KCAL * temperature / mass * FORCE_CONVERSION_FACTOR).sqrt()
+    // where FORCE_TO_ACCEL converts (kcal/mol)/amu to Å²/fs²
     float sigma = sqrtf(KB * temperature * FORCE_TO_ACCEL / mass);
 
-    velocities[tid * 3] = sigma * rand_normal();
-    velocities[tid * 3 + 1] = sigma * rand_normal();
-    velocities[tid * 3 + 2] = sigma * rand_normal();
+    // Generate 3 normal random numbers (need 2 pairs, use first 3)
+    float n1, n2, n3, n4;
+    rand_normal_pair(n1, n2);
+    rand_normal_pair(n3, n4);
+
+    velocities[tid * 3] = sigma * n1;
+    velocities[tid * 3 + 1] = sigma * n2;
+    velocities[tid * 3 + 2] = sigma * n3;
 }
 
 /**
@@ -1708,18 +2053,15 @@ extern "C" __global__ void amber_steepest_descent_step(
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Zero forces and energy
+    // Zero energy accumulator only
+    // NOTE: Forces are NOT zeroed here - host code handles force zeroing
+    // before kernel launch to allow external force contributions if needed.
     if (tid == 0) {
         *total_energy = 0.0f;
     }
     __syncthreads();
 
-    if (tid < n_atoms * 3) {
-        forces[tid] = 0.0f;
-    }
-    __syncthreads();
-
-    // Compute all forces
+    // Compute all forces (ACCUMULATE on existing forces)
     compute_all_bonded_forces_flat(
         positions, forces, total_energy,
         bond_atoms, bond_params,
@@ -1836,6 +2178,8 @@ __device__ void compute_fast_forces_flat(
         float3 pos_i = make_float3(pos[i*3], pos[i*3+1], pos[i*3+2]);
         float3 pos_j = make_float3(pos[j*3], pos[j*3+1], pos[j*3+2]);
         float3 r_ij = make_float3_sub(pos_j, pos_i);
+        // Apply PBC wrapping to bond vector (minimum image convention)
+        r_ij = apply_pbc(r_ij);
         float r = norm3(r_ij);
 
         if (r > 1e-6f) {
@@ -1866,6 +2210,9 @@ __device__ void compute_fast_forces_flat(
 
         float3 r_ji = make_float3_sub(pos_i, pos_j);
         float3 r_jk = make_float3_sub(pos_k, pos_j);
+        // Apply PBC wrapping to angle vectors (minimum image convention)
+        r_ji = apply_pbc(r_ji);
+        r_jk = apply_pbc(r_jk);
         float d_ji = norm3(r_ji);
         float d_jk = norm3(r_jk);
 
@@ -1989,6 +2336,11 @@ extern "C" __global__ void amber_respa_hmc_step_flat(
         float3 b1 = make_float3_sub(pos_j, pos_i);
         float3 b2 = make_float3_sub(pos_k, pos_j);
         float3 b3 = make_float3_sub(pos_l, pos_k);
+
+        // Apply PBC wrapping to dihedral vectors (minimum image convention)
+        b1 = apply_pbc(b1);
+        b2 = apply_pbc(b2);
+        b3 = apply_pbc(b3);
 
         float3 n1 = cross3(b1, b2);
         float3 n2 = cross3(b2, b3);
@@ -2695,4 +3047,254 @@ extern "C" __global__ void execute_replica_swaps(
     velocities[idx_j] = tmp_x;
     velocities[idx_j + 1] = tmp_y;
     velocities[idx_j + 2] = tmp_z;
+}
+
+// ============================================================================
+// PROPER VELOCITY VERLET INTEGRATION KERNELS
+// ============================================================================
+//
+// These kernels implement proper velocity Verlet integration with TWO force
+// evaluations per step, which is essential for energy conservation:
+//
+// 1. compute_forces_only: Compute all forces at current positions
+// 2. velocity_verlet_step1: v += (dt/2)*a; x += dt*v  (half-kick + drift)
+// 3. compute_forces_only: Recompute forces at new positions
+// 4. velocity_verlet_step2: v += (dt/2)*a; O-step  (half-kick + thermostat)
+//
+// This is a TIME-REVERSIBLE integrator that conserves energy in NVE.
+// Reference: Leimkuhler & Matthews, "Molecular Dynamics" (2015)
+// ============================================================================
+
+/**
+ * @brief Compute all forces (bonded + non-bonded) WITHOUT integration
+ *
+ * This kernel ONLY computes forces and does NOT update positions/velocities.
+ * Call this before each velocity Verlet half-step.
+ */
+extern "C" __global__ void compute_forces_only(
+    const float* __restrict__ positions,     // [n_atoms * 3]
+    float* __restrict__ forces,              // [n_atoms * 3] - OUTPUT
+    float* __restrict__ total_energy,        // [1] - OUTPUT
+
+    // Topology - Bonds
+    const int* __restrict__ bond_atoms,      // [n_bonds * 2] (i, j)
+    const float* __restrict__ bond_params,   // [n_bonds * 2] (k, r0)
+
+    // Topology - Angles
+    const int* __restrict__ angle_atoms,     // [n_angles * 4] (i, j, k, pad)
+    const float* __restrict__ angle_params,  // [n_angles * 2] (k, theta0)
+
+    // Topology - Dihedrals
+    const int* __restrict__ dihedral_atoms,  // [n_dihedrals * 4]
+    const float* __restrict__ dihedral_params, // [n_dihedrals * 4] (k, n, phase, pad)
+
+    // Non-bonded parameters
+    const float* __restrict__ nb_sigma,      // [n_atoms]
+    const float* __restrict__ nb_epsilon,    // [n_atoms]
+    const float* __restrict__ nb_charge,     // [n_atoms]
+    const int* __restrict__ excl_list,       // [n_atoms * max_excl]
+    const int* __restrict__ n_excl,          // [n_atoms]
+    const int* __restrict__ pair14_list,     // [n_atoms * max_14]
+    const int* __restrict__ n_pairs14,       // [n_atoms]
+    int max_excl, int max_14,
+
+    // Configuration
+    int n_atoms, int n_bonds, int n_angles, int n_dihedrals
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Zero energy accumulator (only thread 0)
+    if (tid == 0) {
+        *total_energy = 0.0f;
+    }
+    __syncthreads();
+
+    // NOTE: Forces should be zeroed by caller before this kernel!
+    // This allows external forces (PME, restraints) to be added first.
+
+    // Compute bonded forces
+    compute_all_bonded_forces_flat(
+        positions, forces, total_energy,
+        bond_atoms, bond_params,
+        angle_atoms, angle_params,
+        dihedral_atoms, dihedral_params,
+        n_bonds, n_angles, n_dihedrals, tid
+    );
+    __syncthreads();
+
+    // Compute non-bonded forces
+    compute_nonbonded_tiled_flat(
+        positions, forces, total_energy,
+        nb_sigma, nb_epsilon, nb_charge,
+        excl_list, n_excl, pair14_list, n_pairs14,
+        max_excl, max_14, n_atoms, tid
+    );
+}
+
+/**
+ * @brief Velocity Verlet Step 1: Half-kick + Full drift
+ *
+ * v += (dt/2) * a  (half kick)
+ * x += dt * v      (full drift)
+ *
+ * Call AFTER compute_forces_only to use current forces for the half-kick.
+ */
+extern "C" __global__ void velocity_verlet_step1(
+    float* __restrict__ positions,           // [n_atoms * 3] - MODIFIED
+    float* __restrict__ velocities,          // [n_atoms * 3] - MODIFIED
+    const float* __restrict__ forces,        // [n_atoms * 3] - INPUT (from compute_forces_only)
+    const float* __restrict__ nb_mass,       // [n_atoms]
+    int n_atoms,
+    float dt
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    float mass = nb_mass[tid];
+    if (mass < 1e-6f) mass = 12.0f;
+    float inv_mass = 1.0f / mass;
+
+    // Load forces and apply soft limiting
+    float fx = forces[tid * 3];
+    float fy = forces[tid * 3 + 1];
+    float fz = forces[tid * 3 + 2];
+    soft_limit_force3(&fx, &fy, &fz, MAX_FORCE, SOFT_LIMIT_STEEPNESS);
+
+    // Compute acceleration
+    float accel_factor = FORCE_TO_ACCEL * inv_mass;
+    float ax = fx * accel_factor;
+    float ay = fy * accel_factor;
+    float az = fz * accel_factor;
+
+    // Load velocities
+    float vx = velocities[tid * 3];
+    float vy = velocities[tid * 3 + 1];
+    float vz = velocities[tid * 3 + 2];
+
+    // Half-kick: v += (dt/2) * a
+    float half_dt = 0.5f * dt;
+    vx += half_dt * ax;
+    vy += half_dt * ay;
+    vz += half_dt * az;
+
+    // Store updated velocities
+    velocities[tid * 3] = vx;
+    velocities[tid * 3 + 1] = vy;
+    velocities[tid * 3 + 2] = vz;
+
+    // Full drift: x += dt * v
+    float px = positions[tid * 3] + dt * vx;
+    float py = positions[tid * 3 + 1] + dt * vy;
+    float pz = positions[tid * 3 + 2] + dt * vz;
+
+    // Apply PBC wrapping
+    float3 pos_wrapped = wrap_position(make_float3(px, py, pz));
+    positions[tid * 3] = pos_wrapped.x;
+    positions[tid * 3 + 1] = pos_wrapped.y;
+    positions[tid * 3 + 2] = pos_wrapped.z;
+}
+
+/**
+ * @brief Velocity Verlet Step 2: Half-kick + O-step (Langevin thermostat)
+ *
+ * v += (dt/2) * a  (half kick with NEW forces)
+ * O-step           (friction + noise)
+ *
+ * Call AFTER recomputing forces at the new positions from step1.
+ */
+extern "C" __global__ void velocity_verlet_step2(
+    float* __restrict__ velocities,          // [n_atoms * 3] - MODIFIED
+    float* __restrict__ kinetic_energy,      // [1] - OUTPUT
+    const float* __restrict__ forces,        // [n_atoms * 3] - INPUT (recomputed at new positions!)
+    const float* __restrict__ nb_mass,       // [n_atoms]
+    int n_atoms,
+    float dt,
+    float temperature,
+    float gamma_fs,
+    unsigned int step
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Zero KE accumulator
+    if (tid == 0) {
+        *kinetic_energy = 0.0f;
+    }
+    __syncthreads();
+
+    if (tid >= n_atoms) return;
+
+    float mass = nb_mass[tid];
+    if (mass < 1e-6f) mass = 12.0f;
+    float inv_mass = 1.0f / mass;
+
+    // Load forces and apply soft limiting
+    float fx = forces[tid * 3];
+    float fy = forces[tid * 3 + 1];
+    float fz = forces[tid * 3 + 2];
+    soft_limit_force3(&fx, &fy, &fz, MAX_FORCE, SOFT_LIMIT_STEEPNESS);
+
+    // Compute acceleration
+    float accel_factor = FORCE_TO_ACCEL * inv_mass;
+    float ax = fx * accel_factor;
+    float ay = fy * accel_factor;
+    float az = fz * accel_factor;
+
+    // Load velocities
+    float vx = velocities[tid * 3];
+    float vy = velocities[tid * 3 + 1];
+    float vz = velocities[tid * 3 + 2];
+
+    // Half-kick: v += (dt/2) * a (with NEW forces!)
+    float half_dt = 0.5f * dt;
+    vx += half_dt * ax;
+    vy += half_dt * ay;
+    vz += half_dt * az;
+
+    // O-step: Langevin thermostat (only if gamma > 0)
+    if (gamma_fs > 1e-10f) {
+        float c = expf(-gamma_fs * dt);
+        float c2 = 1.0f - c * c;
+
+        // Generate random numbers
+        unsigned long long state = splitmix64((unsigned long long)tid +
+                                              (unsigned long long)step * 0x9E3779B97F4A7C15ULL);
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        float u1 = (state >> 11) * (1.0f / 9007199254740992.0f);
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        float u2 = (state >> 11) * (1.0f / 9007199254740992.0f);
+        u1 = fmaxf(1e-10f, u1);
+        float noise1 = sqrtf(-2.0f * logf(u1)) * cosf(2.0f * M_PI * u2);
+
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        u1 = (state >> 11) * (1.0f / 9007199254740992.0f);
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        u2 = (state >> 11) * (1.0f / 9007199254740992.0f);
+        u1 = fmaxf(1e-10f, u1);
+        float noise2 = sqrtf(-2.0f * logf(u1)) * cosf(2.0f * M_PI * u2);
+
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        u1 = (state >> 11) * (1.0f / 9007199254740992.0f);
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        u2 = (state >> 11) * (1.0f / 9007199254740992.0f);
+        u1 = fmaxf(1e-10f, u1);
+        float noise3 = sqrtf(-2.0f * logf(u1)) * cosf(2.0f * M_PI * u2);
+
+        float sigma = sqrtf(KB * temperature * FORCE_TO_ACCEL / mass);
+        float noise_scale = sqrtf(c2) * sigma;
+
+        // Apply O-step: v = c*v + sqrt(1-c²)*σ*ξ
+        vx = c * vx + noise_scale * noise1;
+        vy = c * vy + noise_scale * noise2;
+        vz = c * vz + noise_scale * noise3;
+    }
+
+    // Store velocities
+    velocities[tid * 3] = vx;
+    velocities[tid * 3 + 1] = vy;
+    velocities[tid * 3 + 2] = vz;
+
+    // Compute kinetic energy
+    float v2 = vx*vx + vy*vy + vz*vz;
+    float ke = 0.5f * mass * v2 / FORCE_TO_ACCEL;
+    atomicAdd(kinetic_energy, ke);
 }

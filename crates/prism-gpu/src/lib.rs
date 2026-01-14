@@ -23,6 +23,16 @@ pub mod amber_forces;
 // Mega-fused AMBER HMC dynamics (full GPU acceleration)
 pub mod amber_mega_fused;
 
+// PME (Particle Mesh Ewald) for long-range electrostatics
+pub mod cufft_sys;
+pub mod pme;
+
+// SETTLE constraint solver for rigid water
+pub mod settle;
+
+// H-bond constraint solver for protein X-H bonds
+pub mod h_constraints;
+
 // Essential exports
 pub use context::{GpuContext, GpuInfo, GpuSecurityConfig};
 pub use global_context::{GlobalGpuContext, GlobalGpuError};
@@ -38,6 +48,9 @@ pub use bio_chemistry_gpu::{BiochemistryGpu, GpuAtomicMetadata, MAX_ATOMS as BIO
 pub use prism_nova::{PrismNova, NovaConfig, NovaStepResult, RESERVOIR_SIZE as NOVA_RESERVOIR_SIZE};
 pub use amber_forces::{AmberBondedForces, TopologyBuilder, BondParam, AngleParam, DihedralParam, EnergyComponents};
 pub use amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, build_exclusion_lists as build_amber_exclusions, MAX_EXCLUSIONS as AMBER_MAX_EXCLUSIONS};
+pub use pme::PME;
+pub use settle::Settle;
+pub use h_constraints::{HConstraints, HConstraintCluster, ClusterType, build_h_clusters};
 pub use memory::{VramGuard, VramInfo, VramGuardError, init_global_vram_guard, global_vram_guard};
 pub use whcr::{WhcrGpu, RepairResult as WhcrRepairResult};
 
