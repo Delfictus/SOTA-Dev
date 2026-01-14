@@ -109,8 +109,8 @@ impl Default for SamplingConfig {
             steps_per_sample: 100,
             temperature: 310.0,
             seed: 42,
-            timestep_fs: Some(2.0),
-            leapfrog_steps: Some(5),
+            timestep_fs: Some(0.5),    // Reduced from 2.0 fs for numerical stability
+            leapfrog_steps: Some(10),  // Increased from 5 for better trajectory integration
         }
     }
 }

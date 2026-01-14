@@ -28,6 +28,7 @@ use std::collections::HashMap;
 
 use crate::gnm_enhanced::{EnhancedGnm, EnhancedGnmConfig, EnhancedGnmResult};
 use crate::amber_ff14sb::{AmberTopology, PdbAtom, GpuTopology};
+use crate::amber_dynamics::{AmberSimulator, AmberSimConfig, AmberSimResult};
 
 /// Dynamics computation mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -542,17 +543,105 @@ impl DynamicsEngine {
             );
         }
 
-        // Generate topology
+        // Convert structure to PDB atoms
         let pdb_atoms = structure.to_pdb_atoms()
             .ok_or_else(|| anyhow::anyhow!("Failed to convert to PDB atoms"))?;
 
-        let _topology = AmberTopology::from_pdb_atoms(&pdb_atoms);
-        let _gpu_topology = GpuTopology::from_amber(&_topology);
+        // Create AMBER simulation config from dynamics config
+        let amber_config = AmberSimConfig {
+            temperature: self.config.temperature as f64,
+            timestep: (self.config.timestep * 1000.0) as f64, // ps to fs
+            n_leapfrog_steps: 10,
+            friction: 1.0,
+            use_langevin: true, // Langevin is more stable than HMC
+            seed: 42,
+            use_gpu: true, // Use GPU acceleration when available
+        };
 
-        // TODO: Initialize AMBER force calculator and run HMC
-        // For now, fall back to enhanced GNM
-        log::warn!("All-atom AMBER mode not fully implemented, falling back to Enhanced GNM");
-        self.run_enhanced_gnm(structure)
+        // Create simulator
+        let mut simulator = AmberSimulator::new(&pdb_atoms, amber_config)?;
+
+        // Run simulation
+        let save_every = self.config.trajectory_interval.max(1);
+        let amber_result = simulator.run(self.config.n_steps, save_every)?;
+
+        // Convert per-atom RMSF to per-residue RMSF
+        // Group atoms by residue and average their RMSF values
+        let atom_residue_indices = structure.atom_residue_indices.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing atom_residue_indices"))?;
+
+        let n_residues = structure.n_residues();
+        let mut residue_rmsf = vec![0.0f64; n_residues];
+        let mut residue_atom_counts = vec![0usize; n_residues];
+
+        for (atom_idx, &res_idx) in atom_residue_indices.iter().enumerate() {
+            if res_idx < n_residues {
+                if let Some(&rmsf_val) = amber_result.rmsf.get(atom_idx) {
+                    residue_rmsf[res_idx] += rmsf_val;
+                    residue_atom_counts[res_idx] += 1;
+                }
+            }
+        }
+
+        // Average per residue
+        for (i, count) in residue_atom_counts.iter().enumerate() {
+            if *count > 0 {
+                residue_rmsf[i] /= *count as f64;
+            }
+        }
+
+        // Convert trajectory frames
+        let trajectory = if self.config.save_trajectory {
+            Some(amber_result.trajectory.iter().enumerate().map(|(idx, frame)| {
+                // Extract CA positions from all-atom positions
+                let atom_names = structure.atom_names.as_ref();
+                let ca_positions: Vec<[f32; 3]> = frame.positions.iter()
+                    .enumerate()
+                    .filter(|(i, _)| {
+                        atom_names.map(|names| names.get(*i).map(|n| n.trim() == "CA").unwrap_or(false))
+                            .unwrap_or(false)
+                    })
+                    .map(|(_, pos)| [pos[0] as f32, pos[1] as f32, pos[2] as f32])
+                    .collect();
+
+                TrajectoryFrame {
+                    index: idx,
+                    time_ps: (frame.time / 1000.0) as f32, // fs to ps
+                    ca_positions,
+                    all_positions: Some(frame.positions.iter()
+                        .map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
+                        .collect()),
+                    potential_energy: frame.potential_energy as f32,
+                    kinetic_energy: frame.kinetic_energy as f32,
+                }
+            }).collect())
+        } else {
+            None
+        };
+
+        log::info!(
+            "AMBER simulation completed: {} steps, acceptance={:.1}%, avg_PE={:.1} kcal/mol, avg_T={:.1}K",
+            self.config.n_steps,
+            amber_result.acceptance_rate * 100.0,
+            amber_result.avg_potential_energy,
+            amber_result.avg_temperature
+        );
+
+        Ok(DynamicsResult {
+            mode: DynamicsMode::AllAtomAmber,
+            rmsf: residue_rmsf,
+            secondary_structure: None,
+            sasa: None,
+            burial_depth: None,
+            domains: None,
+            eigenvalues: None,
+            collectivity: None,
+            trajectory,
+            acceptance_rate: Some(amber_result.acceptance_rate as f32),
+            total_energy: Some(amber_result.avg_potential_energy as f32),
+            computation_time_ms: 0, // Will be set by caller
+            experimental_correlation: None,
+        })
     }
 
     /// Run Coarse-Grained ANM mode

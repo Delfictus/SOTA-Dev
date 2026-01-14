@@ -502,6 +502,8 @@ mod tests {
             residue_names: vec!["ALA".to_string(); 100],
             chain_ids: vec!["A".to_string(); 100],
             b_factors: vec![20.0; 100],
+            atom_names: vec!["CA".to_string(); 100],
+            residue_seqs: (1..=100).collect(),
             n_residues: 10,
             n_atoms: 100,
             pocket_residues: Some(vec![1, 2, 3]),

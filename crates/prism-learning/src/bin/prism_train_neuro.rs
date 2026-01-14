@@ -32,6 +32,9 @@ use std::time::Instant;
 use std::fs;
 use serde::{Serialize, Deserialize};
 use chrono::Utc;
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use prism_learning::{
     CalibrationManifest,
@@ -42,6 +45,7 @@ use prism_learning::{
     Transition,
     SimulationBuffers,
     calculate_macro_step_reward,
+    NeuralStateExport,
 };
 use prism_physics::molecular_dynamics::{MolecularDynamicsEngine, MolecularDynamicsConfig};
 use prism_io::sovereign_types::Atom;
@@ -99,6 +103,36 @@ struct Args {
     /// Verbose logging
     #[arg(short, long)]
     verbose: bool,
+
+    // ========== CONTINUAL LEARNING OPTIONS ==========
+
+    /// Resume from checkpoint (load existing weights)
+    #[arg(long)]
+    resume: Option<String>,
+
+    /// Number of full epochs (passes through all targets)
+    #[arg(long, default_value = "1")]
+    epochs: usize,
+
+    /// Randomize target order within interleaved pattern each epoch
+    #[arg(long)]
+    randomize: bool,
+
+    /// Initial learning rate multiplier (>1 for faster learning)
+    #[arg(long, default_value = "1.0")]
+    lr_multiplier: f32,
+
+    /// Enable curriculum learning (progressive difficulty)
+    #[arg(long)]
+    curriculum: bool,
+
+    /// Minimum epsilon (lower = more exploitation of learned policy)
+    #[arg(long, default_value = "0.05")]
+    epsilon_min: f64,
+
+    /// Epsilon decay rate (higher = slower decay, more exploration)
+    #[arg(long, default_value = "0.995")]
+    epsilon_decay: f64,
 }
 
 /// Training statistics
@@ -240,6 +274,14 @@ fn write_hil_status(output_dir: &str, status: &HilStatus) {
     }
 }
 
+/// Write neural network state for visualization dashboard
+fn write_neural_state(output_dir: &str, state: &NeuralStateExport) {
+    let state_path = format!("{}/neural_state.json", output_dir);
+    if let Ok(json) = serde_json::to_string_pretty(state) {
+        let _ = fs::write(&state_path, json);
+    }
+}
+
 /// Acknowledge HIL control command
 fn ack_hil_control(output_dir: &str, ack_id: u64) {
     let control_path = format!("{}/hil_control.json", output_dir);
@@ -286,7 +328,12 @@ fn calculate_trend(values: &[f32]) -> f32 {
 
 /// Interleave targets by family in round-robin fashion
 /// This creates a "zipper" pattern: family1_t1, family2_t1, family3_t1, family1_t2, ...
-fn interleave_targets_by_family(targets: &[prism_learning::ProteinTarget]) -> Vec<usize> {
+/// If randomize=true, shuffles within each family for variety while maintaining interleaving
+fn interleave_targets_by_family(
+    targets: &[prism_learning::ProteinTarget],
+    randomize: bool,
+    seed: u64,
+) -> Vec<usize> {
     use std::collections::HashMap;
 
     // Group target indices by family
@@ -297,9 +344,22 @@ fn interleave_targets_by_family(targets: &[prism_learning::ProteinTarget]) -> Ve
             .push(idx);
     }
 
-    // Get sorted family names for consistent ordering
+    // Optionally randomize within each family
+    if randomize {
+        let mut rng = StdRng::seed_from_u64(seed);
+        for indices in family_indices.values_mut() {
+            indices.shuffle(&mut rng);
+        }
+    }
+
+    // Get family names (randomize order too if requested)
     let mut family_names: Vec<_> = family_indices.keys().cloned().collect();
-    family_names.sort();
+    if randomize {
+        let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1));
+        family_names.shuffle(&mut rng);
+    } else {
+        family_names.sort();
+    }
 
     // Create interleaved order
     let mut interleaved: Vec<usize> = Vec::with_capacity(targets.len());
@@ -316,6 +376,28 @@ fn interleave_targets_by_family(targets: &[prism_learning::ProteinTarget]) -> Ve
     }
 
     interleaved
+}
+
+/// Sort targets by difficulty for curriculum learning
+/// Easy (low difficulty) first, hard (high difficulty) last
+fn curriculum_sort_targets(targets: &[prism_learning::ProteinTarget]) -> Vec<usize> {
+    let mut indexed: Vec<(usize, &str)> = targets.iter()
+        .enumerate()
+        .map(|(i, t)| (i, t.difficulty.as_str()))
+        .collect();
+
+    // Sort by difficulty: easy < medium < hard < expert
+    indexed.sort_by_key(|(_, diff)| {
+        match *diff {
+            "easy" => 0,
+            "medium" => 1,
+            "hard" => 2,
+            "expert" => 3,
+            _ => 1, // Default to medium
+        }
+    });
+
+    indexed.into_iter().map(|(i, _)| i).collect()
 }
 
 fn main() -> Result<()> {
@@ -359,13 +441,16 @@ fn main() -> Result<()> {
           (args.macro_steps as u64 * args.steps_per_macro) / 1_000_000);
 
     // Create Dendritic Agent configuration
+    // If resuming, start with lower epsilon (more exploitation)
+    let epsilon_start = if args.resume.is_some() { 0.3 } else { 1.0 };
+
     let agent_config = DendriticAgentConfig {
         reservoir_size: args.reservoir_size,
         lambda: args.lambda,
         tau: 0.005,  // Polyak averaging coefficient
-        epsilon_start: 1.0,
-        epsilon_min: 0.05,
-        epsilon_decay: 0.995,
+        epsilon_start,
+        epsilon_min: args.epsilon_min,
+        epsilon_decay: args.epsilon_decay,
         gamma: 0.99,
         target_update_freq: 100,
     };
@@ -376,10 +461,28 @@ fn main() -> Result<()> {
     info!("   RLS lambda: {} (forgetting factor)", agent_config.lambda);
     info!("   Features: 23 raw → 46 expanded (+ velocity)");
     info!("   CUDA device: {}", args.device);
+    if args.resume.is_some() {
+        info!("   🔄 CONTINUAL LEARNING MODE: Starting from checkpoint");
+    }
 
     // Create agent
     let mut agent = DendriticAgent::new_with_config(23, args.device, agent_config)
         .context("Failed to create Dendritic Agent")?;
+
+    // Load checkpoint if resuming
+    if let Some(ref checkpoint_path) = args.resume {
+        info!("📂 Loading checkpoint: {}", checkpoint_path);
+        agent.load(checkpoint_path)
+            .with_context(|| format!("Failed to load checkpoint: {}", checkpoint_path))?;
+        info!("   ✅ Weights loaded successfully!");
+        info!("   Starting epsilon: {:.3} (lower = more exploitation of learned policy)", epsilon_start);
+    }
+
+    // Set initial learning rate multiplier
+    if args.lr_multiplier != 1.0 {
+        agent.set_learning_rate_multiplier(args.lr_multiplier);
+        info!("   📈 Learning rate multiplier: {}x", args.lr_multiplier);
+    }
 
     // Training loop
     let mut stats = TrainingStats::default();
@@ -404,26 +507,72 @@ fn main() -> Result<()> {
             .targets_count += 1;
     }
 
-    // Create interleaved target order (zipper pattern across families)
-    let interleaved_order = interleave_targets_by_family(&manifest.targets);
-
-    // Log the interleaved training order
-    info!("🔀 INTERLEAVED TRAINING ORDER (zipper across families):");
-    let mut current_round = 0;
-    let num_families = learning_monitor.family_performance.len();
-    for (i, &idx) in interleaved_order.iter().enumerate() {
-        let target = &manifest.targets[idx];
-        let round = i / num_families;
-        if round != current_round {
-            current_round = round;
-            info!("   --- Round {} ---", round + 1);
-        }
-        info!("   {}: {} [{}]", i + 1, target.name, target.family);
+    // Training mode info
+    let mode_str = if args.curriculum {
+        "CURRICULUM (easy→hard)"
+    } else if args.randomize {
+        "RANDOMIZED INTERLEAVED"
+    } else {
+        "INTERLEAVED"
+    };
+    info!("📚 Training Mode: {}", mode_str);
+    info!("   Epochs: {} (full passes through all targets)", args.epochs);
+    if args.randomize {
+        info!("   🎲 Order will be randomized each epoch for better generalization");
     }
     info!("");
-    info!("💡 This interleaved order helps the network learn cross-family patterns");
-    info!("   by exposing it to diverse protein structures in rapid succession.");
-    info!("");
+
+    let num_families = learning_monitor.family_performance.len();
+
+    // ========================================================================
+    // EPOCH LOOP - Multiple passes through all targets
+    // ========================================================================
+    for epoch in 0..args.epochs {
+        println!();
+        println!("{}",  "╔══════════════════════════════════════════════════════════════════════════╗");
+        info!("🔄 EPOCH {}/{} {}", epoch + 1, args.epochs,
+              if args.resume.is_some() { "(CONTINUAL LEARNING)" } else { "" });
+        println!("{}",  "╚══════════════════════════════════════════════════════════════════════════╝");
+
+        // Create target order for this epoch
+        let epoch_seed = (epoch as u64).wrapping_mul(12345).wrapping_add(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        );
+
+        let interleaved_order = if args.curriculum {
+            // Curriculum: easy targets first, hard targets last
+            curriculum_sort_targets(&manifest.targets)
+        } else {
+            // Interleaved with optional randomization
+            interleave_targets_by_family(&manifest.targets, args.randomize, epoch_seed)
+        };
+
+        // Log the training order for this epoch
+        if epoch == 0 || args.randomize {
+            info!("🔀 {} ORDER (Epoch {}):", mode_str.to_uppercase(), epoch + 1);
+            let mut current_round = 0;
+            for (i, &idx) in interleaved_order.iter().enumerate() {
+                let target = &manifest.targets[idx];
+                let round = i / num_families;
+                if round != current_round && !args.curriculum {
+                    current_round = round;
+                    info!("   --- Round {} ---", round + 1);
+                }
+                info!("   {}: {} [{}] ({})", i + 1, target.name, target.family, target.difficulty);
+            }
+            info!("");
+        }
+
+        // Progressive learning rate adjustment per epoch
+        if args.epochs > 1 && epoch > 0 {
+            // Gradually decrease learning rate each epoch for fine-tuning
+            let epoch_lr = args.lr_multiplier * (0.8_f32).powi(epoch as i32);
+            agent.set_learning_rate_multiplier(epoch_lr);
+            info!("📈 Epoch {} learning rate: {:.2}x (progressive decay)", epoch + 1, epoch_lr);
+        }
 
     for (order_idx, &target_idx) in interleaved_order.iter().enumerate() {
         let target = &manifest.targets[target_idx];
@@ -617,6 +766,10 @@ fn main() -> Result<()> {
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
             write_hil_status(&args.output, &status);
+
+            // Export neural network state for visualization dashboard
+            let neural_state = agent.export_neural_state(None);
+            write_neural_state(&args.output, &neural_state);
             // ================================================================
 
             // Early stopping on target reward
@@ -671,6 +824,21 @@ fn main() -> Result<()> {
         let target_path = format!("{}/agent_after_{}.json", args.output, target.name);
         agent.save(&target_path)?;
     }
+
+        // End of epoch - save epoch checkpoint
+        let epoch_path = format!("{}/agent_epoch_{}.json", args.output, epoch + 1);
+        agent.save(&epoch_path)?;
+        info!("💾 Epoch {} checkpoint saved: {}", epoch + 1, epoch_path);
+
+        // Epoch summary
+        println!();
+        println!("{}",  "╔══════════════════════════════════════════════════════════════════════════╗");
+        info!("📊 EPOCH {}/{} COMPLETE", epoch + 1, args.epochs);
+        info!("   Targets this epoch: {}", manifest.targets.len());
+        info!("   Total episodes: {}", stats.total_episodes);
+        info!("   Best reward: {:+.6}", stats.best_reward);
+        println!("{}",  "╚══════════════════════════════════════════════════════════════════════════╝");
+    } // End of epoch loop
 
     // Final summary
     let training_time = training_start.elapsed();
@@ -776,11 +944,12 @@ fn run_macro_step_episode(
         }
         current_buffers.global_step = (macro_step as u64 + 1) * steps_per_macro;
 
-        // D. Calculate macro-step reward
+        // D. Calculate macro-step reward (now with stability + clash penalties)
         let step_reward = calculate_macro_step_reward(
             &initial_buffers,
             &current_buffers,
             &target.target_residues,
+            &target.core_residues,
             reward_weights,
             macro_step,
             num_macro_steps,

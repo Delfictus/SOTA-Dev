@@ -118,7 +118,7 @@ impl WhcrGpu {
 
         // Load PTX
         let ptx_path =
-            std::env::var("PRISM_PTX_PATH").unwrap_or_else(|_| "target/ptx/whcr.ptx".to_string();
+            std::env::var("PRISM_PTX_PATH").unwrap_or_else(|_| "target/ptx/whcr.ptx".to_string());
 
         log::debug!("Loading WHCR PTX from: {}", ptx_path);
 
@@ -127,14 +127,14 @@ impl WhcrGpu {
         let module = context.load_module(ptx)?;
 
         // Get kernel functions from module
-        let count_conflicts_f32 = module.load_function("count_conflicts_f32").unwrap());
-        let count_conflicts_f64 = module.load_function("count_conflicts_f64").unwrap());
-        let compute_wavelet_details = module.load_function("compute_wavelet_details").unwrap());
-        let evaluate_moves_f32 = module.load_function("evaluate_moves_f32").unwrap());
-        let evaluate_moves_f64 = module.load_function("evaluate_moves_f64").unwrap());
-        let compute_wavelet_priorities = module.load_function("compute_wavelet_priorities").unwrap());
-        let apply_moves_with_locking = module.load_function("apply_moves_with_locking").unwrap());
-        let apply_moves_with_locking_f64 = module.load_function("apply_moves_with_locking_f64").unwrap());
+        let count_conflicts_f32 = module.load_function("count_conflicts_f32").unwrap();
+        let count_conflicts_f64 = module.load_function("count_conflicts_f64").unwrap();
+        let compute_wavelet_details = module.load_function("compute_wavelet_details").unwrap();
+        let evaluate_moves_f32 = module.load_function("evaluate_moves_f32").unwrap();
+        let evaluate_moves_f64 = module.load_function("evaluate_moves_f64").unwrap();
+        let compute_wavelet_priorities = module.load_function("compute_wavelet_priorities").unwrap();
+        let apply_moves_with_locking = module.load_function("apply_moves_with_locking").unwrap();
+        let apply_moves_with_locking_f64 = module.load_function("apply_moves_with_locking_f64").unwrap();
 
         // Allocate graph data on GPU
         let d_coloring = stream.alloc_zeros::<i32>(num_vertices)?;
@@ -401,7 +401,7 @@ impl WhcrGpu {
         // Upload coloring to GPU
         log::debug!("WHCR: Uploading coloring to GPU");
         let coloring_i32: Vec<i32> = coloring.iter().map(|&c| c as i32).collect();
-        self.d_coloring = self.stream.clone_htod(coloring_i32)?;
+        self.d_coloring = self.stream.clone_htod(&coloring_i32)?;
         log::debug!("WHCR: Coloring uploaded successfully");
 
         // Initial wavelet decomposition before V-cycle
@@ -599,7 +599,7 @@ impl WhcrGpu {
             if conflict_counts_source_f64 {
                 let counts_f64 = self.stream.clone_dtoh(&self.d_conflict_counts_f64)?;
                 let counts_f32: Vec<f32> = counts_f64.iter().map(|&c| c as f32).collect();
-                self.d_conflict_counts_f32 = self.stream.clone_htod(counts_f32))?;
+                self.d_conflict_counts_f32 = self.stream.clone_htod(&counts_f32)?;
             }
 
             // ========== MOVE EVALUATION AND APPLICATION ==========
@@ -670,7 +670,7 @@ impl WhcrGpu {
                     })
                     .collect();
                 // sort descending by priority
-                scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal);
+                scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 let top_k = scored.len().max(1).min(256);
                 let filtered: Vec<i32> = scored.into_iter().take(top_k).map(|(_, v)| v).collect();
                 if filtered.is_empty() {
@@ -729,7 +729,7 @@ impl WhcrGpu {
                     for v in 0..num_conflict_vertices.min(5) {
                         let base = v * num_colors;
                         let slice = &deltas[base..base + num_colors];
-                        sample.push(slice.to_vec();
+                        sample.push(slice.to_vec());
                     }
                     log::warn!(
                         "WHCR debug: no moves applied; conflict_vertices={}, sample_deltas(len={}): {:?}",
@@ -818,7 +818,7 @@ impl WhcrGpu {
             // Reset num_moves_applied counter
             // self.stream.memset_zeros(&mut self.d_num_moves_applied)?;
              let zero = vec![0i32; 1];
-             self.d_num_moves_applied = self.stream.clone_htod(zero))?;
+             self.d_num_moves_applied = self.stream.clone_htod(&zero)?;
 
             let cfg = LaunchConfig::for_num_elems(num_conflict_vertices as u32);
 
@@ -912,7 +912,7 @@ impl WhcrGpu {
             // Reset locks for next iteration
             // self.stream.memset_zeros(&mut self.d_locks)?;
             let zeros_locks = vec![0i32; self.num_vertices]; // Inefficient but works
-            self.d_locks = self.stream.clone_htod(zeros_locks))?;
+            self.d_locks = self.stream.clone_htod(&zeros_locks)?;
 
             // ========== END MOVE EVALUATION AND APPLICATION ==========
 
@@ -978,7 +978,7 @@ impl WhcrGpu {
 
         // Level 0 approximations <- conflict counts
         if let Some(level0) = self.d_wavelet_levels.get_mut(0) {
-            level0.approximations = self.stream.clone_htod(counts))?;
+            level0.approximations = self.stream.clone_htod(&counts)?;
         }
 
         // Work coarse from level 1 upward
@@ -1001,7 +1001,7 @@ impl WhcrGpu {
             }
 
             // Upload coarse approximations
-            curr_level.approximations = self.stream.clone_htod(coarse_host))?;
+            curr_level.approximations = self.stream.clone_htod(&coarse_host)?;
 
             // Compute details: fine - coarse[proj]
             if let (Some(details), Some(proj)) = 

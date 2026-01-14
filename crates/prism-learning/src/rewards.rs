@@ -55,6 +55,12 @@ pub struct RewardBreakdown {
     pub stability_penalty: f32,
     pub clash_penalty: f32,
     pub target_bonus: f32,
+    /// v3.1.1: Bonus for glycan-correlated discovery
+    pub glycan_discovery_bonus: f32,
+    /// v3.1.1: Bonus for adjacent residue exposure
+    pub adjacent_bonus: f32,
+    /// v3.1.1: Site value multiplier applied
+    pub site_value_multiplier: f32,
 }
 
 /// Main entry point - evaluates simulation with configurable weights from manifest
@@ -351,35 +357,228 @@ fn calculate_com(buffers: &SimulationBuffers, indices: &[usize]) -> (f32, f32, f
 
 /// Calculate intermediate reward for macro-step training
 /// This gives partial credit during the simulation, not just at the end
+///
+/// UPDATED v3.1.1: Now includes stability penalty and clash penalty for
+/// more robust learning that doesn't reward protein destabilization.
 pub fn calculate_macro_step_reward(
     initial: &SimulationBuffers,
     current: &SimulationBuffers,
     target_residues: &[usize],
+    core_residues: &[usize],
     weights: &RewardWeighting,
     macro_step: usize,
     total_macro_steps: usize,
 ) -> f32 {
     let target_res_set: HashSet<usize> = target_residues.iter().cloned().collect();
+    let core_res_set: HashSet<usize> = core_residues.iter().cloned().collect();
+
     let mut target_atom_indices = Vec::new();
+    let mut core_atom_indices = Vec::new();
 
     for i in 0..initial.num_atoms {
         if let Some(res_idx) = initial.atom_to_res.get(i) {
-            if target_res_set.contains(&(*res_idx as usize)) {
+            let res = *res_idx as usize;
+            if target_res_set.contains(&res) {
                 target_atom_indices.push(i);
+            }
+            if core_res_set.contains(&res) {
+                core_atom_indices.push(i);
             }
         }
     }
 
-    // Calculate exposure progress
+    // Fallback: if no core residues specified, use non-target atoms
+    if core_atom_indices.is_empty() {
+        for i in 0..initial.num_atoms {
+            if let Some(res_idx) = initial.atom_to_res.get(i) {
+                if !target_res_set.contains(&(*res_idx as usize)) {
+                    core_atom_indices.push(i);
+                }
+            }
+        }
+    }
+
+    // 1. Calculate exposure progress (The "Carrot")
     let initial_exposure = calculate_exposure_score(initial, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
     let current_exposure = calculate_exposure_score(current, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
     let exposure_gain = current_exposure - initial_exposure;
 
-    // Scale reward based on progress through episode
+    // 2. Calculate stability penalty (The "Stick")
+    let core_rmsd = calculate_core_rmsd(initial, current, &core_atom_indices);
+    let rmsd_excess = (core_rmsd - weights.stability_threshold).max(0.0);
+    let stability_penalty = rmsd_excess * weights.rmsd_weight;
+
+    // 3. Calculate clash penalty
+    let clash_count = count_clashes(current, weights.clash_distance);
+    let clash_penalty = clash_count as f32 * weights.clash_penalty;
+
+    // 4. Scale reward based on progress through episode
     // Early macro-steps get smaller rewards, later ones get larger
+    // This encourages gradual opening rather than immediate disruption
     let progress_factor = (macro_step as f32 + 1.0) / (total_macro_steps as f32);
 
-    exposure_gain * weights.exposure_weight * progress_factor
+    // Final reward: exposure gain minus penalties, scaled by progress
+    let reward = (exposure_gain * weights.exposure_weight - stability_penalty - clash_penalty)
+                 * progress_factor;
+
+    reward
+}
+
+// ============================================================================================
+// v3.1.1 META-LEARNING REWARD UTILITIES
+// ============================================================================================
+
+/// Enhanced macro-step reward with glycan awareness and site value weighting
+///
+/// Key insight: When glycan displacement correlates with target exposure,
+/// it indicates biologically meaningful cryptic site opening (like the 6VXX discovery).
+/// This function rewards such correlated discovery with a bonus.
+///
+/// # Arguments
+/// * `initial` - Initial simulation state
+/// * `current` - Current simulation state
+/// * `target_residues` - Primary cryptic site residues
+/// * `core_residues` - Structurally stable reference residues
+/// * `glycan_residues` - Glycan-bearing residues (shield positions)
+/// * `adjacent_residues` - Secondary residues near primary targets
+/// * `site_value` - Priority multiplier (1.0 = standard, 5.0 = high-value epitope)
+/// * `weights` - Reward configuration from manifest
+/// * `macro_step` - Current macro-step in episode
+/// * `total_macro_steps` - Total macro-steps per episode
+pub fn calculate_enhanced_macro_step_reward(
+    initial: &SimulationBuffers,
+    current: &SimulationBuffers,
+    target_residues: &[usize],
+    core_residues: &[usize],
+    glycan_residues: &[usize],
+    adjacent_residues: &[usize],
+    site_value: f32,
+    weights: &RewardWeighting,
+    macro_step: usize,
+    total_macro_steps: usize,
+) -> (f32, RewardBreakdown) {
+    let target_res_set: HashSet<usize> = target_residues.iter().cloned().collect();
+    let core_res_set: HashSet<usize> = core_residues.iter().cloned().collect();
+    let glycan_res_set: HashSet<usize> = glycan_residues.iter().cloned().collect();
+    let adjacent_res_set: HashSet<usize> = adjacent_residues.iter().cloned().collect();
+
+    let mut target_atom_indices = Vec::new();
+    let mut core_atom_indices = Vec::new();
+    let mut glycan_atom_indices = Vec::new();
+    let mut adjacent_atom_indices = Vec::new();
+
+    for i in 0..initial.num_atoms {
+        if let Some(res_idx) = initial.atom_to_res.get(i) {
+            let res = *res_idx as usize;
+            if target_res_set.contains(&res) {
+                target_atom_indices.push(i);
+            }
+            if core_res_set.contains(&res) {
+                core_atom_indices.push(i);
+            }
+            if glycan_res_set.contains(&res) {
+                glycan_atom_indices.push(i);
+            }
+            if adjacent_res_set.contains(&res) {
+                adjacent_atom_indices.push(i);
+            }
+        }
+    }
+
+    // Fallback: if no core residues specified, use non-target atoms
+    if core_atom_indices.is_empty() {
+        for i in 0..initial.num_atoms {
+            if let Some(res_idx) = initial.atom_to_res.get(i) {
+                if !target_res_set.contains(&(*res_idx as usize)) {
+                    core_atom_indices.push(i);
+                }
+            }
+        }
+    }
+
+    let mut breakdown = RewardBreakdown::default();
+    breakdown.site_value_multiplier = site_value * weights.site_value_weight;
+
+    // 1. Calculate exposure progress (Primary target)
+    let initial_exposure = calculate_exposure_score(initial, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
+    let current_exposure = calculate_exposure_score(current, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
+    let exposure_gain = current_exposure - initial_exposure;
+    breakdown.exposure_component = exposure_gain * weights.exposure_weight;
+
+    // 2. Calculate stability penalty
+    let core_rmsd = calculate_core_rmsd(initial, current, &core_atom_indices);
+    let rmsd_excess = (core_rmsd - weights.stability_threshold).max(0.0);
+    breakdown.stability_penalty = rmsd_excess * weights.rmsd_weight;
+
+    // 3. Calculate clash penalty
+    let clash_count = count_clashes(current, weights.clash_distance);
+    breakdown.clash_penalty = clash_count as f32 * weights.clash_penalty;
+
+    // 4. Calculate glycan discovery bonus (NEW in v3.1.1)
+    if !glycan_atom_indices.is_empty() && exposure_gain > 0.0 {
+        let glycan_displacement = calculate_glycan_displacement(
+            initial, current, &glycan_atom_indices
+        );
+
+        // If glycan displacement exceeds threshold AND we have exposure gain,
+        // this indicates biologically meaningful opening (the 6VXX insight!)
+        if glycan_displacement >= weights.glycan_displacement_threshold {
+            // Correlation-based bonus: more displacement + more exposure = bigger bonus
+            let correlation_factor = (glycan_displacement / 10.0).min(1.0) * exposure_gain;
+            breakdown.glycan_discovery_bonus = correlation_factor * weights.glycan_discovery_bonus;
+        }
+    }
+
+    // 5. Calculate adjacent residue bonus (partial discovery indicator)
+    if !adjacent_atom_indices.is_empty() {
+        let initial_adj_exposure = calculate_exposure_score(initial, &adjacent_atom_indices, DEFAULT_CUTOFF_RADIUS);
+        let current_adj_exposure = calculate_exposure_score(current, &adjacent_atom_indices, DEFAULT_CUTOFF_RADIUS);
+        let adj_exposure_gain = current_adj_exposure - initial_adj_exposure;
+
+        if adj_exposure_gain > 0.0 {
+            breakdown.adjacent_bonus = adj_exposure_gain * weights.adjacent_bonus;
+        }
+    }
+
+    // 6. Scale reward based on progress through episode
+    let progress_factor = (macro_step as f32 + 1.0) / (total_macro_steps as f32);
+
+    // Final reward calculation with all components
+    let base_reward = breakdown.exposure_component
+                    + breakdown.glycan_discovery_bonus
+                    + breakdown.adjacent_bonus
+                    - breakdown.stability_penalty
+                    - breakdown.clash_penalty;
+
+    // Apply site value multiplier and progress scaling
+    let reward = base_reward * breakdown.site_value_multiplier * progress_factor;
+
+    (reward, breakdown)
+}
+
+/// Calculate average glycan displacement from initial positions
+fn calculate_glycan_displacement(
+    initial: &SimulationBuffers,
+    current: &SimulationBuffers,
+    glycan_indices: &[usize],
+) -> f32 {
+    if glycan_indices.is_empty() {
+        return 0.0;
+    }
+
+    let mut total_displacement = 0.0;
+
+    for &idx in glycan_indices {
+        let base = idx * 4;
+        if base + 2 < initial.positions.len() && base + 2 < current.positions.len() {
+            let dx = current.positions[base] - initial.positions[base];
+            let dy = current.positions[base + 1] - initial.positions[base + 1];
+            let dz = current.positions[base + 2] - initial.positions[base + 2];
+            total_displacement += (dx * dx + dy * dy + dz * dz).sqrt();
+        }
+    }
+
+    total_displacement / glycan_indices.len() as f32
 }
 
 #[cfg(test)]

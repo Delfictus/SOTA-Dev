@@ -432,6 +432,16 @@ pub struct FeatureConfig {
     /// - Electrostatic Frustration: Spring-loaded regions wanting to pop open
     #[serde(default = "default_false")]
     pub include_bio_chemistry: bool,
+
+    // ========== GPU ACCELERATION ==========
+
+    /// Use GPU-accelerated feature extraction for bio-chemistry features
+    /// NEW in v3.1.1 - Unlocks ~40% more GPU utilization by moving
+    /// feature extraction loops from CPU to CUDA kernels.
+    /// Falls back to CPU if GPU initialization fails.
+    /// Requires include_bio_chemistry = true to have effect.
+    #[serde(default = "default_false")]
+    pub use_gpu_features: bool,
 }
 
 fn default_neighbor_cutoff() -> f32 { 8.0 }
@@ -453,6 +463,7 @@ impl Default for FeatureConfig {
             include_glycan_awareness: false, // Backward compatible
             include_mechanism: false,        // Backward compatible
             include_bio_chemistry: false,    // Backward compatible
+            use_gpu_features: false,         // Opt-in for GPU acceleration
         }
     }
 }

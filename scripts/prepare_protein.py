@@ -16,18 +16,53 @@ except ImportError:
     print("OpenMM not found. Install with: conda install -c conda-forge openmm")
     sys.exit(1)
 
+# Try to import PDBFixer for better structure handling
+try:
+    from pdbfixer import PDBFixer
+    HAS_PDBFIXER = True
+except ImportError:
+    HAS_PDBFIXER = False
+    print("Warning: PDBFixer not found. Terminal capping may fail.")
+    print("Install with: conda install -c conda-forge pdbfixer")
+
 def prepare_protein(pdb_path, output_path, solvate=False):
     print(f"Loading {pdb_path}...")
-    pdb = app.PDBFile(pdb_path)
 
     # Use AMBER ff14SB force field
     forcefield = app.ForceField('amber14-all.xml', 'amber14/tip3pfb.xml')
 
-    # Create modeller for adding hydrogens
-    modeller = app.Modeller(pdb.topology, pdb.positions)
+    # Use PDBFixer for robust structure preparation
+    if HAS_PDBFIXER:
+        print("Using PDBFixer to fix structure...")
+        fixer = PDBFixer(filename=pdb_path)
+
+        # Find and add missing residues (gaps in the chain)
+        fixer.findMissingResidues()
+        if fixer.missingResidues:
+            print(f"  Found {len(fixer.missingResidues)} missing residue segments")
+            # Don't add missing residues - just note them
+            # fixer.missingResidues = {}  # Clear to skip adding
+
+        # Find and add missing atoms (including terminal OXT)
+        fixer.findMissingAtoms()
+        n_missing_atoms = sum(len(atoms) for atoms in fixer.missingAtoms.values())
+        n_missing_terminals = sum(len(atoms) for atoms in fixer.missingTerminals.values())
+        print(f"  Missing atoms: {n_missing_atoms}, Missing terminals: {n_missing_terminals}")
+
+        fixer.addMissingAtoms()
+
+        # Find and remove heterogens (water, ligands, etc.) - optional
+        # fixer.removeHeterogens(keepWater=False)
+
+        # Create modeller from fixed structure
+        modeller = app.Modeller(fixer.topology, fixer.positions)
+    else:
+        # Fallback: load directly
+        pdb = app.PDBFile(pdb_path)
+        modeller = app.Modeller(pdb.topology, pdb.positions)
 
     # Check if structure already has hydrogens
-    has_hydrogens = any(atom.element.symbol == 'H' for atom in pdb.topology.atoms())
+    has_hydrogens = any(atom.element.symbol == 'H' for atom in modeller.topology.atoms())
 
     if has_hydrogens:
         print("Structure already has hydrogens, skipping addHydrogens()")

@@ -55,6 +55,14 @@ pub enum AmberAtomType {
     CN = 24,    // sp2 junction C in TRP
     CB = 25,    // sp2 aromatic C in PHE, TYR, fused ring of TRP
 
+    // Water atoms (TIP3P)
+    OW = 26,    // TIP3P water oxygen
+    HW = 27,    // TIP3P water hydrogen
+
+    // Ions (Joung & Cheatham parameters)
+    IP = 28,    // Sodium cation (Na+)
+    IM = 29,    // Chloride anion (Cl-)
+
     Unknown = 255,
 }
 
@@ -272,6 +280,17 @@ impl AmberAtomType {
                 }
             },
 
+            // Water residues (TIP3P)
+            "WAT" | "HOH" | "SOL" | "TIP3" | "TIP3P" => match atom {
+                "O" | "OW" | "OH2" => AmberAtomType::OW,
+                "H1" | "H2" | "HW1" | "HW2" => AmberAtomType::HW,
+                _ => AmberAtomType::OW,
+            },
+
+            // Ions
+            "NA" | "NA+" | "SOD" => AmberAtomType::IP,
+            "CL" | "CL-" | "CLA" => AmberAtomType::IM,
+
             _ => {
                 // DEBUG: This catch-all may be hiding the real problem!
                 log::warn!(
@@ -410,6 +429,10 @@ pub fn get_bond_param(type1: AmberAtomType, type2: AmberAtomType) -> Option<Bond
         (CW, CB) => (1.365, 546.0),     // CW=18 < CB=25
         (CA, CN) => (1.400, 469.0),     // CA=15 < CN=24
         (NA, CN) => (1.380, 428.0),     // NA=19 < CN=24
+
+        // TIP3P Water bonds (OW=26, HW=27)
+        (OW, HW) => (0.9572, 553.0),    // TIP3P O-H bond
+        (HW, HW) => (1.5139, 553.0),    // Virtual H-H bond (for SETTLE reference)
 
         _ => {
             // DEBUG: Log every failed bond parameter lookup
@@ -552,6 +575,9 @@ pub fn get_angle_param(type1: AmberAtomType, type2: AmberAtomType, type3: AmberA
         (CN, CA, HA) | (HA, CA, CN) => (120.0, 50.0),      // CA-centered: TRP ring junction
         (CW, CB, CB) | (CB, CB, CW) => (107.0, 63.0),      // CB-centered: TRP 5-ring/6-ring junction
 
+        // TIP3P Water angle (HW-OW-HW)
+        (HW, OW, HW) => (104.52, 100.0),  // TIP3P H-O-H angle
+
         _ => {
             // DEBUG: Log every failed angle parameter lookup
             log::warn!(
@@ -687,6 +713,15 @@ pub fn get_lj_param(atom_type: AmberAtomType) -> LJParam {
         OH => (0.2104, 1.721),
         S | SH => (0.2500, 2.000),
         CA | CB | CC | CR | CV | CW | CN => (0.0860, 1.908),
+
+        // TIP3P Water (AMBER-compatible parameters)
+        OW => (0.1521, 1.7683),   // TIP3P oxygen: ε=0.1521, rmin/2=σ*2^(1/6)/2
+        HW => (0.0000, 0.0000),   // TIP3P hydrogen: no LJ
+
+        // Ions (Joung & Cheatham parameters for TIP3P water)
+        IP => (0.0874393, 1.212), // Na+
+        IM => (0.0355910, 2.711), // Cl-
+
         Unknown => (0.1094, 1.908), // Default to CT
     };
 
@@ -873,6 +908,15 @@ pub fn get_atom_mass(atom_type: AmberAtomType) -> f32 {
         N | N2 | N3 | NA | NB => 14.01,
         O | O2 | OH => 16.00,
         S | SH => 32.07,
+
+        // TIP3P Water
+        OW => 15.9994,  // Water oxygen
+        HW => 1.008,    // Water hydrogen
+
+        // Ions
+        IP => 22.9898,  // Na+
+        IM => 35.453,   // Cl-
+
         Unknown => 12.01, // Default to carbon
     }
 }
@@ -1148,6 +1192,17 @@ pub fn get_atom_charge(residue: &str, atom_name: &str) -> f32 {
             "HG11" | "HG12" | "HG13" | "HG21" | "HG22" | "HG23" => 0.0791,
             _ => 0.0,
         },
+
+        // TIP3P Water charges
+        "WAT" | "HOH" | "SOL" | "TIP3" | "TIP3P" => match atom {
+            "O" | "OW" | "OH2" => -0.834,
+            "H1" | "H2" | "HW1" | "HW2" => 0.417,
+            _ => 0.0,
+        },
+
+        // Ion charges
+        "NA" | "NA+" | "SOD" => 1.0,   // Na+
+        "CL" | "CL-" | "CLA" => -1.0,  // Cl-
 
         _ => 0.0,
     }

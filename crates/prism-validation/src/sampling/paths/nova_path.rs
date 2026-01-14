@@ -129,14 +129,16 @@ impl SamplingBackend for NovaPath {
         let topology = AmberTopology::from_pdb_atoms(&pdb_atoms);
 
         // Build NovaConfig
+        // Using 0.5 fs (0.0005 ps) timestep for numerical stability
+        // Increased leapfrog_steps from 3 to 10 for better trajectory integration
         let config = NovaConfig {
             n_atoms: structure.n_atoms() as i32,
             n_residues: structure.n_residues() as i32,
             temperature: 310.0,
-            dt: 0.002,
+            dt: 0.0005,  // 0.5 fs (reduced from 2 fs for stability)
             goal_strength: 0.1,
             lambda: 0.99,
-            leapfrog_steps: 3,
+            leapfrog_steps: 10,  // Increased from 3 for better sampling
             ..Default::default()
         };
 
@@ -163,6 +165,15 @@ impl SamplingBackend for NovaPath {
         if !angle_list.is_empty() {
             nova.upload_angles(&angle_list, &angle_params)
                 .context("NovaPath: Failed to upload angles")?;
+        }
+
+        // Upload dihedrals (CRITICAL for backbone phi/psi and sidechain chi angles)
+        // Without dihedrals, the protein backbone has no rotational stiffness
+        // and will collapse into a random coil immediately
+        let (dihedral_list, dihedral_params, term_counts) = topology_to_dihedral_arrays(&topology);
+        if !dihedral_list.is_empty() {
+            nova.upload_dihedrals(&dihedral_list, &dihedral_params, &term_counts)
+                .context("NovaPath: Failed to upload dihedrals")?;
         }
 
         // Initialize momenta and RLS
@@ -204,6 +215,11 @@ impl SamplingBackend for NovaPath {
 
         // Collect samples at intervals
         for sample_idx in 0..config.n_samples {
+            // Reinitialize momenta at the start of each sample to maintain canonical ensemble
+            // This compensates for numerical drift and energy accumulation
+            nova.initialize_momenta()
+                .with_context(|| format!("NovaPath: Momenta reinitialization failed at sample {}", sample_idx))?;
+
             let mut last_result: Option<NovaStepResult> = None;
 
             // Run decorrelation steps
@@ -444,6 +460,47 @@ fn topology_to_angle_arrays(topology: &AmberTopology) -> (Vec<i32>, Vec<f32>) {
     }
 
     (angle_list, angle_params)
+}
+
+/// Convert topology dihedrals to flat arrays for PrismNova
+///
+/// Returns:
+/// - dihedral_list: [i, j, k, l, i, j, k, l, ...] atom indices (4 per dihedral)
+/// - dihedral_params: [k, n, phase, paths, ...] flattened for all terms
+/// - term_counts: number of Fourier terms per dihedral
+#[cfg(feature = "cryptic-gpu")]
+fn topology_to_dihedral_arrays(topology: &AmberTopology) -> (Vec<i32>, Vec<f32>, Vec<i32>) {
+    let mut dihedral_list: Vec<i32> = Vec::new();
+    let mut dihedral_params: Vec<f32> = Vec::new();
+    let mut term_counts: Vec<i32> = Vec::new();
+
+    for (i, (a1, a2, a3, a4)) in topology.dihedrals.iter().enumerate() {
+        if i < topology.dihedral_params.len() {
+            let terms = &topology.dihedral_params[i];
+            if terms.is_empty() {
+                continue; // Skip dihedrals with no parameters
+            }
+
+            // Add atom indices
+            dihedral_list.push(*a1 as i32);
+            dihedral_list.push(*a2 as i32);
+            dihedral_list.push(*a3 as i32);
+            dihedral_list.push(*a4 as i32);
+
+            // Record number of terms for this dihedral
+            term_counts.push(terms.len() as i32);
+
+            // Add parameters for each term (k, n, phase, paths)
+            for term in terms {
+                dihedral_params.push(term.k);
+                dihedral_params.push(term.n as f32);
+                dihedral_params.push(term.phase);
+                dihedral_params.push(term.paths as f32);
+            }
+        }
+    }
+
+    (dihedral_list, dihedral_params, term_counts)
 }
 
 /// Convert flat positions [x0,y0,z0,x1,y1,z1,...] to [[x,y,z],...] for n_residues

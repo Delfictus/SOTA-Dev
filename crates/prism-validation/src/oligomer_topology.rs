@@ -454,7 +454,7 @@ impl OligomerTopology {
                         buried_sasa: interface_area * 0.5, // Rough estimate
                         interface_area,
                         center,
-                        cryptic_boost: 0.15, // +15% boost for interface residues
+                        cryptic_boost: 0.30, // +30% boost for interface residues (Phase 5.2)
                     });
                 }
             }
@@ -474,9 +474,15 @@ impl OligomerTopology {
     ///
     /// Interface residues are potentially cryptic - they're buried in the oligomer
     /// but become accessible when the complex dissociates.
+    ///
+    /// # Phase 5.2 Enhancement
+    /// Increased from 15% to 30% based on:
+    /// - CrypTothML shows interface residues are 2x more likely to be cryptic
+    /// - Epitopes cluster at protein-protein interfaces
+    /// - Interface burial creates druggable pockets upon dissociation
     pub fn get_interface_boost(&self, chain_id: &str, residue_num: i32) -> f64 {
         if self.is_interface_residue(chain_id, residue_num) {
-            0.15 // +15% boost to cryptic score
+            0.30 // +30% boost to cryptic score (Phase 5.2)
         } else {
             0.0
         }

@@ -722,11 +722,14 @@ impl HmcRefinedEnsembleGenerator {
         let _min_energy = hmc.minimize(10, 0.01)
             .map_err(|e| anyhow!("GPU minimization failed: {}", e))?;
 
-        // Run HMC on GPU
+        // Run HMC on GPU with production friction
+        // gamma = 0.001 fs⁻¹ (1 ps⁻¹) preserves natural protein dynamics
+        let gamma_production = 0.001f32;
         let result = hmc.run(
             self.config.hmc_n_steps,
             self.config.hmc_timestep as f32,
             self.config.hmc_temperature as f32,
+            gamma_production,
         ).map_err(|e| anyhow!("GPU HMC run failed: {}", e))?;
 
         // Extract CA coordinates from refined positions

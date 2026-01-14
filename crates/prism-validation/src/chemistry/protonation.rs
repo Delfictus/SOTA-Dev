@@ -315,10 +315,10 @@ impl Protonator {
             return None;
         }
 
-        // Glycine has two HA atoms (HA2, HA3) - we'll add one for now
-        // Skip glycine for simplicity (it needs special handling)
+        // Glycine has two HA atoms (HA2, HA3) instead of single HA
+        // GLY is handled in add_sidechain_hydrogens() which adds HA2 + HA3
         if ca_atom.residue_name == "GLY" {
-            return None; // TODO: Add HA2 and HA3 for glycine
+            return None; // GLY HA2/HA3 added in sidechain handler
         }
 
         let n_pos = n_atom.position;
@@ -1156,8 +1156,89 @@ impl Protonator {
                 }
             }
 
-            // GLY has no sidechain (only HA2, HA3 on Cα, handled in backbone)
-            "GLY" => {}
+            // GLY has two Cα hydrogens (HA2, HA3) instead of sidechain
+            // These MUST be added for AMBER ff14SB force field correctness
+            "GLY" => {
+                // Need N, Cα, and C for geometry
+                if let (Some(n_atom), Some(ca_atom), Some(c_atom)) =
+                    (atoms.get("N"), atoms.get("CA"), atoms.get("C"))
+                {
+                    let n_pos = n_atom.position;
+                    let ca_pos = ca_atom.position;
+                    let c_pos = c_atom.position;
+
+                    // Vectors from Cα to N and C
+                    let ca_to_n = normalize([
+                        n_pos[0] - ca_pos[0],
+                        n_pos[1] - ca_pos[1],
+                        n_pos[2] - ca_pos[2],
+                    ]);
+                    let ca_to_c = normalize([
+                        c_pos[0] - ca_pos[0],
+                        c_pos[1] - ca_pos[1],
+                        c_pos[2] - ca_pos[2],
+                    ]);
+
+                    // Normal to N-CA-C plane
+                    let normal = normalize(cross(ca_to_n, ca_to_c));
+
+                    // Base direction opposite to N and C
+                    let base = normalize([
+                        -(ca_to_n[0] + ca_to_c[0]),
+                        -(ca_to_n[1] + ca_to_c[1]),
+                        -(ca_to_n[2] + ca_to_c[2]),
+                    ]);
+
+                    // Tetrahedral angle: H atoms at ~109.5° from base
+                    // HA2 is on +normal side, HA3 is on -normal side
+                    let tetrahedral_factor = 0.816f32; // sin(109.5/2)
+                    let lift_factor = 0.577f32;        // cos(109.5/2)
+
+                    // HA2 direction (+normal)
+                    let ha2_dir = normalize([
+                        tetrahedral_factor * base[0] + lift_factor * normal[0],
+                        tetrahedral_factor * base[1] + lift_factor * normal[1],
+                        tetrahedral_factor * base[2] + lift_factor * normal[2],
+                    ]);
+
+                    // HA3 direction (-normal)
+                    let ha3_dir = normalize([
+                        tetrahedral_factor * base[0] - lift_factor * normal[0],
+                        tetrahedral_factor * base[1] - lift_factor * normal[1],
+                        tetrahedral_factor * base[2] - lift_factor * normal[2],
+                    ]);
+
+                    // Place HA2
+                    new_hydrogens.push(SanitizedAtom {
+                        index: existing.len() + new_hydrogens.len() + 1,
+                        name: "HA2".to_string(),
+                        residue_name: ca_atom.residue_name.clone(),
+                        residue_index: ca_atom.residue_index,
+                        chain_id: ca_atom.chain_id,
+                        position: [
+                            ca_pos[0] + ha2_dir[0] * CA_H_BOND_LENGTH,
+                            ca_pos[1] + ha2_dir[1] * CA_H_BOND_LENGTH,
+                            ca_pos[2] + ha2_dir[2] * CA_H_BOND_LENGTH,
+                        ],
+                        original_res_seq: ca_atom.original_res_seq,
+                    });
+
+                    // Place HA3
+                    new_hydrogens.push(SanitizedAtom {
+                        index: existing.len() + new_hydrogens.len() + 1,
+                        name: "HA3".to_string(),
+                        residue_name: ca_atom.residue_name.clone(),
+                        residue_index: ca_atom.residue_index,
+                        chain_id: ca_atom.chain_id,
+                        position: [
+                            ca_pos[0] + ha3_dir[0] * CA_H_BOND_LENGTH,
+                            ca_pos[1] + ha3_dir[1] * CA_H_BOND_LENGTH,
+                            ca_pos[2] + ha3_dir[2] * CA_H_BOND_LENGTH,
+                        ],
+                        original_res_seq: ca_atom.original_res_seq,
+                    });
+                }
+            }
 
             _ => {
                 // Unknown residue - skip sidechain H

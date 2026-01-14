@@ -31,29 +31,43 @@ use prism_gpu::amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, build_exclusi
 #[cfg(feature = "cryptic-gpu")]
 use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_angle_param, get_dihedral_params, get_lj_param};
 
+// Explicit solvent imports (optional feature)
+#[cfg(feature = "cryptic-gpu")]
+use prism_physics::solvation::{SolvationBox, SolvationConfig};
+#[cfg(feature = "cryptic-gpu")]
+use prism_gpu::{PME, Settle};
+
 // ============================================================================
-// LANGEVIN FRICTION COEFFICIENTS (SOTA Configurable Thermostat)
+// LANGEVIN FRICTION COEFFICIENTS (SOTA Physics Parameters)
 // ============================================================================
 // τ_relax = 1/γ determines how fast the system equilibrates to target temperature.
 // BAOAB Langevin thermostat applies friction + noise every step for stable NVT.
 //
-// The O-step formula is: v = c*v + sqrt(1-c²)*sigma*noise, where c = exp(-γ*dt)
-// With dt = 0.1-0.2 fs, we need γ that gives c ≈ 0.95-0.99 for stability.
+// CRITICAL UNIT CONVERSION:
+// Standard MD uses friction in ps⁻¹, but our integrator uses fs⁻¹.
+// 1 ps⁻¹ = 0.001 fs⁻¹
 //
-// γ = 0.5 fs⁻¹, dt = 0.1 fs → c = exp(-0.05) ≈ 0.951 (good damping)
-// γ = 0.1 fs⁻¹, dt = 0.2 fs → c = exp(-0.02) ≈ 0.980 (light damping)
+// Production: γ = 1 ps⁻¹ = 0.001 fs⁻¹ (τ = 1 ps)
+//   - Standard value for production MD, preserves natural dynamics
+//   - Molecules diffuse and sample conformations properly
+//
+// Equilibration: γ = 10 ps⁻¹ = 0.01 fs⁻¹ (τ = 100 fs)
+//   - Faster thermalization during equilibration
+//   - Still allows reasonable dynamics
+//
+// γ = 1.0 fs⁻¹ is 1000x TOO HIGH - system becomes viscous like concrete!
 
-/// Heating friction: γ = 1.0 fs⁻¹ - strong damping for heating
-/// - τ = 1 fs - forces system to target temperature quickly
-const GAMMA_HEATING: f32 = 1.0;
+/// Heating friction: γ = 10 ps⁻¹ = 0.01 fs⁻¹
+/// - τ = 100 fs - fast thermalization during heating
+const GAMMA_HEATING: f32 = 0.01;
 
-/// Equilibration friction: γ = 1.0 fs⁻¹ - strong damping
-/// - τ = 1 fs - prevents energy spikes
-const GAMMA_EQUILIBRATION: f32 = 1.0;
+/// Equilibration friction: γ = 10 ps⁻¹ = 0.01 fs⁻¹
+/// - τ = 100 fs - faster equilibration
+const GAMMA_EQUILIBRATION: f32 = 0.01;
 
-/// Production friction: γ = 1.0 fs⁻¹ - strong damping for temperature control
-/// - τ = 1 fs - prioritize temperature stability over dynamics
-const GAMMA_PRODUCTION: f32 = 1.0;
+/// Production friction: γ = 1 ps⁻¹ = 0.001 fs⁻¹
+/// - τ = 1 ps - standard production, preserves natural dynamics
+const GAMMA_PRODUCTION: f32 = 0.001;
 
 /// AMBER Path - Stable sampling with proven AMBER ff14SB
 ///
@@ -74,6 +88,14 @@ pub struct AmberPath {
     context: Arc<CudaContext>,
     /// AmberMegaFusedHmc GPU kernel instance
     hmc: Option<AmberMegaFusedHmc>,
+    /// PME electrostatics (for explicit solvent)
+    pme: Option<PME>,
+    /// SETTLE constraints (for explicit solvent)
+    settle: Option<Settle>,
+    /// Whether explicit solvent is enabled
+    explicit_solvent: bool,
+    /// Box dimensions (for PBC)
+    box_dims: Option<[f32; 3]>,
 }
 
 #[cfg(not(feature = "cryptic-gpu"))]
@@ -101,7 +123,33 @@ impl AmberPath {
             structure: None,
             context,
             hmc: None,
+            pme: None,
+            settle: None,
+            explicit_solvent: false,
+            box_dims: None,
         })
+    }
+
+    /// Enable explicit solvent mode
+    ///
+    /// When enabled, structures will be solvated with TIP3P water,
+    /// PME will be used for long-range electrostatics, and SETTLE
+    /// constraints will be applied to maintain rigid water geometry.
+    ///
+    /// This provides more accurate dynamics than implicit solvent
+    /// but requires more GPU memory and computation.
+    pub fn enable_explicit_solvent(&mut self) {
+        self.explicit_solvent = true;
+        log::info!("AmberPath: Explicit solvent mode ENABLED (TIP3P + PME + SETTLE)");
+    }
+
+    /// Disable explicit solvent mode (default)
+    pub fn disable_explicit_solvent(&mut self) {
+        self.explicit_solvent = false;
+        self.pme = None;
+        self.settle = None;
+        self.box_dims = None;
+        log::info!("AmberPath: Explicit solvent mode DISABLED (implicit ε=4r)");
     }
 
     /// Create a mock AMBER path for testing only
@@ -273,18 +321,22 @@ impl SamplingBackend for AmberPath {
             .context("AmberPath: Energy minimization failed")?;
         log::info!("AmberPath: Minimization complete, PE = {:.2} kcal/mol", final_energy);
 
-        // Stage 2: Gentle Heating to LOW temperature (50K → 100K)
-        // Using very low temperature to prevent unfolding in implicit solvent
-        log::info!("AmberPath: Stage 2/3 - Gentle heating (50K → 100K, γ={} fs⁻¹)...", GAMMA_HEATING);
-        const HEATING_STEPS_PER_STAGE: usize = 200;
-        let heating_temps = [50.0f32, 75.0, 100.0];
+        // Stage 2: Gentle Heating to target temperature
+        // - dt = 0.2 fs: small timestep during heating for stability
+        // - γ = 0.01 fs⁻¹ (10 ps⁻¹): faster coupling for equilibration
+        // - Temperatures: 50K → 100K → 150K → 200K → 300K (implicit) or 310K (explicit)
+        log::info!("AmberPath: Stage 2/3 - Gentle heating (γ={} fs⁻¹, τ={:.0} ps)...",
+            GAMMA_HEATING, 1.0 / GAMMA_HEATING / 1000.0);
+        const HEATING_STEPS_PER_STAGE: usize = 500;
+        const HEATING_DT: f32 = 0.2;  // Conservative timestep during heating
+        let heating_temps = [50.0f32, 100.0, 150.0, 200.0, 300.0];
         for temp in heating_temps {
-            let result = hmc.run(HEATING_STEPS_PER_STAGE, 0.05, temp, GAMMA_HEATING)
+            let result = hmc.run(HEATING_STEPS_PER_STAGE, HEATING_DT, temp, GAMMA_HEATING)
                 .with_context(|| format!("AmberPath: Heating at {}K failed", temp))?;
             log::info!("  Heating {}K: PE={:.1} kcal/mol, T_avg={:.1}K",
                 temp, result.potential_energy, result.avg_temperature);
         }
-        log::info!("AmberPath: Heating complete (target 100K for implicit solvent stability)");
+        log::info!("AmberPath: Heating complete to 300K");
 
         // Stage 3: SKIP EQUILIBRATION - go straight to production
         // Equilibration causes PE explosion in implicit solvent
@@ -319,24 +371,27 @@ impl SamplingBackend for AmberPath {
         );
 
         // Sample conformations with PRODUCTION friction
-        // - timestep: 0.05 fs for maximum stability
-        // - gamma: GAMMA_PRODUCTION (1.0 fs⁻¹) strong coupling for temperature control
-        let timestep_fs = 0.05;
+        // TIMESTEP SELECTION:
+        // - Explicit solvent (SETTLE): dt = 1.0 fs is standard and stable
+        // - Implicit solvent: dt = 0.5 fs provides better stability without constraints
+        let timestep_fs = if hmc.is_explicit_solvent() { 1.0 } else { 0.5 };
 
-        // VERY LOW TEMPERATURE: 100K for implicit solvent stability
-        // Higher temperatures cause unfolding; 100K provides minimal dynamics while stable
-        let target_temp = 100.0;
+        // TEMPERATURE:
+        // - Explicit solvent: 310 K (physiological)
+        // - Implicit solvent: 300 K (room temperature, more stable)
+        let target_temp = if hmc.is_explicit_solvent() { 310.0 } else { 300.0 };
 
-        log::info!("AmberPath: Production sampling (dt={}fs, γ={} fs⁻¹, τ={:.1} fs, T_target={}K)",
-            timestep_fs, GAMMA_PRODUCTION, 1.0 / GAMMA_PRODUCTION, target_temp);
+        log::info!("AmberPath: Production sampling (dt={}fs, γ={} fs⁻¹, τ={:.0} ps, T_target={}K, solvent={})",
+            timestep_fs, GAMMA_PRODUCTION, 1.0 / GAMMA_PRODUCTION / 1000.0, target_temp,
+            if hmc.is_explicit_solvent() { "explicit" } else { "implicit" });
 
         // Continuous Langevin dynamics (no velocity rescaling)
-        // 500 steps per sample for decorrelation
-        const STEPS_PER_SAMPLE: usize = 500;
+        // More steps per sample for explicit solvent (larger timestep = more simulation time)
+        let steps_per_sample = if hmc.is_explicit_solvent() { 1000 } else { 500 };
 
         for sample_idx in 0..config.n_samples {
             // Run continuous Langevin dynamics (Langevin thermostat handles temperature)
-            let result = hmc.run(STEPS_PER_SAMPLE, timestep_fs, target_temp, GAMMA_PRODUCTION)
+            let result = hmc.run(steps_per_sample, timestep_fs, target_temp, GAMMA_PRODUCTION)
                 .with_context(|| format!("AmberPath: HMC run failed at sample {}", sample_idx))?;
 
             // Collect conformation
@@ -382,6 +437,9 @@ impl SamplingBackend for AmberPath {
     fn reset(&mut self) -> Result<()> {
         self.structure = None;
         self.hmc = None;
+        self.pme = None;
+        self.settle = None;
+        self.box_dims = None;
         log::debug!("AmberPath: Reset complete");
         Ok(())
     }

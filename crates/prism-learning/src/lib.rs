@@ -79,7 +79,7 @@ pub use rewards::{EvaluationResult, RewardBreakdown, evaluate_simulation, evalua
 pub use trainer::{PrismTrainer, TrainingSession, TrainingConfig, Transition};
 
 // Dendritic Agent exports (default)
-pub use dendritic_agent::{DendriticAgent, DendriticAgentConfig, FactorizedAction};
+pub use dendritic_agent::{DendriticAgent, DendriticAgentConfig, FactorizedAction, NeuralStateExport, ReservoirStats, WeightStats};
 
 // DQN Agent exports (optional)
 #[cfg(feature = "rl")]

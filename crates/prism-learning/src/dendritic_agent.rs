@@ -659,6 +659,119 @@ impl DendriticAgent {
         self.learning_rate_multiplier
     }
 
+    /// Export neural network state for visualization dashboard
+    /// Returns a JSON-serializable struct with all internal states
+    pub fn export_neural_state(&self, features: Option<&[f32]>) -> NeuralStateExport {
+        // Get reservoir state (last cached or zeros)
+        let reservoir_state: Vec<f32> = self.last_state.clone().unwrap_or_else(|| {
+            vec![0.0; self.config.reservoir_size]
+        });
+
+        // Compute Q-values from current state
+        let q_values: Vec<f32> = if self.last_state.is_some() {
+            self.readout.compute_q_values(self.last_state.as_ref().unwrap(), false).to_vec()
+        } else {
+            vec![0.0; NUM_OUTPUTS]
+        };
+
+        // Get weight statistics per output head
+        let weight_stats: Vec<WeightStats> = self.readout.w_active.iter()
+            .enumerate()
+            .map(|(i, weights)| {
+                let sum: f32 = weights.iter().sum();
+                let mean = sum / weights.len() as f32;
+                let variance: f32 = weights.iter().map(|w| (w - mean).powi(2)).sum::<f32>() / weights.len() as f32;
+                let min = weights.iter().cloned().fold(f32::INFINITY, f32::min);
+                let max = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                WeightStats {
+                    head_idx: i,
+                    mean,
+                    std: variance.sqrt(),
+                    min,
+                    max,
+                    l2_norm: weights.iter().map(|w| w * w).sum::<f32>().sqrt(),
+                }
+            })
+            .collect();
+
+        // Subsample weights for visualization (full matrix too large)
+        // Take every Nth weight to get ~64 values per head
+        let subsample_rate = (self.config.reservoir_size / 64).max(1);
+        let weight_heatmap: Vec<Vec<f32>> = self.readout.w_active.iter()
+            .map(|weights| {
+                weights.iter()
+                    .step_by(subsample_rate)
+                    .take(64)
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+
+        // Subsample reservoir state for heatmap (reshape to 2D grid)
+        let reservoir_heatmap: Vec<f32> = reservoir_state.iter()
+            .step_by(subsample_rate)
+            .take(256)
+            .cloned()
+            .collect();
+
+        // Feature importance (approximate via weight magnitudes)
+        let feature_importance: Vec<f32> = if let Some(feats) = features {
+            feats.to_vec()
+        } else {
+            vec![0.0; 23]
+        };
+
+        NeuralStateExport {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            architecture: format!("{}→SNN({})→RLS({})",
+                feature_importance.len(),
+                self.config.reservoir_size,
+                NUM_OUTPUTS),
+            reservoir_size: self.config.reservoir_size,
+            num_outputs: NUM_OUTPUTS,
+            epsilon: self.epsilon,
+            step_count: self.step_count,
+            learning_rate_multiplier: self.learning_rate_multiplier,
+
+            // Neural states
+            reservoir_heatmap,
+            reservoir_stats: ReservoirStats {
+                mean: reservoir_state.iter().sum::<f32>() / reservoir_state.len() as f32,
+                std: {
+                    let mean = reservoir_state.iter().sum::<f32>() / reservoir_state.len() as f32;
+                    (reservoir_state.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / reservoir_state.len() as f32).sqrt()
+                },
+                sparsity: reservoir_state.iter().filter(|&&x| x.abs() < 0.01).count() as f32 / reservoir_state.len() as f32,
+                max_activation: reservoir_state.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+            },
+
+            // Q-values
+            q_values: q_values.clone(),
+            q_values_by_param: vec![
+                q_values[0..BINS_PER_PARAM].to_vec(),
+                q_values[BINS_PER_PARAM..2*BINS_PER_PARAM].to_vec(),
+                q_values[2*BINS_PER_PARAM..3*BINS_PER_PARAM].to_vec(),
+                q_values[3*BINS_PER_PARAM..4*BINS_PER_PARAM].to_vec(),
+            ],
+            param_names: vec!["temperature".to_string(), "friction".to_string(), "spring_k".to_string(), "bias".to_string()],
+
+            // Weights
+            weight_heatmap,
+            weight_stats,
+
+            // Features
+            feature_values: feature_importance,
+            feature_names: vec![
+                "rgyr".into(), "sasa".into(), "hbonds".into(), "contacts".into(),
+                "rmsd".into(), "temp".into(), "friction".into(), "spring_k".into(),
+                "bias".into(), "energy_pot".into(), "energy_kin".into(), "energy_tot".into(),
+                "d_rgyr".into(), "d_sasa".into(), "d_hbonds".into(), "d_contacts".into(),
+                "d_rmsd".into(), "d_energy".into(), "step_norm".into(), "episode_frac".into(),
+                "stuck_frac".into(), "reward_ma".into(), "explore_bonus".into(),
+            ],
+        }
+    }
+
     pub fn eval_mode(&mut self) {
         self.epsilon = 0.0;
     }
@@ -771,6 +884,54 @@ struct DendriticWeights {
     w_active: Vec<Vec<f32>>,
     w_target: Vec<Vec<f32>>,
     reservoir_size: usize,
+}
+
+/// Neural network state export for visualization dashboard
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeuralStateExport {
+    pub timestamp: String,
+    pub architecture: String,
+    pub reservoir_size: usize,
+    pub num_outputs: usize,
+    pub epsilon: f64,
+    pub step_count: u64,
+    pub learning_rate_multiplier: f32,
+
+    /// Subsampled reservoir activations for heatmap (256 values)
+    pub reservoir_heatmap: Vec<f32>,
+    pub reservoir_stats: ReservoirStats,
+
+    /// Q-values for all outputs
+    pub q_values: Vec<f32>,
+    /// Q-values grouped by parameter (4 groups of 5)
+    pub q_values_by_param: Vec<Vec<f32>>,
+    pub param_names: Vec<String>,
+
+    /// Weight heatmap (20 heads × 64 subsampled weights)
+    pub weight_heatmap: Vec<Vec<f32>>,
+    pub weight_stats: Vec<WeightStats>,
+
+    /// Input features
+    pub feature_values: Vec<f32>,
+    pub feature_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReservoirStats {
+    pub mean: f32,
+    pub std: f32,
+    pub sparsity: f32,
+    pub max_activation: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeightStats {
+    pub head_idx: usize,
+    pub mean: f32,
+    pub std: f32,
+    pub min: f32,
+    pub max: f32,
+    pub l2_norm: f32,
 }
 
 #[cfg(test)]

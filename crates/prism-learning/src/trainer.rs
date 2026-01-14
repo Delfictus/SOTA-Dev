@@ -337,11 +337,12 @@ impl PrismTrainer {
             }
             current_buffers.global_step = (macro_step as u64 + 1) * macro_config.steps_per_macro;
 
-            // Calculate intermediate reward
+            // Calculate intermediate reward (with stability + clash penalties)
             let step_reward = calculate_macro_step_reward(
                 &initial_buffers,
                 &current_buffers,
                 &target.target_residues,
+                &target.core_residues,
                 reward_weights,
                 macro_step,
                 macro_config.num_macro_steps,

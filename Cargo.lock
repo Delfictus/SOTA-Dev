@@ -3943,6 +3943,7 @@ name = "prism-validation"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "blake3",
  "chrono",
  "clap",
@@ -3956,6 +3957,8 @@ dependencies = [
  "prism-core",
  "prism-gpu",
  "prism-physics",
+ "rand 0.8.5",
+ "rand_distr",
  "reqwest 0.11.27",
  "serde",
  "serde_json",

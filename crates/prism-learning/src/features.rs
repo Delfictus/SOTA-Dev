@@ -29,6 +29,15 @@ use crate::atomic_chemistry::{
 };
 use prism_io::sovereign_types::Atom;
 use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+
+// GPU-accelerated bio-chemistry feature extraction (optional)
+#[cfg(feature = "cuda")]
+use prism_gpu::{BiochemistryGpu, GpuAtomicMetadata};
+#[cfg(feature = "cuda")]
+use cudarc::driver::CudaContext;
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
 
 // ============================================================================
 // FEATURE VECTOR
@@ -95,11 +104,26 @@ pub struct FeatureExtractor {
     initial_positions: Vec<f32>,
     /// Target residue indices as Vec for bio-chemistry calculations
     target_residue_vec: Vec<usize>,
+    /// GPU-accelerated bio-chemistry extractor (v3.1.2)
+    /// Uses RefCell for interior mutability (GPU compute modifies buffers)
+    #[cfg(feature = "cuda")]
+    gpu_biochemistry: RefCell<Option<BiochemistryGpu>>,
+    /// Whether GPU features were requested (for non-cuda builds)
+    #[cfg(not(feature = "cuda"))]
+    _gpu_features_requested: bool,
 }
 
 impl FeatureExtractor {
     /// Create new feature extractor for a target
     pub fn new(config: FeatureConfig, target: &ProteinTarget) -> Self {
+        // Try to initialize GPU bio-chemistry extractor if requested
+        #[cfg(feature = "cuda")]
+        let gpu_biochemistry = if config.use_gpu_features && config.include_bio_chemistry {
+            Self::try_init_gpu_biochemistry(config.neighbor_cutoff)
+        } else {
+            None
+        };
+
         Self {
             config,
             target_residues: target.target_residues.iter().cloned().collect(),
@@ -116,6 +140,33 @@ impl FeatureExtractor {
             atomic_metadata: None,
             initial_positions: Vec::new(),
             target_residue_vec: target.target_residues.clone(),
+            #[cfg(feature = "cuda")]
+            gpu_biochemistry: RefCell::new(gpu_biochemistry),
+            #[cfg(not(feature = "cuda"))]
+            _gpu_features_requested: config.use_gpu_features,
+        }
+    }
+
+    /// Try to initialize GPU bio-chemistry extractor
+    #[cfg(feature = "cuda")]
+    fn try_init_gpu_biochemistry(neighbor_cutoff: f32) -> Option<BiochemistryGpu> {
+        match CudaContext::new(0) {
+            Ok(ctx) => {
+                match BiochemistryGpu::new(ctx, 10000, neighbor_cutoff) {
+                    Ok(gpu) => {
+                        log::info!("GPU bio-chemistry extractor initialized successfully");
+                        Some(gpu)
+                    }
+                    Err(e) => {
+                        log::warn!("GPU bio-chemistry init failed (using CPU fallback): {}", e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("CUDA context creation failed (using CPU fallback): {:?}", e);
+                None
+            }
         }
     }
 
@@ -148,10 +199,53 @@ impl FeatureExtractor {
 
             // Build atomic metadata for bio-chemistry features (v3.1.1)
             if self.config.include_bio_chemistry {
-                self.atomic_metadata = Some(AtomicMetadata::from_atoms(initial_atoms));
+                let metadata = AtomicMetadata::from_atoms(initial_atoms);
                 self.initial_positions = positions.clone();
+
+                // Upload metadata to GPU if GPU extractor is available
+                #[cfg(feature = "cuda")]
+                {
+                    let mut gpu_failed = false;
+                    if let Some(ref mut gpu) = *self.gpu_biochemistry.borrow_mut() {
+                        if let Err(e) = Self::upload_gpu_metadata(gpu, &metadata, &self.target_residue_vec) {
+                            log::warn!("GPU metadata upload failed (will use CPU): {}", e);
+                            gpu_failed = true;
+                        } else if let Err(e) = gpu.upload_initial_positions(&self.initial_positions) {
+                            log::warn!("GPU initial positions upload failed (will use CPU): {}", e);
+                            gpu_failed = true;
+                        }
+                    }
+                    if gpu_failed {
+                        *self.gpu_biochemistry.borrow_mut() = None;
+                    }
+                }
+
+                self.atomic_metadata = Some(metadata);
             }
         }
+    }
+
+    /// Upload atomic metadata to GPU extractor
+    #[cfg(feature = "cuda")]
+    fn upload_gpu_metadata(
+        gpu: &mut BiochemistryGpu,
+        metadata: &AtomicMetadata,
+        target_residues: &[usize],
+    ) -> anyhow::Result<()> {
+        let gpu_metadata = GpuAtomicMetadata {
+            hydrophobicity: metadata.hydrophobicity.clone(),
+            atom_to_residue: metadata.atom_to_residue.iter().map(|&r| r as i32).collect(),
+            target_residues: target_residues.iter().map(|&r| r as i32).collect(),
+            ca_indices: metadata.ca_indices.iter().map(|&i| i as i32).collect(),
+            charges: metadata.atom_charges.clone(),
+            charged_indices: metadata.atom_charges
+                .iter()
+                .enumerate()
+                .filter(|(_, &c)| c.abs() > 0.25)  // Significant charge
+                .map(|(i, _)| i as i32)
+                .collect(),
+        };
+        gpu.upload_metadata(&gpu_metadata)
     }
 
     /// Extract complete feature vector from current state
@@ -674,6 +768,31 @@ impl FeatureExtractor {
             return [0.0, 0.0, 0.0];
         }
 
+        // Try GPU-accelerated path first
+        #[cfg(feature = "cuda")]
+        {
+            let mut gpu_ref = self.gpu_biochemistry.borrow_mut();
+            if let Some(ref mut gpu) = *gpu_ref {
+                match gpu.compute(positions) {
+                    Ok(result) => {
+                        // GPU returns already normalized [0,1] values
+                        return result;
+                    }
+                    Err(e) => {
+                        log::warn!("GPU bio-chemistry compute failed, falling back to CPU: {}", e);
+                        // Disable GPU for subsequent calls
+                        *gpu_ref = None;
+                    }
+                }
+            }
+        }
+
+        // CPU fallback path
+        self.extract_bio_chemistry_cpu(positions, metadata)
+    }
+
+    /// CPU implementation of bio-chemistry features
+    fn extract_bio_chemistry_cpu(&self, positions: &[f32], metadata: &AtomicMetadata) -> [f32; 3] {
         // 1. Hydrophobic Exposure Delta
         let hydrophobic_delta = calculate_hydrophobic_exposure(
             positions,

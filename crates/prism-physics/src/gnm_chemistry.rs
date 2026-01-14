@@ -11,11 +11,19 @@
 //! - w_burial = burial depth weighting (buried contacts are stiffer)
 //! - w_hbond = hydrogen bond detection (H-bonds are stiffer)
 //! - w_type = contact type (backbone-backbone vs sidechain)
+//!
+//! ## GPU Acceleration
+//!
+//! For large proteins (>500 residues), GPU-accelerated eigendecomposition
+//! can be enabled via `enable_gpu()`. Uses Lanczos iteration on CUDA.
 
 use nalgebra::{DMatrix, SymmetricEigen};
 use std::collections::HashSet;
 
 use crate::residue_chemistry::{enhanced_pair_stiffness, ResidueClass};
+
+#[cfg(feature = "cuda")]
+use crate::gnm_gpu::GpuGnm;
 
 /// Configuration for Chemistry-Aware GNM
 #[derive(Debug, Clone)]
@@ -136,6 +144,11 @@ pub struct ChemistryGnmResult {
 /// Chemistry-Aware GNM implementation
 pub struct ChemistryGnm {
     config: ChemistryGnmConfig,
+    /// GPU accelerator for large proteins
+    #[cfg(feature = "cuda")]
+    gpu_gnm: Option<GpuGnm>,
+    /// Threshold for GPU acceleration (number of residues)
+    gpu_threshold: usize,
 }
 
 impl ChemistryGnm {
@@ -143,12 +156,52 @@ impl ChemistryGnm {
     pub fn new() -> Self {
         Self {
             config: ChemistryGnmConfig::default(),
+            #[cfg(feature = "cuda")]
+            gpu_gnm: None,
+            gpu_threshold: 500,
         }
     }
 
     /// Create with custom configuration
     pub fn with_config(config: ChemistryGnmConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            #[cfg(feature = "cuda")]
+            gpu_gnm: None,
+            gpu_threshold: 500,
+        }
+    }
+
+    /// Enable GPU acceleration for large proteins
+    ///
+    /// When enabled, proteins with more than `threshold` residues will
+    /// use GPU-accelerated Lanczos eigendecomposition.
+    #[cfg(feature = "cuda")]
+    pub fn enable_gpu(&mut self, threshold: Option<usize>) -> anyhow::Result<()> {
+        let mut gpu = GpuGnm::with_cutoff(self.config.cutoff);
+        gpu.init_cuda()?;
+        self.gpu_gnm = Some(gpu);
+        if let Some(t) = threshold {
+            self.gpu_threshold = t;
+        }
+        log::info!("CA-GNM: GPU acceleration enabled (threshold: {} residues)", self.gpu_threshold);
+        Ok(())
+    }
+
+    /// Check if GPU is enabled and initialized
+    #[cfg(feature = "cuda")]
+    pub fn gpu_enabled(&self) -> bool {
+        self.gpu_gnm.as_ref().map_or(false, |g| g.gpu_ready())
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    pub fn gpu_enabled(&self) -> bool {
+        false
+    }
+
+    /// Set GPU threshold
+    pub fn set_gpu_threshold(&mut self, threshold: usize) {
+        self.gpu_threshold = threshold;
     }
 
     /// Compute burial depth for each residue using neighbor counting
@@ -353,6 +406,9 @@ impl ChemistryGnm {
     }
 
     /// Compute RMSF using Chemistry-Aware GNM
+    ///
+    /// For proteins with more than `gpu_threshold` residues (default 500),
+    /// GPU-accelerated Lanczos eigendecomposition is used when available.
     pub fn compute_rmsf(
         &self,
         ca_positions: &[[f32; 3]],
@@ -374,8 +430,48 @@ impl ChemistryGnm {
         // Build chemistry-weighted Kirchhoff matrix
         let (kirchhoff, chemistry_factor_mean) = self.build_kirchhoff(ca_positions, residue_names);
 
-        // Eigendecomposition
-        let eigen = SymmetricEigen::new(kirchhoff);
+        // Choose eigendecomposition path based on matrix size and GPU availability
+        let (rmsf, eigenvalues) = if n >= self.gpu_threshold && self.gpu_enabled() {
+            // GPU path for large proteins
+            self.compute_eigen_gpu(&kirchhoff, n)
+        } else {
+            // CPU path (full eigendecomposition for small proteins, Lanczos for medium)
+            self.compute_eigen_cpu(&kirchhoff, n)
+        };
+
+        // Collect auxiliary data
+        let burial_depth = if self.config.use_burial_weighting {
+            self.compute_burial_depth(ca_positions)
+        } else {
+            vec![0.0; n]
+        };
+
+        let hbonds = if self.config.use_hbond_detection {
+            self.detect_hbonds(ca_positions)
+        } else {
+            vec![]
+        };
+
+        let salt_bridges = if self.config.use_salt_bridges {
+            self.detect_salt_bridges(ca_positions, residue_names)
+        } else {
+            vec![]
+        };
+
+        ChemistryGnmResult {
+            rmsf,
+            burial_depth,
+            hbonds,
+            salt_bridges,
+            eigenvalues,
+            chemistry_factor_mean,
+        }
+    }
+
+    /// CPU eigendecomposition path
+    fn compute_eigen_cpu(&self, kirchhoff: &DMatrix<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
+        // Full eigendecomposition using nalgebra
+        let eigen = SymmetricEigen::new(kirchhoff.clone());
         let eigenvalues = eigen.eigenvalues.as_slice().to_vec();
         let eigenvectors = eigen.eigenvectors;
 
@@ -407,33 +503,30 @@ impl ChemistryGnm {
             }
         }
 
-        // Collect auxiliary data
-        let burial_depth = if self.config.use_burial_weighting {
-            self.compute_burial_depth(ca_positions)
-        } else {
-            vec![0.0; n]
-        };
+        (rmsf, eigenvalues)
+    }
 
-        let hbonds = if self.config.use_hbond_detection {
-            self.detect_hbonds(ca_positions)
+    /// GPU eigendecomposition path using Lanczos iteration
+    #[cfg(feature = "cuda")]
+    fn compute_eigen_gpu(&self, kirchhoff: &DMatrix<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
+        if let Some(ref gpu) = self.gpu_gnm {
+            // Use GPU GNM which internally uses Lanczos
+            // Note: GpuGnm builds its own Kirchhoff matrix from CA positions,
+            // but we've already built chemistry-weighted one. We pass the
+            // pre-built matrix via the RMSF computation.
+            let result = gpu.compute_rmsf_from_kirchhoff(kirchhoff);
+            log::info!("CA-GNM: Used GPU Lanczos for {} residues", n);
+            (result.rmsf, result.eigenvalues)
         } else {
-            vec![]
-        };
-
-        let salt_bridges = if self.config.use_salt_bridges {
-            self.detect_salt_bridges(ca_positions, residue_names)
-        } else {
-            vec![]
-        };
-
-        ChemistryGnmResult {
-            rmsf,
-            burial_depth,
-            hbonds,
-            salt_bridges,
-            eigenvalues,
-            chemistry_factor_mean,
+            // Fallback to CPU
+            log::debug!("CA-GNM: GPU not available, using CPU");
+            self.compute_eigen_cpu(kirchhoff, n)
         }
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    fn compute_eigen_gpu(&self, kirchhoff: &DMatrix<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
+        self.compute_eigen_cpu(kirchhoff, n)
     }
 }
 

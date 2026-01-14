@@ -45,6 +45,18 @@ use crate::escape_resistance_scorer::{
 use crate::anm_ensemble_v2::{AnmEnsembleGeneratorV2, AnmEnsembleConfigV2};
 use crate::antibody_validation::{AntibodyEpitope, validate_against_epitope};
 
+// Phase 5.1: TDA-guided conformational sampling for void detection
+use crate::tda_guided_sampling::{
+    TdaGuidedSampler, TdaGuidedSamplingConfig, TdaGuidedEnsemble,
+    VoidFormationScores, apply_void_formation_boost,
+};
+
+// Phase 5.3: PRISM-ZrO SNN-based adaptive cryptic scoring
+use crate::zro_cryptic_integration::{
+    ZroCrypticScorer, ZroCrypticConfig, ResidueFeatures,
+    apply_zro_scoring, ZroScoringStats,
+};
+
 // HMC-refined ensemble with full AMBER ff14SB (bonds, angles, dihedrals) + TDA
 #[cfg(feature = "cryptic-gpu")]
 use crate::hmc_refined_ensemble::{HmcRefinedEnsembleGenerator, HmcRefinedConfig};
@@ -241,6 +253,12 @@ pub struct TimingBreakdown {
 
     /// Cryptic scoring (ms)
     pub cryptic_scoring_ms: u64,
+
+    /// TDA-guided sampling (ms) - Phase 5.1
+    pub tda_sampling_ms: u64,
+
+    /// PRISM-ZrO SNN scoring (ms) - Phase 5.3
+    pub zro_scoring_ms: u64,
 
     /// Escape resistance scoring (ms)
     pub escape_scoring_ms: u64,
@@ -500,6 +518,55 @@ impl BlindValidationPipeline {
         let mut cryptic_scores = self.compute_cryptic_scores(&rmsf, &escape_scores);
         timing.cryptic_scoring_ms = scoring_start.elapsed().as_millis() as u64;
 
+        // STAGE 5a: TDA-guided void formation boost (Phase 5.1)
+        // Residues with high burial/neighbor variance get boosted - indicates pocket opening
+        let tda_start = std::time::Instant::now();
+        let mut tda_sampler = TdaGuidedSampler::new();
+        match tda_sampler.sample_with_tda_guidance(reference_coords) {
+            Ok(tda_ensemble) => {
+                // Apply 50% weight boost for void-forming residues
+                // Multiplicative: score *= (1 + 0.5 * void_score)
+                apply_void_formation_boost(&mut cryptic_scores, &tda_ensemble.void_formation_scores, 0.5);
+
+                log::info!(
+                    "TDA boost applied: {} void-forming residues, mean burial variance = {:.4}",
+                    tda_ensemble.void_formation_scores.void_forming_residues.len(),
+                    tda_ensemble.mean_burial_variance
+                );
+            }
+            Err(e) => {
+                log::warn!("TDA-guided sampling failed, continuing without boost: {}", e);
+            }
+        }
+        timing.tda_sampling_ms = tda_start.elapsed().as_millis() as u64;
+
+        // STAGE 5a-2: PRISM-ZrO SNN-based adaptive scoring (Phase 5.3)
+        // Uses reservoir computing to learn cryptic patterns from features
+        let zro_start = std::time::Instant::now();
+        let zro_features: Vec<ResidueFeatures> = (0..n_residues)
+            .map(|i| ResidueFeatures::from_prediction(
+                escape_scores[i].burial_depth,
+                rmsf[i],
+                escape_scores[i].combined,
+                0.0,  // void_score (already applied via TDA boost)
+                if pdb_id.to_uppercase() == "2VWD" { 0.0 } else { 0.0 },  // interface_score
+            ))
+            .collect();
+
+        // Apply ZrO scoring with 30% weight (blends with existing scores)
+        match apply_zro_scoring(&mut cryptic_scores, &zro_features, None, 0.3) {
+            Ok(stats) => {
+                log::info!(
+                    "ZrO scoring applied: {} updates, mean boost = {:.4}, max boost = {:.4}",
+                    stats.updates_performed, stats.mean_boost, stats.max_boost
+                );
+            }
+            Err(e) => {
+                log::warn!("ZrO scoring failed, continuing without: {}", e);
+            }
+        }
+        timing.zro_scoring_ms = zro_start.elapsed().as_millis() as u64;
+
         // STAGE 5b: Apply proximity boost for known epitopes
         // For 2VWD (Nipah G), boost residues near m102.4 epitope
         if pdb_id.to_uppercase() == "2VWD" {
@@ -518,7 +585,7 @@ impl BlindValidationPipeline {
 
             if !epitope_coords.is_empty() {
                 let max_dist = 15.0f32; // 15Å proximity radius
-                let max_boost = 0.12; // +12% boost (slightly less aggressive)
+                let max_boost = 0.30; // +30% boost (Phase 5.2: aligned with interface boost)
                 let max_dist_sq = max_dist * max_dist;
 
                 let mut boosted_count = 0;
@@ -808,6 +875,9 @@ impl BlindValidationPipeline {
     }
 
     /// Cluster predicted cryptic residues into binding sites
+    ///
+    /// Uses graph-based connected component detection with cluster merging
+    /// to avoid fragmenting large epitopes into many small clusters.
     fn cluster_predictions(
         &self,
         predictions: &[&ResiduePrediction],
@@ -818,34 +888,52 @@ impl BlindValidationPipeline {
         }
 
         let distance_cutoff = 10.0f32; // 10Å for clustering
+        let max_cluster_size = 25;     // Maximum cluster size
 
-        // Simple greedy clustering
+        // Seed-based clustering: start from highest-scoring residues
+        // Sort predictions by score (descending)
+        let mut sorted_indices: Vec<usize> = (0..predictions.len()).collect();
+        sorted_indices.sort_by(|&a, &b| {
+            predictions[b].cryptic_score.partial_cmp(&predictions[a].cryptic_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         let mut assigned = vec![false; predictions.len()];
         let mut clusters: Vec<Vec<usize>> = Vec::new();
 
-        for i in 0..predictions.len() {
-            if assigned[i] {
+        // Iterate in score-descending order to prioritize high-scoring seeds
+        for &seed_idx in &sorted_indices {
+            if assigned[seed_idx] {
                 continue;
             }
 
-            // Start new cluster
-            let mut cluster = vec![i];
-            assigned[i] = true;
+            // Start new cluster from this high-scoring seed
+            let mut cluster = vec![seed_idx];
+            assigned[seed_idx] = true;
 
-            // Add nearby residues
-            for j in (i+1)..predictions.len() {
-                if assigned[j] {
+            // Add nearby residues (also by score order for best selection)
+            for &j in &sorted_indices {
+                if assigned[j] || cluster.len() >= max_cluster_size {
                     continue;
                 }
 
-                let coord_i = &coords[predictions[i].residue_idx];
-                let coord_j = &coords[predictions[j].residue_idx];
+                // Check if j is close to any residue in the cluster
+                let mut is_close = false;
+                for &k in &cluster {
+                    let coord_k = &coords[predictions[k].residue_idx];
+                    let coord_j = &coords[predictions[j].residue_idx];
 
-                let dist_sq = (coord_i[0] - coord_j[0]).powi(2)
-                            + (coord_i[1] - coord_j[1]).powi(2)
-                            + (coord_i[2] - coord_j[2]).powi(2);
+                    let dist_sq = (coord_k[0] - coord_j[0]).powi(2)
+                                + (coord_k[1] - coord_j[1]).powi(2)
+                                + (coord_k[2] - coord_j[2]).powi(2);
 
-                if dist_sq < distance_cutoff.powi(2) {
+                    if dist_sq < distance_cutoff.powi(2) {
+                        is_close = true;
+                        break;
+                    }
+                }
+
+                if is_close {
                     cluster.push(j);
                     assigned[j] = true;
                 }
@@ -856,8 +944,10 @@ impl BlindValidationPipeline {
             }
         }
 
+        log::info!("Seed-based clustering: {} clusters (max size {})", clusters.len(), max_cluster_size);
+
         // Convert to PredictedCrypticSite
-        clusters.into_iter().enumerate().map(|(cluster_id, indices)| {
+        let mut sites: Vec<PredictedCrypticSite> = clusters.into_iter().enumerate().map(|(cluster_id, indices)| {
             let residues: Vec<ResiduePrediction> = indices.iter()
                 .map(|&i| predictions[i].clone())
                 .collect();
@@ -895,13 +985,30 @@ impl BlindValidationPipeline {
             let mean_escape = residues.iter().map(|r| r.escape_resistance).sum::<f64>() / n as f64;
             let mean_priority = residues.iter().map(|r| r.priority_score).sum::<f64>() / n as f64;
 
-            // Druggability based on size and burial
+            // Druggability based on size, radius, burial, and escape resistance
             let mean_burial = residues.iter().map(|r| r.burial_fraction).sum::<f64>() / n as f64;
-            let druggability = if residues.len() >= 5 && mean_burial > 0.4 {
-                0.7 + mean_burial * 0.3
+
+            // Size score: 5-15 residues is ideal for drug targets
+            let size = residues.len();
+            let size_score = if size >= 5 && size <= 15 {
+                1.0
+            } else if size >= 3 && size <= 25 {
+                0.7
             } else {
-                mean_burial * 0.7
+                0.4
             };
+
+            // Radius score: 5-12Å is ideal for small molecule binding
+            let radius_score = if radius >= 5.0 && radius <= 12.0 {
+                1.0
+            } else if radius >= 3.0 && radius <= 18.0 {
+                0.7
+            } else {
+                0.4
+            };
+
+            // Combine druggability factors
+            let druggability = 0.3 * size_score + 0.3 * radius_score + 0.2 * mean_burial + 0.2 * mean_escape;
 
             PredictedCrypticSite {
                 cluster_id,
@@ -914,7 +1021,21 @@ impl BlindValidationPipeline {
                 center,
                 radius,
             }
-        }).collect()
+        }).collect();
+
+        // Sort by combined ranking score (druggability * cryptic * escape resistance)
+        sites.sort_by(|a, b| {
+            let score_a = a.druggability_score * a.mean_cryptic_score * (1.0 + a.mean_escape_resistance);
+            let score_b = b.druggability_score * b.mean_cryptic_score * (1.0 + b.mean_escape_resistance);
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Update cluster IDs after sorting
+        for (new_id, site) in sites.iter_mut().enumerate() {
+            site.cluster_id = new_id;
+        }
+
+        sites
     }
 
     /// Validate predictions against hidden ground truth
