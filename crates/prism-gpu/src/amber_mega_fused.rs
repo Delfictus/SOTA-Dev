@@ -618,6 +618,23 @@ impl AmberMegaFusedHmc {
         self.settle.as_ref()
     }
 
+    /// Get mutable reference to SETTLE (if enabled)
+    pub fn settle_mut(&mut self) -> Option<&mut Settle> {
+        self.settle.as_mut()
+    }
+
+    /// Check SETTLE constraint violations
+    ///
+    /// Returns (max_oh_violation, max_hh_violation) in Angstroms
+    /// Returns None if SETTLE is not enabled
+    pub fn check_settle_constraints(&mut self) -> Result<Option<(f32, f32)>> {
+        if let Some(ref mut settle) = self.settle {
+            Ok(Some(settle.check_constraints(&self.d_positions)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Set H-bond constraints for protein X-H bonds
     ///
     /// This enables analytic constraints for fast H-bond vibrations,

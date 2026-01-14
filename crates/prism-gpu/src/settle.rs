@@ -112,13 +112,27 @@ impl Settle {
         let total_mass = mass_o + 2.0 * mass_h;
         let inv_total_mass = 1.0 / total_mass;
 
-        // ra = distance from O to center of mass along bisector
-        // For TIP3P with HOH angle = 104.52°:
+        // SETTLE canonical frame geometry:
+        // - O is at (0, 0, -ra) - distance ra from COM along negative bisector
+        // - H1 is at (-rc, 0, rb) - distance rb along positive bisector, rc sideways
+        // - H2 is at (+rc, 0, rb) - symmetric with H1
+        //
+        // From center of mass constraint: mO*(-ra) + 2*mH*rb = 0
+        // Therefore: rb = ra * mO / (2*mH)
+        //
+        // From OH distance constraint: OH² = (ra+rb)² + rc²
+        // Solving: ra + rb = sqrt(OH² - rc²) = OH*cos(half_angle)
+        //
+        // Combined: ra*(1 + mO/(2*mH)) = OH*cos(half_angle)
+        //           ra = OH*cos(half_angle) / (1 + mO/(2*mH))
+        //           ra = OH*cos(half_angle) * 2*mH / (2*mH + mO)
+        //           ra = OH*cos(half_angle) * 2*mH / total_mass
+
         let half_angle = 104.52_f32.to_radians() / 2.0;
         let ra = TIP3P_OH_DISTANCE * half_angle.cos() * 2.0 * mass_h * inv_total_mass;
 
-        // rb = distance from H to COM along OH direction
-        let rb = TIP3P_OH_DISTANCE - ra;
+        // rb from COM constraint: mO*ra = 2*mH*rb
+        let rb = ra * mass_o / (2.0 * mass_h);
 
         // rc = half of HH distance
         let rc = TIP3P_HH_DISTANCE / 2.0;

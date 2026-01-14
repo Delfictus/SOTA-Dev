@@ -208,42 +208,58 @@ fn main() -> Result<()> {
         hmc.set_position_restraints(&heavy_atom_indices, 100.0)?;  // k = 100 kcal/(mol·Å²) - very strong
         println!("   Position restraints: ENABLED (k=100.0 kcal/(mol·Å²) - very strong)");
 
-        // Set up SETTLE for water (DISABLED - kernel has bugs)
-        // if !topology.water_oxygens.is_empty() {
-        //     println!("\nSetting up SETTLE for {} water molecules...", topology.water_oxygens.len());
-        //     hmc.set_water_molecules(&topology.water_oxygens)?;
-        //     println!("   SETTLE constraints enabled");
-        // }
-        println!("\nSETTLE disabled (kernel needs debugging)");
+        // Set up SETTLE for water
+        let has_settle = !topology.water_oxygens.is_empty();
+        if has_settle {
+            println!("\nSetting up SETTLE for {} water molecules...", topology.water_oxygens.len());
+            hmc.set_water_molecules(&topology.water_oxygens)?;
+            println!("   SETTLE constraints enabled");
 
-        // Set up H-bond constraints (DISABLED for debugging)
-        println!("\nSetting up H-bond constraints for {} clusters... (DISABLED)", topology.h_clusters.len());
-        // let h_clusters: Vec<HConstraintCluster> = topology.h_clusters.iter().map(|c| {
-        //     HConstraintCluster {
-        //         central_atom: c.central_atom,
-        //         hydrogen_atoms: [
-        //             c.hydrogen_atoms.get(0).copied().unwrap_or(-1),
-        //             c.hydrogen_atoms.get(1).copied().unwrap_or(-1),
-        //             c.hydrogen_atoms.get(2).copied().unwrap_or(-1),
-        //         ],
-        //         bond_lengths: [
-        //             c.bond_lengths.get(0).copied().unwrap_or(0.0),
-        //             c.bond_lengths.get(1).copied().unwrap_or(0.0),
-        //             c.bond_lengths.get(2).copied().unwrap_or(0.0),
-        //         ],
-        //         inv_mass_central: c.inv_mass_central,
-        //         inv_mass_h: c.inv_mass_h,
-        //         n_hydrogens: c.n_hydrogens,
-        //         cluster_type: c.cluster_type,
-        //     }
-        // }).collect();
-        // hmc.set_h_constraints(&h_clusters)?;
+            // Check initial constraint violations
+            if let Some((max_oh, max_hh)) = hmc.check_settle_constraints()? {
+                println!("   Initial constraint violations:");
+                println!("     OH: {:.4} Å (target: 0.9572 Å)", max_oh);
+                println!("     HH: {:.4} Å (target: 1.5136 Å)", max_hh);
+            }
+        } else {
+            println!("\nNo water molecules - SETTLE not needed");
+        }
+
+        // Set up H-bond constraints for protein X-H bonds
+        if !topology.h_clusters.is_empty() {
+            use prism_gpu::HConstraintCluster;
+
+            println!("\nSetting up H-bond constraints for {} clusters...", topology.h_clusters.len());
+            let h_clusters: Vec<HConstraintCluster> = topology.h_clusters.iter().map(|c| {
+                HConstraintCluster {
+                    central_atom: c.central_atom,
+                    hydrogen_atoms: [
+                        c.hydrogen_atoms.get(0).copied().unwrap_or(-1),
+                        c.hydrogen_atoms.get(1).copied().unwrap_or(-1),
+                        c.hydrogen_atoms.get(2).copied().unwrap_or(-1),
+                    ],
+                    bond_lengths: [
+                        c.bond_lengths.get(0).copied().unwrap_or(0.0),
+                        c.bond_lengths.get(1).copied().unwrap_or(0.0),
+                        c.bond_lengths.get(2).copied().unwrap_or(0.0),
+                    ],
+                    inv_mass_central: c.inv_mass_central,
+                    inv_mass_h: c.inv_mass_h,
+                    n_hydrogens: c.n_hydrogens,
+                    cluster_type: c.cluster_type,
+                }
+            }).collect();
+            hmc.set_h_constraints(&h_clusters)?;
+            println!("   H-bond constraints enabled");
+        } else {
+            println!("\nNo H-bond clusters - H-constraints not needed");
+        }
 
         // Run simulation - but first get diagnostic info
         println!("\nRunning MD simulation...");
         println!("   Target temperature: 310 K");
-        let dt = 0.1; // 0.1 fs - smaller for stability
-        println!("   Timestep: {} fs (reduced for stability)", dt);
+        let dt = 0.5; // 0.5 fs - testing constraint stability
+        println!("   Timestep: {} fs (testing with H-constraints)", dt);
 
         let target_temp = 310.0_f64;
         let gamma_fs = 0.01; // Production-like friction (10 ps^-1)
@@ -423,6 +439,32 @@ fn main() -> Result<()> {
             println!("   [FAIL] Temperature outside acceptable range!");
         }
 
+        // Check SETTLE constraint satisfaction
+        let settle_ok = if has_settle {
+            println!("\n=== SETTLE Constraint Check ===");
+            if let Some((max_oh, max_hh)) = hmc.check_settle_constraints()? {
+                println!("   Final constraint violations:");
+                println!("     OH: {:.6} Å (target: 0.9572 Å)", max_oh);
+                println!("     HH: {:.6} Å (target: 1.5136 Å)", max_hh);
+
+                let oh_ok = max_oh < 0.01;  // < 0.01 Å violation
+                let hh_ok = max_hh < 0.01;
+
+                if oh_ok && hh_ok {
+                    println!("   [OK] SETTLE constraints satisfied (< 0.01 Å)");
+                    true
+                } else {
+                    println!("   [FAIL] SETTLE constraints violated!");
+                    false
+                }
+            } else {
+                println!("   SETTLE not enabled");
+                true
+            }
+        } else {
+            true
+        };
+
         // H-bond constraint checking disabled for debugging
         // Check H-bond constraint satisfaction
         // let final_positions = hmc.get_positions()?;
@@ -432,11 +474,16 @@ fn main() -> Result<()> {
 
         // Overall pass/fail
         println!("\n==================================");
-        if temp_ok {
-            println!("TEST PASSED (temperature stable)");
+        if temp_ok && settle_ok {
+            println!("TEST PASSED (temperature stable, SETTLE OK)");
         } else {
             println!("TEST FAILED");
-            println!("   - Temperature instability");
+            if !temp_ok {
+                println!("   - Temperature instability");
+            }
+            if !settle_ok {
+                println!("   - SETTLE constraint violations");
+            }
         }
     }
 
