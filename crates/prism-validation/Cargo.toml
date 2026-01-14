@@ -166,3 +166,7 @@ required-features = ["cryptic-gpu"]
 [[bin]]
 name = "run-blind-validation"
 path = "src/bin/run_blind_validation.rs"
+
+[[bin]]
+name = "generate-ensemble"
+path = "src/bin/generate_ensemble.rs"
