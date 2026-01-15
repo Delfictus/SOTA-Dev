@@ -61,6 +61,14 @@ struct Args {
     /// Position restraint force constant (kcal/mol/Å², 0 to disable)
     #[arg(long, default_value = "0.0")]
     restraint_k: f32,
+
+    /// Output CSV for energy timeseries (time_ps,PE,KE,total_E)
+    #[arg(long)]
+    energy_log: Option<PathBuf>,
+
+    /// Output CSV for temperature timeseries (time_ps,T_instantaneous,T_rolling_avg,n_dof,n_settle,n_h_constraints)
+    #[arg(long)]
+    temperature_log: Option<PathBuf>,
 }
 
 // Topology structs matching prepare_protein.py output
@@ -370,6 +378,11 @@ fn main() -> Result<()> {
         let mut steps_run = 0u64;
         let mut last_progress = 0u32;
 
+        // Collect energy trajectory for CSV output
+        use prism_gpu::{EnergyRecord, ConstraintInfo};
+        let mut all_energy_records: Vec<EnergyRecord> = Vec::new();
+        let constraint_info_cached: ConstraintInfo = hmc.get_constraint_info();
+
         // Save initial frame
         let positions = hmc.get_positions()?;
         write_pdb_model(&mut output, &atom_info, &positions, model_number)?;
@@ -384,6 +397,21 @@ fn main() -> Result<()> {
                 args.temperature,
                 args.gamma,
             )?;
+
+            // Collect energy records with proper time offset
+            let base_step = args.equilibration + steps_run;
+            for record in &result.energy_trajectory {
+                let adjusted_record = EnergyRecord {
+                    step: base_step + record.step,
+                    time_ps: (base_step + record.step) as f64 * args.dt as f64 / 1000.0,
+                    potential_energy: record.potential_energy,
+                    kinetic_energy: record.kinetic_energy,
+                    total_energy: record.total_energy,
+                    temperature: record.temperature,
+                };
+                all_energy_records.push(adjusted_record);
+            }
+
             steps_run += steps_this_round as u64;
 
             // Save snapshot
@@ -430,6 +458,69 @@ fn main() -> Result<()> {
         if let Ok(metadata) = std::fs::metadata(&args.output) {
             let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
             println!("   File size: {:.1} MB", size_mb);
+        }
+
+        // Write energy timeseries CSV if requested
+        if let Some(ref energy_path) = args.energy_log {
+            if let Some(parent) = energy_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut energy_file = BufWriter::new(
+                File::create(energy_path).context("Failed to create energy log file")?,
+            );
+            writeln!(energy_file, "time_ps,PE_kcal_mol,KE_kcal_mol,total_E_kcal_mol")?;
+            for record in &all_energy_records {
+                writeln!(
+                    energy_file,
+                    "{:.4},{:.4},{:.4},{:.4}",
+                    record.time_ps,
+                    record.potential_energy,
+                    record.kinetic_energy,
+                    record.total_energy
+                )?;
+            }
+            energy_file.flush()?;
+            println!("   Energy log: {:?} ({} records)", energy_path, all_energy_records.len());
+        }
+
+        // Write temperature timeseries CSV if requested
+        if let Some(ref temp_path) = args.temperature_log {
+            if let Some(parent) = temp_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut temp_file = BufWriter::new(
+                File::create(temp_path).context("Failed to create temperature log file")?,
+            );
+            // Header with constraint info columns per plan
+            writeln!(temp_file, "time_ps,T_instantaneous_K,T_rolling_avg_K,n_dof,n_settle_constraints,n_h_constraints")?;
+
+            // Get DOF info from the cached constraint info
+            let n_dof = hmc.compute_n_dof(true);  // true = remove COM DOFs
+
+            // Compute rolling average (window of 10 points)
+            let window_size = 10;
+            for (i, record) in all_energy_records.iter().enumerate() {
+                // Rolling average: average of last `window_size` temperature values
+                let start = if i >= window_size { i - window_size + 1 } else { 0 };
+                let t_avg: f64 = all_energy_records[start..=i]
+                    .iter()
+                    .map(|r| r.temperature)
+                    .sum::<f64>()
+                    / (i - start + 1) as f64;
+
+                writeln!(
+                    temp_file,
+                    "{:.4},{:.2},{:.2},{},{},{}",
+                    record.time_ps,
+                    record.temperature,
+                    t_avg,
+                    n_dof,
+                    constraint_info_cached.n_settle_constraints,
+                    constraint_info_cached.n_h_constraints
+                )?;
+            }
+            temp_file.flush()?;
+            println!("   Temperature log: {:?} ({} records)", temp_path, all_energy_records.len());
         }
     }
 

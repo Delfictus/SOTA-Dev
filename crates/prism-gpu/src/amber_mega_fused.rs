@@ -33,6 +33,28 @@ pub const MAX_TOTAL_CELLS: usize = MAX_CELLS_PER_DIM * MAX_CELLS_PER_DIM * MAX_C
 pub const MAX_ATOMS_PER_CELL: usize = 128;
 pub const NEIGHBOR_LIST_SIZE: usize = 256;
 
+/// Boltzmann constant in kcal/(mol·K)
+pub const KB_KCAL_MOL_K: f64 = 0.001987204;
+
+/// Single energy/temperature record for trajectory logging
+#[derive(Debug, Clone)]
+pub struct EnergyRecord {
+    pub step: u64,
+    pub time_ps: f64,
+    pub potential_energy: f64,
+    pub kinetic_energy: f64,
+    pub total_energy: f64,
+    pub temperature: f64,
+}
+
+/// Constraint count information for DOF calculation
+#[derive(Debug, Clone, Default)]
+pub struct ConstraintInfo {
+    pub n_waters: usize,
+    pub n_settle_constraints: usize,
+    pub n_h_constraints: usize,
+}
+
 /// HMC run results
 #[derive(Debug, Clone)]
 pub struct HmcRunResult {
@@ -41,6 +63,12 @@ pub struct HmcRunResult {
     pub positions: Vec<f32>,
     pub velocities: Vec<f32>,
     pub avg_temperature: f64,
+    /// Energy/temperature trajectory sampled during simulation
+    pub energy_trajectory: Vec<EnergyRecord>,
+    /// Degrees of freedom used for temperature calculation
+    pub n_dof: usize,
+    /// Constraint information for debugging
+    pub constraint_info: ConstraintInfo,
 }
 
 /// Mega-fused AMBER HMC simulator
@@ -470,6 +498,64 @@ impl AmberMegaFusedHmc {
     /// Check if topology is uploaded
     pub fn is_ready(&self) -> bool {
         self.topology_ready
+    }
+
+    /// Get constraint information for DOF calculation
+    pub fn get_constraint_info(&self) -> ConstraintInfo {
+        let n_waters = self.settle.as_ref().map_or(0, |s| s.n_waters());
+        let n_settle_constraints = 3 * n_waters; // 3 constraints per water (O-H1, O-H2, H1-H2)
+        let n_h_constraints = self.h_constraints.as_ref().map_or(0, |h| h.n_constraints());
+
+        ConstraintInfo {
+            n_waters,
+            n_settle_constraints,
+            n_h_constraints,
+        }
+    }
+
+    /// Compute degrees of freedom accounting for constraints
+    ///
+    /// For explicit solvent:
+    /// N_dof = 3 * N_atoms - 3 (COM removal)
+    ///       - 3 * N_waters (SETTLE: 3 holonomic constraints per water)
+    ///       - N_h_constraints (X-H bonds: 1 constraint per bond)
+    ///
+    /// For implicit solvent (no constraints):
+    /// N_dof = 3 * N_atoms
+    pub fn compute_n_dof(&self, remove_com: bool) -> usize {
+        let base_dof = 3 * self.n_atoms;
+        let constraint_info = self.get_constraint_info();
+
+        let com_dof = if remove_com { 3 } else { 0 };
+        let constrained_dof = constraint_info.n_settle_constraints + constraint_info.n_h_constraints;
+
+        // Log DOF accounting for debugging
+        log::info!(
+            "DOF accounting: {} atoms, {} waters ({} SETTLE constraints), {} H-constraints",
+            self.n_atoms,
+            constraint_info.n_waters,
+            constraint_info.n_settle_constraints,
+            constraint_info.n_h_constraints
+        );
+
+        let n_dof = base_dof.saturating_sub(com_dof).saturating_sub(constrained_dof);
+
+        log::info!(
+            "N_dof = {} - {} - {} - {} = {}",
+            base_dof,
+            com_dof,
+            constraint_info.n_settle_constraints,
+            constraint_info.n_h_constraints,
+            n_dof
+        );
+
+        // Sanity check: ensure positive DOF
+        if n_dof == 0 {
+            log::warn!("WARNING: N_dof = 0, using fallback of 3 * n_atoms");
+            return base_dof;
+        }
+
+        n_dof
     }
 
     /// Enable periodic boundary conditions
@@ -1106,6 +1192,14 @@ impl AmberMegaFusedHmc {
         let n_angles_i32 = self.n_angles as i32;
         let n_dihedrals_i32 = self.n_dihedrals as i32;
 
+        // Compute DOF for proper temperature calculation (HMC method - no explicit solvent)
+        let n_dof = self.compute_n_dof(false); // HMC doesn't use COM removal
+        let constraint_info = self.get_constraint_info();
+
+        // Initialize energy trajectory
+        const ENERGY_SAMPLE_INTERVAL: usize = 100;
+        let mut energy_trajectory: Vec<EnergyRecord> = Vec::with_capacity(n_steps / ENERGY_SAMPLE_INTERVAL + 1);
+
         log::info!("🏃 Running {} HMC steps on GPU (dt={}fs, T={}K, γ={}fs⁻¹)", n_steps, dt, temperature, gamma_fs);
 
         // Neighbor list rebuild interval - atoms move ~0.01 Å per step at 310K
@@ -1313,18 +1407,33 @@ impl AmberMegaFusedHmc {
                 total_ke += ke[0] as f64;
             }
 
-            // DIAGNOSTIC: Log energy every 100 steps to track explosion
-            if step % 100 == 0 || step < 10 {
+            // DIAGNOSTIC: Log energy every 100 steps and record trajectory
+            if step % ENERGY_SAMPLE_INTERVAL == 0 || step < 10 {
                 self.stream.synchronize()?;
                 let mut pe = vec![0.0f32; 1];
                 let mut ke = vec![0.0f32; 1];
                 self.stream.memcpy_dtoh(&self.d_total_energy, &mut pe)?;
                 self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut ke)?;
-                let kb = 0.001987204f32;
-                let inst_temp = 2.0 * ke[0] / (3.0 * self.n_atoms as f32 * kb);
+
+                // Compute temperature using proper DOF
+                let inst_temp = 2.0 * ke[0] as f64 / (n_dof as f64 * KB_KCAL_MOL_K);
+                let time_ps = step as f64 * dt as f64 / 1000.0; // fs -> ps
+
+                // Record to energy trajectory
+                if step % ENERGY_SAMPLE_INTERVAL == 0 {
+                    energy_trajectory.push(EnergyRecord {
+                        step: step as u64,
+                        time_ps,
+                        potential_energy: pe[0] as f64,
+                        kinetic_energy: ke[0] as f64,
+                        total_energy: (pe[0] + ke[0]) as f64,
+                        temperature: inst_temp,
+                    });
+                }
+
                 log::info!(
-                    "📊 Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K",
-                    step, pe[0], ke[0], inst_temp
+                    "📊 Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K (DOF={})",
+                    step, pe[0], ke[0], inst_temp, n_dof
                 );
             }
         }
@@ -1341,23 +1450,22 @@ impl AmberMegaFusedHmc {
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
         self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
 
-        // Average temperature from kinetic energy samples
+        // Average temperature using proper DOF
         let n_samples = (n_steps / 10).max(1);
         let avg_ke = total_ke / n_samples as f64;
-        let kb = 0.001987204; // kcal/(mol*K)
-        let avg_temperature = 2.0 * avg_ke / (3.0 * self.n_atoms as f64 * kb);
+        let avg_temperature = 2.0 * avg_ke / (n_dof as f64 * KB_KCAL_MOL_K);
 
         // DIAGNOSTIC: Verify atom count and KE sanity
-        let expected_ke_at_target = 1.5 * self.n_atoms as f64 * kb * temperature as f64;
+        let expected_ke_at_target = 0.5 * n_dof as f64 * KB_KCAL_MOL_K * temperature as f64;
         log::info!(
-            "🔬 DIAG: avg_ke={:.1}, expected_ke@{}K={:.1}, ratio={:.3}, n_atoms={}, n_samples={}",
+            "🔬 DIAG: avg_ke={:.1}, expected_ke@{}K={:.1}, ratio={:.3}, n_dof={}, n_samples={}",
             avg_ke, temperature, expected_ke_at_target,
-            avg_ke / expected_ke_at_target, self.n_atoms, n_samples
+            avg_ke / expected_ke_at_target, n_dof, n_samples
         );
 
         log::info!(
-            "✅ HMC complete: PE={:.2} kcal/mol, KE={:.2} kcal/mol, T_avg={:.1}K",
-            h_total_energy[0], h_kinetic_energy[0], avg_temperature
+            "✅ HMC complete: PE={:.2} kcal/mol, KE={:.2} kcal/mol, T_avg={:.1}K (DOF={})",
+            h_total_energy[0], h_kinetic_energy[0], avg_temperature, n_dof
         );
 
         Ok(HmcRunResult {
@@ -1366,6 +1474,9 @@ impl AmberMegaFusedHmc {
             positions,
             velocities,
             avg_temperature,
+            energy_trajectory,
+            n_dof,
+            constraint_info,
         })
     }
 
@@ -1422,6 +1533,16 @@ impl AmberMegaFusedHmc {
 
         let mut total_ke = 0.0f64;
         const NEIGHBOR_REBUILD_INTERVAL: usize = 50;
+        const ENERGY_SAMPLE_INTERVAL: usize = 100;
+
+        // Compute DOF for proper temperature calculation
+        // Use COM removal only for explicit solvent (PBC enabled with SETTLE)
+        let has_explicit_solvent = self.pbc_enabled && self.settle.is_some();
+        let n_dof = self.compute_n_dof(has_explicit_solvent);
+        let constraint_info = self.get_constraint_info();
+
+        // Initialize energy trajectory
+        let mut energy_trajectory: Vec<EnergyRecord> = Vec::with_capacity(n_steps / ENERGY_SAMPLE_INTERVAL + 1);
 
         log::info!("🏃 Running {} Velocity Verlet steps (2-force-eval per step)", n_steps);
 
@@ -1615,17 +1736,32 @@ impl AmberMegaFusedHmc {
                 total_ke += ke[0] as f64;
             }
 
-            // Diagnostic logging
-            if step % 100 == 0 || step < 10 {
+            // Diagnostic logging and energy trajectory recording
+            if step % ENERGY_SAMPLE_INTERVAL == 0 || step < 10 {
                 self.stream.synchronize()?;
                 let mut pe = vec![0.0f32; 1];
                 let mut ke = vec![0.0f32; 1];
                 self.stream.memcpy_dtoh(&self.d_total_energy, &mut pe)?;
                 self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut ke)?;
-                let kb = 0.001987204f32;
-                let inst_temp = 2.0 * ke[0] / (3.0 * self.n_atoms as f32 * kb);
-                log::info!("📊 VV Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K TE={:>10.2}",
-                    step, pe[0], ke[0], inst_temp, pe[0] + ke[0]);
+
+                // Compute temperature using proper DOF
+                let inst_temp = 2.0 * ke[0] as f64 / (n_dof as f64 * KB_KCAL_MOL_K);
+                let time_ps = step as f64 * dt as f64 / 1000.0; // fs -> ps
+
+                // Record to energy trajectory (only at ENERGY_SAMPLE_INTERVAL, not first 10 steps)
+                if step % ENERGY_SAMPLE_INTERVAL == 0 {
+                    energy_trajectory.push(EnergyRecord {
+                        step: step as u64,
+                        time_ps,
+                        potential_energy: pe[0] as f64,
+                        kinetic_energy: ke[0] as f64,
+                        total_energy: (pe[0] + ke[0]) as f64,
+                        temperature: inst_temp,
+                    });
+                }
+
+                log::info!("📊 VV Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K (DOF={}) TE={:>10.2}",
+                    step, pe[0], ke[0], inst_temp, n_dof, pe[0] + ke[0]);
             }
         }
 
@@ -1641,14 +1777,13 @@ impl AmberMegaFusedHmc {
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
         self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
 
-        // Average temperature
+        // Average temperature using proper DOF
         let n_samples = (n_steps / 10).max(1);
         let avg_ke = total_ke / n_samples as f64;
-        let kb = 0.001987204;
-        let avg_temperature = 2.0 * avg_ke / (3.0 * self.n_atoms as f64 * kb);
+        let avg_temperature = 2.0 * avg_ke / (n_dof as f64 * KB_KCAL_MOL_K);
 
-        log::info!("✅ Velocity Verlet complete: PE={:.2}, KE={:.2}, T_avg={:.1}K",
-            h_total_energy[0], h_kinetic_energy[0], avg_temperature);
+        log::info!("✅ Velocity Verlet complete: PE={:.2}, KE={:.2}, T_avg={:.1}K (DOF={})",
+            h_total_energy[0], h_kinetic_energy[0], avg_temperature, n_dof);
 
         Ok(HmcRunResult {
             potential_energy: h_total_energy[0] as f64,
@@ -1656,6 +1791,9 @@ impl AmberMegaFusedHmc {
             positions,
             velocities,
             avg_temperature,
+            energy_trajectory,
+            n_dof,
+            constraint_info,
         })
     }
 
