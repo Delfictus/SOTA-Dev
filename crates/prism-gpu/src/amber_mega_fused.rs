@@ -372,6 +372,9 @@ pub struct AmberMegaFusedHmc {
     save_positions_at_build_kernel: CudaFunction,
     check_neighbor_overflow_kernel: CudaFunction,
 
+    // Phase 7: Mixed precision kernel
+    compute_forces_mixed_kernel: CudaFunction,
+
     // Device buffers - State (as flat f32 arrays)
     d_positions: CudaSlice<f32>,      // [n_atoms * 3]
     d_velocities: CudaSlice<f32>,     // [n_atoms * 3]
@@ -537,7 +540,12 @@ impl AmberMegaFusedHmc {
             .load_function("check_neighbor_overflow")
             .context("Failed to load check_neighbor_overflow")?;
 
-        log::info!("📦 Cell list, PBC, Velocity Verlet, Phase 1, and Phase 2 kernels loaded");
+        // Load Phase 7 kernel: Mixed precision force calculation
+        let compute_forces_mixed_kernel = module
+            .load_function("compute_forces_mixed")
+            .context("Failed to load compute_forces_mixed")?;
+
+        log::info!("📦 Cell list, PBC, Velocity Verlet, Phase 1, Phase 2, and Phase 7 kernels loaded");
 
         // Allocate state buffers
         let d_positions = stream.alloc_zeros::<f32>(n_atoms * 3)?;
@@ -607,6 +615,7 @@ impl AmberMegaFusedHmc {
             compute_max_displacement_kernel,
             save_positions_at_build_kernel,
             check_neighbor_overflow_kernel,
+            compute_forces_mixed_kernel,
             d_positions,
             d_velocities,
             d_forces,
