@@ -187,6 +187,18 @@ impl HConstraints {
         })
     }
 
+    /// Get total number of constrained bonds (for DOF calculation)
+    ///
+    /// Each single-H cluster has 1 constraint, CH2/NH2 has 2, CH3/NH3 has 3.
+    pub fn n_constraints(&self) -> usize {
+        self.n_single_h + 2 * self.n_ch2 + 3 * self.n_ch3
+    }
+
+    /// Get number of clusters
+    pub fn n_clusters(&self) -> usize {
+        self.n_clusters
+    }
+
     /// Apply constraints to positions and velocities
     ///
     /// Call this AFTER the integration step (position update) to enforce
@@ -225,11 +237,6 @@ impl HConstraints {
         self.stream.synchronize()?;
 
         Ok(())
-    }
-
-    /// Get number of constraint clusters
-    pub fn n_clusters(&self) -> usize {
-        self.n_clusters
     }
 
     /// Get number of single-H constraints

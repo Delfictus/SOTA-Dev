@@ -1,0 +1,1 @@
+//! integrity module (stub)

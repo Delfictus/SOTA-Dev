@@ -1220,17 +1220,50 @@ extern "C" __global__ void build_neighbor_list(
                     }
                     if (excluded) continue;
 
-                    // Add to neighbor list
+                    // Add to neighbor list (with overflow detection)
                     if (neighbor_count < NEIGHBOR_LIST_SIZE) {
                         my_neighbors[neighbor_count] = j;
                         neighbor_count++;
                     }
+                    // Note: overflow is detected by comparing neighbor_count with NEIGHBOR_LIST_SIZE
+                    // after the kernel completes - the count can exceed the array bounds check
                 }
             }
         }
     }
 
-    n_neighbors[tid] = neighbor_count;
+    n_neighbors[tid] = neighbor_count;  // Store actual count (may exceed NEIGHBOR_LIST_SIZE)
+}
+
+/**
+ * @brief Check for neighbor list overflow
+ *
+ * Scans n_neighbors array and counts how many atoms have more neighbors
+ * than NEIGHBOR_LIST_SIZE. Returns the overflow count.
+ *
+ * @param n_neighbors Number of neighbors per atom [n_atoms]
+ * @param overflow_count Output: number of atoms with overflow [1]
+ * @param n_atoms Number of atoms
+ */
+extern "C" __global__ void check_neighbor_overflow(
+    const int* __restrict__ n_neighbors,
+    int* __restrict__ overflow_count,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // First thread resets the counter
+    if (tid == 0) {
+        overflow_count[0] = 0;
+    }
+    __syncthreads();
+
+    if (tid >= n_atoms) return;
+
+    // Check if this atom has overflow
+    if (n_neighbors[tid] > NEIGHBOR_LIST_SIZE) {
+        atomicAdd(overflow_count, 1);
+    }
 }
 
 /**
@@ -3297,4 +3330,191 @@ extern "C" __global__ void velocity_verlet_step2(
     float v2 = vx*vx + vy*vy + vz*vz;
     float ke = 0.5f * mass * v2 / FORCE_TO_ACCEL;
     atomicAdd(kinetic_energy, ke);
+}
+
+// ============================================================================
+// Phase 1: PBC Position Wrapping and COM Drift Removal
+// ============================================================================
+
+/**
+ * @brief Wrap all atom positions into the primary simulation box [0, L)
+ *
+ * Call this AFTER constraints (SETTLE + H-bonds) to ensure molecules stay
+ * intact before being wrapped. The minimum image convention in force
+ * calculations handles cross-boundary interactions correctly.
+ *
+ * Only operates when PBC is enabled (d_use_pbc == 1).
+ */
+extern "C" __global__ void wrap_positions_kernel(
+    float* __restrict__ positions,   // [n_atoms * 3] - MODIFIED in-place
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    // Only wrap if PBC is enabled
+    if (!d_use_pbc) return;
+
+    float px = positions[tid * 3];
+    float py = positions[tid * 3 + 1];
+    float pz = positions[tid * 3 + 2];
+
+    // Wrap into [0, L) using floor
+    float3 pos_wrapped = wrap_position(make_float3(px, py, pz));
+
+    positions[tid * 3] = pos_wrapped.x;
+    positions[tid * 3 + 1] = pos_wrapped.y;
+    positions[tid * 3 + 2] = pos_wrapped.z;
+}
+
+/**
+ * @brief Compute center-of-mass velocity (reduction kernel)
+ *
+ * Computes: COM_vel = sum(m_i * v_i) / sum(m_i)
+ *
+ * Uses atomic operations for simplicity. For large systems, a proper
+ * parallel reduction would be more efficient.
+ */
+extern "C" __global__ void compute_com_velocity(
+    const float* __restrict__ velocities,  // [n_atoms * 3]
+    const float* __restrict__ masses,      // [n_atoms]
+    float* __restrict__ com_velocity,      // [4]: vx, vy, vz, total_mass
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Initialize output buffer (only thread 0)
+    if (tid == 0) {
+        com_velocity[0] = 0.0f;  // COM vx
+        com_velocity[1] = 0.0f;  // COM vy
+        com_velocity[2] = 0.0f;  // COM vz
+        com_velocity[3] = 0.0f;  // Total mass
+    }
+    __syncthreads();
+
+    if (tid >= n_atoms) return;
+
+    float mass = masses[tid];
+    if (mass < 1e-6f) mass = 12.0f;  // Default to carbon mass
+
+    float vx = velocities[tid * 3];
+    float vy = velocities[tid * 3 + 1];
+    float vz = velocities[tid * 3 + 2];
+
+    // Accumulate mass-weighted velocity
+    atomicAdd(&com_velocity[0], mass * vx);
+    atomicAdd(&com_velocity[1], mass * vy);
+    atomicAdd(&com_velocity[2], mass * vz);
+    atomicAdd(&com_velocity[3], mass);
+}
+
+/**
+ * @brief Remove center-of-mass velocity from all atoms
+ *
+ * Subtracts the COM velocity from each atom's velocity to eliminate
+ * net translational drift. Essential for periodic systems.
+ *
+ * Call AFTER compute_com_velocity() has completed.
+ */
+extern "C" __global__ void remove_com_velocity(
+    float* __restrict__ velocities,        // [n_atoms * 3] - MODIFIED
+    const float* __restrict__ com_velocity, // [4]: momentum_x, momentum_y, momentum_z, total_mass
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    // Compute COM velocity: v_com = p_total / m_total
+    float total_mass = com_velocity[3];
+    if (total_mass < 1e-6f) return;  // Avoid division by zero
+
+    float inv_mass = 1.0f / total_mass;
+    float com_vx = com_velocity[0] * inv_mass;
+    float com_vy = com_velocity[1] * inv_mass;
+    float com_vz = com_velocity[2] * inv_mass;
+
+    // Subtract COM velocity
+    velocities[tid * 3] -= com_vx;
+    velocities[tid * 3 + 1] -= com_vy;
+    velocities[tid * 3 + 2] -= com_vz;
+}
+
+// =============================================================================
+// Phase 2: Displacement-based Neighbor List Rebuild
+// =============================================================================
+
+/**
+ * @brief Reset max displacement counter (must be called before compute_max_displacement)
+ */
+extern "C" __global__ void reset_max_displacement(
+    float* __restrict__ max_disp
+) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        max_disp[0] = 0.0f;
+    }
+}
+
+/**
+ * @brief Compute maximum displacement since last neighbor list build (PBC-aware)
+ *
+ * Uses atomic float max via integer casting trick for CUDA.
+ * This kernel computes the max displacement of any atom since the neighbor
+ * list was last built. If max_disp > skin/2, rebuild is needed.
+ *
+ * @param pos Current positions [n_atoms * 3]
+ * @param pos_at_build Positions when neighbor list was built [n_atoms * 3]
+ * @param max_disp Output: maximum displacement (atomic reduce) [1]
+ * @param n_atoms Number of atoms
+ */
+extern "C" __global__ void compute_max_displacement(
+    const float* __restrict__ pos,
+    const float* __restrict__ pos_at_build,
+    float* __restrict__ max_disp,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    // Compute displacement vector
+    float dx = pos[tid * 3]     - pos_at_build[tid * 3];
+    float dy = pos[tid * 3 + 1] - pos_at_build[tid * 3 + 1];
+    float dz = pos[tid * 3 + 2] - pos_at_build[tid * 3 + 2];
+
+    // Apply PBC (minimum image convention for displacement)
+    if (d_use_pbc) {
+        dx -= d_box_dims.x * rintf(dx * d_box_inv.x);
+        dy -= d_box_dims.y * rintf(dy * d_box_inv.y);
+        dz -= d_box_dims.z * rintf(dz * d_box_inv.z);
+    }
+
+    // Compute displacement magnitude
+    float disp = sqrtf(dx * dx + dy * dy + dz * dz);
+
+    // Atomic max using integer casting trick for floats
+    // Works because IEEE 754 floats preserve order when cast to int (for positive values)
+    int* max_disp_int = (int*)max_disp;
+    int disp_int = __float_as_int(disp);
+    atomicMax(max_disp_int, disp_int);
+}
+
+/**
+ * @brief Save current positions as reference for displacement tracking
+ *
+ * Called after rebuilding the neighbor list.
+ *
+ * @param pos Current positions [n_atoms * 3]
+ * @param pos_at_build Output: saved positions [n_atoms * 3]
+ * @param n_atoms Number of atoms
+ */
+extern "C" __global__ void save_positions_at_build(
+    const float* __restrict__ pos,
+    float* __restrict__ pos_at_build,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    pos_at_build[tid * 3]     = pos[tid * 3];
+    pos_at_build[tid * 3 + 1] = pos[tid * 3 + 1];
+    pos_at_build[tid * 3 + 2] = pos[tid * 3 + 2];
 }
