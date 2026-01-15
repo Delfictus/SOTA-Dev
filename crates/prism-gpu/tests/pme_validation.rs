@@ -394,3 +394,120 @@ fn test_water_dimer_energy() {
 
     println!("\n✓ Water dimer test passed (energy is finite, negative, and reasonable)");
 }
+
+// ============================================================================
+// Ewald Beta Computation Tests
+// ============================================================================
+
+/// Test compute_ewald_beta function correctness
+///
+/// Verifies the formula: β = sqrt(-ln(tolerance)) / cutoff
+#[test]
+fn test_compute_ewald_beta() {
+    use prism_gpu::pme::compute_ewald_beta;
+
+    println!("\n=== Ewald Beta Computation Test ===\n");
+
+    // Test case 1: 12 Å cutoff, 1e-5 tolerance
+    // β = sqrt(-ln(1e-5)) / 12 = sqrt(11.5129) / 12 = 3.393 / 12 = 0.2828
+    let beta1 = compute_ewald_beta(12.0, 1e-5);
+    println!("Case 1: cutoff=12.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.2828)", beta1);
+    assert!(
+        (beta1 - 0.2828).abs() < 0.001,
+        "Expected β ≈ 0.283, got {:.4}",
+        beta1
+    );
+
+    // Test case 2: 10 Å cutoff, 1e-5 tolerance
+    // β = sqrt(11.5129) / 10 = 0.3393
+    let beta2 = compute_ewald_beta(10.0, 1e-5);
+    println!("Case 2: cutoff=10.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.3393)", beta2);
+    assert!(
+        (beta2 - 0.3393).abs() < 0.001,
+        "Expected β ≈ 0.339, got {:.4}",
+        beta2
+    );
+
+    // Test case 3: 12 Å cutoff, 1e-6 tolerance
+    // β = sqrt(-ln(1e-6)) / 12 = sqrt(13.8155) / 12 = 0.3098
+    let beta3 = compute_ewald_beta(12.0, 1e-6);
+    println!("Case 3: cutoff=12.0 Å, tol=1e-6 → β={:.4} Å⁻¹ (expected ≈0.3098)", beta3);
+    assert!(
+        (beta3 - 0.3098).abs() < 0.001,
+        "Expected β ≈ 0.310, got {:.4}",
+        beta3
+    );
+
+    // Test case 4: 14 Å cutoff, 1e-5 tolerance
+    // β = sqrt(11.5129) / 14 = 0.2424
+    let beta4 = compute_ewald_beta(14.0, 1e-5);
+    println!("Case 4: cutoff=14.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.2424)", beta4);
+    assert!(
+        (beta4 - 0.2424).abs() < 0.001,
+        "Expected β ≈ 0.242, got {:.4}",
+        beta4
+    );
+
+    // Test case 5: Verify β decreases with increasing cutoff
+    println!("\nCase 5: Verifying β decreases with increasing cutoff...");
+    let beta_10 = compute_ewald_beta(10.0, 1e-5);
+    let beta_12 = compute_ewald_beta(12.0, 1e-5);
+    let beta_14 = compute_ewald_beta(14.0, 1e-5);
+    println!("   β(10Å)={:.4} > β(12Å)={:.4} > β(14Å)={:.4}", beta_10, beta_12, beta_14);
+    assert!(beta_10 > beta_12, "β should decrease with cutoff: {:.4} vs {:.4}", beta_10, beta_12);
+    assert!(beta_12 > beta_14, "β should decrease with cutoff: {:.4} vs {:.4}", beta_12, beta_14);
+
+    // Test case 6: Verify β increases with tighter tolerance
+    println!("\nCase 6: Verifying β increases with tighter tolerance...");
+    let beta_1e5 = compute_ewald_beta(12.0, 1e-5);
+    let beta_1e6 = compute_ewald_beta(12.0, 1e-6);
+    let beta_1e7 = compute_ewald_beta(12.0, 1e-7);
+    println!("   β(1e-5)={:.4} < β(1e-6)={:.4} < β(1e-7)={:.4}", beta_1e5, beta_1e6, beta_1e7);
+    assert!(beta_1e6 > beta_1e5, "β should increase with tighter tolerance");
+    assert!(beta_1e7 > beta_1e6, "β should increase with tighter tolerance");
+
+    println!("\n✓ Ewald beta computation test PASSED");
+}
+
+/// Test that DEFAULT_PME_TOLERANCE is exported and reasonable
+#[test]
+fn test_default_pme_tolerance() {
+    use prism_gpu::pme::DEFAULT_PME_TOLERANCE;
+
+    println!("\n=== Default PME Tolerance Test ===\n");
+
+    // Should be a small positive value
+    assert!(DEFAULT_PME_TOLERANCE > 0.0, "Tolerance must be positive");
+    assert!(DEFAULT_PME_TOLERANCE < 1e-3, "Tolerance should be small (< 1e-3)");
+    assert!(DEFAULT_PME_TOLERANCE >= 1e-8, "Tolerance should be >= 1e-8 for numerical stability");
+
+    println!("DEFAULT_PME_TOLERANCE = {:.0e}", DEFAULT_PME_TOLERANCE);
+    println!("\n✓ Default PME tolerance test PASSED");
+}
+
+/// Test comparison between old hardcoded β and computed β
+#[test]
+fn test_beta_improvement_over_hardcoded() {
+    use prism_gpu::pme::compute_ewald_beta;
+
+    println!("\n=== Beta Improvement Test ===\n");
+
+    let old_hardcoded_beta = 0.34;  // What was hardcoded before
+    let cutoff = 12.0;  // PRISM-4D standard cutoff
+    let tolerance = 1e-5;
+
+    let correct_beta = compute_ewald_beta(cutoff, tolerance);
+    let error_percent = ((old_hardcoded_beta - correct_beta) / correct_beta).abs() * 100.0;
+
+    println!("Old hardcoded β: {:.4} Å⁻¹", old_hardcoded_beta);
+    println!("Correct β for {} Å cutoff: {:.4} Å⁻¹", cutoff, correct_beta);
+    println!("Improvement: {:.1}% error eliminated", error_percent);
+
+    // The old hardcoded value was ~20% off for 12 Å cutoff
+    assert!(
+        error_percent > 15.0,
+        "This test validates that the fix was necessary (old value was significantly wrong)"
+    );
+
+    println!("\n✓ Beta improvement test PASSED - fix was necessary");
+}

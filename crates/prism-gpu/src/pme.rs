@@ -26,9 +26,40 @@ use crate::cufft_sys::{
 /// Default grid spacing (Å) - determines PME grid density
 const PME_GRID_SPACING: f32 = 1.0;
 
-/// Default Ewald splitting parameter (Å⁻¹)
-/// β = 0.34 Å⁻¹ is standard for 10 Å real-space cutoff
-const DEFAULT_BETA: f32 = 0.34;
+/// Default real-space cutoff (Å) - must match non-bonded cutoff
+const DEFAULT_REAL_SPACE_CUTOFF: f32 = 12.0;
+
+/// Default PME tolerance for Ewald sum convergence
+/// Smaller values give higher accuracy but require more reciprocal space work
+pub const DEFAULT_PME_TOLERANCE: f32 = 1e-5;
+
+/// Compute Ewald splitting parameter from tolerance and cutoff.
+///
+/// The Ewald method splits the Coulomb sum into real-space and reciprocal-space
+/// components. The splitting parameter β controls this division:
+/// - Larger β: More work in reciprocal space (faster for dense systems)
+/// - Smaller β: More work in real space (faster for sparse systems)
+///
+/// Formula: β = sqrt(-ln(tolerance)) / cutoff
+///
+/// # Arguments
+/// * `cutoff` - Real-space cutoff distance in Ångströms
+/// * `tolerance` - Relative error tolerance (typically 1e-5 to 1e-6)
+///
+/// # Returns
+/// Ewald splitting parameter β in Å⁻¹
+///
+/// # Example
+/// ```ignore
+/// let beta = compute_ewald_beta(12.0, 1e-5);
+/// assert!((beta - 0.283).abs() < 0.001);
+/// ```
+pub fn compute_ewald_beta(cutoff: f32, tolerance: f32) -> f32 {
+    debug_assert!(cutoff > 0.0, "Cutoff must be positive");
+    debug_assert!(tolerance > 0.0 && tolerance < 1.0, "Tolerance must be in (0, 1)");
+
+    (-tolerance.ln()).sqrt() / cutoff
+}
 
 /// PME electrostatics calculator
 pub struct PME {
@@ -144,7 +175,13 @@ impl PME {
         let (fft_plan_r2c, fft_plan_c2r) =
             create_fft_plans(nx, ny, nz).context("Failed to create cuFFT plans")?;
 
-        log::info!("✅ PME initialized with cuFFT plans");
+        // Compute Ewald splitting parameter from cutoff and tolerance
+        // β = sqrt(-ln(tolerance)) / cutoff
+        let beta = compute_ewald_beta(DEFAULT_REAL_SPACE_CUTOFF, DEFAULT_PME_TOLERANCE);
+        log::info!(
+            "✅ PME initialized: β={:.4} Å⁻¹ (cutoff={:.1} Å, tolerance={:.0e})",
+            beta, DEFAULT_REAL_SPACE_CUTOFF, DEFAULT_PME_TOLERANCE
+        );
 
         Ok(Self {
             context,
@@ -154,7 +191,7 @@ impl PME {
             ny,
             nz,
             box_dims,
-            beta: DEFAULT_BETA,
+            beta,
             fft_plan_r2c,
             fft_plan_c2r,
             plans_initialized: true,
@@ -171,13 +208,29 @@ impl PME {
         })
     }
 
-    /// Set the Ewald splitting parameter
+    /// Set the Ewald splitting parameter directly
     ///
-    /// Default is 0.34 Å⁻¹ (appropriate for 10 Å cutoff).
+    /// Prefer using `set_beta_from_cutoff()` which computes the optimal β.
     /// Larger β → more in reciprocal space, smaller → more in real space.
     pub fn set_beta(&mut self, beta: f32) {
         self.beta = beta;
-        log::info!("🔧 PME β = {:.3} Å⁻¹", beta);
+        log::info!("🔧 PME β = {:.4} Å⁻¹ (manually set)", beta);
+    }
+
+    /// Set the Ewald splitting parameter from cutoff and tolerance
+    ///
+    /// This is the preferred method - computes optimal β using:
+    /// β = sqrt(-ln(tolerance)) / cutoff
+    ///
+    /// # Arguments
+    /// * `cutoff` - Real-space cutoff in Ångströms (should match non-bonded cutoff)
+    /// * `tolerance` - Ewald sum tolerance (typically 1e-5 to 1e-6)
+    pub fn set_beta_from_cutoff(&mut self, cutoff: f32, tolerance: f32) {
+        self.beta = compute_ewald_beta(cutoff, tolerance);
+        log::info!(
+            "🔧 PME β = {:.4} Å⁻¹ (cutoff={:.1} Å, tolerance={:.0e})",
+            self.beta, cutoff, tolerance
+        );
     }
 
     /// Compute PME reciprocal energy and add forces to atoms

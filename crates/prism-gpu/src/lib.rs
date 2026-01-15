@@ -48,7 +48,7 @@ pub use bio_chemistry_gpu::{BiochemistryGpu, GpuAtomicMetadata, MAX_ATOMS as BIO
 pub use prism_nova::{PrismNova, NovaConfig, NovaStepResult, RESERVOIR_SIZE as NOVA_RESERVOIR_SIZE};
 pub use amber_forces::{AmberBondedForces, TopologyBuilder, BondParam, AngleParam, DihedralParam, NB14Param, EnergyComponents, Bond, Angle, Dihedral, Pair14};
 pub use amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, EnergyRecord, ConstraintInfo, KB_KCAL_MOL_K, build_exclusion_lists as build_amber_exclusions, MAX_EXCLUSIONS as AMBER_MAX_EXCLUSIONS};
-pub use pme::PME;
+pub use pme::{PME, compute_ewald_beta, DEFAULT_PME_TOLERANCE};
 pub use settle::Settle;
 pub use h_constraints::{HConstraints, HConstraintCluster, ClusterType, build_h_clusters};
 pub use memory::{VramGuard, VramInfo, VramGuardError, init_global_vram_guard, global_vram_guard};
