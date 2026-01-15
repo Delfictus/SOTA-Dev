@@ -10,6 +10,7 @@
 //!
 //! Run with: cargo test -p prism-gpu --test fused_kernel_integration --features cuda
 
+#[allow(unused_imports)]
 use std::sync::Arc;
 
 // ============================================================================
@@ -105,15 +106,16 @@ fn test_langevin_thermostat_statistics() {
 fn test_shared_memory_tile_calculations() {
     println!("\n=== Shared Memory Tile Calculations Test ===\n");
 
-    const SM_TILE_SIZE: usize = 128;
+    // SOTA: 256-atom tiles for 8 warps per block
+    const SM_TILE_SIZE: usize = 256;
 
     // Each atom in tile needs: xyz (3*4=12 bytes) + sigma,epsilon,charge (3*4=12 bytes)
     let bytes_per_atom = 12 + 12;
     let tile_bytes = SM_TILE_SIZE * bytes_per_atom;
 
-    println!("Tile size: {} atoms", SM_TILE_SIZE);
+    println!("Tile size: {} atoms (SOTA)", SM_TILE_SIZE);
     println!("Bytes per atom: {} bytes", bytes_per_atom);
-    println!("Total tile size: {} bytes", tile_bytes);
+    println!("Total tile size: {} bytes (~{}KB)", tile_bytes, tile_bytes / 1024);
 
     // Typical shared memory limit: 48KB per SM
     let sm_limit = 48 * 1024;

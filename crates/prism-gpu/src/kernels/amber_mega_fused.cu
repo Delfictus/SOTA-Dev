@@ -3521,6 +3521,62 @@ extern "C" __global__ void save_positions_at_build(
 }
 
 // =============================================================================
+// Phase 7: FP16 Atomic Operations for Mixed Precision
+// =============================================================================
+
+/**
+ * @brief FP16 atomic add helper for PME grid accumulation
+ *
+ * Uses native FP16 atomics on Volta+ (sm_70+), CAS fallback otherwise.
+ * Required for FP16 PME charge grid accumulation to reduce memory bandwidth.
+ *
+ * @param address Pointer to FP16 value to atomically update
+ * @param val Value to add
+ */
+__device__ __forceinline__
+void atomicAdd_fp16(__half* address, __half val) {
+#if __CUDA_ARCH__ >= 700
+    // Native FP16 atomics on Volta, Turing, Ampere, Ada (sm_70+)
+    atomicAdd(address, val);
+#else
+    // Fallback: Compare-And-Swap loop for older GPUs (Pascal, etc.)
+    unsigned short* addr_as_ushort = (unsigned short*)address;
+    unsigned short old = *addr_as_ushort;
+    unsigned short assumed;
+    do {
+        assumed = old;
+        __half sum = __hadd(__ushort_as_half(assumed), val);
+        old = atomicCAS(addr_as_ushort, assumed, __half_as_ushort(sum));
+    } while (assumed != old);
+#endif
+}
+
+/**
+ * @brief Half2 atomic add for vectorized FP16 accumulation
+ *
+ * Adds two FP16 values atomically using native Half2 atomics on sm_70+.
+ * Provides 2x throughput over single FP16 atomics.
+ *
+ * @param address Pointer to Half2 value
+ * @param val Half2 value to add
+ */
+__device__ __forceinline__
+void atomicAdd_half2(__half2* address, __half2 val) {
+#if __CUDA_ARCH__ >= 700
+    atomicAdd(address, val);
+#else
+    unsigned int* addr_as_uint = (unsigned int*)address;
+    unsigned int old = *addr_as_uint;
+    unsigned int assumed;
+    do {
+        assumed = old;
+        __half2 sum = __hadd2(*reinterpret_cast<__half2*>(&assumed), val);
+        old = atomicCAS(addr_as_uint, assumed, *reinterpret_cast<unsigned int*>(&sum));
+    } while (assumed != old);
+#endif
+}
+
+// =============================================================================
 // Phase 7: Mixed Precision (FP16/FP32) LJ Force Calculation
 // =============================================================================
 
@@ -4307,7 +4363,10 @@ __device__ __forceinline__ void compute_nb_pair_force_device(
  * - ~50% reduction in kernel launch overhead
  * - Better GPU occupancy through persistent threads
  * - Reduced PCIe traffic (intermediate results stay on GPU)
+ *
+ * @note __launch_bounds__(256, 4) targets 256 threads/block × 4 blocks/SM = 1024 threads/SM
  */
+__launch_bounds__(256, 4)
 extern "C" __global__ void mega_fused_md_step(
     // Positions and velocities (MODIFIED)
     float* __restrict__ positions,           // [n_atoms * 3]
@@ -4931,7 +4990,10 @@ __device__ __forceinline__ void constrain_h_cluster_device(
  * @param n_h_clusters Number of H-constraint clusters
  * @param mO, mH       Water masses
  * @param ra, rb, rc   SETTLE geometry parameters
+ *
+ * @note __launch_bounds__(256, 4) for optimal occupancy on sm_86+
  */
+__launch_bounds__(256, 4)
 extern "C" __global__ void fused_constraints_kernel(
     float* __restrict__ new_pos,
     const float* __restrict__ old_pos,
@@ -4970,20 +5032,22 @@ extern "C" __global__ void fused_constraints_kernel(
 // utilization for maximum memory bandwidth efficiency.
 // ============================================================================
 
-#define SM_TILE_SIZE 128  // Larger tile for better occupancy
+#define SM_TILE_SIZE 256  // SOTA: 256-atom tiles for 8 warps per block
 
 /**
  * @brief Shared memory structure for tiled NB calculation
  *
  * Aligned for optimal memory access patterns on compute capability 8.x GPUs.
+ * Memory usage: 256 × 6 × 4 = 6,144 bytes (~6KB, well within 48KB limit)
  */
 struct __align__(128) SharedTileData {
-    float pos_x[SM_TILE_SIZE];
-    float pos_y[SM_TILE_SIZE];
-    float pos_z[SM_TILE_SIZE];
-    float sigma[SM_TILE_SIZE];
-    float epsilon[SM_TILE_SIZE];
-    float charge[SM_TILE_SIZE];
+    float pos_x[SM_TILE_SIZE];     // 256 × 4 = 1,024 bytes
+    float pos_y[SM_TILE_SIZE];     // 256 × 4 = 1,024 bytes
+    float pos_z[SM_TILE_SIZE];     // 256 × 4 = 1,024 bytes
+    float sigma[SM_TILE_SIZE];     // 256 × 4 = 1,024 bytes
+    float epsilon[SM_TILE_SIZE];   // 256 × 4 = 1,024 bytes
+    float charge[SM_TILE_SIZE];    // 256 × 4 = 1,024 bytes
+    // Total: 6,144 bytes (~6KB)
 };
 
 /**
@@ -5171,9 +5235,13 @@ __device__ void compute_nonbonded_tiled_optimized(
 /**
  * @brief Optimized mega-fused MD step with shared memory tiling
  *
- * Uses larger shared memory tiles (128 atoms) for better memory bandwidth.
+ * Uses 256-atom shared memory tiles for better memory bandwidth.
  * Specifically optimized for sm_80+ GPUs (Ampere and later).
+ * Shared memory usage: ~6KB (well within 48KB limit).
+ *
+ * @note __launch_bounds__(256, 4) targets 256 threads/block × 4 blocks/SM = 1024 threads/SM
  */
+__launch_bounds__(256, 4)
 extern "C" __global__ void mega_fused_md_step_tiled(
     // Positions and velocities (MODIFIED)
     float* __restrict__ positions,
