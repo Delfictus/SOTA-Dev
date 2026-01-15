@@ -1,0 +1,26 @@
+\begin{table}
+\caption{Molecular Dynamics Simulation Parameters}
+\label{tab:sim_params}
+\begin{tabular}{ll}
+\toprule
+Parameter & Value \\
+\midrule
+Target Structure & SARS-CoV-2 Spike RBD \\
+PDB ID & 6M0J (Chain E) \\
+Force Field & AMBER ff14SB \\
+Solvent Model & Implicit (distance-dependent epsilon) \\
+Temperature & 310 K \\
+Timestep & 2.0 fs \\
+Constraint Algorithm (Water) & SETTLE \\
+Constraint Algorithm (H-bonds) & H-bond constraints (SHAKE-like) \\
+Position Restraints & k = 2.0 kcal/(mol*A^2) on heavy atoms \\
+Total Simulation Time & 1.0 ns \\
+Equilibration Time & 50 ps \\
+Production Time & 950 ps \\
+Snapshot Interval & 1.0 ps \\
+Total Frames & 951 \\
+MD Engine & PRISM-4D (Rust/CUDA) \\
+Hardware & Consumer laptop GPU \\
+\bottomrule
+\end{tabular}
+\end{table}

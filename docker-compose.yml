@@ -1,0 +1,83 @@
+# PRISM-4D Docker Compose Configuration
+#
+# Usage:
+#   docker-compose up prism4d         # Run with GPU
+#   docker-compose run prism4d bash   # Interactive shell
+#   docker-compose run simulation     # Run MD simulation
+#   docker-compose run analysis       # Generate publication data
+
+version: '3.8'
+
+services:
+  # Main PRISM-4D service
+  prism4d:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: prism4d:latest
+    container_name: prism4d
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./publication:/app/publication
+      - ./scripts:/app/scripts
+    environment:
+      - PRISM4D_LOG_LEVEL=info
+      - PRISM4D_GPU_DEVICE=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    stdin_open: true
+    tty: true
+    command: >
+      bash -c "echo 'PRISM-4D Container Ready' &&
+               nvidia-smi --query-gpu=name,memory.total --format=csv &&
+               echo '' &&
+               echo 'Run: cargo run --release -p prism-validation --bin generate-ensemble -- --help'"
+
+  # MD Simulation service
+  simulation:
+    extends:
+      service: prism4d
+    container_name: prism4d-simulation
+    command: >
+      bash -c "cargo run --release -p prism-validation --bin generate-ensemble -- \
+               --pdb /app/data/raw/6M0J_RBD_fixed.pdb \
+               --output /app/data/ensembles/6M0J_output.pdb \
+               --frames 1000 \
+               --temperature 310 \
+               --restraint-k 2.0"
+
+  # Analysis and publication data generation
+  analysis:
+    extends:
+      service: prism4d
+    container_name: prism4d-analysis
+    command: >
+      bash -c "python3 /app/scripts/generate_publication_data.py"
+
+  # Development service with additional tools
+  dev:
+    extends:
+      service: prism4d
+    container_name: prism4d-dev
+    volumes:
+      - .:/app
+      - cargo-cache:/root/.cargo/registry
+      - target-cache:/app/target
+    command: bash
+
+volumes:
+  cargo-cache:
+  target-cache:
+
+# Network configuration (optional, for multi-node setups)
+networks:
+  default:
+    name: prism4d-network

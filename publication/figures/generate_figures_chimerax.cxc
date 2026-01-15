@@ -1,0 +1,37 @@
+# PRISM-4D Publication Figure - ChimeraX Script
+# SARS-CoV-2 RBD colored by RMSF
+
+# Open structure
+open publication/figures/6M0J_RBD_RMSF_bfactor.pdb
+
+# Set background
+set bgColor white
+
+# Color by B-factor (RMSF)
+color bfactor palette blue:white:red range 0,20
+
+# Nice rendering
+lighting soft
+graphics silhouettes true
+cartoon style protein modeh tube rad 0.3
+
+# Highlight escape mutations
+select :346,371,373,375,417,440,446,452,477,478,484,493,496,498,501,505
+style sel stick
+color sel gold
+
+# Add labels
+label :477@CA text "S477N"
+label :484@CA text "E484K"
+label :501@CA text "N501Y"
+
+# Save views
+save publication/figures/Figure5a_chimerax_overview.png width 2400 height 1800 supersample 3
+
+turn y 90
+save publication/figures/Figure5b_chimerax_side.png width 2400 height 1800 supersample 3
+
+turn x 90
+save publication/figures/Figure5c_chimerax_top.png width 2400 height 1800 supersample 3
+
+exit
