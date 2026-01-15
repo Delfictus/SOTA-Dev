@@ -18,6 +18,15 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
+/// Solvent model selection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum SolventMode {
+    /// Implicit solvent: screened Coulomb (ε = 4r), no PBC, position restraints
+    Implicit,
+    /// Explicit solvent: PME electrostatics, PBC, SETTLE, COM drift removal
+    Explicit,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "generate_ensemble")]
 #[command(about = "Generate conformational ensemble via GPU MD simulation")]
@@ -25,6 +34,10 @@ struct Args {
     /// Path to prepared topology JSON (from prepare_protein.py)
     #[arg(long)]
     topology: PathBuf,
+
+    /// Solvent model: implicit (screened Coulomb) or explicit (PME + PBC)
+    #[arg(long, value_enum, default_value = "implicit")]
+    solvent: SolventMode,
 
     /// Total number of MD steps
     #[arg(long, default_value = "100000")]
@@ -59,8 +72,9 @@ struct Args {
     pdb: Option<PathBuf>,
 
     /// Position restraint force constant (kcal/mol/Å², 0 to disable)
-    #[arg(long, default_value = "0.0")]
-    restraint_k: f32,
+    /// Default: 10.0 for implicit solvent, 0.0 for explicit solvent
+    #[arg(long)]
+    restraint_k: Option<f32>,
 
     /// Output CSV for energy timeseries (time_ps,PE,KE,total_E)
     #[arg(long)]
@@ -171,6 +185,35 @@ fn main() -> Result<()> {
     println!("   Waters: {}", n_waters);
     println!("   H-bond clusters: {}", n_h_clusters);
 
+    // Determine effective restraint force constant based on solvent mode
+    let effective_restraint_k = args.restraint_k.unwrap_or_else(|| {
+        match args.solvent {
+            SolventMode::Implicit => 10.0,  // Default restraints for implicit
+            SolventMode::Explicit => 0.0,   // No restraints for explicit
+        }
+    });
+
+    // Validate solvent mode settings
+    match args.solvent {
+        SolventMode::Explicit => {
+            if topology.box_vectors.is_none() {
+                anyhow::bail!("Explicit solvent requires box_vectors in topology");
+            }
+            if n_waters == 0 {
+                log::warn!("Explicit solvent mode but no waters in topology");
+            }
+            println!("\n💧 Solvent mode: EXPLICIT");
+            println!("   - PME electrostatics enabled");
+            println!("   - Periodic boundary conditions enabled");
+            println!("   - COM drift removal every 10 steps");
+        }
+        SolventMode::Implicit => {
+            println!("\n💨 Solvent mode: IMPLICIT");
+            println!("   - Screened Coulomb (ε = 4r)");
+            println!("   - No periodic boundaries");
+        }
+    }
+
     // Count H-cluster types
     let n_single = topology.h_clusters.iter().filter(|c| c.cluster_type == 1).count();
     let n_ch2 = topology.h_clusters.iter().filter(|c| c.cluster_type == 2).count();
@@ -214,8 +257,10 @@ fn main() -> Result<()> {
     println!("   Production: {} steps", production_steps);
     println!("   Save interval: {} steps ({:.2} ps)", args.save_interval, snapshot_interval_ps);
     println!("   Expected snapshots: {}", n_snapshots);
-    if args.restraint_k > 0.0 {
-        println!("   Position restraints: k={} kcal/(mol·Å²)", args.restraint_k);
+    if effective_restraint_k > 0.0 {
+        println!("   Position restraints: k={} kcal/(mol·Å²)", effective_restraint_k);
+    } else {
+        println!("   Position restraints: disabled");
     }
 
     // Initialize CUDA and run simulation
@@ -285,11 +330,18 @@ fn main() -> Result<()> {
             &exclusions,
         )?;
 
-        // Enable PBC if box vectors provided
+        // Enable PBC if box vectors provided (required for explicit solvent)
         if let Some(ref box_vecs) = topology.box_vectors {
             if box_vecs.len() >= 3 {
-                println!("   Box: {:.2} x {:.2} x {:.2} Å", box_vecs[0], box_vecs[1], box_vecs[2]);
-                hmc.set_pbc_box([box_vecs[0], box_vecs[1], box_vecs[2]])?;
+                let box_dims = [box_vecs[0], box_vecs[1], box_vecs[2]];
+                println!("   Box: {:.2} x {:.2} x {:.2} Å", box_dims[0], box_dims[1], box_dims[2]);
+                hmc.set_pbc_box(box_dims)?;
+
+                // Enable explicit solvent mode (PME electrostatics)
+                if args.solvent == SolventMode::Explicit {
+                    hmc.enable_explicit_solvent(box_dims)?;
+                    println!("   ✓ PME electrostatics enabled");
+                }
             }
         }
 
@@ -326,13 +378,15 @@ fn main() -> Result<()> {
             println!("   ✓ H-constraints enabled for {} clusters", n_h_clusters);
         }
 
-        // Enable position restraints if requested
-        if args.restraint_k > 0.0 {
+        // Enable position restraints if requested (default depends on solvent mode)
+        if effective_restraint_k > 0.0 {
             let heavy_atoms: Vec<usize> = (0..n_atoms)
                 .filter(|&i| topology.masses[i] > 2.0)
                 .collect();
-            hmc.set_position_restraints(&heavy_atoms, args.restraint_k)?;
-            println!("   ✓ Position restraints on {} heavy atoms", heavy_atoms.len());
+            hmc.set_position_restraints(&heavy_atoms, effective_restraint_k)?;
+            println!("   ✓ Position restraints on {} heavy atoms (k={:.1})", heavy_atoms.len(), effective_restraint_k);
+        } else {
+            println!("   ✓ No position restraints (unrestrained dynamics)");
         }
 
         // Energy minimization
