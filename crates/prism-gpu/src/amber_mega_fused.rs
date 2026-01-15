@@ -96,6 +96,11 @@ pub struct AmberMegaFusedHmc {
     vv_step1_kernel: CudaFunction,
     vv_step2_kernel: CudaFunction,
 
+    // Phase 1: PBC position wrapping and COM drift removal kernels
+    wrap_positions_kernel: CudaFunction,
+    compute_com_velocity_kernel: CudaFunction,
+    remove_com_velocity_kernel: CudaFunction,
+
     // Device buffers - State (as flat f32 arrays)
     d_positions: CudaSlice<f32>,      // [n_atoms * 3]
     d_velocities: CudaSlice<f32>,     // [n_atoms * 3]
@@ -150,6 +155,10 @@ pub struct AmberMegaFusedHmc {
     // Periodic boundary conditions (for explicit solvent)
     pbc_enabled: bool,
     box_dimensions: [f32; 3],
+
+    // Phase 1: COM drift removal buffer
+    d_com_velocity: CudaSlice<f32>,    // [4]: momentum_x, momentum_y, momentum_z, total_mass
+    com_removal_interval: usize,       // How often to remove COM drift (default: 10 steps)
 
     // Explicit solvent components (optional)
     pme: Option<PME>,
@@ -221,7 +230,18 @@ impl AmberMegaFusedHmc {
             .load_function("velocity_verlet_step2")
             .context("Failed to load velocity_verlet_step2")?;
 
-        log::info!("📦 Cell list, PBC, and Velocity Verlet kernels loaded");
+        // Load Phase 1 kernels: PBC wrapping and COM drift removal
+        let wrap_positions_kernel = module
+            .load_function("wrap_positions_kernel")
+            .context("Failed to load wrap_positions_kernel")?;
+        let compute_com_velocity_kernel = module
+            .load_function("compute_com_velocity")
+            .context("Failed to load compute_com_velocity")?;
+        let remove_com_velocity_kernel = module
+            .load_function("remove_com_velocity")
+            .context("Failed to load remove_com_velocity")?;
+
+        log::info!("📦 Cell list, PBC, Velocity Verlet, and Phase 1 kernels loaded");
 
         // Allocate state buffers
         let d_positions = stream.alloc_zeros::<f32>(n_atoms * 3)?;
@@ -229,6 +249,9 @@ impl AmberMegaFusedHmc {
         let d_forces = stream.alloc_zeros::<f32>(n_atoms * 3)?;
         let d_total_energy = stream.alloc_zeros::<f32>(1)?;
         let d_kinetic_energy = stream.alloc_zeros::<f32>(1)?;
+
+        // Phase 1: COM velocity buffer for drift removal
+        let d_com_velocity = stream.alloc_zeros::<f32>(4)?;
 
         // Allocate topology buffers (minimal initial size)
         let d_bond_atoms = stream.alloc_zeros::<i32>(2)?;
@@ -276,6 +299,9 @@ impl AmberMegaFusedHmc {
             compute_forces_kernel,
             vv_step1_kernel,
             vv_step2_kernel,
+            wrap_positions_kernel,
+            compute_com_velocity_kernel,
+            remove_com_velocity_kernel,
             d_positions,
             d_velocities,
             d_forces,
@@ -313,6 +339,8 @@ impl AmberMegaFusedHmc {
             neighbor_list_valid: false,
             pbc_enabled: false,
             box_dimensions: [0.0, 0.0, 0.0],
+            d_com_velocity,
+            com_removal_interval: 10,  // Remove COM drift every 10 steps (default)
             pme: None,
             settle: None,
             d_old_positions: None,
@@ -630,6 +658,94 @@ impl AmberMegaFusedHmc {
         } else {
             None
         }
+    }
+
+    // ========================================================================
+    // Phase 1: PBC Position Wrapping and COM Drift Removal
+    // ========================================================================
+
+    /// Wrap all atom positions into the primary simulation box [0, L)
+    ///
+    /// Call this AFTER constraints (SETTLE + H-bonds) to ensure molecules stay
+    /// intact before being wrapped. Only operates when PBC is enabled.
+    pub fn wrap_positions(&mut self) -> Result<()> {
+        if !self.pbc_enabled {
+            return Ok(());  // No-op for non-periodic systems
+        }
+
+        let threads_per_block = 256;
+        let num_blocks = (self.n_atoms + threads_per_block - 1) / threads_per_block;
+        let cfg = LaunchConfig {
+            grid_dim: (num_blocks as u32, 1, 1),
+            block_dim: (threads_per_block as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let n_atoms_i32 = self.n_atoms as i32;
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.wrap_positions_kernel);
+            builder.arg(&self.d_positions);
+            builder.arg(&n_atoms_i32);
+            builder.launch(cfg)?;
+        }
+
+        Ok(())
+    }
+
+    /// Remove center-of-mass velocity drift
+    ///
+    /// Subtracts the net COM velocity from all atoms to eliminate translational
+    /// drift in periodic systems. Essential for explicit solvent simulations.
+    ///
+    /// This is a two-step process:
+    /// 1. Compute COM velocity (parallel reduction)
+    /// 2. Subtract COM velocity from all atoms
+    pub fn remove_com_drift(&mut self) -> Result<()> {
+        if !self.pbc_enabled {
+            return Ok(());  // No-op for non-periodic systems
+        }
+
+        let threads_per_block = 256;
+        let num_blocks = (self.n_atoms + threads_per_block - 1) / threads_per_block;
+        let cfg = LaunchConfig {
+            grid_dim: (num_blocks as u32, 1, 1),
+            block_dim: (threads_per_block as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let n_atoms_i32 = self.n_atoms as i32;
+
+        // Step 1: Compute COM velocity (accumulates into d_com_velocity)
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.compute_com_velocity_kernel);
+            builder.arg(&self.d_velocities);
+            builder.arg(&self.d_nb_mass);
+            builder.arg(&self.d_com_velocity);
+            builder.arg(&n_atoms_i32);
+            builder.launch(cfg)?;
+        }
+
+        // Synchronize to ensure reduction is complete
+        self.stream.synchronize()?;
+
+        // Step 2: Subtract COM velocity from all atoms
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.remove_com_velocity_kernel);
+            builder.arg(&self.d_velocities);
+            builder.arg(&self.d_com_velocity);
+            builder.arg(&n_atoms_i32);
+            builder.launch(cfg)?;
+        }
+
+        Ok(())
+    }
+
+    /// Set the interval for COM drift removal (default: 10 steps)
+    ///
+    /// COM removal every 10-100 steps is sufficient for most simulations.
+    /// Setting to 0 disables COM removal entirely.
+    pub fn set_com_removal_interval(&mut self, interval: usize) {
+        self.com_removal_interval = interval;
     }
 
     /// Enable explicit solvent with PME electrostatics
@@ -1399,6 +1515,14 @@ impl AmberMegaFusedHmc {
                 h_constraints.apply(&mut self.d_positions, &mut self.d_velocities, dt)?;
             }
 
+            // Phase 1: Wrap positions into periodic box (after constraints)
+            self.wrap_positions()?;
+
+            // Phase 1: Remove COM drift (every com_removal_interval steps)
+            if self.com_removal_interval > 0 && step % self.com_removal_interval == 0 {
+                self.remove_com_drift()?;
+            }
+
             // Accumulate kinetic energy for average temperature
             if step % 10 == 0 {
                 self.stream.synchronize()?;
@@ -1726,6 +1850,16 @@ impl AmberMegaFusedHmc {
             // Apply H-bond constraints (if enabled)
             if let Some(ref h_constraints) = self.h_constraints {
                 h_constraints.apply(&mut self.d_positions, &mut self.d_velocities, dt)?;
+            }
+
+            // Phase 1: Wrap positions into periodic box (after constraints)
+            // This ensures molecules stay intact before being placed in the primary cell
+            self.wrap_positions()?;
+
+            // Phase 1: Remove COM drift (every com_removal_interval steps)
+            // Essential for periodic systems to prevent net translational drift
+            if self.com_removal_interval > 0 && step % self.com_removal_interval == 0 {
+                self.remove_com_drift()?;
             }
 
             // Sample KE for temperature
