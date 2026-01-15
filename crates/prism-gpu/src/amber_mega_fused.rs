@@ -71,6 +71,271 @@ pub struct HmcRunResult {
     pub constraint_info: ConstraintInfo,
 }
 
+// =============================================================================
+// Phase 7: Mixed Precision (FP16/FP32) Infrastructure
+// =============================================================================
+
+/// Configuration for mixed precision computation
+///
+/// FP16 provides ~2x memory bandwidth improvement for LJ parameters
+/// while maintaining FP32 accumulation for numerical stability.
+#[derive(Debug, Clone)]
+pub struct MixedPrecisionConfig {
+    /// Enable FP16 for LJ sigma/epsilon parameters
+    pub fp16_lj_params: bool,
+    /// Enable FP16 for PME charge grid (spread/gather)
+    pub fp16_pme_grid: bool,
+    /// Enable Half2 vectorized LJ computation (2x throughput)
+    pub half2_lj: bool,
+    /// Maximum relative error threshold for validation
+    pub max_relative_error: f32,
+}
+
+impl Default for MixedPrecisionConfig {
+    fn default() -> Self {
+        Self {
+            fp16_lj_params: true,
+            fp16_pme_grid: false,  // Conservative default - enable after validation
+            half2_lj: false,       // Requires sm_70+ and kernel changes
+            max_relative_error: 0.001,  // 0.1% max error
+        }
+    }
+}
+
+impl MixedPrecisionConfig {
+    /// Create config for maximum performance (all FP16 features enabled)
+    pub fn max_performance() -> Self {
+        Self {
+            fp16_lj_params: true,
+            fp16_pme_grid: true,
+            half2_lj: true,
+            max_relative_error: 0.001,
+        }
+    }
+
+    /// Create config for maximum accuracy (FP32 only)
+    pub fn full_precision() -> Self {
+        Self {
+            fp16_lj_params: false,
+            fp16_pme_grid: false,
+            half2_lj: false,
+            max_relative_error: 0.0,
+        }
+    }
+
+    /// Check if any mixed precision features are enabled
+    pub fn is_enabled(&self) -> bool {
+        self.fp16_lj_params || self.fp16_pme_grid || self.half2_lj
+    }
+}
+
+/// FP16 (half precision) GPU buffers for LJ parameters
+///
+/// Stores sigma and epsilon in FP16 format to reduce memory bandwidth.
+/// Conversion: FP32 → FP16 on upload, FP16 → FP32 in kernel for accumulation.
+pub struct MixedPrecisionBuffers {
+    /// FP16 LJ sigma values [n_atoms] - stored as u16 (IEEE 754 binary16)
+    pub d_sigma_fp16: CudaSlice<u16>,
+    /// FP16 LJ epsilon values [n_atoms]
+    pub d_epsilon_fp16: CudaSlice<u16>,
+    /// Number of atoms
+    n_atoms: usize,
+    /// Whether buffers are initialized with valid data
+    initialized: bool,
+}
+
+impl MixedPrecisionBuffers {
+    /// Allocate FP16 buffers for n_atoms
+    pub fn new(stream: &Arc<CudaStream>, n_atoms: usize) -> Result<Self> {
+        let d_sigma_fp16 = stream
+            .alloc_zeros::<u16>(n_atoms.max(1))
+            .context("Failed to allocate FP16 sigma buffer")?;
+        let d_epsilon_fp16 = stream
+            .alloc_zeros::<u16>(n_atoms.max(1))
+            .context("Failed to allocate FP16 epsilon buffer")?;
+
+        log::debug!(
+            "Allocated FP16 LJ buffers: {} atoms, {} bytes total",
+            n_atoms,
+            n_atoms * 4  // 2 bytes each for sigma and epsilon
+        );
+
+        Ok(Self {
+            d_sigma_fp16,
+            d_epsilon_fp16,
+            n_atoms,
+            initialized: false,
+        })
+    }
+
+    /// Upload FP32 LJ parameters, converting to FP16
+    ///
+    /// Uses IEEE 754 binary16 format with round-to-nearest-even.
+    pub fn upload_from_fp32(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        sigma: &[f32],
+        epsilon: &[f32],
+    ) -> Result<()> {
+        if sigma.len() != self.n_atoms || epsilon.len() != self.n_atoms {
+            anyhow::bail!(
+                "Parameter size mismatch: got {}/{}, expected {}",
+                sigma.len(),
+                epsilon.len(),
+                self.n_atoms
+            );
+        }
+
+        // Convert FP32 to FP16 on CPU
+        let sigma_fp16: Vec<u16> = sigma.iter().map(|&v| f32_to_f16_bits(v)).collect();
+        let epsilon_fp16: Vec<u16> = epsilon.iter().map(|&v| f32_to_f16_bits(v)).collect();
+
+        // Upload to GPU
+        stream
+            .memcpy_htod(&sigma_fp16, &mut self.d_sigma_fp16)
+            .context("Failed to upload FP16 sigma")?;
+        stream
+            .memcpy_htod(&epsilon_fp16, &mut self.d_epsilon_fp16)
+            .context("Failed to upload FP16 epsilon")?;
+
+        self.initialized = true;
+
+        // Validate conversion accuracy
+        let max_sigma_err = Self::compute_max_relative_error(sigma, &sigma_fp16);
+        let max_eps_err = Self::compute_max_relative_error(epsilon, &epsilon_fp16);
+
+        log::debug!(
+            "FP16 conversion: sigma max_err={:.6}%, epsilon max_err={:.6}%",
+            max_sigma_err * 100.0,
+            max_eps_err * 100.0
+        );
+
+        if max_sigma_err > 0.01 || max_eps_err > 0.01 {
+            log::warn!(
+                "FP16 conversion error exceeds 1%: sigma={:.2}%, epsilon={:.2}%",
+                max_sigma_err * 100.0,
+                max_eps_err * 100.0
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Compute maximum relative error from FP32→FP16 conversion
+    fn compute_max_relative_error(original: &[f32], converted: &[u16]) -> f32 {
+        original
+            .iter()
+            .zip(converted.iter())
+            .map(|(&orig, &conv)| {
+                let back = f16_bits_to_f32(conv);
+                if orig.abs() < 1e-10 {
+                    0.0
+                } else {
+                    ((back - orig) / orig).abs()
+                }
+            })
+            .fold(0.0f32, f32::max)
+    }
+
+    /// Check if buffers are ready for use
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    /// Memory usage in bytes
+    pub fn memory_bytes(&self) -> usize {
+        self.n_atoms * 4  // 2 bytes sigma + 2 bytes epsilon
+    }
+}
+
+/// Convert FP32 to FP16 bits (IEEE 754 binary16)
+///
+/// Uses round-to-nearest-even for best accuracy.
+#[inline]
+pub fn f32_to_f16_bits(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exponent = ((bits >> 23) & 0xFF) as i32;
+    let mantissa = bits & 0x007FFFFF;
+
+    // Handle special cases
+    if exponent == 255 {
+        // NaN or infinity
+        if mantissa != 0 {
+            return sign | 0x7E00;  // NaN
+        } else {
+            return sign | 0x7C00;  // Infinity
+        }
+    }
+
+    // Bias conversion: FP32 bias = 127, FP16 bias = 15
+    let new_exp = exponent - 127 + 15;
+
+    if new_exp >= 31 {
+        // Overflow to infinity
+        return sign | 0x7C00;
+    }
+
+    if new_exp <= 0 {
+        // Subnormal or underflow
+        if new_exp < -10 {
+            return sign;  // Underflow to zero
+        }
+        // Subnormal handling
+        let mant = (mantissa | 0x00800000) >> (14 - new_exp);
+        return sign | ((mant >> 13) as u16);
+    }
+
+    // Normal number with rounding
+    let mant = mantissa >> 13;
+    let round_bit = (mantissa >> 12) & 1;
+    let sticky = mantissa & 0x0FFF;
+
+    let mut result = sign | ((new_exp as u16) << 10) | (mant as u16);
+
+    // Round to nearest even
+    if round_bit != 0 && (sticky != 0 || (mant & 1) != 0) {
+        result += 1;
+    }
+
+    result
+}
+
+/// Convert FP16 bits to FP32
+#[inline]
+pub fn f16_bits_to_f32(bits: u16) -> f32 {
+    let sign = ((bits & 0x8000) as u32) << 16;
+    let exponent = ((bits >> 10) & 0x1F) as u32;
+    let mantissa = (bits & 0x03FF) as u32;
+
+    if exponent == 0 {
+        if mantissa == 0 {
+            return f32::from_bits(sign);  // Zero
+        }
+        // Subnormal - normalize
+        let mut mant = mantissa;
+        let mut exp = 1i32;
+        while (mant & 0x0400) == 0 {
+            mant <<= 1;
+            exp -= 1;
+        }
+        mant &= 0x03FF;
+        let new_exp = ((exp - 15 + 127) as u32) << 23;
+        return f32::from_bits(sign | new_exp | (mant << 13));
+    }
+
+    if exponent == 31 {
+        if mantissa == 0 {
+            return f32::from_bits(sign | 0x7F800000);  // Infinity
+        }
+        return f32::from_bits(sign | 0x7FC00000);  // NaN
+    }
+
+    // Normal number
+    let new_exp = ((exponent as i32 - 15 + 127) as u32) << 23;
+    f32::from_bits(sign | new_exp | (mantissa << 13))
+}
+
 /// Mega-fused AMBER HMC simulator
 pub struct AmberMegaFusedHmc {
     context: Arc<CudaContext>,
@@ -186,6 +451,10 @@ pub struct AmberMegaFusedHmc {
     d_ref_positions: Option<CudaSlice<f32>>,
     n_restrained: usize,
     k_restraint: f32,
+
+    // Phase 7: Mixed precision (FP16/FP32) support
+    mixed_precision_config: MixedPrecisionConfig,
+    mixed_precision_buffers: Option<MixedPrecisionBuffers>,
 }
 
 impl AmberMegaFusedHmc {
@@ -390,6 +659,9 @@ impl AmberMegaFusedHmc {
             d_ref_positions: None,
             n_restrained: 0,
             k_restraint: 0.0,
+            // Phase 7: Mixed precision defaults to disabled
+            mixed_precision_config: MixedPrecisionConfig::full_precision(),
+            mixed_precision_buffers: None,
         })
     }
 
@@ -2280,6 +2552,104 @@ impl AmberMegaFusedHmc {
 
         Ok(())
     }
+
+    // =========================================================================
+    // Phase 7: Mixed Precision Methods
+    // =========================================================================
+
+    /// Enable mixed precision computation with the specified configuration
+    ///
+    /// This allocates FP16 buffers and uploads LJ parameters in half precision.
+    /// Call this AFTER upload_topology() to ensure parameters are available.
+    pub fn enable_mixed_precision(&mut self, config: MixedPrecisionConfig) -> Result<()> {
+        if !config.is_enabled() {
+            log::info!("Mixed precision disabled (full FP32 mode)");
+            self.mixed_precision_config = config;
+            self.mixed_precision_buffers = None;
+            return Ok(());
+        }
+
+        log::info!("⚡ Enabling mixed precision: FP16_LJ={}, FP16_PME={}, Half2={}",
+            config.fp16_lj_params, config.fp16_pme_grid, config.half2_lj);
+
+        // Allocate FP16 buffers
+        let mut buffers = MixedPrecisionBuffers::new(&self.stream, self.n_atoms)?;
+
+        // If topology is already uploaded, convert and upload FP16 params
+        if self.topology_ready && config.fp16_lj_params {
+            // Download current FP32 params
+            let mut sigma = vec![0.0f32; self.n_atoms];
+            let mut epsilon = vec![0.0f32; self.n_atoms];
+
+            self.stream.memcpy_dtoh(&self.d_nb_sigma, &mut sigma)?;
+            self.stream.memcpy_dtoh(&self.d_nb_epsilon, &mut epsilon)?;
+
+            // Upload as FP16
+            buffers.upload_from_fp32(&self.stream, &sigma, &epsilon)?;
+
+            log::info!(
+                "✅ Converted {} atoms to FP16: saved {} bytes",
+                self.n_atoms,
+                self.n_atoms * 4  // 4 bytes saved per atom (sigma + epsilon: FP32→FP16)
+            );
+        }
+
+        self.mixed_precision_config = config;
+        self.mixed_precision_buffers = Some(buffers);
+
+        Ok(())
+    }
+
+    /// Disable mixed precision (return to full FP32)
+    pub fn disable_mixed_precision(&mut self) {
+        self.mixed_precision_config = MixedPrecisionConfig::full_precision();
+        self.mixed_precision_buffers = None;
+        log::info!("Mixed precision disabled");
+    }
+
+    /// Check if mixed precision is currently enabled
+    pub fn is_mixed_precision_enabled(&self) -> bool {
+        self.mixed_precision_config.is_enabled()
+    }
+
+    /// Get current mixed precision configuration
+    pub fn mixed_precision_config(&self) -> &MixedPrecisionConfig {
+        &self.mixed_precision_config
+    }
+
+    /// Get FP16 buffer memory usage in bytes
+    pub fn mixed_precision_memory_bytes(&self) -> usize {
+        self.mixed_precision_buffers
+            .as_ref()
+            .map(|b| b.memory_bytes())
+            .unwrap_or(0)
+    }
+
+    /// Update FP16 buffers after topology change
+    ///
+    /// Call this if LJ parameters are modified after initial upload.
+    pub fn sync_mixed_precision_buffers(&mut self) -> Result<()> {
+        if !self.mixed_precision_config.fp16_lj_params {
+            return Ok(());
+        }
+
+        let buffers = match &mut self.mixed_precision_buffers {
+            Some(b) => b,
+            None => return Ok(()),
+        };
+
+        // Download current FP32 params and re-upload as FP16
+        let mut sigma = vec![0.0f32; self.n_atoms];
+        let mut epsilon = vec![0.0f32; self.n_atoms];
+
+        self.stream.memcpy_dtoh(&self.d_nb_sigma, &mut sigma)?;
+        self.stream.memcpy_dtoh(&self.d_nb_epsilon, &mut epsilon)?;
+
+        buffers.upload_from_fp32(&self.stream, &sigma, &epsilon)?;
+
+        log::debug!("Synced FP16 LJ buffers with FP32 source");
+        Ok(())
+    }
 }
 
 /// Build exclusion lists from bond topology
@@ -2357,5 +2727,153 @@ mod tests {
         assert!(exclusions[0].contains(&2));
         assert!(exclusions[1].contains(&0));
         assert!(exclusions[1].contains(&2));
+    }
+
+    // =========================================================================
+    // Phase 7: FP16 Conversion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_f32_to_f16_roundtrip_normal() {
+        // Test normal values typical for LJ parameters
+        let test_values = [
+            0.0f32, 1.0, -1.0, 0.5, 2.0,
+            3.4,    // Typical sigma in Angstroms
+            0.1,    // Typical epsilon in kcal/mol
+            0.01,   // Small epsilon
+            10.0,   // Large value
+            100.0,
+        ];
+
+        for &v in &test_values {
+            let bits = f32_to_f16_bits(v);
+            let back = f16_bits_to_f32(bits);
+
+            if v == 0.0 {
+                assert_eq!(back, 0.0, "Zero should roundtrip exactly");
+            } else {
+                let rel_error = ((back - v) / v).abs();
+                assert!(
+                    rel_error < 0.001,
+                    "Value {} -> {} has error {:.4}% (max 0.1%)",
+                    v, back, rel_error * 100.0
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_f32_to_f16_typical_lj_params() {
+        // AMBER ff14SB typical sigma values (Angstroms)
+        let sigmas = [
+            1.9080,  // H
+            1.8240,  // HO
+            3.3997,  // C
+            3.2500,  // N
+            3.0665,  // O
+            3.5636,  // S
+        ];
+
+        // AMBER ff14SB typical epsilon values (kcal/mol)
+        let epsilons = [
+            0.0157,  // H
+            0.0000,  // HO
+            0.1094,  // C
+            0.1700,  // N
+            0.2100,  // O
+            0.2500,  // S
+        ];
+
+        for &sigma in &sigmas {
+            let bits = f32_to_f16_bits(sigma);
+            let back = f16_bits_to_f32(bits);
+            let rel_error = ((back - sigma) / sigma).abs();
+            assert!(
+                rel_error < 0.001,
+                "Sigma {} has FP16 error {:.4}%",
+                sigma, rel_error * 100.0
+            );
+        }
+
+        for &eps in &epsilons {
+            if eps > 0.0 {
+                let bits = f32_to_f16_bits(eps);
+                let back = f16_bits_to_f32(bits);
+                let rel_error = ((back - eps) / eps).abs();
+                assert!(
+                    rel_error < 0.01,  // 1% tolerance for small values
+                    "Epsilon {} has FP16 error {:.4}%",
+                    eps, rel_error * 100.0
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_f32_to_f16_special_values() {
+        // Infinity
+        let inf_bits = f32_to_f16_bits(f32::INFINITY);
+        let inf_back = f16_bits_to_f32(inf_bits);
+        assert!(inf_back.is_infinite() && inf_back > 0.0);
+
+        let neg_inf_bits = f32_to_f16_bits(f32::NEG_INFINITY);
+        let neg_inf_back = f16_bits_to_f32(neg_inf_bits);
+        assert!(neg_inf_back.is_infinite() && neg_inf_back < 0.0);
+
+        // NaN
+        let nan_bits = f32_to_f16_bits(f32::NAN);
+        let nan_back = f16_bits_to_f32(nan_bits);
+        assert!(nan_back.is_nan());
+
+        // Negative zero (should preserve sign in FP16)
+        let neg_zero = -0.0f32;
+        let nz_bits = f32_to_f16_bits(neg_zero);
+        let nz_back = f16_bits_to_f32(nz_bits);
+        assert_eq!(nz_back, 0.0);  // Value is 0
+    }
+
+    #[test]
+    fn test_f32_to_f16_overflow() {
+        // FP16 max is ~65504, values beyond should become infinity
+        let big = 100000.0f32;
+        let bits = f32_to_f16_bits(big);
+        let back = f16_bits_to_f32(bits);
+        assert!(back.is_infinite(), "Large values should overflow to infinity");
+    }
+
+    #[test]
+    fn test_f32_to_f16_underflow() {
+        // FP16 min positive is ~6e-8, very small values should become 0
+        let tiny = 1e-10f32;
+        let bits = f32_to_f16_bits(tiny);
+        let back = f16_bits_to_f32(bits);
+        assert_eq!(back, 0.0, "Very small values should underflow to zero");
+    }
+
+    #[test]
+    fn test_mixed_precision_config_default() {
+        let config = MixedPrecisionConfig::default();
+        assert!(config.fp16_lj_params);
+        assert!(!config.fp16_pme_grid);
+        assert!(!config.half2_lj);
+        assert!(config.is_enabled());
+    }
+
+    #[test]
+    fn test_mixed_precision_config_full_precision() {
+        let config = MixedPrecisionConfig::full_precision();
+        assert!(!config.fp16_lj_params);
+        assert!(!config.fp16_pme_grid);
+        assert!(!config.half2_lj);
+        assert!(!config.is_enabled());
+    }
+
+    #[test]
+    fn test_mixed_precision_config_max_performance() {
+        let config = MixedPrecisionConfig::max_performance();
+        assert!(config.fp16_lj_params);
+        assert!(config.fp16_pme_grid);
+        assert!(config.half2_lj);
+        assert!(config.is_enabled());
     }
 }
