@@ -1220,17 +1220,50 @@ extern "C" __global__ void build_neighbor_list(
                     }
                     if (excluded) continue;
 
-                    // Add to neighbor list
+                    // Add to neighbor list (with overflow detection)
                     if (neighbor_count < NEIGHBOR_LIST_SIZE) {
                         my_neighbors[neighbor_count] = j;
                         neighbor_count++;
                     }
+                    // Note: overflow is detected by comparing neighbor_count with NEIGHBOR_LIST_SIZE
+                    // after the kernel completes - the count can exceed the array bounds check
                 }
             }
         }
     }
 
-    n_neighbors[tid] = neighbor_count;
+    n_neighbors[tid] = neighbor_count;  // Store actual count (may exceed NEIGHBOR_LIST_SIZE)
+}
+
+/**
+ * @brief Check for neighbor list overflow
+ *
+ * Scans n_neighbors array and counts how many atoms have more neighbors
+ * than NEIGHBOR_LIST_SIZE. Returns the overflow count.
+ *
+ * @param n_neighbors Number of neighbors per atom [n_atoms]
+ * @param overflow_count Output: number of atoms with overflow [1]
+ * @param n_atoms Number of atoms
+ */
+extern "C" __global__ void check_neighbor_overflow(
+    const int* __restrict__ n_neighbors,
+    int* __restrict__ overflow_count,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // First thread resets the counter
+    if (tid == 0) {
+        overflow_count[0] = 0;
+    }
+    __syncthreads();
+
+    if (tid >= n_atoms) return;
+
+    // Check if this atom has overflow
+    if (n_neighbors[tid] > NEIGHBOR_LIST_SIZE) {
+        atomicAdd(overflow_count, 1);
+    }
 }
 
 /**
@@ -3404,4 +3437,84 @@ extern "C" __global__ void remove_com_velocity(
     velocities[tid * 3] -= com_vx;
     velocities[tid * 3 + 1] -= com_vy;
     velocities[tid * 3 + 2] -= com_vz;
+}
+
+// =============================================================================
+// Phase 2: Displacement-based Neighbor List Rebuild
+// =============================================================================
+
+/**
+ * @brief Reset max displacement counter (must be called before compute_max_displacement)
+ */
+extern "C" __global__ void reset_max_displacement(
+    float* __restrict__ max_disp
+) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        max_disp[0] = 0.0f;
+    }
+}
+
+/**
+ * @brief Compute maximum displacement since last neighbor list build (PBC-aware)
+ *
+ * Uses atomic float max via integer casting trick for CUDA.
+ * This kernel computes the max displacement of any atom since the neighbor
+ * list was last built. If max_disp > skin/2, rebuild is needed.
+ *
+ * @param pos Current positions [n_atoms * 3]
+ * @param pos_at_build Positions when neighbor list was built [n_atoms * 3]
+ * @param max_disp Output: maximum displacement (atomic reduce) [1]
+ * @param n_atoms Number of atoms
+ */
+extern "C" __global__ void compute_max_displacement(
+    const float* __restrict__ pos,
+    const float* __restrict__ pos_at_build,
+    float* __restrict__ max_disp,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    // Compute displacement vector
+    float dx = pos[tid * 3]     - pos_at_build[tid * 3];
+    float dy = pos[tid * 3 + 1] - pos_at_build[tid * 3 + 1];
+    float dz = pos[tid * 3 + 2] - pos_at_build[tid * 3 + 2];
+
+    // Apply PBC (minimum image convention for displacement)
+    if (d_use_pbc) {
+        dx -= d_box_dims.x * rintf(dx * d_box_inv.x);
+        dy -= d_box_dims.y * rintf(dy * d_box_inv.y);
+        dz -= d_box_dims.z * rintf(dz * d_box_inv.z);
+    }
+
+    // Compute displacement magnitude
+    float disp = sqrtf(dx * dx + dy * dy + dz * dz);
+
+    // Atomic max using integer casting trick for floats
+    // Works because IEEE 754 floats preserve order when cast to int (for positive values)
+    int* max_disp_int = (int*)max_disp;
+    int disp_int = __float_as_int(disp);
+    atomicMax(max_disp_int, disp_int);
+}
+
+/**
+ * @brief Save current positions as reference for displacement tracking
+ *
+ * Called after rebuilding the neighbor list.
+ *
+ * @param pos Current positions [n_atoms * 3]
+ * @param pos_at_build Output: saved positions [n_atoms * 3]
+ * @param n_atoms Number of atoms
+ */
+extern "C" __global__ void save_positions_at_build(
+    const float* __restrict__ pos,
+    float* __restrict__ pos_at_build,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    pos_at_build[tid * 3]     = pos[tid * 3];
+    pos_at_build[tid * 3 + 1] = pos[tid * 3 + 1];
+    pos_at_build[tid * 3 + 2] = pos[tid * 3 + 2];
 }

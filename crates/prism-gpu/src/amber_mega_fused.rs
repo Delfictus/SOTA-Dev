@@ -101,6 +101,12 @@ pub struct AmberMegaFusedHmc {
     compute_com_velocity_kernel: CudaFunction,
     remove_com_velocity_kernel: CudaFunction,
 
+    // Phase 2: Displacement-based neighbor list rebuild
+    reset_max_displacement_kernel: CudaFunction,
+    compute_max_displacement_kernel: CudaFunction,
+    save_positions_at_build_kernel: CudaFunction,
+    check_neighbor_overflow_kernel: CudaFunction,
+
     // Device buffers - State (as flat f32 arrays)
     d_positions: CudaSlice<f32>,      // [n_atoms * 3]
     d_velocities: CudaSlice<f32>,     // [n_atoms * 3]
@@ -159,6 +165,13 @@ pub struct AmberMegaFusedHmc {
     // Phase 1: COM drift removal buffer
     d_com_velocity: CudaSlice<f32>,    // [4]: momentum_x, momentum_y, momentum_z, total_mass
     com_removal_interval: usize,       // How often to remove COM drift (default: 10 steps)
+
+    // Phase 2: Displacement-based neighbor list rebuild buffers
+    d_pos_at_build: CudaSlice<f32>,    // [n_atoms * 3] - positions when neighbor list was built
+    d_max_displacement: CudaSlice<f32>, // [1] - max displacement since last rebuild
+    d_neighbor_overflow: CudaSlice<i32>, // [1] - overflow counter for neighbor list
+    rebuild_threshold: f32,             // Rebuild when max_disp > threshold (skin/2 = 0.5 Å)
+    neighbor_rebuild_count: usize,      // Statistics: number of rebuilds
 
     // Explicit solvent components (optional)
     pme: Option<PME>,
@@ -241,7 +254,21 @@ impl AmberMegaFusedHmc {
             .load_function("remove_com_velocity")
             .context("Failed to load remove_com_velocity")?;
 
-        log::info!("📦 Cell list, PBC, Velocity Verlet, and Phase 1 kernels loaded");
+        // Load Phase 2 kernels: Displacement-based neighbor list rebuild
+        let reset_max_displacement_kernel = module
+            .load_function("reset_max_displacement")
+            .context("Failed to load reset_max_displacement")?;
+        let compute_max_displacement_kernel = module
+            .load_function("compute_max_displacement")
+            .context("Failed to load compute_max_displacement")?;
+        let save_positions_at_build_kernel = module
+            .load_function("save_positions_at_build")
+            .context("Failed to load save_positions_at_build")?;
+        let check_neighbor_overflow_kernel = module
+            .load_function("check_neighbor_overflow")
+            .context("Failed to load check_neighbor_overflow")?;
+
+        log::info!("📦 Cell list, PBC, Velocity Verlet, Phase 1, and Phase 2 kernels loaded");
 
         // Allocate state buffers
         let d_positions = stream.alloc_zeros::<f32>(n_atoms * 3)?;
@@ -252,6 +279,11 @@ impl AmberMegaFusedHmc {
 
         // Phase 1: COM velocity buffer for drift removal
         let d_com_velocity = stream.alloc_zeros::<f32>(4)?;
+
+        // Phase 2: Displacement-based neighbor list rebuild buffers
+        let d_pos_at_build = stream.alloc_zeros::<f32>(n_atoms * 3)?;
+        let d_max_displacement = stream.alloc_zeros::<f32>(1)?;
+        let d_neighbor_overflow = stream.alloc_zeros::<i32>(1)?;
 
         // Allocate topology buffers (minimal initial size)
         let d_bond_atoms = stream.alloc_zeros::<i32>(2)?;
@@ -302,6 +334,10 @@ impl AmberMegaFusedHmc {
             wrap_positions_kernel,
             compute_com_velocity_kernel,
             remove_com_velocity_kernel,
+            reset_max_displacement_kernel,
+            compute_max_displacement_kernel,
+            save_positions_at_build_kernel,
+            check_neighbor_overflow_kernel,
             d_positions,
             d_velocities,
             d_forces,
@@ -341,6 +377,11 @@ impl AmberMegaFusedHmc {
             box_dimensions: [0.0, 0.0, 0.0],
             d_com_velocity,
             com_removal_interval: 10,  // Remove COM drift every 10 steps (default)
+            d_pos_at_build,
+            d_max_displacement,
+            d_neighbor_overflow,
+            rebuild_threshold: 0.5,  // Rebuild when max_disp > skin/2 = 0.5 Å
+            neighbor_rebuild_count: 0,
             pme: None,
             settle: None,
             d_old_positions: None,
@@ -746,6 +787,133 @@ impl AmberMegaFusedHmc {
     /// Setting to 0 disables COM removal entirely.
     pub fn set_com_removal_interval(&mut self, interval: usize) {
         self.com_removal_interval = interval;
+    }
+
+    // ========================================================================
+    // Phase 2: Displacement-based Neighbor List Rebuild
+    // ========================================================================
+
+    /// Check if neighbor list rebuild is needed based on atom displacement
+    ///
+    /// Computes the maximum displacement of any atom since the last neighbor
+    /// list build. If max_disp > rebuild_threshold (skin/2), returns true.
+    ///
+    /// Returns (needs_rebuild, max_displacement)
+    pub fn check_neighbor_list_rebuild_needed(&mut self) -> Result<(bool, f32)> {
+        let threads_per_block = 256;
+        let num_blocks = (self.n_atoms + threads_per_block - 1) / threads_per_block;
+        let cfg = LaunchConfig {
+            grid_dim: (num_blocks as u32, 1, 1),
+            block_dim: (threads_per_block as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let n_atoms_i32 = self.n_atoms as i32;
+
+        // Step 1: Reset max displacement counter
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.reset_max_displacement_kernel);
+            builder.arg(&self.d_max_displacement);
+            builder.launch(LaunchConfig {
+                grid_dim: (1, 1, 1),
+                block_dim: (1, 1, 1),
+                shared_mem_bytes: 0,
+            })?;
+        }
+
+        // Step 2: Compute max displacement (parallel reduction with atomic max)
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.compute_max_displacement_kernel);
+            builder.arg(&self.d_positions);
+            builder.arg(&self.d_pos_at_build);
+            builder.arg(&self.d_max_displacement);
+            builder.arg(&n_atoms_i32);
+            builder.launch(cfg)?;
+        }
+
+        // Synchronize and read result
+        self.stream.synchronize()?;
+        let mut max_disp = [0.0f32];
+        self.stream.memcpy_dtoh(&self.d_max_displacement, &mut max_disp)?;
+
+        let needs_rebuild = max_disp[0] > self.rebuild_threshold;
+        Ok((needs_rebuild, max_disp[0]))
+    }
+
+    /// Save current positions as reference for displacement tracking
+    ///
+    /// Call this AFTER rebuilding the neighbor list.
+    pub fn save_positions_at_build(&mut self) -> Result<()> {
+        let threads_per_block = 256;
+        let num_blocks = (self.n_atoms + threads_per_block - 1) / threads_per_block;
+        let cfg = LaunchConfig {
+            grid_dim: (num_blocks as u32, 1, 1),
+            block_dim: (threads_per_block as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let n_atoms_i32 = self.n_atoms as i32;
+
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.save_positions_at_build_kernel);
+            builder.arg(&self.d_positions);
+            builder.arg(&self.d_pos_at_build);
+            builder.arg(&n_atoms_i32);
+            builder.launch(cfg)?;
+        }
+
+        Ok(())
+    }
+
+    /// Check for neighbor list overflow
+    ///
+    /// Returns the number of atoms that have more neighbors than the
+    /// allocated neighbor list size. If > 0, the NEIGHBOR_LIST_SIZE constant
+    /// needs to be increased.
+    pub fn check_neighbor_overflow(&mut self) -> Result<i32> {
+        let threads_per_block = 256;
+        let num_blocks = (self.n_atoms + threads_per_block - 1) / threads_per_block;
+        let cfg = LaunchConfig {
+            grid_dim: (num_blocks as u32, 1, 1),
+            block_dim: (threads_per_block as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let n_atoms_i32 = self.n_atoms as i32;
+
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.check_neighbor_overflow_kernel);
+            builder.arg(&self.d_n_neighbors);
+            builder.arg(&self.d_neighbor_overflow);
+            builder.arg(&n_atoms_i32);
+            builder.launch(cfg)?;
+        }
+
+        self.stream.synchronize()?;
+        let mut overflow_count = [0i32];
+        self.stream.memcpy_dtoh(&self.d_neighbor_overflow, &mut overflow_count)?;
+
+        if overflow_count[0] > 0 {
+            log::warn!(
+                "⚠️  Neighbor list overflow: {} atoms have more neighbors than NEIGHBOR_LIST_SIZE (256)",
+                overflow_count[0]
+            );
+        }
+
+        Ok(overflow_count[0])
+    }
+
+    /// Set the displacement threshold for neighbor list rebuild (default: 0.5 Å)
+    ///
+    /// Should typically be set to skin/2 where skin is the Verlet skin distance.
+    /// With skin = 1.0 Å, threshold = 0.5 Å is appropriate.
+    pub fn set_rebuild_threshold(&mut self, threshold: f32) {
+        self.rebuild_threshold = threshold;
+    }
+
+    /// Get the number of neighbor list rebuilds since simulation start
+    pub fn get_neighbor_rebuild_count(&self) -> usize {
+        self.neighbor_rebuild_count
     }
 
     /// Enable explicit solvent with PME electrostatics
@@ -1232,13 +1400,25 @@ impl AmberMegaFusedHmc {
 
         self.stream.synchronize()?;
         self.neighbor_list_valid = true;
+        self.neighbor_rebuild_count += 1;
+
+        // Phase 2: Check for overflow and save positions for displacement tracking
+        let overflow = self.check_neighbor_overflow()?;
+        if overflow > 0 {
+            log::error!(
+                "❌ Neighbor list overflow: {} atoms exceeded NEIGHBOR_LIST_SIZE. Increase the constant!",
+                overflow
+            );
+        }
+        self.save_positions_at_build()?;
 
         // Debug: check average neighbor count (use debug level to avoid spam during rebuilds)
         let mut n_neighbors = vec![0i32; self.n_atoms];
         self.stream.memcpy_dtoh(&self.d_n_neighbors, &mut n_neighbors)?;
         let avg_neighbors: f64 = n_neighbors.iter().map(|&n| n as f64).sum::<f64>() / self.n_atoms as f64;
         log::debug!(
-            "Neighbor lists built: avg {:.1} neighbors/atom (vs {} for O(N²))",
+            "Neighbor lists built (rebuild #{}): avg {:.1} neighbors/atom (vs {} for O(N²))",
+            self.neighbor_rebuild_count,
             avg_neighbors,
             self.n_atoms
         );
@@ -1318,16 +1498,22 @@ impl AmberMegaFusedHmc {
 
         log::info!("🏃 Running {} HMC steps on GPU (dt={}fs, T={}K, γ={}fs⁻¹)", n_steps, dt, temperature, gamma_fs);
 
-        // Neighbor list rebuild interval - atoms move ~0.01 Å per step at 310K
-        // Rebuild every 50 steps to keep lists fresh (before atoms drift 0.5 Å)
-        const NEIGHBOR_REBUILD_INTERVAL: usize = 50;
+        // Phase 2: Displacement-based neighbor list rebuild
+        // Check displacement every N steps (checking every step is expensive)
+        const DISPLACEMENT_CHECK_INTERVAL: usize = 10;
 
         for step in 0..n_steps {
-            // Rebuild neighbor lists periodically to prevent stale interactions
-            if step > 0 && step % NEIGHBOR_REBUILD_INTERVAL == 0 {
-                self.stream.synchronize()?;
-                self.neighbor_list_valid = false;
-                self.build_neighbor_lists()?;
+            // Phase 2: Check if neighbor list rebuild is needed based on displacement
+            if step > 0 && step % DISPLACEMENT_CHECK_INTERVAL == 0 {
+                let (needs_rebuild, max_disp) = self.check_neighbor_list_rebuild_needed()?;
+                if needs_rebuild {
+                    log::debug!(
+                        "📦 Rebuilding neighbor list at step {} (max_disp={:.3} Å > threshold={:.3} Å)",
+                        step, max_disp, self.rebuild_threshold
+                    );
+                    self.neighbor_list_valid = false;
+                    self.build_neighbor_lists()?;
+                }
             }
 
             // Save positions BEFORE integration for SETTLE constraint projection
@@ -1656,8 +1842,10 @@ impl AmberMegaFusedHmc {
         let max_14_i32 = MAX_14_PAIRS as i32;
 
         let mut total_ke = 0.0f64;
-        const NEIGHBOR_REBUILD_INTERVAL: usize = 50;
         const ENERGY_SAMPLE_INTERVAL: usize = 100;
+
+        // Phase 2: Displacement-based neighbor list rebuild
+        const DISPLACEMENT_CHECK_INTERVAL: usize = 10;
 
         // Compute DOF for proper temperature calculation
         // Use COM removal only for explicit solvent (PBC enabled with SETTLE)
@@ -1671,11 +1859,17 @@ impl AmberMegaFusedHmc {
         log::info!("🏃 Running {} Velocity Verlet steps (2-force-eval per step)", n_steps);
 
         for step in 0..n_steps {
-            // Rebuild neighbor lists periodically
-            if step > 0 && step % NEIGHBOR_REBUILD_INTERVAL == 0 {
-                self.stream.synchronize()?;
-                self.neighbor_list_valid = false;
-                self.build_neighbor_lists()?;
+            // Phase 2: Check if neighbor list rebuild is needed based on displacement
+            if step > 0 && step % DISPLACEMENT_CHECK_INTERVAL == 0 {
+                let (needs_rebuild, max_disp) = self.check_neighbor_list_rebuild_needed()?;
+                if needs_rebuild {
+                    log::debug!(
+                        "📦 Rebuilding neighbor list at step {} (max_disp={:.3} Å > threshold={:.3} Å)",
+                        step, max_disp, self.rebuild_threshold
+                    );
+                    self.neighbor_list_valid = false;
+                    self.build_neighbor_lists()?;
+                }
             }
 
             // Save positions for SETTLE (if enabled)
