@@ -35,25 +35,25 @@ RUN cargo build --release --features cuda -p prism-validation --bin generate-ens
     cargo build --release -p prism-validation --bin analyze_ensemble
 
 # =============================================================================
-# Stage 2: Python environment
+# Stage 2: Python environment (using Miniforge - no TOS required)
 # =============================================================================
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS python-builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Miniconda
+# Install Miniforge (conda-forge default, no TOS acceptance required)
 RUN apt-get update && apt-get install -y wget && \
-    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh && \
+    wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh && \
+    bash /tmp/miniforge.sh -b -p /opt/conda && \
+    rm /tmp/miniforge.sh && \
     rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/opt/conda/bin:${PATH}"
 
-# Create conda environment with dependencies
+# Create conda environment with dependencies (all from conda-forge)
 RUN conda create -n prism4d python=3.11 -y && \
     conda run -n prism4d conda install -c conda-forge \
-        openmm=8.1 \
+        openmm \
         pdbfixer \
         numpy \
         requests \
@@ -97,7 +97,7 @@ COPY crates/prism-gpu/target/ptx/*.ptx /opt/prism4d/ptx/
 # Set environment
 ENV PRISM4D_HOME=/opt/prism4d
 ENV PATH="/opt/prism4d/scripts:${PATH}"
-ENV PYTHONPATH="/opt/prism4d/scripts:${PYTHONPATH}"
+ENV PYTHONPATH="/opt/prism4d/scripts"
 
 # Create working directory
 WORKDIR /workspace

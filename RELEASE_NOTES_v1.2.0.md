@@ -53,10 +53,13 @@ Stage 4: analyze_ensemble ───► RMSD/RMSF Analysis (Rust)
 
 ### Docker (Recommended)
 ```bash
-docker pull ghcr.io/delfictus/prism4d:1.2.0
+# Download pre-built image (1.7GB)
+wget https://github.com/Delfictus/PRISM-Delta/releases/download/v1.2.0/prism4d-1.2.0-docker.tar.gz
+docker load < prism4d-1.2.0-docker.tar.gz
+
+# Run pipeline
 docker run --gpus all -v $(pwd)/output:/workspace \
-  prism4d:1.2.0 conda run -n prism4d python \
-  /opt/prism4d/scripts/prism_pipeline.py 6M0J /workspace --chain E
+  prism4d:1.2.0 6M0J /workspace --chain E
 ```
 
 ### From Source
@@ -73,10 +76,11 @@ python scripts/prism_pipeline.py 6M0J output/ --chain E
 
 ## Binary Downloads
 
-| Binary | Platform | Description |
-|--------|----------|-------------|
-| `generate-ensemble` | Linux x86_64 + CUDA | GPU MD simulation |
-| `analyze_ensemble` | Linux x86_64 | RMSD/RMSF analysis |
+| Asset | Size | Description |
+|-------|------|-------------|
+| `prism4d-1.2.0-docker.tar.gz` | 1.7 GB | Complete Docker image with all dependencies |
+| `generate-ensemble` | 3 MB | GPU MD simulation binary |
+| `analyze_ensemble` | 1 MB | RMSD/RMSF analysis binary |
 
 ## Dependencies
 

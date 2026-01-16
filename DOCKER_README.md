@@ -11,10 +11,14 @@ GPU-accelerated cryptic pocket discovery pipeline in a fully containerized envir
 
 ## Quick Start
 
-### Pull Pre-built Image (Recommended)
+### Download Pre-built Image (Recommended)
 
 ```bash
-docker pull ghcr.io/delfictus/prism4d:1.2.0
+# Download from GitHub Release (1.7GB)
+wget https://github.com/Delfictus/PRISM-Delta/releases/download/v1.2.0/prism4d-1.2.0-docker.tar.gz
+
+# Load into Docker
+docker load < prism4d-1.2.0-docker.tar.gz
 ```
 
 ### Or Build Locally
@@ -33,7 +37,6 @@ docker build -t prism4d:1.2.0 .
 mkdir -p output
 docker run --gpus all -v $(pwd)/output:/workspace \
   prism4d:1.2.0 \
-  conda run -n prism4d python /opt/prism4d/scripts/prism_pipeline.py \
   6M0J /workspace --chain E
 ```
 
@@ -48,7 +51,6 @@ docker-compose run prism4d 6M0J /workspace --chain E
 ```bash
 docker run --gpus all -v $(pwd)/output:/workspace \
   prism4d:1.2.0 \
-  conda run -n prism4d python /opt/prism4d/scripts/prism_pipeline.py \
   6M0J /workspace \
   --chain E \
   --steps 500000 \
@@ -125,7 +127,6 @@ Reduce simulation length or use a smaller protein:
 ```bash
 docker run --gpus all -v $(pwd)/output:/workspace \
   prism4d:1.2.0 \
-  conda run -n prism4d python /opt/prism4d/scripts/prism_pipeline.py \
   6M0J /workspace --chain E --steps 10000
 ```
 
