@@ -1,130 +1,106 @@
-# PRISM-4D Docker Container
-# Sovereign GPU-Accelerated Molecular Dynamics Engine
+# PRISM4D: GPU-Accelerated Cryptic Pocket Discovery
 #
-# Build:   docker build -t prism4d:latest .
-# Run:     docker run --gpus all -v $(pwd)/data:/app/data prism4d:latest
-#
-# Requirements:
-#   - NVIDIA GPU with compute capability >= 7.0
-#   - nvidia-container-toolkit installed on host
-#   - Docker 19.03+ with GPU support
+# Multi-stage build for production-ready container
+# Requires NVIDIA GPU with CUDA 12.0+ support
 
-FROM nvidia/cuda:13.0-devel-ubuntu22.04
+# =============================================================================
+# Stage 1: Build environment (Rust + CUDA)
+# =============================================================================
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder
 
-LABEL maintainer="PRISM-4D Team"
-LABEL description="PRISM-4D: Sovereign GPU-Accelerated MD Engine"
-LABEL version="1.0.0"
-
-# Prevent interactive prompts during package installation
+# Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Set up locale
-RUN apt-get update && apt-get install -y locales && \
-    locale-gen en_US.UTF-8
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
-
-# Install system dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
-    # Build essentials
-    build-essential \
-    cmake \
-    pkg-config \
-    git \
     curl \
-    wget \
-    # Rust dependencies
+    git \
+    build-essential \
+    pkg-config \
     libssl-dev \
-    libclang-dev \
-    # Python for analysis scripts
-    python3 \
-    python3-pip \
-    python3-venv \
-    # Visualization (optional, for headless rendering)
-    xvfb \
-    libgl1-mesa-glx \
-    libglu1-mesa \
-    # Cleanup
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust toolchain
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain stable
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Verify Rust and Cargo
-RUN rustc --version && cargo --version
+# Set up working directory
+WORKDIR /build
 
-# Set CUDA environment variables
-ENV CUDA_HOME=/usr/local/cuda
-ENV PATH="${CUDA_HOME}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
-
-# Verify CUDA installation
-RUN nvcc --version
-
-# Create application directory
-WORKDIR /app
-
-# Copy Cargo manifests first (for layer caching)
-COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
-
-# Build dependencies first (caching layer)
-RUN cargo build --release 2>/dev/null || true
-
-# Copy the rest of the source code
+# Copy source code
 COPY . .
 
-# Build PRISM-4D with CUDA support
-RUN cargo build --release --features cuda
+# Build release binaries with CUDA support
+RUN cargo build --release --features cuda -p prism-validation --bin generate-ensemble && \
+    cargo build --release -p prism-validation --bin analyze_ensemble
 
-# Install Python dependencies for analysis
-RUN pip3 install --no-cache-dir \
-    numpy>=1.21.0 \
-    pandas>=1.3.0 \
-    matplotlib>=3.4.0 \
-    scipy>=1.7.0 \
-    seaborn>=0.11.0
+# =============================================================================
+# Stage 2: Python environment
+# =============================================================================
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS python-builder
 
-# Create output directories
-RUN mkdir -p /app/data/ensembles \
-             /app/data/raw \
-             /app/results \
-             /app/publication
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Set default environment variables
-ENV PRISM4D_LOG_LEVEL=info
-ENV PRISM4D_GPU_DEVICE=0
+# Install Miniconda
+RUN apt-get update && apt-get install -y wget && \
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh && \
+    rm -rf /var/lib/apt/lists/*
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD cargo run --release -p prism-gpu -- --health-check || exit 1
+ENV PATH="/opt/conda/bin:${PATH}"
 
-# Default entry point - show help
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["echo 'PRISM-4D Container Ready' && \
-     echo '' && \
-     echo 'Available commands:' && \
-     echo '  cargo run --release -p prism-validation --bin generate-ensemble -- --help' && \
-     echo '  python3 scripts/generate_publication_data.py' && \
-     echo '' && \
-     echo 'GPU Status:' && \
-     nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv"]
+# Create conda environment with dependencies
+RUN conda create -n prism4d python=3.11 -y && \
+    conda run -n prism4d conda install -c conda-forge \
+        openmm=8.1 \
+        pdbfixer \
+        numpy \
+        requests \
+        -y && \
+    conda clean -afy
 
-# Example usage:
-#
-# 1. Run MD simulation:
-#    docker run --gpus all -v $(pwd)/data:/app/data prism4d:latest \
-#      "cargo run --release -p prism-validation --bin generate-ensemble -- \
-#       --pdb data/raw/6M0J_RBD_fixed.pdb \
-#       --output data/ensembles/6M0J_output.pdb \
-#       --frames 1000 --temperature 310"
-#
-# 2. Generate publication data:
-#    docker run --gpus all -v $(pwd):/app prism4d:latest \
-#      "python3 scripts/generate_publication_data.py"
-#
-# 3. Interactive shell:
-#    docker run --gpus all -it -v $(pwd):/app prism4d:latest /bin/bash
+# =============================================================================
+# Stage 3: Production image
+# =============================================================================
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+LABEL maintainer="PRISM4D Team"
+LABEL description="PRISM4D: GPU-Accelerated Cryptic Pocket Discovery Pipeline"
+LABEL version="1.2.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy conda environment
+COPY --from=python-builder /opt/conda /opt/conda
+ENV PATH="/opt/conda/bin:${PATH}"
+
+# Copy built binaries
+COPY --from=builder /build/target/release/generate-ensemble /usr/local/bin/
+COPY --from=builder /build/target/release/analyze_ensemble /usr/local/bin/
+
+# Copy pipeline scripts
+COPY scripts/prism_pipeline.py /opt/prism4d/scripts/
+COPY scripts/stage1_sanitize.py /opt/prism4d/scripts/
+COPY scripts/stage2_topology.py /opt/prism4d/scripts/
+
+# Copy PTX kernels (required for CUDA)
+COPY crates/prism-gpu/target/ptx/*.ptx /opt/prism4d/ptx/
+
+# Set environment
+ENV PRISM4D_HOME=/opt/prism4d
+ENV PATH="/opt/prism4d/scripts:${PATH}"
+ENV PYTHONPATH="/opt/prism4d/scripts:${PYTHONPATH}"
+
+# Create working directory
+WORKDIR /workspace
+
+# Default command: show help
+CMD ["conda", "run", "-n", "prism4d", "python", "/opt/prism4d/scripts/prism_pipeline.py", "--help"]
