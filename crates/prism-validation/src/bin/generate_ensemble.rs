@@ -421,7 +421,11 @@ fn main() -> Result<()> {
 
         // Equilibration
         if args.equilibration > 0 {
-            let mode_str = if args.fused { "fused" } else { "verlet" };
+            let mode_str = if args.fused {
+                if args.mixed_precision { "fused+FP16" } else { "fused" }
+            } else {
+                if args.mixed_precision { "verlet+FP16" } else { "verlet" }
+            };
             println!("\n🔥 Equilibration ({} steps, {:.2} ps, {} mode)...",
                      args.equilibration,
                      args.equilibration as f64 * args.dt as f64 / 1000.0,
@@ -456,10 +460,12 @@ fn main() -> Result<()> {
         );
 
         // Production run with snapshot saving
+        // Note: verlet+FP16 is recommended for production (2-force-eval, stable)
+        // fused+FP16 uses 1-force-eval (faster but less stable for long runs)
         let mode_str = if args.fused {
-            if args.mixed_precision { "fused+FP16" } else { "fused" }
+            if args.mixed_precision { "fused+FP16 (1-eval)" } else { "fused (1-eval)" }
         } else {
-            "verlet"
+            if args.mixed_precision { "verlet+FP16 (2-eval)" } else { "verlet (2-eval)" }
         };
         println!("\n🏃 Production run ({} steps, {:.3} ns, {} mode)...",
                  production_steps,

@@ -714,9 +714,13 @@ pub fn get_lj_param(atom_type: AmberAtomType) -> LJParam {
         S | SH => (0.2500, 2.000),
         CA | CB | CC | CR | CV | CW | CN => (0.0860, 1.908),
 
-        // TIP3P Water (AMBER-compatible parameters)
+        // TIP3P Water (modified for stability with simplified SETTLE)
+        // Standard TIP3P has no LJ on H, but this causes collapse issues
+        // during minimization when waters get too close. Adding LJ
+        // for stability, similar to CHARMM TIP3P which gives H a radius.
+        // Using rmin_half = 0.8 Å gives combined H-O distance ~2.5 Å minimum.
         OW => (0.1521, 1.7683),   // TIP3P oxygen: ε=0.1521, rmin/2=σ*2^(1/6)/2
-        HW => (0.0000, 0.0000),   // TIP3P hydrogen: no LJ
+        HW => (0.0460, 0.8000),   // TIP3P-mod: LJ for stability (rmin/2=0.8Å)
 
         // Ions (Joung & Cheatham parameters for TIP3P water)
         IP => (0.0874393, 1.212), // Na+

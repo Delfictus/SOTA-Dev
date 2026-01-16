@@ -289,7 +289,11 @@ impl SolvationBox {
         }
 
         // Remove waters that overlap with ions
-        let min_dist_sq = 2.5_f32 * 2.5_f32;
+        // CRITICAL: Minimum distance must be >= r_min for ion-water LJ interaction
+        // Na+-O: σ_combined ~ 2.65 Å, r_min ~ 3.0 Å
+        // Cl--O: σ_combined ~ 4.0 Å, r_min ~ 4.5 Å
+        // Use 4.5 Å to accommodate the larger Cl- ion
+        let min_dist_sq = 4.5_f32 * 4.5_f32;
         self.waters.retain(|water| {
             !ion_positions.iter().any(|ion_pos| distance_sq(water.o_pos, *ion_pos) < min_dist_sq)
         });

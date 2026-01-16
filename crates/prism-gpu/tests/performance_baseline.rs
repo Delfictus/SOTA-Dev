@@ -297,6 +297,140 @@ fn benchmark_scaling_analysis() {
     println!("\n✓ Scaling analysis complete");
 }
 
+/// Benchmark: 1 ns production run on medium system (15,000 atoms)
+///
+/// This is the production benchmark - 500,000 steps at 2 fs timestep = 1 ns
+/// Target system: 5000 waters = 15,000 atoms
+#[test]
+#[ignore] // Requires CUDA - run with: cargo test -p prism-gpu --release --test performance_baseline --features cuda -- --ignored benchmark_1ns_production --nocapture
+fn benchmark_1ns_production() {
+    use cudarc::driver::CudaContext;
+    use prism_gpu::AmberMegaFusedHmc;
+
+    println!("\n╔══════════════════════════════════════════════════════════════╗");
+    println!("║     PRISM-4D 1 ns PRODUCTION BENCHMARK                       ║");
+    println!("╚══════════════════════════════════════════════════════════════╝\n");
+
+    // System configuration: 5000 waters = 15,000 atoms
+    let n_waters = 5000;
+    let n_atoms = n_waters * 3;
+    let box_dim = 54.0f32;  // ~54 Å for proper density
+    let box_dims = [box_dim, box_dim, box_dim];
+
+    println!("System Setup:");
+    println!("  Waters: {}", n_waters);
+    println!("  Atoms:  {}", n_atoms);
+    println!("  Box:    {:.1} × {:.1} × {:.1} Å", box_dim, box_dim, box_dim);
+
+    // Simulation parameters
+    let dt_fs = 2.0f32;      // 2 fs timestep
+    let total_steps = 500_000;  // 500,000 steps = 1 ns
+    let report_interval = 50_000;  // Report every 100 ps
+    let temperature = 310.0f32;
+    let gamma_fs = 0.01f32;  // Langevin friction
+
+    println!("\nSimulation Parameters:");
+    println!("  Timestep:    {} fs", dt_fs);
+    println!("  Total steps: {} (1 ns)", total_steps);
+    println!("  Temperature: {} K", temperature);
+    println!("  Report every {} steps (100 ps)", report_interval);
+
+    // Generate system
+    println!("\nGenerating water box...");
+    let (positions, water_oxygens) = generate_water_grid(n_waters, box_dim);
+    let nb_params = generate_tip3p_params(n_waters);
+    let exclusions = generate_water_exclusions(n_waters);
+
+    // Initialize CUDA
+    println!("Initializing CUDA...");
+    let context = CudaContext::new(0).expect("Failed to create CUDA context");
+    let mut hmc = AmberMegaFusedHmc::new(context, n_atoms).expect("Failed to create HMC");
+
+    // Upload topology (no bonds/angles/dihedrals for pure water)
+    let bonds: Vec<(usize, usize, f32, f32)> = vec![];
+    let angles: Vec<(usize, usize, usize, f32, f32)> = vec![];
+    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = vec![];
+
+    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
+        .expect("Failed to upload topology");
+
+    hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
+    hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
+    hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
+    hmc.initialize_velocities(temperature).expect("Failed to init velocities");
+
+    // Warm-up
+    println!("\nWarming up (1000 steps)...");
+    let _ = hmc.run_fused(1000, dt_fs, temperature, gamma_fs, false).expect("Warmup failed");
+
+    // Production run
+    println!("\n════════════════════════════════════════════════════════════════");
+    println!("Starting 1 ns production run...");
+    println!("════════════════════════════════════════════════════════════════\n");
+
+    let start = Instant::now();
+    let mut last_report = Instant::now();
+    let mut steps_completed = 0usize;
+
+    // Run in chunks with progress reporting
+    while steps_completed < total_steps {
+        let chunk_size = report_interval.min(total_steps - steps_completed);
+
+        let _ = hmc.run_fused(chunk_size, dt_fs, temperature, gamma_fs, false)
+            .expect("MD step failed");
+
+        steps_completed += chunk_size;
+
+        let chunk_elapsed = last_report.elapsed();
+        let total_elapsed = start.elapsed();
+        let steps_per_sec = chunk_size as f64 / chunk_elapsed.as_secs_f64();
+        let ns_per_day = steps_per_sec * (dt_fs as f64 / 1000.0) * 86400.0;
+        let progress = steps_completed as f64 / total_steps as f64 * 100.0;
+        let time_ns = steps_completed as f64 * dt_fs as f64 / 1_000_000.0;
+
+        println!(
+            "  [{:>6.1}%] {:>7}/{} steps | {:.3} ns | {:>8.0} steps/s | {:>7.1} ns/day | {:.1}s elapsed",
+            progress,
+            steps_completed,
+            total_steps,
+            time_ns,
+            steps_per_sec,
+            ns_per_day,
+            total_elapsed.as_secs_f64()
+        );
+
+        last_report = Instant::now();
+    }
+
+    let total_elapsed = start.elapsed();
+    let avg_steps_per_sec = total_steps as f64 / total_elapsed.as_secs_f64();
+    let avg_ns_per_day = avg_steps_per_sec * (dt_fs as f64 / 1000.0) * 86400.0;
+    let time_per_step_us = total_elapsed.as_micros() as f64 / total_steps as f64;
+
+    println!("\n╔══════════════════════════════════════════════════════════════╗");
+    println!("║                    BENCHMARK RESULTS                         ║");
+    println!("╠══════════════════════════════════════════════════════════════╣");
+    println!("║  System:        {:>6} atoms ({} waters)                   ║", n_atoms, n_waters);
+    println!("║  Simulated:     1.000 ns (500,000 steps)                    ║");
+    println!("╠══════════════════════════════════════════════════════════════╣");
+    println!("║  Wall time:     {:>7.2} seconds ({:.2} minutes)             ║",
+             total_elapsed.as_secs_f64(),
+             total_elapsed.as_secs_f64() / 60.0);
+    println!("║  Time/step:     {:>7.2} µs                                  ║", time_per_step_us);
+    println!("║  Steps/second:  {:>7.0}                                     ║", avg_steps_per_sec);
+    println!("║  Performance:   {:>7.1} ns/day                              ║", avg_ns_per_day);
+    println!("╚══════════════════════════════════════════════════════════════╝");
+
+    // Performance assertions
+    assert!(
+        avg_ns_per_day > 100.0,
+        "Performance {} ns/day is below minimum threshold of 100 ns/day",
+        avg_ns_per_day
+    );
+
+    println!("\n✓ 1 ns production benchmark completed successfully!");
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================

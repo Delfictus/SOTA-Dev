@@ -31,8 +31,9 @@ pub struct Settle {
     stream: Arc<CudaStream>,
     module: Arc<CudaModule>,
 
-    // Kernel
+    // Kernels
     settle_kernel: CudaFunction,
+    velocity_correction_kernel: CudaFunction,
 
     // Device buffers
     d_water_indices: CudaSlice<i32>,  // [n_waters * 3] - O, H1, H2 indices for each water
@@ -85,10 +86,13 @@ impl Settle {
             .load_module(ptx)
             .with_context(|| format!("Failed to load SETTLE PTX from {}", ptx_path))?;
 
-        // Load kernel
+        // Load kernels
         let settle_kernel = module
             .load_function("settle_constraints")
             .context("Failed to load settle_constraints")?;
+        let velocity_correction_kernel = module
+            .load_function("settle_velocity_correction")
+            .context("Failed to load settle_velocity_correction")?;
 
         // Build water index array: [O0, H0_1, H0_2, O1, H1_1, H1_2, ...]
         let mut water_indices = Vec::with_capacity(n_waters * 3);
@@ -153,6 +157,7 @@ impl Settle {
             stream,
             module,
             settle_kernel,
+            velocity_correction_kernel,
             d_water_indices,
             d_old_positions,
             n_waters,
@@ -218,6 +223,54 @@ impl Settle {
             builder.arg(&self.rc);
             builder.arg(&self.roh2);
             builder.arg(&self.rhh2);
+            builder.launch(cfg)?;
+        }
+
+        self.stream.synchronize()?;
+
+        Ok(())
+    }
+
+    /// Apply RATTLE-style velocity correction to water molecules
+    ///
+    /// This uses proper RATTLE velocity constraints to project out only the
+    /// constraint-violating velocity components (along bond directions),
+    /// preserving rotational kinetic energy around the molecular axis.
+    ///
+    /// IMPORTANT: Call this AFTER apply() to correct velocities consistently
+    /// with the position constraints.
+    ///
+    /// # Arguments
+    /// * `d_velocities` - Device buffer with velocities to correct
+    /// * `d_positions` - Device buffer with constrained positions (for bond vectors)
+    pub fn apply_velocity_correction(
+        &mut self,
+        d_velocities: &mut CudaSlice<f32>,
+        d_positions: &CudaSlice<f32>,
+    ) -> Result<()> {
+        if self.n_waters == 0 {
+            return Ok(());
+        }
+
+        let threads = 256;
+        let blocks = (self.n_waters + threads - 1) / threads;
+
+        let cfg = LaunchConfig {
+            grid_dim: (blocks as u32, 1, 1),
+            block_dim: (threads as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let n_waters_i32 = self.n_waters as i32;
+
+        unsafe {
+            let mut builder = self.stream.launch_builder(&self.velocity_correction_kernel);
+            builder.arg(d_velocities);
+            builder.arg(d_positions);
+            builder.arg(&self.d_water_indices);
+            builder.arg(&n_waters_i32);
+            builder.arg(&self.mass_o);
+            builder.arg(&self.mass_h);
             builder.launch(cfg)?;
         }
 
