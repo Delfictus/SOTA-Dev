@@ -4366,8 +4366,7 @@ __device__ __forceinline__ void compute_nb_pair_force_device(
  *
  * @note __launch_bounds__(256, 4) targets 256 threads/block × 4 blocks/SM = 1024 threads/SM
  */
-__launch_bounds__(256, 4)
-extern "C" __global__ void mega_fused_md_step(
+extern "C" __global__ void __launch_bounds__(256, 4) mega_fused_md_step(
     // Positions and velocities (MODIFIED)
     float* __restrict__ positions,           // [n_atoms * 3]
     float* __restrict__ velocities,          // [n_atoms * 3]
@@ -4993,8 +4992,7 @@ __device__ __forceinline__ void constrain_h_cluster_device(
  *
  * @note __launch_bounds__(256, 4) for optimal occupancy on sm_86+
  */
-__launch_bounds__(256, 4)
-extern "C" __global__ void fused_constraints_kernel(
+extern "C" __global__ void __launch_bounds__(256, 4) fused_constraints_kernel(
     float* __restrict__ new_pos,
     const float* __restrict__ old_pos,
     float* __restrict__ velocities,
@@ -5241,8 +5239,7 @@ __device__ void compute_nonbonded_tiled_optimized(
  *
  * @note __launch_bounds__(256, 4) targets 256 threads/block × 4 blocks/SM = 1024 threads/SM
  */
-__launch_bounds__(256, 4)
-extern "C" __global__ void mega_fused_md_step_tiled(
+extern "C" __global__ void __launch_bounds__(256, 4) mega_fused_md_step_tiled(
     // Positions and velocities (MODIFIED)
     float* __restrict__ positions,
     float* __restrict__ velocities,

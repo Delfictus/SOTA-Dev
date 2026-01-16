@@ -158,9 +158,11 @@ impl HConstraints {
 
         let stream = context.default_stream();
 
-        // Load H-constraints PTX module
-        let ptx_path = "crates/prism-gpu/target/ptx/h_constraints.ptx";
-        let ptx = Ptx::from_file(ptx_path);
+        // Load H-constraints PTX module - use absolute path for reliability
+        let ptx_path = concat!(env!("CARGO_MANIFEST_DIR"), "/target/ptx/h_constraints.ptx");
+        let ptx_src = std::fs::read_to_string(ptx_path)
+            .with_context(|| format!("Failed to read PTX file: {}", ptx_path))?;
+        let ptx = Ptx::from_src(&ptx_src);
         let module = context
             .load_module(ptx)
             .with_context(|| format!("Failed to load H-constraints PTX from {}", ptx_path))?;

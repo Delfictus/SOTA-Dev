@@ -472,9 +472,11 @@ impl AmberMegaFusedHmc {
 
         let stream = context.default_stream();
 
-        // Load PTX module
-        let ptx_path = "crates/prism-gpu/target/ptx/amber_mega_fused.ptx";
-        let ptx = Ptx::from_file(ptx_path);
+        // Load PTX module - use absolute path for reliability across different working directories
+        let ptx_path = concat!(env!("CARGO_MANIFEST_DIR"), "/target/ptx/amber_mega_fused.ptx");
+        let ptx_src = std::fs::read_to_string(ptx_path)
+            .with_context(|| format!("Failed to read PTX file: {}", ptx_path))?;
+        let ptx = Ptx::from_src(&ptx_src);
         let module = context
             .load_module(ptx)
             .with_context(|| format!("Failed to load mega-fused PTX from {}", ptx_path))?;

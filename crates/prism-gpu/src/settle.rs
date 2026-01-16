@@ -76,9 +76,11 @@ impl Settle {
         let stream = context.default_stream();
         let n_waters = water_oxygen_indices.len();
 
-        // Load SETTLE PTX module
-        let ptx_path = "crates/prism-gpu/target/ptx/settle.ptx";
-        let ptx = Ptx::from_file(ptx_path);
+        // Load SETTLE PTX module - use absolute path for reliability
+        let ptx_path = concat!(env!("CARGO_MANIFEST_DIR"), "/target/ptx/settle.ptx");
+        let ptx_src = std::fs::read_to_string(ptx_path)
+            .with_context(|| format!("Failed to read PTX file: {}", ptx_path))?;
+        let ptx = Ptx::from_src(&ptx_src);
         let module = context
             .load_module(ptx)
             .with_context(|| format!("Failed to load SETTLE PTX from {}", ptx_path))?;
