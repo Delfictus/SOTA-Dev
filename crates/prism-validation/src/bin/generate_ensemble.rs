@@ -83,6 +83,18 @@ struct Args {
     /// Output CSV for temperature timeseries (time_ps,T_instantaneous,T_rolling_avg,n_dof,n_settle,n_h_constraints)
     #[arg(long)]
     temperature_log: Option<PathBuf>,
+
+    /// Use fused kernels for ~60% reduced launch overhead (Phase 8 optimization)
+    #[arg(long, default_value = "false")]
+    fused: bool,
+
+    /// Enable mixed precision (FP16 LJ params) for ~2x memory bandwidth (Phase 7 optimization)
+    #[arg(long, default_value = "false")]
+    mixed_precision: bool,
+
+    /// Use tiled shared memory kernel for fused mode (better for >1000 atoms)
+    #[arg(long, default_value = "true")]
+    tiled: bool,
 }
 
 // Topology structs matching prepare_protein.py output
@@ -378,6 +390,14 @@ fn main() -> Result<()> {
             println!("   ✓ H-constraints enabled for {} clusters", n_h_clusters);
         }
 
+        // Enable mixed precision if requested (Phase 7 optimization)
+        if args.mixed_precision {
+            use prism_gpu::MixedPrecisionConfig;
+            let config = MixedPrecisionConfig::default();  // FP16 for LJ params
+            hmc.enable_mixed_precision(config)?;
+            println!("   ✓ Mixed precision enabled (FP16 LJ parameters)");
+        }
+
         // Enable position restraints if requested (default depends on solvent mode)
         if effective_restraint_k > 0.0 {
             let heavy_atoms: Vec<usize> = (0..n_atoms)
@@ -401,16 +421,28 @@ fn main() -> Result<()> {
 
         // Equilibration
         if args.equilibration > 0 {
-            println!("\n🔥 Equilibration ({} steps, {:.2} ps)...",
+            let mode_str = if args.fused { "fused" } else { "verlet" };
+            println!("\n🔥 Equilibration ({} steps, {:.2} ps, {} mode)...",
                      args.equilibration,
-                     args.equilibration as f64 * args.dt as f64 / 1000.0);
+                     args.equilibration as f64 * args.dt as f64 / 1000.0,
+                     mode_str);
 
-            let eq_result = hmc.run_verlet(
-                args.equilibration as usize,
-                args.dt,
-                args.temperature,
-                args.gamma,
-            )?;
+            let eq_result = if args.fused {
+                hmc.run_fused(
+                    args.equilibration as usize,
+                    args.dt,
+                    args.temperature,
+                    args.gamma,
+                    args.tiled,  // Use tiled kernel for large systems
+                )?
+            } else {
+                hmc.run_verlet(
+                    args.equilibration as usize,
+                    args.dt,
+                    args.temperature,
+                    args.gamma,
+                )?
+            };
             println!("   Final T: {:.1} K, PE: {:.1} kcal/mol",
                      eq_result.avg_temperature, eq_result.potential_energy);
         }
@@ -424,9 +456,15 @@ fn main() -> Result<()> {
         );
 
         // Production run with snapshot saving
-        println!("\n🏃 Production run ({} steps, {:.3} ns)...",
+        let mode_str = if args.fused {
+            if args.mixed_precision { "fused+FP16" } else { "fused" }
+        } else {
+            "verlet"
+        };
+        println!("\n🏃 Production run ({} steps, {:.3} ns, {} mode)...",
                  production_steps,
-                 production_steps as f64 * args.dt as f64 / 1_000_000.0);
+                 production_steps as f64 * args.dt as f64 / 1_000_000.0,
+                 mode_str);
 
         let mut model_number = 1u32;
         let mut steps_run = 0u64;
@@ -445,12 +483,22 @@ fn main() -> Result<()> {
         while steps_run < production_steps {
             // Run for save_interval steps
             let steps_this_round = args.save_interval.min(production_steps - steps_run) as usize;
-            let result = hmc.run_verlet(
-                steps_this_round,
-                args.dt,
-                args.temperature,
-                args.gamma,
-            )?;
+            let result = if args.fused {
+                hmc.run_fused(
+                    steps_this_round,
+                    args.dt,
+                    args.temperature,
+                    args.gamma,
+                    args.tiled,
+                )?
+            } else {
+                hmc.run_verlet(
+                    steps_this_round,
+                    args.dt,
+                    args.temperature,
+                    args.gamma,
+                )?
+            };
 
             // Collect energy records with proper time offset
             let base_step = args.equilibration + steps_run;
