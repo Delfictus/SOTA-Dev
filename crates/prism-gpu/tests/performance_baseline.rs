@@ -105,7 +105,7 @@ fn benchmark_water_box_216() {
 
     // Warm-up (100 steps)
     println!("Warming up (100 steps)...");
-    let _ = hmc.run_verlet(100, 2.0, 310.0, 0.01);
+    let _ = hmc.run_fused(100, 2.0, 310.0, 0.01, false).expect("Warmup failed");
 
     // Benchmark neighbor list build
     println!("Benchmarking neighbor list build...");
@@ -121,7 +121,7 @@ fn benchmark_water_box_216() {
     println!("Benchmarking MD steps (1000 steps)...");
     let n_steps = 1000;
     let md_start = Instant::now();
-    let _ = hmc.run_verlet(n_steps, 2.0, 310.0, 0.01);
+    let _ = hmc.run_fused(n_steps, 2.0, 310.0, 0.01, false).expect("Benchmark failed");
     let md_elapsed = md_start.elapsed();
     let time_per_step_us = md_elapsed.as_micros() as f64 / n_steps as f64;
 
@@ -190,12 +190,12 @@ fn benchmark_water_box_1000() {
     hmc.initialize_velocities(310.0).expect("Failed to init velocities");
 
     // Warm-up
-    let _ = hmc.run_verlet(100, 2.0, 310.0, 0.01);
+    let _ = hmc.run_fused(100, 2.0, 310.0, 0.01, false).expect("Warmup failed");
 
     // Benchmark
     let n_steps = 500;
     let md_start = Instant::now();
-    let _ = hmc.run_verlet(n_steps, 2.0, 310.0, 0.01);
+    let _ = hmc.run_fused(n_steps, 2.0, 310.0, 0.01, false).expect("Benchmark failed");
     let md_elapsed = md_start.elapsed();
     let time_per_step_us = md_elapsed.as_micros() as f64 / n_steps as f64;
 
@@ -261,11 +261,11 @@ fn benchmark_scaling_analysis() {
         hmc.initialize_velocities(310.0).expect("Failed to init velocities");
 
         // Warm-up and benchmark
-        let _ = hmc.run_verlet(50, 2.0, 310.0, 0.01);
+        let _ = hmc.run_fused(50, 2.0, 310.0, 0.01, false).expect("Scaling benchmark failed");
 
         let n_steps = 200;
         let start = Instant::now();
-        let _ = hmc.run_verlet(n_steps, 2.0, 310.0, 0.01);
+        let _ = hmc.run_fused(n_steps, 2.0, 310.0, 0.01, false).expect("Benchmark failed");
         let elapsed = start.elapsed();
         let time_per_step_us = elapsed.as_micros() as f64 / n_steps as f64;
 
