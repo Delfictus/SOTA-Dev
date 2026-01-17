@@ -154,7 +154,8 @@ pub struct AmberSimdBatch {
     total_bonds: usize,
     total_angles: usize,
     total_dihedrals: usize,
-    total_constraints: usize, // H-bond constraints for DOF calculation
+    total_constraints: usize, // H-bond constraints total (for logging)
+    constraints_per_structure: Vec<usize>, // Per-structure constraint counts for DOF
 
     // Host buffers for accumulation
     h_positions: Vec<f32>,
@@ -324,6 +325,7 @@ impl AmberSimdBatch {
             total_angles: 0,
             total_dihedrals: 0,
             total_constraints: 0,
+            constraints_per_structure: Vec::new(),
             h_positions: Vec::new(),
             h_velocities: Vec::new(),
             h_bond_atoms: Vec::new(),
@@ -509,6 +511,7 @@ impl AmberSimdBatch {
         // Identify hydrogens (mass ~1.0) and their heavy atom bonds
         use std::collections::HashMap;
         let mut h_neighbors: HashMap<usize, Vec<(usize, f32)>> = HashMap::new();
+        let mut structure_constraint_count = 0usize;
 
         for &(i, j, _k, r0) in &topology.bonds {
             let mass_i = topology.masses.get(i).copied().unwrap_or(12.0);
@@ -540,33 +543,37 @@ impl AmberSimdBatch {
             // Check if nitrogen (mass ~14) for cluster type
             let is_nitrogen = mass_central > 13.0 && mass_central < 15.0;
 
-            let cluster = match hydrogens.len() {
+            let (cluster, n_constraints) = match hydrogens.len() {
                 1 => {
                     let (h_local, d) = hydrogens[0];
-                    HConstraintCluster::single_h(heavy_global, atom_offset + h_local, d, mass_central, mass_h)
+                    (HConstraintCluster::single_h(heavy_global, atom_offset + h_local, d, mass_central, mass_h), 1)
                 }
                 2 => {
                     let (h1_local, d1) = hydrogens[0];
                     let (h2_local, d2) = hydrogens[1];
-                    HConstraintCluster::two_h(
+                    (HConstraintCluster::two_h(
                         heavy_global, atom_offset + h1_local, atom_offset + h2_local,
                         d1, d2, mass_central, mass_h, is_nitrogen
-                    )
+                    ), 2)
                 }
                 3 => {
                     let (h1_local, d1) = hydrogens[0];
                     let (h2_local, d2) = hydrogens[1];
                     let (h3_local, d3) = hydrogens[2];
-                    HConstraintCluster::three_h(
+                    (HConstraintCluster::three_h(
                         heavy_global, atom_offset + h1_local, atom_offset + h2_local, atom_offset + h3_local,
                         d1, d2, d3, mass_central, mass_h, is_nitrogen
-                    )
+                    ), 3)
                 }
                 _ => continue,  // Unusual, skip
             };
 
             self.h_constraint_clusters.push(cluster);
+            structure_constraint_count += n_constraints;
         }
+
+        // Store per-structure constraint count for DOF calculation
+        self.constraints_per_structure.push(structure_constraint_count);
 
         // Update totals
         self.total_atoms += n_atoms;
@@ -1161,8 +1168,9 @@ impl AmberSimdBatch {
 
             let pe = energies[i * 2] as f64;
             let ke = energies[i * 2 + 1] as f64;
-            // DOF = 3N - 6 (center of mass + rotation) - N_constraints (H-bond constraints)
-            let n_dof = (3 * desc.n_atoms).saturating_sub(6 + self.total_constraints);
+            // DOF = 3N - 6 (center of mass + rotation) - N_constraints (per-structure H-bond constraints)
+            let struct_constraints = self.constraints_per_structure.get(i).copied().unwrap_or(0);
+            let n_dof = (3 * desc.n_atoms).saturating_sub(6 + struct_constraints);
             let temperature = if n_dof > 0 {
                 2.0 * ke / (n_dof as f64 * KB_KCAL_MOL_K)
             } else {
@@ -1208,6 +1216,7 @@ impl AmberSimdBatch {
         self.total_angles = 0;
         self.total_dihedrals = 0;
         self.total_constraints = 0;
+        self.constraints_per_structure.clear();
         self.finalized = false;
         self.current_step = 0;
     }
