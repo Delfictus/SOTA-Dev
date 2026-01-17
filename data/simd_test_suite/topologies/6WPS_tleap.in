@@ -1,0 +1,13 @@
+# Load AMBER ff14SB force field
+source leaprc.protein.ff14SB
+
+# Load the fixed PDB
+mol = loadpdb sanitized/6WPS_amber.pdb
+
+# Check for any issues
+check mol
+
+# Save topology and coordinates
+saveamberparm mol topologies/6WPS.prmtop topologies/6WPS.inpcrd
+
+quit

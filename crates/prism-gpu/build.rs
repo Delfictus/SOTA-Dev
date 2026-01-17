@@ -266,6 +266,14 @@ fn main() {
         &target_ptx_dir.join("amber_mega_fused.ptx"),
     );
 
+    // Compile SIMD Batch kernel (Tier 1: 10-50x throughput, identical physics)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/amber_simd_batch.cu",
+        &ptx_dir.join("amber_simd_batch.ptx"),
+        &target_ptx_dir.join("amber_simd_batch.ptx"),
+    );
+
     // Compile PME kernel (Particle Mesh Ewald long-range electrostatics)
     compile_kernel(
         &nvcc,

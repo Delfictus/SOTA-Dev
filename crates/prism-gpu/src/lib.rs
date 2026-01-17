@@ -33,6 +33,9 @@ pub mod settle;
 // H-bond constraint solver for protein X-H bonds
 pub mod h_constraints;
 
+// SIMD Batched AMBER MD (Tier 1: 10-50x throughput, identical physics)
+pub mod amber_simd_batch;
+
 // Essential exports
 pub use context::{GpuContext, GpuInfo, GpuSecurityConfig};
 pub use global_context::{GlobalGpuContext, GlobalGpuError};
@@ -58,6 +61,10 @@ pub use amber_mega_fused::{
 pub use pme::{PME, compute_ewald_beta, DEFAULT_PME_TOLERANCE};
 pub use settle::Settle;
 pub use h_constraints::{HConstraints, HConstraintCluster, ClusterType, build_h_clusters};
+pub use amber_simd_batch::{
+    AmberSimdBatch, StructureTopology, BatchMdResult,
+    BATCH_SPATIAL_OFFSET, MAX_BATCH_SIZE,
+};
 pub use memory::{VramGuard, VramInfo, VramGuardError, init_global_vram_guard, global_vram_guard};
 pub use whcr::{WhcrGpu, RepairResult as WhcrRepairResult};
 

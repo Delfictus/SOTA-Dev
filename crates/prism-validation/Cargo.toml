@@ -33,6 +33,9 @@ statrs = "0.16"
 rand = "0.8"
 rand_distr = "0.4"
 
+# Parallel processing
+rayon = "1.8"
+
 # Logging
 log = "0.4"
 env_logger = "0.10"
@@ -170,3 +173,20 @@ path = "src/bin/run_blind_validation.rs"
 [[bin]]
 name = "generate-ensemble"
 path = "src/bin/generate_ensemble.rs"
+
+[[bin]]
+name = "generate_ensemble_batch"
+path = "src/bin/generate_ensemble_batch.rs"
+
+[[bin]]
+name = "generate-ensemble-simd"
+path = "src/bin/generate_ensemble_simd.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "analyze_ensemble"
+path = "src/bin/analyze_ensemble.rs"
+
+[[bin]]
+name = "analyze_ensemble_batch"
+path = "src/bin/analyze_ensemble_batch.rs"
