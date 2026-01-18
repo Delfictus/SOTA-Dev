@@ -405,17 +405,17 @@ def process_single(
                 "validate_topology.py",
                 validate_args,
                 verbose=verbose,
-                description="Final validation"
+                description="Topology validation"
             )
 
             if not success:
                 if strict:
-                    result['errors'].append(f"Validation failed: {stderr}")
+                    result['errors'].append(f"Topology validation failed: {stderr}")
                     return result
                 else:
-                    result['warnings'].append(f"Validation warnings: {stderr}")
+                    result['warnings'].append(f"Topology validation warnings: {stderr}")
 
-            result['stages_completed'].append('validation')
+            result['stages_completed'].append('topology_validation')
 
             # Parse validation stats
             for line in stdout.split('\n'):
@@ -425,6 +425,42 @@ def process_single(
                         result['stats'][key.strip()] = val.strip()
                     except:
                         pass
+
+        # Stage 3: Comprehensive structure validation
+        if validate:
+            struct_validate_args = [str(input_pdb), "--ph", "7.4"]
+            if strict:
+                struct_validate_args.append("--strict")
+            if verbose:
+                struct_validate_args.append("-v")
+
+            success, stdout, stderr = run_script(
+                "validate_structure.py",
+                struct_validate_args,
+                verbose=verbose,
+                description="Structure validation (protonation, clashes, SS-bonds)",
+                use_amber_env=True
+            )
+
+            if not success:
+                if strict:
+                    result['errors'].append(f"Structure validation failed: {stderr}")
+                    return result
+                else:
+                    result['warnings'].append(f"Structure validation warnings: {stderr}")
+
+            result['stages_completed'].append('structure_validation')
+
+            # Parse structure validation stats
+            for line in stdout.split('\n'):
+                if 'Disulfide' in line and '--' in line:
+                    if 'disulfide_bonds' not in result['stats']:
+                        result['stats']['disulfide_bonds'] = []
+                    result['stats']['disulfide_bonds'].append(line.strip())
+                elif 'Net charge:' in line:
+                    result['stats']['net_charge'] = line.split(':')[1].strip()
+                elif 'Clash score:' in line:
+                    result['stats']['clash_score'] = line.split(':')[1].strip()
 
         # Check output exists
         if output_topology.exists():
