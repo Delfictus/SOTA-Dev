@@ -19,6 +19,7 @@ def combine_topologies(chain_files, output_file):
         'masses': [],
         'charges': [],
         'lj_params': [],
+        'gb_radii': [],  # For implicit solvent (GBn2)
         'atom_names': [],
         'elements': [],
         'residue_names': [],
@@ -48,6 +49,7 @@ def combine_topologies(chain_files, output_file):
         combined['masses'].extend(chain.get('masses', []))
         combined['charges'].extend(chain.get('charges', []))
         combined['lj_params'].extend(chain.get('lj_params', []))
+        combined['gb_radii'].extend(chain.get('gb_radii', []))  # For implicit solvent
         combined['atom_names'].extend(chain.get('atom_names', []))
         combined['elements'].extend(chain.get('elements', []))
         combined['residue_names'].extend(chain.get('residue_names', []))

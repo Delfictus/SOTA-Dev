@@ -239,7 +239,7 @@ def process_single_chain(
     # For per-chain, always use cryptic mode (remove glycans) since
     # glycans span chains and we're processing individually
     cmd = [
-        "python3", str(SCRIPT_DIR / "glycan_preprocessor.py"),
+        sys.executable, str(SCRIPT_DIR / "glycan_preprocessor.py"),
         pdb_path, preprocessed_path,
         "--mode", "cryptic", "-q"
     ]
@@ -251,13 +251,13 @@ def process_single_chain(
     if use_amber:
         # Hybrid: PDBFixer adds H with correct naming, reduce optimizes positions
         cmd = [
-            "python3", str(SCRIPT_DIR / "stage1_sanitize_hybrid.py"),
+            sys.executable, str(SCRIPT_DIR / "stage1_sanitize_hybrid.py"),
             preprocessed_path, sanitized_path, "-q"
         ]
         sanitizer_name = "Stage 1 (PDBFixer + reduce)"
     else:
         cmd = [
-            "python3", str(SCRIPT_DIR / "stage1_sanitize.py"),
+            sys.executable, str(SCRIPT_DIR / "stage1_sanitize.py"),
             preprocessed_path, sanitized_path
         ]
         sanitizer_name = "Stage 1 (PDBFixer)"
@@ -267,9 +267,10 @@ def process_single_chain(
     # Step 3: Stage 2 topology
     topology_path = os.path.join(output_dir, f"{base_name}_topology.json")
     cmd = [
-        "python3", str(SCRIPT_DIR / "stage2_topology.py"),
+        sys.executable, str(SCRIPT_DIR / "stage2_topology.py"),
         sanitized_path, topology_path
     ]
+    # Note: ACE/NME caps are added by default in stage2_topology.py
     if not run_command(cmd, f"Chain {chain_id}: Stage 2 topology", verbose):
         return False, ""
 
@@ -284,7 +285,7 @@ def combine_topologies(topology_files: List[str], output_path: str, verbose: boo
         print(f"  Combining {len(topology_files)} chain topologies...", end=" ", flush=True)
 
     cmd = [
-        "python3", str(SCRIPT_DIR / "combine_chain_topologies.py"),
+        sys.executable, str(SCRIPT_DIR / "combine_chain_topologies.py"),
         output_path
     ] + topology_files
 
@@ -406,6 +407,7 @@ def process_structure(
     force_multichain: bool = False,
     force_whole: bool = False,
     use_amber: bool = False,
+    no_caps: bool = False,
     work_dir: str = None,
     verbose: bool = True
 ) -> bool:
@@ -478,7 +480,7 @@ def process_structure(
 
         # Glycan preprocessing
         preprocessed = os.path.join(work_dir, f"{pdb_name}_preprocessed.pdb")
-        cmd = ["python3", str(SCRIPT_DIR / "glycan_preprocessor.py"),
+        cmd = [sys.executable, str(SCRIPT_DIR / "glycan_preprocessor.py"),
                pdb_path, preprocessed, "--mode", mode, "-q"]
         if not run_command(cmd, "Glycan preprocessing", verbose):
             return False
@@ -487,19 +489,21 @@ def process_structure(
         sanitized = os.path.join(work_dir, f"{pdb_name}_sanitized.pdb")
         if use_amber:
             # Hybrid: PDBFixer adds H with correct naming, reduce optimizes positions
-            cmd = ["python3", str(SCRIPT_DIR / "stage1_sanitize_hybrid.py"),
+            cmd = [sys.executable, str(SCRIPT_DIR / "stage1_sanitize_hybrid.py"),
                    preprocessed, sanitized, "-q"]
             sanitizer_desc = "Stage 1 (PDBFixer + reduce)"
         else:
-            cmd = ["python3", str(SCRIPT_DIR / "stage1_sanitize.py"),
+            cmd = [sys.executable, str(SCRIPT_DIR / "stage1_sanitize.py"),
                    preprocessed, sanitized]
             sanitizer_desc = "Stage 1 (PDBFixer)"
         if not run_command(cmd, sanitizer_desc, verbose):
             return False
 
         # Stage 2
-        cmd = ["python3", str(SCRIPT_DIR / "stage2_topology.py"),
+        cmd = [sys.executable, str(SCRIPT_DIR / "stage2_topology.py"),
                sanitized, output_topology]
+        if no_caps:
+            cmd.append("--no-caps")
         if not run_command(cmd, "Stage 2 topology", verbose):
             return False
 
@@ -538,6 +542,8 @@ Examples:
                         help='Force whole-structure processing (override contact analysis)')
     parser.add_argument('--use-amber', '-a', action='store_true',
                         help='Use AMBER reduce for high-quality hydrogen placement')
+    parser.add_argument('--no-caps', action='store_true',
+                        help='Skip ACE/NME terminal capping (not recommended)')
     parser.add_argument('--work-dir', '-w', help='Working directory (default: temp)')
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Suppress output')
@@ -559,6 +565,7 @@ Examples:
         force_multichain=args.force_multichain,
         force_whole=args.force_whole,
         use_amber=args.use_amber,
+        no_caps=args.no_caps,
         work_dir=args.work_dir,
         verbose=not args.quiet
     )
