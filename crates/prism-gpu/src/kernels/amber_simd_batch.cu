@@ -1526,3 +1526,597 @@ extern "C" __global__ void simd_batch_remove_offsets(
         }
     }
 }
+
+// ============================================================================
+// DETERMINISTIC BONDED FORCE KERNELS (Phase 1b)
+// ============================================================================
+//
+// These kernels eliminate atomicAdd race conditions by having each ATOM
+// compute its own force contributions from all interactions it participates in.
+// This guarantees bitwise reproducibility at the cost of computational redundancy.
+//
+// Required data structures (built by Rust host code):
+// - Per-atom lists of bond/angle/dihedral indices the atom participates in
+// - Per-atom position within each interaction (0=i, 1=j, etc.)
+// ============================================================================
+
+/**
+ * @brief Batch descriptor extended with atom-centric bonded interaction lists
+ *
+ * For deterministic force computation, we need per-atom lists of interactions.
+ * These are stored in flattened arrays indexed by:
+ *   atom_bond_list[atom_offset * max_bonds_per_atom + local_atom * max_bonds_per_atom + b]
+ */
+struct __align__(64) BatchDeterministicDesc {
+    // Base descriptor fields
+    int atom_offset;
+    int n_atoms;
+    int bond_offset;
+    int n_bonds;
+    int angle_offset;
+    int n_angles;
+    int dihedral_offset;
+    int n_dihedrals;
+    int nb_param_offset;
+    int excl_offset;
+    float spatial_offset_x;
+    float spatial_offset_y;
+    float spatial_offset_z;
+
+    // Deterministic bonded list offsets (into per-atom interaction lists)
+    int atom_bond_list_offset;      // Offset into atom_bond_list array
+    int atom_angle_list_offset;     // Offset into atom_angle_list array
+    int atom_dihedral_list_offset;  // Offset into atom_dihedral_list array
+};
+
+/**
+ * @brief Compute bond force for one atom from one bond (device helper)
+ *
+ * @return force on this atom from the bond
+ */
+__device__ float3 compute_bond_force_for_atom(
+    const float* __restrict__ positions,
+    int my_atom, int other_atom,
+    int my_position,  // 0=i, 1=j in the bond
+    float k, float r0,
+    float* energy_out  // Only written if my_position == 0
+) {
+    float3 my_pos = make_float3(
+        positions[my_atom * 3],
+        positions[my_atom * 3 + 1],
+        positions[my_atom * 3 + 2]
+    );
+    float3 other_pos = make_float3(
+        positions[other_atom * 3],
+        positions[other_atom * 3 + 1],
+        positions[other_atom * 3 + 2]
+    );
+
+    // Vector from me to other
+    float3 r_ij = make_float3(
+        other_pos.x - my_pos.x,
+        other_pos.y - my_pos.y,
+        other_pos.z - my_pos.z
+    );
+
+    float dist = norm3(r_ij);
+    if (dist < 1e-8f) return make_float3(0.0f, 0.0f, 0.0f);
+
+    float dr = dist - r0;
+    float force_mag = -k * dr / dist;
+
+    // Cap force
+    float f_per_atom = fabsf(k * dr);
+    if (f_per_atom > MAX_FORCE) {
+        force_mag *= MAX_FORCE / f_per_atom;
+    }
+
+    // Force direction depends on my position in bond
+    // If I'm i: force on me is -f_ij (opposite to direction toward j)
+    // If I'm j: force on me is +f_ij (toward direction from i)
+    float sign = (my_position == 0) ? -1.0f : 1.0f;
+
+    // Energy (only count once per bond, when we're atom i)
+    if (my_position == 0 && energy_out != nullptr) {
+        *energy_out = 0.5f * k * dr * dr;
+    }
+
+    return make_float3(
+        sign * force_mag * r_ij.x,
+        sign * force_mag * r_ij.y,
+        sign * force_mag * r_ij.z
+    );
+}
+
+/**
+ * @brief Compute angle force for one atom from one angle (device helper)
+ */
+__device__ float3 compute_angle_force_for_atom(
+    const float* __restrict__ positions,
+    int ai, int aj, int ak,  // The three atoms in the angle
+    int my_position,          // 0=i, 1=j(central), 2=k
+    float k_angle, float theta0,
+    float* energy_out
+) {
+    float3 pos_i = make_float3(positions[ai*3], positions[ai*3+1], positions[ai*3+2]);
+    float3 pos_j = make_float3(positions[aj*3], positions[aj*3+1], positions[aj*3+2]);
+    float3 pos_k = make_float3(positions[ak*3], positions[ak*3+1], positions[ak*3+2]);
+
+    float3 r_ji = make_float3_sub(pos_i, pos_j);
+    float3 r_jk = make_float3_sub(pos_k, pos_j);
+
+    float d_ji = norm3(r_ji);
+    float d_jk = norm3(r_jk);
+
+    if (d_ji < 1e-6f || d_jk < 1e-6f) return make_float3(0.0f, 0.0f, 0.0f);
+
+    float cos_theta = dot3(r_ji, r_jk) / (d_ji * d_jk);
+    cos_theta = fmaxf(-0.9999f, fminf(0.9999f, cos_theta));
+
+    float theta = acosf(cos_theta);
+    float dtheta = theta - theta0;
+
+    float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+    if (sin_theta < 1e-6f) sin_theta = 1e-6f;
+
+    float force_factor = -k_angle * dtheta / sin_theta;
+
+    // Cap force
+    float max_factor = MAX_FORCE * fminf(d_ji, d_jk);
+    if (fabsf(force_factor) > max_factor) {
+        force_factor = copysignf(max_factor, force_factor);
+    }
+
+    float inv_d_ji = 1.0f / d_ji;
+    float inv_d_jk = 1.0f / d_jk;
+
+    float3 f_i = make_float3(
+        force_factor * inv_d_ji * (r_jk.x * inv_d_jk - cos_theta * r_ji.x * inv_d_ji),
+        force_factor * inv_d_ji * (r_jk.y * inv_d_jk - cos_theta * r_ji.y * inv_d_ji),
+        force_factor * inv_d_ji * (r_jk.z * inv_d_jk - cos_theta * r_ji.z * inv_d_ji)
+    );
+
+    float3 f_k = make_float3(
+        force_factor * inv_d_jk * (r_ji.x * inv_d_ji - cos_theta * r_jk.x * inv_d_jk),
+        force_factor * inv_d_jk * (r_ji.y * inv_d_ji - cos_theta * r_jk.y * inv_d_jk),
+        force_factor * inv_d_jk * (r_ji.z * inv_d_ji - cos_theta * r_jk.z * inv_d_jk)
+    );
+
+    // Apply per-atom force cap
+    float f_i_mag = norm3(f_i);
+    if (f_i_mag > MAX_FORCE) {
+        float scale = MAX_FORCE / f_i_mag;
+        f_i.x *= scale; f_i.y *= scale; f_i.z *= scale;
+    }
+    float f_k_mag = norm3(f_k);
+    if (f_k_mag > MAX_FORCE) {
+        float scale = MAX_FORCE / f_k_mag;
+        f_k.x *= scale; f_k.y *= scale; f_k.z *= scale;
+    }
+
+    // Central atom j gets -(f_i + f_k)
+    float3 f_j = make_float3(-f_i.x - f_k.x, -f_i.y - f_k.y, -f_i.z - f_k.z);
+
+    // Energy (only when we're atom i)
+    if (my_position == 0 && energy_out != nullptr) {
+        *energy_out = 0.5f * k_angle * dtheta * dtheta;
+    }
+
+    // Return force for our position
+    if (my_position == 0) return f_i;
+    if (my_position == 1) return f_j;
+    return f_k;  // my_position == 2
+}
+
+/**
+ * @brief Compute dihedral force for one atom from one dihedral (device helper)
+ */
+__device__ float3 compute_dihedral_force_for_atom(
+    const float* __restrict__ positions,
+    int ai, int aj, int ak, int al,
+    int my_position,  // 0=i, 1=j, 2=k, 3=l
+    float pk, float pn, float phase,
+    float* energy_out
+) {
+    float3 p1 = make_float3(positions[ai*3], positions[ai*3+1], positions[ai*3+2]);
+    float3 p2 = make_float3(positions[aj*3], positions[aj*3+1], positions[aj*3+2]);
+    float3 p3 = make_float3(positions[ak*3], positions[ak*3+1], positions[ak*3+2]);
+    float3 p4 = make_float3(positions[al*3], positions[al*3+1], positions[al*3+2]);
+
+    float3 b1 = make_float3_sub(p2, p1);
+    float3 b2 = make_float3_sub(p3, p2);
+    float3 b3 = make_float3_sub(p4, p3);
+
+    float3 n1 = cross3(b1, b2);
+    float3 n2 = cross3(b2, b3);
+
+    float n1_len = norm3(n1);
+    float n2_len = norm3(n2);
+
+    if (n1_len < 1e-6f || n2_len < 1e-6f) return make_float3(0.0f, 0.0f, 0.0f);
+
+    n1.x /= n1_len; n1.y /= n1_len; n1.z /= n1_len;
+    n2.x /= n2_len; n2.y /= n2_len; n2.z /= n2_len;
+
+    float cos_phi = dot3(n1, n2);
+    cos_phi = fmaxf(-1.0f, fminf(1.0f, cos_phi));
+
+    float3 m1 = cross3(n1, b2);
+    float b2_len = norm3(b2);
+    if (b2_len > 1e-6f) {
+        m1.x /= b2_len; m1.y /= b2_len; m1.z /= b2_len;
+    }
+    float sin_phi = dot3(m1, n2);
+
+    float phi = atan2f(sin_phi, cos_phi);
+
+    int n_int = __float2int_rn(pn);
+    float dE_dphi = pk * n_int * sinf(n_int * phi - phase);
+
+    // Energy (only when we're atom i)
+    if (my_position == 0 && energy_out != nullptr) {
+        *energy_out = pk * (1.0f + cosf(n_int * phi - phase));
+    }
+
+    // Force distribution
+    float f_scale_i = -dE_dphi / (n1_len + 1e-10f);
+    float f_scale_l = dE_dphi / (n2_len + 1e-10f);
+
+    float max_scale = MAX_FORCE * 0.5f;
+    if (fabsf(f_scale_i) > max_scale) f_scale_i = copysignf(max_scale, f_scale_i);
+    if (fabsf(f_scale_l) > max_scale) f_scale_l = copysignf(max_scale, f_scale_l);
+
+    float3 f_i = make_float3(f_scale_i * n1.x, f_scale_i * n1.y, f_scale_i * n1.z);
+    float3 f_l = make_float3(f_scale_l * n2.x, f_scale_l * n2.y, f_scale_l * n2.z);
+
+    // Central atoms get split
+    float3 f_central = make_float3(
+        -0.5f * (f_i.x + f_l.x),
+        -0.5f * (f_i.y + f_l.y),
+        -0.5f * (f_i.z + f_l.z)
+    );
+
+    if (my_position == 0) return f_i;
+    if (my_position == 1) return f_central;
+    if (my_position == 2) return f_central;
+    return f_l;  // my_position == 3
+}
+
+/**
+ * @brief DETERMINISTIC SIMD Batch MD Step with Cell Lists
+ *
+ * This kernel variant uses atom-centric bonded force computation for
+ * bitwise reproducibility. Each atom computes its own bonded forces
+ * by iterating over all interactions it participates in.
+ *
+ * Memory overhead: O(4 * n_interactions) for the per-atom lists
+ * Compute overhead: 2x bonds, 3x angles, 4x dihedrals (due to redundant computation)
+ * Benefit: Bitwise deterministic results regardless of thread scheduling
+ */
+extern "C" __global__ void __launch_bounds__(256, 4) simd_batch_md_step_deterministic(
+    // Batch descriptor array (extended with deterministic offsets)
+    const BatchDeterministicDesc* __restrict__ batch_descs,
+    int n_structures,
+
+    // Flattened positions/velocities/forces
+    float* __restrict__ positions,
+    float* __restrict__ velocities,
+    float* __restrict__ forces,
+
+    // Flattened topology - Bonds
+    const int* __restrict__ bond_atoms,      // [total_bonds * 2]
+    const float* __restrict__ bond_params,   // [total_bonds * 2] (k, r0)
+
+    // Flattened topology - Angles
+    const int* __restrict__ angle_atoms,     // [total_angles * 4] (i,j,k,param_idx)
+    const float* __restrict__ angle_params,  // [total_angles * 2] (k, theta0)
+
+    // Flattened topology - Dihedrals
+    const int* __restrict__ dihedral_atoms,  // [total_dihedrals * 4]
+    const float* __restrict__ dihedral_params, // [total_dihedrals * 4] (k, n, phase, pad)
+
+    // Per-atom bonded interaction lists (for deterministic computation)
+    const int* __restrict__ atom_bond_list,       // Bond indices per atom
+    const int* __restrict__ atom_bond_count,      // Number of bonds per atom
+    const int* __restrict__ atom_bond_position,   // Position in each bond (0 or 1)
+    int max_bonds_per_atom,
+
+    const int* __restrict__ atom_angle_list,
+    const int* __restrict__ atom_angle_count,
+    const int* __restrict__ atom_angle_position,  // 0, 1, or 2
+    int max_angles_per_atom,
+
+    const int* __restrict__ atom_dihedral_list,
+    const int* __restrict__ atom_dihedral_count,
+    const int* __restrict__ atom_dihedral_position,  // 0, 1, 2, or 3
+    int max_dihedrals_per_atom,
+
+    // Flattened non-bonded parameters
+    const float* __restrict__ nb_sigma,
+    const float* __restrict__ nb_epsilon,
+    const float* __restrict__ nb_charge,
+    const float* __restrict__ nb_mass,
+    const int* __restrict__ excl_list,
+    const int* __restrict__ n_excl,
+    int max_excl,
+
+    // Cell list data (PRE-BUILT)
+    const int* __restrict__ cell_list,
+    const int* __restrict__ cell_counts,
+    const int* __restrict__ atom_cell,
+
+    // Per-structure energy outputs
+    BatchEnergyOutput* __restrict__ energies,
+    int energy_base_idx,
+
+    // Position restraints
+    const float* __restrict__ ref_positions,
+    float restraint_k,
+
+    // Integration parameters
+    float dt,
+    float temperature,
+    float gamma_fs,
+    unsigned int step,
+    int phase  // 0=legacy, 1=half_kick1+drift, 2=forces+half_kick2+thermo
+) {
+    // Shared memory for energy reduction
+    __shared__ float s_energy[32];
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int n_threads = blockDim.x * gridDim.x;
+
+    bool do_forces = (phase == 0 || phase == 1 || phase == 2);
+    bool do_half_kick1 = (phase == 0 || phase == 1);
+    bool do_drift = (phase == 0 || phase == 1);
+    bool do_half_kick2 = (phase == 0 || phase == 2);
+    bool do_thermostat = (phase == 0 || phase == 2);
+
+    // ========== PHASE 1: Zero forces ==========
+    if (do_forces) {
+        for (int s = 0; s < n_structures; s++) {
+            const BatchDeterministicDesc& desc = batch_descs[s];
+            for (int a = tid; a < desc.n_atoms; a += n_threads) {
+                int global_idx = desc.atom_offset + a;
+                forces[global_idx * 3] = 0.0f;
+                forces[global_idx * 3 + 1] = 0.0f;
+                forces[global_idx * 3 + 2] = 0.0f;
+            }
+        }
+        __syncthreads();
+    }
+
+    // ========== PHASE 2: DETERMINISTIC BONDED FORCES ==========
+    // Each atom computes its own bonded forces
+    if (do_forces) {
+        for (int s = 0; s < n_structures; s++) {
+            const BatchDeterministicDesc& desc = batch_descs[s];
+
+            for (int local_a = tid; local_a < desc.n_atoms; local_a += n_threads) {
+                int global_a = desc.atom_offset + local_a;
+                float local_pe = 0.0f;
+                float3 local_force = make_float3(0.0f, 0.0f, 0.0f);
+
+                // 2a. Bonds - each atom processes its bonds
+                int n_my_bonds = atom_bond_count[global_a];
+                int bond_list_base = global_a * max_bonds_per_atom;
+
+                for (int b = 0; b < n_my_bonds; b++) {
+                    int bond_idx = atom_bond_list[bond_list_base + b];
+                    int my_pos = atom_bond_position[bond_list_base + b];
+
+                    int ai = bond_atoms[bond_idx * 2];
+                    int aj = bond_atoms[bond_idx * 2 + 1];
+                    int other = (my_pos == 0) ? aj : ai;
+
+                    float k = bond_params[bond_idx * 2];
+                    float r0 = bond_params[bond_idx * 2 + 1];
+
+                    float bond_e = 0.0f;
+                    float3 f = compute_bond_force_for_atom(
+                        positions, global_a, other, my_pos, k, r0,
+                        (my_pos == 0) ? &bond_e : nullptr
+                    );
+                    local_force.x += f.x;
+                    local_force.y += f.y;
+                    local_force.z += f.z;
+                    local_pe += bond_e;
+                }
+
+                // 2b. Angles
+                int n_my_angles = atom_angle_count[global_a];
+                int angle_list_base = global_a * max_angles_per_atom;
+
+                for (int a = 0; a < n_my_angles; a++) {
+                    int angle_idx = atom_angle_list[angle_list_base + a];
+                    int my_pos = atom_angle_position[angle_list_base + a];
+
+                    int ai = angle_atoms[angle_idx * 4];
+                    int aj = angle_atoms[angle_idx * 4 + 1];
+                    int ak = angle_atoms[angle_idx * 4 + 2];
+
+                    float k = angle_params[angle_idx * 2];
+                    float theta0 = angle_params[angle_idx * 2 + 1];
+
+                    float angle_e = 0.0f;
+                    float3 f = compute_angle_force_for_atom(
+                        positions, ai, aj, ak, my_pos, k, theta0,
+                        (my_pos == 0) ? &angle_e : nullptr
+                    );
+                    local_force.x += f.x;
+                    local_force.y += f.y;
+                    local_force.z += f.z;
+                    local_pe += angle_e;
+                }
+
+                // 2c. Dihedrals
+                int n_my_dihedrals = atom_dihedral_count[global_a];
+                int dih_list_base = global_a * max_dihedrals_per_atom;
+
+                for (int d = 0; d < n_my_dihedrals; d++) {
+                    int dih_idx = atom_dihedral_list[dih_list_base + d];
+                    int my_pos = atom_dihedral_position[dih_list_base + d];
+
+                    int ai = dihedral_atoms[dih_idx * 4];
+                    int aj = dihedral_atoms[dih_idx * 4 + 1];
+                    int ak = dihedral_atoms[dih_idx * 4 + 2];
+                    int al = dihedral_atoms[dih_idx * 4 + 3];
+
+                    float pk = dihedral_params[dih_idx * 4];
+                    float pn = dihedral_params[dih_idx * 4 + 1];
+                    float dih_phase = dihedral_params[dih_idx * 4 + 2];
+
+                    float dih_e = 0.0f;
+                    float3 f = compute_dihedral_force_for_atom(
+                        positions, ai, aj, ak, al, my_pos, pk, pn, dih_phase,
+                        (my_pos == 0) ? &dih_e : nullptr
+                    );
+                    local_force.x += f.x;
+                    local_force.y += f.y;
+                    local_force.z += f.z;
+                    local_pe += dih_e;
+                }
+
+                // Write force directly (DETERMINISTIC - no atomicAdd for bonded)
+                forces[global_a * 3] = local_force.x;
+                forces[global_a * 3 + 1] = local_force.y;
+                forces[global_a * 3 + 2] = local_force.z;
+
+                // Accumulate energy (use block reduction for determinism)
+                atomicAdd(&energies[energy_base_idx + s].potential_energy, local_pe);
+            }
+        }
+        __syncthreads();
+
+        // ========== PHASE 3: NON-BONDED (already deterministic) ==========
+        for (int s = 0; s < n_structures; s++) {
+            const BatchDeterministicDesc& desc = batch_descs[s];
+
+            for (int local_a = tid; local_a < desc.n_atoms; local_a += n_threads) {
+                int global_a = desc.atom_offset + local_a;
+                compute_nonbonded_cell_list(
+                    positions, forces, &energies[energy_base_idx + s].potential_energy,
+                    nb_sigma, nb_epsilon, nb_charge,
+                    excl_list, n_excl,
+                    cell_list, cell_counts, atom_cell,
+                    global_a, max_excl
+                );
+            }
+        }
+        __syncthreads();
+
+        // ========== PHASE 3.5: Position restraints ==========
+        if (ref_positions != nullptr && restraint_k > 0.0f) {
+            for (int s = 0; s < n_structures; s++) {
+                const BatchDeterministicDesc& desc = batch_descs[s];
+
+                for (int local_a = tid; local_a < desc.n_atoms; local_a += n_threads) {
+                    int global_a = desc.atom_offset + local_a;
+                    float mass = nb_mass[global_a];
+
+                    if (mass > 2.0f) {
+                        float px = positions[global_a * 3];
+                        float py = positions[global_a * 3 + 1];
+                        float pz = positions[global_a * 3 + 2];
+
+                        float rx = ref_positions[global_a * 3];
+                        float ry = ref_positions[global_a * 3 + 1];
+                        float rz = ref_positions[global_a * 3 + 2];
+
+                        // Direct write since each atom only accesses itself
+                        forces[global_a * 3] += -restraint_k * (px - rx);
+                        forces[global_a * 3 + 1] += -restraint_k * (py - ry);
+                        forces[global_a * 3 + 2] += -restraint_k * (pz - rz);
+                    }
+                }
+            }
+        }
+        __syncthreads();
+
+        // ========== PHASE 3.75: Cap total forces ==========
+        for (int s = 0; s < n_structures; s++) {
+            const BatchDeterministicDesc& desc = batch_descs[s];
+
+            for (int local_a = tid; local_a < desc.n_atoms; local_a += n_threads) {
+                int global_a = desc.atom_offset + local_a;
+
+                float fx = forces[global_a * 3];
+                float fy = forces[global_a * 3 + 1];
+                float fz = forces[global_a * 3 + 2];
+
+                float f_mag = sqrtf(fx*fx + fy*fy + fz*fz);
+                if (f_mag > MAX_FORCE) {
+                    float scale = MAX_FORCE / f_mag;
+                    forces[global_a * 3] = fx * scale;
+                    forces[global_a * 3 + 1] = fy * scale;
+                    forces[global_a * 3 + 2] = fz * scale;
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    // ========== PHASE 4: Velocity Verlet integration ==========
+    // (Same as non-deterministic version - integration is already deterministic)
+    if (do_half_kick1 && do_drift) {
+        for (int s = 0; s < n_structures; s++) {
+            const BatchDeterministicDesc& desc = batch_descs[s];
+
+            for (int local_a = tid; local_a < desc.n_atoms; local_a += n_threads) {
+                int global_a = desc.atom_offset + local_a;
+
+                float px = positions[global_a * 3];
+                float py = positions[global_a * 3 + 1];
+                float pz = positions[global_a * 3 + 2];
+                float vx = velocities[global_a * 3];
+                float vy = velocities[global_a * 3 + 1];
+                float vz = velocities[global_a * 3 + 2];
+                float fx = forces[global_a * 3];
+                float fy = forces[global_a * 3 + 1];
+                float fz = forces[global_a * 3 + 2];
+                float mass = nb_mass[global_a];
+
+                velocity_verlet_step1_batch(&px, &py, &pz, &vx, &vy, &vz, fx, fy, fz, mass, dt);
+
+                positions[global_a * 3] = px;
+                positions[global_a * 3 + 1] = py;
+                positions[global_a * 3 + 2] = pz;
+                velocities[global_a * 3] = vx;
+                velocities[global_a * 3 + 1] = vy;
+                velocities[global_a * 3 + 2] = vz;
+            }
+        }
+        __syncthreads();
+    }
+
+    if (do_half_kick2) {
+        for (int s = 0; s < n_structures; s++) {
+            const BatchDeterministicDesc& desc = batch_descs[s];
+
+            for (int local_a = tid; local_a < desc.n_atoms; local_a += n_threads) {
+                int global_a = desc.atom_offset + local_a;
+
+                float vx = velocities[global_a * 3];
+                float vy = velocities[global_a * 3 + 1];
+                float vz = velocities[global_a * 3 + 2];
+                float fx = forces[global_a * 3];
+                float fy = forces[global_a * 3 + 1];
+                float fz = forces[global_a * 3 + 2];
+                float mass = nb_mass[global_a];
+
+                float ke = velocity_verlet_step2_batch(
+                    &vx, &vy, &vz, fx, fy, fz, mass, dt,
+                    do_thermostat ? temperature : 0.0f,
+                    do_thermostat ? gamma_fs : 0.0f,
+                    step, global_a
+                );
+
+                velocities[global_a * 3] = vx;
+                velocities[global_a * 3 + 1] = vy;
+                velocities[global_a * 3 + 2] = vz;
+
+                atomicAdd(&energies[energy_base_idx + s].kinetic_energy, ke);
+            }
+        }
+    }
+}

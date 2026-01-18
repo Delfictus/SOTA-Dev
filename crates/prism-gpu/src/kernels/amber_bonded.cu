@@ -723,6 +723,502 @@ extern "C" __global__ void zero_forces(
 }
 
 //============================================================================
+// DETERMINISTIC BONDED FORCE KERNELS (Phase 1b)
+//============================================================================
+//
+// These kernels eliminate atomicAdd race conditions by having each ATOM
+// compute its own force contributions from all interactions it participates in.
+// This is the same strategy used for deterministic non-bonded forces.
+//
+// The tradeoff is computational redundancy (each interaction computed multiple
+// times, once per participating atom), but this guarantees bitwise reproducibility.
+//
+// Required auxiliary data structures:
+// - atom_bond_list: For each atom, list of bond indices it participates in
+// - atom_bond_positions: For each (atom, bond) pair, atom's position in bond (0=i, 1=j)
+// - atom_angle_list: For each atom, list of angle indices it participates in
+// - atom_angle_positions: For each (atom, angle) pair, position (0=i, 1=j, 2=k)
+// - atom_dihedral_list: For each atom, list of dihedral indices it participates in
+// - atom_dihedral_positions: For each (atom, dihedral) pair, position (0-3)
+//
+// Each atom processes its interactions in sorted order (by interaction index),
+// guaranteeing deterministic floating-point summation order.
+//============================================================================
+
+#include "reduction_primitives.cuh"
+
+//============================================================================
+// Deterministic Bond Force Kernel
+//============================================================================
+
+/// Compute bond forces deterministically - each atom gathers from all its bonds
+///
+/// Grid: (n_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE
+/// Block: BLOCK_SIZE
+///
+/// @param atom_bond_list     Flattened list of bond indices per atom [n_atoms * max_bonds_per_atom]
+/// @param atom_bond_count    Number of bonds each atom participates in [n_atoms]
+/// @param atom_bond_position Which position this atom is in each bond (0=i, 1=j) [n_atoms * max_bonds_per_atom]
+/// @param max_bonds_per_atom Maximum bonds any single atom participates in
+extern "C" __global__ void compute_bond_forces_deterministic(
+    const float3* __restrict__ positions,
+    float3* __restrict__ forces,
+    float* __restrict__ total_energy,
+    const int2* __restrict__ bond_list,
+    const BondParams* __restrict__ params,
+    const int* __restrict__ atom_bond_list,
+    const int* __restrict__ atom_bond_count,
+    const int* __restrict__ atom_bond_position,
+    int n_atoms,
+    int max_bonds_per_atom
+) {
+    __shared__ float s_energy[32];  // For block reduction
+
+    int atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float3 local_force = make_float3(0.0f, 0.0f, 0.0f);
+    float local_energy = 0.0f;
+
+    if (atom_idx < n_atoms) {
+        float3 my_pos = positions[atom_idx];
+        int n_bonds = atom_bond_count[atom_idx];
+        int list_offset = atom_idx * max_bonds_per_atom;
+
+        // Process each bond this atom participates in (in sorted order by bond index)
+        for (int b = 0; b < n_bonds; b++) {
+            int bond_idx = atom_bond_list[list_offset + b];
+            int my_position = atom_bond_position[list_offset + b];  // 0=i, 1=j
+
+            // Get bond atoms
+            int2 bond = bond_list[bond_idx];
+            int other_atom = (my_position == 0) ? bond.y : bond.x;
+
+            // Get positions
+            float3 other_pos = positions[other_atom];
+
+            // Compute distance (direction depends on our position in bond)
+            float3 r_ij;
+            if (my_position == 0) {
+                // I am atom i, so r_ij = r_j - r_i
+                r_ij = make_float3(other_pos.x - my_pos.x,
+                                   other_pos.y - my_pos.y,
+                                   other_pos.z - my_pos.z);
+            } else {
+                // I am atom j, so r_ji = r_i - r_j
+                r_ij = make_float3(my_pos.x - other_pos.x,
+                                   my_pos.y - other_pos.y,
+                                   my_pos.z - other_pos.z);
+            }
+
+            float dist = sqrtf(r_ij.x * r_ij.x + r_ij.y * r_ij.y + r_ij.z * r_ij.z);
+
+            // Get parameters
+            BondParams p = params[bond_idx];
+            float k = p.k * KCAL_TO_INTERNAL;
+            float r0 = p.r0;
+
+            // Compute force magnitude
+            float dr = dist - r0;
+            float force_mag = -k * dr / fmaxf(dist, 1e-8f);
+
+            // Force on me from this bond
+            // If I'm atom i: F_i = -force_mag * r_ij (opposite to j)
+            // If I'm atom j: F_j = +force_mag * r_ij (toward j direction computed as r_ji)
+            float sign = (my_position == 0) ? -1.0f : 1.0f;
+            local_force.x += sign * force_mag * r_ij.x;
+            local_force.y += sign * force_mag * r_ij.y;
+            local_force.z += sign * force_mag * r_ij.z;
+
+            // Energy: count only once per bond (when we're atom i, i.e., position 0)
+            if (my_position == 0) {
+                local_energy += 0.5f * k * dr * dr;
+            }
+        }
+
+        // Write force directly (no atomicAdd needed - each atom writes only to itself)
+        forces[atom_idx].x += local_force.x;
+        forces[atom_idx].y += local_force.y;
+        forces[atom_idx].z += local_force.z;
+    }
+
+    // Deterministic energy reduction using block primitives
+    float block_energy = block_reduce_sum_f32(local_energy, s_energy);
+    if (threadIdx.x == 0 && block_energy != 0.0f) {
+        atomicAdd(total_energy, block_energy);
+    }
+}
+
+//============================================================================
+// Deterministic Angle Force Kernel
+//============================================================================
+
+/// Compute angle forces deterministically - each atom gathers from all its angles
+extern "C" __global__ void compute_angle_forces_deterministic(
+    const float3* __restrict__ positions,
+    float3* __restrict__ forces,
+    float* __restrict__ total_energy,
+    const int4* __restrict__ angle_list,      // (i, j, k, param_idx)
+    const AngleParams* __restrict__ params,
+    const int* __restrict__ atom_angle_list,
+    const int* __restrict__ atom_angle_count,
+    const int* __restrict__ atom_angle_position,  // 0=i, 1=j(central), 2=k
+    int n_atoms,
+    int max_angles_per_atom
+) {
+    __shared__ float s_energy[32];
+
+    int atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float3 local_force = make_float3(0.0f, 0.0f, 0.0f);
+    float local_energy = 0.0f;
+
+    if (atom_idx < n_atoms) {
+        float3 my_pos = positions[atom_idx];
+        int n_angles = atom_angle_count[atom_idx];
+        int list_offset = atom_idx * max_angles_per_atom;
+
+        for (int a = 0; a < n_angles; a++) {
+            int angle_idx = atom_angle_list[list_offset + a];
+            int my_position = atom_angle_position[list_offset + a];  // 0=i, 1=j, 2=k
+
+            // Get angle atoms
+            int4 angle = angle_list[angle_idx];
+            int ai = angle.x;
+            int aj = angle.y;  // Central atom
+            int ak = angle.z;
+            int param_idx = angle.w;
+
+            // Get all positions
+            float3 r_i = positions[ai];
+            float3 r_j = positions[aj];
+            float3 r_k = positions[ak];
+
+            // Vectors from central atom j
+            float3 r_ji = make_float3(r_i.x - r_j.x, r_i.y - r_j.y, r_i.z - r_j.z);
+            float3 r_jk = make_float3(r_k.x - r_j.x, r_k.y - r_j.y, r_k.z - r_j.z);
+
+            float d_ji = norm(r_ji);
+            float d_jk = norm(r_jk);
+
+            if (d_ji < 1e-8f || d_jk < 1e-8f) continue;
+
+            // Compute angle
+            float cos_theta = dot(r_ji, r_jk) / (d_ji * d_jk);
+            cos_theta = fminf(1.0f, fmaxf(-1.0f, cos_theta));
+            float theta = acosf(cos_theta);
+
+            // Get parameters
+            AngleParams p = params[param_idx];
+            float k_angle = p.k * KCAL_TO_INTERNAL;
+            float theta0 = p.theta0;
+
+            float dtheta = theta - theta0;
+            float dV_dtheta = k_angle * dtheta;
+
+            float sin_theta = sinf(theta);
+            if (fabsf(sin_theta) < 1e-8f) sin_theta = 1e-8f;
+
+            // Unit vectors
+            float3 n_ji = make_float3(r_ji.x / d_ji, r_ji.y / d_ji, r_ji.z / d_ji);
+            float3 n_jk = make_float3(r_jk.x / d_jk, r_jk.y / d_jk, r_jk.z / d_jk);
+
+            // Force on atom i
+            float scale_i = -dV_dtheta / (d_ji * sin_theta);
+            float3 f_i = make_float3(
+                scale_i * (cos_theta * n_ji.x - n_jk.x),
+                scale_i * (cos_theta * n_ji.y - n_jk.y),
+                scale_i * (cos_theta * n_ji.z - n_jk.z)
+            );
+
+            // Force on atom k
+            float scale_k = -dV_dtheta / (d_jk * sin_theta);
+            float3 f_k = make_float3(
+                scale_k * (cos_theta * n_jk.x - n_ji.x),
+                scale_k * (cos_theta * n_jk.y - n_ji.y),
+                scale_k * (cos_theta * n_jk.z - n_ji.z)
+            );
+
+            // Force on central atom j (Newton's third law)
+            float3 f_j = make_float3(-(f_i.x + f_k.x), -(f_i.y + f_k.y), -(f_i.z + f_k.z));
+
+            // Add MY force based on my position in the angle
+            if (my_position == 0) {
+                local_force.x += f_i.x;
+                local_force.y += f_i.y;
+                local_force.z += f_i.z;
+            } else if (my_position == 1) {
+                local_force.x += f_j.x;
+                local_force.y += f_j.y;
+                local_force.z += f_j.z;
+            } else {  // my_position == 2
+                local_force.x += f_k.x;
+                local_force.y += f_k.y;
+                local_force.z += f_k.z;
+            }
+
+            // Energy: count only when we're atom i (position 0)
+            if (my_position == 0) {
+                local_energy += 0.5f * k_angle * dtheta * dtheta;
+            }
+        }
+
+        forces[atom_idx].x += local_force.x;
+        forces[atom_idx].y += local_force.y;
+        forces[atom_idx].z += local_force.z;
+    }
+
+    float block_energy = block_reduce_sum_f32(local_energy, s_energy);
+    if (threadIdx.x == 0 && block_energy != 0.0f) {
+        atomicAdd(total_energy, block_energy);
+    }
+}
+
+//============================================================================
+// Deterministic Dihedral Force Kernel
+//============================================================================
+
+/// Compute dihedral forces deterministically - each atom gathers from all its dihedrals
+extern "C" __global__ void compute_dihedral_forces_deterministic(
+    const float3* __restrict__ positions,
+    float3* __restrict__ forces,
+    float* __restrict__ total_energy,
+    const int4* __restrict__ dihedral_atoms,     // (i, j, k, l)
+    const int* __restrict__ param_indices,
+    const DihedralParams* __restrict__ params,
+    const int* __restrict__ atom_dihedral_list,
+    const int* __restrict__ atom_dihedral_count,
+    const int* __restrict__ atom_dihedral_position,  // 0=i, 1=j, 2=k, 3=l
+    int n_atoms,
+    int max_dihedrals_per_atom
+) {
+    __shared__ float s_energy[32];
+
+    int atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float3 local_force = make_float3(0.0f, 0.0f, 0.0f);
+    float local_energy = 0.0f;
+
+    if (atom_idx < n_atoms) {
+        int n_dihedrals = atom_dihedral_count[atom_idx];
+        int list_offset = atom_idx * max_dihedrals_per_atom;
+
+        for (int d = 0; d < n_dihedrals; d++) {
+            int dih_idx = atom_dihedral_list[list_offset + d];
+            int my_position = atom_dihedral_position[list_offset + d];  // 0-3
+
+            // Get dihedral atoms
+            int4 atoms = dihedral_atoms[dih_idx];
+            int ai = atoms.x;
+            int aj = atoms.y;
+            int ak = atoms.z;
+            int al = atoms.w;
+
+            // Get all positions
+            float3 p0 = positions[ai];
+            float3 p1 = positions[aj];
+            float3 p2 = positions[ak];
+            float3 p3 = positions[al];
+
+            // Bond vectors
+            float3 b1 = make_float3(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+            float3 b2 = make_float3(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+            float3 b3 = make_float3(p3.x - p2.x, p3.y - p2.y, p3.z - p2.z);
+
+            // Normal vectors to planes
+            float3 n1 = cross(b1, b2);
+            float3 n2 = cross(b2, b3);
+
+            float n1_len = norm(n1);
+            float n2_len = norm(n2);
+            float b2_len = norm(b2);
+
+            if (n1_len < 1e-8f || n2_len < 1e-8f || b2_len < 1e-8f) continue;
+
+            float3 n1_norm = make_float3(n1.x / n1_len, n1.y / n1_len, n1.z / n1_len);
+            float3 n2_norm = make_float3(n2.x / n2_len, n2.y / n2_len, n2.z / n2_len);
+            float3 b2_norm = make_float3(b2.x / b2_len, b2.y / b2_len, b2.z / b2_len);
+
+            // Compute dihedral angle
+            float3 m1 = cross(n1_norm, b2_norm);
+            float x = dot(n1_norm, n2_norm);
+            float y = dot(m1, n2_norm);
+            float phi = atan2f(y, x);
+
+            // Get parameters
+            DihedralParams p = params[param_indices[dih_idx]];
+            float k_dih = p.k * KCAL_TO_INTERNAL;
+            float n_period = p.n;
+            float phase = p.phase;
+
+            // dV/dphi
+            float dV_dphi = -k_dih * n_period * sinf(n_period * phi - phase);
+
+            // Cross products for force distribution
+            float3 c12 = cross(n1, b2);
+            float3 c23 = cross(b2, n2);
+
+            // Force on atom i (first atom)
+            float scale_i = dV_dphi / (n1_len * n1_len * b2_len);
+            float3 f_i = make_float3(-scale_i * c12.x, -scale_i * c12.y, -scale_i * c12.z);
+
+            // Force on atom l (last atom)
+            float scale_l = dV_dphi / (n2_len * n2_len * b2_len);
+            float3 f_l = make_float3(scale_l * c23.x, scale_l * c23.y, scale_l * c23.z);
+
+            // Forces on j and k using projection factors
+            float b1_dot_b2 = dot(b1, b2);
+            float b2_dot_b3 = dot(b2, b3);
+            float b2_sq = b2_len * b2_len;
+
+            float proj_1 = b1_dot_b2 / b2_sq;
+            float proj_3 = b2_dot_b3 / b2_sq;
+
+            float3 f_j = make_float3(
+                -f_i.x * (1.0f - proj_1) + f_l.x * proj_3,
+                -f_i.y * (1.0f - proj_1) + f_l.y * proj_3,
+                -f_i.z * (1.0f - proj_1) + f_l.z * proj_3
+            );
+
+            float3 f_k = make_float3(
+                f_i.x * proj_1 - f_l.x * (1.0f - proj_3),
+                f_i.y * proj_1 - f_l.y * (1.0f - proj_3),
+                f_i.z * proj_1 - f_l.z * (1.0f - proj_3)
+            );
+
+            // Add MY force based on my position
+            if (my_position == 0) {
+                local_force.x += f_i.x;
+                local_force.y += f_i.y;
+                local_force.z += f_i.z;
+            } else if (my_position == 1) {
+                local_force.x += f_j.x;
+                local_force.y += f_j.y;
+                local_force.z += f_j.z;
+            } else if (my_position == 2) {
+                local_force.x += f_k.x;
+                local_force.y += f_k.y;
+                local_force.z += f_k.z;
+            } else {  // my_position == 3
+                local_force.x += f_l.x;
+                local_force.y += f_l.y;
+                local_force.z += f_l.z;
+            }
+
+            // Energy: count only when we're atom i (position 0)
+            if (my_position == 0) {
+                local_energy += k_dih * (1.0f + cosf(n_period * phi - phase));
+            }
+        }
+
+        forces[atom_idx].x += local_force.x;
+        forces[atom_idx].y += local_force.y;
+        forces[atom_idx].z += local_force.z;
+    }
+
+    float block_energy = block_reduce_sum_f32(local_energy, s_energy);
+    if (threadIdx.x == 0 && block_energy != 0.0f) {
+        atomicAdd(total_energy, block_energy);
+    }
+}
+
+//============================================================================
+// Deterministic 1-4 Non-bonded Kernel
+//============================================================================
+
+/// Compute 1-4 non-bonded forces deterministically
+/// Each atom gathers from all 1-4 pairs it participates in
+extern "C" __global__ void compute_14_nonbonded_deterministic(
+    const float3* __restrict__ positions,
+    float3* __restrict__ forces,
+    float* __restrict__ total_energy,
+    const Pair14* __restrict__ pair_list,
+    const NBParams14* __restrict__ params,
+    const int* __restrict__ atom_14_list,
+    const int* __restrict__ atom_14_count,
+    const int* __restrict__ atom_14_position,  // 0=i, 1=j
+    int n_atoms,
+    int max_14_per_atom,
+    float coulomb_constant
+) {
+    __shared__ float s_energy[32];
+
+    int atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float3 local_force = make_float3(0.0f, 0.0f, 0.0f);
+    float local_energy = 0.0f;
+
+    if (atom_idx < n_atoms) {
+        float3 my_pos = positions[atom_idx];
+        int n_pairs = atom_14_count[atom_idx];
+        int list_offset = atom_idx * max_14_per_atom;
+
+        for (int p = 0; p < n_pairs; p++) {
+            int pair_idx = atom_14_list[list_offset + p];
+            int my_position = atom_14_position[list_offset + p];  // 0=i, 1=j
+
+            Pair14 pair = pair_list[pair_idx];
+            int other_atom = (my_position == 0) ? pair.atom_j : pair.atom_i;
+
+            float3 other_pos = positions[other_atom];
+
+            // Direction: from me to other
+            float3 r_ij = make_float3(
+                other_pos.x - my_pos.x,
+                other_pos.y - my_pos.y,
+                other_pos.z - my_pos.z
+            );
+
+            float r_sq = r_ij.x * r_ij.x + r_ij.y * r_ij.y + r_ij.z * r_ij.z;
+            float r = sqrtf(r_sq);
+
+            if (r < 1e-6f) continue;
+
+            NBParams14 nb = params[pair_idx];
+            float epsilon = nb.epsilon * KCAL_TO_INTERNAL;
+            float sigma = nb.sigma;
+            float qi = nb.qi;
+            float qj = nb.qj;
+
+            // LJ 12-6
+            float sigma_over_r = sigma / r;
+            float s6 = sigma_over_r * sigma_over_r * sigma_over_r;
+            s6 = s6 * s6;
+            float s12 = s6 * s6;
+
+            float lj_energy = 4.0f * epsilon * (s12 - s6) * LJ_14_SCALE;
+            float lj_force = 24.0f * epsilon * (2.0f * s12 - s6) / r_sq * LJ_14_SCALE;
+
+            // Coulomb
+            float coul_energy = coulomb_constant * qi * qj / r * COUL_14_SCALE;
+            float coul_force = coulomb_constant * qi * qj / r_sq * COUL_14_SCALE;
+
+            float f_mag = (lj_force + coul_force) / r;
+
+            // Force on ME from this pair
+            // Force points from me toward other (attractive) or away (repulsive)
+            // f_mag > 0 means repulsive, so force on me is -f_mag * r_ij
+            local_force.x -= f_mag * r_ij.x;
+            local_force.y -= f_mag * r_ij.y;
+            local_force.z -= f_mag * r_ij.z;
+
+            // Energy: count only when we're atom i (position 0)
+            if (my_position == 0) {
+                local_energy += lj_energy + coul_energy;
+            }
+        }
+
+        forces[atom_idx].x += local_force.x;
+        forces[atom_idx].y += local_force.y;
+        forces[atom_idx].z += local_force.z;
+    }
+
+    float block_energy = block_reduce_sum_f32(local_energy, s_energy);
+    if (threadIdx.x == 0 && block_energy != 0.0f) {
+        atomicAdd(total_energy, block_energy);
+    }
+}
+
+//============================================================================
 // Non-bonded Force Kernel (LJ + Coulomb with cutoff)
 //============================================================================
 
