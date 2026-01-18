@@ -2,6 +2,47 @@
 
 This file contains instructions for Claude Code when working on this project.
 
+## PRISM-PREP: Official PDB Preprocessing Tool
+
+**CRITICAL**: For ALL PDB preprocessing, use `scripts/prism-prep`. This is the ONLY tool for PDB preparation.
+
+**Documentation**: `docs/PRISM_PREP.md`
+
+### Quick Reference
+```bash
+# Cryptic pocket detection (recommended)
+prism-prep input.pdb output.json --use-amber --mode cryptic --strict -v
+
+# Escape mutation analysis (preserves glycans)
+prism-prep input.pdb output.json --use-amber --mode escape --strict -v
+
+# Check dependencies
+prism-prep --check-deps
+
+# Batch processing
+prism-prep --batch manifest.txt --output-dir prepared/ --use-amber --strict
+```
+
+### Key Flags
+| Flag | Purpose |
+|------|---------|
+| `--use-amber` | AMBER reduce for optimized H-bonds (ALWAYS USE) |
+| `--mode cryptic` | Strip glycans for pocket detection (default) |
+| `--mode escape` | Keep glycans for glycoprotein analysis |
+| `--strict` | Fail on validation issues (use for production) |
+| `-v` | Verbose output |
+
+### What It Does
+1. Smart routing analysis (chain contacts, disulfides)
+2. Glycan handling (mode-dependent)
+3. Sanitization with AMBER reduce + PDBFixer
+4. AMBER ff14SB topology generation
+5. Final structure validation
+
+**Output**: Validated topology JSON ready for MD engine.
+
+---
+
 ## ACTIVE IMPLEMENTATION: Phase 6 SOTA Cryptic Site Detection
 
 **Mandatory Reference**: Before ANY implementation work, Claude MUST read and follow:

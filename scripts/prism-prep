@@ -499,14 +499,28 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  prism-prep input.pdb output_topology.json
-  prism-prep input.pdb prepared/ --use-amber --verbose
-  prism-prep --batch manifest.txt --output-dir prepared/
-  prism-prep input.pdb output.json --mode escape --strict
+  # Cryptic pocket detection (recommended)
+  prism-prep input.pdb output.json --use-amber --mode cryptic --strict -v
+
+  # Escape mutation analysis (keeps glycans)
+  prism-prep input.pdb output.json --use-amber --mode escape --strict -v
+
+  # Batch processing
+  prism-prep --batch manifest.txt --output-dir prepared/ --use-amber --strict
+
+  # Check dependencies
+  prism-prep --check-deps
 
 Modes:
-  cryptic  - Cryptic pocket detection (removes glycans)
+  cryptic  - Cryptic pocket detection (removes glycans) [DEFAULT]
   escape   - Escape mutation analysis (preserves glycans)
+
+Recommended flags for production:
+  --use-amber   Use AMBER reduce for optimized hydrogen placement
+  --strict      Fail on any validation issue
+  -v            Verbose output for monitoring
+
+Documentation: docs/PRISM_PREP.md
 """
     )
 
