@@ -427,8 +427,15 @@ def process_single(
                         pass
 
         # Stage 3: Comprehensive structure validation
+        # Validate the SANITIZED PDB (from work directory), not raw input
         if validate:
-            struct_validate_args = [str(input_pdb), "--ph", "7.4"]
+            # Find sanitized PDB in work directory
+            sanitized_pdb = Path(work_dir) / f"{input_pdb.stem}_sanitized.pdb"
+            if not sanitized_pdb.exists():
+                # Fallback to raw input if sanitized not found
+                sanitized_pdb = input_pdb
+
+            struct_validate_args = [str(sanitized_pdb), "--ph", "7.4"]
             if strict:
                 struct_validate_args.append("--strict")
             if verbose:

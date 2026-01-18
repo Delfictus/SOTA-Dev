@@ -70,10 +70,22 @@ PRISM-PREP is a unified preprocessing pipeline that takes a raw PDB file and pro
 │           │                                                              │
 │           ▼                                                              │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ STAGE 5: Validation                                              │    │
+│  │ STAGE 5: Topology Validation                                     │    │
 │  │  • Verify atom counts and connectivity                           │    │
 │  │  • Check force field coverage                                    │    │
 │  │  • Validate topology completeness                                │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│           │                                                              │
+│           ▼                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │ STAGE 6: Structure Validation (Comprehensive)                    │    │
+│  │  • Protonation states (HID/HIE/HIP histidine tautomers)         │    │
+│  │  • Missing atoms/residues (gaps, loops, terminal caps)           │    │
+│  │  • Disulfide bond verification (CONECT records, S-S distance)    │    │
+│  │  • Steric clash detection (VDW overlap, clash score)             │    │
+│  │  • Chirality validation (L-amino acids)                          │    │
+│  │  • Charge analysis (net charge, counterions needed)              │    │
+│  │  • pKa prediction via PROPKA at target pH                        │    │
 │  │  • --strict: Fail on any issue                                   │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │           │                                                              │
@@ -232,6 +244,65 @@ conda install -c conda-forge ambertools openmm pdbfixer propka
 ```
 
 PRISM-PREP automatically discovers AMBER tools from the `ambertools` conda environment - no manual activation required.
+
+---
+
+## Comprehensive Structure Validation
+
+The pipeline includes MolProbity-style validation checks:
+
+### Protonation State Validation
+- Histidine tautomer identification (HID/HIE/HIP)
+- Hydrogen count verification
+- pH-appropriate protonation via PROPKA
+
+### Missing Atoms/Residues
+- Gap detection in sequence
+- Missing heavy atom identification
+- Terminal capping status (ACE/NME)
+
+### Disulfide Bond Verification
+- S-S distance checking (2.0-2.5 Å)
+- CONECT record verification
+- Cysteine state validation (CYS vs CYX)
+
+### Steric Clash Detection
+- VDW radii overlap calculation
+- Clash score (clashes per 1000 atoms)
+- Severe clash identification (>50% overlap)
+
+### Chirality Validation
+- L-amino acid verification
+- D-amino acid detection
+
+### Charge Analysis
+- Net charge calculation
+- Charged residue counting (ASP, GLU, LYS, ARG, HIP)
+- Counterion requirements (Na+/Cl-)
+
+### pKa Prediction
+- PROPKA pKa calculation at target pH
+- Unusual pKa flagging
+- Titratable residue identification
+
+### Example Output
+
+```
+--- Disulfide Bonds ---
+  ✓ A:CYS133 -- A:CYS141
+  ✓ A:CYS344 -- A:CYS361
+
+--- Steric Clashes ---
+  Total clashes: 12
+  Clash score: 1.8 per 1000 atoms
+
+--- Charge Analysis ---
+  Net charge: -26 e
+  Charged residues: LYS(42), ASP(42), GLU(53), ARG(27)
+  Counterions needed: 26 Na⁺
+
+✅ STRUCTURE VALIDATION PASSED
+```
 
 ---
 

@@ -93,11 +93,25 @@ def run_pdbfixer(input_pdb: str, output_pdb: str, verbose: bool = True) -> bool:
 
         fixer = PDBFixer(filename=input_pdb)
 
-        # Remove heterogens (already done by glycan preprocessing, but just in case)
+        # Remove heterogens (ligands, ions, waters)
         fixer.removeHeterogens(keepWater=False)
 
-        # Find and add missing atoms (including hydrogens)
+        # Find missing residues (but don't try to add non-standard ones)
         fixer.findMissingResidues()
+        # Clear missing residues that are non-standard (ligand fragments)
+        # These can't be reconstructed and would cause errors
+        if fixer.missingResidues:
+            standard_aa = {'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY',
+                          'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER',
+                          'THR', 'TRP', 'TYR', 'VAL'}
+            to_remove = []
+            for key, residues in fixer.missingResidues.items():
+                if not all(r in standard_aa for r in residues):
+                    to_remove.append(key)
+            for key in to_remove:
+                del fixer.missingResidues[key]
+
+        # Find and add missing atoms (including hydrogens)
         fixer.findMissingAtoms()
         fixer.addMissingAtoms()
         fixer.addMissingHydrogens(7.0)  # pH 7.0

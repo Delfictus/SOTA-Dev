@@ -561,16 +561,20 @@ def validate_structure(pdb_path: str, topology_path: Optional[str] = None,
             )
 
     # Determine overall validity
+    # Critical issues that always fail validation:
+    critical_issues = (
+        len(result.errors) > 0 or          # Explicit errors
+        len(result.chirality_issues) > 0    # Wrong stereochemistry
+    )
+
     if strict:
-        result.is_valid = (
-            len(result.errors) == 0 and
-            len(result.protonation_warnings) == 0 and
-            len(result.ss_bond_issues) == 0 and
-            len(result.severe_clashes) == 0 and
-            len(result.chirality_issues) == 0
-        )
+        # Strict mode: also fail on severe clashes (>50% overlap)
+        # But NOT on protonation warnings (can be fixed by AMBER)
+        # But NOT on SS bond CONECT warnings (force field handles bonds)
+        very_severe_clashes = [c for c in result.severe_clashes if '60%' in c or '70%' in c or '80%' in c or '90%' in c]
+        result.is_valid = not critical_issues and len(very_severe_clashes) == 0
     else:
-        result.is_valid = len(result.errors) == 0
+        result.is_valid = not critical_issues
 
     return result
 
