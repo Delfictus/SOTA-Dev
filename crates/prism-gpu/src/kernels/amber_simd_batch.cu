@@ -28,6 +28,7 @@
 
 #include <cuda_runtime.h>
 #include <math_constants.h>
+#include "reduction_primitives.cuh"
 
 // ============================================================================
 // SIMD BATCH CONFIGURATION
@@ -409,8 +410,12 @@ __device__ void compute_nonbonded_batch(
     // Load exclusions for this atom
     int my_n_excl = n_excl[i_global];
 
-    // Loop over atoms in SAME structure only
-    for (int local_j = local_atom_id + 1; local_j < n_atoms; local_j++) {
+    // DETERMINISTIC: Loop over ALL atoms in structure (not just j > i)
+    // Each thread computes forces ON its own atom FROM all neighbors
+    // No Newton's 3rd law optimization - eliminates atomicAdd race conditions
+    for (int local_j = 0; local_j < n_atoms; local_j++) {
+        if (local_j == local_atom_id) continue;  // Skip self-interaction
+
         int j_global = atom_offset + local_j;
 
         // Check exclusions
@@ -457,14 +462,10 @@ __device__ void compute_nonbonded_batch(
         float lj_f = 24.0f * eps_ij * (2.0f * sigma12 * inv_r6 * inv_r6 - sigma6 * inv_r6) * inv_r2;
 
         // Coulomb with implicit solvent (ε = 4r)
-        // Energy: V = k*q1*q2/(4r²), Force: F = -dV/dr = 2*V/r = k*q1*q2*0.5/r³
         float q_j = charge[j_global];
         float coul_e = COULOMB_CONST * q_i * q_j * IMPLICIT_SOLVENT_SCALE * inv_r2;
-        float coul_f = 2.0f * coul_e * inv_r;  // Derivative of 1/r² is -2/r³
+        float coul_f = 2.0f * coul_e * inv_r;
 
-        // CRITICAL: total_f = -dE/dr / r, so force F = -total_f * r_vec
-        // This gives F pointing from j to i when repulsive (lj_f > 0)
-        // and from i to j when attractive (lj_f < 0)
         float total_f = lj_f + coul_f;
 
         // Cap force magnitude
@@ -473,19 +474,23 @@ __device__ void compute_nonbonded_batch(
             total_f *= MAX_FORCE / f_mag;
         }
 
-        // Force on i: F_i = -total_f * (r_j - r_i) = -total_f * dr_vec
+        // Force on i FROM j: F_i = -total_f * (r_j - r_i)
         fx -= total_f * dx;
         fy -= total_f * dy;
         fz -= total_f * dz;
 
-        pe += lj_e + coul_e;
+        // DETERMINISTIC ENERGY: Only count when j > i to avoid double counting
+        // Each pair contributes energy once (when i is the smaller index)
+        if (local_j > local_atom_id) {
+            pe += lj_e + coul_e;
+        }
 
-        // Newton's third law - force on j is opposite: F_j = +total_f * dr_vec
-        atomicAdd(&forces[j_global * 3], total_f * dx);
-        atomicAdd(&forces[j_global * 3 + 1], total_f * dy);
-        atomicAdd(&forces[j_global * 3 + 2], total_f * dz);
+        // NOTE: Removed Newton's 3rd law atomicAdd - deterministic version
+        // Thread j will compute its own forces from thread i's perspective
     }
 
+    // DETERMINISTIC: Each thread writes ONLY to its own atom's forces
+    // No race conditions since each forces[i_global] written by exactly one thread
     atomicAdd(&forces[i_global * 3], fx);
     atomicAdd(&forces[i_global * 3 + 1], fy);
     atomicAdd(&forces[i_global * 3 + 2], fz);
@@ -712,10 +717,10 @@ __device__ void compute_nonbonded_cell_list(
                 int n_in_cell = cell_counts[neighbor_cell];
                 if (n_in_cell > MAX_ATOMS_PER_CELL) n_in_cell = MAX_ATOMS_PER_CELL;
 
-                // Check all atoms in this cell
+                // DETERMINISTIC: Check all atoms in this cell, compute forces bidirectionally
                 for (int k = 0; k < n_in_cell; k++) {
                     int j = cell_list[neighbor_cell * MAX_ATOMS_PER_CELL + k];
-                    if (j <= i_global) continue;  // Only compute each pair once (j > i)
+                    if (j == i_global) continue;  // Skip self-interaction only
 
                     // Check exclusions
                     bool excluded = false;
@@ -765,7 +770,6 @@ __device__ void compute_nonbonded_cell_list(
                     float coul_e = COULOMB_CONST * q_i * q_j * IMPLICIT_SOLVENT_SCALE * inv_r2;
                     float coul_f = 2.0f * coul_e * inv_r;
 
-                    // CRITICAL: total_f = -dE/dr / r, so force F = -total_f * r_vec
                     float total_f = lj_f + coul_f;
 
                     // Cap force magnitude
@@ -774,22 +778,23 @@ __device__ void compute_nonbonded_cell_list(
                         total_f *= MAX_FORCE / f_mag;
                     }
 
-                    // Force on i: F_i = -total_f * (r_j - r_i)
+                    // Force on i FROM j: F_i = -total_f * (r_j - r_i)
                     fx -= total_f * dx_ij;
                     fy -= total_f * dy_ij;
                     fz -= total_f * dz_ij;
 
-                    pe += lj_e + coul_e;
+                    // DETERMINISTIC ENERGY: Only count when j > i to avoid double counting
+                    if (j > i_global) {
+                        pe += lj_e + coul_e;
+                    }
 
-                    // Newton's third law - force on j is opposite
-                    atomicAdd(&forces[j * 3], total_f * dx_ij);
-                    atomicAdd(&forces[j * 3 + 1], total_f * dy_ij);
-                    atomicAdd(&forces[j * 3 + 2], total_f * dz_ij);
+                    // NOTE: Removed Newton's 3rd law atomicAdd - deterministic version
                 }
             }
         }
     }
 
+    // DETERMINISTIC: Each thread writes ONLY to its own atom's forces
     atomicAdd(&forces[i_global * 3], fx);
     atomicAdd(&forces[i_global * 3 + 1], fy);
     atomicAdd(&forces[i_global * 3 + 2], fz);
