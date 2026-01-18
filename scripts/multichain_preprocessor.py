@@ -35,6 +35,35 @@ from collections import defaultdict
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+# Known conda environments with AMBER tools
+AMBER_ENV_NAMES = ['ambertools', 'amber', 'mdtools']
+
+
+def find_amber_env_bin() -> Optional[Path]:
+    """Find the bin directory of an AMBER conda environment."""
+    home = Path.home()
+    for base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+        envs_dir = base / 'envs'
+        if envs_dir.exists():
+            for env_name in AMBER_ENV_NAMES:
+                bin_dir = envs_dir / env_name / 'bin'
+                if (bin_dir / 'reduce').exists():
+                    return bin_dir
+    return None
+
+
+def get_amber_env() -> Dict[str, str]:
+    """Get environment with AMBER tools in PATH."""
+    env = os.environ.copy()
+    amber_bin = find_amber_env_bin()
+    if amber_bin:
+        env['PATH'] = f"{amber_bin}:{env.get('PATH', '')}"
+    return env
+
+
+# Global AMBER environment for subprocess calls
+AMBER_ENV = get_amber_env()
+
 from glycan_preprocessor import detect_glycans, GLYCAN_RESIDUES
 from interchain_contacts import analyze_structure as analyze_contacts, ContactAnalysisResult
 
@@ -159,7 +188,8 @@ def run_command(cmd: List[str], description: str, verbose: bool = True) -> bool:
             cmd,
             capture_output=True,
             text=True,
-            timeout=600  # 10 minute timeout
+            timeout=600,  # 10 minute timeout
+            env=AMBER_ENV  # Use AMBER environment
         )
         if result.returncode == 0:
             if verbose:
@@ -179,7 +209,7 @@ def run_command(cmd: List[str], description: str, verbose: bool = True) -> bool:
 def check_reduce_available() -> bool:
     """Check if AMBER reduce is available."""
     try:
-        result = subprocess.run(['reduce', '-v'], capture_output=True, timeout=10)
+        result = subprocess.run(['reduce', '-v'], capture_output=True, timeout=10, env=AMBER_ENV)
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False

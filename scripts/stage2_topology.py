@@ -58,13 +58,20 @@ def prepare_topology(
     # Check if structure already has hydrogens
     has_hydrogens = any(atom.element.symbol == 'H' for atom in modeller.topology.atoms())
 
-    if has_hydrogens:
-        if verbose:
-            print("Structure already has hydrogens, skipping addHydrogens()")
-    else:
-        if verbose:
+    # Always add hydrogens to ensure template compatibility
+    # OpenMM's addHydrogens will fix any missing or misnamed hydrogens
+    if verbose:
+        if has_hydrogens:
+            print(f"Re-adding hydrogens at pH {ph} (ensuring template compatibility)...")
+        else:
             print(f"Adding hydrogens at pH {ph}...")
-        modeller.addHydrogens(forcefield, pH=ph)
+
+    # Remove existing hydrogens first to avoid conflicts
+    toDelete = [atom for atom in modeller.topology.atoms() if atom.element.symbol == 'H']
+    modeller.delete(toDelete)
+
+    # Add hydrogens with correct naming for force field templates
+    modeller.addHydrogens(forcefield, pH=ph)
 
     # Add solvent if requested
     if solvate:

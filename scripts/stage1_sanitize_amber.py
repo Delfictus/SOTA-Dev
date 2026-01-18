@@ -28,12 +28,42 @@ import subprocess
 import argparse
 import tempfile
 from pathlib import Path
+from typing import Optional, Dict
+
+# Known conda environments with AMBER tools
+AMBER_ENV_NAMES = ['ambertools', 'amber', 'mdtools']
+
+
+def find_amber_env_bin() -> Optional[Path]:
+    """Find the bin directory of an AMBER conda environment."""
+    home = Path.home()
+    for base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+        envs_dir = base / 'envs'
+        if envs_dir.exists():
+            for env_name in AMBER_ENV_NAMES:
+                bin_dir = envs_dir / env_name / 'bin'
+                if (bin_dir / 'reduce').exists():
+                    return bin_dir
+    return None
+
+
+def get_amber_env() -> Dict[str, str]:
+    """Get environment with AMBER tools in PATH."""
+    env = os.environ.copy()
+    amber_bin = find_amber_env_bin()
+    if amber_bin:
+        env['PATH'] = f"{amber_bin}:{env.get('PATH', '')}"
+    return env
+
+
+# Global AMBER environment for subprocess calls
+AMBER_ENV = get_amber_env()
 
 
 def check_reduce_available() -> bool:
-    """Check if reduce is available in PATH."""
+    """Check if reduce is available in PATH or AMBER environment."""
     try:
-        result = subprocess.run(['reduce', '-v'], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(['reduce', '-v'], capture_output=True, text=True, timeout=10, env=AMBER_ENV)
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -62,7 +92,7 @@ def run_reduce(input_pdb: str, output_pdb: str, flip: bool = True, verbose: bool
     try:
         # reduce -Trim removes hydrogens
         cmd = ['reduce', '-Trim', '-Quiet', input_pdb]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=AMBER_ENV)
 
         if result.returncode != 0 and 'error' in result.stderr.lower():
             print(f"  Warning: reduce -Trim returned code {result.returncode}")
@@ -86,7 +116,7 @@ def run_reduce(input_pdb: str, output_pdb: str, flip: bool = True, verbose: bool
         else:
             cmd = ['reduce', '-NOFLIP', '-Quiet', stripped_path]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=AMBER_ENV)
 
         if result.returncode != 0 and 'error' in result.stderr.lower():
             print(f"  Warning: reduce -BUILD returned code {result.returncode}")

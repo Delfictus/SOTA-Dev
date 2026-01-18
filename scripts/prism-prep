@@ -1,0 +1,645 @@
+#!/usr/bin/env python3
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              PRISM-PREP                                       ║
+║            The Official PRISM4D PDB Preprocessing Pipeline                    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  THIS IS THE ONLY TOOL YOU SHOULD USE FOR PDB PREPARATION.                   ║
+║  All other preprocessing scripts are internal components.                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Unified entry point for the PRISM4D preprocessing pipeline:
+  1. Smart routing analysis (chain contacts, disulfides, H-bonds)
+  2. Glycan detection and handling
+  3. Sanitization with optional AMBER reduce for hydrogen optimization
+  4. AMBER ff14SB topology generation
+  5. Final validation before MD engine
+
+Usage:
+    prism-prep input.pdb output_topology.json
+    prism-prep input.pdb output_topology.json --use-amber
+    prism-prep input.pdb output_topology.json --mode cryptic --verbose
+    prism-prep --batch manifest.txt --output-dir prepared/
+
+This script orchestrates:
+  - multichain_preprocessor.py (smart routing)
+  - glycan_preprocessor.py (glycan handling)
+  - stage1_sanitize_amber.py (AMBER reduce H-placement)
+  - stage2_topology.py (topology generation)
+  - validate_topology.py (final validation)
+"""
+
+import os
+import sys
+import json
+import argparse
+import subprocess
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+from typing import Optional, List, Dict, Tuple
+
+
+# Script directory for finding sibling scripts
+SCRIPT_DIR = Path(__file__).parent.resolve()
+
+# Version
+VERSION = "1.1.0"
+
+# Known conda environments with AMBER tools
+AMBER_ENV_NAMES = ['ambertools', 'amber', 'mdtools']
+
+
+def find_amber_reduce() -> Optional[Path]:
+    """
+    Find the AMBER reduce executable.
+
+    Searches in order:
+    1. System PATH
+    2. Known conda environments (ambertools, amber, mdtools)
+    3. Common installation locations
+    """
+    # First check if reduce is in PATH
+    try:
+        result = subprocess.run(['which', 'reduce'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+    except:
+        pass
+
+    # Check conda environments
+    conda_base = os.environ.get('CONDA_PREFIX_1') or os.environ.get('CONDA_PREFIX')
+    if conda_base:
+        conda_base = Path(conda_base)
+        # Go up to find envs directory
+        if 'envs' in str(conda_base):
+            envs_dir = conda_base.parent
+        else:
+            envs_dir = conda_base / 'envs'
+    else:
+        # Try common conda locations
+        home = Path.home()
+        for base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+            if (base / 'envs').exists():
+                envs_dir = base / 'envs'
+                break
+        else:
+            envs_dir = None
+
+    if envs_dir and envs_dir.exists():
+        for env_name in AMBER_ENV_NAMES:
+            reduce_path = envs_dir / env_name / 'bin' / 'reduce'
+            if reduce_path.exists():
+                return reduce_path
+
+    # Check base conda environment
+    if conda_base:
+        reduce_path = Path(conda_base) / 'bin' / 'reduce'
+        if reduce_path.exists():
+            return reduce_path
+
+    return None
+
+
+def get_amber_env() -> Optional[Dict[str, str]]:
+    """
+    Get environment variables for running AMBER tools.
+
+    Returns modified environment with AMBER tools in PATH, or None if not found.
+    """
+    reduce_path = find_amber_reduce()
+    if reduce_path is None:
+        return None
+
+    env = os.environ.copy()
+    amber_bin = str(reduce_path.parent)
+
+    # Prepend AMBER bin to PATH
+    current_path = env.get('PATH', '')
+    env['PATH'] = f"{amber_bin}:{current_path}"
+
+    return env
+
+
+def print_banner():
+    """Print the PRISM-PREP banner."""
+    print("""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              PRISM-PREP v{}                                 ║
+║            The Official PRISM4D PDB Preprocessing Pipeline                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+""".format(VERSION))
+
+
+def find_amber_python() -> Optional[Path]:
+    """Find Python interpreter in AMBER/ambertools conda environment."""
+    home = Path.home()
+    for base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+        envs_dir = base / 'envs'
+        if envs_dir.exists():
+            for env_name in AMBER_ENV_NAMES:
+                python_path = envs_dir / env_name / 'bin' / 'python'
+                if python_path.exists():
+                    return python_path
+    return None
+
+
+def check_module_in_env(python_path: Path, module_name: str) -> bool:
+    """Check if a Python module is importable using a specific Python interpreter."""
+    try:
+        result = subprocess.run(
+            [str(python_path), '-c', f'import {module_name}'],
+            capture_output=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+
+def find_amber_tool(tool_name: str) -> Optional[Path]:
+    """
+    Find an AMBER tool executable.
+
+    Searches in order:
+    1. System PATH
+    2. Known conda environments
+    """
+    # First check if tool is in PATH
+    try:
+        result = subprocess.run(['which', tool_name], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+    except:
+        pass
+
+    # Check conda environments
+    home = Path.home()
+    for base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+        envs_dir = base / 'envs'
+        if envs_dir.exists():
+            for env_name in AMBER_ENV_NAMES:
+                tool_path = envs_dir / env_name / 'bin' / tool_name
+                if tool_path.exists():
+                    return tool_path
+
+    return None
+
+
+def check_dependencies() -> Dict[str, str]:
+    """
+    Check for required dependencies.
+
+    Returns dict mapping dependency name to status string:
+    - "available" or path for found dependencies
+    - "not found" for missing dependencies
+    """
+    deps = {}
+
+    # Check Python dependencies
+    try:
+        import numpy
+        deps['numpy'] = "available"
+    except ImportError:
+        deps['numpy'] = "not found"
+
+    # Check for AMBER reduce (optional but recommended)
+    reduce_path = find_amber_reduce()
+    if reduce_path:
+        deps['amber_reduce'] = str(reduce_path)
+    else:
+        deps['amber_reduce'] = "not found"
+
+    # Find AMBER environment Python for checking pdbfixer/openmm
+    amber_python = find_amber_python()
+
+    # Check for PDBFixer (optional)
+    try:
+        from pdbfixer import PDBFixer
+        deps['pdbfixer'] = "available"
+    except ImportError:
+        # Check in AMBER environment
+        if amber_python and check_module_in_env(amber_python, 'pdbfixer'):
+            deps['pdbfixer'] = f"available ({amber_python.parent.parent.name} env)"
+        else:
+            deps['pdbfixer'] = "not found"
+
+    # Check for OpenMM (optional, for PDBFixer)
+    try:
+        import openmm
+        deps['openmm'] = "available"
+    except ImportError:
+        # Check in AMBER environment
+        if amber_python and check_module_in_env(amber_python, 'openmm'):
+            deps['openmm'] = f"available ({amber_python.parent.parent.name} env)"
+        else:
+            deps['openmm'] = "not found"
+
+    # Check for tleap (AMBER topology generation)
+    tleap_path = find_amber_tool('tleap')
+    if tleap_path:
+        deps['tleap'] = str(tleap_path)
+    else:
+        deps['tleap'] = "not found"
+
+    # Check for pdb4amber (PDB preparation for AMBER)
+    pdb4amber_path = find_amber_tool('pdb4amber')
+    if pdb4amber_path:
+        deps['pdb4amber'] = str(pdb4amber_path)
+    else:
+        deps['pdb4amber'] = "not found"
+
+    # Check for propka (pKa prediction for protonation states)
+    try:
+        import propka
+        deps['propka'] = "available"
+    except ImportError:
+        # Check in AMBER environment
+        if amber_python and check_module_in_env(amber_python, 'propka'):
+            deps['propka'] = f"available ({amber_python.parent.parent.name} env)"
+        else:
+            deps['propka'] = "not found"
+
+    return deps
+
+
+def run_script(script_name: str, args: List[str], verbose: bool = False,
+               description: str = "", use_amber_env: bool = False) -> Tuple[bool, str, str]:
+    """
+    Run a preprocessing script.
+
+    Args:
+        script_name: Name of script in SCRIPT_DIR
+        args: Command line arguments
+        verbose: Print progress
+        description: Human-readable description
+        use_amber_env: If True, ensure AMBER tools are in PATH
+
+    Returns: (success, stdout, stderr)
+    """
+    script_path = SCRIPT_DIR / script_name
+
+    if not script_path.exists():
+        return False, "", f"Script not found: {script_path}"
+
+    cmd = [sys.executable, str(script_path)] + args
+
+    # Get environment (with AMBER tools in PATH if requested)
+    env = None
+    if use_amber_env:
+        env = get_amber_env()
+        if env is None and verbose:
+            print("  Warning: AMBER tools not found, proceeding without reduce")
+
+    if verbose:
+        print(f"  Running: {description or script_name}...", end=" ", flush=True)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minute timeout
+            env=env
+        )
+
+        if result.returncode == 0:
+            if verbose:
+                print("OK")
+            return True, result.stdout, result.stderr
+        else:
+            if verbose:
+                print("FAILED")
+            return False, result.stdout, result.stderr
+
+    except subprocess.TimeoutExpired:
+        if verbose:
+            print("TIMEOUT")
+        return False, "", "Script timed out after 10 minutes"
+    except Exception as e:
+        if verbose:
+            print(f"ERROR: {e}")
+        return False, "", str(e)
+
+
+def process_single(
+    input_pdb: Path,
+    output_topology: Path,
+    mode: str = "cryptic",
+    use_amber: bool = False,
+    validate: bool = True,
+    strict: bool = False,
+    verbose: bool = False,
+    keep_work: bool = False,
+) -> Dict:
+    """
+    Process a single PDB file through the full pipeline.
+
+    Returns a result dict with status and details.
+    """
+    result = {
+        'input': str(input_pdb),
+        'output': str(output_topology),
+        'success': False,
+        'routing': None,
+        'routing_reason': None,
+        'stages_completed': [],
+        'warnings': [],
+        'errors': [],
+        'stats': {},
+    }
+
+    start_time = datetime.now()
+
+    # Create work directory
+    work_dir = tempfile.mkdtemp(prefix=f"prism_prep_{input_pdb.stem}_")
+
+    try:
+        if verbose:
+            print(f"\nProcessing: {input_pdb}")
+            print(f"  Work directory: {work_dir}")
+
+        # Stage 1: Run multichain preprocessor (handles routing + processing)
+        multichain_args = [
+            str(input_pdb),
+            str(output_topology),
+            "--mode", mode,
+            "--work-dir", work_dir,
+        ]
+
+        if use_amber:
+            multichain_args.append("--use-amber")
+
+        if not verbose:
+            multichain_args.append("-q")
+
+        success, stdout, stderr = run_script(
+            "multichain_preprocessor.py",
+            multichain_args,
+            verbose=verbose,
+            description="Smart routing + preprocessing",
+            use_amber_env=use_amber
+        )
+
+        if not success:
+            result['errors'].append(f"Preprocessing failed: {stderr}")
+            return result
+
+        result['stages_completed'].append('preprocessing')
+
+        # Parse routing info from stdout if available
+        for line in stdout.split('\n'):
+            if 'Routing:' in line:
+                result['routing'] = line.split('Routing:')[1].strip().split()[0]
+            if 'routing_reason' in line.lower() or 'because' in line.lower():
+                result['routing_reason'] = line.strip()
+
+        # Stage 2: Validate topology (if enabled)
+        if validate and output_topology.exists():
+            validate_args = [str(output_topology)]
+            if strict:
+                validate_args.append("--strict")
+
+            success, stdout, stderr = run_script(
+                "validate_topology.py",
+                validate_args,
+                verbose=verbose,
+                description="Final validation"
+            )
+
+            if not success:
+                if strict:
+                    result['errors'].append(f"Validation failed: {stderr}")
+                    return result
+                else:
+                    result['warnings'].append(f"Validation warnings: {stderr}")
+
+            result['stages_completed'].append('validation')
+
+            # Parse validation stats
+            for line in stdout.split('\n'):
+                if 'atoms' in line.lower() and ':' in line:
+                    try:
+                        key, val = line.split(':', 1)
+                        result['stats'][key.strip()] = val.strip()
+                    except:
+                        pass
+
+        # Check output exists
+        if output_topology.exists():
+            result['success'] = True
+
+            # Get topology stats
+            try:
+                with open(output_topology) as f:
+                    topo = json.load(f)
+                result['stats']['n_atoms'] = topo.get('n_atoms', 0)
+                result['stats']['n_bonds'] = len(topo.get('bonds', []))
+                result['stats']['n_angles'] = len(topo.get('angles', []))
+                result['stats']['n_dihedrals'] = len(topo.get('dihedrals', []))
+            except:
+                pass
+        else:
+            result['errors'].append(f"Output topology not created: {output_topology}")
+
+    finally:
+        # Cleanup work directory
+        if not keep_work and os.path.exists(work_dir):
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+    result['elapsed_seconds'] = (datetime.now() - start_time).total_seconds()
+
+    return result
+
+
+def process_batch(
+    manifest_path: Path,
+    output_dir: Path,
+    **kwargs
+) -> List[Dict]:
+    """Process multiple PDB files from a manifest."""
+    results = []
+
+    # Read manifest (one PDB path per line)
+    with open(manifest_path) as f:
+        pdb_files = [
+            Path(line.strip())
+            for line in f
+            if line.strip() and not line.startswith('#')
+        ]
+
+    print(f"Processing {len(pdb_files)} structures...")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, pdb_file in enumerate(pdb_files, 1):
+        print(f"\n[{i}/{len(pdb_files)}] {pdb_file.name}")
+
+        output_topology = output_dir / f"{pdb_file.stem}_topology.json"
+
+        result = process_single(
+            pdb_file,
+            output_topology,
+            **kwargs
+        )
+        results.append(result)
+
+        if result['success']:
+            print(f"  ✓ Success")
+        else:
+            print(f"  ✗ Failed: {result['errors']}")
+
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="PRISM-PREP: The Official PRISM4D Preprocessing Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  prism-prep input.pdb output_topology.json
+  prism-prep input.pdb prepared/ --use-amber --verbose
+  prism-prep --batch manifest.txt --output-dir prepared/
+  prism-prep input.pdb output.json --mode escape --strict
+
+Modes:
+  cryptic  - Cryptic pocket detection (removes glycans)
+  escape   - Escape mutation analysis (preserves glycans)
+"""
+    )
+
+    parser.add_argument('input', nargs='?', help='Input PDB file')
+    parser.add_argument('output', nargs='?', help='Output topology JSON or directory')
+
+    parser.add_argument('--batch', type=Path,
+                        help='Batch mode: file with list of PDB paths')
+    parser.add_argument('--output-dir', type=Path,
+                        help='Output directory for batch mode')
+
+    parser.add_argument('--mode', choices=['cryptic', 'escape'], default='cryptic',
+                        help='Processing mode (default: cryptic)')
+    parser.add_argument('--use-amber', action='store_true',
+                        help='Use AMBER reduce for high-quality hydrogen placement')
+
+    parser.add_argument('--no-validate', action='store_true',
+                        help='Skip final validation (not recommended)')
+    parser.add_argument('--strict', action='store_true',
+                        help='Strict validation (fail on any issue)')
+
+    parser.add_argument('--keep-work', action='store_true',
+                        help='Keep intermediate work directory')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Verbose output')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Quiet mode (errors only)')
+
+    parser.add_argument('--check-deps', action='store_true',
+                        help='Check dependencies and exit')
+    parser.add_argument('--version', action='version', version=f'prism-prep {VERSION}')
+
+    args = parser.parse_args()
+
+    # Print banner unless quiet
+    if not args.quiet:
+        print_banner()
+
+    # Check dependencies
+    if args.check_deps:
+        print("Checking dependencies...")
+        deps = check_dependencies()
+        for name, status in deps.items():
+            if status == "not found":
+                print(f"  ✗ {name}: not found")
+            elif status == "available":
+                print(f"  ✓ {name}")
+            else:
+                # It's a path (for amber_reduce)
+                print(f"  ✓ {name}: {status}")
+
+        if deps.get('amber_reduce') == "not found":
+            print("\n  Note: AMBER reduce not found.")
+            print("  Install with: conda install -c conda-forge ambertools")
+
+        return 0
+
+    # Validate arguments
+    if args.batch:
+        if not args.output_dir:
+            parser.error("--output-dir required with --batch")
+        if not args.batch.exists():
+            parser.error(f"Batch file not found: {args.batch}")
+
+        results = process_batch(
+            args.batch,
+            args.output_dir,
+            mode=args.mode,
+            use_amber=args.use_amber,
+            validate=not args.no_validate,
+            strict=args.strict,
+            verbose=args.verbose,
+            keep_work=args.keep_work,
+        )
+
+        # Summary
+        successes = sum(1 for r in results if r['success'])
+        failures = len(results) - successes
+
+        print(f"\n{'='*60}")
+        print(f"Summary: {successes} succeeded, {failures} failed")
+        print(f"{'='*60}")
+
+        # Write results manifest
+        results_path = args.output_dir / "prep_results.json"
+        with open(results_path, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Results written to: {results_path}")
+
+        return 0 if failures == 0 else 1
+
+    else:
+        if not args.input:
+            parser.error("Input PDB file required")
+
+        input_pdb = Path(args.input)
+        if not input_pdb.exists():
+            parser.error(f"Input file not found: {input_pdb}")
+
+        # Determine output path
+        if args.output:
+            output_path = Path(args.output)
+            if output_path.is_dir() or not output_path.suffix:
+                output_path.mkdir(parents=True, exist_ok=True)
+                output_topology = output_path / f"{input_pdb.stem}_topology.json"
+            else:
+                output_topology = output_path
+        else:
+            output_topology = input_pdb.with_name(f"{input_pdb.stem}_topology.json")
+
+        result = process_single(
+            input_pdb,
+            output_topology,
+            mode=args.mode,
+            use_amber=args.use_amber,
+            validate=not args.no_validate,
+            strict=args.strict,
+            verbose=args.verbose,
+            keep_work=args.keep_work,
+        )
+
+        if result['success']:
+            if not args.quiet:
+                print(f"\n✓ Success: {output_topology}")
+                if result['stats']:
+                    print(f"  Atoms: {result['stats'].get('n_atoms', 'N/A')}")
+                    print(f"  Bonds: {result['stats'].get('n_bonds', 'N/A')}")
+                print(f"  Elapsed: {result['elapsed_seconds']:.1f}s")
+            return 0
+        else:
+            print(f"\n✗ Failed: {result['errors']}")
+            return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

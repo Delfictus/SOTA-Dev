@@ -25,6 +25,38 @@ import subprocess
 import argparse
 import tempfile
 from pathlib import Path
+from typing import Optional, Dict
+
+# Known conda environments with AMBER tools
+AMBER_ENV_NAMES = ['ambertools', 'amber', 'mdtools']
+
+
+def find_amber_env_bin() -> Optional[Path]:
+    """Find the bin directory of an AMBER conda environment."""
+    home = Path.home()
+    for base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+        envs_dir = base / 'envs'
+        if envs_dir.exists():
+            for env_name in AMBER_ENV_NAMES:
+                bin_dir = envs_dir / env_name / 'bin'
+                if (bin_dir / 'reduce').exists():
+                    return bin_dir
+    return None
+
+
+def get_amber_env() -> Dict[str, str]:
+    """Get environment with AMBER tools in PATH."""
+    env = os.environ.copy()
+    amber_bin = find_amber_env_bin()
+    if amber_bin:
+        env['PATH'] = f"{amber_bin}:{env.get('PATH', '')}"
+        # Also add Python path for pdbfixer/openmm imports
+        env['PYTHONPATH'] = f"{amber_bin.parent / 'lib' / 'python3.13' / 'site-packages'}:{env.get('PYTHONPATH', '')}"
+    return env
+
+
+# Global AMBER environment for subprocess calls
+AMBER_ENV = get_amber_env()
 
 
 def check_dependencies() -> dict:
@@ -40,7 +72,7 @@ def check_dependencies() -> dict:
 
     # Check reduce
     try:
-        result = subprocess.run(['reduce', '-v'], capture_output=True, timeout=10)
+        result = subprocess.run(['reduce', '-v'], capture_output=True, timeout=10, env=AMBER_ENV)
         deps['reduce'] = True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
@@ -103,7 +135,7 @@ def run_reduce_optimize(input_pdb: str, output_pdb: str, verbose: bool = True) -
         # -NOFLIP would skip the optimization, so we use default behavior
         cmd = ['reduce', '-BUILD', '-Quiet', input_pdb]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=AMBER_ENV)
 
         if result.returncode != 0 and 'error' in result.stderr.lower():
             if verbose:
