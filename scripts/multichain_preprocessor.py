@@ -216,14 +216,15 @@ def process_single_chain(
     if not run_command(cmd, f"Chain {chain_id}: Glycan preprocessing", verbose):
         return False, ""
 
-    # Step 2: Stage 1 sanitization (choose AMBER reduce or PDBFixer)
+    # Step 2: Stage 1 sanitization (choose hybrid PDBFixer+reduce or PDBFixer only)
     sanitized_path = os.path.join(output_dir, f"{base_name}_sanitized.pdb")
     if use_amber:
+        # Hybrid: PDBFixer adds H with correct naming, reduce optimizes positions
         cmd = [
-            "python3", str(SCRIPT_DIR / "stage1_sanitize_amber.py"),
+            "python3", str(SCRIPT_DIR / "stage1_sanitize_hybrid.py"),
             preprocessed_path, sanitized_path, "-q"
         ]
-        sanitizer_name = "Stage 1 (AMBER reduce)"
+        sanitizer_name = "Stage 1 (PDBFixer + reduce)"
     else:
         cmd = [
             "python3", str(SCRIPT_DIR / "stage1_sanitize.py"),
@@ -452,12 +453,13 @@ def process_structure(
         if not run_command(cmd, "Glycan preprocessing", verbose):
             return False
 
-        # Stage 1 sanitization (choose AMBER reduce or PDBFixer)
+        # Stage 1 sanitization (choose hybrid PDBFixer+reduce or PDBFixer only)
         sanitized = os.path.join(work_dir, f"{pdb_name}_sanitized.pdb")
         if use_amber:
-            cmd = ["python3", str(SCRIPT_DIR / "stage1_sanitize_amber.py"),
+            # Hybrid: PDBFixer adds H with correct naming, reduce optimizes positions
+            cmd = ["python3", str(SCRIPT_DIR / "stage1_sanitize_hybrid.py"),
                    preprocessed, sanitized, "-q"]
-            sanitizer_desc = "Stage 1 (AMBER reduce)"
+            sanitizer_desc = "Stage 1 (PDBFixer + reduce)"
         else:
             cmd = ["python3", str(SCRIPT_DIR / "stage1_sanitize.py"),
                    preprocessed, sanitized]

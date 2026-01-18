@@ -726,15 +726,38 @@ impl AmberSimdBatch {
         Ok(())
     }
 
-    /// Initialize velocities (Maxwell-Boltzmann)
+    /// Initialize velocities (Maxwell-Boltzmann) with optional seed for reproducibility
     pub fn initialize_velocities(&mut self, temperature: f32) -> Result<()> {
+        self.initialize_velocities_seeded(temperature, None)
+    }
+
+    /// Initialize velocities with deterministic seed for reproducibility
+    pub fn initialize_velocities_seeded(&mut self, temperature: f32, seed: Option<u64>) -> Result<()> {
         if !self.finalized {
             bail!("Batch not finalized");
         }
 
         // Initialize on CPU using Box-Muller transform
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        use rand::SeedableRng;
+
+        // Use concrete type for better performance and determinism
+        let mut seeded_rng = seed.map(|s| {
+            log::info!("Using deterministic seed {} for velocity initialization", s);
+            rand::rngs::StdRng::seed_from_u64(s)
+        });
+        let mut thread_rng = rand::thread_rng();
+
+        // Helper macro to get random number from appropriate RNG
+        macro_rules! get_rand {
+            () => {
+                if let Some(ref mut rng) = seeded_rng {
+                    rng.gen::<f32>()
+                } else {
+                    thread_rng.gen::<f32>()
+                }
+            };
+        }
 
         // Conversion factor from kT/m (kcal/mol/amu) to v² (Å²/fs²)
         // KE (kcal/mol) = 0.5 * m * v² / FORCE_TO_ACCEL
@@ -759,10 +782,10 @@ impl AmberSimdBatch {
                 let sigma = ((KB_KCAL_MOL_K * temperature as f64 * FORCE_TO_ACCEL) / mass as f64).sqrt() as f32;
 
                 // Box-Muller transform for Gaussian random numbers
-                let u1: f32 = rng.gen::<f32>().max(1e-10);
-                let u2: f32 = rng.gen();
-                let u3: f32 = rng.gen::<f32>().max(1e-10);
-                let u4: f32 = rng.gen();
+                let u1: f32 = get_rand!().max(1e-10);
+                let u2: f32 = get_rand!();
+                let u3: f32 = get_rand!().max(1e-10);
+                let u4: f32 = get_rand!();
 
                 let mag1 = (-2.0 * u1.ln()).sqrt();
                 let mag2 = (-2.0 * u3.ln()).sqrt();
@@ -806,21 +829,28 @@ impl AmberSimdBatch {
     /// Uses high friction coefficient to quickly relax the system to target temperature.
     /// This is essential for stability when starting from minimized structures.
     pub fn equilibrate(&mut self, n_steps: usize, dt: f32, temperature: f32) -> Result<()> {
+        // Default strong friction for rapid equilibration
+        self.equilibrate_with_gamma(n_steps, dt, temperature, 0.1)
+    }
+
+    /// Equilibrate with custom friction coefficient
+    ///
+    /// For tightly-coupled multi-chain structures (WHOLE routing), use lower gamma (0.01-0.05)
+    /// to avoid disrupting inter-chain contacts. For loosely-coupled or single-chain structures,
+    /// use higher gamma (0.1) for faster equilibration.
+    pub fn equilibrate_with_gamma(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
         if !self.finalized {
             bail!("Batch not finalized");
         }
 
-        // Strong friction for rapid equilibration
-        let strong_gamma = 0.1;  // 10x stronger than typical production (0.01)
-
         log::info!(
-            "Equilibrating {} steps with strong thermostat (γ={} fs⁻¹)...",
+            "Equilibrating {} steps with thermostat (γ={} fs⁻¹)...",
             n_steps,
-            strong_gamma
+            gamma
         );
 
-        // Run with strong damping
-        self.run_internal(n_steps, dt, temperature, strong_gamma)?;
+        // Run with specified damping
+        self.run_internal(n_steps, dt, temperature, gamma)?;
 
         // Download and check temperature
         let results = self.get_all_results()?;
@@ -828,6 +858,108 @@ impl AmberSimdBatch {
         log::info!("Equilibration complete. Avg T = {:.1} K", avg_temp);
 
         Ok(())
+    }
+
+    /// Staged equilibration with temperature ramping
+    ///
+    /// Best practice for complex multi-chain structures:
+    /// 1. Heat slowly from low temperature to target
+    /// 2. Use strong friction during heating, then relax
+    /// 3. Avoid thermal shock that can break inter-chain contacts
+    pub fn equilibrate_staged(&mut self, total_steps: usize, dt: f32, target_temp: f32) -> Result<()> {
+        if !self.finalized {
+            bail!("Batch not finalized");
+        }
+
+        // Stage 1: Heat from low temperature with strong friction (40% of steps)
+        let heat_steps = total_steps * 4 / 10;
+        let temps = [50.0, 100.0, 150.0, 200.0, 250.0, target_temp];
+        let steps_per_temp = heat_steps / temps.len();
+
+        log::info!("Staged equilibration: {} total steps, target {} K", total_steps, target_temp);
+
+        for temp in temps.iter() {
+            log::info!("  Heating to {} K ({} steps, γ=0.1)...", temp, steps_per_temp);
+            self.run_internal(steps_per_temp, dt, *temp, 0.1)?;
+        }
+
+        // Stage 2: Equilibrate at target with moderate friction (40% of steps)
+        let eq_steps = total_steps * 4 / 10;
+        log::info!("  Equilibrating at {} K ({} steps, γ=0.05)...", target_temp, eq_steps);
+        self.run_internal(eq_steps, dt, target_temp, 0.05)?;
+
+        // Stage 3: Relax with gentle friction (20% of steps)
+        let relax_steps = total_steps - heat_steps - eq_steps;
+        log::info!("  Relaxing at {} K ({} steps, γ=0.01)...", target_temp, relax_steps);
+        self.run_internal(relax_steps, dt, target_temp, 0.01)?;
+
+        // Check final temperature
+        let results = self.get_all_results()?;
+        let avg_temp: f64 = results.iter().map(|r| r.temperature).sum::<f64>() / results.len() as f64;
+        log::info!("Staged equilibration complete. Avg T = {:.1} K", avg_temp);
+
+        Ok(())
+    }
+
+    /// Energy minimization using damped dynamics
+    ///
+    /// Uses very low temperature with high friction to relax steric clashes.
+    /// This is critical for structures with bad initial contacts (e.g., after
+    /// hydrogen placement).
+    ///
+    /// # Arguments
+    /// * `n_steps` - Number of minimization steps (typical: 500-2000)
+    ///
+    /// # Returns
+    /// Final average potential energy per structure
+    pub fn minimize(&mut self, n_steps: usize) -> Result<f64> {
+        if !self.finalized {
+            bail!("Batch not finalized");
+        }
+
+        log::info!("Energy minimization: {} steps (steepest descent with velocity reset)", n_steps);
+
+        // Steepest descent approach:
+        // - Run short bursts of damped dynamics to move atoms
+        // - Zero velocities between bursts to prevent overshooting
+        // - This approximates true steepest descent
+        let dt = 0.2;           // Small timestep (fs)
+        let temperature = 0.0;  // Zero temperature
+        let gamma = 0.5;        // Moderate friction
+
+        // Run in short bursts with velocity reset between each
+        let burst_size = 50;    // Steps per burst
+        let n_bursts = (n_steps + burst_size - 1) / burst_size;
+
+        for burst in 0..n_bursts {
+            let burst_steps = if burst == n_bursts - 1 {
+                n_steps - burst * burst_size
+            } else {
+                burst_size
+            };
+
+            // Run a short burst
+            self.run_internal(burst_steps, dt, temperature, gamma)?;
+
+            // Zero velocities after burst to prevent momentum buildup
+            // This is key for stable minimization
+            let zero_vel = vec![0.0f32; self.alloc_positions_size];
+            self.stream.memcpy_htod(&zero_vel, &mut self.d_velocities)?;
+
+            // Log energy progress every 10 bursts
+            if burst % 10 == 0 || burst == n_bursts - 1 {
+                let results = self.get_all_results()?;
+                let avg_pe: f64 = results.iter().map(|r| r.potential_energy).sum::<f64>() / results.len() as f64;
+                log::info!("  Step {}: avg PE = {:.2e} kcal/mol", (burst + 1) * burst_size, avg_pe);
+            }
+        }
+
+        // Return final average energy
+        let results = self.get_all_results()?;
+        let avg_pe: f64 = results.iter().map(|r| r.potential_energy).sum::<f64>() / results.len() as f64;
+        log::info!("Minimization complete: avg PE = {:.2e} kcal/mol", avg_pe);
+
+        Ok(avg_pe)
     }
 
     /// Internal run method used by both run() and equilibrate()

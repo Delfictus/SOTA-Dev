@@ -73,6 +73,26 @@ struct Args {
     #[arg(long, default_value = "10000")]
     equilibration: u64,
 
+    /// Equilibration friction coefficient (fs⁻¹)
+    /// Use 0.1 (strong) for single/loose chains, 0.01-0.05 (gentle) for tight complexes
+    #[arg(long, default_value = "0.1")]
+    eq_gamma: f32,
+
+    /// Use staged equilibration (temperature ramping)
+    /// Best for complex multi-chain structures - avoids thermal shock
+    #[arg(long)]
+    staged_eq: bool,
+
+    /// Random seed for reproducibility (velocity initialization)
+    /// If not specified, uses system entropy (non-deterministic)
+    #[arg(long)]
+    seed: Option<u64>,
+
+    /// Energy minimization steps before equilibration (0 = disabled)
+    /// Use 500-2000 for structures with steric clashes
+    #[arg(long, default_value = "0")]
+    minimize: usize,
+
     /// Output directory
     #[arg(long)]
     output_dir: PathBuf,
@@ -198,10 +218,23 @@ fn main() -> Result<()> {
         println!("   Save interval: {} steps", args.save_interval);
         println!("   Temperature: {} K", args.temperature);
         println!("   Timestep: {} fs", args.dt);
+        if args.staged_eq {
+            println!("   Equilibration: {} steps (STAGED with temperature ramping)", args.equilibration);
+        } else {
+            println!("   Equilibration: {} steps @ γ={} fs⁻¹", args.equilibration, args.eq_gamma);
+        }
         if args.restraint_k > 0.0 {
             println!("   Position restraints: k={} kcal/(mol·Å²)", args.restraint_k);
         } else {
             println!("   Position restraints: DISABLED");
+        }
+        if args.minimize > 0 {
+            println!("   Pre-minimization: {} steps", args.minimize);
+        }
+        if let Some(seed) = args.seed {
+            println!("   Random seed: {} (deterministic)", seed);
+        } else {
+            println!("   Random seed: system entropy (non-deterministic)");
         }
     }
 
@@ -313,8 +346,19 @@ fn main() -> Result<()> {
                 println!("   Total atoms in batch: {}", batch.total_atoms());
             }
 
-            // Initialize velocities
-            batch.initialize_velocities(args.temperature)?;
+            // Energy minimization (if requested)
+            if args.minimize > 0 {
+                if !args.quiet {
+                    println!("   Minimizing {} steps (damped dynamics)...", args.minimize);
+                }
+                let final_pe = batch.minimize(args.minimize)?;
+                if !args.quiet {
+                    println!("   Minimization complete: avg PE = {:.2e} kcal/mol", final_pe);
+                }
+            }
+
+            // Initialize velocities (with optional seed for reproducibility)
+            batch.initialize_velocities_seeded(args.temperature, args.seed)?;
 
             // Open output files
             let mut output_files: Vec<BufWriter<File>> = batch_names
@@ -334,8 +378,13 @@ fn main() -> Result<()> {
                     println!("   Equilibrating {} steps (strong thermostat)...", args.equilibration);
                 }
                 let eq_steps = args.equilibration as usize;
-                // Use equilibrate() which applies stronger friction for stability
-                batch.equilibrate(eq_steps, args.dt, args.temperature)?;
+                if args.staged_eq {
+                    // Staged equilibration with temperature ramping - best for complex multi-chain
+                    batch.equilibrate_staged(eq_steps, args.dt, args.temperature)?;
+                } else {
+                    // Standard equilibration with custom friction
+                    batch.equilibrate_with_gamma(eq_steps, args.dt, args.temperature, args.eq_gamma)?;
+                }
             }
 
             // Save initial frame
