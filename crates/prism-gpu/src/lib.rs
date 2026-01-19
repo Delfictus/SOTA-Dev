@@ -76,6 +76,9 @@ pub use settle::Settle;
 pub use h_constraints::{HConstraints, HConstraintCluster, ClusterType, build_h_clusters};
 pub use amber_simd_batch::{
     AmberSimdBatch, StructureTopology, BatchMdResult, OptimizationConfig, SotaStats,
+    ReplicaConfig, ReplicaFrame, ReplicaMergedResult,
+    merge_replica_frames, compute_rmsf_per_residue, merge_rmsf_cross_replica,
+    merge_cv_cross_replica, compute_convergence_confidence,
     BATCH_SPATIAL_OFFSET, MAX_BATCH_SIZE, NB_CUTOFF,
 };
 pub use verlet_list::{

@@ -221,6 +221,7 @@ def process_single_chain(
     chain_id: str,
     mode: str,
     use_amber: bool = False,
+    hmr: bool = False,
     verbose: bool = True
 ) -> Tuple[bool, str]:
     """
@@ -271,6 +272,8 @@ def process_single_chain(
         sanitized_path, topology_path
     ]
     # Note: ACE/NME caps are added by default in stage2_topology.py
+    if hmr:
+        cmd.append("--hmr")
     if not run_command(cmd, f"Chain {chain_id}: Stage 2 topology", verbose):
         return False, ""
 
@@ -312,6 +315,7 @@ def process_multichain(
     mode: str,
     work_dir: str = None,
     use_amber: bool = False,
+    hmr: bool = False,
     verbose: bool = True
 ) -> bool:
     """
@@ -359,7 +363,7 @@ def process_multichain(
         chain_dirs[chain_id] = chain_work_dir
 
         success, topo_path = process_single_chain(
-            chain_pdb, chain_work_dir, chain_id, mode, use_amber, verbose
+            chain_pdb, chain_work_dir, chain_id, mode, use_amber, hmr, verbose
         )
 
         if success:
@@ -408,6 +412,7 @@ def process_structure(
     force_whole: bool = False,
     use_amber: bool = False,
     no_caps: bool = False,
+    hmr: bool = False,
     work_dir: str = None,
     verbose: bool = True
 ) -> bool:
@@ -463,7 +468,7 @@ def process_structure(
     if routing == 'multichain':
         if verbose:
             print(f"\n>>> Using MULTI-CHAIN pipeline (independent chains)")
-        return process_multichain(pdb_path, output_topology, mode, work_dir, use_amber, verbose)
+        return process_multichain(pdb_path, output_topology, mode, work_dir, use_amber, hmr, verbose)
     else:
         # 'whole' or 'standard' - both use whole-structure processing
         if verbose:
@@ -504,6 +509,8 @@ def process_structure(
                sanitized, output_topology]
         if no_caps:
             cmd.append("--no-caps")
+        if hmr:
+            cmd.append("--hmr")
         if not run_command(cmd, "Stage 2 topology", verbose):
             return False
 
@@ -544,6 +551,8 @@ Examples:
                         help='Use AMBER reduce for high-quality hydrogen placement')
     parser.add_argument('--no-caps', action='store_true',
                         help='Skip ACE/NME terminal capping (not recommended)')
+    parser.add_argument('--hmr', action='store_true',
+                        help='Apply Hydrogen Mass Repartitioning for 4 fs timestep')
     parser.add_argument('--work-dir', '-w', help='Working directory (default: temp)')
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Suppress output')
@@ -566,6 +575,7 @@ Examples:
         force_whole=args.force_whole,
         use_amber=args.use_amber,
         no_caps=args.no_caps,
+        hmr=args.hmr,
         work_dir=args.work_dir,
         verbose=not args.quiet
     )

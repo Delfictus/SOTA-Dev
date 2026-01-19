@@ -439,6 +439,7 @@ def process_single(
     strict: bool = False,
     verbose: bool = False,
     keep_work: bool = False,
+    hmr: bool = False,
 ) -> Dict[str, Any]:
     """
     Process a single PDB file through the complete pipeline.
@@ -494,6 +495,9 @@ def process_single(
 
         if use_amber:
             multichain_args.append("--use-amber")
+
+        if hmr:
+            multichain_args.append("--hmr")
 
         if not verbose:
             multichain_args.append("-q")
@@ -591,6 +595,7 @@ def process_batch(
     strict: bool = False,
     verbose: bool = False,
     keep_work: bool = False,
+    hmr: bool = False,
 ) -> Dict[str, Any]:
     """
     Process multiple PDB files from a manifest.
@@ -638,6 +643,7 @@ def process_batch(
             strict=strict,
             verbose=verbose,
             keep_work=keep_work,
+            hmr=hmr,
         )
 
         results['items'].append(result)
@@ -763,6 +769,8 @@ for production use with PRISM4D GPU kernels.
                         help='Use AMBER reduce for optimized H-placement')
     parser.add_argument('--strict', '-s', action='store_true',
                         help='Strict validation (fail on any warning)')
+    parser.add_argument('--hmr', action='store_true',
+                        help='Apply Hydrogen Mass Repartitioning for 4 fs timestep (2x speedup)')
 
     # Output control
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -817,6 +825,7 @@ for production use with PRISM4D GPU kernels.
             strict=args.strict,
             verbose=verbose,
             keep_work=args.keep_work,
+            hmr=args.hmr,
         )
 
         print_batch_summary(results)
@@ -838,6 +847,7 @@ for production use with PRISM4D GPU kernels.
         strict=args.strict,
         verbose=verbose,
         keep_work=args.keep_work,
+        hmr=args.hmr,
     )
 
     print_result(result, verbose=verbose)

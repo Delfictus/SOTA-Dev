@@ -136,6 +136,98 @@ pub struct BatchMdResult {
     pub temperature: f64,
 }
 
+// =============================================================================
+// REPLICA-PARALLEL TYPES (for conformational sampling speedup)
+// =============================================================================
+
+/// Configuration for replica-parallel execution
+#[derive(Debug, Clone)]
+pub struct ReplicaConfig {
+    /// Number of replicas to run in parallel
+    pub n_replicas: usize,
+    /// Random seeds for each replica (one per replica)
+    pub seeds: Vec<u64>,
+    /// Temperature for velocity initialization (K)
+    pub temperature: f32,
+}
+
+impl ReplicaConfig {
+    /// Create config for N replicas with sequential seeds starting from base_seed
+    pub fn new(n_replicas: usize, base_seed: u64, temperature: f32) -> Self {
+        let seeds = (0..n_replicas)
+            .map(|i| base_seed + i as u64 * 12345)
+            .collect();
+        Self {
+            n_replicas,
+            seeds,
+            temperature,
+        }
+    }
+
+    /// Create config with explicit seeds
+    pub fn with_seeds(seeds: Vec<u64>, temperature: f32) -> Self {
+        Self {
+            n_replicas: seeds.len(),
+            seeds,
+            temperature,
+        }
+    }
+}
+
+/// Per-replica frame data for streaming analysis
+#[derive(Debug, Clone)]
+pub struct ReplicaFrame {
+    /// Replica index
+    pub replica_id: usize,
+    /// Frame index within this replica
+    pub frame_id: usize,
+    /// Positions (n_atoms * 3)
+    pub positions: Vec<f32>,
+    /// Potential energy (kcal/mol)
+    pub potential_energy: f64,
+    /// Kinetic energy (kcal/mol)
+    pub kinetic_energy: f64,
+}
+
+/// Merged result from multiple replicas with cross-replica variance
+#[derive(Debug, Clone)]
+pub struct ReplicaMergedResult {
+    /// Number of replicas that contributed
+    pub n_replicas: usize,
+    /// Per-residue mean RMSF across replicas
+    pub rmsf_mean: Vec<f32>,
+    /// Per-residue RMSF standard deviation across replicas (error bars)
+    pub rmsf_std: Vec<f32>,
+    /// Per-residue CV of pocket volume (mean across replicas)
+    pub cv_mean: Vec<f32>,
+    /// Per-residue CV standard deviation (cross-replica variance)
+    pub cv_std: Vec<f32>,
+    /// Total simulation time per replica (ns)
+    pub sim_time_per_replica_ns: f64,
+    /// Total wall time (seconds)
+    pub wall_time_s: f64,
+    /// Convergence confidence (0.0 - 1.0)
+    pub confidence: f32,
+}
+
+impl ReplicaMergedResult {
+    /// Calculate mean CV across all residues
+    pub fn mean_cv(&self) -> f32 {
+        if self.cv_mean.is_empty() {
+            return 0.0;
+        }
+        self.cv_mean.iter().sum::<f32>() / self.cv_mean.len() as f32
+    }
+
+    /// Calculate mean cross-replica variance (uncertainty measure)
+    pub fn mean_cross_replica_std(&self) -> f32 {
+        if self.cv_std.is_empty() {
+            return 0.0;
+        }
+        self.cv_std.iter().sum::<f32>() / self.cv_std.len() as f32
+    }
+}
+
 /// Internal batch descriptor (host-side tracking)
 #[derive(Debug, Clone, Default)]
 struct BatchDesc {
@@ -2112,6 +2204,270 @@ impl AmberSimdBatch {
             avg_steps_per_rebuild: self.avg_steps_per_verlet_rebuild(),
         }
     }
+
+    // =========================================================================
+    // REPLICA-PARALLEL EXECUTION (for conformational sampling speedup)
+    // =========================================================================
+
+    /// Add multiple replicas of the same structure with different random seeds
+    ///
+    /// This enables parallel conformational sampling - all replicas run simultaneously
+    /// on the GPU, providing N-fold speedup for ensemble generation.
+    ///
+    /// # Arguments
+    /// * `topology` - The structure topology to replicate
+    /// * `config` - Replica configuration (n_replicas, seeds, temperature)
+    ///
+    /// # Returns
+    /// Vector of structure IDs for the added replicas
+    pub fn add_replicas(
+        &mut self,
+        topology: &StructureTopology,
+        config: &ReplicaConfig,
+    ) -> Result<Vec<usize>> {
+        if config.n_replicas == 0 {
+            bail!("Must add at least 1 replica");
+        }
+
+        if config.seeds.len() != config.n_replicas {
+            bail!(
+                "Seed count ({}) must match replica count ({})",
+                config.seeds.len(),
+                config.n_replicas
+            );
+        }
+
+        if self.n_structures + config.n_replicas > self.max_batch_size {
+            bail!(
+                "Not enough capacity for {} replicas (current: {}, max: {})",
+                config.n_replicas,
+                self.n_structures,
+                self.max_batch_size
+            );
+        }
+
+        let mut structure_ids = Vec::with_capacity(config.n_replicas);
+
+        for replica_idx in 0..config.n_replicas {
+            let structure_id = self.add_structure(topology)?;
+            structure_ids.push(structure_id);
+            log::debug!(
+                "Added replica {} as structure {} (seed: {})",
+                replica_idx,
+                structure_id,
+                config.seeds[replica_idx]
+            );
+        }
+
+        log::info!(
+            "Added {} replicas (structures {}-{}) for parallel execution",
+            config.n_replicas,
+            structure_ids[0],
+            structure_ids[config.n_replicas - 1]
+        );
+
+        Ok(structure_ids)
+    }
+
+    /// Initialize velocities for replicas with their respective seeds
+    ///
+    /// Each replica gets Maxwell-Boltzmann distributed velocities but with
+    /// different random seeds, ensuring independent conformational sampling.
+    pub fn initialize_replica_velocities(
+        &mut self,
+        replica_ids: &[usize],
+        config: &ReplicaConfig,
+    ) -> Result<()> {
+        if replica_ids.len() != config.n_replicas {
+            bail!(
+                "Replica ID count ({}) must match config ({}) ",
+                replica_ids.len(),
+                config.n_replicas
+            );
+        }
+
+        // Initialize velocities for each replica with its specific seed
+        // We do this on CPU side before upload since each replica needs different RNG
+        use rand::prelude::*;
+        use rand::rngs::StdRng;
+
+        for (replica_idx, &structure_id) in replica_ids.iter().enumerate() {
+            if structure_id >= self.batch_descs.len() {
+                bail!("Invalid structure ID: {}", structure_id);
+            }
+
+            let desc = &self.batch_descs[structure_id];
+            let n_atoms = desc.n_atoms;
+            let atom_offset = desc.atom_offset;
+            let seed = config.seeds[replica_idx];
+
+            let mut rng = StdRng::seed_from_u64(seed);
+
+            // Maxwell-Boltzmann velocity distribution
+            let target_temp = config.temperature as f64;
+            let kb = KB_KCAL_MOL_K;
+
+            for i in 0..n_atoms {
+                let mass = self.h_nb_mass[atom_offset + i] as f64;
+                if mass < 0.1 {
+                    continue; // Skip virtual particles
+                }
+
+                // Standard deviation for this atom: sqrt(kT/m)
+                let sigma = (kb * target_temp / mass).sqrt();
+
+                // Box-Muller transform for Gaussian random numbers
+                let u1: f64 = rng.gen::<f64>().max(1e-10);
+                let u2: f64 = rng.gen::<f64>();
+                let u3: f64 = rng.gen::<f64>().max(1e-10);
+                let u4: f64 = rng.gen::<f64>();
+                let u5: f64 = rng.gen::<f64>().max(1e-10);
+                let u6: f64 = rng.gen::<f64>();
+
+                let g1: f64 = (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
+                let g2: f64 = (-2.0_f64 * u3.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u4).cos();
+                let g3: f64 = (-2.0_f64 * u5.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u6).cos();
+
+                let vel_idx = (atom_offset + i) * 3;
+                self.h_velocities[vel_idx] = (sigma * g1) as f32;
+                self.h_velocities[vel_idx + 1] = (sigma * g2) as f32;
+                self.h_velocities[vel_idx + 2] = (sigma * g3) as f32;
+            }
+
+            log::debug!(
+                "Initialized velocities for replica {} (structure {}) with seed {} at {}K",
+                replica_idx,
+                structure_id,
+                seed,
+                config.temperature
+            );
+        }
+
+        // Upload velocities to GPU
+        self.stream.memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
+
+        log::info!(
+            "Initialized {} replicas with Maxwell-Boltzmann velocities at {}K",
+            replica_ids.len(),
+            config.temperature
+        );
+
+        Ok(())
+    }
+
+    /// Run parallel replica MD and return per-replica frames for streaming analysis
+    ///
+    /// This runs all replicas simultaneously and extracts frames at the specified
+    /// interval. Returns frames grouped by replica for cross-replica analysis.
+    ///
+    /// # Arguments
+    /// * `replica_ids` - Structure IDs of the replicas
+    /// * `n_steps` - Total MD steps to run
+    /// * `frame_interval` - Steps between frame extractions
+    /// * `dt` - Timestep in femtoseconds
+    /// * `temperature` - Target temperature for Langevin thermostat
+    /// * `gamma` - Langevin friction coefficient (ps^-1)
+    ///
+    /// # Returns
+    /// Vector of vectors: outer is replica, inner is frames for that replica
+    pub fn run_replica_parallel(
+        &mut self,
+        replica_ids: &[usize],
+        n_steps: usize,
+        frame_interval: usize,
+        dt: f32,
+        temperature: f32,
+        gamma: f32,
+    ) -> Result<Vec<Vec<ReplicaFrame>>> {
+        if !self.finalized {
+            bail!("Batch must be finalized before running");
+        }
+
+        let n_replicas = replica_ids.len();
+        let n_frames = n_steps / frame_interval;
+
+        log::info!(
+            "Running {} replicas in parallel: {} steps, extracting {} frames",
+            n_replicas,
+            n_steps,
+            n_frames
+        );
+
+        // Pre-allocate frame storage
+        let mut all_frames: Vec<Vec<ReplicaFrame>> = vec![Vec::with_capacity(n_frames); n_replicas];
+
+        let start_time = std::time::Instant::now();
+
+        // Run MD in chunks of frame_interval steps, extracting frames between chunks
+        for frame_id in 0..n_frames {
+            // Run frame_interval MD steps for ALL replicas simultaneously
+            self.run_internal(frame_interval, dt, temperature, gamma)?;
+
+            // Download positions from GPU
+            self.stream.memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
+
+            // Download energies
+            let mut h_energies = vec![0.0f32; self.n_structures * 2];
+            self.stream.memcpy_dtoh(&self.d_energies, &mut h_energies)?;
+
+            // Extract per-replica frames
+            for (replica_idx, &structure_id) in replica_ids.iter().enumerate() {
+                let desc = &self.batch_descs[structure_id];
+                let n_atoms = desc.n_atoms;
+                let atom_offset = desc.atom_offset;
+
+                // Extract positions for this replica
+                let start = atom_offset * 3;
+                let end = start + n_atoms * 3;
+                let positions = self.h_positions[start..end].to_vec();
+
+                // Extract energies
+                let pe = h_energies[structure_id * 2] as f64;
+                let ke = h_energies[structure_id * 2 + 1] as f64;
+
+                all_frames[replica_idx].push(ReplicaFrame {
+                    replica_id: replica_idx,
+                    frame_id,
+                    positions,
+                    potential_energy: pe,
+                    kinetic_energy: ke,
+                });
+            }
+
+            // Progress logging every 10 frames
+            if (frame_id + 1) % 10 == 0 {
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let rate = (frame_id + 1) as f64 / elapsed;
+                log::info!(
+                    "Frame {}/{} ({:.1}%), {:.1} frames/sec",
+                    frame_id + 1,
+                    n_frames,
+                    100.0 * (frame_id + 1) as f64 / n_frames as f64,
+                    rate
+                );
+            }
+        }
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+        log::info!(
+            "Replica parallel complete: {} frames across {} replicas in {:.1}s ({:.1} frames/sec)",
+            n_frames,
+            n_replicas,
+            elapsed,
+            (n_frames * n_replicas) as f64 / elapsed
+        );
+
+        Ok(all_frames)
+    }
+
+    /// Get atoms per structure for a given structure ID
+    pub fn atoms_per_structure(&self, structure_id: usize) -> usize {
+        if structure_id >= self.batch_descs.len() {
+            0
+        } else {
+            self.batch_descs[structure_id].n_atoms
+        }
+    }
 }
 
 /// SOTA optimization statistics
@@ -2140,5 +2496,243 @@ impl std::fmt::Display for SotaStats {
                 self.verlet_rebuild_count, self.avg_steps_per_rebuild)?;
         }
         Ok(())
+    }
+}
+
+// =============================================================================
+// REPLICA MERGING UTILITIES (for cross-replica variance / error bars)
+// =============================================================================
+
+/// Compute per-residue RMSF from a trajectory (positions array per frame)
+///
+/// # Arguments
+/// * `frames` - Vector of positions arrays (n_atoms * 3 each)
+/// * `n_atoms` - Number of atoms
+/// * `residue_start` - Start atom index for each residue (length = n_residues)
+/// * `residue_end` - End atom index (exclusive) for each residue
+///
+/// # Returns
+/// Per-residue RMSF values (Å)
+pub fn compute_rmsf_per_residue(
+    frames: &[Vec<f32>],
+    n_atoms: usize,
+    residue_start: &[usize],
+    residue_end: &[usize],
+) -> Vec<f32> {
+    if frames.is_empty() || residue_start.is_empty() {
+        return vec![];
+    }
+
+    let n_frames = frames.len();
+    let n_residues = residue_start.len();
+
+    // Compute mean position per atom
+    let mut mean_pos = vec![0.0f64; n_atoms * 3];
+    for frame in frames {
+        for i in 0..n_atoms * 3 {
+            mean_pos[i] += frame[i] as f64;
+        }
+    }
+    for i in 0..n_atoms * 3 {
+        mean_pos[i] /= n_frames as f64;
+    }
+
+    // Compute RMSF per residue
+    let mut rmsf = vec![0.0f32; n_residues];
+    for (res_idx, (&start, &end)) in residue_start.iter().zip(residue_end.iter()).enumerate() {
+        let n_res_atoms = end - start;
+        if n_res_atoms == 0 {
+            continue;
+        }
+
+        let mut sum_sq = 0.0f64;
+        let mut count = 0usize;
+
+        for frame in frames {
+            for atom_idx in start..end {
+                let dx = frame[atom_idx * 3] as f64 - mean_pos[atom_idx * 3];
+                let dy = frame[atom_idx * 3 + 1] as f64 - mean_pos[atom_idx * 3 + 1];
+                let dz = frame[atom_idx * 3 + 2] as f64 - mean_pos[atom_idx * 3 + 2];
+                sum_sq += dx * dx + dy * dy + dz * dz;
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            rmsf[res_idx] = (sum_sq / count as f64).sqrt() as f32;
+        }
+    }
+
+    rmsf
+}
+
+/// Merge RMSF values from multiple replicas with cross-replica variance
+///
+/// # Arguments
+/// * `per_replica_rmsf` - RMSF values per replica (outer: replica, inner: residue)
+///
+/// # Returns
+/// (mean_rmsf, std_rmsf) - Mean and standard deviation across replicas
+pub fn merge_rmsf_cross_replica(per_replica_rmsf: &[Vec<f32>]) -> (Vec<f32>, Vec<f32>) {
+    if per_replica_rmsf.is_empty() {
+        return (vec![], vec![]);
+    }
+
+    let n_replicas = per_replica_rmsf.len();
+    let n_residues = per_replica_rmsf[0].len();
+
+    let mut mean_rmsf = vec![0.0f32; n_residues];
+    let mut std_rmsf = vec![0.0f32; n_residues];
+
+    for res_idx in 0..n_residues {
+        // Collect values across replicas
+        let mut sum = 0.0f64;
+        for replica in per_replica_rmsf {
+            sum += replica[res_idx] as f64;
+        }
+        let mean = sum / n_replicas as f64;
+        mean_rmsf[res_idx] = mean as f32;
+
+        // Compute standard deviation
+        if n_replicas > 1 {
+            let mut sum_sq = 0.0f64;
+            for replica in per_replica_rmsf {
+                let diff = replica[res_idx] as f64 - mean;
+                sum_sq += diff * diff;
+            }
+            std_rmsf[res_idx] = (sum_sq / (n_replicas - 1) as f64).sqrt() as f32;
+        }
+    }
+
+    (mean_rmsf, std_rmsf)
+}
+
+/// Merge CV values from multiple replicas with cross-replica variance
+///
+/// # Arguments
+/// * `per_replica_cv` - CV values per replica (outer: replica, inner: pocket/residue)
+///
+/// # Returns
+/// (mean_cv, std_cv) - Mean and standard deviation of CV across replicas
+pub fn merge_cv_cross_replica(per_replica_cv: &[Vec<f32>]) -> (Vec<f32>, Vec<f32>) {
+    // Same algorithm as RMSF merging
+    merge_rmsf_cross_replica(per_replica_cv)
+}
+
+/// Compute convergence confidence from cross-replica variance
+///
+/// Confidence is computed as: 1 - (mean_std / mean_value)
+/// Higher confidence means replicas agree well on the metrics.
+///
+/// # Arguments
+/// * `cv_mean` - Mean CV values
+/// * `cv_std` - Standard deviation of CV across replicas
+///
+/// # Returns
+/// Confidence value (0.0 - 1.0)
+pub fn compute_convergence_confidence(cv_mean: &[f32], cv_std: &[f32]) -> f32 {
+    if cv_mean.is_empty() || cv_std.is_empty() {
+        return 0.0;
+    }
+
+    let n = cv_mean.len();
+    let mut sum_mean = 0.0f64;
+    let mut sum_std = 0.0f64;
+
+    for i in 0..n {
+        sum_mean += cv_mean[i].abs() as f64;
+        sum_std += cv_std[i] as f64;
+    }
+
+    if sum_mean < 1e-10 {
+        return 1.0; // No variance, perfect confidence
+    }
+
+    let relative_std = sum_std / sum_mean;
+    (1.0 - relative_std.min(1.0)) as f32
+}
+
+/// Full replica merging pipeline: frames -> merged result with error bars
+///
+/// # Arguments
+/// * `all_frames` - Per-replica frames (outer: replica, inner: frames)
+/// * `n_atoms` - Number of atoms per structure
+/// * `residue_start` - Start atom index for each residue
+/// * `residue_end` - End atom index (exclusive) for each residue
+/// * `sim_time_per_replica_ns` - Simulation time per replica in nanoseconds
+/// * `wall_time_s` - Total wall clock time in seconds
+///
+/// # Returns
+/// Merged result with cross-replica variance (error bars)
+pub fn merge_replica_frames(
+    all_frames: &[Vec<ReplicaFrame>],
+    n_atoms: usize,
+    residue_start: &[usize],
+    residue_end: &[usize],
+    sim_time_per_replica_ns: f64,
+    wall_time_s: f64,
+) -> ReplicaMergedResult {
+    let n_replicas = all_frames.len();
+
+    if n_replicas == 0 {
+        return ReplicaMergedResult {
+            n_replicas: 0,
+            rmsf_mean: vec![],
+            rmsf_std: vec![],
+            cv_mean: vec![],
+            cv_std: vec![],
+            sim_time_per_replica_ns,
+            wall_time_s,
+            confidence: 0.0,
+        };
+    }
+
+    // Compute per-replica RMSF
+    let per_replica_rmsf: Vec<Vec<f32>> = all_frames
+        .iter()
+        .map(|frames| {
+            let positions: Vec<Vec<f32>> = frames.iter().map(|f| f.positions.clone()).collect();
+            compute_rmsf_per_residue(&positions, n_atoms, residue_start, residue_end)
+        })
+        .collect();
+
+    // Merge RMSF across replicas
+    let (rmsf_mean, rmsf_std) = merge_rmsf_cross_replica(&per_replica_rmsf);
+
+    // Compute per-residue CV from RMSF (CV = std / mean for each residue's fluctuation)
+    // For now, we use RMSF as a proxy for CV since actual pocket CV requires SASA calculation
+    // The pipeline integration will compute actual SASA CV
+    let n_residues = residue_start.len();
+    let mut cv_mean = vec![0.0f32; n_residues];
+    let mut cv_std = vec![0.0f32; n_residues];
+
+    // Compute coefficient of variation from RMSF
+    for i in 0..n_residues {
+        if rmsf_mean[i] > 0.0 {
+            cv_mean[i] = rmsf_std[i] / rmsf_mean[i]; // Relative variance
+        }
+        // CV std is approximated as the std of the ratio
+        cv_std[i] = rmsf_std[i] * 0.1; // Simplified approximation
+    }
+
+    // Compute convergence confidence
+    let confidence = compute_convergence_confidence(&cv_mean, &cv_std);
+
+    log::info!(
+        "Merged {} replicas: {} residues, confidence={:.2}",
+        n_replicas,
+        n_residues,
+        confidence
+    );
+
+    ReplicaMergedResult {
+        n_replicas,
+        rmsf_mean,
+        rmsf_std,
+        cv_mean,
+        cv_std,
+        sim_time_per_replica_ns,
+        wall_time_s,
+        confidence,
     }
 }

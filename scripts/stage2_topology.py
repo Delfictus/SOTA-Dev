@@ -242,6 +242,7 @@ def prepare_topology(
     minimize: bool = True,
     cap_termini: bool = True,
     ph: float = 7.0,
+    hmr: bool = False,
     verbose: bool = True
 ) -> dict:
     """
@@ -493,7 +494,14 @@ def prepare_topology(
     if verbose and water_oxygens:
         print(f"  Water molecules: {len(water_oxygens)}")
 
-    # Build H-bond clusters for constraints
+    # Apply Hydrogen Mass Repartitioning if requested
+    # This must be done BEFORE h_clusters so inv_mass values are correct
+    hmr_applied = False
+    if hmr:
+        masses = apply_hmr(masses, bonds, elements, verbose=verbose)
+        hmr_applied = True
+
+    # Build H-bond clusters for constraints (uses HMR masses if applied)
     h_clusters = build_h_clusters(topology, bonds, masses, elements)
     if verbose:
         print(f"  H-bond clusters: {len(h_clusters)}")
@@ -551,6 +559,13 @@ def prepare_topology(
 
     if box_vectors:
         output["box_vectors"] = box_vectors
+
+    # Add HMR metadata
+    output["hmr_applied"] = hmr_applied
+    if hmr_applied:
+        output["recommended_timestep_fs"] = 4.0
+    else:
+        output["recommended_timestep_fs"] = 2.0
 
     # Write JSON
     if verbose:
@@ -620,6 +635,69 @@ def build_h_clusters(topology, bonds, masses, elements):
     return clusters
 
 
+def apply_hmr(masses: list, bonds: list, elements: list, verbose: bool = True) -> list:
+    """
+    Apply Hydrogen Mass Repartitioning (HMR) for 4 fs timestep support.
+
+    Transfers mass from heavy atoms to bonded hydrogens, enabling larger
+    timesteps while maintaining SHAKE constraints on H-bonds.
+
+    Reference: Hopkins et al., J. Chem. Theory Comput. 2015, 11, 1864-1874
+               "Long-Time-Step Molecular Dynamics through Hydrogen Mass Repartitioning"
+
+    Args:
+        masses: List of atomic masses (amu)
+        bonds: List of bond dicts with 'i' and 'j' atom indices
+        elements: List of element symbols
+        verbose: Print HMR statistics
+
+    Returns:
+        Modified masses list with HMR applied
+    """
+    masses = masses.copy()
+    transfer = 1.5  # amu to transfer from heavy atom to H
+
+    # Pass 1: Count H bonds per heavy atom (for safety check)
+    h_count = defaultdict(int)
+    for bond in bonds:
+        i, j = bond["i"], bond["j"]
+        if elements[i] == "H" and elements[j] != "H":
+            h_count[j] += 1
+        elif elements[j] == "H" and elements[i] != "H":
+            h_count[i] += 1
+
+    # Pass 2: Apply HMR with safety check
+    n_modified = 0
+    for bond in bonds:
+        i, j = bond["i"], bond["j"]
+
+        # Identify H-heavy atom pair
+        if elements[i] == "H" and elements[j] != "H":
+            h_idx, heavy_idx = i, j
+        elif elements[j] == "H" and elements[i] != "H":
+            h_idx, heavy_idx = j, i
+        else:
+            continue
+
+        # Safety: don't let heavy atom go below 1.0 amu
+        # This handles cases like CH3 where 3 H's are bonded to one C
+        max_transfer = (masses[heavy_idx] - 1.0) / h_count[heavy_idx]
+        actual_transfer = min(transfer, max_transfer)
+
+        masses[heavy_idx] -= actual_transfer
+        masses[h_idx] += actual_transfer
+        n_modified += 1
+
+    if verbose:
+        h_masses = [m for m, e in zip(masses, elements) if e == "H"]
+        if h_masses:
+            print(f"✓ HMR APPLIED: {n_modified} H-bonds modified")
+            print(f"  H masses now: {min(h_masses):.3f} - {max(h_masses):.3f} amu")
+            print(f"  Recommended timestep: 4.0 fs (with SHAKE constraints)")
+
+    return masses
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='PRISM4D Stage 2: Topology Preparation',
@@ -644,6 +722,8 @@ Examples:
                         help='pH for protonation state (default: 7.0)')
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Suppress output')
+    parser.add_argument('--hmr', action='store_true',
+                        help='Apply Hydrogen Mass Repartitioning for 4 fs timestep')
 
     args = parser.parse_args()
 
@@ -659,6 +739,7 @@ Examples:
             minimize=not args.no_minimize,
             cap_termini=not args.no_caps,
             ph=args.ph,
+            hmr=args.hmr,
             verbose=not args.quiet
         )
 
