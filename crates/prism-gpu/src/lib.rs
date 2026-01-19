@@ -44,6 +44,11 @@ pub mod tensor_core_forces;
 // Async CUDA streams: 1.1-1.3× speedup from latency hiding
 pub mod async_md_pipeline;
 
+// Revolutionary Ensemble Warp MD - True parallel clone processing
+// Each WARP (32 threads) processes ONE CLONE independently
+// Expected: N× speedup for N clones (theoretical limit)
+pub mod ensemble_warp_md;
+
 // Essential exports
 pub use context::{GpuContext, GpuInfo, GpuSecurityConfig};
 pub use global_context::{GlobalGpuContext, GlobalGpuError};
@@ -82,8 +87,13 @@ pub use tensor_core_forces::{
 pub use async_md_pipeline::{
     AsyncMdPipeline, AsyncPipelineConfig, PipelineStats, MdPhase, PipelineExecutor, SyncPoint,
 };
+pub use ensemble_warp_md::{
+    EnsembleWarpMd, EnsembleResult, EnsembleTopology, topology_from_prism_prep,
+    MAX_ATOMS_WARP, WARP_SIZE,
+};
 pub use memory::{VramGuard, VramInfo, VramGuardError, init_global_vram_guard, global_vram_guard};
 pub use whcr::{WhcrGpu, RepairResult as WhcrRepairResult};
+pub use lcpo_sasa::{LcpoSasaGpu, SasaResult, BatchedSasaResult, AtomType as LcpoAtomType, elements_to_atom_types, elements_to_radii};
 
 // Commented out unused modules to isolate benchmark requirements
 // pub mod aatgs;
@@ -104,6 +114,9 @@ pub use whcr::{WhcrGpu, RepairResult as WhcrRepairResult};
 // pub mod quantum;
 pub mod stream_integration;
 pub mod stream_manager;
+
+// LCPO SASA - GPU-accelerated solvent accessible surface area for cryptic site detection
+pub mod lcpo_sasa;
 
 // VRAM Safety Guard - Battle-tested memory management
 pub mod memory;

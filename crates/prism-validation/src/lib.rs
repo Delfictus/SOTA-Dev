@@ -87,6 +87,10 @@ pub mod antibody_validation;
 #[cfg(feature = "cryptic")]
 pub mod cryptic_production;
 
+// Pilot-ready cryptic site detection module (Domain 1 - Biosecurity)
+// Full pipeline with volume tracking, druggability scoring, and executive reports
+pub mod cryptic_site_pilot;
+
 // GPU-accelerated spatial clustering for site merging
 pub mod spatial_clustering_gpu;
 

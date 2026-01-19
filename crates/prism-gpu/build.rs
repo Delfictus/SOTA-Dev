@@ -314,6 +314,15 @@ fn main() {
         &target_ptx_dir.join("tensor_core_forces.ptx"),
     );
 
+    // Compile LCPO SASA kernel (GPU-accelerated solvent accessible surface area)
+    // Used by cryptic site detection pipeline for fast per-frame SASA calculation
+    compile_kernel(
+        &nvcc,
+        "src/kernels/lcpo_sasa.cu",
+        &ptx_dir.join("lcpo_sasa.ptx"),
+        &target_ptx_dir.join("lcpo_sasa.ptx"),
+    );
+
     println!("cargo:info=PTX compilation completed successfully");
 }
 

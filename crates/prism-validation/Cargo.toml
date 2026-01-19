@@ -190,3 +190,33 @@ path = "src/bin/analyze_ensemble.rs"
 [[bin]]
 name = "analyze_ensemble_batch"
 path = "src/bin/analyze_ensemble_batch.rs"
+
+[[bin]]
+name = "ensemble_warp_benchmark"
+path = "src/bin/ensemble_warp_benchmark.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "test_1l2y_md"
+path = "src/bin/test_1l2y_md.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "batch_md_test"
+path = "src/bin/batch_md_test.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "md_diagnostic"
+path = "src/bin/md_diagnostic.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "md_comprehensive"
+path = "src/bin/md_comprehensive.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "md-cryptic-pilot"
+path = "src/bin/md_cryptic_pilot.rs"
+required-features = ["cryptic-gpu"]
