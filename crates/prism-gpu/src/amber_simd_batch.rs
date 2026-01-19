@@ -1955,9 +1955,10 @@ impl AmberSimdBatch {
 
             let pe = energies[i * 2] as f64;
             let ke = energies[i * 2 + 1] as f64;
-            // DOF = 3N - 6 (center of mass + rotation) - N_constraints (per-structure H-bond constraints)
-            let struct_constraints = self.constraints_per_structure.get(i).copied().unwrap_or(0);
-            let n_dof = (3 * desc.n_atoms).saturating_sub(6 + struct_constraints);
+            // DOF = 3N - 6 (center of mass + rotation)
+            // NOTE: constraints_per_structure exists but SHAKE/RATTLE not yet implemented in CUDA
+            // So we use full DOF until constraints are enforced
+            let n_dof = (3 * desc.n_atoms).saturating_sub(6);
             let temperature = if n_dof > 0 {
                 2.0 * ke / (n_dof as f64 * KB_KCAL_MOL_K)
             } else {
