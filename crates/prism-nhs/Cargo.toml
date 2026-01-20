@@ -29,9 +29,29 @@ cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"], optio
 rand = "0.8"
 rand_distr = "0.4"
 
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+env_logger = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+
 # Internal crates
 prism-io = { path = "../prism-io" }
 prism-learning = { path = "../prism-learning" }
+
+[[bin]]
+name = "nhs-detect"
+path = "src/bin/nhs_detect.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-cryo-probe"
+path = "src/bin/nhs_cryo_probe.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-adaptive"
+path = "src/bin/nhs_adaptive.rs"
+required-features = ["gpu"]
 
 [dev-dependencies]
 tempfile = "3.0"

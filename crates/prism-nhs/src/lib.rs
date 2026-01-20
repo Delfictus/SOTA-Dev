@@ -88,9 +88,15 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod adaptive;
 pub mod avalanche;
 pub mod config;
 pub mod exclusion;
+#[cfg(feature = "gpu")]
+pub mod gpu;
+#[cfg(feature = "gpu")]
+pub mod fused_engine;
+pub mod input;
 pub mod neuromorphic;
 pub mod pipeline;
 pub mod uv_bias;
@@ -104,6 +110,19 @@ pub use pipeline::{NhsPipeline, NhsStats};
 pub use uv_bias::{
     AromaticTarget, AromaticType, BurstEvent, CausalCorrelation, PerturbationResult,
     SpikeEvent, UvBiasEngine, UvBiasStats,
+};
+#[cfg(feature = "gpu")]
+pub use gpu::{NhsGpuEngine, FrameResult, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING};
+#[cfg(feature = "gpu")]
+pub use fused_engine::{
+    NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig,
+    SpikeEvent as FusedSpikeEvent, EnsembleSnapshot, StepResult, RunSummary,
+};
+pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
+pub use adaptive::{
+    AdaptiveGridProtocol, AdaptiveNhsEngine, AdaptiveStepResult, AdaptiveSummary,
+    CascadeDetector, CascadeEvent, ExplorationPhase, GridPhase, JitterConfig,
+    JitterDetector, JitterSignal, QuietBaseline, UvStrategy,
 };
 
 /// Crate version
