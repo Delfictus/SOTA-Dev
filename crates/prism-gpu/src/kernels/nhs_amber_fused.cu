@@ -17,6 +17,9 @@
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 
+// Include excited state dynamics for true UV photophysics
+#include "nhs_excited_state.cuh"
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -100,6 +103,13 @@ struct UVTarget {
     int atom_indices[16];   // Atoms in aromatic ring
     int n_atoms;
     float absorption_strength;  // Trp > Tyr > Phe
+    int aromatic_type;          // 0=TYR, 1=PHE, 2=TRP (for excited state dynamics)
+};
+
+// Aromatic neighbor list for vibrational transfer
+struct AromaticNeighbors {
+    int atom_indices[64];       // Atoms within 5Å of aromatic
+    int n_neighbors;
 };
 
 // Spike event for capture
@@ -631,6 +641,19 @@ extern "C" __global__ void nhs_amber_fused_step(
     int uv_target_idx,
     float uv_burst_energy,
 
+    // Excited state dynamics (true photophysics)
+    int* d_is_excited,                  // [n_aromatics] - excitation flag
+    float* d_time_since_excitation,     // [n_aromatics] - time tracking
+    float* d_electronic_population,     // [n_aromatics] - 0.0-1.0 population
+    float* d_vibrational_energy,        // [n_aromatics] - kcal/mol
+    float* d_franck_condon_progress,    // [n_aromatics] - relaxation progress
+    const float* d_ground_state_charges,// [n_atoms] - original charges
+    const int* d_atom_to_aromatic,      // [n_atoms] - -1 or aromatic index
+    const int* d_aromatic_type,         // [n_aromatics] - 0=TYR,1=PHE,2=TRP
+    const float3* d_ring_normals,       // [n_aromatics] - precomputed
+    const AromaticNeighbors* d_aromatic_neighbors, // [n_aromatics] - neighbor lists
+    int n_aromatics,
+
     // Spike output
     SpikeEvent* spike_events,
     int* spike_count,
@@ -908,6 +931,19 @@ extern "C" __global__ void nhs_amber_fused_step(
                 positions[a], voxel_center,
                 atom_types[a], charges[a]
             );
+
+            // EXCITED STATE INTEGRATION: Apply exclusion modifier for aromatic atoms
+            // Excited aromatics are more polar → less hydrophobic → reduced exclusion
+            int aromatic_idx = d_atom_to_aromatic[a];
+            if (aromatic_idx >= 0 && aromatic_idx < n_aromatics) {
+                float excitation_modifier = get_exclusion_modifier(
+                    aromatic_idx,
+                    d_is_excited,
+                    d_electronic_population
+                );
+                contrib *= excitation_modifier;
+            }
+
             total_exclusion += contrib * entry.atom_weights[i] * 4.0f;  // Scale by weight
 
             // Polar field from charged/polar atoms
@@ -976,26 +1012,74 @@ extern "C" __global__ void nhs_amber_fused_step(
     __syncthreads();
 
     // ========================================================================
-    // PHASE 6: UV BIAS PUMP-PROBE
+    // PHASE 6: UV BIAS PUMP-PROBE (TRUE EXCITED STATE DYNAMICS)
     // ========================================================================
+    //
+    // This replaces the naive velocity kick with proper QM-based photophysics:
+    // 1. UV absorption → electronic excitation (charge redistribution)
+    // 2. Franck-Condon relaxation (50 fs)
+    // 3. Vibrational relaxation (2 ps) → energy transfer to neighbors
+    // 4. Electronic decay (ns timescale) → fluorescence/IC
+    //
+    // The key signal for cryptic detection is the EXCLUSION CHANGE:
+    // - Excited aromatic has larger dipole → more polar → less hydrophobic
+    // - This causes a DECREASE in exclusion → MORE water attracted
+    // - LIF neurons detect this transient dewetting/rewetting event
 
-    if (uv_burst_active && uv_target_idx < n_uv_targets) {
-        UVTarget target = uv_targets[uv_target_idx];
+    // Step 6a: Apply UV excitation to target aromatics
+    if (uv_burst_active && n_aromatics > 0) {
+        // Use first 14 threads of block 0 for excitation (one per aromatic max)
+        if (blockIdx.x == 0 && threadIdx.x < n_aromatics) {
+            int arom_idx = threadIdx.x;
 
-        // Apply UV energy to target aromatic atoms
-        for (int i = 0; i < target.n_atoms; i++) {
-            int atom_idx = target.atom_indices[i];
-            if (tid == atom_idx % (gridDim.x * blockDim.x)) {
-                curandState local_rng = rng_states[atom_idx];
-                apply_uv_burst(
-                    velocities[atom_idx],
-                    masses[atom_idx],
-                    target.absorption_strength,
-                    uv_burst_energy,
-                    &local_rng
+            // Only excite if not already excited (avoid double excitation)
+            if (d_is_excited[arom_idx] == 0) {
+                excite_aromatic_inline(
+                    arom_idx,
+                    d_aromatic_type[arom_idx],
+                    d_is_excited,
+                    d_time_since_excitation,
+                    d_electronic_population,
+                    d_vibrational_energy,
+                    d_franck_condon_progress
                 );
-                rng_states[atom_idx] = local_rng;
             }
+        }
+    }
+
+    __syncthreads();
+
+    // Step 6b: Update all excited state dynamics (every timestep)
+    // This handles Franck-Condon, vibrational relaxation, and electronic decay
+    if (blockIdx.x == 0 && threadIdx.x < n_aromatics) {
+        int arom_idx = threadIdx.x;
+        float energy_to_transfer = 0.0f;
+
+        update_excited_state_inline(
+            arom_idx,
+            d_aromatic_type[arom_idx],
+            dt,
+            d_is_excited,
+            d_time_since_excitation,
+            d_electronic_population,
+            d_vibrational_energy,
+            d_franck_condon_progress,
+            &energy_to_transfer
+        );
+
+        // Transfer vibrational energy to neighboring atoms
+        // This creates the thermal perturbation that propagates through the structure
+        if (energy_to_transfer > 0.001f && d_aromatic_neighbors != nullptr) {
+            AromaticNeighbors neighbors = d_aromatic_neighbors[arom_idx];
+            apply_vibrational_transfer(
+                arom_idx,
+                energy_to_transfer,
+                d_ring_normals[arom_idx],
+                velocities,
+                neighbors.atom_indices,
+                neighbors.n_neighbors,
+                timestep * n_aromatics + arom_idx  // seed for RNG
+            );
         }
     }
 
@@ -1098,5 +1182,161 @@ extern "C" __global__ void advance_temperature_protocol(
 ) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         protocol->current_step++;
+    }
+}
+
+// ============================================================================
+// EXCITED STATE INITIALIZATION
+// ============================================================================
+
+extern "C" __global__ void init_excited_state(
+    int* d_is_excited,
+    float* d_time_since_excitation,
+    float* d_electronic_population,
+    float* d_vibrational_energy,
+    float* d_franck_condon_progress,
+    int n_aromatics
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (tid < n_aromatics) {
+        d_is_excited[tid] = 0;
+        d_time_since_excitation[tid] = 0.0f;
+        d_electronic_population[tid] = 0.0f;
+        d_vibrational_energy[tid] = 0.0f;
+        d_franck_condon_progress[tid] = 0.0f;
+    }
+}
+
+extern "C" __global__ void init_atom_to_aromatic(
+    int* d_atom_to_aromatic,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (tid < n_atoms) {
+        d_atom_to_aromatic[tid] = -1;  // Not an aromatic atom by default
+    }
+}
+
+extern "C" __global__ void build_aromatic_neighbors(
+    AromaticNeighbors* d_aromatic_neighbors,
+    const float3* positions,
+    const int* aromatic_atom_indices,  // [n_aromatics * MAX_RING_ATOMS]
+    const int* aromatic_n_atoms,       // [n_aromatics]
+    int n_aromatics,
+    int n_atoms,
+    float neighbor_cutoff              // ~5 Angstroms
+) {
+    int arom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (arom_idx < n_aromatics) {
+        AromaticNeighbors* neighbors = &d_aromatic_neighbors[arom_idx];
+        neighbors->n_neighbors = 0;
+
+        // Get center of aromatic ring
+        float3 ring_center = make_float3(0, 0, 0);
+        int n_ring_atoms = aromatic_n_atoms[arom_idx];
+
+        for (int i = 0; i < n_ring_atoms && i < 16; i++) {
+            int atom_idx = aromatic_atom_indices[arom_idx * 16 + i];
+            if (atom_idx >= 0 && atom_idx < n_atoms) {
+                ring_center.x += positions[atom_idx].x;
+                ring_center.y += positions[atom_idx].y;
+                ring_center.z += positions[atom_idx].z;
+            }
+        }
+        if (n_ring_atoms > 0) {
+            ring_center.x /= n_ring_atoms;
+            ring_center.y /= n_ring_atoms;
+            ring_center.z /= n_ring_atoms;
+        }
+
+        float cutoff_sq = neighbor_cutoff * neighbor_cutoff;
+
+        // Find all atoms within cutoff of ring center
+        for (int a = 0; a < n_atoms && neighbors->n_neighbors < 64; a++) {
+            // Skip atoms that are part of this aromatic ring
+            bool is_ring_atom = false;
+            for (int i = 0; i < n_ring_atoms && i < 16; i++) {
+                if (aromatic_atom_indices[arom_idx * 16 + i] == a) {
+                    is_ring_atom = true;
+                    break;
+                }
+            }
+            if (is_ring_atom) continue;
+
+            float dx = positions[a].x - ring_center.x;
+            float dy = positions[a].y - ring_center.y;
+            float dz = positions[a].z - ring_center.z;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+
+            if (dist_sq < cutoff_sq) {
+                neighbors->atom_indices[neighbors->n_neighbors] = a;
+                neighbors->n_neighbors++;
+            }
+        }
+    }
+}
+
+extern "C" __global__ void compute_ring_normals(
+    float3* d_ring_normals,
+    const float3* positions,
+    const int* aromatic_atom_indices,  // [n_aromatics * 16]
+    const int* aromatic_n_atoms,       // [n_aromatics]
+    int n_aromatics,
+    int n_atoms
+) {
+    int arom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (arom_idx < n_aromatics) {
+        int n_ring_atoms = aromatic_n_atoms[arom_idx];
+
+        // Need at least 3 atoms to compute a plane normal
+        if (n_ring_atoms < 3) {
+            d_ring_normals[arom_idx] = make_float3(0, 0, 1);  // Default
+            return;
+        }
+
+        // Get first three atoms
+        int a0 = aromatic_atom_indices[arom_idx * 16 + 0];
+        int a1 = aromatic_atom_indices[arom_idx * 16 + 1];
+        int a2 = aromatic_atom_indices[arom_idx * 16 + 2];
+
+        if (a0 < 0 || a1 < 0 || a2 < 0 || a0 >= n_atoms || a1 >= n_atoms || a2 >= n_atoms) {
+            d_ring_normals[arom_idx] = make_float3(0, 0, 1);
+            return;
+        }
+
+        // Compute two edge vectors
+        float3 v1 = make_float3(
+            positions[a1].x - positions[a0].x,
+            positions[a1].y - positions[a0].y,
+            positions[a1].z - positions[a0].z
+        );
+        float3 v2 = make_float3(
+            positions[a2].x - positions[a0].x,
+            positions[a2].y - positions[a0].y,
+            positions[a2].z - positions[a0].z
+        );
+
+        // Cross product for normal
+        float3 normal = make_float3(
+            v1.y * v2.z - v1.z * v2.y,
+            v1.z * v2.x - v1.x * v2.z,
+            v1.x * v2.y - v1.y * v2.x
+        );
+
+        // Normalize
+        float len = sqrtf(normal.x*normal.x + normal.y*normal.y + normal.z*normal.z);
+        if (len > 1e-8f) {
+            normal.x /= len;
+            normal.y /= len;
+            normal.z /= len;
+        } else {
+            normal = make_float3(0, 0, 1);
+        }
+
+        d_ring_normals[arom_idx] = normal;
     }
 }

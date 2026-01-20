@@ -114,7 +114,7 @@ impl Default for GpuHCluster {
 }
 
 /// UV target for CUDA kernel (matches UVTarget in nhs_amber_fused.cu)
-/// CUDA struct: residue_id (4), atom_indices[16] (64), n_atoms (4), absorption_strength (4) = 76 bytes
+/// CUDA struct: residue_id (4), atom_indices[16] (64), n_atoms (4), absorption_strength (4), aromatic_type (4) = 80 bytes
 #[cfg(feature = "gpu")]
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
@@ -123,6 +123,7 @@ pub struct GpuUVTarget {
     pub atom_indices: [i32; 16],
     pub n_atoms: i32,
     pub absorption_strength: f32,
+    pub aromatic_type: i32,  // 0=TYR, 1=PHE, 2=TRP
 }
 
 #[cfg(feature = "gpu")]
@@ -133,6 +134,27 @@ impl Default for GpuUVTarget {
             atom_indices: [-1; 16],
             n_atoms: 0,
             absorption_strength: 0.0,
+            aromatic_type: 0,
+        }
+    }
+}
+
+/// Aromatic neighbor list for vibrational energy transfer
+/// CUDA struct: atom_indices[64] (256), n_neighbors (4) = 260 bytes
+#[cfg(feature = "gpu")]
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct GpuAromaticNeighbors {
+    pub atom_indices: [i32; 64],
+    pub n_neighbors: i32,
+}
+
+#[cfg(feature = "gpu")]
+impl Default for GpuAromaticNeighbors {
+    fn default() -> Self {
+        Self {
+            atom_indices: [-1; 64],
+            n_neighbors: 0,
         }
     }
 }
@@ -523,6 +545,22 @@ pub struct NhsAmberFusedEngine {
     // Cached aromatic residue info
     aromatic_residues: Vec<i32>,
 
+    // ====================================================================
+    // EXCITED STATE DYNAMICS BUFFERS (true UV photophysics)
+    // ====================================================================
+    d_is_excited: CudaSlice<i32>,              // [n_aromatics] - excitation flag
+    d_time_since_excitation: CudaSlice<f32>,   // [n_aromatics] - time tracking
+    d_electronic_population: CudaSlice<f32>,   // [n_aromatics] - 0.0-1.0 population
+    d_vibrational_energy: CudaSlice<f32>,      // [n_aromatics] - kcal/mol
+    d_franck_condon_progress: CudaSlice<f32>,  // [n_aromatics] - relaxation progress
+    d_ground_state_charges: CudaSlice<f32>,    // [n_atoms] - original charges
+    d_atom_to_aromatic: CudaSlice<i32>,        // [n_atoms] - -1 or aromatic index
+    d_aromatic_type: CudaSlice<i32>,           // [n_aromatics] - 0=TYR,1=PHE,2=TRP
+    d_ring_normals: CudaSlice<f32>,            // [n_aromatics * 3] - precomputed normals
+    d_aromatic_neighbors: CudaSlice<u8>,       // [n_aromatics] - AromaticNeighbors structs
+    aromatic_neighbors_size: usize,
+    n_aromatics: usize,
+
     // Captured data
     spike_events: Vec<SpikeEvent>,
     ensemble_snapshots: Vec<EnsembleSnapshot>,
@@ -685,7 +723,7 @@ impl NhsAmberFusedEngine {
         let d_h_clusters: CudaSlice<u8> = stream.alloc_zeros((n_clusters.max(1) * h_cluster_size))?;
 
         // ====================================================================
-        // BUILD UV TARGETS (aromatic residues)
+        // BUILD UV TARGETS (aromatic residues) + EXCITED STATE MAPPINGS
         // ====================================================================
 
         let uv_target_size = std::mem::size_of::<GpuUVTarget>();
@@ -694,8 +732,12 @@ impl NhsAmberFusedEngine {
             .map(|r| r as i32)
             .collect();
 
+        // Build atom_to_aromatic mapping (-1 for non-aromatic atoms)
+        let mut atom_to_aromatic: Vec<i32> = vec![-1i32; n_atoms];
+        let mut aromatic_types: Vec<i32> = Vec::new();
+
         let mut uv_targets: Vec<GpuUVTarget> = Vec::new();
-        for &res_id in &aromatic_residues {
+        for (aromatic_idx, &res_id) in aromatic_residues.iter().enumerate() {
             // Find atoms in this aromatic residue
             let mut target = GpuUVTarget::default();
             target.residue_id = res_id;
@@ -704,29 +746,54 @@ impl NhsAmberFusedEngine {
             for (atom_idx, &atom_res) in topology.residue_ids.iter().enumerate() {
                 if atom_res as i32 == res_id && atom_count < 16 {
                     target.atom_indices[atom_count] = atom_idx as i32;
+                    // Map this atom to its aromatic index
+                    atom_to_aromatic[atom_idx] = aromatic_idx as i32;
                     atom_count += 1;
                 }
             }
             target.n_atoms = atom_count as i32;
 
-            // Set absorption strength based on residue type
+            // Set absorption strength and aromatic type based on residue type
             // TRP > TYR > PHE (roughly 5:3:1 ratio for molar absorptivity at 280nm)
+            // aromatic_type: 0=TYR, 1=PHE, 2=TRP (matching CUDA constants)
             let res_name = topology.residue_ids.iter()
                 .position(|&r| r as i32 == res_id)
                 .map(|idx| topology.residue_names[idx].as_str())
                 .unwrap_or("");
 
-            target.absorption_strength = match res_name {
-                "TRP" => 1.0,
-                "TYR" => 0.6,
-                "PHE" => 0.2,
-                _ => 0.3,
+            let (absorption, arom_type) = match res_name {
+                "TRP" => (1.0, 2),
+                "TYR" => (0.6, 0),
+                "PHE" => (0.2, 1),
+                _ => (0.3, 0),
             };
+            target.absorption_strength = absorption;
+            target.aromatic_type = arom_type;
+            aromatic_types.push(arom_type);
 
             uv_targets.push(target);
         }
         let n_uv_targets = uv_targets.len().min(MAX_UV_TARGETS);
+        let n_aromatics = n_uv_targets;  // Same as UV targets
         let d_uv_targets: CudaSlice<u8> = stream.alloc_zeros((n_uv_targets.max(1) * uv_target_size))?;
+
+        // ====================================================================
+        // ALLOCATE EXCITED STATE BUFFERS
+        // ====================================================================
+
+        let d_is_excited: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1))?;
+        let d_time_since_excitation: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1))?;
+        let d_electronic_population: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1))?;
+        let d_vibrational_energy: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1))?;
+        let d_franck_condon_progress: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1))?;
+        let d_ground_state_charges: CudaSlice<f32> = stream.alloc_zeros(n_atoms)?;
+        let d_atom_to_aromatic: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
+        let d_aromatic_type: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1))?;
+        let d_ring_normals: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1) * 3)?;
+
+        // Aromatic neighbors for vibrational energy transfer
+        let aromatic_neighbors_size = std::mem::size_of::<GpuAromaticNeighbors>();
+        let d_aromatic_neighbors: CudaSlice<u8> = stream.alloc_zeros(n_aromatics.max(1) * aromatic_neighbors_size)?;
 
         // ====================================================================
         // ALLOCATE WARP MATRIX (voxel-to-atom mapping)
@@ -838,6 +905,20 @@ impl NhsAmberFusedEngine {
 
             aromatic_residues,
 
+            // Excited state buffers
+            d_is_excited,
+            d_time_since_excitation,
+            d_electronic_population,
+            d_vibrational_energy,
+            d_franck_condon_progress,
+            d_ground_state_charges,
+            d_atom_to_aromatic,
+            d_aromatic_type,
+            d_ring_normals,
+            d_aromatic_neighbors,
+            aromatic_neighbors_size,
+            n_aromatics,
+
             spike_events: Vec::new(),
             ensemble_snapshots: Vec::new(),
         };
@@ -845,7 +926,8 @@ impl NhsAmberFusedEngine {
         // Upload all data to GPU
         engine.upload_topology_structs(topology, &bonds, &angles, &dihedrals, &lj_params,
                                         &exclusion_list, &exclusion_offsets,
-                                        &h_clusters, &uv_targets)?;
+                                        &h_clusters, &uv_targets,
+                                        &atom_to_aromatic, &aromatic_types)?;
 
         // Initialize RNG
         engine.init_rng(42)?;
@@ -935,6 +1017,8 @@ impl NhsAmberFusedEngine {
         exclusion_offsets: &[i32],
         h_clusters: &[GpuHCluster],
         uv_targets: &[GpuUVTarget],
+        atom_to_aromatic: &[i32],
+        aromatic_types: &[i32],
     ) -> Result<()> {
         // Positions (flatten [x,y,z] format)
         self.stream.memcpy_htod(&topology.positions, &mut self.d_positions)?;
@@ -999,8 +1083,27 @@ impl NhsAmberFusedEngine {
             self.stream.memcpy_htod(&uv_targets_bytes, &mut self.d_uv_targets)?;
         }
 
+        // ====================================================================
+        // UPLOAD EXCITED STATE MAPPINGS
+        // ====================================================================
+
+        // Ground state charges (copy of original charges for reference)
+        self.stream.memcpy_htod(&topology.charges, &mut self.d_ground_state_charges)?;
+
+        // Atom to aromatic mapping
+        self.stream.memcpy_htod(atom_to_aromatic, &mut self.d_atom_to_aromatic)?;
+
+        // Aromatic types
+        if !aromatic_types.is_empty() {
+            self.stream.memcpy_htod(aromatic_types, &mut self.d_aromatic_type)?;
+        }
+
+        // Initialize excited state arrays to zero (ground state)
+        // d_is_excited, d_electronic_population, d_vibrational_energy, etc. are already zero-initialized
+
         log::info!("Uploaded topology: {} bonds, {} angles, {} dihedrals",
             self.n_bonds, self.n_angles, self.n_dihedrals);
+        log::info!("Excited state: {} aromatics mapped", self.n_aromatics);
 
         Ok(())
     }
@@ -1317,6 +1420,18 @@ impl NhsAmberFusedEngine {
                 .arg(&uv_burst_active_i32)
                 .arg(&uv_target_idx)
                 .arg(&uv_burst_energy)
+                // Excited state dynamics (true photophysics)
+                .arg(&mut self.d_is_excited)
+                .arg(&mut self.d_time_since_excitation)
+                .arg(&mut self.d_electronic_population)
+                .arg(&mut self.d_vibrational_energy)
+                .arg(&mut self.d_franck_condon_progress)
+                .arg(&self.d_ground_state_charges)
+                .arg(&self.d_atom_to_aromatic)
+                .arg(&self.d_aromatic_type)
+                .arg(&self.d_ring_normals)
+                .arg(&self.d_aromatic_neighbors)
+                .arg(&(self.n_aromatics as i32))
                 // Spike output
                 .arg(&mut self.d_spike_events)
                 .arg(&mut self.d_spike_count)
@@ -1449,6 +1564,18 @@ impl NhsAmberFusedEngine {
                     .arg(&uv_burst_active_i32)
                     .arg(&uv_target_idx)
                     .arg(&uv_burst_energy)
+                    // Excited state dynamics
+                    .arg(&mut self.d_is_excited)
+                    .arg(&mut self.d_time_since_excitation)
+                    .arg(&mut self.d_electronic_population)
+                    .arg(&mut self.d_vibrational_energy)
+                    .arg(&mut self.d_franck_condon_progress)
+                    .arg(&self.d_ground_state_charges)
+                    .arg(&self.d_atom_to_aromatic)
+                    .arg(&self.d_aromatic_type)
+                    .arg(&self.d_ring_normals)
+                    .arg(&self.d_aromatic_neighbors)
+                    .arg(&(self.n_aromatics as i32))
                     .arg(&mut self.d_spike_events)
                     .arg(&mut self.d_spike_count)
                     .arg(&max_spikes_i32)
