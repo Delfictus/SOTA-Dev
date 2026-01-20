@@ -57,6 +57,14 @@ struct Args {
     #[arg(long)]
     production: bool,
 
+    /// Use accelerated mode (4 replicas, 4fs timestep - requires HMR topology)
+    #[arg(long)]
+    accelerated: bool,
+
+    /// Number of parallel replicas (overrides mode default)
+    #[arg(long)]
+    replicas: Option<usize>,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -83,12 +91,16 @@ fn main() -> Result<()> {
     }
 
     // Build configuration
-    let config = if args.quick {
+    let mut config = if args.quick {
         println!("  Mode:         QUICK TEST (50 frames, ~1 ns)");
         MdCrypticConfig::quick_test()
     } else if args.production {
         println!("  Mode:         PRODUCTION (400 frames, ~8 ns)");
         MdCrypticConfig::production()
+    } else if args.accelerated {
+        println!("  Mode:         ACCELERATED (4 replicas, 4fs timestep)");
+        println!("                ⚠️  Requires topology from prism-prep --hmr");
+        MdCrypticConfig::accelerated()
     } else {
         println!("  Mode:         STANDARD ({} frames)", args.frames);
         let mut config = MdCrypticConfig::default();
@@ -97,12 +109,19 @@ fn main() -> Result<()> {
         config
     };
 
+    // Override replicas if specified
+    if let Some(n) = args.replicas {
+        config.n_replicas = n;
+        println!("  Replicas:     {} (override)", n);
+    }
+
     println!("  Input:        {}", args.topology.display());
     println!("  Output:       {}", args.output_dir.display());
     println!("  Frames:       {}", config.n_frames);
     println!("  Sim Time:     {:.1} ns", config.total_time_ps() / 1000.0);
     println!("  Temperature:  {:.1} K", config.temperature_k);
     println!("  Timestep:     {:.1} fs", config.dt_fs);
+    println!("  Replicas:     {}", config.n_replicas);
     println!();
     println!("  CLASSIFICATION THRESHOLDS (Literature-Derived, Pre-Set):");
     println!("  - CV threshold:       {:.2} (CryptoSite, PocketMiner)", config.cv_threshold);

@@ -97,6 +97,66 @@ __device__ __forceinline__ float warp_reduce_min_f32(float val) {
 //==============================================================================
 
 /**
+ * Block-level max reduction for float.
+ *
+ * @param val Local value from this thread
+ * @param smem Shared memory array of size >= (blockDim.x / 32)
+ * @return Max of all values in block (valid in thread 0 only)
+ */
+__device__ __forceinline__ float block_reduce_max_f32(float val, float* smem) {
+    const int lane = threadIdx.x % 32;
+    const int warp_id = threadIdx.x / 32;
+    const int num_warps = (blockDim.x + 31) / 32;
+
+    // Phase 1: Reduce within each warp
+    val = warp_reduce_max_f32(val);
+
+    // Lane 0 of each warp writes to shared memory
+    if (lane == 0) {
+        smem[warp_id] = val;
+    }
+    __syncthreads();
+
+    // Phase 2: First warp reduces across all warps
+    if (warp_id == 0) {
+        val = (lane < num_warps) ? smem[lane] : -INFINITY;
+        val = warp_reduce_max_f32(val);
+    }
+
+    return val;
+}
+
+/**
+ * Block-level min reduction for float.
+ *
+ * @param val Local value from this thread
+ * @param smem Shared memory array of size >= (blockDim.x / 32)
+ * @return Min of all values in block (valid in thread 0 only)
+ */
+__device__ __forceinline__ float block_reduce_min_f32(float val, float* smem) {
+    const int lane = threadIdx.x % 32;
+    const int warp_id = threadIdx.x / 32;
+    const int num_warps = (blockDim.x + 31) / 32;
+
+    // Phase 1: Reduce within each warp
+    val = warp_reduce_min_f32(val);
+
+    // Lane 0 of each warp writes to shared memory
+    if (lane == 0) {
+        smem[warp_id] = val;
+    }
+    __syncthreads();
+
+    // Phase 2: First warp reduces across all warps
+    if (warp_id == 0) {
+        val = (lane < num_warps) ? smem[lane] : INFINITY;
+        val = warp_reduce_min_f32(val);
+    }
+
+    return val;
+}
+
+/**
  * Block-level sum reduction for float.
  *
  * @param val Local value from this thread

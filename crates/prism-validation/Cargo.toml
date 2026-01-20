@@ -220,3 +220,8 @@ required-features = ["cuda"]
 name = "md-cryptic-pilot"
 path = "src/bin/md_cryptic_pilot.rs"
 required-features = ["cryptic-gpu"]
+
+[[bin]]
+name = "prism-cryptic"
+path = "src/bin/prism_cryptic.rs"
+required-features = ["cryptic-gpu"]

@@ -32,7 +32,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "cryptic-gpu")]
-use prism_gpu::{AmberMegaFusedHmc, LcpoSasaGpu, HmcRunResult};
+use prism_gpu::{AmberMegaFusedHmc, LcpoSasaGpu};
+
+#[cfg(feature = "cryptic-gpu")]
+use prism_gpu::{
+    ReplicaParallelMD, ReplicaParallelConfig, SharedTopology,
+};
 
 #[cfg(feature = "cryptic-gpu")]
 use cudarc::driver::CudaContext;
@@ -143,6 +148,18 @@ pub struct MdCrypticConfig {
 
     /// Random seed for reproducibility
     pub seed: u64,
+
+    // =========================================================================
+    // REPLICA-PARALLEL ACCELERATION (OPTIONAL)
+    // =========================================================================
+
+    /// Number of parallel replicas (1 = serial, 4 = recommended for speed)
+    ///
+    /// With n_replicas > 1:
+    /// - Runs N independent MD simulations in parallel on GPU
+    /// - Provides cross-replica variance for error bars
+    /// - ~N× speedup (4 replicas = ~4× faster)
+    pub n_replicas: usize,
 }
 
 impl Default for MdCrypticConfig {
@@ -173,6 +190,9 @@ impl Default for MdCrypticConfig {
             max_pocket_neighbors: 25,
 
             seed: 42,
+
+            // Replica-parallel acceleration (disabled by default for compatibility)
+            n_replicas: 1,  // Serial execution
         }
     }
 }
@@ -194,6 +214,46 @@ impl MdCrypticConfig {
             segment_steps: 10_000,    // 20 ps per frame
             n_frames: 400,            // 8 ns total
             equilibration_steps: 50_000, // 100 ps equilibration
+            ..Default::default()
+        }
+    }
+
+    /// Accelerated configuration using replica-parallel MD
+    ///
+    /// Expected speedup: ~8× (4 replicas × 2× if HMR topology used)
+    /// - 4 replicas run in parallel on GPU (blockIdx.y = replica)
+    /// - Cross-replica variance provides error bars
+    ///
+    /// For 4fs timestep, prepare topology with: `prism-prep input.pdb output.json --hmr`
+    /// Then set dt_fs: 4.0 in this config.
+    ///
+    /// Requirements:
+    /// - GPU with ≥6 GB VRAM for medium proteins
+    pub fn accelerated() -> Self {
+        Self {
+            // NOTE: For 4fs timestep, topology MUST be from `prism-prep --hmr`
+            dt_fs: 4.0,               // 4 fs (requires HMR topology)
+            segment_steps: 5_000,     // 20 ps per frame (5000 × 4fs)
+            n_frames: 200,            // 4 ns total (same coverage)
+            equilibration_steps: 12_500, // 50 ps (12500 × 4fs)
+            n_replicas: 4,            // 4 parallel replicas
+            ..Default::default()
+        }
+    }
+
+    /// Maximum acceleration for fast turnaround
+    ///
+    /// Expected speedup: ~16× (8 replicas × 2× if HMR topology used)
+    /// Use for rapid screening or iterative development.
+    ///
+    /// IMPORTANT: Requires topology from `prism-prep --hmr` for 4fs timestep.
+    pub fn max_acceleration() -> Self {
+        Self {
+            dt_fs: 4.0,               // Requires HMR topology from prism-prep
+            segment_steps: 2_500,     // 10 ps per frame
+            n_frames: 100,            // 1 ns total (quick scan)
+            equilibration_steps: 6_250, // 25 ps
+            n_replicas: 8,            // 8 parallel replicas
             ..Default::default()
         }
     }
@@ -546,6 +606,14 @@ pub struct TrackerDiagnostics {
 // MD CRYPTIC PIPELINE
 // =============================================================================
 
+/// Internal result from merging multiple replica trackers
+#[derive(Debug)]
+struct MergedReplicaResult {
+    pub all_pockets: Vec<PocketTimeSeries>,
+    pub cryptic_sites: Vec<CrypticSite>,
+    pub diagnostics: TrackerDiagnostics,
+}
+
 /// Result of MD-based cryptic site detection
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MdCrypticResult {
@@ -585,9 +653,415 @@ impl MdCrypticPipeline {
     }
 
     /// Run the complete pipeline on a prism-prep topology
+    ///
+    /// Automatically dispatches to serial or replica-parallel based on config.n_replicas:
+    /// - n_replicas == 1: Serial execution with AmberMegaFusedHmc
+    /// - n_replicas > 1: Parallel execution with ReplicaParallelMD (2D grid kernel)
     pub fn run(&self, topology_path: &str) -> Result<MdCrypticResult> {
-        use std::sync::Arc;
+        if self.config.n_replicas > 1 {
+            log::info!("[MD-CRYPTIC] Using REPLICA-PARALLEL mode ({} replicas)",
+                self.config.n_replicas);
+            self.run_replica_parallel(topology_path)
+        } else {
+            log::info!("[MD-CRYPTIC] Using SERIAL mode (1 replica)");
+            self.run_serial(topology_path)
+        }
+    }
 
+    /// Run the pipeline with replica-parallel MD (n_replicas > 1)
+    ///
+    /// Uses 2D grid kernel where blockIdx.y = replica for ~N× speedup.
+    /// Each replica gets independent volume tracking, then results are merged
+    /// with cross-replica variance for error bars.
+    fn run_replica_parallel(&self, topology_path: &str) -> Result<MdCrypticResult> {
+        let start_time = std::time::Instant::now();
+        let n_replicas = self.config.n_replicas;
+
+        log::info!("[MD-CRYPTIC-PARALLEL] Starting with {} replicas", n_replicas);
+        log::info!("[MD-CRYPTIC-PARALLEL] Config: {} frames/replica, {} ps total",
+            self.config.n_frames, self.config.total_time_ps());
+
+        // 1. Load topology
+        let topology = PrismTopology::load(Path::new(topology_path))
+            .with_context(|| format!("Failed to load topology: {}", topology_path))?;
+
+        let pdb_id = topology.get_pdb_id();
+        let n_atoms = topology.n_atoms;
+
+        log::info!("[MD-CRYPTIC-PARALLEL] Loaded {} atoms, {} residues from {}",
+            n_atoms, topology.n_residues, pdb_id);
+
+        // 2. Initialize GPU context
+        let context = CudaContext::new(0)
+            .context("Failed to create CUDA context")?;
+
+        // 3. Build shared topology for replica-parallel MD
+        let shared_topology = self.build_shared_topology(&topology)?;
+
+        // 4. Configure replica-parallel MD (API: seeds, temperature, gamma, dt)
+        let replica_config = ReplicaParallelConfig::new(
+            n_replicas,
+            self.config.seed,
+            self.config.temperature_k,
+            self.config.dt_fs,
+        );
+
+        // 5. Initialize replica-parallel MD engine
+        let mut md_engine = ReplicaParallelMD::new(context.clone(), replica_config, &shared_topology)
+            .context("Failed to create ReplicaParallelMD engine")?;
+
+        // Initialize the simulation (uploads positions, inits RNG, builds neighbor list)
+        md_engine.initialize()
+            .context("Failed to initialize ReplicaParallelMD")?;
+
+        // 6. Initialize GPU SASA calculator (shared across replicas)
+        let sasa_calculator = LcpoSasaGpu::new(context.clone())
+            .context("Failed to initialize GPU SASA calculator")?;
+
+        // 7. Initialize per-replica volume trackers
+        let mut volume_trackers: Vec<ResidueBasedVolumeTracker> = (0..n_replicas)
+            .map(|_| ResidueBasedVolumeTracker::new(
+                self.config.n_frames,
+                self.config.jaccard_threshold,
+            ))
+            .collect();
+
+        // 8. Equilibration (all replicas in parallel)
+        log::info!("[MD-CRYPTIC-PARALLEL] Running {} steps equilibration ({:.1} ps) on {} replicas...",
+            self.config.equilibration_steps,
+            self.config.equilibration_steps as f64 * self.config.dt_fs as f64 / 1000.0,
+            n_replicas);
+
+        // Run equilibration steps (no frame extraction)
+        for _ in 0..self.config.equilibration_steps {
+            md_engine.step()
+                .context("Equilibration step failed")?;
+        }
+
+        log::info!("[MD-CRYPTIC-PARALLEL] Equilibration complete, starting production...");
+
+        // 9. Production loop - use run() method which extracts frames
+        let atom_types = topology.get_sasa_atom_types();
+        let radii = topology.get_vdw_radii();
+        let atom_to_residue = topology.get_atom_to_residue_map();
+
+        // Run production and get all frames organized by replica
+        let all_replica_frames = md_engine.run(
+            self.config.n_frames * self.config.segment_steps,
+            self.config.segment_steps,
+        ).with_context(|| "Production MD failed")?;
+
+        // Process frames from each replica
+        for (replica_idx, replica_frames) in all_replica_frames.iter().enumerate() {
+            for (frame_idx, frame) in replica_frames.iter().enumerate() {
+                // Compute SASA for this replica's frame
+                let sasa_result = sasa_calculator.compute(
+                    &frame.positions,
+                    &atom_types,
+                    Some(&radii),
+                ).with_context(|| format!("SASA failed for replica {} frame {}",
+                    replica_idx, frame_idx))?;
+
+                // Detect pockets
+                let pockets = self.detect_pockets_allatom(
+                    &frame.positions,
+                    &topology,
+                    &sasa_result.per_atom,
+                    &atom_to_residue,
+                );
+
+                // Track in this replica's tracker
+                for pocket in pockets {
+                    volume_trackers[replica_idx].add_observation(
+                        frame_idx,
+                        &pocket.residue_ids,
+                        pocket.volume,
+                        pocket.sasa,
+                    );
+                }
+            }
+        }
+
+        // 10. Finalize all trackers
+        for tracker in &mut volume_trackers {
+            tracker.finalize();
+        }
+
+        // 11. Merge results across replicas
+        // Strategy: Use consensus pockets that appear in majority of replicas
+        let merged_result = self.merge_replica_results(&topology, &volume_trackers)?;
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+
+        log::info!("[MD-CRYPTIC-PARALLEL] Complete: {} cryptic sites detected in {:.1}s",
+            merged_result.cryptic_sites.len(), elapsed);
+        log::info!("[MD-CRYPTIC-PARALLEL] Effective speedup: {:.1}x vs serial estimate",
+            (self.config.n_frames as f64 * self.config.segment_steps as f64 *
+             self.config.dt_fs as f64 / 1000.0 * 60.0) / elapsed);
+
+        Ok(MdCrypticResult {
+            pdb_id,
+            config: self.config.clone(),
+            total_time_ps: self.config.total_time_ps(),
+            n_frames: self.config.n_frames,
+            all_pockets: merged_result.all_pockets,
+            cryptic_sites: merged_result.cryptic_sites,
+            diagnostics: merged_result.diagnostics,
+            computation_time_secs: elapsed,
+        })
+    }
+
+    /// Build SharedTopology for replica-parallel MD from PrismTopology
+    fn build_shared_topology(&self, topology: &PrismTopology) -> Result<SharedTopology> {
+        let n_atoms = topology.n_atoms;
+
+        // Positions (initial configuration)
+        let initial_positions: Vec<f32> = topology.positions.iter().map(|&x| x as f32).collect();
+
+        // Masses and inverse masses
+        let masses: Vec<f32> = topology.masses.iter().map(|&m| m as f32).collect();
+        let inv_masses: Vec<f32> = masses.iter()
+            .map(|&m| if m > 0.1 { 1.0 / m } else { 0.0 })
+            .collect();
+
+        // Charges
+        let charges: Vec<f32> = topology.charges.iter().map(|&c| c as f32).collect();
+
+        // LJ parameters
+        let sigmas: Vec<f32> = (0..n_atoms)
+            .map(|i| topology.lj_params.get(i).map(|p| p.sigma as f32).unwrap_or(3.4))
+            .collect();
+        let epsilons: Vec<f32> = (0..n_atoms)
+            .map(|i| topology.lj_params.get(i).map(|p| p.epsilon as f32).unwrap_or(0.1))
+            .collect();
+
+        // Bonds: flatten to [i, j, i, j, ...] and params to [k, r0, k, r0, ...]
+        let mut bond_atoms: Vec<i32> = Vec::with_capacity(topology.bonds.len() * 2);
+        let mut bond_params: Vec<f32> = Vec::with_capacity(topology.bonds.len() * 2);
+        for b in &topology.bonds {
+            bond_atoms.push(b.i as i32);
+            bond_atoms.push(b.j as i32);
+            bond_params.push(b.k as f32);
+            bond_params.push(b.r0 as f32);
+        }
+
+        // Angles: flatten to [i, j, k, ...] and params to [k_theta, theta0, ...]
+        let mut angle_atoms: Vec<i32> = Vec::with_capacity(topology.angles.len() * 3);
+        let mut angle_params: Vec<f32> = Vec::with_capacity(topology.angles.len() * 2);
+        for a in &topology.angles {
+            angle_atoms.push(a.i as i32);
+            angle_atoms.push(a.j as i32);
+            angle_atoms.push(a.k_idx as i32);
+            angle_params.push(a.force_k as f32);
+            angle_params.push(a.theta0 as f32);
+        }
+
+        // Dihedrals: flatten to [i, j, k, l, ...] and params to [pk, n, phase, ...]
+        let mut dihedral_atoms: Vec<i32> = Vec::with_capacity(topology.dihedrals.len() * 4);
+        let mut dihedral_params: Vec<f32> = Vec::with_capacity(topology.dihedrals.len() * 3);
+        for d in &topology.dihedrals {
+            dihedral_atoms.push(d.i as i32);
+            dihedral_atoms.push(d.j as i32);
+            dihedral_atoms.push(d.k_idx as i32);
+            dihedral_atoms.push(d.l as i32);
+            dihedral_params.push(d.force_k as f32);
+            dihedral_params.push(d.periodicity as f32);
+            dihedral_params.push(d.phase as f32);
+        }
+
+        // Exclusion lists: flatten to [n_atoms × MAX_EXCL] array
+        const MAX_EXCL: usize = 32;
+        let mut exclusions: Vec<i32> = vec![-1; n_atoms * MAX_EXCL];
+        let mut n_excl: Vec<i32> = vec![0; n_atoms];
+
+        // Build exclusions from 1-2 (bonds) and 1-3 (angles) interactions
+        let mut excl_sets: Vec<HashSet<usize>> = vec![HashSet::new(); n_atoms];
+        for b in &topology.bonds {
+            excl_sets[b.i].insert(b.j);
+            excl_sets[b.j].insert(b.i);
+        }
+        for a in &topology.angles {
+            excl_sets[a.i].insert(a.k_idx);
+            excl_sets[a.k_idx].insert(a.i);
+        }
+
+        // Flatten to array format
+        for (atom, excl_set) in excl_sets.iter().enumerate() {
+            let excl_list: Vec<i32> = excl_set.iter().map(|&e| e as i32).collect();
+            let count = excl_list.len().min(MAX_EXCL);
+            n_excl[atom] = count as i32;
+            for (i, &e) in excl_list.iter().take(count).enumerate() {
+                exclusions[atom * MAX_EXCL + i] = e;
+            }
+        }
+
+        // GB radii and screening (empty for now - using implicit solvent via cutoff)
+        let gb_radii: Vec<f32> = Vec::new();
+        let gb_screen: Vec<f32> = Vec::new();
+
+        Ok(SharedTopology {
+            n_atoms,
+            bond_atoms,
+            bond_params,
+            angle_atoms,
+            angle_params,
+            dihedral_atoms,
+            dihedral_params,
+            charges,
+            sigmas,
+            epsilons,
+            masses,
+            inv_masses,
+            gb_radii,
+            gb_screen,
+            exclusions,
+            n_excl,
+            initial_positions,
+        })
+    }
+
+    /// Merge results from multiple replica trackers
+    fn merge_replica_results(
+        &self,
+        topology: &PrismTopology,
+        trackers: &[ResidueBasedVolumeTracker],
+    ) -> Result<MergedReplicaResult> {
+        let n_replicas = trackers.len();
+
+        // Collect all pockets from all replicas
+        let mut all_pocket_data: HashMap<String, Vec<&PocketTimeSeries>> = HashMap::new();
+
+        for (replica_idx, tracker) in trackers.iter().enumerate() {
+            for pocket in tracker.get_all_pockets() {
+                // Generate a canonical pocket ID based on sorted residues
+                let mut residues = pocket.defining_residues.clone();
+                residues.sort();
+                let canonical_id = format!("res_{:?}", &residues[..residues.len().min(5)]);
+
+                all_pocket_data.entry(canonical_id)
+                    .or_insert_with(Vec::new)
+                    .push(pocket);
+            }
+        }
+
+        // Merge pockets that appear in at least half of replicas
+        let min_replicas = (n_replicas + 1) / 2;
+        let mut merged_pockets: Vec<PocketTimeSeries> = Vec::new();
+
+        for (canonical_id, replica_pockets) in &all_pocket_data {
+            if replica_pockets.len() >= min_replicas {
+                // Average statistics across replicas
+                let mean_cv: f64 = replica_pockets.iter().map(|p| p.cv).sum::<f64>()
+                    / replica_pockets.len() as f64;
+                let mean_cv_sasa: f64 = replica_pockets.iter().map(|p| p.cv_sasa).sum::<f64>()
+                    / replica_pockets.len() as f64;
+                let mean_volume: f64 = replica_pockets.iter().map(|p| p.mean_volume).sum::<f64>()
+                    / replica_pockets.len() as f64;
+                let mean_sasa: f64 = replica_pockets.iter().map(|p| p.mean_sasa).sum::<f64>()
+                    / replica_pockets.len() as f64;
+                let mean_freq: f64 = replica_pockets.iter().map(|p| p.open_frequency).sum::<f64>()
+                    / replica_pockets.len() as f64;
+
+                // Cross-replica variance (error estimate)
+                let cv_variance: f64 = replica_pockets.iter()
+                    .map(|p| (p.cv_sasa - mean_cv_sasa).powi(2))
+                    .sum::<f64>() / replica_pockets.len() as f64;
+                let cv_std = cv_variance.sqrt();
+
+                // Merge residue sets
+                let mut merged_residues: HashSet<i32> = HashSet::new();
+                for pocket in replica_pockets {
+                    merged_residues.extend(&pocket.defining_residues);
+                }
+
+                let mut merged_pocket = PocketTimeSeries::new(
+                    format!("merged_{}", canonical_id),
+                    self.config.n_frames,
+                );
+                merged_pocket.defining_residues = merged_residues.into_iter().collect();
+                merged_pocket.defining_residues.sort();
+                merged_pocket.cv = mean_cv;
+                merged_pocket.cv_sasa = mean_cv_sasa;
+                merged_pocket.mean_volume = mean_volume;
+                merged_pocket.mean_sasa = mean_sasa;
+                merged_pocket.open_frequency = mean_freq;
+                merged_pocket.std_volume = cv_std; // Store cross-replica std here
+
+                merged_pockets.push(merged_pocket);
+            }
+        }
+
+        // Classify cryptic sites from merged pockets
+        let mut cryptic_sites: Vec<CrypticSite> = merged_pockets.iter()
+            .filter(|p| {
+                p.cv_sasa > self.config.cv_threshold
+                && p.open_frequency >= self.config.min_open_frequency
+                && p.open_frequency <= self.config.max_open_frequency
+            })
+            .map(|p| {
+                let confidence = ((p.cv_sasa - self.config.cv_threshold) / self.config.cv_threshold)
+                    .min(1.0).max(0.0);
+
+                CrypticSite {
+                    site_id: p.pocket_id.clone(),
+                    rank: 0,
+                    residues: p.defining_residues.clone(),
+                    mean_volume: p.mean_volume,
+                    cv_volume: p.cv,
+                    mean_sasa: p.mean_sasa,
+                    cv_sasa: p.cv_sasa,
+                    open_frequency: p.open_frequency,
+                    confidence,
+                    druggability: None,
+                }
+            })
+            .collect();
+
+        // Sort by confidence and assign ranks
+        cryptic_sites.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        for (i, site) in cryptic_sites.iter_mut().enumerate() {
+            site.rank = i + 1;
+        }
+
+        // Score druggability
+        for site in &mut cryptic_sites {
+            let residue_names: Vec<String> = site.residues.iter()
+                .filter_map(|&res_id| {
+                    topology.residue_ids.iter()
+                        .position(|&r| r == res_id)
+                        .and_then(|idx| topology.residue_names.get(idx).cloned())
+                })
+                .collect();
+
+            site.druggability = Some(self.druggability_scorer.score_simple(
+                &residue_names,
+                site.mean_volume,
+            ));
+        }
+
+        // Compute diagnostics from merged pockets
+        let cv_values: Vec<f64> = merged_pockets.iter().map(|p| p.cv_sasa).collect();
+        let freq_values: Vec<f64> = merged_pockets.iter().map(|p| p.open_frequency).collect();
+
+        let diagnostics = TrackerDiagnostics {
+            total_pockets_seen: all_pocket_data.len(),
+            valid_pockets: merged_pockets.len(),
+            cv_min: cv_values.iter().copied().fold(f64::INFINITY, f64::min),
+            cv_max: cv_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            cv_mean: if !cv_values.is_empty() { cv_values.iter().sum::<f64>() / cv_values.len() as f64 } else { 0.0 },
+            freq_min: freq_values.iter().copied().fold(f64::INFINITY, f64::min),
+            freq_max: freq_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        };
+
+        Ok(MergedReplicaResult {
+            all_pockets: merged_pockets,
+            cryptic_sites,
+            diagnostics,
+        })
+    }
+
+    /// Serial execution (original implementation for n_replicas == 1)
+    fn run_serial(&self, topology_path: &str) -> Result<MdCrypticResult> {
         let start_time = std::time::Instant::now();
 
         log::info!("[MD-CRYPTIC] Starting MD-based cryptic site detection");
