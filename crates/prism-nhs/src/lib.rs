@@ -97,6 +97,7 @@ pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod fused_engine;
 pub mod input;
+pub mod mapping;
 pub mod neuromorphic;
 pub mod pipeline;
 pub mod uv_bias;
@@ -123,6 +124,10 @@ pub use adaptive::{
     AdaptiveGridProtocol, AdaptiveNhsEngine, AdaptiveStepResult, AdaptiveSummary,
     CascadeDetector, CascadeEvent, ExplorationPhase, GridPhase, JitterConfig,
     JitterDetector, JitterSignal, QuietBaseline, UvStrategy,
+};
+pub use mapping::{
+    CalibrationMetrics, ComparativeAnalysis, ExperimentalCondition, MappedHotspot,
+    NearbyResidue, NhsSiteId, NhsSiteMapper, ProtocolType, RobustSite, compare_conditions,
 };
 
 /// Crate version

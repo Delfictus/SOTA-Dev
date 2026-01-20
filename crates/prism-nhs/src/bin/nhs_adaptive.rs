@@ -37,6 +37,9 @@ use prism_nhs::adaptive::{
     AdaptiveGridProtocol, AdaptiveNhsEngine, ExplorationPhase,
     JitterConfig, CascadeDetector,
 };
+use prism_nhs::mapping::{
+    NhsSiteMapper, ExperimentalCondition, ProtocolType, MappedHotspot,
+};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
@@ -530,37 +533,91 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     println!("  Validated sites:   {}", summary.validated_sites);
     println!();
 
-    // Analyze spike spatial distribution to find candidate cryptic sites
-    println!("Spike Spatial Analysis:");
+    // Create site mapper for residue correlation
+    let pdb_id = args.input.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("UNKNOWN")
+        .split('_')
+        .next()
+        .unwrap_or("UNKNOWN");
+
+    // Convert residue_ids from usize to i32 for mapping
+    let residue_ids_i32: Vec<i32> = topology.residue_ids.iter()
+        .map(|&id| id as i32)
+        .collect();
+
+    let mapper = NhsSiteMapper::from_topology(
+        pdb_id,
+        &topology.positions, // Already flat Vec<f32>
+        &residue_ids_i32,
+        &topology.residue_names,
+        &topology.chain_ids,
+        8.0, // 8Å mapping radius
+    );
+
+    // Create experimental condition
+    let condition = if args.cryo {
+        ExperimentalCondition::new(args.cryo_temp, ProtocolType::CryoUvProbe)
+    } else {
+        ExperimentalCondition::standard(args.temperature)
+    };
+
+    // Map all hotspots to residues
+    let mapped_hotspots = mapper.map_all_hotspots(&spike_accumulator, condition.clone(), 3);
+
+    // Analyze spike spatial distribution with AMBER residue correlation
+    println!("Spike Spatial Analysis (AMBER-mapped):");
     if spike_accumulator.is_empty() {
         println!("  No spike events captured for spatial analysis");
     } else {
-        // Find voxels with multiple spikes (persistent dewetting)
-        let mut high_spike_voxels: Vec<_> = spike_accumulator.iter()
-            .filter(|(_, (count, _))| *count >= 2)
-            .collect();
-        high_spike_voxels.sort_by(|a, b| b.1.0.cmp(&a.1.0));
-
         println!("  Total unique voxels with spikes: {}", spike_accumulator.len());
-        println!("  Voxels with 2+ spikes (persistent): {}", high_spike_voxels.len());
+        println!("  Mapped hotspots (3+ spikes): {}", mapped_hotspots.len());
+        println!("  Condition: {}", condition.condition_id);
 
-        if !high_spike_voxels.is_empty() {
-            println!("\n  Top spike hotspots (candidate cryptic sites):");
-            for (i, (voxel_idx, (count, pos))) in high_spike_voxels.iter().take(10).enumerate() {
-                println!("    {} Voxel {} @ ({:.1}, {:.1}, {:.1})Å - {} spikes",
-                    if *count >= 3 { "★" } else { "○" },
-                    voxel_idx, pos[0], pos[1], pos[2], count);
+        if !mapped_hotspots.is_empty() {
+            println!("\n  Top mapped hotspots (AMBER residue correlation):");
+            for (i, hs) in mapped_hotspots.iter().take(10).enumerate() {
+                let residue_info = if let Some(ref primary) = hs.primary_residue {
+                    format!("{} ({})", primary.full_id, primary.residue_name)
+                } else {
+                    format!("HS_{} (no nearby residue)", hs.voxel_idx)
+                };
+
+                let aromatic_marker = if hs.nearby_residues.iter().any(|r| r.is_aromatic) {
+                    " [UV-target]"
+                } else {
+                    ""
+                };
+
+                println!("    {} {} @ ({:.1}, {:.1}, {:.1})Å - {} spikes{}",
+                    if hs.spike_count >= 10 { "★" } else { "○" },
+                    residue_info,
+                    hs.position_angstrom[0], hs.position_angstrom[1], hs.position_angstrom[2],
+                    hs.spike_count,
+                    aromatic_marker);
+
+                // Show nearby residues for top 3 hotspots
+                if i < 3 && !hs.nearby_residues.is_empty() {
+                    println!("      Nearby: {}",
+                        hs.nearby_residues.iter()
+                            .take(5)
+                            .map(|r| format!("{} ({:.1}Å)", r.site_id.residue_name, r.distance_angstrom))
+                            .collect::<Vec<_>>()
+                            .join(", "));
+                }
             }
 
-            // Cluster nearby high-spike voxels
-            let persistent_sites: Vec<_> = high_spike_voxels.iter()
-                .filter(|(_, (count, _))| *count >= 3)
-                .map(|(_, (_, pos))| *pos)
-                .collect();
+            // Count aromatic-adjacent hotspots (potential allosteric sites)
+            let aromatic_adjacent = mapped_hotspots.iter()
+                .filter(|hs| hs.nearby_residues.iter().any(|r| r.is_aromatic))
+                .count();
 
-            if !persistent_sites.is_empty() {
-                println!("\n  ✓ {} PERSISTENT DEWETTING REGIONS DETECTED", persistent_sites.len());
-                println!("    These are strong candidates for cryptic binding sites");
+            println!("\n  Aromatic-adjacent hotspots: {} / {} ({:.0}%)",
+                aromatic_adjacent, mapped_hotspots.len(),
+                100.0 * aromatic_adjacent as f32 / mapped_hotspots.len() as f32);
+
+            if aromatic_adjacent > 0 {
+                println!("    These may respond to UV probing (allosteric candidates)");
             }
         }
     }
@@ -628,16 +685,35 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             "validated_sites": summary.validated_sites,
         },
         "validated_sites": validated,
-        "spike_hotspots": spike_accumulator.iter()
-            .filter(|(_, (count, _))| *count >= 3)
-            .map(|(voxel_idx, (count, pos))| serde_json::json!({
-                "voxel_idx": voxel_idx,
-                "spike_count": count,
-                "position_angstrom": [pos[0], pos[1], pos[2]],
+        "mapped_hotspots": mapped_hotspots.iter()
+            .map(|hs| serde_json::json!({
+                "hotspot_id": hs.hotspot_id,
+                "comparison_id": hs.comparison_id,
+                "voxel_idx": hs.voxel_idx,
+                "spike_count": hs.spike_count,
+                "position_angstrom": hs.position_angstrom,
+                "primary_residue": hs.primary_residue.as_ref().map(|r| serde_json::json!({
+                    "site_id": r.full_id,
+                    "chain": r.chain_id,
+                    "residue_number": r.residue_number,
+                    "residue_name": r.residue_name,
+                })),
+                "nearby_residues": hs.nearby_residues.iter().take(10).map(|r| serde_json::json!({
+                    "site_id": r.site_id.full_id,
+                    "distance_angstrom": r.distance_angstrom,
+                    "is_aromatic": r.is_aromatic,
+                })).collect::<Vec<_>>(),
             }))
             .collect::<Vec<_>>(),
-        "n_persistent_regions": spike_accumulator.iter()
-            .filter(|(_, (count, _))| *count >= 3).count(),
+        "n_persistent_regions": mapped_hotspots.len(),
+        "n_aromatic_adjacent": mapped_hotspots.iter()
+            .filter(|hs| hs.nearby_residues.iter().any(|r| r.is_aromatic))
+            .count(),
+        "experimental_condition": {
+            "temperature_k": condition.temperature_k,
+            "protocol": condition.protocol.as_str(),
+            "condition_id": condition.condition_id,
+        },
         "cryo_protocol": args.cryo,
         "cryo_temp_k": if args.cryo { Some(args.cryo_temp) } else { None },
         "elapsed_seconds": elapsed.as_secs_f64(),
