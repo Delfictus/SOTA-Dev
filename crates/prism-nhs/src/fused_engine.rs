@@ -21,6 +21,9 @@
 
 use anyhow::{bail, Context, Result};
 use std::sync::Arc;
+use std::net::TcpStream;
+use std::io::Write;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
@@ -596,6 +599,11 @@ pub struct NhsAmberFusedEngine {
     // Captured data
     spike_events: Vec<SpikeEvent>,
     ensemble_snapshots: Vec<EnsembleSnapshot>,
+
+    // Live monitor connection
+    live_monitor: Option<TcpStream>,
+    live_monitor_last_send: Instant,
+    live_monitor_frame_id: u64,
 }
 
 #[cfg(feature = "gpu")]
@@ -1027,6 +1035,11 @@ impl NhsAmberFusedEngine {
 
             spike_events: Vec::new(),
             ensemble_snapshots: Vec::new(),
+
+            // Live monitor (not connected by default)
+            live_monitor: None,
+            live_monitor_last_send: Instant::now(),
+            live_monitor_frame_id: 0,
         };
 
         // Upload all data to GPU
@@ -1889,6 +1902,9 @@ impl NhsAmberFusedEngine {
             0 // Don't know spike count on non-sync steps
         };
 
+        // Update live monitor (rate-limited to ~30 FPS internally)
+        self.update_live_monitor(current_temp)?;
+
         Ok(StepResult {
             timestep: self.timestep,
             temperature: current_temp,
@@ -2222,6 +2238,151 @@ impl NhsAmberFusedEngine {
     /// Get ensemble snapshots
     pub fn get_ensemble_snapshots(&self) -> &[EnsembleSnapshot] {
         &self.ensemble_snapshots
+    }
+
+    // ========================================================================
+    // LIVE MONITOR METHODS
+    // ========================================================================
+
+    /// Connect to live monitor (call before simulation starts)
+    pub fn connect_live_monitor(&mut self, address: &str) -> Result<()> {
+        match TcpStream::connect_timeout(
+            &address.parse().context("Invalid monitor address")?,
+            Duration::from_secs(2)
+        ) {
+            Ok(stream) => {
+                stream.set_nodelay(true)?;
+                stream.set_write_timeout(Some(Duration::from_millis(100)))?;
+                self.live_monitor = Some(stream);
+                log::info!("Live monitor connected to {}", address);
+            }
+            Err(e) => {
+                log::warn!("Live monitor unavailable: {} (continuing without)", e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Update live monitor with current state (called at end of step)
+    fn update_live_monitor(&mut self, temperature: f32) -> Result<()> {
+        // Early return if no monitor connected
+        if self.live_monitor.is_none() {
+            return Ok(());
+        }
+
+        // Rate limit to ~30 FPS
+        if self.live_monitor_last_send.elapsed() < Duration::from_millis(33) {
+            return Ok(());
+        }
+
+        // Download GPU state
+        let mut positions = vec![0.0f32; self.n_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
+
+        let grid_size = self.grid_dim * self.grid_dim * self.grid_dim;
+        let mut exclusion = vec![0.0f32; grid_size];
+        self.stream.memcpy_dtoh(&self.d_exclusion_field, &mut exclusion)?;
+
+        // Subsample exclusion field (every 2nd voxel for efficiency)
+        let sub_dim = self.grid_dim / 2;
+        let mut sub_excl = vec![0.0f32; sub_dim * sub_dim * sub_dim];
+        for z in 0..sub_dim {
+            for y in 0..sub_dim {
+                for x in 0..sub_dim {
+                    let src = (z*2)*self.grid_dim*self.grid_dim + (y*2)*self.grid_dim + (x*2);
+                    let dst = z*sub_dim*sub_dim + y*sub_dim + x;
+                    sub_excl[dst] = exclusion[src];
+                }
+            }
+        }
+
+        let mut spike_count = vec![0i32];
+        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
+
+        // Get aromatic excitation if available
+        let aromatic_excitation = if self.n_aromatics > 0 {
+            let mut exc = vec![0.0f32; self.n_aromatics];
+            self.stream.memcpy_dtoh(&self.d_electronic_population, &mut exc)?;
+            exc
+        } else {
+            vec![]
+        };
+
+        // Build frame
+        let frame = self.build_monitor_frame(
+            temperature,
+            &positions,
+            &sub_excl,
+            sub_dim,
+            spike_count[0],
+            &aromatic_excitation,
+        );
+
+        // Send (ignore errors - just disconnect if monitor goes away)
+        let len = frame.len() as u32;
+        let send_failed = if let Some(stream) = &mut self.live_monitor {
+            stream.write_all(&len.to_le_bytes()).is_err()
+                || stream.write_all(&frame).is_err()
+        } else {
+            false
+        };
+
+        if send_failed {
+            self.live_monitor = None;
+            log::debug!("Live monitor disconnected");
+        }
+
+        self.live_monitor_frame_id += 1;
+        self.live_monitor_last_send = Instant::now();
+        Ok(())
+    }
+
+    fn build_monitor_frame(
+        &self,
+        temperature: f32,
+        positions: &[f32],
+        exclusion: &[f32],
+        grid_dim: usize,
+        spike_count: i32,
+        aromatic_excitation: &[f32],
+    ) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(1024 + positions.len() * 4 + exclusion.len() * 4);
+
+        // Header: Q=u64, f=f32, I=u32, i=i32 (matches Python struct format)
+        buf.extend_from_slice(&self.live_monitor_frame_id.to_le_bytes());  // Q: frame_id
+        buf.extend_from_slice(&(self.timestep as f32 * self.dt).to_le_bytes());  // f: time_ps
+        buf.extend_from_slice(&temperature.to_le_bytes());  // f: temperature
+        buf.extend_from_slice(&0.0f32.to_le_bytes());  // f: PE placeholder
+        buf.extend_from_slice(&0.0f32.to_le_bytes());  // f: KE placeholder
+        buf.extend_from_slice(&(self.n_atoms as u32).to_le_bytes());  // I: n_atoms
+        buf.extend_from_slice(&(spike_count as u32).to_le_bytes());  // I: spike_count
+        buf.extend_from_slice(&(grid_dim as u32).to_le_bytes());  // I: grid_dim
+        buf.extend_from_slice(&(self.uv_config.get_target_idx().unwrap_or(0) as i32).to_le_bytes());  // i: probe_id
+        buf.extend_from_slice(&0.0f32.to_le_bytes());  // f: sequence_score placeholder
+        buf.extend_from_slice(&[0u8; 16]);  // 16 bytes padding
+
+        // Positions
+        buf.extend_from_slice(&(positions.len() as u32).to_le_bytes());
+        for &p in positions {
+            buf.extend_from_slice(&p.to_le_bytes());
+        }
+
+        // Exclusion field
+        buf.extend_from_slice(&(exclusion.len() as u32).to_le_bytes());
+        for &e in exclusion {
+            buf.extend_from_slice(&e.to_le_bytes());
+        }
+
+        // Spikes (empty for now - would need spike event download)
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        // Aromatic excitation
+        buf.extend_from_slice(&(aromatic_excitation.len() as u32).to_le_bytes());
+        for &e in aromatic_excitation {
+            buf.extend_from_slice(&e.to_le_bytes());
+        }
+
+        buf
     }
 }
 

@@ -125,7 +125,7 @@ pub use fused_engine::{
 pub use active_sensing::{
     ActiveSensingEngine, ActiveSensingConfig, ActiveSensingMode, ActiveSensingResults,
     ActiveSensingBuilder, CoherentProbe, AromaticGroup, ProbeResponse, ResonancePeak,
-    SpikeSequenceDetector, CrypticSiteCandidate,
+    SpikeSequenceDetector, CrypticSiteCandidate, Float3, ProbeType,
 };
 pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
 pub use adaptive::{

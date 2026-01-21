@@ -108,6 +108,10 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// Live monitor address (e.g., 127.0.0.1:9999)
+    #[arg(long)]
+    live_monitor: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -277,6 +281,12 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         grid_dim,
         args.spacing,
     )?;
+
+    // Connect live monitor if specified
+    if let Some(addr) = &args.live_monitor {
+        engine.connect_live_monitor(addr)?;
+        println!("Live monitor: Connected to {}", addr);
+    }
 
     // Set protocols
     engine.set_temperature_protocol(temp_protocol.clone())?;
