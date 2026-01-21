@@ -44,8 +44,10 @@ class LiveFrame:
     n_resonances: int = 0
     pocket_open_fraction: float = 0.0
 
-    HEADER_FORMAT = '<QfffIIIif16s'
-    HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+    # Header format matches Rust fused_engine.rs build_monitor_frame() (60 bytes)
+    # Q=u64, f=f32, I=u32, i=i32
+    HEADER_FORMAT = '<QffffIIIif16s'
+    HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 60 bytes
 
     @classmethod
     def from_bytes(cls, data):

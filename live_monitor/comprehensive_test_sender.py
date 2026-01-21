@@ -95,9 +95,20 @@ class Simulator:
         pe = -5000 - self.pocket_open*200 + np.random.randn()*20
         ke = self.temperature * 1.5
 
-        header = struct.pack('<QfffIIIif16s', self.frame_id, self.time_ps, self.temperature,
-                             pe, ke, self.n_atoms, len(spikes), self.grid_dim,
-                             self.current_probe, self.sequence_score, b'\x00'*16)
+        # Header format: Q=u64, f=f32, I=u32, i=i32 (60 bytes total)
+        # Matches Rust fused_engine.rs build_monitor_frame()
+        header = struct.pack('<QffffIIIif16s',
+                             self.frame_id,      # Q: u64 frame_id
+                             self.time_ps,       # f: f32 time_ps
+                             self.temperature,   # f: f32 temperature
+                             pe,                 # f: f32 PE
+                             ke,                 # f: f32 KE
+                             self.n_atoms,       # I: u32 n_atoms
+                             len(spikes),        # I: u32 n_spikes
+                             self.grid_dim,      # I: u32 grid_dim
+                             self.current_probe, # i: i32 probe_id
+                             self.sequence_score,# f: f32 sequence_score
+                             b'\x00'*16)         # 16s: padding
         data = bytearray(header)
 
         data.extend(struct.pack('<I', len(pos)))
