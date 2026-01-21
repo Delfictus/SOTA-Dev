@@ -96,6 +96,8 @@ pub mod exclusion;
 pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod fused_engine;
+#[cfg(feature = "gpu")]
+pub mod active_sensing;
 pub mod input;
 pub mod mapping;
 pub mod neuromorphic;
@@ -118,6 +120,12 @@ pub use gpu::{NhsGpuEngine, FrameResult, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING}
 pub use fused_engine::{
     NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig,
     SpikeEvent as FusedSpikeEvent, EnsembleSnapshot, StepResult, RunSummary,
+};
+#[cfg(feature = "gpu")]
+pub use active_sensing::{
+    ActiveSensingEngine, ActiveSensingConfig, ActiveSensingMode, ActiveSensingResults,
+    ActiveSensingBuilder, CoherentProbe, AromaticGroup, ProbeResponse, ResonancePeak,
+    SpikeSequenceDetector, CrypticSiteCandidate,
 };
 pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
 pub use adaptive::{
