@@ -942,7 +942,7 @@ mod tests {
     fn test_gpu_engine_creation() {
         env_logger::builder().is_test(true).try_init().ok();
 
-        let context = Arc::new(CudaContext::new(0).expect("CUDA not available"));
+        let context = CudaContext::new(0).expect("CUDA not available");
         let engine = NhsGpuEngine::new(context, 32, 1000);
 
         assert!(engine.is_ok(), "Failed to create GPU engine: {:?}", engine.err());
@@ -953,7 +953,7 @@ mod tests {
     fn test_gpu_engine_basic_workflow() {
         env_logger::builder().is_test(true).try_init().ok();
 
-        let context = Arc::new(CudaContext::new(0).expect("CUDA not available"));
+        let context = CudaContext::new(0).expect("CUDA not available");
         let mut engine = NhsGpuEngine::new(context, 32, 100).expect("Failed to create engine");
 
         // Initialize

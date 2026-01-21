@@ -561,6 +561,10 @@ pub struct NhsAmberFusedEngine {
     aromatic_neighbors_size: usize,
     n_aromatics: usize,
 
+    // Aromatic topology buffers for init kernels (Issue #3 fix)
+    d_aromatic_atom_indices: CudaSlice<i32>,  // [n_aromatics * 16] - flat array of ring atom indices
+    d_aromatic_n_atoms: CudaSlice<i32>,       // [n_aromatics] - count of atoms per aromatic
+
     // Captured data
     spike_events: Vec<SpikeEvent>,
     ensemble_snapshots: Vec<EnsembleSnapshot>,
@@ -795,6 +799,11 @@ impl NhsAmberFusedEngine {
         let aromatic_neighbors_size = std::mem::size_of::<GpuAromaticNeighbors>();
         let d_aromatic_neighbors: CudaSlice<u8> = stream.alloc_zeros(n_aromatics.max(1) * aromatic_neighbors_size)?;
 
+        // Aromatic topology buffers for init kernels (Issue #3 fix)
+        // These are needed by build_aromatic_neighbors and compute_ring_normals CUDA kernels
+        let d_aromatic_atom_indices: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1) * 16)?;
+        let d_aromatic_n_atoms: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1))?;
+
         // ====================================================================
         // ALLOCATE WARP MATRIX (voxel-to-atom mapping)
         // ====================================================================
@@ -919,6 +928,10 @@ impl NhsAmberFusedEngine {
             aromatic_neighbors_size,
             n_aromatics,
 
+            // Aromatic topology buffers for init kernels (Issue #3 fix)
+            d_aromatic_atom_indices,
+            d_aromatic_n_atoms,
+
             spike_events: Vec::new(),
             ensemble_snapshots: Vec::new(),
         };
@@ -937,6 +950,13 @@ impl NhsAmberFusedEngine {
 
         // Build warp matrix
         engine.build_warp_matrix()?;
+
+        // ====================================================================
+        // INITIALIZE AROMATIC NEIGHBOR LISTS AND RING NORMALS (Issues #1 & #2 fix)
+        // These must be called AFTER positions are uploaded but BEFORE simulation starts
+        // ====================================================================
+        engine.init_aromatic_neighbors()?;
+        engine.compute_ring_normals()?;
 
         log::info!("NHS-AMBER Fused Engine created successfully");
         log::info!("  Bonds: {}, Angles: {}, Dihedrals: {}", n_bonds, n_angles, n_dihedrals);
@@ -1096,6 +1116,31 @@ impl NhsAmberFusedEngine {
         // Aromatic types
         if !aromatic_types.is_empty() {
             self.stream.memcpy_htod(aromatic_types, &mut self.d_aromatic_type)?;
+        }
+
+        // ====================================================================
+        // UPLOAD AROMATIC TOPOLOGY FOR INIT KERNELS (Issue #3 fix)
+        // Build flat arrays of aromatic atom indices and counts for GPU kernels
+        // ====================================================================
+
+        if !uv_targets.is_empty() {
+            let n_aromatics = uv_targets.len();
+
+            // Build flat array: [aromatic_0_atom_0, aromatic_0_atom_1, ..., aromatic_1_atom_0, ...]
+            let mut aromatic_atom_indices_flat = vec![-1i32; n_aromatics * 16];
+            let mut aromatic_n_atoms_flat = vec![0i32; n_aromatics];
+
+            for (i, target) in uv_targets.iter().enumerate() {
+                aromatic_n_atoms_flat[i] = target.n_atoms;
+                for j in 0..16 {
+                    aromatic_atom_indices_flat[i * 16 + j] = target.atom_indices[j];
+                }
+            }
+
+            self.stream.memcpy_htod(&aromatic_atom_indices_flat, &mut self.d_aromatic_atom_indices)?;
+            self.stream.memcpy_htod(&aromatic_n_atoms_flat, &mut self.d_aromatic_n_atoms)?;
+
+            log::info!("Uploaded aromatic topology: {} aromatics with ring atom indices", n_aromatics);
         }
 
         // Initialize excited state arrays to zero (ground state)
@@ -1304,10 +1349,122 @@ impl NhsAmberFusedEngine {
         Ok(())
     }
 
+    /// Initialize aromatic neighbor lists for vibrational energy transfer (Issue #1 fix)
+    ///
+    /// This must be called AFTER positions are uploaded to GPU.
+    /// The CUDA kernel `build_aromatic_neighbors` finds all atoms within 5A
+    /// of each aromatic ring center (excluding ring atoms themselves).
+    /// These neighbors receive vibrational energy kicks during UV excitation decay.
+    fn init_aromatic_neighbors(&mut self) -> Result<()> {
+        if self.n_aromatics == 0 {
+            log::info!("No aromatics - skipping aromatic neighbor initialization");
+            return Ok(());
+        }
+
+        // Load the build_aromatic_neighbors kernel
+        let build_neighbors_kernel = self._fused_module
+            .load_function("build_aromatic_neighbors")
+            .context("Failed to load build_aromatic_neighbors kernel")?;
+
+        let n_blocks = (self.n_aromatics as u32).div_ceil(BLOCK_SIZE_1D as u32);
+        let cfg = LaunchConfig {
+            grid_dim: (n_blocks, 1, 1),
+            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let neighbor_cutoff = 5.0f32;  // 5 Angstroms - atoms within this distance receive vibrational energy
+
+        // Kernel signature from nhs_amber_fused.cu:
+        // build_aromatic_neighbors(
+        //     AromaticNeighbors* d_aromatic_neighbors,
+        //     const float3* positions,
+        //     const int* aromatic_atom_indices,  // [n_aromatics * 16]
+        //     const int* aromatic_n_atoms,       // [n_aromatics]
+        //     int n_aromatics,
+        //     int n_atoms,
+        //     float neighbor_cutoff
+        // )
+
+        unsafe {
+            self.stream
+                .launch_builder(&build_neighbors_kernel)
+                .arg(&mut self.d_aromatic_neighbors)
+                .arg(&self.d_positions)
+                .arg(&self.d_aromatic_atom_indices)
+                .arg(&self.d_aromatic_n_atoms)
+                .arg(&(self.n_aromatics as i32))
+                .arg(&(self.n_atoms as i32))
+                .arg(&neighbor_cutoff)
+                .launch(cfg)
+        }
+        .context("Failed to launch build_aromatic_neighbors")?;
+
+        self.context.synchronize()?;
+        log::info!("Built aromatic neighbor lists for {} aromatics (cutoff {:.1}A)",
+            self.n_aromatics, neighbor_cutoff);
+
+        Ok(())
+    }
+
+    /// Compute ring normal vectors for directional vibrational transfer (Issue #2 fix)
+    ///
+    /// This must be called AFTER positions are uploaded to GPU.
+    /// The CUDA kernel `compute_ring_normals` computes the plane normal
+    /// for each aromatic ring using cross product of two edge vectors.
+    /// These normals are used to direct vibrational energy transfer
+    /// perpendicular to the ring plane.
+    fn compute_ring_normals(&mut self) -> Result<()> {
+        if self.n_aromatics == 0 {
+            log::info!("No aromatics - skipping ring normal computation");
+            return Ok(());
+        }
+
+        // Load the compute_ring_normals kernel
+        let compute_normals_kernel = self._fused_module
+            .load_function("compute_ring_normals")
+            .context("Failed to load compute_ring_normals kernel")?;
+
+        let n_blocks = (self.n_aromatics as u32).div_ceil(BLOCK_SIZE_1D as u32);
+        let cfg = LaunchConfig {
+            grid_dim: (n_blocks, 1, 1),
+            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        // Kernel signature from nhs_amber_fused.cu:
+        // compute_ring_normals(
+        //     float3* d_ring_normals,
+        //     const float3* positions,
+        //     const int* aromatic_atom_indices,  // [n_aromatics * 16]
+        //     const int* aromatic_n_atoms,       // [n_aromatics]
+        //     int n_aromatics,
+        //     int n_atoms
+        // )
+
+        unsafe {
+            self.stream
+                .launch_builder(&compute_normals_kernel)
+                .arg(&mut self.d_ring_normals)
+                .arg(&self.d_positions)
+                .arg(&self.d_aromatic_atom_indices)
+                .arg(&self.d_aromatic_n_atoms)
+                .arg(&(self.n_aromatics as i32))
+                .arg(&(self.n_atoms as i32))
+                .launch(cfg)
+        }
+        .context("Failed to launch compute_ring_normals")?;
+
+        self.context.synchronize()?;
+        log::info!("Computed ring normals for {} aromatics", self.n_aromatics);
+
+        Ok(())
+    }
+
     /// Set temperature protocol
     pub fn set_temperature_protocol(&mut self, protocol: TemperatureProtocol) -> Result<()> {
         self.temp_protocol = protocol.clone();
-        log::info!("Set temperature protocol: {}K → {}K over {} steps",
+        log::info!("Set temperature protocol: {}K -> {}K over {} steps",
             protocol.start_temp, protocol.end_temp, protocol.ramp_steps);
         Ok(())
     }
