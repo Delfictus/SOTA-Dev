@@ -7,7 +7,8 @@ Takes a sanitized PDB from Stage 1 and creates AMBER ff14SB topology:
 2. Applies AMBER ff14SB force field
 3. Energy minimizes to remove clashes
 4. Extracts all force field parameters
-5. Exports topology JSON for PRISM GPU kernels
+5. Detects aromatic residues for UV pump targeting
+6. Exports topology JSON for PRISM GPU kernels
 
 Usage:
     python stage2_topology.py sanitized.pdb topology.json
@@ -129,6 +130,93 @@ ELEMENT_RADII = {
     'Na': 1.87,
     'K': 2.43,
 }
+
+
+# =============================================================================
+# AROMATIC RING DETECTION FOR UV PUMP TARGETING
+# =============================================================================
+
+# Ring atom names for aromatic residues
+AROMATIC_RING_ATOMS = {
+    'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],  # 6-membered ring
+    'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],  # 6-membered ring
+    'TRP': ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],  # Fused 5+6 rings
+}
+
+# UV absorption properties at 280nm
+AROMATIC_EXTINCTION_280 = {
+    'TRP': 5500.0,  # Tryptophan: highest absorber
+    'TYR': 1490.0,  # Tyrosine: moderate
+    'PHE': 200.0,   # Phenylalanine: weak (but counts contribute)
+}
+
+
+def detect_aromatic_targets(atom_names, residue_names, residue_ids, positions, verbose=False):
+    """
+    Detect aromatic residues and their ring atoms for UV pump targeting.
+
+    Returns a list of aromatic targets, each containing:
+    - residue_idx: residue index
+    - residue_name: TRP, TYR, or PHE
+    - residue_id: PDB residue number
+    - ring_atom_indices: list of atom indices forming the aromatic ring
+    - ring_center: [x, y, z] center of the ring
+    - extinction_280: UV absorption coefficient at 280nm
+
+    This is pre-computed at prep time so nhs-adaptive doesn't need to scan
+    residue names at runtime.
+    """
+    aromatic_targets = []
+
+    # Group atoms by residue
+    residue_atoms = defaultdict(list)
+    for i, (name, res_name, res_id) in enumerate(zip(atom_names, residue_names, residue_ids)):
+        residue_atoms[(res_id, res_name)].append((i, name))
+
+    # Find aromatics
+    for (res_id, res_name), atoms in residue_atoms.items():
+        if res_name not in AROMATIC_RING_ATOMS:
+            continue
+
+        ring_names = AROMATIC_RING_ATOMS[res_name]
+        ring_atom_indices = []
+
+        # Find ring atom indices
+        for atom_idx, atom_name in atoms:
+            if atom_name in ring_names:
+                ring_atom_indices.append(atom_idx)
+
+        # Only include if we found enough ring atoms
+        min_ring_atoms = 5 if res_name == 'TRP' else 4
+        if len(ring_atom_indices) >= min_ring_atoms:
+            # Compute ring center
+            ring_center = [0.0, 0.0, 0.0]
+            for idx in ring_atom_indices:
+                ring_center[0] += positions[idx * 3]
+                ring_center[1] += positions[idx * 3 + 1]
+                ring_center[2] += positions[idx * 3 + 2]
+            n = len(ring_atom_indices)
+            ring_center = [c / n for c in ring_center]
+
+            # Get residue index (unique sequential)
+            residue_idx = len(aromatic_targets)
+
+            aromatic_targets.append({
+                'residue_idx': residue_idx,
+                'residue_name': res_name,
+                'residue_id': res_id,
+                'ring_atom_indices': ring_atom_indices,
+                'ring_center': ring_center,
+                'extinction_280': AROMATIC_EXTINCTION_280[res_name],
+            })
+
+    if verbose and aromatic_targets:
+        trp = sum(1 for t in aromatic_targets if t['residue_name'] == 'TRP')
+        tyr = sum(1 for t in aromatic_targets if t['residue_name'] == 'TYR')
+        phe = sum(1 for t in aromatic_targets if t['residue_name'] == 'PHE')
+        print(f"Aromatic targets: {len(aromatic_targets)} (TRP={trp}, TYR={tyr}, PHE={phe})")
+
+    return aromatic_targets
 
 
 def get_mbondi3_radius(element: str, atom_name: str, residue_name: str) -> float:
@@ -566,6 +654,13 @@ def prepare_topology(
         output["recommended_timestep_fs"] = 4.0
     else:
         output["recommended_timestep_fs"] = 2.0
+
+    # Detect aromatic targets for UV pump (Cryo-UV pipeline)
+    aromatic_targets = detect_aromatic_targets(
+        atom_names, residue_names, residue_ids, pos_flat, verbose
+    )
+    output["aromatic_targets"] = aromatic_targets
+    output["n_aromatics"] = len(aromatic_targets)
 
     # Write JSON
     if verbose:
