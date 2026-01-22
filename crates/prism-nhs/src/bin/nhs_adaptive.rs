@@ -61,16 +61,17 @@ struct Args {
     #[arg(short, long, default_value = "nhs_adaptive_results")]
     output: PathBuf,
 
-    /// Survey phase duration (steps)
-    #[arg(long, default_value = "20000")]
+    /// Survey phase duration (steps) - 1ns default for frozen baseline
+    /// Note: dt=0.002ps, so 500000 steps = 1ns
+    #[arg(long, default_value = "500000")]
     survey_steps: i32,
 
-    /// Convergence phase duration (steps)
-    #[arg(long, default_value = "40000")]
+    /// Convergence phase duration (steps) - 2ns default for warming/probing
+    #[arg(long, default_value = "1000000")]
     convergence_steps: i32,
 
-    /// Precision phase duration (steps)
-    #[arg(long, default_value = "40000")]
+    /// Precision phase duration (steps) - 2ns default for hot validation
+    #[arg(long, default_value = "1000000")]
     precision_steps: i32,
 
     /// Survey phase grid spacing (Angstroms)
@@ -86,7 +87,8 @@ struct Args {
     precision_grid: f32,
 
     /// Equilibration steps before baseline measurement
-    #[arg(long, default_value = "10000")]
+    /// Default: 50000 steps = 100ps equilibration
+    #[arg(long, default_value = "50000")]
     equilibration: i32,
 
     /// Jitter amplitude threshold
@@ -101,7 +103,7 @@ struct Args {
     #[arg(long, default_value = "8.0")]
     cascade_radius: f32,
 
-    /// Target temperature (K) - final temperature after warming
+    /// Target temperature (K) - final temperature after warming (minimum 300K)
     #[arg(long, default_value = "300.0")]
     temperature: f32,
 
@@ -109,12 +111,17 @@ struct Args {
     #[arg(long)]
     cryo: bool,
 
+    /// Quick test mode (reduced steps for debugging, NOT for production)
+    #[arg(long)]
+    quick: bool,
+
     /// Cryogenic start temperature (K) - requires --cryo
     #[arg(long, default_value = "100.0")]
     cryo_temp: f32,
 
     /// Steps to hold at cryogenic temperature before warming
-    #[arg(long, default_value = "5000")]
+    /// Default: 500000 steps = 1ns frozen (entire survey phase)
+    #[arg(long, default_value = "500000")]
     cryo_hold: i32,
 
     /// CUDA device ID
@@ -139,12 +146,43 @@ fn main() -> Result<()> {
         .format_timestamp_millis()
         .init();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    // Validate minimum temperature (300K required for physiological relevance)
+    if args.temperature < 300.0 {
+        log::warn!("Temperature {} K is below minimum 300K, setting to 300K", args.temperature);
+        args.temperature = 300.0;
+    }
+
+    // Quick mode: reduced steps for debugging (NOT for production)
+    if args.quick {
+        log::warn!("QUICK MODE: Using reduced steps for testing (NOT production quality)");
+        args.survey_steps = 10000;      // 20ps
+        args.convergence_steps = 20000; // 40ps
+        args.precision_steps = 10000;   // 20ps
+        args.cryo_hold = 10000;         // 20ps frozen
+        args.equilibration = 5000;      // 10ps equilibration
+    }
+
+    // Calculate total simulation time for logging
+    let total_steps = args.survey_steps + args.convergence_steps + args.precision_steps;
+    let total_time_ns = total_steps as f64 * 0.002 / 1000.0; // dt=0.002ps
 
     println!("╔════════════════════════════════════════════════════════════════╗");
     println!("║     PRISM-NHS: Adaptive Jitter Detection                       ║");
     println!("║     Quiet Landscape → UV Perturbation → Cascade Discovery      ║");
     println!("╚════════════════════════════════════════════════════════════════╝");
+    println!();
+
+    if args.quick {
+        println!("⚠️  QUICK TEST MODE - NOT FOR PRODUCTION");
+        println!();
+    }
+
+    println!("Simulation Parameters:");
+    println!("  Total steps:    {} ({:.2} ns)", total_steps, total_time_ns);
+    println!("  Final temp:     {} K", args.temperature);
+    println!("  Cryogenic:      {}", if args.cryo { "ENABLED" } else { "disabled" });
     println!();
 
     // Verify input exists
@@ -322,6 +360,7 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
         target_sequence: (0..aromatics.len()).collect(),
         current_target: 0,
         timestep_counter: 0,
+        ..Default::default()
     };
     engine.set_uv_config(uv_config);
 
@@ -346,10 +385,37 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     let mut phase_jitter_signals = [0usize; 3];
     let mut phase_cascades = [0usize; 3];
 
-    // Spike-based spatial analysis
+    // Spike-based spatial analysis with aromatic-distance weighting
     // Track which voxels spike frequently → these are candidate cryptic sites
-    let mut spike_accumulator: std::collections::HashMap<i32, (usize, [f32; 3])> = std::collections::HashMap::new();
+    // Weighted accumulator: (weighted_count, raw_count, aromatic_adjacent_count, position)
+    let mut spike_accumulator: std::collections::HashMap<i32, (f32, usize, usize, [f32; 3])> = std::collections::HashMap::new();
     let spike_clustering_radius = 5.0f32; // Angstroms - cluster nearby spikes
+    let aromatic_cutoff = 5.0f32; // Spikes within 5Å of aromatic count as "aromatic-adjacent"
+
+    // Pre-compute aromatic residue center positions for weighting
+    let aromatic_residue_ids = topology.aromatic_residues();
+    let aromatic_centers: Vec<[f32; 3]> = aromatic_residue_ids.iter()
+        .map(|&res_id| {
+            // Average position of all atoms in this aromatic residue
+            let mut sum = [0.0f32; 3];
+            let mut count = 0;
+            for (i, &rid) in topology.residue_ids.iter().enumerate() {
+                if rid == res_id {
+                    sum[0] += topology.positions[i * 3];
+                    sum[1] += topology.positions[i * 3 + 1];
+                    sum[2] += topology.positions[i * 3 + 2];
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                [sum[0] / count as f32, sum[1] / count as f32, sum[2] / count as f32]
+            } else {
+                [0.0, 0.0, 0.0]
+            }
+        })
+        .collect();
+
+    log::info!("Computed {} aromatic centers for spike weighting", aromatic_centers.len());
 
     // Run simulation using batched stepping for maximum GPU throughput
     // Batch size of 500 steps minimizes CPU-GPU sync overhead while allowing progress reporting
@@ -396,7 +462,7 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             // Download water density from GPU
             let water_density = engine.get_water_density()?;
 
-            // Download spike events for spatial analysis
+            // Download spike events for spatial analysis with aromatic weighting
             if let Ok(spike_events) = engine.download_spike_events(1000) {
                 if args.verbose && !spike_events.is_empty() {
                     log::info!("Step {}: Downloaded {} spike events for analysis",
@@ -404,9 +470,30 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
                 }
 
                 for (voxel_idx, pos) in &spike_events {
-                    // Accumulate spike counts per voxel
-                    let entry = spike_accumulator.entry(*voxel_idx).or_insert((0, *pos));
-                    entry.0 += 1;
+                    // Find distance to nearest aromatic residue
+                    let min_aromatic_dist = aromatic_centers.iter()
+                        .map(|ac| {
+                            let dx = pos[0] - ac[0];
+                            let dy = pos[1] - ac[1];
+                            let dz = pos[2] - ac[2];
+                            (dx * dx + dy * dy + dz * dz).sqrt()
+                        })
+                        .fold(f32::MAX, |a, b| a.min(b));
+
+                    // Weight by inverse distance (spikes near aromatics count more)
+                    // weight = 1.0 at 0Å, ~0.5 at 5Å, ~0.2 at 10Å
+                    let weight = 1.0 / (1.0 + min_aromatic_dist / aromatic_cutoff);
+
+                    // Track if this spike is aromatic-adjacent (within cutoff)
+                    let is_aromatic_adjacent = min_aromatic_dist <= aromatic_cutoff;
+
+                    // Accumulate: (weighted_count, raw_count, aromatic_adjacent_count, position)
+                    let entry = spike_accumulator.entry(*voxel_idx).or_insert((0.0, 0, 0, *pos));
+                    entry.0 += weight;  // weighted count
+                    entry.1 += 1;       // raw count
+                    if is_aromatic_adjacent {
+                        entry.2 += 1;   // aromatic-adjacent count
+                    }
                 }
             }
 
@@ -562,16 +649,38 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
         ExperimentalCondition::standard(args.temperature)
     };
 
+    // Convert weighted accumulator to old format for mapping compatibility
+    // (weighted_count, raw_count, aromatic_adjacent_count, pos) -> (raw_count, pos)
+    let spike_accumulator_compat: std::collections::HashMap<i32, (usize, [f32; 3])> =
+        spike_accumulator.iter()
+            .map(|(&voxel_idx, &(_, raw_count, _, pos))| (voxel_idx, (raw_count, pos)))
+            .collect();
+
     // Map all hotspots to residues
-    let mapped_hotspots = mapper.map_all_hotspots(&spike_accumulator, condition.clone(), 3);
+    let mapped_hotspots = mapper.map_all_hotspots(&spike_accumulator_compat, condition.clone(), 3);
+
+    // Compute aromatic weighting statistics
+    let total_weighted: f32 = spike_accumulator.values().map(|(w, _, _, _)| w).sum();
+    let total_raw: usize = spike_accumulator.values().map(|(_, r, _, _)| r).sum();
+    let total_aromatic_adj: usize = spike_accumulator.values().map(|(_, _, a, _)| a).sum();
+
+    // Filter hotspots by aromatic adjacency (>50% of spikes near aromatics)
+    let aromatic_weighted_hotspots: Vec<_> = spike_accumulator.iter()
+        .filter(|(_, (_, raw, adj, _))| *raw >= 3 && *adj as f32 / *raw as f32 > 0.5)
+        .map(|(&idx, &(weighted, raw, adj, pos))| (idx, weighted, raw, adj, pos))
+        .collect();
 
     // Analyze spike spatial distribution with AMBER residue correlation
-    println!("Spike Spatial Analysis (AMBER-mapped):");
+    println!("Spike Spatial Analysis (AMBER-mapped with Aromatic Weighting):");
     if spike_accumulator.is_empty() {
         println!("  No spike events captured for spatial analysis");
     } else {
         println!("  Total unique voxels with spikes: {}", spike_accumulator.len());
+        println!("  Total spikes: {} raw, {:.1} weighted", total_raw, total_weighted);
+        println!("  Aromatic-adjacent spikes: {} ({:.1}%)", total_aromatic_adj,
+            100.0 * total_aromatic_adj as f32 / total_raw.max(1) as f32);
         println!("  Mapped hotspots (3+ spikes): {}", mapped_hotspots.len());
+        println!("  Aromatic-weighted hotspots (>50% aromatic): {}", aromatic_weighted_hotspots.len());
         println!("  Condition: {}", condition.condition_id);
 
         if !mapped_hotspots.is_empty() {
@@ -618,6 +727,39 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
 
             if aromatic_adjacent > 0 {
                 println!("    These may respond to UV probing (allosteric candidates)");
+            }
+
+            // Display aromatic-weighted hotspots (candidate cryptic sites)
+            if !aromatic_weighted_hotspots.is_empty() {
+                println!("\n  ═══════════════════════════════════════════════════");
+                println!("  AROMATIC-WEIGHTED HOTSPOTS (Candidate Cryptic Sites)");
+                println!("  ═══════════════════════════════════════════════════");
+                println!("  These hotspots have >50% of spikes near aromatic residues");
+                println!("  (UV-correlated activity indicates allosteric communication)\n");
+
+                // Sort by weighted score descending
+                let mut sorted_weighted = aromatic_weighted_hotspots.clone();
+                sorted_weighted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+                for (rank, (voxel_idx, weighted, raw, adj, pos)) in sorted_weighted.iter().take(10).enumerate() {
+                    let aromatic_pct = 100.0 * *adj as f32 / (*raw).max(1) as f32;
+                    let marker = if aromatic_pct >= 75.0 { "★★" }
+                                 else if aromatic_pct >= 50.0 { "★ " }
+                                 else { "○ " };
+
+                    println!("    {} #{:<3} @ ({:>6.1}, {:>6.1}, {:>6.1})Å",
+                        marker, rank + 1, pos[0], pos[1], pos[2]);
+                    println!("            Weighted: {:.1} | Raw: {} | Aromatic: {}% | Voxel: {}",
+                        weighted, raw, aromatic_pct as u32, voxel_idx);
+                }
+
+                if aromatic_weighted_hotspots.len() > 10 {
+                    println!("\n    ... and {} more aromatic-weighted hotspots",
+                        aromatic_weighted_hotspots.len() - 10);
+                }
+            } else {
+                println!("\n  ⚠ No aromatic-weighted hotspots found");
+                println!("    (No voxels with >50% aromatic-adjacent spikes)");
             }
         }
     }
@@ -709,6 +851,25 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
         "n_aromatic_adjacent": mapped_hotspots.iter()
             .filter(|hs| hs.nearby_residues.iter().any(|r| r.is_aromatic))
             .count(),
+        "aromatic_weighting": {
+            "total_raw_spikes": total_raw,
+            "total_weighted_spikes": total_weighted,
+            "total_aromatic_adjacent": total_aromatic_adj,
+            "aromatic_adjacency_pct": if total_raw > 0 {
+                100.0 * total_aromatic_adj as f64 / total_raw as f64
+            } else { 0.0 },
+            "n_weighted_hotspots": aromatic_weighted_hotspots.len(),
+        },
+        "aromatic_weighted_hotspots": aromatic_weighted_hotspots.iter()
+            .map(|(voxel_idx, weighted, raw, adj, pos)| serde_json::json!({
+                "voxel_idx": voxel_idx,
+                "weighted_score": weighted,
+                "raw_count": raw,
+                "aromatic_adjacent_count": adj,
+                "aromatic_pct": 100.0 * *adj as f64 / (*raw).max(1) as f64,
+                "position_angstrom": pos,
+            }))
+            .collect::<Vec<_>>(),
         "experimental_condition": {
             "temperature_k": condition.temperature_k,
             "protocol": condition.protocol.as_str(),

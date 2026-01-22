@@ -53,6 +53,21 @@ name = "nhs-adaptive"
 path = "src/bin/nhs_adaptive.rs"
 required-features = ["gpu"]
 
+[[bin]]
+name = "nhs-batch"
+path = "src/bin/nhs_batch.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-guided-stage2"
+path = "src/bin/nhs_guided_stage2.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-diagnose"
+path = "src/bin/nhs_diagnose.rs"
+required-features = ["gpu"]
+
 [dev-dependencies]
 tempfile = "3.0"
 tokio-test = "0.4"

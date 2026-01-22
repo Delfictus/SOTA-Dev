@@ -33,6 +33,7 @@
 //!     &elements,
 //!     &charges,
 //!     &residue_names,
+//!     &atom_names,      // IUPAC atom names for ring detection
 //!     &atom_residues,
 //! )?;
 //!
@@ -89,6 +90,7 @@
 #![warn(clippy::all)]
 
 pub mod adaptive;
+pub mod aromatic_proximity;
 pub mod avalanche;
 pub mod config;
 pub mod exclusion;
@@ -96,6 +98,8 @@ pub mod exclusion;
 pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod fused_engine;
+#[cfg(feature = "gpu")]
+pub mod persistent_engine;
 #[cfg(feature = "gpu")]
 pub mod active_sensing;
 pub mod input;
@@ -113,6 +117,14 @@ pub use pipeline::{NhsPipeline, NhsStats};
 pub use uv_bias::{
     AromaticTarget, AromaticType, BurstEvent, CausalCorrelation, PerturbationResult,
     SpikeEvent, UvBiasEngine, UvBiasStats,
+    // Enhanced UV spectroscopy types
+    ChromophoreType, DisulfideTarget, FrequencyHoppingProtocol, LocalTempRecord,
+    SpikeCategory, WavelengthAwareSpike, UvSpectroscopyResults, SpectroscopyStats,
+};
+pub use config::UvSpectroscopyConfig;
+pub use aromatic_proximity::{
+    AromaticProximityAnalyzer, AromaticProximityAnalysis, CrypticSite,
+    ProximityBin, SiteProximityResult, ProximitySummary,
 };
 #[cfg(feature = "gpu")]
 pub use gpu::{NhsGpuEngine, FrameResult, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING};
@@ -126,6 +138,11 @@ pub use active_sensing::{
     ActiveSensingEngine, ActiveSensingConfig, ActiveSensingMode, ActiveSensingResults,
     ActiveSensingBuilder, CoherentProbe, AromaticGroup, ProbeResponse, ResonancePeak,
     SpikeSequenceDetector, CrypticSiteCandidate, Float3, ProbeType,
+};
+#[cfg(feature = "gpu")]
+pub use persistent_engine::{
+    PersistentNhsEngine, PersistentBatchConfig, BatchProcessor,
+    StructureResult, PersistentEngineStats,
 };
 pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
 pub use adaptive::{

@@ -47,18 +47,43 @@ pub const MIN_AVALANCHE_SIZE: usize = 5;
 pub const MIN_DRUGGABLE_VOLUME: f32 = 100.0;
 
 // =============================================================================
-// UV ABSORPTION CONSTANTS (280nm)
+// UV ABSORPTION CONSTANTS - MULTI-WAVELENGTH SPECTROSCOPY
 // =============================================================================
 
+// ----------------------------- λmax Values (nm) -----------------------------
+/// Tryptophan λmax - La band π→π* transition
+pub const TRP_LAMBDA_MAX: f32 = 280.0;
+/// Tyrosine λmax - phenol π→π* transition
+pub const TYR_LAMBDA_MAX: f32 = 274.0;
+/// Phenylalanine λmax - benzyl π→π* transition
+pub const PHE_LAMBDA_MAX: f32 = 258.0;
+/// Disulfide λmax - σ→σ* transition
+pub const DISULFIDE_LAMBDA_MAX: f32 = 250.0;
+
+// ------------------------- Extinction Coefficients (M⁻¹cm⁻¹) ----------------
 /// Tryptophan molar extinction coefficient at 280nm (M⁻¹cm⁻¹)
 /// Strongest UV absorber - primary target for UV bias
 pub const TRP_EXTINCTION_280: f32 = 5600.0;
-
-/// Tyrosine molar extinction coefficient at 280nm (M⁻¹cm⁻¹)
+/// Tyrosine molar extinction coefficient at 274nm
+pub const TYR_EXTINCTION_274: f32 = 1490.0;
+/// Tyrosine at 280nm (secondary peak)
 pub const TYR_EXTINCTION_280: f32 = 1400.0;
-
-/// Phenylalanine molar extinction coefficient at 280nm (M⁻¹cm⁻¹)
+/// Phenylalanine molar extinction coefficient at 258nm
+pub const PHE_EXTINCTION_258: f32 = 200.0;
+/// Phenylalanine at 280nm (off-peak)
 pub const PHE_EXTINCTION_280: f32 = 200.0;
+/// Disulfide molar extinction coefficient at 250nm
+pub const DISULFIDE_EXTINCTION_250: f32 = 300.0;
+
+// ----------------------------- Spectral Bandwidths (nm FWHM) ----------------
+/// Tryptophan bandwidth
+pub const TRP_BANDWIDTH: f32 = 15.0;
+/// Tyrosine bandwidth
+pub const TYR_BANDWIDTH: f32 = 12.0;
+/// Phenylalanine bandwidth
+pub const PHE_BANDWIDTH: f32 = 10.0;
+/// Disulfide bandwidth (broader due to conformational heterogeneity)
+pub const DISULFIDE_BANDWIDTH: f32 = 20.0;
 
 /// Water extinction at 280nm - TRANSPARENT
 /// This is the key insight: water doesn't absorb UV at aromatic wavelengths
@@ -66,6 +91,27 @@ pub const WATER_EXTINCTION_280: f32 = 0.0;
 
 /// Normalization factor for absorption strengths (relative to Trp)
 pub const ABSORPTION_NORMALIZATION: f32 = TRP_EXTINCTION_280;
+
+// ----------------------------- Physical Constants ---------------------------
+/// Boltzmann constant in eV/K
+pub const KB_EV_K: f32 = 8.617e-5;
+/// Planck's constant in eV·s
+pub const PLANCK_EV_S: f32 = 4.136e-15;
+/// Speed of light in nm/s
+pub const SPEED_OF_LIGHT_NM_S: f32 = 2.998e17;
+
+/// Convert wavelength (nm) to photon energy (eV)
+/// E = hc/λ
+pub fn wavelength_to_ev(wavelength_nm: f32) -> f32 {
+    // hc = 1239.84 eV·nm
+    1239.84 / wavelength_nm
+}
+
+/// Standard wavelengths for frequency hopping protocol (nm)
+pub const FREQUENCY_HOP_WAVELENGTHS: [f32; 5] = [258.0, 265.0, 274.0, 280.0, 290.0];
+
+/// Disulfide bond maximum distance (Å) for S-S detection
+pub const DISULFIDE_BOND_MAX_DISTANCE: f32 = 2.5;
 
 // =============================================================================
 // MAIN CONFIGURATION
@@ -339,6 +385,183 @@ impl UvBiasConfig {
             "PHE" | "F" => self.target_phe,
             _ => false,
         }
+    }
+}
+
+// =============================================================================
+// UV SPECTROSCOPY CONFIGURATION (Enhanced Multi-Wavelength)
+// =============================================================================
+
+/// UV Spectroscopy Configuration for full multi-wavelength pump-probe
+///
+/// Extends UvBiasConfig with:
+/// - Frequency hopping protocol
+/// - Disulfide bond targeting
+/// - Local temperature tracking
+/// - π→π* electronic state modeling
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UvSpectroscopyConfig {
+    /// Base UV bias config (backward compatible)
+    pub base: UvBiasConfig,
+
+    // =========================================================================
+    // Frequency Hopping Protocol
+    // =========================================================================
+
+    /// Enable frequency hopping (wavelength scanning)
+    pub frequency_hopping_enabled: bool,
+
+    /// Wavelengths to scan (nm)
+    pub scan_wavelengths: Vec<f32>,
+
+    /// Dwell time per wavelength (MD steps)
+    pub dwell_steps: u32,
+
+    /// Number of full spectral scans
+    pub n_scans: u32,
+
+    // =========================================================================
+    // Disulfide Bond Targeting
+    // =========================================================================
+
+    /// Enable disulfide bond (S-S) targeting at 250nm
+    pub target_disulfides: bool,
+
+    /// Maximum S-S bond distance for detection (Å)
+    pub disulfide_max_distance: f32,
+
+    // =========================================================================
+    // Local Temperature Tracking
+    // =========================================================================
+
+    /// Enable local temperature tracking from photon absorption
+    pub track_local_temperature: bool,
+
+    /// Photon fluence for energy deposition calculation (photons/Å²)
+    pub photon_fluence: f32,
+
+    /// Thermal dissipation time constant (ps)
+    pub thermal_dissipation_tau: f32,
+
+    /// Number of atoms to include in local temperature calculation
+    pub local_temp_shell_atoms: usize,
+
+    // =========================================================================
+    // Electronic State Modeling
+    // =========================================================================
+
+    /// Enable π→π* transition modeling
+    pub model_electronic_transitions: bool,
+
+    /// Excited state lifetime (ps) - vibrational relaxation
+    pub excited_state_lifetime: f32,
+
+    /// Fraction of energy deposited to ring atoms (vs dissipated)
+    pub energy_deposition_fraction: f32,
+}
+
+impl Default for UvSpectroscopyConfig {
+    fn default() -> Self {
+        Self {
+            base: UvBiasConfig::default(),
+
+            // Frequency hopping - disabled by default for backward compat
+            frequency_hopping_enabled: false,
+            scan_wavelengths: vec![258.0, 265.0, 274.0, 280.0, 290.0],
+            dwell_steps: 1000,  // 2 ps per wavelength at 2 fs timestep
+            n_scans: 5,
+
+            // Disulfide targeting - disabled by default
+            target_disulfides: false,
+            disulfide_max_distance: DISULFIDE_BOND_MAX_DISTANCE,
+
+            // Local temperature tracking - enabled
+            track_local_temperature: true,
+            photon_fluence: 1.0,           // photons/Å²
+            thermal_dissipation_tau: 5.0,  // 5 ps decay
+            local_temp_shell_atoms: 20,
+
+            // Electronic state modeling - enabled
+            model_electronic_transitions: true,
+            excited_state_lifetime: 10.0,  // 10 ps for vibrational relaxation
+            energy_deposition_fraction: 0.8,
+        }
+    }
+}
+
+impl UvSpectroscopyConfig {
+    /// Create config with full frequency hopping enabled
+    pub fn with_frequency_hopping() -> Self {
+        Self {
+            frequency_hopping_enabled: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create config with disulfide targeting enabled
+    pub fn with_disulfides() -> Self {
+        Self {
+            target_disulfides: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create full publication-quality config
+    pub fn publication_quality() -> Self {
+        Self {
+            frequency_hopping_enabled: true,
+            target_disulfides: true,
+            track_local_temperature: true,
+            model_electronic_transitions: true,
+            n_scans: 10,
+            ..Default::default()
+        }
+    }
+
+    /// Get chromophore spec for a residue type at a wavelength
+    pub fn get_chromophore_absorption(&self, residue: &str, wavelength: f32) -> f32 {
+        let (lambda_max, epsilon_max, bandwidth) = match residue.to_uppercase().as_str() {
+            "TRP" | "W" => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),
+            "TYR" | "Y" => (TYR_LAMBDA_MAX, TYR_EXTINCTION_274, TYR_BANDWIDTH),
+            "PHE" | "F" => (PHE_LAMBDA_MAX, PHE_EXTINCTION_258, PHE_BANDWIDTH),
+            "CYS" | "C" | "CYX" => (DISULFIDE_LAMBDA_MAX, DISULFIDE_EXTINCTION_250, DISULFIDE_BANDWIDTH),
+            _ => return 0.0,
+        };
+
+        // Gaussian absorption profile
+        let delta = wavelength - lambda_max;
+        let sigma = bandwidth / 2.355;  // FWHM to sigma
+        epsilon_max * (-0.5 * (delta / sigma).powi(2)).exp()
+    }
+
+    /// Get current wavelength for frequency hopping at given step
+    pub fn current_wavelength(&self, step: u64) -> f32 {
+        if !self.frequency_hopping_enabled || self.scan_wavelengths.is_empty() {
+            return 280.0;  // Default to 280nm
+        }
+
+        let scan_length = self.scan_wavelengths.len() as u64 * self.dwell_steps as u64;
+        let position = ((step % scan_length) / self.dwell_steps as u64) as usize;
+        self.scan_wavelengths[position % self.scan_wavelengths.len()]
+    }
+
+    /// Compute local temperature increase from photon absorption
+    ///
+    /// ΔT = E / (3/2 * k_B * N_atoms)
+    pub fn compute_local_heating(&self, wavelength: f32, extinction: f32) -> f32 {
+        let photon_energy = wavelength_to_ev(wavelength);
+
+        // Absorption cross-section (simplified: proportional to extinction)
+        let absorption_cross = extinction / 1000.0;  // Å² approximation
+
+        // Energy deposited per chromophore
+        let energy_deposited = photon_energy * absorption_cross * self.photon_fluence;
+
+        // Convert to temperature increase (equipartition)
+        let n_ring_atoms = 6.0;  // Approximate for benzene ring
+        let delta_t = energy_deposited / (1.5 * KB_EV_K * n_ring_atoms);
+
+        delta_t * self.energy_deposition_fraction
     }
 }
 

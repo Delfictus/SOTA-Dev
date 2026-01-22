@@ -265,6 +265,7 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         target_sequence: (0..aromatics.len()).collect(),
         current_target: 0,
         timestep_counter: 0,
+        ..Default::default()
     };
 
     println!("UV Probe Configuration:");

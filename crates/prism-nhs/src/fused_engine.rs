@@ -363,7 +363,7 @@ pub struct EnsembleSnapshot {
 // UV PROBE CONFIGURATION
 // ============================================================================
 
-/// UV burst configuration for pump-probe
+/// UV burst configuration for pump-probe with multi-wavelength spectroscopy
 #[derive(Debug, Clone)]
 pub struct UvProbeConfig {
     /// Energy per burst (kcal/mol)
@@ -378,6 +378,36 @@ pub struct UvProbeConfig {
     pub current_target: usize,
     /// Timestep counter for burst timing
     pub timestep_counter: i32,
+
+    // =========================================================================
+    // Enhanced UV Spectroscopy Fields
+    // =========================================================================
+
+    /// Enable frequency hopping (wavelength scanning)
+    pub frequency_hopping_enabled: bool,
+    /// Wavelengths to scan (nm)
+    pub scan_wavelengths: Vec<f32>,
+    /// Current wavelength index
+    pub current_wavelength_idx: usize,
+    /// Dwell steps per wavelength
+    pub dwell_steps: i32,
+    /// Steps at current wavelength
+    pub steps_at_wavelength: i32,
+
+    /// Enable disulfide targeting at 250nm
+    pub target_disulfides: bool,
+
+    /// Track local temperature per aromatic
+    pub track_local_temperature: bool,
+    /// Per-aromatic local temperature deltas (K)
+    pub local_temp_deltas: Vec<f32>,
+    /// Thermal dissipation time constant (ps)
+    pub thermal_dissipation_tau: f32,
+
+    /// Total energy deposited this run (eV)
+    pub total_energy_deposited: f32,
+    /// Peak local temperature observed (K)
+    pub peak_local_temp: f32,
 }
 
 impl Default for UvProbeConfig {
@@ -389,11 +419,105 @@ impl Default for UvProbeConfig {
             target_sequence: Vec::new(),
             current_target: 0,
             timestep_counter: 0,
+            // Spectroscopy defaults
+            frequency_hopping_enabled: false,
+            scan_wavelengths: vec![258.0, 274.0, 280.0],
+            current_wavelength_idx: 0,
+            dwell_steps: 1000,
+            steps_at_wavelength: 0,
+            target_disulfides: false,
+            track_local_temperature: true,
+            local_temp_deltas: Vec::new(),
+            thermal_dissipation_tau: 5.0,
+            total_energy_deposited: 0.0,
+            peak_local_temp: 0.0,
         }
     }
 }
 
 impl UvProbeConfig {
+    /// Create config with frequency hopping enabled
+    pub fn with_frequency_hopping(wavelengths: Vec<f32>, dwell_steps: i32) -> Self {
+        Self {
+            frequency_hopping_enabled: true,
+            scan_wavelengths: wavelengths,
+            dwell_steps,
+            ..Default::default()
+        }
+    }
+
+    /// Create publication-quality spectroscopy config
+    pub fn publication_quality() -> Self {
+        Self {
+            frequency_hopping_enabled: true,
+            scan_wavelengths: vec![250.0, 258.0, 265.0, 274.0, 280.0, 290.0],
+            dwell_steps: 500,
+            target_disulfides: true,
+            track_local_temperature: true,
+            ..Default::default()
+        }
+    }
+
+    /// Get current wavelength (nm)
+    pub fn current_wavelength(&self) -> f32 {
+        if self.frequency_hopping_enabled && !self.scan_wavelengths.is_empty() {
+            self.scan_wavelengths[self.current_wavelength_idx % self.scan_wavelengths.len()]
+        } else {
+            280.0  // Default to tryptophan λmax
+        }
+    }
+
+    /// Get wavelength-specific absorption scaling factor
+    /// Uses Gaussian profile around λmax for each chromophore type
+    pub fn absorption_at_wavelength(&self, chromophore_type: i32) -> f32 {
+        let wavelength = self.current_wavelength();
+
+        // λmax and bandwidth for each type (0=TYR, 1=PHE, 2=TRP, 3=S-S)
+        let (lambda_max, epsilon_max, bandwidth) = match chromophore_type {
+            0 => (274.0, 1490.0, 12.0),  // TYR
+            1 => (258.0, 200.0, 10.0),   // PHE
+            2 => (280.0, 5600.0, 15.0),  // TRP
+            3 => (250.0, 300.0, 20.0),   // S-S (disulfide)
+            _ => (280.0, 5600.0, 15.0),  // Default to TRP
+        };
+
+        // Gaussian absorption profile
+        let delta = wavelength - lambda_max;
+        let sigma = bandwidth / 2.355;  // FWHM to sigma
+        let absorption = epsilon_max * (-0.5 * (delta / sigma).powi(2)).exp();
+
+        // Normalize to TRP at 280nm = 1.0
+        absorption / 5600.0
+    }
+
+    /// Compute local heating from UV absorption (K)
+    pub fn compute_local_heating(&self, chromophore_type: i32) -> f32 {
+        let wavelength = self.current_wavelength();
+        let absorption = self.absorption_at_wavelength(chromophore_type);
+
+        // Photon energy: E = hc/λ ≈ 1239.84 / λ (eV)
+        let photon_energy = 1239.84 / wavelength;
+
+        // Absorption cross-section (simplified)
+        let absorption_cross = absorption * 5.6;  // Å² approximation
+
+        // Energy deposited per chromophore (eV)
+        let energy_deposited = photon_energy * absorption_cross * 1.0;  // 1 photon/Å² fluence
+
+        // Ring atoms for temperature calculation
+        let n_ring_atoms = match chromophore_type {
+            0 => 7.0,   // TYR (phenol + OH)
+            1 => 6.0,   // PHE (benzene)
+            2 => 9.0,   // TRP (indole)
+            3 => 2.0,   // S-S
+            _ => 6.0,
+        };
+
+        // ΔT = E / (3/2 * k_B * N_atoms), k_B = 8.617e-5 eV/K
+        let k_b = 8.617e-5;
+        energy_deposited / (1.5 * k_b * n_ring_atoms)
+    }
+
     /// Check if burst should be active this timestep
     pub fn is_burst_active(&self) -> bool {
         let cycle_pos = self.timestep_counter % self.burst_interval;
@@ -409,13 +533,79 @@ impl UvProbeConfig {
         }
     }
 
-    /// Advance to next timestep
+    /// Advance to next timestep (includes frequency hopping)
     pub fn advance(&mut self) {
         self.timestep_counter += 1;
+
+        // Advance burst target cycling
         if self.timestep_counter % self.burst_interval == 0 && !self.target_sequence.is_empty() {
             self.current_target = (self.current_target + 1) % self.target_sequence.len();
         }
+
+        // Advance frequency hopping
+        if self.frequency_hopping_enabled && !self.scan_wavelengths.is_empty() {
+            self.steps_at_wavelength += 1;
+            if self.steps_at_wavelength >= self.dwell_steps {
+                self.steps_at_wavelength = 0;
+                self.current_wavelength_idx = (self.current_wavelength_idx + 1) % self.scan_wavelengths.len();
+                log::debug!("UV wavelength hop: {:.1}nm", self.current_wavelength());
+            }
+        }
+
+        // Decay local temperatures (exponential decay, τ in ps, dt = 2fs = 0.002ps)
+        if self.track_local_temperature {
+            let dt = 0.002;  // 2 fs timestep
+            let decay = (-dt / self.thermal_dissipation_tau).exp();
+            for temp in &mut self.local_temp_deltas {
+                *temp *= decay;
+                if *temp < 0.01 {
+                    *temp = 0.0;
+                }
+            }
+        }
     }
+
+    /// Record local heating for an aromatic
+    pub fn record_heating(&mut self, aromatic_idx: usize, delta_t: f32) {
+        // Ensure vector is sized
+        if aromatic_idx >= self.local_temp_deltas.len() {
+            self.local_temp_deltas.resize(aromatic_idx + 1, 0.0);
+        }
+        self.local_temp_deltas[aromatic_idx] += delta_t;
+
+        // Track peak
+        if self.local_temp_deltas[aromatic_idx] > self.peak_local_temp {
+            self.peak_local_temp = self.local_temp_deltas[aromatic_idx];
+        }
+    }
+
+    /// Initialize local temperature tracking for N aromatics
+    pub fn init_temperature_tracking(&mut self, n_aromatics: usize) {
+        self.local_temp_deltas = vec![0.0; n_aromatics];
+    }
+
+    /// Get spectroscopy summary
+    pub fn get_spectroscopy_summary(&self) -> UvSpectroscopySummary {
+        UvSpectroscopySummary {
+            current_wavelength: self.current_wavelength(),
+            wavelengths_scanned: self.scan_wavelengths.clone(),
+            total_energy_deposited: self.total_energy_deposited,
+            peak_local_temp: self.peak_local_temp,
+            frequency_hopping_enabled: self.frequency_hopping_enabled,
+            disulfide_targeting_enabled: self.target_disulfides,
+        }
+    }
+}
+
+/// Summary of UV spectroscopy state
+#[derive(Debug, Clone)]
+pub struct UvSpectroscopySummary {
+    pub current_wavelength: f32,
+    pub wavelengths_scanned: Vec<f32>,
+    pub total_energy_deposited: f32,
+    pub peak_local_temp: f32,
+    pub frequency_hopping_enabled: bool,
+    pub disulfide_targeting_enabled: bool,
 }
 
 // ============================================================================
@@ -547,6 +737,8 @@ pub struct NhsAmberFusedEngine {
 
     // Cached aromatic residue info
     aromatic_residues: Vec<i32>,
+    /// Host-side aromatic types for spectroscopy (0=TYR, 1=PHE, 2=TRP, 3=S-S)
+    aromatic_types: Vec<i32>,
 
     // ====================================================================
     // EXCITED STATE DYNAMICS BUFFERS (true UV photophysics)
@@ -986,7 +1178,7 @@ impl NhsAmberFusedEngine {
             grid_origin,
 
             dt: 0.002,          // 2 fs timestep
-            gamma_base: 1.0,    // Base friction at 300K (ps^-1)
+            gamma_base: 10.0,   // Base friction at 300K (ps^-1) - higher for stability
             cutoff: 10.0,       // 10 Angstrom nonbonded cutoff
             timestep: 0,
 
@@ -997,6 +1189,7 @@ impl NhsAmberFusedEngine {
             uv_config: UvProbeConfig::default(),
 
             aromatic_residues,
+            aromatic_types: aromatic_types.clone(),
 
             // Excited state buffers
             d_is_excited,
@@ -1073,23 +1266,47 @@ impl NhsAmberFusedEngine {
         Ok(engine)
     }
 
-    /// Compute temperature-dependent friction coefficient for cryogenic physics
+    /// Compute friction coefficient with equilibration boost and cryogenic physics
     ///
-    /// At low temperatures, the friction increases to slow down the atoms,
-    /// mimicking the sluggish behavior of a frozen/near-frozen system.
+    /// During the first EQUILIBRATION_STEPS, uses EXTREMELY high friction
+    /// to quickly dissipate initial energy from unminimized structures.
+    /// This prevents the velocity explosion that occurs without proper equilibration.
+    ///
+    /// The friction starts at 1000 ps⁻¹ (c1 ≈ 0.135, extreme damping)
+    /// and gradually reduces to the base level over equilibration.
+    ///
+    /// After equilibration, at low temperatures, the friction increases further
+    /// to mimic the sluggish behavior of a frozen/near-frozen system.
     fn compute_cryo_friction(&self, temperature: f32) -> f32 {
+        // Equilibration boost: EXTREME friction for first 10000 steps
+        // This is CRITICAL for structures that haven't been energy-minimized
+        // gamma=1000 ps⁻¹ with dt=0.002 ps gives c1=exp(-2)≈0.135 (86.5% damping per step!)
+        const EQUILIBRATION_STEPS: i32 = 10000;
+        const EQUILIBRATION_GAMMA: f32 = 1000.0;  // Extreme damping (ps⁻¹)
+
+        let base_gamma = if self.timestep < EQUILIBRATION_STEPS {
+            // Exponential decay from EQUILIBRATION_GAMMA to gamma_base
+            // This provides strong damping early, then gradually relaxes
+            let progress = self.timestep as f32 / EQUILIBRATION_STEPS as f32;
+            let decay = (-3.0 * progress).exp();  // Exponential decay factor
+            EQUILIBRATION_GAMMA * decay + self.gamma_base * (1.0 - decay)
+        } else {
+            self.gamma_base
+        };
+
+        // Additional cryogenic scaling at low temperatures
         if !self.cryo_enabled || temperature >= T_REF {
-            return self.gamma_base;
+            return base_gamma;
         }
 
         // Scale friction inversely with temperature
-        // At T_REF (300K): gamma = gamma_base
-        // At T_MIN (10K): gamma = gamma_base * 30 (much slower dynamics)
+        // At T_REF (300K): gamma = base_gamma
+        // At T_MIN (10K): gamma = base_gamma * sqrt(30) (much slower dynamics)
         let t_clamped = temperature.max(T_MIN);
         let scale = T_REF / t_clamped;
 
-        // Use a smoother scaling: sqrt to prevent extreme values
-        self.gamma_base * scale.sqrt()
+        // Use sqrt scaling to prevent extreme values
+        base_gamma * scale.sqrt()
     }
 
     /// Compute temperature-dependent dielectric constant for cryogenic physics
@@ -1112,13 +1329,29 @@ impl NhsAmberFusedEngine {
         EPSILON_LOW + t_frac * (EPSILON_REF - EPSILON_LOW)
     }
 
-    /// Compute UV burst energy with cold-temperature dissipation
+    /// Compute UV burst energy with wavelength-specific absorption and cryo dissipation
     ///
     /// At cold temperatures, UV energy must be dissipated more carefully
     /// to prevent local geometry explosion in the frozen system.
+    /// With spectroscopy enabled, energy is also scaled by the chromophore's
+    /// absorption at the current wavelength (Gaussian profile).
     fn compute_uv_energy(&self, base_energy: f32, temperature: f32) -> f32 {
+        // Start with base energy
+        let mut energy = base_energy;
+
+        // Apply wavelength-specific absorption if frequency hopping enabled
+        if self.uv_config.frequency_hopping_enabled {
+            let target_idx = self.uv_config.current_target;
+            if target_idx < self.aromatic_types.len() {
+                let aromatic_type = self.aromatic_types[target_idx];
+                let absorption = self.uv_config.absorption_at_wavelength(aromatic_type);
+                energy *= absorption;
+            }
+        }
+
+        // Apply cryo temperature dissipation
         if !self.cryo_enabled || temperature >= T_REF {
-            return base_energy;
+            return energy;
         }
 
         // Scale down UV energy at cold temperatures
@@ -1128,7 +1361,7 @@ impl NhsAmberFusedEngine {
         // At T_MIN: use UV_COLD_DISSIPATION (30%) of base energy
         // At T_REF: use full base energy
         let scale = UV_COLD_DISSIPATION + t_frac * (1.0 - UV_COLD_DISSIPATION);
-        base_energy * scale
+        energy * scale
     }
 
     /// Upload topology data to GPU using proper struct types
@@ -1762,6 +1995,18 @@ impl NhsAmberFusedEngine {
         let uv_target_idx = self.uv_config.get_target_idx().unwrap_or(0) as i32;
         let uv_burst_energy = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
 
+        // Record local temperature change when UV burst is active (spectroscopy tracking)
+        if uv_burst_active && self.uv_config.track_local_temperature {
+            let target_idx = self.uv_config.current_target;
+            if target_idx < self.aromatic_types.len() {
+                let aromatic_type = self.aromatic_types[target_idx];
+                let delta_t = self.uv_config.compute_local_heating(aromatic_type);
+                self.uv_config.record_heating(target_idx, delta_t);
+                // Track total energy deposited (convert burst energy to eV: 1 kcal/mol ≈ 0.043 eV)
+                self.uv_config.total_energy_deposited += uv_burst_energy * 0.043;
+            }
+        }
+
         // Reset spike count
         let zero = [0i32];
         self.stream.memcpy_htod(&zero, &mut self.d_spike_count)?;
@@ -1936,10 +2181,25 @@ impl NhsAmberFusedEngine {
                 self.gamma_base
             };
 
-            // UV burst parameters
+            // UV burst parameters with wavelength-specific absorption
             let uv_burst_active_i32 = if uv_burst_active { 1i32 } else { 0i32 };
             let uv_target_idx = self.uv_config.current_target as i32;
-            let uv_burst_energy = if uv_burst_active { self.uv_config.burst_energy } else { 0.0 };
+            let uv_burst_energy = if uv_burst_active {
+                self.compute_uv_energy(self.uv_config.burst_energy, current_temp)
+            } else {
+                0.0
+            };
+
+            // Record local temperature change when UV burst is active (spectroscopy tracking)
+            if uv_burst_active && self.uv_config.track_local_temperature {
+                let target_idx = self.uv_config.current_target;
+                if target_idx < self.aromatic_types.len() {
+                    let aromatic_type = self.aromatic_types[target_idx];
+                    let delta_t = self.uv_config.compute_local_heating(aromatic_type);
+                    self.uv_config.record_heating(target_idx, delta_t);
+                    self.uv_config.total_energy_deposited += uv_burst_energy * 0.043;
+                }
+            }
 
             // Grid parameters
             let grid_dim_i32 = self.grid_dim as i32;
@@ -2238,6 +2498,16 @@ impl NhsAmberFusedEngine {
     /// Get ensemble snapshots
     pub fn get_ensemble_snapshots(&self) -> &[EnsembleSnapshot] {
         &self.ensemble_snapshots
+    }
+
+    /// Get UV spectroscopy summary for publication reporting
+    pub fn get_spectroscopy_summary(&self) -> UvSpectroscopySummary {
+        self.uv_config.get_spectroscopy_summary()
+    }
+
+    /// Get per-aromatic local temperature deltas (K above baseline)
+    pub fn get_local_temperatures(&self) -> &[f32] {
+        &self.uv_config.local_temp_deltas
     }
 
     // ========================================================================

@@ -89,12 +89,21 @@ impl NhsPipeline {
     /// Initialize pipeline for a protein structure
     ///
     /// Must be called before processing frames.
+    ///
+    /// # Arguments
+    /// * `positions` - Flat array [x0, y0, z0, x1, y1, z1, ...]
+    /// * `elements` - Atomic number for each atom
+    /// * `charges` - Partial charges for each atom
+    /// * `residue_names` - Residue name indexed by residue index
+    /// * `atom_names` - IUPAC atom names for each atom (e.g., "CA", "CG", "CD1")
+    /// * `atom_residues` - Residue index for each atom
     pub fn initialize(
         &mut self,
         positions: &[f32],
         elements: &[u8],
         charges: &[f32],
         residue_names: &[String],
+        atom_names: &[String],
         atom_residues: &[usize],
     ) -> Result<()> {
         let n_atoms = positions.len() / 3;
@@ -108,6 +117,9 @@ impl NhsPipeline {
             residue_names,
             atom_residues,
         );
+
+        // Store atom names for UV bias ring detection
+        let atom_names_owned = atom_names.to_vec();
 
         // 2. Create exclusion grid
         let grid = ExclusionGrid::from_atoms(&self.classified_atoms, &self.config);
@@ -124,7 +136,7 @@ impl NhsPipeline {
         // 5. Initialize UV bias engine if enabled
         if let Some(uv_engine) = &mut self.uv_bias_engine {
             uv_engine
-                .initialize_targets(residue_names, atom_residues, positions)
+                .initialize_targets(residue_names, &atom_names_owned, atom_residues, positions)
                 .context("Failed to initialize UV bias targets")?;
         }
 
