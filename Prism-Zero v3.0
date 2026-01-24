@@ -1,0 +1,118 @@
+This is the Executive Summary of the PRISM-Zero v3.0 scientific mission.
+
+You are no longer building a "physics simulator." You are building a Cryptic Pocket Discovery Platform.
+
+Here is the exact strategy, the deliverables, and the metrics that a pharmaceutical partner would demand to see.
+1. The True Calibration Strategy: "Train on Diversity, Test on Reality"
+
+The core hypothesis is that physics is universal. If your engine learns the correct parameters to open a hidden pocket on a human cancer protein (KRAS), those same parameters should work on a viral protein (Spike), because the laws of thermodynamics don't change.
+Phase A: Calibration (The Gym)
+
+    Goal: Teach the RL Agent how to "pick a lock" without breaking the door.
+
+    Input: The Calibration Dataset (IL-2, PTP1B, KRAS, 6VXX).
+
+    The Loop:
+
+        Agent sees a closed protein.
+
+        Agent guesses physics knobs (e.g., T=1.5, Friction=0.1, Bias=Mode7).
+
+        Engine runs.
+
+        Reward: Did the pocket open (
+
+                
+        ΔΔ
+
+              
+
+        SASA > 0)? Did the core stay intact (RMSD < 3.0 Å)?
+
+        Agent updates its brain.
+
+    Outcome: A "Frozen" set of physics parameters that balances energy injection with structural stability.
+
+Phase B: Validation (The Exam)
+
+    Goal: Prove the engine works on a target it has never seen.
+
+    Input: The Holdout Dataset (6W41, 7K8S, Abl Kinase).
+
+    The Rule: Zero Tuning. You run the engine exactly once using the parameters learned in Phase A.
+
+    Success: The engine predicts the open state of 6W41 purely based on the physics it learned from KRAS and IL-2.
+
+2. The Pipeline Outputs (What you deliver)
+
+At the end of a run, your engine produces three distinct classes of data:
+A. The "Digital Twin" (Structures)
+
+    relaxed_structure.pdb: A physically valid 3D model of the protein in its "Open/Druggable" state.
+
+    Why it matters: Medicinal chemists need this 3D shape to design a drug molecule that fits into the hole. You aren't just giving them a number; you are giving them the lock geometry.
+
+B. The "Treasure Map" (Rankings)
+
+    residue_scores.csv: A ranked list of every residue in the protein, sorted by how much it "opened up."
+
+    Why it matters: A protein has ~1,000 residues. Pharma can't test them all. They want to know: "Which 5 spots should we target?" Your list answers that.
+
+C. The "Certificate of Authenticity" (Provenance)
+
+    manifest.json: A cryptographic record of the exact code, inputs, and parameters used.
+
+    Why it matters: Regulatory defensibility. It proves you didn't just get lucky or fake the data.
+
+3. Real-World Drug Discovery Metrics (The "So What?")
+
+If you pitch this to a biotech firm, these are the actual metrics they use to judge success. Your validation scripts are designed to calculate these.
+1. Enrichment Factor (EF)
+
+    Definition: If your engine picks the Top 10 residues, how many of them are actual drug binding sites?
+
+    Target: EF > 5.0. (Your engine is 5x better than random guessing).
+
+    Real World: "If we test the sites PRISM suggests, we save 80% of our screening budget."
+
+2.
+
+        
+ΔΔ
+
+      
+
+SASA (Cryptic Exposure)
+
+    Definition: How much new surface area was exposed?
+
+    Target: > 50 Å².
+
+    Real World: A drug molecule is roughly 200-500 Daltons. It needs a hole at least 50-100 Å² to fit inside. If
+
+            
+    ΔΔ
+
+          
+
+    SASA is tiny, the pocket is too small for a drug.
+
+3. Pocket Persistence
+
+    Definition: Does the pocket stay open, or does it snap shut immediately?
+
+    Target: Open for > 50% of the simulation frames (if running an ensemble).
+
+    Real World: If the pocket only opens for 1 femtosecond, a drug can't bind. It needs to stay open long enough for chemistry to happen.
+
+4. Structural Integrity (RMSD)
+
+    Definition: Did the rest of the protein melt?
+
+    Target: Core RMSD < 3.0 Å.
+
+    Real World: If you melt the protein, any "pocket" you find is a hallucination. A low RMSD proves the target exists in a biologically relevant state.
+
+🏁 Summary
+
+Your PRISM Engine is a machine that takes a "Rock" (Closed Protein) and turns it into a "Lock" (Open Pocket), providing the "Key" (Coordinates) to the chemist.

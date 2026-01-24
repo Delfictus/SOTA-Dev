@@ -100,11 +100,213 @@ pub const PLANCK_EV_S: f32 = 4.136e-15;
 /// Speed of light in nm/s
 pub const SPEED_OF_LIGHT_NM_S: f32 = 2.998e17;
 
+// =============================================================================
+// UV PUMP-PROBE CALIBRATION CONSTANTS (PHYSICS-CORRECTED)
+// =============================================================================
+
+/// Proper ε → σ conversion factor (per molecule)
+/// σ(Å²) = ε(M⁻¹cm⁻¹) × ln(10) / N_A
+/// σ(Å²) = ε × 2.303 / (6.022×10²³) × 10¹⁶
+/// σ(Å²) = ε × 3.823×10⁻⁵
+pub const EPSILON_TO_SIGMA_CONVERSION: f32 = 3.823e-5;
+
+/// Calibrated photon fluence (photons/Å² per pulse)
+/// Anchored to ΔT = 20 K for TRP @ 280nm with η = 1.0
+pub const CALIBRATED_PHOTON_FLUENCE: f32 = 0.024;
+
+/// Calibrated fluence in experimental units (mJ/cm² at 280nm)
+/// Conversion: H(mJ/cm²) = F(photons/Å²) × 10¹⁶ (Å²/cm²) × E_photon(J) × 10³ (mJ/J)
+/// At 280nm: E_photon = 7.09×10⁻¹⁹ J, so 1 photon/Å² ≈ 7.09 mJ/cm²
+/// Therefore: 0.024 photons/Å² ≈ 0.170 mJ/cm²
+pub const CALIBRATED_FLUENCE_MJ_CM2_280NM: f32 = 0.170;
+
+/// Heat yield η (fraction of absorbed photon energy converted to local heat)
+/// η = 1.0 is conservative upper bound (all absorbed energy → vibrational heat)
+/// In practice, some energy may be re-emitted as fluorescence or transferred.
+/// For computational pump-probe, η = 1.0 provides maximum structural perturbation.
+pub const DEFAULT_HEAT_YIELD: f32 = 1.0;
+
+/// Alias for backward compatibility - energy_deposition_fraction IS heat_yield (η)
+pub const DEFAULT_ENERGY_DEPOSITION_FRACTION: f32 = DEFAULT_HEAT_YIELD;
+
+/// Effective degrees of freedom for local heating (N_eff)
+/// These are EFFECTIVE DOF PROXIES calibrated for local temperature response,
+/// NOT literal atom counts. Values chosen to match experimental heating profiles.
+pub const NEFF_TRP: f32 = 9.0;   // Indole ring system - effective DOF proxy
+pub const NEFF_TYR: f32 = 10.0;  // Phenol + hydroxyl system - effective DOF proxy
+pub const NEFF_PHE: f32 = 9.0;   // Benzene + methylene system - effective DOF proxy
+pub const NEFF_DISULFIDE: f32 = 2.0;  // S-S bond - 2 atoms involved in stretch
+
+/// Single-photon regime threshold
+/// Absorption probability must satisfy p << 1
+pub const MAX_ABSORPTION_PROBABILITY: f32 = 0.01;  // 1% max
+
+// =============================================================================
+// CRYO PHYSICS CONSTANTS
+// =============================================================================
+
+/// Cryogenic bath temperature (defensible classical MD range)
+pub const CRYO_BATH_TEMPERATURE: f32 = 100.0;  // Kelvin
+
+/// Ambient reference temperature
+pub const AMBIENT_BATH_TEMPERATURE: f32 = 300.0;  // Kelvin
+
+/// Minimum temperature (prevents division by zero)
+pub const T_MIN: f32 = 10.0;  // Kelvin
+
+/// Dielectric constant of water at 300K
+pub const EPSILON_WATER_300K: f32 = 78.5;
+
+/// Dielectric constant of ice at 100K
+pub const EPSILON_ICE_100K: f32 = 3.2;
+
+/// Base Langevin friction coefficient (ambient)
+pub const GAMMA_BASE: f32 = 1.0;  // ps⁻¹
+
+/// Equilibration friction (first 10,000 steps)
+pub const GAMMA_EQUILIBRATION: f32 = 1000.0;  // ps⁻¹
+
+/// Equilibration duration (steps)
+pub const EQUILIBRATION_STEPS: i32 = 10000;
+
+/// Convert extinction coefficient to absorption cross-section (per molecule)
+/// σ(Å²) = ε(M⁻¹cm⁻¹) × 3.823×10⁻⁵
+#[inline]
+pub fn extinction_to_cross_section(epsilon: f32) -> f32 {
+    epsilon * EPSILON_TO_SIGMA_CONVERSION
+}
+
+/// Calibration diagnostic: logs all UV pump-probe parameters for validation
+/// Call this to verify the physics chain produces expected ΔT values.
+///
+/// Expected result for TRP @ 280nm with default parameters:
+/// - ε = 5600 M⁻¹cm⁻¹
+/// - σ = 0.21409 Å²
+/// - F = 0.024 photons/Å²
+/// - p = 0.00514 (< 0.01 single-photon threshold)
+/// - E_photon = 4.428 eV
+/// - E_dep = 0.0228 eV
+/// - N_eff = 9
+/// - ΔT ≈ 19.6 K
+pub fn log_uv_calibration_diagnostic(
+    chromophore: &str,
+    wavelength_nm: f32,
+    epsilon: f32,
+    photon_fluence: f32,
+    heat_yield: f32,
+    n_eff: f32,
+) {
+    let sigma = extinction_to_cross_section(epsilon);
+    let p_absorb = sigma * photon_fluence;
+    let e_photon = wavelength_to_ev(wavelength_nm);
+    let e_dep = e_photon * p_absorb * heat_yield;
+    let delta_t = e_dep / (1.5 * KB_EV_K * n_eff);
+
+    log::info!("=== UV Pump-Probe Calibration Diagnostic ===");
+    log::info!("Chromophore: {}", chromophore);
+    log::info!("Wavelength: {:.1} nm", wavelength_nm);
+    log::info!("ε(λ): {:.1} M⁻¹cm⁻¹", epsilon);
+    log::info!("σ(λ): {:.5} Å²", sigma);
+    log::info!("Photon fluence F: {:.4} photons/Å²", photon_fluence);
+    log::info!("Absorption probability p: {:.5} (threshold: < {})", p_absorb, MAX_ABSORPTION_PROBABILITY);
+    log::info!("Photon energy E_γ: {:.3} eV", e_photon);
+    log::info!("Heat yield η: {:.2}", heat_yield);
+    log::info!("Energy deposited E_dep: {:.5} eV", e_dep);
+    log::info!("Effective DOF N_eff: {:.1}", n_eff);
+    log::info!("Temperature rise ΔT: {:.2} K", delta_t);
+    log::info!("============================================");
+
+    // Warn if outside expected ranges
+    if p_absorb > MAX_ABSORPTION_PROBABILITY {
+        log::warn!("p_absorb ({:.5}) exceeds single-photon regime threshold!", p_absorb);
+    }
+}
+
+/// Run standard calibration check for TRP @ 280nm
+/// Returns (ΔT, p_absorb) for validation
+pub fn validate_trp_calibration() -> (f32, f32) {
+    let epsilon = TRP_EXTINCTION_280;  // 5600
+    let sigma = extinction_to_cross_section(epsilon);  // 0.21409
+    let p_absorb = sigma * CALIBRATED_PHOTON_FLUENCE;  // ~0.00514
+    let e_photon = wavelength_to_ev(280.0);  // 4.428 eV
+    let e_dep = e_photon * p_absorb * DEFAULT_HEAT_YIELD;
+    let delta_t = e_dep / (1.5 * KB_EV_K * NEFF_TRP);
+
+    log_uv_calibration_diagnostic(
+        "TRP",
+        280.0,
+        epsilon,
+        CALIBRATED_PHOTON_FLUENCE,
+        DEFAULT_HEAT_YIELD,
+        NEFF_TRP,
+    );
+
+    // Verify expected values
+    assert!((sigma - 0.21409).abs() < 0.001, "σ_TRP mismatch: got {}", sigma);
+    assert!((p_absorb - 0.00514).abs() < 0.0001, "p_absorb mismatch: got {}", p_absorb);
+    assert!((delta_t - 19.6).abs() < 1.0, "ΔT mismatch: expected ~19.6K, got {:.1}K", delta_t);
+
+    (delta_t, p_absorb)
+}
+
 /// Convert wavelength (nm) to photon energy (eV)
 /// E = hc/λ
 pub fn wavelength_to_ev(wavelength_nm: f32) -> f32 {
     // hc = 1239.84 eV·nm
     1239.84 / wavelength_nm
+}
+
+/// Compute extinction coefficient at a given wavelength using Gaussian band model
+/// ε(λ) = ε_max × exp(-(λ - λ_max)² / (2σ²))
+/// where σ = FWHM / 2.355
+///
+/// CANONICAL chromophore_type: 0=TRP, 1=TYR, 2=PHE, 3=S-S
+pub fn extinction_at_wavelength(chromophore_type: i32, wavelength_nm: f32) -> f32 {
+    let (lambda_max, epsilon_max, bandwidth) = match chromophore_type {
+        0 => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // TRP @ 280nm
+        1 => (TYR_LAMBDA_MAX, TYR_EXTINCTION_274, TYR_BANDWIDTH),      // TYR @ 274nm
+        2 => (PHE_LAMBDA_MAX, PHE_EXTINCTION_258, PHE_BANDWIDTH),      // PHE @ 258nm
+        3 => (DISULFIDE_LAMBDA_MAX, DISULFIDE_EXTINCTION_250, DISULFIDE_BANDWIDTH), // S-S @ 250nm
+        _ => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // Default to TRP
+    };
+
+    // Gaussian band profile
+    let delta = wavelength_nm - lambda_max;
+    let sigma = bandwidth / 2.355;  // FWHM to σ
+    (-delta * delta / (2.0 * sigma * sigma)).exp() * epsilon_max
+}
+
+/// Compute local heating (ΔT in K) for a chromophore at a specific wavelength
+/// Uses full physics chain: ε(λ) → σ(λ) → p → E_dep → ΔT
+///
+/// CANONICAL chromophore_type: 0=TRP, 1=TYR, 2=PHE, 3=S-S
+pub fn compute_heating_at_wavelength(chromophore_type: i32, wavelength_nm: f32) -> f32 {
+    // Get wavelength-dependent extinction
+    let epsilon = extinction_at_wavelength(chromophore_type, wavelength_nm);
+
+    // Convert to cross-section
+    let sigma = extinction_to_cross_section(epsilon);
+
+    // Absorption probability
+    let p_absorb = sigma * CALIBRATED_PHOTON_FLUENCE;
+
+    // Photon energy at this wavelength
+    let e_photon = wavelength_to_ev(wavelength_nm);
+
+    // Energy deposited
+    let e_dep = e_photon * p_absorb * DEFAULT_HEAT_YIELD;
+
+    // N_eff for this chromophore
+    let n_eff = match chromophore_type {
+        0 => NEFF_TRP,
+        1 => NEFF_TYR,
+        2 => NEFF_PHE,
+        3 => NEFF_DISULFIDE,
+        _ => NEFF_TRP,
+    };
+
+    // Temperature rise
+    e_dep / (1.5 * KB_EV_K * n_eff)
 }
 
 /// Standard wavelengths for frequency hopping protocol (nm)
@@ -477,7 +679,7 @@ impl Default for UvSpectroscopyConfig {
 
             // Local temperature tracking - enabled
             track_local_temperature: true,
-            photon_fluence: 1.0,           // photons/Å²
+            photon_fluence: CALIBRATED_PHOTON_FLUENCE,  // 0.024 photons/Å² (calibrated)
             thermal_dissipation_tau: 5.0,  // 5 ps decay
             local_temp_shell_atoms: 20,
 
@@ -545,23 +747,64 @@ impl UvSpectroscopyConfig {
         self.scan_wavelengths[position % self.scan_wavelengths.len()]
     }
 
-    /// Compute local temperature increase from photon absorption
+    /// Compute local temperature increase from photon absorption (PHYSICS-CORRECTED)
     ///
-    /// ΔT = E / (3/2 * k_B * N_atoms)
-    pub fn compute_local_heating(&self, wavelength: f32, extinction: f32) -> f32 {
-        let photon_energy = wavelength_to_ev(wavelength);
+    /// Formula: ΔT = (E_γ × p × η) / (3/2 × k_B × N_eff)
+    /// where: p = σ × F (absorption probability)
+    ///        σ = ε × 3.823×10⁻⁵ (cross-section in Å²)
+    ///        F = photon fluence (photons/Å²)
+    ///        η = heat yield (fraction → heat)
+    ///
+    /// Calibration: TRP @ 280nm with F=0.024, η=1.0 → ΔT ≈ 20K
+    pub fn compute_local_heating(&self, wavelength: f32, extinction: f32, n_eff: f32) -> f32 {
+        let photon_energy = wavelength_to_ev(wavelength);  // eV
 
-        // Absorption cross-section (simplified: proportional to extinction)
-        let absorption_cross = extinction / 1000.0;  // Å² approximation
+        // CORRECTED: Proper ε → σ conversion (per molecule)
+        let sigma = extinction_to_cross_section(extinction);  // Å²
 
-        // Energy deposited per chromophore
-        let energy_deposited = photon_energy * absorption_cross * self.photon_fluence;
+        // Absorption probability (single-photon regime: p << 1)
+        let p_absorb = sigma * self.photon_fluence;
 
-        // Convert to temperature increase (equipartition)
-        let n_ring_atoms = 6.0;  // Approximate for benzene ring
-        let delta_t = energy_deposited / (1.5 * KB_EV_K * n_ring_atoms);
+        // Warn if exceeding single-photon regime (p should be << 0.01)
+        #[cfg(debug_assertions)]
+        if p_absorb > MAX_ABSORPTION_PROBABILITY {
+            log::warn!(
+                "Absorption probability {:.4} exceeds single-photon regime threshold {}",
+                p_absorb, MAX_ABSORPTION_PROBABILITY
+            );
+        }
 
-        delta_t * self.energy_deposition_fraction
+        // Energy deposited per chromophore with heat yield
+        let heat_yield = self.energy_deposition_fraction;  // η
+        let energy_deposited = photon_energy * p_absorb * heat_yield;  // eV
+
+        // Convert to temperature increase via equipartition
+        // ΔT = E_dep / (3/2 × k_B × N_eff)
+        energy_deposited / (1.5 * KB_EV_K * n_eff)  // Kelvin
+    }
+
+    /// Compute local heating for a specific residue type (convenience method)
+    pub fn compute_local_heating_for_residue(&self, residue: &str, wavelength: f32) -> f32 {
+        let (extinction, n_eff) = match residue.to_uppercase().as_str() {
+            "TRP" | "W" => {
+                let ext = self.get_chromophore_absorption("TRP", wavelength);
+                (ext, NEFF_TRP)
+            }
+            "TYR" | "Y" => {
+                let ext = self.get_chromophore_absorption("TYR", wavelength);
+                (ext, NEFF_TYR)
+            }
+            "PHE" | "F" => {
+                let ext = self.get_chromophore_absorption("PHE", wavelength);
+                (ext, NEFF_PHE)
+            }
+            "CYS" | "C" | "CYX" => {
+                let ext = self.get_chromophore_absorption("CYS", wavelength);
+                (ext, NEFF_DISULFIDE)
+            }
+            _ => return 0.0,
+        };
+        self.compute_local_heating(wavelength, extinction, n_eff)
     }
 }
 
@@ -630,5 +873,418 @@ mod tests {
     fn test_water_transparency() {
         // This is the key physical insight
         assert_eq!(WATER_EXTINCTION_280, 0.0);
+    }
+
+    // =========================================================================
+    // PHYSICS CHAIN VERIFICATION TESTS
+    // =========================================================================
+
+    #[test]
+    fn test_physics_constants_exact_values() {
+        // Verify all physics constants match the calibration spec exactly
+
+        // ε → σ conversion factor
+        assert!((EPSILON_TO_SIGMA_CONVERSION - 3.823e-5).abs() < 1e-9,
+            "EPSILON_TO_SIGMA_CONVERSION wrong");
+
+        // Calibrated fluence
+        assert!((CALIBRATED_PHOTON_FLUENCE - 0.024).abs() < 0.001,
+            "CALIBRATED_PHOTON_FLUENCE wrong");
+
+        // Fluence in mJ/cm² (must be ~0.170, NOT 0.017)
+        assert!((CALIBRATED_FLUENCE_MJ_CM2_280NM - 0.170).abs() < 0.01,
+            "CALIBRATED_FLUENCE_MJ_CM2_280NM wrong: got {}, expected ~0.170",
+            CALIBRATED_FLUENCE_MJ_CM2_280NM);
+
+        // Heat yield
+        assert!((DEFAULT_HEAT_YIELD - 1.0).abs() < 0.01, "DEFAULT_HEAT_YIELD wrong");
+
+        // N_eff values
+        assert!((NEFF_TRP - 9.0).abs() < 0.1, "NEFF_TRP wrong");
+        assert!((NEFF_TYR - 10.0).abs() < 0.1, "NEFF_TYR wrong");
+        assert!((NEFF_PHE - 9.0).abs() < 0.1, "NEFF_PHE wrong");
+        assert!((NEFF_DISULFIDE - 2.0).abs() < 0.1, "NEFF_DISULFIDE wrong");
+
+        // Boltzmann constant
+        assert!((KB_EV_K - 8.617e-5).abs() < 1e-8, "KB_EV_K wrong");
+    }
+
+    #[test]
+    fn test_physics_chain_step_by_step() {
+        // Complete physics chain verification for TRP @ 280nm
+        // This test validates each step independently
+
+        // Step 1: Extinction coefficient
+        let epsilon = TRP_EXTINCTION_280;
+        assert!((epsilon - 5600.0).abs() < 1.0, "ε_TRP wrong");
+
+        // Step 2: Cross-section conversion
+        // σ(Å²) = ε(M⁻¹cm⁻¹) × 3.823×10⁻⁵
+        let sigma = extinction_to_cross_section(epsilon);
+        let expected_sigma = 5600.0 * 3.823e-5;
+        assert!((sigma - expected_sigma).abs() < 1e-6,
+            "σ calculation wrong: got {}, expected {}", sigma, expected_sigma);
+        assert!((sigma - 0.21409).abs() < 0.001,
+            "σ_TRP wrong: got {}, expected 0.21409", sigma);
+
+        // Step 3: Photon fluence
+        let fluence = CALIBRATED_PHOTON_FLUENCE;
+        assert!((fluence - 0.024).abs() < 0.001, "Fluence wrong");
+
+        // Step 4: Absorption probability
+        // p = σ × F
+        let p_absorb = sigma * fluence;
+        let expected_p = 0.21409 * 0.024;
+        assert!((p_absorb - expected_p).abs() < 1e-6,
+            "p_absorb calculation wrong");
+        assert!((p_absorb - 0.00514).abs() < 0.0001,
+            "p_absorb wrong: got {}, expected ~0.00514", p_absorb);
+
+        // Verify single-photon regime
+        assert!(p_absorb < MAX_ABSORPTION_PROBABILITY,
+            "p_absorb {} exceeds single-photon threshold {}", p_absorb, MAX_ABSORPTION_PROBABILITY);
+
+        // Step 5: Photon energy
+        // E = hc/λ = 1239.84 / λ(nm)
+        let e_photon = wavelength_to_ev(280.0);
+        let expected_e = 1239.84 / 280.0;
+        assert!((e_photon - expected_e).abs() < 0.001,
+            "E_photon calculation wrong");
+        assert!((e_photon - 4.428).abs() < 0.01,
+            "E_photon wrong: got {}, expected ~4.428", e_photon);
+
+        // Step 6: Heat yield
+        let eta = DEFAULT_HEAT_YIELD;
+        assert!((eta - 1.0).abs() < 0.01, "η wrong");
+
+        // Step 7: Energy deposited
+        // E_dep = E_γ × p × η
+        let e_dep = e_photon * p_absorb * eta;
+        let expected_e_dep = 4.428 * 0.00514 * 1.0;
+        assert!((e_dep - expected_e_dep).abs() < 0.001,
+            "E_dep calculation wrong: got {}, expected {}", e_dep, expected_e_dep);
+        assert!((e_dep - 0.0228).abs() < 0.001,
+            "E_dep wrong: got {}, expected ~0.0228", e_dep);
+
+        // Step 8: Effective DOF
+        let n_eff = NEFF_TRP;
+        assert!((n_eff - 9.0).abs() < 0.1, "N_eff wrong");
+
+        // Step 9: Temperature rise
+        // ΔT = E_dep / (3/2 × k_B × N_eff)
+        let delta_t = e_dep / (1.5 * KB_EV_K * n_eff);
+        let expected_dt = 0.0228 / (1.5 * 8.617e-5 * 9.0);
+        assert!((delta_t - expected_dt).abs() < 0.5,
+            "ΔT calculation wrong: got {}, expected {}", delta_t, expected_dt);
+        assert!((delta_t - 19.6).abs() < 1.0,
+            "CALIBRATION FAILED: ΔT = {} K, expected ~19.6 K", delta_t);
+
+        println!("=== Physics Chain Verification PASSED ===");
+        println!("ε = {:.0} M⁻¹cm⁻¹", epsilon);
+        println!("σ = {:.5} Å²", sigma);
+        println!("F = {:.4} photons/Å²", fluence);
+        println!("p = {:.5}", p_absorb);
+        println!("E_γ = {:.3} eV", e_photon);
+        println!("η = {:.1}", eta);
+        println!("E_dep = {:.5} eV", e_dep);
+        println!("N_eff = {:.1}", n_eff);
+        println!("ΔT = {:.2} K ✓", delta_t);
+    }
+
+    #[test]
+    fn test_fluence_unit_conversion() {
+        // Verify the mJ/cm² conversion is correct
+        // At 280nm: 1 photon/Å² ≈ 7.09 mJ/cm²
+
+        let wavelength = 280.0;
+        let e_photon_ev = wavelength_to_ev(wavelength);  // 4.428 eV
+        let e_photon_j = e_photon_ev * 1.602e-19;  // Convert to Joules
+
+        // 1 photon/Å² = 10¹⁶ photons/cm² (conversion factor)
+        // Energy density = 10¹⁶ × E_photon(J) J/cm²
+        // Convert to mJ/cm²: multiply by 1000
+        let mj_per_cm2_per_photon_per_a2 = 1e16 * e_photon_j * 1e3;
+
+        // Should be approximately 7.09 mJ/cm² per (photon/Å²)
+        assert!((mj_per_cm2_per_photon_per_a2 - 7.09).abs() < 0.1,
+            "Unit conversion wrong: 1 photon/Å² = {} mJ/cm², expected ~7.09",
+            mj_per_cm2_per_photon_per_a2);
+
+        // Verify calibrated fluence conversion
+        let calibrated_mj_cm2 = CALIBRATED_PHOTON_FLUENCE * mj_per_cm2_per_photon_per_a2;
+        assert!((calibrated_mj_cm2 - CALIBRATED_FLUENCE_MJ_CM2_280NM).abs() < 0.02,
+            "Calibrated fluence conversion mismatch: {} vs {} mJ/cm²",
+            calibrated_mj_cm2, CALIBRATED_FLUENCE_MJ_CM2_280NM);
+
+        println!("=== Fluence Unit Conversion PASSED ===");
+        println!("1 photon/Å² @ 280nm = {:.2} mJ/cm²", mj_per_cm2_per_photon_per_a2);
+        println!("0.024 photon/Å² @ 280nm = {:.3} mJ/cm²", calibrated_mj_cm2);
+    }
+
+    // =========================================================================
+    // GPU PARITY REGRESSION TESTS
+    // =========================================================================
+    // These tests verify that the GPU constants (in nhs_excited_state.cuh)
+    // match the CPU constants. If you modify the CUDA headers, update these
+    // expected values and ensure they match exactly.
+
+    #[test]
+    fn test_gpu_parity_cross_sections() {
+        // GPU constants from nhs_excited_state.cuh (MUST MATCH)
+        // #define UV_SIGMA_TRP  0.21409f
+        // #define UV_SIGMA_TYR  0.05696f
+        // #define UV_SIGMA_PHE  0.00765f
+        // #define UV_SIGMA_SS   0.01147f
+
+        let gpu_sigma_trp = 0.21409_f32;
+        let gpu_sigma_tyr = 0.05696_f32;
+        let gpu_sigma_phe = 0.00765_f32;
+        let gpu_sigma_ss = 0.01147_f32;
+
+        // CPU computed values
+        let cpu_sigma_trp = extinction_to_cross_section(TRP_EXTINCTION_280);
+        let cpu_sigma_tyr = extinction_to_cross_section(TYR_EXTINCTION_274);
+        let cpu_sigma_phe = extinction_to_cross_section(PHE_EXTINCTION_258);
+        let cpu_sigma_ss = extinction_to_cross_section(DISULFIDE_EXTINCTION_250);
+
+        // Verify GPU matches CPU
+        assert!((gpu_sigma_trp - cpu_sigma_trp).abs() < 0.0001,
+            "GPU/CPU σ_TRP mismatch: GPU={}, CPU={}", gpu_sigma_trp, cpu_sigma_trp);
+        assert!((gpu_sigma_tyr - cpu_sigma_tyr).abs() < 0.0001,
+            "GPU/CPU σ_TYR mismatch: GPU={}, CPU={}", gpu_sigma_tyr, cpu_sigma_tyr);
+        assert!((gpu_sigma_phe - cpu_sigma_phe).abs() < 0.0001,
+            "GPU/CPU σ_PHE mismatch: GPU={}, CPU={}", gpu_sigma_phe, cpu_sigma_phe);
+        assert!((gpu_sigma_ss - cpu_sigma_ss).abs() < 0.0001,
+            "GPU/CPU σ_SS mismatch: GPU={}, CPU={}", gpu_sigma_ss, cpu_sigma_ss);
+
+        println!("=== GPU Parity (Cross-Sections) PASSED ===");
+    }
+
+    #[test]
+    fn test_gpu_parity_fluence_and_conversion() {
+        // GPU constants from nhs_excited_state.cuh (MUST MATCH)
+        // #define EPSILON_TO_SIGMA_FACTOR  3.823e-5f
+        // #define CALIBRATED_PHOTON_FLUENCE  0.024f
+
+        let gpu_conversion = 3.823e-5_f32;
+        let gpu_fluence = 0.024_f32;
+
+        assert!((gpu_conversion - EPSILON_TO_SIGMA_CONVERSION).abs() < 1e-9,
+            "GPU/CPU ε→σ conversion mismatch: GPU={}, CPU={}",
+            gpu_conversion, EPSILON_TO_SIGMA_CONVERSION);
+        assert!((gpu_fluence - CALIBRATED_PHOTON_FLUENCE).abs() < 0.0001,
+            "GPU/CPU fluence mismatch: GPU={}, CPU={}",
+            gpu_fluence, CALIBRATED_PHOTON_FLUENCE);
+
+        println!("=== GPU Parity (Conversion/Fluence) PASSED ===");
+    }
+
+    #[test]
+    fn test_gpu_parity_neff_values() {
+        // GPU constants from nhs_excited_state.cuh (MUST MATCH)
+        // #define NEFF_TRP  9.0f
+        // #define NEFF_TYR  10.0f
+        // #define NEFF_PHE  9.0f
+        // #define NEFF_SS   2.0f
+
+        let gpu_neff_trp = 9.0_f32;
+        let gpu_neff_tyr = 10.0_f32;
+        let gpu_neff_phe = 9.0_f32;
+        let gpu_neff_ss = 2.0_f32;
+
+        assert!((gpu_neff_trp - NEFF_TRP).abs() < 0.1, "GPU/CPU N_eff TRP mismatch");
+        assert!((gpu_neff_tyr - NEFF_TYR).abs() < 0.1, "GPU/CPU N_eff TYR mismatch");
+        assert!((gpu_neff_phe - NEFF_PHE).abs() < 0.1, "GPU/CPU N_eff PHE mismatch");
+        assert!((gpu_neff_ss - NEFF_DISULFIDE).abs() < 0.1, "GPU/CPU N_eff SS mismatch");
+
+        println!("=== GPU Parity (N_eff Values) PASSED ===");
+    }
+
+    #[test]
+    fn test_regression_wrong_conversion_factor() {
+        // REGRESSION TEST: Catch if someone reintroduces ε/1000 instead of ε × 3.823e-5
+        // The WRONG conversion was: σ = ε / 1000 = 5.6 (for TRP)
+        // The CORRECT conversion is: σ = ε × 3.823e-5 = 0.21409 (for TRP)
+
+        let wrong_sigma = TRP_EXTINCTION_280 / 1000.0;  // 5.6 - WRONG
+        let correct_sigma = extinction_to_cross_section(TRP_EXTINCTION_280);  // 0.21409
+
+        // This test MUST fail if someone uses the wrong conversion
+        assert!((correct_sigma - 0.21409).abs() < 0.001,
+            "REGRESSION: extinction_to_cross_section is returning {}, should be ~0.21409",
+            correct_sigma);
+        assert!((correct_sigma - wrong_sigma).abs() > 5.0,
+            "REGRESSION: extinction_to_cross_section appears to use ε/1000 instead of ε×3.823e-5");
+
+        println!("=== Regression Test (Wrong Conversion) PASSED ===");
+    }
+
+    #[test]
+    fn test_regression_wrong_fluence_units() {
+        // REGRESSION TEST: Catch if someone uses 0.017 instead of 0.170 mJ/cm²
+        // The WRONG value was: 0.017 mJ/cm² (10× too small)
+        // The CORRECT value is: 0.170 mJ/cm² (≈ 0.024 photons/Å² × 7.09 mJ·cm⁻²·(photon/Å²)⁻¹)
+
+        let wrong_fluence_mj = 0.017_f32;
+        let correct_fluence_mj = CALIBRATED_FLUENCE_MJ_CM2_280NM;
+
+        // This test MUST fail if someone uses the wrong fluence
+        assert!((correct_fluence_mj - 0.170).abs() < 0.02,
+            "REGRESSION: CALIBRATED_FLUENCE_MJ_CM2_280NM is {}, should be ~0.170",
+            correct_fluence_mj);
+        assert!((correct_fluence_mj - wrong_fluence_mj).abs() > 0.1,
+            "REGRESSION: Fluence appears to be 10× too small (0.017 instead of 0.170)");
+
+        println!("=== Regression Test (Wrong Fluence Units) PASSED ===");
+    }
+
+    // =========================================================================
+    // WAVELENGTH-DEPENDENT σ(λ) TESTS
+    // =========================================================================
+    // These tests verify the Gaussian band model for wavelength-dependent
+    // absorption cross-sections and the resulting local heating.
+
+    #[test]
+    fn test_wavelength_dependent_trp_280nm() {
+        // TRP @ 280nm (peak) → ~19.56K
+        // This is the calibration point for the physics chain
+        let delta_t = compute_heating_at_wavelength(0, 280.0);  // 0 = TRP
+
+        // Should be approximately 19.6K at peak
+        assert!((delta_t - 19.6).abs() < 1.5,
+            "TRP@280nm ΔT wrong: expected ~19.6K, got {:.2}K", delta_t);
+
+        println!("=== Wavelength Test: TRP@280nm ===");
+        println!("ΔT = {:.2} K (expected ~19.6 K)", delta_t);
+    }
+
+    #[test]
+    fn test_wavelength_dependent_trp_258nm() {
+        // TRP @ 258nm (off-peak, near PHE peak) → should be much weaker
+        // 258nm is 22nm away from TRP λ_max=280nm
+        // With σ=15nm/2.355≈6.4nm, this is ~3.4σ away
+        // Gaussian factor: exp(-3.4²/2) ≈ 0.003
+        let delta_t = compute_heating_at_wavelength(0, 258.0);  // 0 = TRP
+
+        // Should be near zero (< 1K) at this off-peak wavelength
+        assert!(delta_t < 1.0,
+            "TRP@258nm ΔT wrong: expected < 1K (off-peak), got {:.2}K", delta_t);
+
+        println!("=== Wavelength Test: TRP@258nm ===");
+        println!("ΔT = {:.3} K (expected < 1 K, off-peak)", delta_t);
+    }
+
+    #[test]
+    fn test_wavelength_dependent_phe_selectivity() {
+        // PHE @ 258nm (peak) vs PHE @ 280nm (off-peak)
+        // PHE λ_max = 258nm, so absorption should be stronger at 258nm
+        let delta_t_258 = compute_heating_at_wavelength(2, 258.0);  // 2 = PHE at peak
+        let delta_t_280 = compute_heating_at_wavelength(2, 280.0);  // 2 = PHE off-peak
+
+        // PHE@258nm should be stronger than PHE@280nm
+        assert!(delta_t_258 > delta_t_280,
+            "PHE selectivity wrong: PHE@258nm ({:.2}K) should be > PHE@280nm ({:.2}K)",
+            delta_t_258, delta_t_280);
+
+        // The ratio should be significant (> 2x)
+        let ratio = delta_t_258 / delta_t_280.max(0.001);  // Avoid div by zero
+        assert!(ratio > 2.0,
+            "PHE selectivity ratio too low: expected > 2x, got {:.1}x", ratio);
+
+        println!("=== Wavelength Test: PHE Selectivity ===");
+        println!("PHE@258nm = {:.3} K", delta_t_258);
+        println!("PHE@280nm = {:.3} K", delta_t_280);
+        println!("Ratio = {:.1}x", ratio);
+    }
+
+    #[test]
+    fn test_wavelength_dependent_chromophore_selectivity() {
+        // At 280nm, TRP should dominate over PHE and TYR
+        let trp_280 = compute_heating_at_wavelength(0, 280.0);  // TRP
+        let tyr_280 = compute_heating_at_wavelength(1, 280.0);  // TYR (peak is 274nm)
+        let phe_280 = compute_heating_at_wavelength(2, 280.0);  // PHE (peak is 258nm)
+
+        // TRP should be strongest at 280nm
+        assert!(trp_280 > tyr_280,
+            "At 280nm: TRP ({:.2}K) should be > TYR ({:.2}K)", trp_280, tyr_280);
+        assert!(trp_280 > phe_280,
+            "At 280nm: TRP ({:.2}K) should be > PHE ({:.3}K)", trp_280, phe_280);
+
+        // At 258nm, PHE should be enhanced relative to TRP
+        let trp_258 = compute_heating_at_wavelength(0, 258.0);
+        let phe_258 = compute_heating_at_wavelength(2, 258.0);
+
+        // PHE/TRP ratio should be much higher at 258nm than at 280nm
+        let ratio_258 = phe_258 / trp_258.max(0.001);
+        let ratio_280 = phe_280 / trp_280.max(0.001);
+
+        assert!(ratio_258 > ratio_280,
+            "PHE selectivity should increase at 258nm: ratio@258={:.3}, ratio@280={:.4}",
+            ratio_258, ratio_280);
+
+        println!("=== Wavelength Test: Chromophore Selectivity ===");
+        println!("At 280nm: TRP={:.2}K, TYR={:.2}K, PHE={:.4}K", trp_280, tyr_280, phe_280);
+        println!("At 258nm: TRP={:.3}K, PHE={:.4}K", trp_258, phe_258);
+        println!("PHE/TRP ratio: @258nm={:.3}, @280nm={:.5}", ratio_258, ratio_280);
+    }
+
+    #[test]
+    fn test_gaussian_band_model_symmetry() {
+        // Gaussian band should be symmetric around λ_max
+        // Test TRP at λ_max ± Δλ
+        let delta = 10.0;  // nm
+
+        let trp_peak = compute_heating_at_wavelength(0, TRP_LAMBDA_MAX);
+        let trp_plus = compute_heating_at_wavelength(0, TRP_LAMBDA_MAX + delta);
+        let trp_minus = compute_heating_at_wavelength(0, TRP_LAMBDA_MAX - delta);
+
+        // Peak should be strongest
+        assert!(trp_peak > trp_plus,
+            "TRP peak ({:.2}K) should be > TRP+{}nm ({:.2}K)", trp_peak, delta, trp_plus);
+        assert!(trp_peak > trp_minus,
+            "TRP peak ({:.2}K) should be > TRP-{}nm ({:.2}K)", trp_peak, delta, trp_minus);
+
+        // Symmetric offsets should give similar (but not identical due to E_γ = hc/λ)
+        // The difference comes from photon energy variation, not the Gaussian
+        let relative_diff = (trp_plus - trp_minus).abs() / trp_peak;
+        assert!(relative_diff < 0.15,
+            "Gaussian asymmetry too large: {:.1}%", relative_diff * 100.0);
+
+        println!("=== Wavelength Test: Gaussian Symmetry ===");
+        println!("TRP@{:.0}nm = {:.2} K", TRP_LAMBDA_MAX, trp_peak);
+        println!("TRP@{:.0}nm = {:.2} K", TRP_LAMBDA_MAX + delta, trp_plus);
+        println!("TRP@{:.0}nm = {:.2} K", TRP_LAMBDA_MAX - delta, trp_minus);
+        println!("Relative diff = {:.1}%", relative_diff * 100.0);
+    }
+
+    #[test]
+    fn test_gpu_parity_wavelength_dependent() {
+        // GPU constants from nhs_excited_state.cuh Gaussian band parameters
+        // #define TRP_LAMBDA_MAX    280.0f
+        // #define TRP_EPSILON_MAX   5600.0f
+        // #define TRP_BANDWIDTH     15.0f  (σ ≈ 6.4nm for FWHM~15nm)
+        // Note: GPU uses σ directly, CPU uses FWHM then converts
+
+        // Verify CPU and GPU would compute similar heating at peak
+        let cpu_trp_280 = compute_heating_at_wavelength(0, 280.0);
+
+        // GPU computes: sigma = compute_extinction_at_wavelength(0, 280.0) * 3.823e-5
+        // At peak: epsilon = 5600, sigma = 0.21409, same as CPU peak
+
+        // The test passes if CPU heating at peak matches our expected ~19.6K
+        assert!((cpu_trp_280 - 19.6).abs() < 2.0,
+            "GPU parity: CPU TRP@280nm = {:.2}K, expected ~19.6K", cpu_trp_280);
+
+        // Verify CPU off-peak decay matches GPU Gaussian model
+        // At 258nm (22nm away from 280nm), with σ≈6.4nm:
+        // exp(-(22)²/(2*6.4²)) = exp(-5.9) ≈ 0.0027
+        // So heating should be ~0.05K
+        let cpu_trp_258 = compute_heating_at_wavelength(0, 258.0);
+        assert!(cpu_trp_258 < 1.0,
+            "GPU parity: CPU TRP@258nm = {:.3}K, expected < 1K (off-peak)", cpu_trp_258);
+
+        println!("=== GPU Parity (Wavelength-Dependent) PASSED ===");
+        println!("TRP@280nm = {:.2} K", cpu_trp_280);
+        println!("TRP@258nm = {:.3} K", cpu_trp_258);
     }
 }

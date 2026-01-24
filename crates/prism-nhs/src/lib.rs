@@ -106,6 +106,7 @@ pub mod input;
 pub mod mapping;
 pub mod neuromorphic;
 pub mod pipeline;
+pub mod trajectory;
 pub mod uv_bias;
 
 // Re-exports for convenience
@@ -132,6 +133,10 @@ pub use gpu::{NhsGpuEngine, FrameResult, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING}
 pub use fused_engine::{
     NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig,
     SpikeEvent as FusedSpikeEvent, EnsembleSnapshot, StepResult, RunSummary,
+    // Quality scoring types
+    SpikeQualityScore, SpikeQualityCategory, SpikePersistenceTracker,
+    // RMSD utilities
+    compute_rmsd_subset, find_atoms_near_position, compute_alignment_quality,
 };
 #[cfg(feature = "gpu")]
 pub use active_sensing::{
@@ -153,6 +158,10 @@ pub use adaptive::{
 pub use mapping::{
     CalibrationMetrics, ComparativeAnalysis, ExperimentalCondition, MappedHotspot,
     NearbyResidue, NhsSiteId, NhsSiteMapper, ProtocolType, RobustSite, compare_conditions,
+};
+pub use trajectory::{
+    TrajectoryConfig, TrajectoryFrame, TrajectoryWriter, TrajectoryStats,
+    write_ensemble_pdb, load_ensemble_pdb,
 };
 
 /// Crate version

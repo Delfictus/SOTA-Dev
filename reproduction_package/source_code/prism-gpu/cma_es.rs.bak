@@ -1,0 +1,576 @@
+//! CMA-ES (Covariance Matrix Adaptation Evolution Strategy) GPU acceleration
+//!
+//! ASSUMPTIONS:
+//! - PTX module "cma_es" loaded in GPU context
+//! - Population stored as contiguous f32 arrays
+//! - MAX_POPULATION = 1024, MAX_DIMENSIONS = 2048
+//! - Requires sm_80+ for efficient matrix operations
+//!
+//! PERFORMANCE TARGETS:
+//! - 100-population evolution: < 20ms per generation
+//! - Memory: < 500MB for typical configurations
+//! - Convergence: < 1000 generations for sphere function
+//!
+//! REFERENCE: PRISM Spec Section 2.4 "CMA-ES Optimization"
+
+use anyhow::{Context, Result};
+use cudarc::driver::{CudaDevice, CudaSlice, LaunchAsync, LaunchConfig};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// CMA-ES parameters for GPU kernel
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CmaParams {
+    pub population_size: i32,
+    pub parent_size: i32,
+    pub dimensions: i32,
+    pub sigma: f32,   // Step size
+    pub c_sigma: f32, // Cumulation for step size control
+    pub d_sigma: f32, // Damping for step size
+    pub c_c: f32,     // Cumulation for covariance matrix
+    pub c_1: f32,     // Learning rate for rank-one update
+    pub c_mu: f32,    // Learning rate for rank-mu update
+    pub chi_n: f32,   // Expected norm of N(0,I)
+    pub mu_eff: f32,  // Variance effective selection mass
+    pub seed: u64,
+}
+
+impl CmaParams {
+    /// Create default CMA-ES parameters for given dimension
+    pub fn new(dimensions: usize) -> Self {
+        let dim = dimensions as f32;
+        let population_size = (4.0 + 3.0 * dim.ln()).floor() as i32;
+        let parent_size = population_size / 2;
+
+        // Compute recombination weights
+        let mut weights = Vec::new();
+        let mut weights_sum = 0.0;
+        let mut weights_sum2 = 0.0;
+
+        for i in 0..parent_size {
+            let w = ((parent_size as f32 + 0.5).ln() - ((i + 1) as f32).ln()).max(0.0);
+            weights.push(w);
+            weights_sum += w;
+            weights_sum2 += w * w;
+        }
+
+        let mu_eff = weights_sum * weights_sum / weights_sum2;
+
+        // Step size control parameters
+        let c_sigma = (mu_eff + 2.0) / (dim + mu_eff + 5.0);
+        let d_sigma = 1.0 + 2.0 * ((mu_eff - 1.0) / (dim + 1.0)).sqrt().max(0.0) + c_sigma;
+
+        // Covariance matrix adaptation parameters
+        let c_c = (4.0 + mu_eff / dim) / (dim + 4.0 + 2.0 * mu_eff / dim);
+        let c_1 = 2.0 / ((dim + 1.3).powi(2) + mu_eff);
+        let c_mu = ((1.0 - c_1)
+            .min(2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((dim + 2.0).powi(2) + mu_eff)))
+        .max(0.0);
+
+        // Expected chi value
+        let chi_n = dim.sqrt() * (1.0 - 1.0 / (4.0 * dim) + 1.0 / (21.0 * dim * dim));
+
+        Self {
+            population_size,
+            parent_size,
+            dimensions: dimensions as i32,
+            sigma: 0.5,
+            c_sigma,
+            d_sigma,
+            c_c,
+            c_1,
+            c_mu,
+            chi_n,
+            mu_eff,
+            seed: 42,
+        }
+    }
+}
+
+/// CMA-ES state maintained during optimization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CmaState {
+    pub best_solution: Vec<f32>,
+    pub best_fitness: f32,
+    pub covariance_condition: f32,
+    pub generation: usize,
+    pub convergence_metric: f32,
+    pub sigma: f32,
+    pub mean: Vec<f32>,
+}
+
+impl CmaState {
+    pub fn new(dimensions: usize) -> Self {
+        Self {
+            best_solution: vec![0.0; dimensions],
+            best_fitness: f32::INFINITY,
+            covariance_condition: 1.0,
+            generation: 0,
+            convergence_metric: 1.0,
+            sigma: 0.5,
+            mean: vec![0.0; dimensions],
+        }
+    }
+
+    /// Check if converged based on various criteria
+    pub fn is_converged(&self, tol_fun: f32, tol_x: f32, max_condition: f32) -> bool {
+        self.best_fitness < tol_fun
+            || self.convergence_metric < tol_x
+            || self.covariance_condition > max_condition
+            || self.sigma < 1e-10
+    }
+}
+
+/// GPU-accelerated CMA-ES optimizer
+pub struct CmaOptimizer {
+    device: Arc<CudaDevice>,
+    params: CmaParams,
+
+    // GPU buffers
+    d_population: CudaSlice<f32>,
+    d_fitness: CudaSlice<f32>,
+    d_mean: CudaSlice<f32>,
+    d_covariance: CudaSlice<f32>,
+    d_bd_matrix: CudaSlice<f32>,
+    d_ps: CudaSlice<f32>,
+    d_pc: CudaSlice<f32>,
+    d_eigenvalues: CudaSlice<f32>,
+    d_eigenvectors: CudaSlice<f32>,
+    d_weights: CudaSlice<f32>,
+    d_selected: CudaSlice<f32>,
+    d_old_mean: CudaSlice<f32>,
+    d_bd_inv: CudaSlice<f32>,
+    d_sigma: CudaSlice<f32>,
+    d_best_fitness: CudaSlice<f32>,
+    d_condition: CudaSlice<f32>,
+    d_ranks: CudaSlice<i32>,
+
+    state: CmaState,
+}
+
+impl CmaOptimizer {
+    /// Create new CMA-ES optimizer
+    pub fn new(device: Arc<CudaDevice>, dimensions: usize, seed: u64) -> Result<Self> {
+        let mut params = CmaParams::new(dimensions);
+        params.seed = seed;
+
+        let pop_size = params.population_size as usize;
+        let parent_size = params.parent_size as usize;
+        let dim = dimensions;
+
+        // Allocate GPU memory
+        let d_population = device
+            .alloc_zeros::<f32>(pop_size * dim)
+            .context("Failed to allocate population buffer")?;
+        let d_fitness = device
+            .alloc_zeros::<f32>(pop_size)
+            .context("Failed to allocate fitness buffer")?;
+        let d_mean = device
+            .alloc_zeros::<f32>(dim)
+            .context("Failed to allocate mean buffer")?;
+        let mut d_covariance = device
+            .alloc_zeros::<f32>(dim * dim)
+            .context("Failed to allocate covariance buffer")?;
+        let mut d_bd_matrix = device
+            .alloc_zeros::<f32>(dim * dim)
+            .context("Failed to allocate BD matrix buffer")?;
+        let d_ps = device
+            .alloc_zeros::<f32>(dim)
+            .context("Failed to allocate ps buffer")?;
+        let d_pc = device
+            .alloc_zeros::<f32>(dim)
+            .context("Failed to allocate pc buffer")?;
+        let d_eigenvalues = device
+            .alloc_zeros::<f32>(dim)
+            .context("Failed to allocate eigenvalues buffer")?;
+        let d_eigenvectors = device
+            .alloc_zeros::<f32>(dim * dim)
+            .context("Failed to allocate eigenvectors buffer")?;
+        let mut d_weights = device
+            .alloc_zeros::<f32>(parent_size)
+            .context("Failed to allocate weights buffer")?;
+        let d_selected = device
+            .alloc_zeros::<f32>(parent_size * dim)
+            .context("Failed to allocate selected buffer")?;
+        let d_old_mean = device
+            .alloc_zeros::<f32>(dim)
+            .context("Failed to allocate old mean buffer")?;
+        let d_bd_inv = device
+            .alloc_zeros::<f32>(dim * dim)
+            .context("Failed to allocate BD inverse buffer")?;
+        let mut d_sigma =
+            unsafe { device.alloc::<f32>(1) }.context("Failed to allocate sigma buffer")?;
+        let mut d_best_fitness =
+            unsafe { device.alloc::<f32>(1) }.context("Failed to allocate best fitness buffer")?;
+        let mut d_condition =
+            unsafe { device.alloc::<f32>(1) }.context("Failed to allocate condition buffer")?;
+        let d_ranks = device
+            .alloc_zeros::<i32>(pop_size)
+            .context("Failed to allocate ranks buffer")?;
+
+        // Initialize sigma
+        device.htod_copy_into(&[params.sigma], &mut d_sigma)?;
+        device.htod_copy_into(&[f32::INFINITY], &mut d_best_fitness)?;
+        device.htod_copy_into(&[1.0f32], &mut d_condition)?;
+
+        // Initialize weights
+        let mut weights = Vec::new();
+        let mut weights_sum = 0.0;
+        for i in 0..parent_size {
+            let w = ((parent_size as f32 + 0.5).ln() - ((i + 1) as f32).ln()).max(0.0);
+            weights.push(w);
+            weights_sum += w;
+        }
+        for w in &mut weights {
+            *w /= weights_sum;
+        }
+        device.htod_copy_into(&weights, &mut d_weights)?;
+
+        // Initialize covariance to identity
+        let mut identity = vec![0.0f32; dim * dim];
+        for i in 0..dim {
+            identity[i * dim + i] = 1.0;
+        }
+        device.htod_copy_into(&identity, &mut d_covariance)?;
+        device.htod_copy_into(&identity, &mut d_bd_matrix)?;
+
+        // Load PTX module once during initialization
+        log::info!("Loading CMA-ES PTX module...");
+        let ptx_path = "target/ptx/cma_es.ptx";
+        let ptx_code = std::fs::read_to_string(ptx_path)
+            .with_context(|| format!("Failed to read CMA-ES PTX file: {}", ptx_path))?;
+
+        device
+            .load_ptx(
+                ptx_code.into(),
+                "cma_es",
+                &[
+                    "sample_population",
+                    "rank_and_select",
+                    "update_mean",
+                    "update_evolution_paths",
+                    "update_covariance",
+                    "update_sigma",
+                    "eigendecompose_covariance",
+                    "compute_condition_number",
+                ],
+            )
+            .context("Failed to load CMA-ES PTX module")?;
+
+        log::info!("CMA-ES GPU module loaded successfully");
+
+        let state = CmaState::new(dimensions);
+
+        Ok(Self {
+            device,
+            params,
+            d_population,
+            d_fitness,
+            d_mean,
+            d_covariance,
+            d_bd_matrix,
+            d_ps,
+            d_pc,
+            d_eigenvalues,
+            d_eigenvectors,
+            d_weights,
+            d_selected,
+            d_old_mean,
+            d_bd_inv,
+            d_sigma,
+            d_best_fitness,
+            d_condition,
+            d_ranks,
+            state,
+        })
+    }
+
+    /// Run one generation of CMA-ES
+    pub fn step(&mut self, fitness_fn: impl Fn(&[f32]) -> f32) -> Result<()> {
+        let dim = self.params.dimensions as usize;
+        let pop_size = self.params.population_size as usize;
+        let parent_size = self.params.parent_size as usize;
+
+        // Get current sigma
+        let sigma_vec = self.device.dtoh_sync_copy(&self.d_sigma)?;
+        let sigma = sigma_vec[0];
+
+        // Sample population
+        let _block_size = 256;
+        let _grid_size = ((pop_size * dim) + _block_size - 1) / _block_size;
+
+        // Launch sampling kernel (PTX module already loaded in constructor)
+        unsafe {
+            // Get kernel function from device (module "cma_es", function "sample_population")
+            let sample_fn = self
+                .device
+                .get_func("cma_es", "sample_population")
+                .context("Failed to get sample_population kernel")?;
+            sample_fn.launch(
+                LaunchConfig::for_num_elems((pop_size * dim) as u32),
+                (
+                    &self.d_population,
+                    &self.d_mean,
+                    &self.d_bd_matrix,
+                    sigma,
+                    self.params.population_size,
+                    self.params.dimensions,
+                    self.params.seed,
+                    self.state.generation as i32,
+                ),
+            )?;
+        }
+
+        // Evaluate fitness (copy to host for custom fitness function)
+        let population = self.device.dtoh_sync_copy(&self.d_population)?;
+        let mut fitness = vec![0.0f32; pop_size];
+
+        for i in 0..pop_size {
+            let individual = &population[i * dim..(i + 1) * dim];
+            fitness[i] = fitness_fn(individual);
+        }
+
+        self.device
+            .htod_copy_into(&fitness, &mut self.d_fitness)?;
+
+        // Rank and select parents
+        unsafe {
+            let rank_fn = self
+                .device
+                .get_func("cma_es", "rank_and_select")
+                .context("Failed to get rank_and_select kernel")?;
+            rank_fn.launch(
+                LaunchConfig::for_num_elems(1),
+                (
+                    &self.d_population,
+                    &self.d_fitness,
+                    &self.d_ranks,
+                    &self.d_selected,
+                    self.params.population_size,
+                    self.params.parent_size,
+                    self.params.dimensions,
+                ),
+            )?;
+        }
+
+        // Update mean
+        unsafe {
+            let update_mean_fn = self
+                .device
+                .get_func("cma_es", "update_mean")
+                .context("Failed to get update_mean kernel")?;
+            update_mean_fn.launch(
+                LaunchConfig::for_num_elems(dim as u32),
+                (
+                    &self.d_mean,
+                    &self.d_old_mean,
+                    &self.d_selected,
+                    &self.d_weights,
+                    self.params.parent_size,
+                    self.params.dimensions,
+                ),
+            )?;
+        }
+
+        // Update evolution paths
+        unsafe {
+            let update_paths_fn = self
+                .device
+                .get_func("cma_es", "update_evolution_paths")
+                .context("Failed to get update_evolution_paths kernel")?;
+            update_paths_fn.launch(
+                LaunchConfig::for_num_elems(dim as u32),
+                (
+                    &self.d_ps,
+                    &self.d_pc,
+                    &self.d_mean,
+                    &self.d_old_mean,
+                    &self.d_bd_inv,
+                    sigma,
+                    self.params.c_sigma,
+                    self.params.c_c,
+                    self.params.mu_eff,
+                    self.params.dimensions,
+                    self.state.generation as i32,
+                ),
+            )?;
+        }
+
+        // Update covariance
+        unsafe {
+            let update_cov_fn = self
+                .device
+                .get_func("cma_es", "update_covariance")
+                .context("Failed to get update_covariance kernel")?;
+            update_cov_fn.launch(
+                LaunchConfig::for_num_elems((dim * dim) as u32),
+                (
+                    &self.d_covariance,
+                    &self.d_pc,
+                    &self.d_selected,
+                    &self.d_mean,
+                    &self.d_old_mean,
+                    &self.d_weights,
+                    sigma,
+                    self.params.c_1,
+                    self.params.c_mu,
+                    self.params.parent_size,
+                    self.params.dimensions,
+                ),
+            )?;
+        }
+
+        // Update sigma
+        unsafe {
+            let update_sigma_fn = self
+                .device
+                .get_func("cma_es", "update_sigma")
+                .context("Failed to get update_sigma kernel")?;
+            update_sigma_fn.launch(
+                LaunchConfig::for_num_elems(1),
+                (
+                    &self.d_sigma,
+                    &self.d_ps,
+                    self.params.c_sigma,
+                    self.params.d_sigma,
+                    self.params.chi_n,
+                    self.params.dimensions,
+                ),
+            )?;
+        }
+
+        // Eigendecomposition
+        unsafe {
+            let eigendecomp_fn = self
+                .device
+                .get_func("cma_es", "eigendecompose_covariance")
+                .context("Failed to get eigendecompose_covariance kernel")?;
+            eigendecomp_fn.launch(
+                LaunchConfig::for_num_elems(dim as u32),
+                (
+                    &self.d_covariance,
+                    &self.d_eigenvalues,
+                    &self.d_eigenvectors,
+                    &self.d_bd_matrix,
+                    self.params.dimensions,
+                    100i32, // max iterations
+                ),
+            )?;
+        }
+
+        // Compute condition number
+        unsafe {
+            let condition_fn = self
+                .device
+                .get_func("cma_es", "compute_condition_number")
+                .context("Failed to get compute_condition_number kernel")?;
+            condition_fn.launch(
+                LaunchConfig::for_num_elems(1),
+                (
+                    &self.d_eigenvalues,
+                    &self.d_condition,
+                    self.params.dimensions,
+                ),
+            )?;
+        }
+
+        // Update state
+        let best_idx = fitness
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        if fitness[best_idx] < self.state.best_fitness {
+            self.state.best_fitness = fitness[best_idx];
+            self.state.best_solution = population[best_idx * dim..(best_idx + 1) * dim].to_vec();
+        }
+
+        let sigma_new = self.device.dtoh_sync_copy(&self.d_sigma)?[0];
+        let condition = self.device.dtoh_sync_copy(&self.d_condition)?[0];
+        let mean = self.device.dtoh_sync_copy(&self.d_mean)?;
+
+        self.state.sigma = sigma_new;
+        self.state.covariance_condition = condition;
+        self.state.mean = mean;
+        self.state.generation += 1;
+
+        // Compute convergence metric (change in mean)
+        let mut change = 0.0f32;
+        let old_mean = self.device.dtoh_sync_copy(&self.d_old_mean)?;
+        for i in 0..dim {
+            change += (self.state.mean[i] - old_mean[i]).powi(2);
+        }
+        self.state.convergence_metric = change.sqrt();
+
+        Ok(())
+    }
+
+    /// Get current optimization state
+    pub fn get_state(&self) -> &CmaState {
+        &self.state
+    }
+
+    /// Run optimization until convergence
+    pub fn optimize(
+        &mut self,
+        fitness_fn: impl Fn(&[f32]) -> f32,
+        max_generations: usize,
+        tol_fun: f32,
+        tol_x: f32,
+        max_condition: f32,
+    ) -> Result<CmaState> {
+        println!("Starting CMA-ES optimization...");
+        println!(
+            "Dimensions: {}, Population: {}, Parents: {}",
+            self.params.dimensions, self.params.population_size, self.params.parent_size
+        );
+
+        for gen in 0..max_generations {
+            self.step(&fitness_fn)?;
+
+            if gen % 10 == 0 {
+                println!(
+                    "Generation {}: fitness={:.6e}, sigma={:.6e}, condition={:.2e}",
+                    self.state.generation,
+                    self.state.best_fitness,
+                    self.state.sigma,
+                    self.state.covariance_condition
+                );
+            }
+
+            if self.state.is_converged(tol_fun, tol_x, max_condition) {
+                println!("Converged at generation {}", self.state.generation);
+                break;
+            }
+        }
+
+        Ok(self.state.clone())
+    }
+
+    /// Emit telemetry metrics
+    pub fn emit_telemetry(&self) -> HashMap<String, serde_json::Value> {
+        let mut telemetry = HashMap::new();
+        telemetry.insert(
+            "cma_generation".to_string(),
+            serde_json::json!(self.state.generation),
+        );
+        telemetry.insert(
+            "cma_best_fitness".to_string(),
+            serde_json::json!(self.state.best_fitness),
+        );
+        telemetry.insert("cma_sigma".to_string(), serde_json::json!(self.state.sigma));
+        telemetry.insert(
+            "cma_condition".to_string(),
+            serde_json::json!(self.state.covariance_condition),
+        );
+        telemetry.insert(
+            "cma_convergence".to_string(),
+            serde_json::json!(self.state.convergence_metric),
+        );
+        telemetry
+    }
+}

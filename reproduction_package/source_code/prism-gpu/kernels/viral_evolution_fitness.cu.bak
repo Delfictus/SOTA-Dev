@@ -1,0 +1,769 @@
+// ============================================================================
+// PRISM-VE: Viral Evolution Fitness Module - GPU Kernels
+// ============================================================================
+//
+// Combines two complementary fitness calculations:
+// 1. IMMUNE ESCAPE: DMS antibody escape + population immunity (VASIL approach)
+// 2. BIOCHEMICAL FITNESS: Stability + Binding + Expression (viability)
+//
+// Final fitness = P(immune_escape) × P(biochemical_viable) × P(transmissible)
+//
+// Author: PRISM-VE Team
+// Architecture: Multi-pass kernels for modularity
+// ============================================================================
+
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <math.h>
+
+// Compile-time configuration
+#define BLOCK_SIZE 256
+#define MAX_MUTATIONS_PER_VARIANT 50
+#define MAX_EPITOPE_CLASSES 10
+#define MAX_ANTIBODIES 836
+#define RBD_SITES 201  // Sites 331-531
+#define WARP_SIZE 32
+
+// ============================================================================
+// DATA STRUCTURES
+// ============================================================================
+
+/**
+ * Runtime parameters for fitness calculation
+ */
+struct __align__(16) FitnessParams {
+    // DMS Escape Parameters
+    float escape_scale;                     // Scaling factor for escape scores
+    float epitope_weights[10];              // Weight per epitope class
+
+    // Biochemical Fitness Parameters
+    float stability_weight;                 // Weight for ΔΔG_fold contribution
+    float binding_weight;                   // Weight for ΔΔG_bind contribution
+    float expression_weight;                // Weight for expression contribution
+
+    // Transmissibility Parameters
+    float base_r0;                          // Base reproduction number
+    float r0_variance;                      // Variance in R0 estimates
+
+    // Population Immunity
+    float immunity_decay_rate;              // Antibody decay (1/days)
+    float booster_efficacy;                 // Vaccine booster effectiveness
+
+    // Thresholds
+    float stability_threshold;              // ΔΔG threshold for lethality (kcal/mol)
+    float binding_threshold;                // ΔΔG_bind threshold
+    float expression_threshold;             // Expression score threshold
+
+    // Prediction Parameters
+    float time_horizon_days;                // Forecast window (days)
+    float frequency_threshold;              // Minimum frequency to track
+
+    // Model Weights (calibrated independently on training data)
+    float escape_weight;                    // Weight for immune escape component
+    float transmit_weight;                  // Weight for transmissibility component
+};
+
+/**
+ * Amino acid properties (constant memory)
+ */
+struct AminoAcidProperties {
+    float volume;                // Å³
+    float surface_area;          // Å²
+    float hydrophobicity;        // Kyte-Doolittle scale
+    float charge_ph7;            // Charge at pH 7
+    int h_bond_donors;
+    int h_bond_acceptors;
+    float helix_propensity;
+    float sheet_propensity;
+};
+
+// ============================================================================
+// CONSTANT MEMORY
+// ============================================================================
+
+// DMS escape matrix: [836 antibodies × 201 RBD sites]
+__constant__ float c_escape_matrix[MAX_ANTIBODIES * RBD_SITES];
+
+// Antibody → epitope class mapping
+__constant__ int c_antibody_epitopes[MAX_ANTIBODIES];
+
+// Amino acid properties (20 amino acids)
+__constant__ AminoAcidProperties c_aa_properties[20];
+
+// Amino acid index mapping: A=0, C=1, D=2, E=3, F=4, G=5, H=6, I=7, K=8, L=9,
+//                           M=10, N=11, P=12, Q=13, R=14, S=15, T=16, V=17, W=18, Y=19
+__constant__ char c_aa_order[20] = {'A','C','D','E','F','G','H','I','K','L',
+                                     'M','N','P','Q','R','S','T','V','W','Y'};
+
+// ============================================================================
+// DEVICE HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Convert amino acid character to index (0-19)
+ */
+__device__ inline int aa_to_index(char aa) {
+    // Binary search would be faster, but with 20 elements linear is OK
+    for (int i = 0; i < 20; i++) {
+        if (c_aa_order[i] == aa) return i;
+    }
+    return -1;  // Invalid amino acid
+}
+
+/**
+ * Sigmoid function for converting ΔΔG to probability
+ */
+__device__ inline float sigmoid(float x, float scale = 1.0f) {
+    return 1.0f / (1.0f + expf(x / scale));
+}
+
+/**
+ * Compute van der Waals/steric contribution
+ */
+__device__ inline float calc_vdw_term(float delta_volume, float burial) {
+    if (delta_volume > 0.0f) {
+        // Getting bigger - potential clash
+        return (delta_volume / 50.0f) * burial * 2.0f;
+    } else {
+        // Getting smaller - cavity formation
+        return fabsf(delta_volume / 50.0f) * burial * 0.5f;
+    }
+}
+
+/**
+ * Warp-level reduction for summing escape scores
+ */
+__device__ inline float warp_reduce_sum(float val) {
+    for (int offset = WARP_SIZE / 2; offset > 0; offset /= 2) {
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    }
+    return val;
+}
+
+// ============================================================================
+// STAGE 1: DMS ESCAPE SCORE CALCULATION
+// ============================================================================
+
+/**
+ * Compute DMS antibody escape scores for variants
+ *
+ * Input:
+ *   - spike_mutations: [n_variants × MAX_MUTATIONS] mutation positions
+ *   - mutation_aa: [n_variants × MAX_MUTATIONS] mutation amino acids
+ *   - n_mutations_per_variant: [n_variants] number of mutations
+ *
+ * Output:
+ *   - escape_scores_out: [n_variants × 10] escape score per epitope class
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 4)
+stage1_dms_escape_scores(
+    const int* __restrict__ spike_mutations,     // [n_variants × MAX_MUTATIONS]
+    const char* __restrict__ mutation_aa,        // [n_variants × MAX_MUTATIONS]
+    const int* __restrict__ n_mutations_per_variant,
+    const int n_variants,
+    float* __restrict__ escape_scores_out        // [n_variants × 10]
+) {
+    int variant_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Shared memory for per-epitope aggregation
+    __shared__ float smem_escape[MAX_EPITOPE_CLASSES];
+
+    if (variant_idx >= n_variants) return;
+
+    // Initialize shared memory
+    if (threadIdx.x < MAX_EPITOPE_CLASSES) {
+        smem_escape[threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+
+    int n_mutations = n_mutations_per_variant[variant_idx];
+    int mutation_offset = variant_idx * MAX_MUTATIONS_PER_VARIANT;
+
+    // Thread-local accumulators for each epitope class
+    float local_escape[MAX_EPITOPE_CLASSES] = {0.0f};
+
+    // Process mutations assigned to this thread
+    for (int m = threadIdx.x; m < n_mutations; m += blockDim.x) {
+        int site = spike_mutations[mutation_offset + m];
+
+        // Only RBD mutations (sites 331-531)
+        if (site < 331 || site > 531) continue;
+
+        int rbd_site_idx = site - 331;  // Convert to 0-200 index
+
+        // Accumulate escape across all 836 antibodies
+        // Use warp-level parallelism for efficiency
+        int warp_id = threadIdx.x / WARP_SIZE;
+        int lane_id = threadIdx.x % WARP_SIZE;
+
+        // Each warp processes a subset of antibodies
+        for (int ab = lane_id; ab < MAX_ANTIBODIES; ab += WARP_SIZE) {
+            float escape_value = c_escape_matrix[ab * RBD_SITES + rbd_site_idx];
+            int epitope_class = c_antibody_epitopes[ab];
+
+            // Accumulate to thread-local storage
+            local_escape[epitope_class] += escape_value;
+        }
+    }
+    __syncthreads();
+
+    // Reduce thread-local accumulators to shared memory
+    for (int epitope = 0; epitope < MAX_EPITOPE_CLASSES; epitope++) {
+        float val = local_escape[epitope];
+
+        // Warp-level reduction
+        val = warp_reduce_sum(val);
+
+        // First thread of each warp writes to shared memory
+        if ((threadIdx.x % WARP_SIZE) == 0 && val > 0.0f) {
+            atomicAdd(&smem_escape[epitope], val);
+        }
+    }
+    __syncthreads();
+
+    // Write results (first 10 threads)
+    if (threadIdx.x < MAX_EPITOPE_CLASSES) {
+        int out_idx = variant_idx * MAX_EPITOPE_CLASSES + threadIdx.x;
+        escape_scores_out[out_idx] = smem_escape[threadIdx.x];
+    }
+}
+
+
+// ============================================================================
+// STAGE 2: BIOCHEMICAL FITNESS - STABILITY CALCULATION
+// ============================================================================
+
+/**
+ * Compute protein stability change (ΔΔG_fold) for mutations
+ *
+ * Uses physics-based estimation combining:
+ * - Hydrophobic burial
+ * - Hydrogen bonding
+ * - Electrostatics
+ * - Van der Waals / steric effects
+ * - Solvation
+ *
+ * Input:
+ *   - mutations: [n_mutations × 3] (position, wt_aa_idx, mut_aa_idx)
+ *   - burial_fraction: [n_residues] how buried each residue is
+ *   - n_contacts: [n_residues] number of contacts per residue
+ *   - secondary_structure: [n_residues] 0=coil, 1=helix, 2=sheet
+ *
+ * Output:
+ *   - ddG_fold_out: [n_mutations] stability change (kcal/mol)
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 4)
+stage2_stability_calc(
+    const int* __restrict__ mutations,           // [n_mutations × 3]
+    const float* __restrict__ burial_fraction,   // [n_residues]
+    const int* __restrict__ n_contacts,          // [n_residues]
+    const int* __restrict__ secondary_structure, // [n_residues]
+    const int n_mutations,
+    const int n_residues,
+    const FitnessParams* __restrict__ params,
+    float* __restrict__ ddG_fold_out             // [n_mutations]
+) {
+    int mut_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (mut_idx >= n_mutations) return;
+
+    // Parse mutation
+    int position = mutations[mut_idx * 3 + 0];
+    int wt_aa_idx = mutations[mut_idx * 3 + 1];
+    int mut_aa_idx = mutations[mut_idx * 3 + 2];
+
+    // Get structural context
+    float burial = burial_fraction[position];
+    int contacts = n_contacts[position];
+    int ss = secondary_structure[position];
+
+    // Get amino acid properties
+    AminoAcidProperties wt_props = c_aa_properties[wt_aa_idx];
+    AminoAcidProperties mut_props = c_aa_properties[mut_aa_idx];
+
+    // Calculate property changes
+    float delta_volume = mut_props.volume - wt_props.volume;
+    float delta_hydro = mut_props.hydrophobicity - wt_props.hydrophobicity;
+    float delta_charge = mut_props.charge_ph7 - wt_props.charge_ph7;
+    int delta_h_donors = mut_props.h_bond_donors - wt_props.h_bond_donors;
+    int delta_h_acceptors = mut_props.h_bond_acceptors - wt_props.h_bond_acceptors;
+
+    // === Energy Term Calculations ===
+
+    // 1. Hydrophobic term
+    float hydro_term;
+    if (burial > 0.7f) {
+        // Core position - losing hydrophobicity is bad
+        hydro_term = -0.5f * delta_hydro * burial;
+    } else {
+        // Surface position - smaller effect
+        hydro_term = -0.1f * delta_hydro * (1.0f - burial);
+    }
+
+    // 2. Van der Waals / steric term
+    float vdw_term = calc_vdw_term(delta_volume, burial);
+
+    // 3. Hydrogen bonding term
+    float hbond_term = -0.5f * (float)(delta_h_donors + delta_h_acceptors) * 1.5f;
+
+    // 4. Electrostatic term
+    float electro_term = 0.0f;
+    if (burial > 0.5f && fabsf(delta_charge) > 0.0f) {
+        // Burying a charge is destabilizing
+        electro_term = 2.0f * fabsf(delta_charge) * burial;
+    }
+
+    // 5. Solvation term
+    float exposure = 1.0f - burial;
+    float solvation_term = 0.0f;  // Would need Wimley-White scale in constant memory
+
+    // 6. Backbone strain (Proline special cases)
+    float backbone_term = 0.0f;
+    // Would need to check if mut_aa is Proline and secondary structure
+
+    // 7. Side chain packing
+    float packing_term = fabsf(delta_volume / 100.0f) * fminf((float)contacts, 10.0f) * 0.1f;
+
+    // 8. Cavity formation
+    float cavity_term = 0.0f;
+    if (delta_volume < 0.0f && burial > 0.5f) {
+        cavity_term = fabsf(delta_volume) * 0.02f * burial;
+    }
+
+    // === Combine Terms ===
+    float ddG_fold =
+        1.0f * hydro_term +
+        0.4f * vdw_term +
+        0.8f * hbond_term +
+        0.6f * electro_term +
+        0.7f * solvation_term +
+        1.2f * backbone_term +
+        0.5f * packing_term +
+        0.9f * cavity_term;
+
+    ddG_fold_out[mut_idx] = ddG_fold;
+}
+
+
+// ============================================================================
+// STAGE 3: BIOCHEMICAL FITNESS - BINDING AFFINITY CALCULATION
+// ============================================================================
+
+/**
+ * Compute receptor binding affinity change (ΔΔG_bind)
+ *
+ * Only mutations at the binding interface affect binding.
+ * Uses interface analysis to estimate affinity changes.
+ *
+ * Input:
+ *   - mutations: [n_mutations × 3] (position, wt_aa_idx, mut_aa_idx)
+ *   - interface_mask: [n_residues] 1 if at interface, 0 otherwise
+ *   - interface_burial: [n_residues] burial in complex
+ *   - interface_contacts: [n_residues] contacts to receptor
+ *   - is_hotspot: [n_residues] 1 if binding hotspot
+ *
+ * Output:
+ *   - ddG_bind_out: [n_mutations] binding change (kcal/mol)
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 4)
+stage3_binding_calc(
+    const int* __restrict__ mutations,              // [n_mutations × 3]
+    const int* __restrict__ interface_mask,         // [n_residues]
+    const float* __restrict__ interface_burial,     // [n_residues]
+    const int* __restrict__ interface_contacts,     // [n_residues]
+    const int* __restrict__ is_hotspot,             // [n_residues]
+    const int n_mutations,
+    const int n_residues,
+    const FitnessParams* __restrict__ params,
+    float* __restrict__ ddG_bind_out                // [n_mutations]
+) {
+    int mut_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (mut_idx >= n_mutations) return;
+
+    int position = mutations[mut_idx * 3 + 0];
+    int wt_aa_idx = mutations[mut_idx * 3 + 1];
+    int mut_aa_idx = mutations[mut_idx * 3 + 2];
+
+    // Check if at interface
+    if (!interface_mask[position]) {
+        ddG_bind_out[mut_idx] = 0.0f;
+        return;
+    }
+
+    // Get interface context
+    float burial = interface_burial[position];
+    int contacts = interface_contacts[position];
+    bool hotspot = is_hotspot[position] != 0;
+
+    // Get amino acid properties
+    AminoAcidProperties wt_props = c_aa_properties[wt_aa_idx];
+    AminoAcidProperties mut_props = c_aa_properties[mut_aa_idx];
+
+    float delta_volume = mut_props.volume - wt_props.volume;
+    float delta_charge = mut_props.charge_ph7 - wt_props.charge_ph7;
+    float delta_hydro = mut_props.hydrophobicity - wt_props.hydrophobicity;
+
+    // Estimate contact changes based on volume
+    int contacts_lost = 0;
+    int contacts_gained = 0;
+    if (delta_volume < -30.0f) {
+        contacts_lost = min(2, contacts);
+    } else if (delta_volume < 0.0f) {
+        contacts_lost = min(1, contacts);
+    } else if (delta_volume > 30.0f) {
+        contacts_gained = 1;
+    }
+
+    // Interface electrostatics
+    float electro_change = fabsf(delta_charge) * 1.5f;
+
+    // Interface hydrophobics
+    float hydro_change = 0.0f;
+    if (burial > 0.5f) {
+        hydro_change = delta_hydro * -0.3f;
+    }
+
+    // Hotspot penalty (mutations at hotspots are more impactful)
+    float hotspot_factor = hotspot ? 2.0f : 1.0f;
+
+    // Combine
+    float ddG_bind =
+        (float)contacts_lost * 0.5f * hotspot_factor -
+        (float)contacts_gained * 0.3f +
+        electro_change +
+        hydro_change;
+
+    ddG_bind_out[mut_idx] = ddG_bind;
+}
+
+
+// ============================================================================
+// STAGE 4: CROSS-NEUTRALIZATION COMPUTATION
+// ============================================================================
+
+/**
+ * Compute fold-reduction in neutralization based on escape scores
+ *
+ * VASIL formula: fold_reduction = exp(Σ escape[epitope] × weight[epitope])
+ *
+ * Input:
+ *   - escape_scores: [n_variants × 10] escape per epitope class
+ *   - immunity_weights: [10] population immunity per class (from cycle module)
+ *
+ * Output:
+ *   - fold_reduction_out: [n_variants] fold-reduction in neutralization
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 4)
+stage4_cross_neutralization(
+    const float* __restrict__ escape_scores,      // [n_variants × 10]
+    const float* __restrict__ immunity_weights,   // [10]
+    const int n_variants,
+    const FitnessParams* __restrict__ params,
+    float* __restrict__ fold_reduction_out        // [n_variants]
+) {
+    int variant_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (variant_idx >= n_variants) return;
+
+    float total_escape = 0.0f;
+
+    // Sum weighted escape across 10 epitope classes
+    #pragma unroll
+    for (int epitope = 0; epitope < MAX_EPITOPE_CLASSES; epitope++) {
+        float escape = escape_scores[variant_idx * MAX_EPITOPE_CLASSES + epitope];
+        float weight = immunity_weights[epitope] * params->epitope_weights[epitope];
+        total_escape += escape * weight;
+    }
+
+    // Scale by parameter
+    total_escape *= params->escape_scale;
+
+    // Fold-reduction in neutralization (exponential)
+    fold_reduction_out[variant_idx] = expf(total_escape);
+}
+
+
+// ============================================================================
+// STAGE 5: UNIFIED FITNESS SCORING
+// ============================================================================
+
+/**
+ * Combine immune escape and biochemical fitness into unified score
+ *
+ * Fitness = P(immune_escape) × P(biochemically_viable) × P(transmissible)
+ *
+ * Where:
+ *   P(immune_escape) = -log(fold_reduction)
+ *   P(viable) = sigmoid(-ddG_fold) × sigmoid(-ddG_bind) × expression_score
+ *   P(transmissible) = intrinsic R0 boost
+ *
+ * Final γ (growth rate):
+ *   γ > 0 → variant RISING
+ *   γ < 0 → variant FALLING
+ *
+ * Input:
+ *   - fold_reduction: [n_variants] immune escape
+ *   - ddG_fold: [n_variants] stability change
+ *   - ddG_bind: [n_variants] binding change
+ *   - expression_scores: [n_variants] expression/solubility
+ *   - transmissibility: [n_variants] intrinsic R0
+ *
+ * Output:
+ *   - gamma_out: [n_variants] growth rate (fitness)
+ *   - fitness_components_out: [n_variants × 5] (escape, stability, binding, expression, transmit)
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 4)
+stage5_unified_fitness(
+    const float* __restrict__ fold_reduction,       // [n_variants]
+    const float* __restrict__ ddG_fold,             // [n_variants]
+    const float* __restrict__ ddG_bind,             // [n_variants]
+    const float* __restrict__ expression_scores,    // [n_variants]
+    const float* __restrict__ transmissibility,     // [n_variants]
+    const int n_variants,
+    const FitnessParams* __restrict__ params,
+    float* __restrict__ gamma_out,                  // [n_variants]
+    float* __restrict__ fitness_components_out      // [n_variants × 5]
+) {
+    int variant_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (variant_idx >= n_variants) return;
+
+    float fold_red = fold_reduction[variant_idx];
+    float ddg_fold = ddG_fold[variant_idx];
+    float ddg_bind = ddG_bind[variant_idx];
+    float expression = expression_scores[variant_idx];
+    float r0_boost = transmissibility[variant_idx];
+
+    // === Component Scores (0-1) ===
+
+    // 1. Immune escape score (higher fold_reduction = more escape = better)
+    float escape_score = -logf(fmaxf(fold_red, 1e-6f));  // Negative log
+
+    // 2. Stability score (negative ddG = more stable = better)
+    float stability_score = sigmoid(-ddg_fold, 1.5f);
+
+    // 3. Binding score (negative ddG = better binding)
+    // But too strong binding can also be bad (asymmetric)
+    float binding_score;
+    if (ddg_bind > 0.0f) {
+        binding_score = sigmoid(-ddg_bind, 0.5f);  // Penalize loss heavily
+    } else {
+        binding_score = sigmoid(-ddg_bind, 2.0f);  // Less penalty for gain
+    }
+
+    // 4. Expression score (already 0-1)
+    float expr_score = expression;
+
+    // 5. Transmissibility score
+    float transmit_score = r0_boost / params->base_r0;
+
+    // === Apply Viability Thresholds ===
+
+    // If stability is lethal, fitness = 0
+    if (ddg_fold > params->stability_threshold) {
+        stability_score = 0.0f;
+    }
+
+    // If binding is too weak, fitness = 0
+    if (ddg_bind > params->binding_threshold) {
+        binding_score = 0.0f;
+    }
+
+    // If expression is too low, fitness = 0
+    if (expr_score < params->expression_threshold) {
+        expr_score = 0.0f;
+    }
+
+    // === Combine Scores ===
+
+    // PRISM-VE combination: weighted sum (parameters fitted independently)
+    float prism_fitness =
+        params->escape_weight * escape_score +
+        params->transmit_weight * transmit_score;
+
+    // Biochemical viability: multiplicative (all must be viable)
+    float biochem_fitness =
+        stability_score * binding_score * expr_score;
+
+    // Combined fitness (growth rate γ)
+    float gamma = vasil_fitness * biochem_fitness;
+
+    // Apply weights
+    gamma =
+        params->stability_weight * stability_score +
+        params->binding_weight * binding_score +
+        params->expression_weight * expr_score +
+        escape_score +
+        transmit_score;
+
+    // Output
+    gamma_out[variant_idx] = gamma;
+
+    // Output components for analysis
+    int comp_offset = variant_idx * 5;
+    fitness_components_out[comp_offset + 0] = escape_score;
+    fitness_components_out[comp_offset + 1] = stability_score;
+    fitness_components_out[comp_offset + 2] = binding_score;
+    fitness_components_out[comp_offset + 3] = expr_score;
+    fitness_components_out[comp_offset + 4] = transmit_score;
+}
+
+
+// ============================================================================
+// STAGE 6: DYNAMICS PREDICTION
+// ============================================================================
+
+/**
+ * Predict variant frequency dynamics using logistic growth model
+ *
+ * dF/dt = γ × F × (1 - F)
+ *
+ * Where:
+ *   F = variant frequency
+ *   γ = fitness advantage (from stage 5)
+ *
+ * Input:
+ *   - gamma: [n_variants] growth rate
+ *   - current_freq: [n_variants] current frequency
+ *   - dt: time step (days)
+ *
+ * Output:
+ *   - predicted_freq_out: [n_variants] predicted frequency
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 4)
+stage6_predict_dynamics(
+    const float* __restrict__ gamma,              // [n_variants]
+    const float* __restrict__ current_freq,       // [n_variants]
+    const float dt,                               // Time step (days)
+    const int n_variants,
+    const FitnessParams* __restrict__ params,
+    float* __restrict__ predicted_freq_out        // [n_variants]
+) {
+    int variant_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (variant_idx >= n_variants) return;
+
+    float g = gamma[variant_idx];
+    float f = current_freq[variant_idx];
+
+    // Skip if below threshold
+    if (f < params->frequency_threshold) {
+        predicted_freq_out[variant_idx] = f;
+        return;
+    }
+
+    // Logistic growth: dF = γ * F * (1 - F) * dt
+    float df = g * f * (1.0f - f) * dt;
+
+    // Clamp to [0, 1]
+    float f_new = fmaxf(0.0f, fminf(1.0f, f + df));
+
+    predicted_freq_out[variant_idx] = f_new;
+}
+
+
+// ============================================================================
+// UTILITY KERNELS
+// ============================================================================
+
+/**
+ * Initialize amino acid properties in constant memory
+ * This is called once at module load time
+ */
+extern "C" __global__ void
+init_aa_properties(
+    const AminoAcidProperties* __restrict__ aa_props_host
+) {
+    // This would copy from host to constant memory
+    // In practice, done via cudaMemcpyToSymbol from host code
+}
+
+/**
+ * Load DMS escape matrix into constant memory
+ */
+extern "C" __global__ void
+load_dms_escape_matrix(
+    const float* __restrict__ escape_matrix_host,
+    const int* __restrict__ antibody_epitopes_host
+) {
+    // Copy via cudaMemcpyToSymbol from host
+}
+
+
+// ============================================================================
+// COMBINED BATCH KERNEL (Alternative to Multi-Pass)
+// ============================================================================
+
+/**
+ * All-in-one fitness calculation for small batches
+ *
+ * Combines all stages into single kernel launch for reduced overhead.
+ * Use this for <1000 variants, use multi-pass for larger batches.
+ */
+extern "C" __global__ void __launch_bounds__(BLOCK_SIZE, 2)
+batch_fitness_combined(
+    // Inputs
+    const int* __restrict__ spike_mutations,
+    const char* __restrict__ mutation_aa,
+    const int* __restrict__ n_mutations_per_variant,
+    const float* __restrict__ immunity_weights,
+    const float* __restrict__ transmissibility,
+    const int n_variants,
+    const FitnessParams* __restrict__ params,
+
+    // Outputs
+    float* __restrict__ gamma_out,
+    float* __restrict__ escape_scores_out,
+    float* __restrict__ fitness_components_out
+) {
+    int variant_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (variant_idx >= n_variants) return;
+
+    // Shared memory for epitope scores
+    __shared__ float smem_escape[MAX_EPITOPE_CLASSES];
+
+    if (threadIdx.x < MAX_EPITOPE_CLASSES) {
+        smem_escape[threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+
+    // === Stage 1: DMS Escape (inlined) ===
+    int n_mutations = n_mutations_per_variant[variant_idx];
+    int mutation_offset = variant_idx * MAX_MUTATIONS_PER_VARIANT;
+
+    for (int m = 0; m < n_mutations; m++) {
+        int site = spike_mutations[mutation_offset + m];
+        if (site < 331 || site > 531) continue;
+
+        int rbd_site = site - 331;
+
+        for (int ab = 0; ab < MAX_ANTIBODIES; ab++) {
+            float escape = c_escape_matrix[ab * RBD_SITES + rbd_site];
+            int epitope = c_antibody_epitopes[ab];
+            atomicAdd(&smem_escape[epitope], escape);
+        }
+    }
+    __syncthreads();
+
+    // === Stage 2: Cross-Neutralization (inlined) ===
+    float total_escape = 0.0f;
+    for (int i = 0; i < MAX_EPITOPE_CLASSES; i++) {
+        total_escape += smem_escape[i] * immunity_weights[i];
+    }
+    float fold_reduction = expf(total_escape * params->escape_scale);
+    float escape_score = -logf(fmaxf(fold_reduction, 1e-6f));
+
+    // === Stage 3-4: Biochemical Fitness (simplified) ===
+    // For batch processing, use simplified heuristics
+    float biochem_fitness = 0.8f;  // Placeholder
+
+    // === Stage 5: Combined Fitness ===
+    float r0 = transmissibility[variant_idx];
+    float gamma = params->escape_weight * escape_score +
+                  params->transmit_weight * (r0 / params->base_r0) *
+                  biochem_fitness;
+
+    // === Output ===
+    gamma_out[variant_idx] = gamma;
+
+    if (threadIdx.x < MAX_EPITOPE_CLASSES) {
+        escape_scores_out[variant_idx * MAX_EPITOPE_CLASSES + threadIdx.x] =
+            smem_escape[threadIdx.x];
+    }
+}

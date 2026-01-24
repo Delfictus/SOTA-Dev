@@ -1,0 +1,71 @@
+[package]
+name = "prism-physics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Core dependencies
+prism-core = { workspace = true }
+prism-gpu = { workspace = true, optional = true }
+prism-io = { workspace = true }
+
+# Async & error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Math & scientific
+nalgebra = { workspace = true }
+ndarray = { workspace = true }
+num-complex = { workspace = true }
+rustfft = { workspace = true }
+statrs = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# Cryptographic integrity
+blake3 = "1.5"
+
+# Logging
+log = { workspace = true }
+env_logger = "0.11"
+
+# GPU
+cudarc = { workspace = true, optional = true, features = ["std", "cuda-12050", "driver", "nvrtc"] }
+uuid = { workspace = true, features = ["v4"] }
+
+[[bin]]
+name = "prism-niv-bench"
+path = "src/bin/prism-niv-bench.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "test-holographic"
+path = "src/bin/test_holographic.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "test-gpu-gnm"
+path = "src/bin/test_gpu_gnm.rs"
+required-features = ["cuda"]
+
+[features]
+default = []
+cuda = ["cudarc", "prism-gpu/cuda", "prism-io/gpu"]
+telemetry = ["prism-core/telemetry"]
+
+[dev-dependencies]
+approx = "0.5"
+criterion = "0.5"

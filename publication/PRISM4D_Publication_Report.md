@@ -46,6 +46,9 @@ acceleration, to characterize RBD dynamics on consumer hardware.
 | Timestep | 2.0 fs |
 | Temperature | 310 K |
 | Thermostat | Langevin (gamma = 0.01 fs^-1) |
+| Integrator | Velocity Verlet |
+| Non-bonded cutoff | 12 Å |
+| Neighbor list | O(N) cell-list (10 Å cells) |
 | Constraints | SETTLE (water) + H-bond constraints |
 | Restraints | k = 2.0 kcal/(mol*A^2) on heavy atoms |
 | Total Time | 1.0 ns |
@@ -154,6 +157,23 @@ Key features of the PRISM-4D approach:
 4. **Integration**: Built-in analysis pipeline
 
 ---
+
+### 4.5 Three-Dimensional Structure Visualization
+
+The RBD structure colored by sequence position (N-terminus blue to C-terminus red) with key escape mutation sites highlighted (Figure 5). The four labeled sites (K417N, S477N, E484K, N501Y) represent clinically significant variants that have emerged during the pandemic.
+
+
+
+![Figure 5: SARS-CoV-2 RBD structure with escape mutation sites](figures/Figure5a_structure_overview.png)
+
+
+
+**Figure 5.** Three-dimensional structure of SARS-CoV-2 RBD colored by sequence position (blue→red, N→C terminus). Red spheres indicate key escape mutation sites: K417N, S477N, E484K, and N501Y. Generated using ChimeraX from 1 ns PRISM-4D simulation.
+
+
+
+---
+
 
 ## 5. Conclusions
 

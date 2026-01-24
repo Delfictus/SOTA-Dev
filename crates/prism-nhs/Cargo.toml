@@ -68,6 +68,30 @@ name = "nhs-diagnose"
 path = "src/bin/nhs_diagnose.rs"
 required-features = ["gpu"]
 
+[[bin]]
+name = "nhs-analyze"
+path = "src/bin/nhs_analyze.rs"
+
+[[bin]]
+name = "nhs-analyze-gpu"
+path = "src/bin/nhs_analyze_gpu.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze-ultra"
+path = "src/bin/nhs_analyze_ultra.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze-turbo"
+path = "src/bin/nhs_analyze_turbo.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze-pro"
+path = "src/bin/nhs_analyze_pro.rs"
+required-features = ["gpu"]
+
 [dev-dependencies]
 tempfile = "3.0"
 tokio-test = "0.4"

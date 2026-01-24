@@ -49,7 +49,9 @@ use crate::config::{TRP_EXTINCTION_280, TYR_EXTINCTION_280, PHE_EXTINCTION_280};
 use crate::config::{TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX};
 use crate::config::{TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH};
 use crate::config::{DISULFIDE_EXTINCTION_250, DISULFIDE_BOND_MAX_DISTANCE};
-use crate::config::{wavelength_to_ev, KB_EV_K};
+use crate::config::{wavelength_to_ev, extinction_to_cross_section, KB_EV_K};
+use crate::config::{NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE};
+use crate::config::{CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD};
 use anyhow::Result;
 use rand::Rng;
 use rand_distr::{Distribution, Normal, UnitSphere};
@@ -200,27 +202,63 @@ impl ChromophoreType {
         self.extinction_280() / ABSORPTION_NORMALIZATION
     }
 
-    /// Compute local temperature increase from single photon absorption
+    /// Compute local temperature increase from UV absorption (PHYSICS-CORRECTED)
+    ///
+    /// Formula: ΔT = (E_γ × p × η) / (3/2 × k_B × N_eff)
+    /// where:
+    ///   E_γ = photon energy (eV) = 1239.84 / λ(nm)
+    ///   p = σ × F = absorption probability
+    ///   σ = ε × 3.823×10⁻⁵ (cross-section in Å², per molecule)
+    ///   F = photon fluence (photons/Å²)
+    ///   η = heat yield (fraction of energy → heat)
+    ///   N_eff = effective degrees of freedom for local heating
+    ///
+    /// Calibration target: TRP @ 280nm with F=0.024, η=1.0 → ΔT ≈ 20K
     pub fn compute_local_heating(&self, wavelength: f32, photon_fluence: f32) -> f32 {
-        let photon_energy = wavelength_to_ev(wavelength);  // eV
-        let absorption = self.absorption_at_wavelength(wavelength);
+        self.compute_local_heating_with_yield(wavelength, photon_fluence, DEFAULT_HEAT_YIELD)
+    }
 
-        // Absorption cross-section (simplified: proportional to extinction)
-        let absorption_cross = absorption / 1000.0;  // Å² approximation
+    /// Compute local heating with explicit heat yield parameter
+    pub fn compute_local_heating_with_yield(&self, wavelength: f32, photon_fluence: f32, heat_yield: f32) -> f32 {
+        let photon_energy = wavelength_to_ev(wavelength);  // eV
+        let epsilon = self.absorption_at_wavelength(wavelength);  // M⁻¹cm⁻¹
+
+        // CORRECTED: Proper ε → σ conversion (per molecule)
+        // σ(Å²) = ε(M⁻¹cm⁻¹) × 3.823×10⁻⁵
+        let sigma = extinction_to_cross_section(epsilon);  // Å²
+
+        // Absorption probability (single-photon regime requires p << 1)
+        let p_absorb = sigma * photon_fluence;
 
         // Energy deposited per chromophore
-        let energy_deposited = photon_energy * absorption_cross * photon_fluence;  // eV
+        let energy_deposited = photon_energy * p_absorb * heat_yield;  // eV
 
-        // Convert to temperature increase (equipartition)
-        // ΔT = E / (3/2 * k_B * N_atoms)
-        let n_ring_atoms = match self {
-            ChromophoreType::Tryptophan => 9.0,     // Indole ring
-            ChromophoreType::Tyrosine => 6.0,      // Phenol ring
-            ChromophoreType::Phenylalanine => 6.0, // Benzene ring
-            ChromophoreType::Disulfide => 2.0,     // S-S bond
+        // Effective degrees of freedom for local heating (CORRECTED values)
+        let n_eff = match self {
+            ChromophoreType::Tryptophan => NEFF_TRP,      // 9.0 - Indole ring
+            ChromophoreType::Tyrosine => NEFF_TYR,        // 10.0 - Phenol ring (6) + OH (4)
+            ChromophoreType::Phenylalanine => NEFF_PHE,   // 9.0 - Benzene ring + side chain
+            ChromophoreType::Disulfide => NEFF_DISULFIDE, // 2.0 - S-S bond
         };
 
-        energy_deposited / (1.5 * KB_EV_K * n_ring_atoms)  // Kelvin
+        // Convert to temperature increase via equipartition
+        // ΔT = E_dep / (3/2 × k_B × N_eff)
+        energy_deposited / (1.5 * KB_EV_K * n_eff)  // Kelvin
+    }
+
+    /// Get N_eff for this chromophore type
+    pub fn n_eff(&self) -> f32 {
+        match self {
+            ChromophoreType::Tryptophan => NEFF_TRP,
+            ChromophoreType::Tyrosine => NEFF_TYR,
+            ChromophoreType::Phenylalanine => NEFF_PHE,
+            ChromophoreType::Disulfide => NEFF_DISULFIDE,
+        }
+    }
+
+    /// Get absorption cross-section at wavelength (Å², per molecule)
+    pub fn cross_section_at_wavelength(&self, wavelength: f32) -> f32 {
+        extinction_to_cross_section(self.absorption_at_wavelength(wavelength))
     }
 
     /// Is this an aromatic (ring) chromophore?
@@ -2261,5 +2299,122 @@ mod tests {
         let expected = 20.0 * (-1.0_f32).exp();
         assert!((state.current_delta_t - expected).abs() < 1.0,
             "Expected ~{:.1} K after 1 tau, got {:.1} K", expected, state.current_delta_t);
+    }
+
+    // =========================================================================
+    // PHYSICS CALIBRATION TESTS (MUST PASS FOR PUBLICATION)
+    // =========================================================================
+
+    #[test]
+    fn test_physics_calibration_trp_280nm() {
+        // CRITICAL CALIBRATION TEST: TRP @ 280nm with calibrated parameters
+        // Expected results:
+        //   ε = 5600 M⁻¹cm⁻¹
+        //   σ = ε × 3.823e-5 = 0.21409 Å²
+        //   F = 0.024 photons/Å²
+        //   p = σ × F = 0.00514
+        //   E_photon = 4.428 eV
+        //   E_dep = E_photon × p × η = 0.0228 eV
+        //   ΔT = E_dep / (1.5 × k_B × N_eff) ≈ 19.6 K
+
+        use crate::config::{extinction_to_cross_section, CALIBRATED_PHOTON_FLUENCE,
+                           TRP_EXTINCTION_280, NEFF_TRP, KB_EV_K, wavelength_to_ev,
+                           DEFAULT_HEAT_YIELD, MAX_ABSORPTION_PROBABILITY};
+
+        let wavelength = 280.0;
+        let epsilon = TRP_EXTINCTION_280;  // 5600
+        let fluence = CALIBRATED_PHOTON_FLUENCE;  // 0.024
+        let eta = DEFAULT_HEAT_YIELD;  // 1.0
+        let n_eff = NEFF_TRP;  // 9.0
+
+        // Verify cross-section calculation
+        let sigma = extinction_to_cross_section(epsilon);
+        assert!((sigma - 0.21409).abs() < 0.001,
+            "σ_TRP mismatch: expected 0.21409 Å², got {:.5} Å²", sigma);
+
+        // Verify absorption probability (single-photon regime)
+        let p_absorb = sigma * fluence;
+        assert!((p_absorb - 0.00514).abs() < 0.0001,
+            "p_absorb mismatch: expected 0.00514, got {:.5}", p_absorb);
+        assert!(p_absorb < MAX_ABSORPTION_PROBABILITY,
+            "p_absorb ({}) exceeds single-photon threshold ({})", p_absorb, MAX_ABSORPTION_PROBABILITY);
+
+        // Verify photon energy
+        let e_photon = wavelength_to_ev(wavelength);
+        assert!((e_photon - 4.428).abs() < 0.01,
+            "E_photon mismatch: expected 4.428 eV, got {:.3} eV", e_photon);
+
+        // Verify energy deposited
+        let e_dep = e_photon * p_absorb * eta;
+        assert!((e_dep - 0.0228).abs() < 0.001,
+            "E_dep mismatch: expected 0.0228 eV, got {:.4} eV", e_dep);
+
+        // Verify temperature rise (THE CALIBRATION TARGET)
+        let delta_t = e_dep / (1.5 * KB_EV_K * n_eff);
+        assert!((delta_t - 19.6).abs() < 1.0,
+            "ΔT calibration FAILED: expected ~19.6 K, got {:.1} K", delta_t);
+
+        // Also verify via ChromophoreType method
+        let delta_t_method = ChromophoreType::Tryptophan.compute_local_heating(wavelength, fluence);
+        assert!((delta_t_method - 19.6).abs() < 1.0,
+            "ChromophoreType.compute_local_heating FAILED: expected ~19.6 K, got {:.1} K", delta_t_method);
+
+        println!("=== TRP @ 280nm Calibration PASSED ===");
+        println!("ε = {:.0} M⁻¹cm⁻¹", epsilon);
+        println!("σ = {:.5} Å²", sigma);
+        println!("F = {:.4} photons/Å²", fluence);
+        println!("p = {:.5} (< {} threshold)", p_absorb, MAX_ABSORPTION_PROBABILITY);
+        println!("E_γ = {:.3} eV", e_photon);
+        println!("η = {:.1}", eta);
+        println!("E_dep = {:.5} eV", e_dep);
+        println!("N_eff = {:.1}", n_eff);
+        println!("ΔT = {:.2} K ✓", delta_t);
+    }
+
+    #[test]
+    fn test_physics_cross_section_values() {
+        // Verify all chromophore cross-sections at peak wavelengths
+        use crate::config::extinction_to_cross_section;
+
+        // TRP @ 280nm: σ = 5600 × 3.823e-5 = 0.21409
+        let sigma_trp = extinction_to_cross_section(5600.0);
+        assert!((sigma_trp - 0.21409).abs() < 0.001, "σ_TRP error");
+
+        // TYR @ 274nm: σ = 1490 × 3.823e-5 = 0.05696
+        let sigma_tyr = extinction_to_cross_section(1490.0);
+        assert!((sigma_tyr - 0.05696).abs() < 0.001, "σ_TYR error");
+
+        // PHE @ 258nm: σ = 200 × 3.823e-5 = 0.00765
+        let sigma_phe = extinction_to_cross_section(200.0);
+        assert!((sigma_phe - 0.00765).abs() < 0.0001, "σ_PHE error");
+
+        // S-S @ 250nm: σ = 300 × 3.823e-5 = 0.01147
+        let sigma_ss = extinction_to_cross_section(300.0);
+        assert!((sigma_ss - 0.01147).abs() < 0.0001, "σ_SS error");
+    }
+
+    #[test]
+    fn test_physics_multiwavelength_response() {
+        // Verify wavelength selectivity: TRP should absorb most at 280nm
+        let fluence = CALIBRATED_PHOTON_FLUENCE;
+
+        let trp_at_280 = ChromophoreType::Tryptophan.compute_local_heating(280.0, fluence);
+        let trp_at_258 = ChromophoreType::Tryptophan.compute_local_heating(258.0, fluence);
+        let trp_at_250 = ChromophoreType::Tryptophan.compute_local_heating(250.0, fluence);
+
+        // TRP response should peak at 280nm
+        assert!(trp_at_280 > trp_at_258, "TRP should heat more at 280nm than 258nm");
+        assert!(trp_at_280 > trp_at_250, "TRP should heat more at 280nm than 250nm");
+
+        // PHE should respond more at 258nm than 280nm
+        let phe_at_258 = ChromophoreType::Phenylalanine.compute_local_heating(258.0, fluence);
+        let phe_at_280 = ChromophoreType::Phenylalanine.compute_local_heating(280.0, fluence);
+        assert!(phe_at_258 > phe_at_280, "PHE should heat more at 258nm than 280nm");
+
+        println!("Multi-wavelength response verified:");
+        println!("  TRP @ 280nm: {:.2} K", trp_at_280);
+        println!("  TRP @ 258nm: {:.2} K", trp_at_258);
+        println!("  PHE @ 258nm: {:.2} K", phe_at_258);
+        println!("  PHE @ 280nm: {:.2} K", phe_at_280);
     }
 }

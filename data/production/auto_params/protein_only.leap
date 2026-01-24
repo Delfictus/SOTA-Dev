@@ -1,0 +1,10 @@
+source leaprc.protein.ff19SB
+
+mol = loadPDB /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/6LU7_protein_only.pdb
+addH mol
+check mol
+
+saveAmberParm mol /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/complete.prmtop /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/complete.inpcrd
+savePDB mol /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/complete_with_H.pdb
+
+quit

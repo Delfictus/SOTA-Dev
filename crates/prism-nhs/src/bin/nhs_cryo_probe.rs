@@ -33,6 +33,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use prism_nhs::input::PrismPrepTopology;
+use prism_nhs::trajectory::{TrajectoryConfig, TrajectoryWriter, TrajectoryFrame};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
@@ -112,6 +113,36 @@ struct Args {
     /// Live monitor address (e.g., 127.0.0.1:9999)
     #[arg(long)]
     live_monitor: Option<String>,
+
+    // =========================================================================
+    // Trajectory Output Options
+    // =========================================================================
+
+    /// Save ensemble trajectory for later analysis
+    #[arg(long)]
+    save_trajectory: bool,
+
+    /// Save trajectory frame every N steps (default: 1000 = 2ps)
+    #[arg(long, default_value = "1000")]
+    trajectory_interval: i32,
+
+    /// Save snapshot when spike is detected
+    #[arg(long)]
+    save_on_spike: bool,
+
+    /// Maximum frames to save (0 = unlimited)
+    #[arg(long, default_value = "10000")]
+    max_frames: usize,
+
+    // =========================================================================
+    // UV Spectroscopy Options
+    // =========================================================================
+
+    /// Enable publication-quality UV spectroscopy with frequency hopping
+    /// Scans wavelengths: 250nm (S-S), 258nm (PHE), 265nm, 274nm (TYR), 280nm (TRP), 290nm
+    /// Provides chromophore-specific excitation for higher signal/noise
+    #[arg(long)]
+    spectroscopy: bool,
 }
 
 fn main() -> Result<()> {
@@ -258,17 +289,35 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
 
     // UV probe configuration
     let aromatics = topology.aromatic_residues();
-    let mut uv_config = UvProbeConfig {
-        burst_energy: args.uv_energy,
-        burst_interval: args.uv_interval,
-        burst_duration: 10,
-        target_sequence: (0..aromatics.len()).collect(),
-        current_target: 0,
-        timestep_counter: 0,
-        ..Default::default()
+    let uv_config = if args.spectroscopy {
+        // Publication-quality UV spectroscopy with frequency hopping
+        let mut config = UvProbeConfig::publication_quality();
+        config.target_sequence = (0..aromatics.len()).collect();
+        config.burst_energy = args.uv_energy;
+        config.burst_interval = args.uv_interval;
+        config
+    } else {
+        // Standard UV probing (localized heating)
+        UvProbeConfig {
+            burst_energy: args.uv_energy,
+            burst_interval: args.uv_interval,
+            burst_duration: 10,
+            target_sequence: (0..aromatics.len()).collect(),
+            current_target: 0,
+            timestep_counter: 0,
+            ..Default::default()
+        }
     };
 
     println!("UV Probe Configuration:");
+    if args.spectroscopy {
+        println!("  Mode:           SPECTROSCOPY (frequency hopping)");
+        println!("  Wavelengths:    250, 258, 265, 274, 280, 290 nm");
+        println!("                  (S-S, PHE, -, TYR, TRP, -)");
+        println!("  Dwell steps:    {} per wavelength", uv_config.dwell_steps);
+    } else {
+        println!("  Mode:           STANDARD (localized heating)");
+    }
     println!("  Burst energy:   {:.1} kcal/mol", args.uv_energy);
     println!("  Burst interval: {} steps", args.uv_interval);
     println!("  Targets:        {} aromatic residues", aromatics.len());
@@ -289,9 +338,41 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         println!("Live monitor: Connected to {}", addr);
     }
 
+    // Save spectroscopy info before moving config
+    let spectroscopy_wavelengths = if args.spectroscopy {
+        Some(uv_config.scan_wavelengths.clone())
+    } else {
+        None
+    };
+    let frequency_hopping_enabled = uv_config.frequency_hopping_enabled;
+
     // Set protocols
     engine.set_temperature_protocol(temp_protocol.clone())?;
     engine.set_uv_config(uv_config);
+
+    // Setup trajectory writer if enabled
+    let mut trajectory_writer = if args.save_trajectory || args.save_on_spike {
+        let base_name = args.input.file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "trajectory".to_string());
+
+        let config = TrajectoryConfig {
+            save_interval: args.trajectory_interval,
+            save_on_spike: args.save_on_spike,
+            max_memory_snapshots: 1000,
+            output_dir: args.output.to_string_lossy().to_string(),
+            base_name,
+        };
+        println!("Trajectory Output:");
+        println!("  Interval:     every {} steps ({:.2} ps)", args.trajectory_interval,
+            args.trajectory_interval as f32 * 0.002);
+        println!("  Save on spike: {}", if args.save_on_spike { "YES" } else { "NO" });
+        println!("  Max frames:   {}", if args.max_frames == 0 { "unlimited".to_string() } else { args.max_frames.to_string() });
+        println!();
+        Some(TrajectoryWriter::new(config)?)
+    } else {
+        None
+    };
 
     println!("════════════════════════════════════════════════════════════════");
     println!("                 RUNNING CRYOGENIC PROBE");
@@ -304,6 +385,8 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
     // Run simulation
     let mut total_spikes = 0usize;
     let mut phase_spikes = [0usize; 3];  // Cold, Ramp, Warm phases
+
+    let mut frames_saved = 0usize;
 
     for step in 0..total_steps {
         let result = engine.step()?;
@@ -319,20 +402,51 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         };
         phase_spikes[phase] += result.spike_count;
 
+        // Save trajectory frames
+        if let Some(ref mut writer) = trajectory_writer {
+            let should_save_interval = writer.should_save(step);
+            let should_save_spike = args.save_on_spike && result.spike_count > 0;
+            let under_limit = args.max_frames == 0 || frames_saved < args.max_frames;
+
+            if (should_save_interval || should_save_spike) && under_limit {
+                let positions = engine.get_positions()?;
+                let frame = TrajectoryFrame {
+                    frame_idx: frames_saved,
+                    timestep: step,
+                    temperature: result.temperature,
+                    time_ps: step as f32 * 0.002,
+                    positions,
+                    spike_triggered: should_save_spike,
+                    spike_count: if should_save_spike { Some(result.spike_count) } else { None },
+                    spike_voxels: None,
+                    wavelength_nm: result.current_wavelength_nm,
+                };
+                writer.add_frame(frame);
+                frames_saved += 1;
+            }
+        }
+
         // Progress report
         if step > 0 && step % report_interval == 0 {
             let elapsed = start_time.elapsed().as_secs_f64();
             let steps_per_sec = step as f64 / elapsed;
             let eta = (total_steps - step) as f64 / steps_per_sec;
 
+            let frame_info = if trajectory_writer.is_some() {
+                format!(" | Frames={}", frames_saved)
+            } else {
+                String::new()
+            };
+
             println!(
-                "  Step {:>7}/{} | T={:>5.1}K | Spikes={:>5} | {:.0} steps/s | ETA {:.0}s",
+                "  Step {:>7}/{} | T={:>5.1}K | Spikes={:>5} | {:.0} steps/s | ETA {:.0}s{}",
                 step,
                 total_steps,
                 result.temperature,
                 result.spike_count,
                 steps_per_sec,
-                eta
+                eta,
+                frame_info
             );
 
             if result.uv_burst_active && args.verbose {
@@ -375,9 +489,25 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         println!("  Binding sites opening as structure warms");
     }
 
+    // Finalize trajectory and write ensemble PDB
+    let trajectory_stats = if let Some(mut writer) = trajectory_writer {
+        println!();
+        println!("Trajectory Output:");
+        println!("  Total frames:   {}", frames_saved);
+        let stats = writer.finalize(&topology)?;
+        println!("  Ensemble PDB:   {}", stats.ensemble_pdb);
+        println!("  Spike frames:   {}", stats.spike_triggered_frames);
+        println!("  Time range:     {:.2} - {:.2} ps", stats.time_range_ps.0, stats.time_range_ps.1);
+        println!("  Temp range:     {:.1} - {:.1} K", stats.temperature_range.0, stats.temperature_range.1);
+        Some(stats)
+    } else {
+        None
+    };
+    println!();
+
     // Save results
     let output_json = args.output.join("cryo_probe_results.json");
-    let results = serde_json::json!({
+    let mut results = serde_json::json!({
         "input": args.input.to_string_lossy(),
         "n_atoms": topology.n_atoms,
         "n_residues": topology.n_residues,
@@ -398,8 +528,23 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
             "burst_energy": args.uv_energy,
             "burst_interval": args.uv_interval,
             "n_targets": aromatics.len(),
+            "spectroscopy_mode": args.spectroscopy,
+            "frequency_hopping": frequency_hopping_enabled,
+            "wavelengths_nm": spectroscopy_wavelengths,
         },
     });
+
+    // Add trajectory info if saved
+    if let Some(ref stats) = trajectory_stats {
+        results["trajectory"] = serde_json::json!({
+            "total_frames": stats.total_frames,
+            "spike_triggered_frames": stats.spike_triggered_frames,
+            "interval_frames": stats.interval_frames,
+            "time_range_ps": [stats.time_range_ps.0, stats.time_range_ps.1],
+            "temperature_range_k": [stats.temperature_range.0, stats.temperature_range.1],
+            "ensemble_pdb": stats.ensemble_pdb,
+        });
+    }
 
     std::fs::write(&output_json, serde_json::to_string_pretty(&results)?)?;
     println!();

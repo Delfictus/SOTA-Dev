@@ -3812,6 +3812,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "prism-nhs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "cudarc",
+ "env_logger 0.10.2",
+ "log",
+ "prism-io",
+ "prism-learning",
+ "rand 0.8.5",
+ "rand_distr",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+]
+
+[[package]]
 name = "prism-niv-bench"
 version = "0.3.0"
 dependencies = [

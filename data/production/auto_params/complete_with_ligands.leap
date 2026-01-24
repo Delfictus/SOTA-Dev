@@ -1,0 +1,25 @@
+source leaprc.protein.ff19SB
+source leaprc.gaff2
+
+# Load parameters for 010
+loadMol2 /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/010.mol2
+loadAmberParams /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/010.frcmod
+
+# Load parameters for PJE
+loadMol2 /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/PJE.mol2
+loadAmberParams /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/PJE.frcmod
+
+# Load parameters for ZTJ (renamed from 02J, +1 charge)
+loadMol2 /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/ZTJ_plus1.mol2
+loadAmberParams /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/02J.frcmod
+
+# Load the fixed PDB structure
+mol = loadPDB /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/6LU7_fixed_complete.pdb
+addH mol
+check mol
+
+# Save complete parameterized system
+saveAmberParm mol /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/complete.prmtop /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/complete.inpcrd
+savePDB mol /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/auto_params/complete_with_H.pdb
+
+quit

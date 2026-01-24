@@ -1,0 +1,18 @@
+source leaprc.protein.ff19SB
+
+# Load the raw PDB structure
+mol = loadPDB /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/structures/6LU7.pdb
+
+# Add hydrogens at pH 7.0
+addH mol
+
+# Check structure
+check mol
+
+# Save complete files
+saveAmberParm mol /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/6LU7_complete.prmtop /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/6LU7_complete.inpcrd
+
+# Save PDB with hydrogens and proper formatting
+savePDB mol /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/data/production/6LU7_with_H.pdb
+
+quit

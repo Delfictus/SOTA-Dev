@@ -46,3 +46,11 @@ Thumbs.db
 
 # Keep manifest templates
 !/data/manifests/*.json
+
+# exclude nested repos
+alphaflow/
+analysis-clean/
+data/benchmarks/cryptobench_repo/
+eba/
+Miniconda3-latest-Linux-x86_64.sh
+Miniconda3-latest-Linux-x86_64.sh

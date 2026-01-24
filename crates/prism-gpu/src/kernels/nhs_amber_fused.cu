@@ -20,6 +20,19 @@
 // Include excited state dynamics for true UV photophysics
 #include "nhs_excited_state.cuh"
 
+// Adaptive Cryo-Thermal Protocol for three-phase cryptic site detection
+// Phase 1: CRYO BURST (80K, HIGH UV, global sweep)
+// Phase 2: THERMAL RAMP (80K→300K, validation)
+// Phase 3: FOCUSED DIG (300K, exploitation)
+#include "prism_adaptive_protocol.cuh"
+
+// Cryo-thermal detection physics (UV absorption → thermal signatures)
+#include "cryo_thermal_detection.cuh"
+
+// Ultra-sensitive multi-modal neuromorphic detector
+// Channels: thermal spike, gradient, melt wave, correlation
+#include "sensitive_detector.cuh"
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -38,7 +51,7 @@
 // NHS constants
 #define EXCLUSION_CUTOFF 8.0f       // Angstroms for exclusion field
 #define WATER_DENSITY_BULK 0.0334f  // molecules/A^3
-#define LIF_THRESHOLD 0.1f          // Spike threshold (lowered for sensitivity)
+#define LIF_THRESHOLD 0.5f           // Tuned threshold for cryo-UV water density changes
 #define LIF_RESET 0.0f              // Reset potential
 #define UV_WAVELENGTH 280.0f        // nm - aromatic absorption
 
@@ -117,7 +130,12 @@ struct UVTarget {
     int atom_indices[16];   // Atoms in aromatic ring
     int n_atoms;
     float absorption_strength;  // Trp > Tyr > Phe
-    int aromatic_type;          // 0=TYR, 1=PHE, 2=TRP (for excited state dynamics)
+    // CANONICAL chromophore type ordering (MUST match Rust):
+    //   0 = TRP (Tryptophan)
+    //   1 = TYR (Tyrosine)
+    //   2 = PHE (Phenylalanine)
+    //   3 = S-S (Disulfide)
+    int aromatic_type;
 };
 
 // Aromatic neighbor list for vibrational transfer
@@ -465,7 +483,10 @@ __device__ float infer_water_density(
 // NEUROMORPHIC LIF OBSERVATION
 // ============================================================================
 
-// LIF neuron update - CONTINUOUS observation
+// LIF neuron update - BIDIRECTIONAL detection (rewetting AND dewetting)
+// For cryo-thermal detection, we detect BOTH:
+// 1. Dewetting: water pushed away (exclusion increase)
+// 2. Rewetting: water attracted (exclusion decrease from UV excitation)
 __device__ bool lif_neuron_update(
     float& membrane_potential,
     float water_density_current,
@@ -474,14 +495,31 @@ __device__ bool lif_neuron_update(
     float dt,
     float threshold
 ) {
-    // Dewetting input: negative change in water density
-    float dewetting_signal = fmaxf(0.0f, water_density_prev - water_density_current);
+    // Bidirectional input: detect changes above noise floor
+    // TUNED for Cryo-UV: sensitive to dewetting events during temperature ramp
+    float density_change = water_density_current - water_density_prev;
 
-    // Leaky integration
-    float decay = expf(-dt / tau_mem);
-    membrane_potential = decay * membrane_potential + dewetting_signal;
+    // Lower noise floor for cryo-UV sensitivity (thermal fluctuation ~0.001)
+    const float NOISE_FLOOR = 0.002f;
+    float abs_change = fabsf(density_change);
+    // Increased amplification (10x) for cryo-UV detection
+    float bidirectional_signal = (abs_change > NOISE_FLOOR) ? (abs_change - NOISE_FLOOR) * 10.0f : 0.0f;
 
-    // Spike check
+    // Exclusion-weighted term: detect hydrophobic dewetting zones
+    float density_deviation = fabsf(water_density_current - WATER_DENSITY_BULK);
+    const float EXCLUSION_NOISE_FLOOR = 0.005f;  // Lower floor for cryptic sites
+    // Increased weight (5x) for exclusion-based detection
+    float exclusion_signal = (density_deviation > EXCLUSION_NOISE_FLOOR) ?
+        (density_deviation - EXCLUSION_NOISE_FLOOR) * 5.0f : 0.0f;
+
+    float combined_signal = bidirectional_signal + exclusion_signal;
+
+    // Slower decay to allow signal accumulation at cryptic sites
+    float effective_tau = tau_mem * 1.5f;  // Slower decay for cryptic site detection
+    float decay = expf(-dt / effective_tau);
+    membrane_potential = decay * membrane_potential + combined_signal;
+
+    // Spike check - threshold tuned for differential detection
     bool spike = membrane_potential >= threshold;
     if (spike) {
         membrane_potential = LIF_RESET;
@@ -654,6 +692,7 @@ extern "C" __global__ void nhs_amber_fused_step(
     int uv_burst_active,
     int uv_target_idx,
     float uv_burst_energy,
+    float uv_wavelength_nm,      // Current UV wavelength for frequency hopping
 
     // Excited state dynamics (true photophysics)
     int* d_is_excited,                  // [n_aromatics] - excitation flag
@@ -663,7 +702,7 @@ extern "C" __global__ void nhs_amber_fused_step(
     float* d_franck_condon_progress,    // [n_aromatics] - relaxation progress
     const float* d_ground_state_charges,// [n_atoms] - original charges
     const int* d_atom_to_aromatic,      // [n_atoms] - -1 or aromatic index
-    const int* d_aromatic_type,         // [n_aromatics] - 0=TYR,1=PHE,2=TRP
+    const int* d_aromatic_type,         // [n_aromatics] - CANONICAL: 0=TRP,1=TYR,2=PHE,3=S-S
     const float3* d_ring_normals,       // [n_aromatics] - precomputed
     const AromaticNeighbors* d_aromatic_neighbors, // [n_aromatics] - neighbor lists
     int n_aromatics,
@@ -918,13 +957,40 @@ extern "C" __global__ void nhs_amber_fused_step(
         float inv_mass = 1.0f / masses[tid];
         curandState local_rng = rng_states[tid];
 
-        // Half-step velocity update
-        velocities[tid].x += 0.5f * dt * forces[tid].x * inv_mass;
-        velocities[tid].y += 0.5f * dt * forces[tid].y * inv_mass;
-        velocities[tid].z += 0.5f * dt * forces[tid].z * inv_mass;
+        // FORCE CLAMPING: Prevent runaway from unminimized structures
+        // Max force ~1000 kcal/mol/Å prevents numerical blowup
+        const float MAX_FORCE = 1000.0f;
+        float3 clamped_force = forces[tid];
+        float force_mag = sqrtf(clamped_force.x * clamped_force.x +
+                                clamped_force.y * clamped_force.y +
+                                clamped_force.z * clamped_force.z);
+        if (force_mag > MAX_FORCE) {
+            float scale = MAX_FORCE / force_mag;
+            clamped_force.x *= scale;
+            clamped_force.y *= scale;
+            clamped_force.z *= scale;
+        }
+
+        // Half-step velocity update with clamped forces
+        velocities[tid].x += 0.5f * dt * clamped_force.x * inv_mass;
+        velocities[tid].y += 0.5f * dt * clamped_force.y * inv_mass;
+        velocities[tid].z += 0.5f * dt * clamped_force.z * inv_mass;
 
         // Langevin thermostat (with dynamic temperature!)
         langevin_thermostat(velocities[tid], masses[tid], target_temp, gamma, dt, &local_rng);
+
+        // VELOCITY CLAMPING: Additional safety for numerical stability
+        // Max velocity ~100 Å/ps prevents atoms from escaping
+        const float MAX_VELOCITY = 100.0f;  // Å/ps (very generous - thermal velocity at 300K is ~0.5 Å/ps)
+        float vel_mag = sqrtf(velocities[tid].x * velocities[tid].x +
+                              velocities[tid].y * velocities[tid].y +
+                              velocities[tid].z * velocities[tid].z);
+        if (vel_mag > MAX_VELOCITY) {
+            float scale = MAX_VELOCITY / vel_mag;
+            velocities[tid].x *= scale;
+            velocities[tid].y *= scale;
+            velocities[tid].z *= scale;
+        }
 
         // Position update
         positions[tid].x += dt * velocities[tid].x;
@@ -1045,6 +1111,8 @@ extern "C" __global__ void nhs_amber_fused_step(
             LIF_THRESHOLD
         );
 
+        // Debug forced spikes removed - real LIF detection now active
+
         if (spike) {
             spike_grid[v] = 1;
 
@@ -1092,6 +1160,12 @@ extern "C" __global__ void nhs_amber_fused_step(
     // - LIF neurons detect this transient dewetting/rewetting event
 
     // Step 6a: Apply UV excitation to target aromatics
+#ifdef DEBUG_UV_WAVELENGTH
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        printf("[GPU] uv_wavelength_nm=%.2f uv_burst_active=%d n_aromatics=%d timestep=%d\n",
+               uv_wavelength_nm, uv_burst_active, n_aromatics, timestep);
+    }
+#endif
     if (uv_burst_active && n_aromatics > 0) {
         // Use first 14 threads of block 0 for excitation (one per aromatic max)
         if (blockIdx.x == 0 && threadIdx.x < n_aromatics) {
@@ -1099,9 +1173,10 @@ extern "C" __global__ void nhs_amber_fused_step(
 
             // Only excite if not already excited (avoid double excitation)
             if (d_is_excited[arom_idx] == 0) {
-                excite_aromatic_inline(
+                excite_aromatic_wavelength(
                     arom_idx,
                     d_aromatic_type[arom_idx],
+                    uv_wavelength_nm,  // Use wavelength-dependent σ(λ)
                     d_is_excited,
                     d_time_since_excitation,
                     d_electronic_population,
@@ -1141,9 +1216,12 @@ extern "C" __global__ void nhs_amber_fused_step(
                 energy_to_transfer,
                 d_ring_normals[arom_idx],
                 velocities,
+                masses,  // Pass masses for proper velocity conversion
                 neighbors.atom_indices,
                 neighbors.n_neighbors,
-                timestep * n_aromatics + arom_idx  // seed for RNG
+                timestep * n_aromatics + arom_idx,  // seed for RNG
+                d_aromatic_type[arom_idx],          // ChromophoreType for debug
+                uv_wavelength_nm                    // Wavelength for debug
             );
         }
     }
@@ -1599,11 +1677,12 @@ extern "C" __global__ void compute_nonbonded_neighborlist(
     int arom_idx = d_atom_to_aromatic[tid];
     if (arom_idx >= 0 && d_is_excited[arom_idx]) {
         float pop = d_electronic_population[arom_idx];
+        // CANONICAL: 0=TRP, 1=TYR, 2=PHE, 3=S-S
         float ratio_sqrt;
         switch (d_aromatic_type[arom_idx]) {
-            case 0: ratio_sqrt = TYR_DIPOLE_RATIO_SQRT; break;
-            case 1: ratio_sqrt = PHE_DIPOLE_RATIO_SQRT; break;
-            case 2: ratio_sqrt = TRP_DIPOLE_RATIO_SQRT; break;
+            case 0: ratio_sqrt = TRP_DIPOLE_RATIO_SQRT; break;  // TRP
+            case 1: ratio_sqrt = TYR_DIPOLE_RATIO_SQRT; break;  // TYR
+            case 2: ratio_sqrt = PHE_DIPOLE_RATIO_SQRT; break;  // PHE
             default: ratio_sqrt = 1.0f;
         }
         float scale = 1.0f + (ratio_sqrt - 1.0f) * pop;
@@ -1636,11 +1715,12 @@ extern "C" __global__ void compute_nonbonded_neighborlist(
         int other_arom = d_atom_to_aromatic[j];
         if (other_arom >= 0 && d_is_excited[other_arom]) {
             float pop = d_electronic_population[other_arom];
+            // CANONICAL: 0=TRP, 1=TYR, 2=PHE, 3=S-S
             float ratio_sqrt;
             switch (d_aromatic_type[other_arom]) {
-                case 0: ratio_sqrt = TYR_DIPOLE_RATIO_SQRT; break;
-                case 1: ratio_sqrt = PHE_DIPOLE_RATIO_SQRT; break;
-                case 2: ratio_sqrt = TRP_DIPOLE_RATIO_SQRT; break;
+                case 0: ratio_sqrt = TRP_DIPOLE_RATIO_SQRT; break;  // TRP
+                case 1: ratio_sqrt = TYR_DIPOLE_RATIO_SQRT; break;  // TYR
+                case 2: ratio_sqrt = PHE_DIPOLE_RATIO_SQRT; break;  // PHE
                 default: ratio_sqrt = 1.0f;
             }
             float scale = 1.0f + (ratio_sqrt - 1.0f) * pop;
@@ -1686,4 +1766,71 @@ extern "C" __global__ void compute_nonbonded_neighborlist(
     atomicAdd(&forces[tid].x, my_force.x);
     atomicAdd(&forces[tid].y, my_force.y);
     atomicAdd(&forces[tid].z, my_force.z);
+}
+
+// ============================================================================
+// EXTERN "C" INITIALIZATION KERNELS FOR CRYO-THERMAL DETECTION
+// These initialize the state for the multi-modal sensitive detector
+// ============================================================================
+
+// Initialize multi-modal detector state for cryo probing
+extern "C" __global__ void init_multimodal_detector(
+    MultiModalVoxelState* state,
+    int n_voxels,
+    float baseline_temp
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_voxels) return;
+    
+    state[tid].thermal_potential = 0.0f;
+    state[tid].thermal_baseline = baseline_temp;
+    state[tid].thermal_spike_count = 0;
+    
+    state[tid].gradient_potential = 0.0f;
+    state[tid].last_gradient_dir = make_float3(0.0f, 0.0f, 0.0f);
+    state[tid].gradient_spike_count = 0;
+    
+    state[tid].melt_potential = 0.0f;
+    state[tid].ice_fraction = 1.0f;  // Start frozen
+    state[tid].melt_spike_count = 0;
+    
+    state[tid].combined_potential = 0.0f;
+    state[tid].last_spike_time = 0;
+    state[tid].in_refractory = false;
+    
+    state[tid].signal_to_noise = 1.0f;
+    state[tid].confidence = 0.0f;
+}
+
+// Initialize thermal voxels for cryo-thermal detection
+extern "C" __global__ void init_thermal_voxels(
+    ThermalVoxel* voxels,
+    int n_voxels,
+    float initial_temp
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_voxels) return;
+    
+    voxels[tid].temperature = initial_temp;
+    voxels[tid].baseline_temp = initial_temp;
+    voxels[tid].delta_temp = 0.0f;
+    voxels[tid].temp_gradient_mag = 0.0f;
+    voxels[tid].temp_gradient_dir = make_float3(0.0f, 0.0f, 0.0f);
+    
+    voxels[tid].ice_fraction = (initial_temp < 273.15f) ? 1.0f : 0.0f;
+    voxels[tid].melt_rate = 0.0f;
+    
+    // Ice has different thermal properties than water
+    if (initial_temp < 273.15f) {
+        voxels[tid].heat_capacity = 2.09f;       // J/(g·K) for ice
+        voxels[tid].thermal_conductivity = 2.2f; // W/(m·K) for ice
+    } else {
+        voxels[tid].heat_capacity = 4.18f;       // J/(g·K) for water
+        voxels[tid].thermal_conductivity = 0.6f; // W/(m·K) for water
+    }
+    
+    
+    voxels[tid].last_spike_time = 0;
+    voxels[tid].lif_potential = 0.0f;
+    voxels[tid].in_refractory = false;
 }

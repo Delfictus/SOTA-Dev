@@ -1,0 +1,63 @@
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         PRISM-CRYPTIC v1.0.0                                 ║
+║           Official Cryptic Binding Site Detection Module                      ║
+║                                                                              ║
+║     GPU-Accelerated Langevin MD + Jaccard Pocket Tracking                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+  Mode:         ACCELERATED (4 replicas, 4fs timestep)
+                Requires topology from: prism-prep --hmr
+  Input:        data/validation_benchmark/1BTL_hmr_topology.json
+  Output:       results/restraint_debug/1BTL/
+  Frames:       200
+  Sim Time:     4.0 ns
+  Temperature:  310.0 K
+  Timestep:     4.0 fs
+  Replicas:     4
+
+  CLASSIFICATION THRESHOLDS (Literature-Derived, Pre-Set):
+    CV threshold:       0.20 (CryptoSite, PocketMiner)
+    Open frequency:     5% - 90%
+    Jaccard threshold:  30%
+    Min volume:         80 Å³
+
+────────────────────────────────────────────────────────────────────────────────
+  INITIALIZING GPU MD ENGINE
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+  RUNNING LANGEVIN DYNAMICS SIMULATION
+────────────────────────────────────────────────────────────────────────────────
+
+[2026-01-20T06:28:29Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC] Using REPLICA-PARALLEL mode (4 replicas)
+[2026-01-20T06:28:29Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC-PARALLEL] Starting with 4 replicas
+[2026-01-20T06:28:29Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC-PARALLEL] Config: 200 frames/replica, 4050 ps total
+[2026-01-20T06:28:29Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC-PARALLEL] Loaded 4073 atoms, 263 residues from 1BTL_sanitized
+[2026-01-20T06:28:29Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC] Backbone restraints: 1052 atoms restrained at k=50.0 kcal/(mol·Å²)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Creating ReplicaParallelMD: 4 replicas × 4073 atoms (4108 bonds, 7451 angles, 13953 dihedrals)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Positional restraints: 1052 of 4073 atoms restrained
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Restraint k: sum=52600.0, max=50.0 kcal/(mol·Å²)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Initial radius of gyration: 17.50 Å
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] BAOAB coefficients: c1=0.449329, c2=0.893366, sqrt_kT=0.784878, half_dt_ps=0.002000 (gamma=200.0 ps⁻¹, dt=4.0 fs)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Replica 0 init (HOST): KE=3836.42 kcal/mol, T=316.1K (target=310.0K)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Replica 1 init (HOST): KE=3820.81 kcal/mol, T=314.9K (target=310.0K)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Replica 2 init (HOST): KE=3821.98 kcal/mol, T=315.0K (target=310.0K)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Replica 3 init (HOST): KE=3683.43 kcal/mol, T=303.5K (target=310.0K)
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] Initialized velocities for 4 replicas at 310K
+[2026-01-20T06:28:29Z DEBUG prism_gpu::amber_replica_parallel] GPU restraint_k verification: 1052 restrained, sum=52600.0, max=50.0
+[2026-01-20T06:28:29Z INFO  prism_gpu::amber_replica_parallel] ReplicaParallelMD initialized: 4 replicas ready
+[2026-01-20T06:28:29Z INFO  prism_gpu::lcpo_sasa] [LCPO] GPU SASA calculator initialized
+[2026-01-20T06:28:29Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC-PARALLEL] Running 12500 steps equilibration (50.0 ps) on 4 replicas...
+[2026-01-20T06:28:39Z INFO  prism_validation::cryptic_site_pilot::md_cryptic_pipeline] [MD-CRYPTIC-PARALLEL] Equilibration complete, starting production...
+[2026-01-20T06:28:43Z INFO  prism_gpu::amber_replica_parallel] Frame 1: Inter-replica RMSD: min=2.92Å, max=3.07Å, mean=2.98Å [DIVERGED ✓]
+[2026-01-20T06:28:43Z INFO  prism_gpu::amber_replica_parallel] Frame 1: STABILITY: RMSD_init=2.87Å, Rg=17.65Å (init=17.50Å, Δ=0.8%) [STABLE ✓]
+[2026-01-20T06:29:18Z INFO  prism_gpu::amber_replica_parallel] Frame 10/200 (5.0%), 0.3 frames/sec, T_avg=318.7K
+[2026-01-20T06:29:56Z INFO  prism_gpu::amber_replica_parallel] Frame 20: Inter-replica RMSD: min=13.36Å, max=14.58Å, mean=14.24Å [DIVERGED ✓]
+[2026-01-20T06:29:56Z INFO  prism_gpu::amber_replica_parallel] Frame 20: STABILITY: RMSD_init=11.06Å, Rg=20.48Å (init=17.50Å, Δ=17.0%) [STABLE ✓]
+[2026-01-20T06:29:56Z INFO  prism_gpu::amber_replica_parallel] Frame 20/200 (10.0%), 0.3 frames/sec, T_avg=318.0K
+[2026-01-20T06:30:35Z INFO  prism_gpu::amber_replica_parallel] Frame 30/200 (15.0%), 0.3 frames/sec, T_avg=314.4K
+[2026-01-20T06:31:13Z INFO  prism_gpu::amber_replica_parallel] Frame 40: Inter-replica RMSD: min=24.70Å, max=27.81Å, mean=26.24Å [DIVERGED ✓]
+[2026-01-20T06:31:13Z INFO  prism_gpu::amber_replica_parallel] Frame 40: STABILITY: RMSD_init=19.98Å, Rg=27.20Å (init=17.50Å, Δ=55.4%) [UNSTABLE ✗]
+[2026-01-20T06:31:13Z INFO  prism_gpu::amber_replica_parallel] Frame 40/200 (20.0%), 0.3 frames/sec, T_avg=318.1K
+[2026-01-20T06:31:52Z INFO  prism_gpu::amber_replica_parallel] Frame 50/200 (25.0%), 0.3 frames/sec, T_avg=313.6K
