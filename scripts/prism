@@ -1,0 +1,1928 @@
+#!/usr/bin/env python3
+"""
+PRISM - Interactive Cryptic Binding Site Detection Pipeline
+Rich interactive CLI with 3D visualization, progress tracking, and blind validation
+
+Usage:
+  prism [PDB_FILE] [--ground-truth GT_FILE] [--validate-only DIR]
+
+Examples:
+  prism                           # Interactive mode
+  prism structure.pdb             # Start with PDB file
+  prism --ground-truth gt.json    # Auto-load ground truth for validation
+  prism --validate-only results/  # Skip to validation of existing results
+"""
+
+import os
+import sys
+import math
+import time
+import subprocess
+import json
+import shutil
+import argparse
+from pathlib import Path
+from datetime import datetime
+from typing import Optional, Dict, List, Tuple
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACK NAVIGATION SUPPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BackNavigation(Exception):
+    """Raised when user wants to go back to previous step"""
+    pass
+
+
+def prompt_with_back(prompt_text: str, default: str = "", choices: list = None,
+                     allow_back: bool = True) -> str:
+    """Prompt that supports 'back' command to return to previous step"""
+    from rich.prompt import Prompt
+
+    hint = " [dim](type 'back' to go back)[/]" if allow_back else ""
+    full_prompt = f"{prompt_text}{hint}"
+
+    if choices:
+        result = Prompt.ask(full_prompt, choices=choices + (["back"] if allow_back else []), default=default)
+    else:
+        result = Prompt.ask(full_prompt, default=default)
+
+    if allow_back and result.lower().strip() == "back":
+        raise BackNavigation()
+
+    return result
+
+
+def confirm_with_back(prompt_text: str, default: bool = True, allow_back: bool = True) -> bool:
+    """Confirm prompt that supports 'back' command"""
+    from rich.prompt import Prompt
+
+    hint = " [dim]('back' to go back)[/]" if allow_back else ""
+    choices = ["y", "n", "yes", "no"]
+    if allow_back:
+        choices.append("back")
+
+    result = Prompt.ask(f"{prompt_text}{hint}",
+                       choices=choices,
+                       default="y" if default else "n")
+
+    if allow_back and result.lower().strip() == "back":
+        raise BackNavigation()
+
+    return result.lower() in ["y", "yes"]
+
+# Check for rich library
+try:
+    from rich.console import Console
+    from rich.live import Live
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
+    from rich.prompt import Prompt, Confirm, IntPrompt
+    from rich.text import Text
+    from rich.layout import Layout
+    from rich.align import Align
+    from rich import box
+    from rich.style import Style
+except ImportError:
+    print("Installing required dependencies...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "rich", "-q"])
+    from rich.console import Console
+    from rich.live import Live
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
+    from rich.prompt import Prompt, Confirm, IntPrompt
+    from rich.text import Text
+    from rich.layout import Layout
+    from rich.align import Align
+    from rich import box
+    from rich.style import Style
+
+console = Console()
+
+# Global animation state
+_prism_tick = 0
+_prism_active = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3D PRISM ANIMATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class Vec3:
+    def __init__(self, x, y, z):
+        self.x, self.y, self.z = x, y, z
+    
+    def rotate_y(self, angle):
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        return Vec3(self.x * cos_a + self.z * sin_a, self.y, -self.x * sin_a + self.z * cos_a)
+    
+    def rotate_x(self, angle):
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        return Vec3(self.x, self.y * cos_a - self.z * sin_a, self.y * sin_a + self.z * cos_a)
+    
+    def project(self, width, height, fov=60, dist=4):
+        factor = fov / (dist + self.z)
+        return int(self.x * factor + width / 2), int(-self.y * factor + height / 2), self.z
+
+def create_prism(size=1.2, height=1.8):
+    verts = []
+    for y_off, y_pos in [(-height/2, 0), (height/2, 3)]:
+        for i in range(3):
+            angle = math.pi/2 + (2 * math.pi * i / 3)
+            verts.append(Vec3(size * math.cos(angle), y_off, size * math.sin(angle)))
+    edges = [(0,1), (1,2), (2,0), (3,4), (4,5), (5,3), (0,3), (1,4), (2,5)]
+    return verts, edges
+
+def render_prism_frame(tick, width=50, height=18):
+    verts, edges = create_prism()
+    rot_y, rot_x = tick * 0.12, tick * 0.05 + 0.3
+    
+    # Transform vertices
+    projected = []
+    for v in verts:
+        tv = v.rotate_y(rot_y).rotate_x(rot_x)
+        projected.append(tv.project(width, height))
+    
+    # Create character buffer
+    buf = [[' ' for _ in range(width)] for _ in range(height)]
+    zbuf = [[float('-inf') for _ in range(width)] for _ in range(height)]
+    
+    edge_colors = ['cyan', 'cyan', 'cyan', 'magenta', 'magenta', 'magenta', 'yellow', 'yellow', 'yellow']
+    
+    # Draw edges
+    for idx, (s, e) in enumerate(edges):
+        x1, y1, z1 = projected[s]
+        x2, y2, z2 = projected[e]
+        steps = max(abs(x2-x1), abs(y2-y1), 1)
+        for i in range(steps + 1):
+            t = i / steps if steps > 0 else 0
+            x, y = int(x1 + (x2-x1)*t), int(y1 + (y2-y1)*t)
+            z = z1 + (z2-z1)*t
+            if 0 <= x < width and 0 <= y < height and z > zbuf[y][x]:
+                dx, dy = x2-x1, y2-y1
+                char = '─' if abs(dx) > abs(dy)*2 else '│' if abs(dy) > abs(dx)*2 else '╲' if dx*dy > 0 else '╱'
+                buf[y][x] = f'[{edge_colors[idx]}]{char}[/]'
+                zbuf[y][x] = z
+    
+    # Draw vertices
+    for px, py, pz in projected:
+        if 0 <= px < width and 0 <= py < height:
+            buf[py][px] = '[white bold]◆[/]'
+    
+    return '\n'.join(''.join(row) for row in buf)
+
+def render_mini_prism(tick, width=20, height=10):
+    """Render a compact spinning prism for status display"""
+    verts, edges = create_prism(size=0.8, height=1.2)
+    rot_y, rot_x = tick * 0.15, tick * 0.08 + 0.4
+
+    projected = []
+    for v in verts:
+        tv = v.rotate_y(rot_y).rotate_x(rot_x)
+        projected.append(tv.project(width, height, fov=40, dist=3))
+
+    buf = [[' ' for _ in range(width)] for _ in range(height)]
+    zbuf = [[float('-inf') for _ in range(width)] for _ in range(height)]
+
+    colors = ['cyan', 'cyan', 'cyan', 'magenta', 'magenta', 'magenta', 'yellow', 'yellow', 'yellow']
+
+    for idx, (s, e) in enumerate(edges):
+        x1, y1, z1 = projected[s]
+        x2, y2, z2 = projected[e]
+        steps = max(abs(x2-x1), abs(y2-y1), 1)
+        for i in range(steps + 1):
+            t = i / steps if steps > 0 else 0
+            x, y = int(x1 + (x2-x1)*t), int(y1 + (y2-y1)*t)
+            z = z1 + (z2-z1)*t
+            if 0 <= x < width and 0 <= y < height and z > zbuf[y][x]:
+                dx, dy = x2-x1, y2-y1
+                char = '─' if abs(dx) > abs(dy)*2 else '│' if abs(dy) > abs(dx)*2 else '╱' if dx*dy < 0 else '╲'
+                buf[y][x] = f'[{colors[idx]}]{char}[/]'
+                zbuf[y][x] = z
+
+    for px, py, pz in projected:
+        if 0 <= px < width and 0 <= py < height:
+            buf[py][px] = '[bold white]◆[/]'
+
+    return '\n'.join(''.join(row) for row in buf)
+
+def get_prism_status_panel(tick, status_text="ACTIVE"):
+    """Get a panel with animated prism and status"""
+    prism = render_mini_prism(tick)
+
+    # Color based on status
+    if "COMPLETE" in status_text.upper():
+        color = "green"
+        icon = "✓"
+    elif "ERROR" in status_text.upper() or "FAIL" in status_text.upper():
+        color = "red"
+        icon = "✗"
+    elif "RUNNING" in status_text.upper() or "ACTIVE" in status_text.upper():
+        color = "cyan"
+        icon = "◉"
+    else:
+        color = "yellow"
+        icon = "◎"
+
+    panel_content = f"""{prism}
+[{color} bold]{icon} {status_text}[/]"""
+
+    return Panel(
+        Text.from_markup(panel_content),
+        title="[bold white]PRISM-4D[/]",
+        border_style=color,
+        width=24,
+        padding=(0, 1)
+    )
+
+class PrismAnimator:
+    """Background prism animator for persistent display"""
+    def __init__(self):
+        self.tick = 0
+        self.status = "INITIALIZING"
+        self.running = False
+        self._live = None
+        self._content_func = None
+
+    def get_display(self, content=""):
+        """Get combined display with prism + content"""
+        prism_panel = get_prism_status_panel(self.tick, self.status)
+
+        # Create layout with prism on left, content on right
+        layout = Table.grid(padding=1)
+        layout.add_column(width=26)
+        layout.add_column()
+
+        if content:
+            layout.add_row(prism_panel, content)
+        else:
+            layout.add_row(prism_panel, "")
+
+        return layout
+
+    def advance(self):
+        """Advance animation frame"""
+        self.tick += 1
+
+# Global animator instance
+prism_animator = PrismAnimator()
+
+def animated_banner(duration=2.0):
+    """Show animated 3D prism banner"""
+    start = time.time()
+    tick = 0
+
+    with Live(console=console, refresh_per_second=15, transient=True) as live:
+        while time.time() - start < duration:
+            prism = render_prism_frame(tick)
+
+            banner = f"""
+[bold cyan]╔══════════════════════════════════════════════════════════════════════╗[/]
+[bold cyan]║[/]                                                                      [bold cyan]║[/]
+[bold cyan]║[/]   [bold white]██████╗ ██████╗ ██╗███████╗███╗   ███╗    ██╗  ██╗██████╗ [/]        [bold cyan]║[/]
+[bold cyan]║[/]   [bold white]██╔══██╗██╔══██╗██║██╔════╝████╗ ████║    ██║  ██║██╔══██╗[/]        [bold cyan]║[/]
+[bold cyan]║[/]   [bold white]██████╔╝██████╔╝██║███████╗██╔████╔██║    ███████║██║  ██║[/]        [bold cyan]║[/]
+[bold cyan]║[/]   [bold white]██╔═══╝ ██╔══██╗██║╚════██║██║╚██╔╝██║    ╚════██║██║  ██║[/]        [bold cyan]║[/]
+[bold cyan]║[/]   [bold white]██║     ██║  ██║██║███████║██║ ╚═╝ ██║         ██║██████╔╝[/]        [bold cyan]║[/]
+[bold cyan]║[/]   [bold white]╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝         ╚═╝╚═════╝ [/]        [bold cyan]║[/]
+[bold cyan]║[/]                                                                      [bold cyan]║[/]
+[bold cyan]║[/]   [dim]Phase Resonance Integrated Solver Machine[/]                        [bold cyan]║[/]
+[bold cyan]║[/]   [bold magenta]Cryptic Binding Site Detection Engine[/]                           [bold cyan]║[/]
+[bold cyan]║[/]                                                                      [bold cyan]║[/]
+[bold cyan]╠══════════════════════════════════════════════════════════════════════╣[/]
+[bold cyan]║[/]                                                                      [bold cyan]║[/]
+{chr(10).join('[bold cyan]║[/]  ' + line.ljust(66) + '  [bold cyan]║[/]' for line in prism.split(chr(10)))}
+[bold cyan]║[/]                                                                      [bold cyan]║[/]
+[bold cyan]╚══════════════════════════════════════════════════════════════════════╝[/]
+"""
+            live.update(Text.from_markup(banner))
+            tick += 1
+            time.sleep(0.066)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Resolve symlinks to find actual installation directory
+_SCRIPT_PATH = Path(__file__).resolve()
+_BIN_DIR = _SCRIPT_PATH.parent
+_INSTALL_DIR = _BIN_DIR.parent
+
+PRISM4D_BIN = _BIN_DIR / "prism4d"
+PREP_SCRIPT = _INSTALL_DIR / "scripts" / "prep" / "prism-prep"
+
+# Fallback paths if not found
+if not PREP_SCRIPT.exists():
+    _alt_paths = [
+        Path("/home/diddy/Desktop/PRISM4D_RELEASE/scripts/prep/prism-prep"),
+        Path.home() / "Desktop" / "PRISM4D_RELEASE" / "scripts" / "prep" / "prism-prep",
+    ]
+    for p in _alt_paths:
+        if p.exists():
+            PREP_SCRIPT = p
+            break
+
+class PipelineConfig:
+    def __init__(self):
+        self.pdb_path: Optional[Path] = None
+        self.output_dir: Optional[Path] = None
+        self.topology_path: Optional[Path] = None
+        self.events_path: Optional[Path] = None  # For Stage 3 finalize-only
+
+        # Stage 2 tunables
+        self.uv_energy: float = 5.0      # kcal/mol, max 15
+        self.uv_interval: int = 500       # multiples of 50
+        self.replicates: int = 3          # 1-10
+        self.skip_ablation: bool = True
+        self.use_amber: bool = True
+        # Note: Snapshots are now activity-based (not interval-based)
+        # Captured on: spike activity, UV response, temperature transitions
+
+        # Temperature protocol
+        self.start_temp: float = 50.0
+        self.end_temp: float = 300.0
+        self.cold_hold: int = 20000
+        self.ramp_steps: int = 30000
+        self.warm_hold: int = 50000
+
+        # Ground truth (post-finalize)
+        self.ground_truth_path: Optional[Path] = None
+
+        # Seed management (for reproducibility)
+        self.seed: int = 42  # Master seed for deterministic runs
+        self.load_seed_from: Optional[Path] = None  # Load config from previous run
+
+        # Filtering parameters
+        self.filter_initial_dist: float = 8.0   # Tight initial filter (Å)
+        self.filter_max_dist: float = 18.0      # Global max filter (Å)
+
+        # Clustering parameters
+        self.cluster_min_events: int = 100
+        self.cluster_eps: float = 5.0
+        self.cluster_min_residues: int = 5
+        self.residue_query_radius: float = 8.0
+
+        # Acceptance criteria
+        self.min_persistence: float = 0.002
+        self.min_volume: float = 100.0
+        self.min_replica_agreement: float = 0.3
+
+
+# Global for tracking last run stats
+LAST_RUN_STATS_FILE = Path.home() / ".prism4d_last_run_stats.json"
+
+
+def load_last_run_stats() -> Optional[Dict]:
+    """Load stats from the last run"""
+    if LAST_RUN_STATS_FILE.exists():
+        try:
+            with open(LAST_RUN_STATS_FILE) as f:
+                return json.load(f)
+        except:
+            pass
+    return None
+
+
+def save_run_stats(config: PipelineConfig, stats: Dict) -> None:
+    """Save run stats for future reference"""
+    stats_data = {
+        "timestamp": datetime.now().isoformat(),
+        "seed": config.seed,
+        "pdb_file": str(config.pdb_path) if config.pdb_path else None,
+        "output_dir": str(config.output_dir) if config.output_dir else None,
+        "parameters": {
+            "uv_energy": config.uv_energy,
+            "uv_interval": config.uv_interval,
+            "replicates": config.replicates,
+            "filter_initial_dist": config.filter_initial_dist,
+            "filter_max_dist": config.filter_max_dist,
+            "cluster_min_events": config.cluster_min_events,
+            "cluster_eps": config.cluster_eps,
+        },
+        "results": stats,
+    }
+    try:
+        with open(LAST_RUN_STATS_FILE, 'w') as f:
+            json.dump(stats_data, f, indent=2)
+    except Exception as e:
+        console.print(f"[dim]Warning: Could not save run stats: {e}[/]")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INPUT HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_pdb_path() -> Path:
+    """Get PDB path from argument or prompt - supports 'back' navigation"""
+    console.print("\n[bold cyan]═══ INPUT STRUCTURE ═══[/]\n")
+
+    # Check if provided as argument
+    if len(sys.argv) > 1:
+        pdb_path = Path(sys.argv[1].strip().strip("'\""))
+        if pdb_path.exists() and pdb_path.suffix.lower() == '.pdb':
+            console.print(f"[green]✓[/] Using provided PDB: [bold]{pdb_path.name}[/]")
+            return pdb_path
+
+    console.print("[dim]Drag and drop your PDB file here, or type the path:[/]")
+
+    while True:
+        path_str = prompt_with_back("[bold yellow]PDB file[/]").strip().strip("'\"")
+        pdb_path = Path(path_str)
+
+        if pdb_path.exists():
+            if pdb_path.suffix.lower() == '.pdb':
+                console.print(f"[green]✓[/] Found: [bold]{pdb_path.name}[/]")
+                return pdb_path
+            else:
+                console.print(f"[red]✗[/] File must be a .pdb file, got: {pdb_path.suffix}")
+        else:
+            console.print(f"[red]✗[/] File not found: {path_str}")
+
+def suggest_output_dir(pdb_path: Optional[Path]) -> Path:
+    """Suggest an output directory based on PDB name"""
+    if pdb_path:
+        stem = pdb_path.stem.upper()
+    else:
+        stem = "PRISM4D"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_dir = Path.home() / "Desktop" / "PRISM4D_RELEASE" / "_results"
+    return base_dir / f"{stem}_{timestamp}"
+
+def get_output_dir(pdb_path: Optional[Path]) -> Path:
+    """Get output directory with suggestion - supports 'back' navigation"""
+    console.print("\n[bold cyan]═══ OUTPUT DESTINATION ═══[/]\n")
+
+    suggested = suggest_output_dir(pdb_path)
+    console.print(f"[dim]Suggested output directory:[/]")
+    console.print(f"  [bold green]{suggested}[/]\n")
+
+    use_suggested = confirm_with_back("Use suggested directory?", default=True)
+
+    if use_suggested:
+        output_dir = suggested
+    else:
+        path_str = prompt_with_back("[bold yellow]Custom output directory[/]")
+        output_dir = Path(path_str.strip().strip("'\""))
+
+    # Create directory
+    output_dir.mkdir(parents=True, exist_ok=True)
+    console.print(f"[green]✓[/] Output directory ready: [bold]{output_dir}[/]")
+
+    return output_dir
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE SELECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def select_entry_point() -> int:
+    """Select pipeline entry point - supports 'back' navigation"""
+    console.print("\n[bold cyan]═══ SELECT ENTRY POINT ═══[/]\n")
+
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    table.add_column("#", style="cyan", width=3)
+    table.add_column("Stage", style="bold")
+    table.add_column("Description")
+    table.add_column("Input Required")
+
+    table.add_row("1", "PREP → ENGINE → FINALIZE", "Full pipeline from raw PDB", "PDB file")
+    table.add_row("2", "ENGINE → FINALIZE", "Skip prep (topology exists)", "topology.json + PDB")
+    table.add_row("3", "FINALIZE only", "Re-analyze existing events", "events.jsonl + topology.json")
+
+    console.print(table)
+    console.print()
+
+    while True:
+        choice = prompt_with_back("[bold yellow]Select entry point[/] [dim](1/2/3)[/]", default="1", allow_back=True)
+        if choice in ["1", "2", "3"]:
+            return int(choice)
+        console.print("[red]Please enter 1, 2, or 3[/]")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE 2 CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def configure_stage2(config: PipelineConfig) -> None:
+    """Interactive configuration for engine stage - supports 'back' navigation"""
+    console.print("\n[bold cyan]═══ STAGE 2: ENGINE CONFIGURATION ═══[/]\n")
+
+    # Check for last run stats and offer to load
+    last_stats = load_last_run_stats()
+    if last_stats and last_stats.get("seed"):
+        console.print("[dim]Previous run detected:[/]")
+        console.print(f"  Seed: [magenta]{last_stats['seed']}[/]")
+        console.print(f"  Results: {last_stats.get('results', {}).get('sites_detected', '?')} sites")
+        if confirm_with_back("Load parameters from previous run?", default=False):
+            prev_params = last_stats.get("parameters", {})
+            config.seed = last_stats.get("seed", config.seed)
+            config.uv_energy = prev_params.get("uv_energy", config.uv_energy)
+            config.uv_interval = prev_params.get("uv_interval", config.uv_interval)
+            config.replicates = prev_params.get("replicates", config.replicates)
+            config.filter_initial_dist = prev_params.get("filter_initial_dist", config.filter_initial_dist)
+            config.filter_max_dist = prev_params.get("filter_max_dist", config.filter_max_dist)
+            console.print("[green]✓ Parameters loaded from previous run[/]")
+        console.print()
+
+    # Show current defaults
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Current", style="green")
+    table.add_column("Range/Options")
+
+    table.add_row("Seed", f"{config.seed}", "Any integer (for reproducibility)")
+    table.add_row("UV Energy", f"{config.uv_energy} kcal/mol", "1.0 - 15.0")
+    table.add_row("UV Interval", f"{config.uv_interval} steps", "50, 100, 150, ... 1000")
+    table.add_row("Replicates", str(config.replicates), "1 - 10")
+    table.add_row("Snapshots", "Activity-based", "Spike/UV/Temp triggers")
+    table.add_row("Skip Ablation", "Yes" if config.skip_ablation else "No", "Yes/No (3x faster)")
+    table.add_row("AMBER H-placement", "Yes" if config.use_amber else "No", "Yes (recommended)/No")
+
+    console.print(table)
+    console.print()
+
+    if not confirm_with_back("Modify default settings?", default=False):
+        console.print("[green]✓[/] Using default settings")
+        return
+
+    console.print("\n[dim]Leave blank to keep current value[/]\n")
+
+    # Seed for reproducibility
+    console.print("[bold]Seed[/] [dim](for deterministic reproducibility)[/]")
+    seed_input = prompt_with_back("  Seed", default=str(config.seed))
+    if seed_input:
+        config.seed = int(seed_input)
+
+    # UV Energy
+    console.print("[bold]UV Energy[/] [dim](photon energy for chromophore excitation)[/]")
+    uv_choices = ["1", "2", "3", "5", "7", "10", "12", "15"]
+    uv_table = Table(box=None, show_header=False, padding=(0, 2))
+    for i, v in enumerate(uv_choices):
+        uv_table.add_column()
+    uv_table.add_row(*[f"[cyan]{v}[/]" for v in uv_choices])
+    console.print(uv_table)
+    uv_input = prompt_with_back("  UV Energy (kcal/mol)", default=str(int(config.uv_energy)))
+    if uv_input:
+        config.uv_energy = min(15.0, max(1.0, float(uv_input)))
+
+    # UV Interval
+    console.print("\n[bold]UV Interval[/] [dim](steps between UV bursts)[/]")
+    interval_choices = [50, 100, 150, 200, 250, 300, 400, 500, 750, 1000]
+    int_table = Table(box=None, show_header=False, padding=(0, 1))
+    for v in interval_choices[:5]:
+        int_table.add_column()
+    int_table.add_row(*[f"[cyan]{v}[/]" for v in interval_choices[:5]])
+    int_table.add_row(*[f"[cyan]{v}[/]" for v in interval_choices[5:]])
+    console.print(int_table)
+    int_input = prompt_with_back("  UV Interval (steps)", default=str(config.uv_interval))
+    if int_input:
+        val = int(int_input)
+        # Round to nearest 50
+        config.uv_interval = max(50, min(1000, (val // 50) * 50))
+
+    # Replicates
+    console.print("\n[bold]Replicates[/] [dim](independent simulation runs)[/]")
+    rep_table = Table(box=None, show_header=False, padding=(0, 2))
+    for i in range(1, 11):
+        rep_table.add_column()
+    rep_table.add_row(*[f"[cyan]{i}[/]" for i in range(1, 11)])
+    console.print(rep_table)
+    rep_input = prompt_with_back("  Replicates", default=str(config.replicates))
+    if rep_input:
+        config.replicates = max(1, min(10, int(rep_input)))
+
+    # Snapshot info (activity-based, no configuration needed)
+    console.print("\n[bold]Snapshots[/] [dim](automatically captured based on activity)[/]")
+    console.print("  [cyan]• Spike activity[/] - When significant SASA changes detected")
+    console.print("  [cyan]• UV response[/] - During/after UV chromophore excitation")
+    console.print("  [cyan]• Temperature transitions[/] - At key conformational change points")
+
+    # Skip Ablation
+    console.print()
+    config.skip_ablation = confirm_with_back("Skip ablation phases? [dim](3x faster, recommended)[/]", default=True)
+
+    # AMBER
+    config.use_amber = confirm_with_back("Use AMBER H-placement? [dim](higher quality)[/]", default=True)
+
+    # Advanced parameters
+    if confirm_with_back("\nConfigure advanced parameters?", default=False):
+        console.print("\n[dim]Advanced tuning parameters:[/]\n")
+
+        # Filtering
+        console.print("[bold]Distance Filtering[/]")
+        fid_input = prompt_with_back(f"  Initial filter distance (Å)", default=str(config.filter_initial_dist))
+        config.filter_initial_dist = float(fid_input) if fid_input else config.filter_initial_dist
+        fmd_input = prompt_with_back(f"  Max filter distance (Å)", default=str(config.filter_max_dist))
+        config.filter_max_dist = float(fmd_input) if fmd_input else config.filter_max_dist
+
+        # Clustering
+        console.print("\n[bold]Clustering[/]")
+        cme_input = prompt_with_back(f"  Min events per cluster", default=str(config.cluster_min_events))
+        config.cluster_min_events = int(cme_input) if cme_input else config.cluster_min_events
+        eps_input = prompt_with_back(f"  Cluster eps (Å)", default=str(config.cluster_eps))
+        config.cluster_eps = float(eps_input) if eps_input else config.cluster_eps
+        cmr_input = prompt_with_back(f"  Min residues per site", default=str(config.cluster_min_residues))
+        config.cluster_min_residues = int(cmr_input) if cmr_input else config.cluster_min_residues
+
+        # Acceptance
+        console.print("\n[bold]Site Acceptance[/]")
+        mp_input = prompt_with_back(f"  Min persistence (0-1)", default=str(config.min_persistence))
+        config.min_persistence = float(mp_input) if mp_input else config.min_persistence
+        mv_input = prompt_with_back(f"  Min volume (Å³)", default=str(config.min_volume))
+        config.min_volume = float(mv_input) if mv_input else config.min_volume
+        mra_input = prompt_with_back(f"  Min replica agreement (0-1, 0=disable)", default=str(config.min_replica_agreement))
+        config.min_replica_agreement = float(mra_input) if mra_input else config.min_replica_agreement
+
+    # Summary
+    console.print("\n[bold green]✓ Configuration updated:[/]")
+    console.print(f"  Seed: [magenta]{config.seed}[/]")
+    console.print(f"  UV: {config.uv_energy} kcal/mol @ {config.uv_interval} step interval")
+    console.print(f"  Replicates: {config.replicates}, Snapshots: activity-based")
+    console.print(f"  Filtering: {config.filter_initial_dist}Å (initial), {config.filter_max_dist}Å (max)")
+    console.print(f"  Ablation: {'Skip' if config.skip_ablation else 'Full'}, AMBER: {'Yes' if config.use_amber else 'No'}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PIPELINE EXECUTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_prep_stage(config: PipelineConfig, progress: Progress, task_id) -> bool:
+    """Run prism-prep stage"""
+    config.topology_path = config.output_dir / "topology.json"
+    
+    cmd = [
+        "python3", str(PREP_SCRIPT),
+        str(config.pdb_path),
+        str(config.topology_path),
+    ]
+    if config.use_amber:
+        cmd.append("--use-amber")
+    
+    progress.update(task_id, description="[cyan]PREP:[/] Running prism-prep...")
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0:
+            progress.update(task_id, description="[green]PREP:[/] ✓ Complete", completed=100)
+            return True
+        else:
+            console.print(f"[red]PREP failed:[/] {result.stderr}")
+            return False
+    except Exception as e:
+        console.print(f"[red]PREP error:[/] {e}")
+        return False
+
+def run_engine_stage(config: PipelineConfig, progress: Progress, task_id) -> bool:
+    """Run cryo-UV engine stage"""
+    events_path = config.output_dir / "events.jsonl"
+
+    cmd = [
+        str(PRISM4D_BIN), "run",
+        "--topology", str(config.topology_path),
+        "--pdb", str(config.pdb_path),
+        "--out", str(config.output_dir),
+        "--replicates", str(config.replicates),
+        "--uv-energy", str(config.uv_energy),
+        "--uv-interval", str(config.uv_interval),
+        "--seed", str(config.seed),
+        "--filter-initial-dist", str(config.filter_initial_dist),
+        "--filter-max-dist", str(config.filter_max_dist),
+        "--cluster-min-events", str(config.cluster_min_events),
+        "--cluster-eps", str(config.cluster_eps),
+        "--cluster-min-residues", str(config.cluster_min_residues),
+        "--min-persistence", str(config.min_persistence),
+        "--min-volume", str(config.min_volume),
+        "--no-finalize",  # We'll run finalize separately for progress tracking
+    ]
+    if config.skip_ablation:
+        cmd.append("--skip-ablation")
+    
+    progress.update(task_id, description="[cyan]ENGINE:[/] Initializing GPU...")
+    
+    try:
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+            text=True, bufsize=1
+        )
+        
+        total_steps = config.cold_hold + config.ramp_steps + config.warm_hold
+        
+        for line in iter(process.stdout.readline, ''):
+            # Parse progress from engine output
+            if "Step " in line and "/" in line:
+                try:
+                    parts = line.split("Step ")[1].split("/")
+                    current = int(parts[0])
+                    total = int(parts[1].split(":")[0])
+                    pct = min(99, int(100 * current / total))
+                    progress.update(task_id, completed=pct, 
+                        description=f"[cyan]ENGINE:[/] Step {current:,}/{total:,}")
+                except:
+                    pass
+            elif "Captured" in line:
+                progress.update(task_id, description=f"[cyan]ENGINE:[/] {line.strip()[:50]}")
+        
+        process.wait()
+        
+        if process.returncode == 0:
+            progress.update(task_id, description="[green]ENGINE:[/] ✓ Complete", completed=100)
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        console.print(f"[red]ENGINE error:[/] {e}")
+        return False
+
+def run_finalize_stage(config: PipelineConfig, progress: Progress, task_id) -> bool:
+    """Run finalize stage"""
+    # Use provided events_path or default to output_dir/events.jsonl
+    events_path = config.events_path if config.events_path else config.output_dir / "events.jsonl"
+
+    # If events_path is outside output_dir, copy it there
+    output_events = config.output_dir / "events.jsonl"
+    if events_path != output_events and events_path.exists():
+        shutil.copy(events_path, output_events)
+        events_path = output_events
+
+    cmd = [
+        str(PRISM4D_BIN), "finalize",
+        "--events", str(events_path),
+        "--topology", str(config.topology_path),
+        "--out", str(config.output_dir),
+        "--replicates", str(config.replicates),
+        "--seed", str(config.seed),
+        "--filter-initial-dist", str(config.filter_initial_dist),
+        "--filter-max-dist", str(config.filter_max_dist),
+        "--cluster-min-events", str(config.cluster_min_events),
+        "--cluster-eps", str(config.cluster_eps),
+        "--cluster-min-residues", str(config.cluster_min_residues),
+        "--residue-query-radius", str(config.residue_query_radius),
+        "--min-persistence", str(config.min_persistence),
+        "--min-volume", str(config.min_volume),
+        "--min-replica-agreement", str(config.min_replica_agreement),
+        "--save-seed",  # Always save seed for reproducibility
+    ]
+    
+    progress.update(task_id, description="[cyan]FINALIZE:[/] Clustering events...")
+    
+    try:
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1
+        )
+        
+        stages = ["Loading", "Filtering", "Clustering", "Computing", "Generating", "Writing"]
+        stage_idx = 0
+        
+        for line in iter(process.stdout.readline, ''):
+            for i, stage in enumerate(stages):
+                if stage.lower() in line.lower():
+                    stage_idx = i
+                    pct = min(95, int(100 * (i + 1) / len(stages)))
+                    progress.update(task_id, completed=pct,
+                        description=f"[cyan]FINALIZE:[/] {stage}...")
+                    break
+        
+        process.wait()
+        
+        if process.returncode == 0:
+            progress.update(task_id, description="[green]FINALIZE:[/] ✓ Complete", completed=100)
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        console.print(f"[red]FINALIZE error:[/] {e}")
+        return False
+
+def run_pipeline_with_prism(config: PipelineConfig, entry_point: int) -> bool:
+    """Execute pipeline with animated prism display"""
+    import threading
+
+    stages = []
+    if entry_point == 1:
+        stages = [("PREP", run_prep_stage), ("ENGINE", run_engine_stage), ("FINALIZE", run_finalize_stage)]
+    elif entry_point == 2:
+        stages = [("ENGINE", run_engine_stage), ("FINALIZE", run_finalize_stage)]
+    else:
+        stages = [("FINALIZE", run_finalize_stage)]
+
+    # Animation state
+    prism_tick = [0]
+    current_status = ["INITIALIZING"]
+    stage_progress = {name: 0 for name, _ in stages}
+    stage_status = {name: "pending" for name, _ in stages}
+    pipeline_done = [False]
+    pipeline_success = [True]
+
+    def render_display():
+        """Render the full display with prism + progress"""
+        prism_panel = get_prism_status_panel(prism_tick[0], current_status[0])
+
+        # Build progress table
+        progress_table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+        progress_table.add_column("Stage", width=12)
+        progress_table.add_column("Progress", width=45)
+        progress_table.add_column("Status", width=12)
+
+        for name, _ in stages:
+            pct = stage_progress[name]
+            status = stage_status[name]
+
+            # Progress bar
+            filled = int(pct / 2.5)  # 40 char bar
+            bar = f"[cyan]{'█' * filled}[/][dim]{'░' * (40 - filled)}[/]"
+
+            # Status indicator
+            if status == "complete":
+                status_str = "[green]✓ Done[/]"
+            elif status == "running":
+                status_str = "[cyan]● Running[/]"
+            elif status == "error":
+                status_str = "[red]✗ Error[/]"
+            else:
+                status_str = "[dim]○ Pending[/]"
+
+            progress_table.add_row(f"[bold]{name}[/]", f"{bar} {pct:3.0f}%", status_str)
+
+        # Combine prism and progress
+        layout = Table.grid(padding=(0, 2))
+        layout.add_column(width=26)
+        layout.add_column()
+        layout.add_row(prism_panel, progress_table)
+
+        return Panel(layout, title="[bold cyan]═══ PRISM-4D PIPELINE ═══[/]", border_style="cyan")
+
+    def run_stages():
+        """Run all stages (in main thread)"""
+        for name, func in stages:
+            stage_status[name] = "running"
+            current_status[0] = f"RUNNING: {name}"
+
+            # Create a simple progress tracker
+            class ProgressTracker:
+                def __init__(self, stage_name):
+                    self.stage = stage_name
+                def update(self, task_id, completed=None, description=None):
+                    if completed is not None:
+                        stage_progress[self.stage] = completed
+
+                def add_task(self, desc, total):
+                    return 0
+
+            tracker = ProgressTracker(name)
+
+            try:
+                success = func(config, tracker, 0)
+                if success:
+                    stage_progress[name] = 100
+                    stage_status[name] = "complete"
+                else:
+                    stage_status[name] = "error"
+                    current_status[0] = f"FAILED: {name}"
+                    pipeline_success[0] = False
+                    break
+            except Exception as e:
+                stage_status[name] = "error"
+                current_status[0] = f"ERROR: {name}"
+                pipeline_success[0] = False
+                console.print(f"[red]Error in {name}:[/] {e}")
+                break
+
+        if pipeline_success[0]:
+            current_status[0] = "COMPLETE"
+        pipeline_done[0] = True
+
+    # Start the stage runner in a thread
+    runner_thread = threading.Thread(target=run_stages, daemon=True)
+    runner_thread.start()
+
+    # Animate until done
+    with Live(render_display(), console=console, refresh_per_second=12, transient=False) as live:
+        while not pipeline_done[0]:
+            prism_tick[0] += 1
+            live.update(render_display())
+            time.sleep(0.083)
+
+        # Final update
+        prism_tick[0] += 1
+        live.update(render_display())
+
+    return pipeline_success[0]
+
+def run_pipeline(config: PipelineConfig, entry_point: int) -> bool:
+    """Execute the pipeline with animated prism display"""
+    console.print()
+    return run_pipeline_with_prism(config, entry_point)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GROUND TRUTH / BLIND VALIDATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def detect_residue_offset(known_residues: set, predicted_residues: set, min_improvement: int = 3) -> Tuple[int, int]:
+    """
+    Detect optimal residue offset to maximize overlap.
+    Returns (best_offset, overlap_count).
+    """
+    if not known_residues or not predicted_residues:
+        return 0, 0
+
+    # Build candidate offsets from all pairs
+    candidate_offsets = {}
+    for k in known_residues:
+        for p in predicted_residues:
+            offset = p - k
+            if offset not in candidate_offsets:
+                candidate_offsets[offset] = 0
+            # Count how many known residues would match with this offset
+            shifted = {r + offset for r in known_residues}
+            overlap = len(shifted & predicted_residues)
+            candidate_offsets[offset] = max(candidate_offsets[offset], overlap)
+
+    # Find best offset
+    best_offset = 0
+    best_overlap = len(known_residues & predicted_residues)  # baseline (no offset)
+
+    for offset, overlap in candidate_offsets.items():
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_offset = offset
+
+    # Only return offset if it improves by at least min_improvement
+    baseline_overlap = len(known_residues & predicted_residues)
+    if best_overlap >= baseline_overlap + min_improvement:
+        return best_offset, best_overlap
+    return 0, baseline_overlap
+
+
+def apply_residue_offset(residues: set, offset: int) -> set:
+    """Apply offset to residue numbers."""
+    return {r + offset for r in residues}
+
+
+def compute_validation_metrics(
+    ground_truth: dict,
+    predicted_sites: list,
+    all_predicted_residues: set,
+    chain_map: dict = None,
+    offsets: dict = None
+) -> Tuple[dict, list, int]:
+    """
+    Compute validation metrics with optional chain mapping and residue offsets.
+    Returns (metrics_dict, per_site_results, true_positives)
+    """
+    # Apply chain mapping and offsets to ground truth
+    adjusted_known_sites = []
+    all_known_residues = set()
+
+    for site in ground_truth.get("known_sites", []):
+        known_chain = site.get("chain", "?")
+        known_residues = set(site.get("residues", []))
+
+        # Apply chain mapping
+        if chain_map and known_chain in chain_map:
+            known_chain = chain_map[known_chain]
+
+        # Apply residue offset for this chain
+        if offsets and known_chain in offsets:
+            known_residues = apply_residue_offset(known_residues, offsets[known_chain])
+
+        adjusted_known_sites.append({
+            "site_id": site.get("site_id", "unknown"),
+            "chain": known_chain,
+            "residues": known_residues,
+            "site_type": site.get("site_type", "unknown"),
+            "evidence": site.get("evidence", "")
+        })
+        all_known_residues.update(known_residues)
+
+    # Compare each known site
+    true_positives = 0
+    per_site_results = []
+
+    for known_site in adjusted_known_sites:
+        known_residues = known_site["residues"]
+        known_chain = known_site["chain"]
+
+        # Find best matching predicted site
+        best_overlap = 0
+        best_match = None
+        for pred_site in predicted_sites:
+            overlap = known_residues & pred_site["residues"]
+            overlap_frac = len(overlap) / len(known_residues) if known_residues else 0
+            if overlap_frac > best_overlap:
+                best_overlap = overlap_frac
+                best_match = pred_site["id"]
+
+        # Total overlap with all predictions
+        total_overlap = known_residues & all_predicted_residues
+        total_overlap_frac = len(total_overlap) / len(known_residues) if known_residues else 0
+
+        detected = best_overlap >= 0.3 or total_overlap_frac >= 0.3
+
+        site_result = {
+            "site_id": known_site["site_id"],
+            "chain": known_chain,
+            "site_type": known_site["site_type"],
+            "known_residues": len(known_residues),
+            "best_match_site": best_match,
+            "best_match_overlap": best_overlap,
+            "total_overlap_residues": len(total_overlap),
+            "total_overlap_fraction": total_overlap_frac,
+            "detected": detected,
+            "evidence": known_site["evidence"]
+        }
+        per_site_results.append(site_result)
+
+        if detected:
+            true_positives += 1
+
+    # Compute which predicted sites hit known sites (for precision)
+    predictions_hitting_known = 0
+    for pred_site in predicted_sites:
+        for known_site in adjusted_known_sites:
+            overlap = pred_site["residues"] & known_site["residues"]
+            if len(overlap) >= 3:
+                predictions_hitting_known += 1
+                break
+
+    # Compute summary metrics
+    n_known = len(adjusted_known_sites)
+    n_predicted = len(predicted_sites)
+
+    sensitivity = true_positives / n_known if n_known > 0 else 0
+    precision = predictions_hitting_known / n_predicted if n_predicted > 0 else 0
+    f1_score = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+
+    # Residue-level metrics
+    residue_tp = len(all_predicted_residues & all_known_residues)
+    residue_fp = len(all_predicted_residues - all_known_residues)
+    residue_fn = len(all_known_residues - all_predicted_residues)
+
+    residue_precision = residue_tp / (residue_tp + residue_fp) if (residue_tp + residue_fp) > 0 else 0
+    residue_recall = residue_tp / (residue_tp + residue_fn) if (residue_tp + residue_fn) > 0 else 0
+    residue_f1 = 2 * (residue_precision * residue_recall) / (residue_precision + residue_recall) if (residue_precision + residue_recall) > 0 else 0
+
+    metrics = {
+        "sensitivity": sensitivity,
+        "precision": precision,
+        "f1_score": f1_score,
+        "sites_detected": true_positives,
+        "sites_missed": n_known - true_positives,
+        "predictions_on_target": predictions_hitting_known,
+        "false_positive_sites": n_predicted - predictions_hitting_known,
+        "overlap_threshold": 0.3,
+        "residue_precision": residue_precision,
+        "residue_recall": residue_recall,
+        "residue_f1": residue_f1,
+        "residue_true_positives": residue_tp,
+        "residue_false_positives": residue_fp,
+        "residue_false_negatives": residue_fn,
+    }
+
+    return metrics, per_site_results, true_positives
+
+
+GROUND_TRUTH_FORMAT = """
+[bold cyan]═══ GROUND TRUTH FILE FORMAT ═══[/]
+
+PRISM accepts ground truth in JSON format for blind validation.
+
+[bold yellow]Required file:[/] ground_truth.json
+
+[bold yellow]Format:[/]
+```json
+{
+  "pdb_id": "2VWD",
+  "known_sites": [
+    {
+      "site_id": "site_1",
+      "residues": [45, 48, 52, 89, 91, 93, 124, 127],
+      "chain": "A",
+      "site_type": "cryptic",
+      "evidence": "Bowman et al. 2015, PNAS",
+      "ligand_id": "optional_ligand_code"
+    },
+    {
+      "site_id": "site_2", 
+      "residues": [156, 159, 162, 198, 201],
+      "chain": "A",
+      "site_type": "orthosteric",
+      "evidence": "Crystal structure 2VWD"
+    }
+  ],
+  "reference": "Optional citation or source"
+}
+```
+
+[bold yellow]Fields:[/]
+  • [cyan]pdb_id[/]      - PDB identifier (for verification)
+  • [cyan]known_sites[/] - Array of known binding sites
+    • [cyan]site_id[/]   - Unique identifier for the site
+    • [cyan]residues[/]  - Array of residue numbers (1-indexed)
+    • [cyan]chain[/]     - Chain identifier
+    • [cyan]site_type[/] - "cryptic", "orthosteric", or "allosteric"
+    • [cyan]evidence[/]  - Literature reference or experimental source
+    • [cyan]ligand_id[/] - (Optional) PDB ligand code if known
+
+[bold yellow]Example sources for ground truth:[/]
+  • CryptoSite database
+  • Published co-crystal structures
+  • HDX-MS experiments
+  • Mutagenesis studies
+"""
+
+def prompt_ground_truth(config: PipelineConfig) -> Optional[Path]:
+    """Ask user about ground truth after finalize completes"""
+    console.print("\n" + "═" * 70)
+    console.print("[bold cyan]═══ BLIND VALIDATION (Optional) ═══[/]")
+    console.print("═" * 70 + "\n")
+
+    console.print("[dim]For scientific integrity, ground truth comparison is performed[/]")
+    console.print("[dim]AFTER prediction to ensure unbiased results.[/]\n")
+
+    try:
+        if not confirm_with_back("Do you have ground truth data for validation?", default=False, allow_back=False):
+            return None
+
+        # Show format requirements
+        console.print(GROUND_TRUTH_FORMAT)
+
+        if not confirm_with_back("\nDo you have a file in this format?", default=True):
+            console.print("\n[yellow]Tip:[/] Create ground_truth.json using the format above.")
+            console.print("[yellow]     Then re-run:[/] prism --ground-truth <file> --validate-only <results_dir>")
+            return None
+
+        # Get file path
+        console.print("\n[dim]Drag and drop your ground truth file, or type the path ('back' to cancel):[/]")
+
+        while True:
+            path_str = prompt_with_back("[bold yellow]Ground truth file[/]", allow_back=True).strip().strip("'\"")
+            gt_path = Path(path_str)
+
+            if not gt_path.exists():
+                console.print(f"[red]✗[/] File not found: {path_str}")
+                if not confirm_with_back("Try again?", default=True):
+                    return None
+                continue
+
+            # Validate JSON format
+            try:
+                with open(gt_path) as f:
+                    data = json.load(f)
+
+                if "known_sites" not in data:
+                    console.print("[red]✗[/] Missing 'known_sites' field")
+                    if not confirm_with_back("Try again?", default=True):
+                        return None
+                    continue
+
+                if not isinstance(data["known_sites"], list):
+                    console.print("[red]✗[/] 'known_sites' must be an array")
+                    if not confirm_with_back("Try again?", default=True):
+                        return None
+                    continue
+
+                # Validate each site
+                valid = True
+                for i, site in enumerate(data["known_sites"]):
+                    if "residues" not in site:
+                        console.print(f"[red]✗[/] Site {i+1} missing 'residues' field")
+                        valid = False
+                        break
+
+                if not valid:
+                    if not confirm_with_back("Try again?", default=True):
+                        return None
+                    continue
+
+                console.print(f"[green]✓[/] Valid ground truth: {len(data['known_sites'])} known sites")
+                return gt_path
+
+            except json.JSONDecodeError as e:
+                console.print(f"[red]✗[/] Invalid JSON: {e}")
+                if not confirm_with_back("Try again?", default=True):
+                    return None
+
+    except BackNavigation:
+        console.print("[dim]Skipping validation...[/]")
+        return None
+
+def run_blind_validation(config: PipelineConfig, ground_truth_path: Path) -> None:
+    """Generate blind validation package with alignment support"""
+    console.print("\n[bold cyan]═══ GENERATING BLIND VALIDATION PACKAGE ═══[/]\n")
+
+    # Load ground truth
+    with open(ground_truth_path) as f:
+        ground_truth = json.load(f)
+
+    # Load predictions
+    summary_path = config.output_dir / "summary.json"
+    pharma_path = config.output_dir / "pharma_report.json"
+
+    predictions = {}
+    if summary_path.exists():
+        with open(summary_path) as f:
+            predictions["summary"] = json.load(f)
+    if pharma_path.exists():
+        with open(pharma_path) as f:
+            predictions["pharma"] = json.load(f)
+
+    # ═══ STEP 1: PDB ID Validation ═══
+    gt_pdb_id = ground_truth.get("pdb_id", "").upper()
+    predicted_pdb_id = ""
+
+    # Extract predicted PDB ID from summary
+    if "summary" in predictions:
+        input_info = predictions["summary"].get("input", {})
+        pdb_file = input_info.get("pdb_file", input_info.get("pdb_path", ""))
+        if pdb_file:
+            predicted_pdb_id = Path(pdb_file).stem.upper()
+
+    pdb_match = (gt_pdb_id == predicted_pdb_id) or not gt_pdb_id or not predicted_pdb_id
+
+    if not pdb_match:
+        console.print(f"[yellow]⚠ PDB ID Mismatch:[/]")
+        console.print(f"  Ground truth: [cyan]{gt_pdb_id}[/]")
+        console.print(f"  Prediction:   [cyan]{predicted_pdb_id}[/]\n")
+
+        choice = Prompt.ask(
+            "How to proceed?",
+            choices=["continue", "abort", "align"],
+            default="align"
+        )
+        if choice == "abort":
+            console.print("[red]Validation aborted.[/]")
+            return
+        # "continue" or "align" both proceed, but "align" enables offset detection
+
+    # ═══ STEP 2: Extract Predicted Sites ═══
+    predicted_sites = []
+    all_predicted_residues = set()
+    predicted_chains = set()
+
+    if "pharma" in predictions and "accepted_pockets" in predictions["pharma"]:
+        for pocket in predictions["pharma"]["accepted_pockets"]:
+            site_residues = set(int(r) for r in pocket.get("residues", []))
+            chain = pocket.get("chain_id", "?")
+            predicted_sites.append({
+                "id": pocket.get("pocket_id", "unknown"),
+                "residues": site_residues,
+                "chain": chain,
+            })
+            all_predicted_residues.update(site_residues)
+            predicted_chains.add(chain)
+
+    # Fallback to summary.json
+    if not predicted_sites and "summary" in predictions and "sites" in predictions["summary"]:
+        for site in predictions["summary"]["sites"]:
+            site_residues = set(int(r) for r in site.get("residues", []))
+            chain = site.get("chain_id", "?")
+            predicted_sites.append({
+                "id": site.get("site_id", "unknown"),
+                "residues": site_residues,
+                "chain": chain,
+            })
+            all_predicted_residues.update(site_residues)
+            predicted_chains.add(chain)
+
+    # ═══ STEP 3: Chain Validation & Mapping ═══
+    gt_chains = set()
+    for site in ground_truth.get("known_sites", []):
+        gt_chains.add(site.get("chain", "?"))
+
+    chain_map = {}
+    missing_chains = gt_chains - predicted_chains - {"?"}
+
+    if missing_chains:
+        console.print(f"\n[yellow]⚠ Chain Mismatch:[/]")
+        console.print(f"  Ground truth chains: [cyan]{sorted(gt_chains)}[/]")
+        console.print(f"  Predicted chains:    [cyan]{sorted(predicted_chains)}[/]")
+        console.print(f"  Missing in predictions: [red]{sorted(missing_chains)}[/]\n")
+
+        if Confirm.ask("Create chain mapping?", default=True):
+            for missing in sorted(missing_chains):
+                if predicted_chains:
+                    target = Prompt.ask(
+                        f"  Map chain [cyan]{missing}[/] to",
+                        choices=sorted(predicted_chains) + ["skip"],
+                        default=sorted(predicted_chains)[0] if predicted_chains else "skip"
+                    )
+                    if target != "skip":
+                        chain_map[missing] = target
+
+    # ═══ STEP 4: Automatic Residue Offset Detection ═══
+    offsets = {}
+    offset_details = {}
+
+    # Collect all known residues per chain
+    known_by_chain = {}
+    for site in ground_truth.get("known_sites", []):
+        chain = site.get("chain", "?")
+        if chain in chain_map:
+            chain = chain_map[chain]
+        if chain not in known_by_chain:
+            known_by_chain[chain] = set()
+        known_by_chain[chain].update(site.get("residues", []))
+
+    # Detect offsets per chain
+    for chain, known_res in known_by_chain.items():
+        best_offset, overlap_count = detect_residue_offset(known_res, all_predicted_residues, min_improvement=3)
+
+        if best_offset != 0:
+            baseline_overlap = len(known_res & all_predicted_residues)
+            offset_details[chain] = {
+                "suggested_offset": best_offset,
+                "baseline_overlap": baseline_overlap,
+                "aligned_overlap": overlap_count,
+                "improvement": overlap_count - baseline_overlap
+            }
+
+            # Sanity check for large offsets
+            if abs(best_offset) > 500:
+                console.print(f"[red]⚠ Large offset detected for chain {chain}: {best_offset}[/]")
+                console.print(f"  This may indicate wrong PDB, not just renumbering.")
+
+    # Show offset suggestions
+    if offset_details:
+        console.print("\n[bold cyan]═══ RESIDUE OFFSET DETECTION ═══[/]\n")
+
+        off_table = Table(box=box.SIMPLE, show_header=True)
+        off_table.add_column("Chain", style="cyan")
+        off_table.add_column("Suggested Offset")
+        off_table.add_column("Baseline Overlap")
+        off_table.add_column("Aligned Overlap")
+        off_table.add_column("Improvement")
+
+        for chain, details in offset_details.items():
+            off_table.add_row(
+                chain,
+                f"{details['suggested_offset']:+d}",
+                str(details['baseline_overlap']),
+                f"[green]{details['aligned_overlap']}[/]",
+                f"+{details['improvement']}"
+            )
+
+        console.print(off_table)
+
+        if Confirm.ask("\nApply suggested residue offsets?", default=True):
+            for chain, details in offset_details.items():
+                offsets[chain] = details["suggested_offset"]
+            console.print("[green]✓ Offsets will be applied[/]")
+
+    # ═══ STEP 5: Compute Metrics ═══
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(bar_width=40),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Computing metrics...", total=100)
+
+        # Compute RAW metrics (no alignment)
+        progress.update(task, completed=30, description="[cyan]Computing raw metrics...")
+        raw_metrics, raw_per_site, raw_tp = compute_validation_metrics(
+            ground_truth, predicted_sites, all_predicted_residues,
+            chain_map=None, offsets=None
+        )
+
+        # Compute ALIGNED metrics (with chain map + offsets)
+        progress.update(task, completed=60, description="[cyan]Computing aligned metrics...")
+        aligned_metrics, aligned_per_site, aligned_tp = compute_validation_metrics(
+            ground_truth, predicted_sites, all_predicted_residues,
+            chain_map=chain_map if chain_map else None,
+            offsets=offsets if offsets else None
+        )
+
+        # Build validation results
+        validation_results = {
+            "timestamp": datetime.now().isoformat(),
+            "ground_truth_file": str(ground_truth_path),
+            "prediction_dir": str(config.output_dir),
+            "known_sites": len(ground_truth.get("known_sites", [])),
+            "predicted_sites": len(predicted_sites),
+            "blind_validation": True,
+            "integrity_note": "Ground truth provided AFTER prediction completed",
+
+            # Alignment info
+            "alignment": {
+                "pdb_match": pdb_match,
+                "gt_pdb_id": gt_pdb_id,
+                "predicted_pdb_id": predicted_pdb_id,
+                "chain_map": chain_map if chain_map else None,
+                "offsets": offsets if offsets else None,
+                "offset_details": offset_details if offset_details else None,
+                "alignment_applied": bool(chain_map or offsets)
+            },
+
+            # Both raw and aligned metrics
+            "metrics_raw": raw_metrics,
+            "per_site_results_raw": raw_per_site,
+            "metrics_aligned": aligned_metrics if (chain_map or offsets) else None,
+            "per_site_results_aligned": aligned_per_site if (chain_map or offsets) else None,
+
+            # Primary metrics (use aligned if available)
+            "metrics": aligned_metrics if (chain_map or offsets) else raw_metrics,
+            "per_site_results": aligned_per_site if (chain_map or offsets) else raw_per_site,
+        }
+
+        progress.update(task, completed=80, description="[cyan]Writing validation report...")
+
+        # Write validation package
+        validation_dir = config.output_dir / "blind_validation"
+        validation_dir.mkdir(exist_ok=True)
+
+        # Copy ground truth
+        shutil.copy(ground_truth_path, validation_dir / "ground_truth.json")
+
+        # Write results
+        with open(validation_dir / "validation_results.json", "w") as f:
+            json.dump(validation_results, f, indent=2)
+
+        progress.update(task, completed=100, description="[green]✓ Validation complete")
+    
+    # Display results
+    console.print("\n[bold green]═══ BLIND VALIDATION RESULTS ═══[/]\n")
+
+    alignment = validation_results.get("alignment", {})
+    alignment_applied = alignment.get("alignment_applied", False)
+
+    # Show alignment info if applied
+    if alignment_applied:
+        console.print("[bold cyan]Alignment Applied:[/]")
+        if alignment.get("chain_map"):
+            console.print(f"  Chain mapping: {alignment['chain_map']}")
+        if alignment.get("offsets"):
+            console.print(f"  Residue offsets: {alignment['offsets']}")
+        console.print()
+
+    # Show comparison table if alignment was applied
+    if alignment_applied and validation_results.get("metrics_raw"):
+        raw = validation_results["metrics_raw"]
+        aligned = validation_results["metrics"]
+
+        console.print("[bold]Metrics Comparison (Raw vs Aligned):[/]\n")
+        cmp_table = Table(box=box.ROUNDED, show_header=True, header_style="bold magenta")
+        cmp_table.add_column("Metric", style="cyan")
+        cmp_table.add_column("Raw", style="dim")
+        cmp_table.add_column("Aligned", style="bold green")
+        cmp_table.add_column("Change")
+
+        for key, label in [("sensitivity", "Sensitivity"), ("precision", "Precision"), ("f1_score", "F1 Score")]:
+            raw_val = raw[key] * 100
+            aligned_val = aligned[key] * 100
+            change = aligned_val - raw_val
+            change_str = f"[green]+{change:.1f}%[/]" if change > 0 else f"[red]{change:.1f}%[/]" if change < 0 else "─"
+            cmp_table.add_row(label, f"{raw_val:.1f}%", f"{aligned_val:.1f}%", change_str)
+
+        cmp_table.add_row("─" * 12, "─" * 8, "─" * 8, "─" * 8)
+        cmp_table.add_row("Sites Detected", str(raw["sites_detected"]), str(aligned["sites_detected"]),
+                         f"+{aligned['sites_detected'] - raw['sites_detected']}" if aligned['sites_detected'] > raw['sites_detected'] else "─")
+        cmp_table.add_row("Residue TP", str(raw["residue_true_positives"]), str(aligned["residue_true_positives"]),
+                         f"+{aligned['residue_true_positives'] - raw['residue_true_positives']}" if aligned['residue_true_positives'] > raw['residue_true_positives'] else "─")
+
+        console.print(cmp_table)
+        console.print()
+
+    # Primary metrics (aligned if available)
+    metrics = validation_results["metrics"]
+
+    # Site-level metrics table
+    label = "[bold]Site-Level Metrics" + (" (Aligned):[/]\n" if alignment_applied else ":[/]\n")
+    console.print(label)
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="bold")
+    table.add_column("Description", style="dim")
+
+    table.add_row("Known Sites", str(validation_results["known_sites"]), "Ground truth binding sites")
+    table.add_row("Predicted Sites", str(validation_results["predicted_sites"]), "PRISM detected sites")
+    table.add_row("─" * 15, "─" * 10, "─" * 25)
+
+    sens_color = "green" if metrics["sensitivity"] >= 0.5 else "yellow" if metrics["sensitivity"] >= 0.3 else "red"
+    table.add_row("Sensitivity (Recall)", f"[{sens_color}]{metrics['sensitivity']*100:.1f}%[/]", "Known sites we detected")
+
+    prec_color = "green" if metrics["precision"] >= 0.5 else "yellow" if metrics["precision"] >= 0.3 else "red"
+    table.add_row("Precision", f"[{prec_color}]{metrics['precision']*100:.1f}%[/]", "Predictions that hit known sites")
+
+    f1_color = "green" if metrics["f1_score"] >= 0.5 else "yellow" if metrics["f1_score"] >= 0.3 else "red"
+    table.add_row("F1 Score", f"[{f1_color}]{metrics['f1_score']*100:.1f}%[/]", "Harmonic mean of P & R")
+
+    table.add_row("─" * 15, "─" * 10, "─" * 25)
+    table.add_row("Sites Detected", f"[green]{metrics['sites_detected']}[/]", "True positives")
+    table.add_row("Sites Missed", f"[red]{metrics['sites_missed']}[/]", "False negatives")
+    table.add_row("Off-Target Predictions", f"[yellow]{metrics['false_positive_sites']}[/]", "False positives")
+
+    console.print(table)
+
+    # Residue-level metrics
+    console.print("\n[bold]Residue-Level Metrics:[/]\n")
+    res_table = Table(box=box.SIMPLE, show_header=True)
+    res_table.add_column("Metric", style="cyan")
+    res_table.add_column("Value", style="bold")
+
+    res_table.add_row("Residue Precision", f"{metrics['residue_precision']*100:.1f}%")
+    res_table.add_row("Residue Recall", f"{metrics['residue_recall']*100:.1f}%")
+    res_table.add_row("Residue F1", f"{metrics['residue_f1']*100:.1f}%")
+    res_table.add_row("True Positive Residues", str(metrics['residue_true_positives']))
+    res_table.add_row("False Positive Residues", str(metrics['residue_false_positives']))
+    res_table.add_row("False Negative Residues", str(metrics['residue_false_negatives']))
+
+    console.print(res_table)
+
+    # Per-site breakdown
+    console.print("\n[bold]Per-Site Detection:[/]\n")
+
+    site_table = Table(box=box.SIMPLE)
+    site_table.add_column("Site", style="cyan")
+    site_table.add_column("Chain")
+    site_table.add_column("Type")
+    site_table.add_column("Residues")
+    site_table.add_column("Overlap")
+    site_table.add_column("Best Match")
+    site_table.add_column("Status")
+
+    for site in validation_results["per_site_results"]:
+        status = "[green]✓ DETECTED[/]" if site["detected"] else "[red]✗ MISSED[/]"
+        overlap_pct = f"{site['total_overlap_fraction']*100:.0f}%"
+        best_match = site.get("best_match_site", "-") or "-"
+        site_table.add_row(
+            site["site_id"],
+            site.get("chain", "?"),
+            site["site_type"],
+            str(site["known_residues"]),
+            overlap_pct,
+            best_match,
+            status
+        )
+
+    console.print(site_table)
+
+    console.print(f"\n[dim]Full results saved to:[/] {validation_dir}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESULTS SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def show_results_summary(config: PipelineConfig) -> None:
+    """Display final results summary with seed tracking"""
+    console.print("\n" + "═" * 70)
+    console.print("[bold green]═══ PIPELINE COMPLETE ═══[/]")
+    console.print("═" * 70 + "\n")
+
+    # Check for output files
+    files = {
+        "summary.json": config.output_dir / "summary.json",
+        "pharma_report.json": config.output_dir / "pharma_report.json",
+        "report.html": config.output_dir / "report.html",
+        "site_metrics.csv": config.output_dir / "site_metrics.csv",
+        "correlation.csv": config.output_dir / "correlation.csv",  # backward-compat alias
+        "seed_config.json": config.output_dir / "seed_config.json",  # Reproducibility
+    }
+
+    table = Table(box=box.ROUNDED, title="Generated Files", show_header=True)
+    table.add_column("File", style="cyan")
+    table.add_column("Status")
+    table.add_column("Size")
+
+    for name, path in files.items():
+        if path.exists():
+            size = path.stat().st_size
+            if size > 1024*1024:
+                size_str = f"{size/1024/1024:.1f} MB"
+            elif size > 1024:
+                size_str = f"{size/1024:.1f} KB"
+            else:
+                size_str = f"{size} B"
+            table.add_row(name, "[green]✓[/]", size_str)
+        else:
+            table.add_row(name, "[red]✗[/]", "-")
+
+    console.print(table)
+
+    # Track stats for later reference
+    run_stats = {
+        "sites_detected": 0,
+        "druggable_sites": 0,
+        "pharma_grade_sites": 0,
+        "quality_tier": "UNKNOWN",
+    }
+
+    # Load and display summary
+    summary_path = config.output_dir / "summary.json"
+    if summary_path.exists():
+        with open(summary_path) as f:
+            summary = json.load(f)
+
+        console.print("\n[bold]Detection Summary:[/]\n")
+
+        if "sites" in summary:
+            n_sites = len(summary["sites"])
+            n_druggable = sum(1 for s in summary["sites"] if s.get("is_druggable", False))
+            run_stats["sites_detected"] = n_sites
+            run_stats["druggable_sites"] = n_druggable
+            console.print(f"  Sites detected:    [bold]{n_sites}[/]")
+            console.print(f"  Druggable sites:   [bold green]{n_druggable}[/]")
+
+    # Pharma report summary
+    pharma_path = config.output_dir / "pharma_report.json"
+    if pharma_path.exists():
+        with open(pharma_path) as f:
+            pharma = json.load(f)
+
+        if "accepted_pockets" in pharma:
+            n_pharma = len(pharma['accepted_pockets'])
+            run_stats["pharma_grade_sites"] = n_pharma
+            console.print(f"  Pharma-grade sites: [bold cyan]{n_pharma}[/]")
+        if "quality_assessment" in pharma:
+            qa = pharma["quality_assessment"]
+            tier = qa.get("quality_tier", "UNKNOWN")
+            run_stats["quality_tier"] = tier
+            color = {"HIGH": "green", "MEDIUM": "yellow", "LOW": "red"}.get(tier, "white")
+            console.print(f"  Quality tier:      [bold {color}]{tier}[/]")
+
+    # Display seed for reproducibility
+    console.print("\n[bold]Reproducibility:[/]\n")
+    console.print(f"  Seed used:         [bold magenta]{config.seed}[/]")
+
+    # Check for seed_config.json
+    seed_config_path = config.output_dir / "seed_config.json"
+    if seed_config_path.exists():
+        console.print(f"  [dim]Full config saved to: seed_config.json[/]")
+        console.print(f"  [dim]Reload with: --load-seed-from {seed_config_path}[/]")
+
+    # Save run stats for tracking
+    save_run_stats(config, run_stats)
+
+    # Show last run comparison if available
+    last_stats = load_last_run_stats()
+    if last_stats and last_stats.get("output_dir") != str(config.output_dir):
+        console.print("\n[dim]Last run comparison:[/]")
+        prev_sites = last_stats.get("results", {}).get("sites_detected", 0)
+        prev_druggable = last_stats.get("results", {}).get("druggable_sites", 0)
+        delta_sites = run_stats["sites_detected"] - prev_sites
+        delta_drug = run_stats["druggable_sites"] - prev_druggable
+        delta_sign = "+" if delta_sites >= 0 else ""
+        drug_sign = "+" if delta_drug >= 0 else ""
+        console.print(f"  [dim]Sites: {prev_sites} -> {run_stats['sites_detected']} ({delta_sign}{delta_sites})[/]")
+        console.print(f"  [dim]Druggable: {prev_druggable} -> {run_stats['druggable_sites']} ({drug_sign}{delta_drug})[/]")
+
+    console.print(f"\n[bold]Output directory:[/] {config.output_dir}")
+    console.print(f"[dim]View HTML report:[/] file://{config.output_dir}/report.html")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="PRISM - Interactive Cryptic Binding Site Detection Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  prism                              Interactive mode
+  prism structure.pdb                Start with PDB file
+  prism --ground-truth gt.json       Auto-load ground truth for validation
+  prism --validate-only results/     Validate existing results (skip pipeline)
+  prism --events events.jsonl --topology topo.json   Finalize only (Stage 3)
+        """
+    )
+    parser.add_argument("pdb", nargs="?", help="Input PDB file")
+    parser.add_argument("--ground-truth", "-g", dest="ground_truth",
+                       help="Ground truth JSON file for blind validation")
+    parser.add_argument("--validate-only", "-v", dest="validate_only",
+                       help="Skip pipeline, validate existing results directory")
+    parser.add_argument("--events", "-e", dest="events",
+                       help="Existing events.jsonl file (skip to Stage 3 FINALIZE)")
+    parser.add_argument("--topology", "-t", dest="topology",
+                       help="Topology JSON file (required with --events)")
+    parser.add_argument("--no-banner", action="store_true",
+                       help="Skip animated banner")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    try:
+        # Animated banner (skip if --no-banner or --validate-only)
+        if not args.no_banner and not args.validate_only:
+            animated_banner(duration=2.5)
+
+        console.print("\n[bold white]Welcome to PRISM Interactive Pipeline[/]\n")
+        console.print("[dim]Tip: Type 'back' at any prompt to return to previous step[/]\n")
+
+        config = PipelineConfig()
+
+        # Handle --validate-only mode
+        if args.validate_only:
+            config.output_dir = Path(args.validate_only)
+            if not config.output_dir.exists():
+                console.print(f"[red]✗ Results directory not found: {args.validate_only}[/]")
+                return
+
+            console.print(f"[cyan]Validating existing results:[/] {config.output_dir}\n")
+
+            # Use provided ground truth or prompt
+            gt_path = Path(args.ground_truth) if args.ground_truth else prompt_ground_truth(config)
+            if gt_path:
+                run_blind_validation(config, gt_path)
+            else:
+                console.print("[yellow]No ground truth provided. Exiting.[/]")
+            return
+
+        # Handle --events mode (Stage 3 FINALIZE only)
+        if args.events:
+            events_path = Path(args.events)
+            if not events_path.exists():
+                console.print(f"[red]✗ Events file not found: {args.events}[/]")
+                return
+
+            # Topology is required with events
+            if not args.topology:
+                console.print("[red]✗ --topology is required when using --events[/]")
+                console.print("[dim]Usage: prism --events events.jsonl --topology topology.json[/]")
+                return
+
+            topology_path = Path(args.topology)
+            if not topology_path.exists():
+                console.print(f"[red]✗ Topology file not found: {args.topology}[/]")
+                return
+
+            console.print(f"[green]✓[/] Events file:   [cyan]{events_path}[/]")
+            console.print(f"[green]✓[/] Topology file: [cyan]{topology_path}[/]")
+
+            # Get PDB for visualization (optional)
+            if args.pdb:
+                config.pdb_path = Path(args.pdb)
+                console.print(f"[green]✓[/] PDB file:      [cyan]{config.pdb_path}[/]")
+            else:
+                console.print("\n[dim]PDB file (optional, for visualization):[/]")
+                pdb_str = Prompt.ask("[yellow]PDB file[/] (Enter to skip)").strip().strip("'\"")
+                if pdb_str:
+                    config.pdb_path = Path(pdb_str)
+
+            # Get output directory
+            config.output_dir = get_output_dir(config.pdb_path or events_path)
+            config.topology_path = topology_path
+
+            # Copy events.jsonl to output directory
+            output_events = config.output_dir / "events.jsonl"
+            if events_path != output_events:
+                shutil.copy(events_path, output_events)
+                console.print(f"[green]✓[/] Copied events to: [cyan]{output_events}[/]")
+
+            # Configure and run Stage 3 only
+            console.print("\n[bold cyan]═══ STAGE 3: FINALIZE ONLY ═══[/]\n")
+            configure_stage2(config)
+
+            console.print("\n" + "─" * 70)
+            if not Confirm.ask("[bold]Ready to run FINALIZE stage?[/]", default=True):
+                console.print("[yellow]Aborted.[/]")
+                return
+
+            # Run finalize only (entry_point=3)
+            success = run_pipeline(config, entry_point=3)
+
+            if success:
+                show_results_summary(config)
+                gt_path = Path(args.ground_truth) if args.ground_truth else prompt_ground_truth(config)
+                if gt_path:
+                    run_blind_validation(config, gt_path)
+
+            console.print("\n[bold cyan]Thank you for using PRISM![/]\n")
+            return
+
+        # Store CLI-provided ground truth for later
+        cli_ground_truth = Path(args.ground_truth) if args.ground_truth else None
+        if cli_ground_truth:
+            console.print(f"[green]✓[/] Ground truth pre-loaded: [cyan]{cli_ground_truth}[/]\n")
+
+        # State machine for back navigation
+        # Start with entry point selection, NOT PDB
+        state = "entry_point"
+        entry_point = 1
+
+        while True:
+            try:
+                if state == "entry_point":
+                    entry_point = select_entry_point()
+
+                    # Handle Stage 3 (FINALIZE only) - no PDB required
+                    if entry_point == 3:
+                        console.print("\n[bold yellow]═══ FINALIZE ONLY (Stage 3) ═══[/]")
+                        console.print("[dim]Provide existing engine output files:[/]\n")
+
+                        # Get events.jsonl
+                        events_str = prompt_with_back("[yellow]Events file[/] (events.jsonl)").strip().strip("'\"")
+                        events_path = Path(events_str)
+                        if not events_path.exists():
+                            console.print("[red]✗ Events file not found[/]")
+                            continue
+
+                        # Get topology.json
+                        topo_str = prompt_with_back("[yellow]Topology file[/] (topology.json)").strip().strip("'\"")
+                        config.topology_path = Path(topo_str)
+                        if not config.topology_path.exists():
+                            console.print("[red]✗ Topology not found[/]")
+                            continue
+
+                        # Store events path
+                        config.events_path = events_path
+                        console.print(f"\n[green]✓[/] Events:   {events_path}")
+                        console.print(f"[green]✓[/] Topology: {config.topology_path}")
+
+                        # PDB is optional for Stage 3
+                        console.print("\n[dim]PDB file is optional (for visualization only):[/]")
+                        pdb_str = Prompt.ask("[yellow]PDB file[/] [dim](Enter to skip)[/]", default="").strip().strip("'\"")
+                        if pdb_str:
+                            pdb_path = Path(pdb_str)
+                            if pdb_path.exists():
+                                config.pdb_path = pdb_path
+                                console.print(f"[green]✓[/] PDB: {pdb_path}")
+                            else:
+                                console.print(f"[yellow]PDB not found, skipping[/]")
+
+                        state = "output_dir"
+                        continue
+
+                    # For entry points 1 and 2, need PDB
+                    state = "pdb"
+
+                elif state == "pdb":
+                    # Get PDB file (use CLI arg if provided)
+                    if args.pdb:
+                        pdb_path = Path(args.pdb.strip().strip("'\""))
+                        if pdb_path.exists():
+                            config.pdb_path = pdb_path
+                            console.print(f"[green]✓[/] Using provided PDB: [bold]{pdb_path.name}[/]")
+                            args.pdb = None  # Clear so we don't reuse on back
+                            state = "files"
+                            continue
+                    config.pdb_path = get_pdb_path()
+                    state = "files"
+
+                elif state == "files":
+                    # Handle entry point 2 (need topology)
+                    if entry_point == 2:
+                        console.print("\n[bold yellow]Provide existing topology file:[/]")
+                        topo_str = prompt_with_back("Topology path").strip().strip("'\"")
+                        config.topology_path = Path(topo_str)
+                        if not config.topology_path.exists():
+                            console.print("[red]✗ Topology not found[/]")
+                            continue
+
+                    state = "output_dir"
+
+                elif state == "output_dir":
+                    config.output_dir = get_output_dir(config.pdb_path)
+                    state = "configure"
+
+                elif state == "configure":
+                    if entry_point <= 2:
+                        configure_stage2(config)
+                    state = "confirm"
+
+                elif state == "confirm":
+                    console.print("\n" + "─" * 70)
+                    if not confirm_with_back("[bold]Ready to run pipeline?[/]", default=True):
+                        console.print("[yellow]Aborted.[/]")
+                        return
+                    state = "run"
+
+                elif state == "run":
+                    # Execute pipeline
+                    success = run_pipeline(config, entry_point)
+
+                    if success:
+                        # Show results
+                        show_results_summary(config)
+
+                        # Use CLI ground truth or prompt
+                        gt_path = cli_ground_truth if cli_ground_truth else prompt_ground_truth(config)
+                        if gt_path:
+                            run_blind_validation(config, gt_path)
+
+                    break  # Exit loop after run
+
+            except BackNavigation:
+                # Go back to previous state
+                # Order: entry_point -> pdb -> files -> output_dir -> configure -> confirm
+                state_order = ["entry_point", "pdb", "files", "output_dir", "configure", "confirm"]
+                current_idx = state_order.index(state) if state in state_order else 0
+                if current_idx > 0:
+                    state = state_order[current_idx - 1]
+                    console.print(f"\n[yellow]← Going back to {state.replace('_', ' ')}...[/]\n")
+                else:
+                    console.print("[dim]Already at first step[/]")
+
+        console.print("\n[bold cyan]Thank you for using PRISM![/]\n")
+
+    except KeyboardInterrupt:
+        console.print("\n\n[yellow]Pipeline interrupted by user.[/]")
+    except Exception as e:
+        console.print(f"\n[red bold]Error:[/] {e}")
+        raise
+
+if __name__ == "__main__":
+    main()
