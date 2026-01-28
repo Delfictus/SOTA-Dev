@@ -1,0 +1,52 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{NiV-Bench: A Neuromorphic Benchmark for Cryptic Epitope Prediction on Nipah Virus Proteins}
+
+\author{[Authors]}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Cryptic epitopes—antibody binding sites hidden in the apo conformation—
+represent high-value therapeutic targets that evade current prediction methods.
+We introduce NiV-Bench, a benchmark for evaluating cryptic site prediction
+on Nipah virus proteins, a WHO priority pathogen with no approved treatments.
+Using PRISM>4D, a GPU-accelerated pipeline integrating neuromorphic 
+computing with reinforcement learning, we achieve [X]\% improvement in 
+cryptic site detection over EVEscape while processing structures 
+19,400\times faster. Our FluxNet RL agent learns optimal feature weighting
+from a 6D state space derived from topological, physics-based, and
+spiking neural network features.
+\end{abstract}
+
+\section{Introduction}
+% 1. Nipah virus threat (>70% fatality, no drugs)
+% 2. Cryptic epitopes as therapeutic targets
+% 3. EVEscape's limitations (sparse class 4 coverage)
+% 4. Our contribution: neuromorphic + RL for cryptic sites
+
+\section{Methods}
+% 2.1 NiV-Bench Dataset
+% 2.2 PRISM>4D Architecture (47 CUDA kernels, 140-dim features)
+% 2.3 FluxNet RL (6D state space, Q-learning)
+% 2.4 Evaluation Metrics
+
+\section{Results}
+% 3.1 Cryptic Site Detection (Task 1)
+% 3.2 Epitope Prediction (Task 2)
+% 3.3 ΔΔG Prediction (Task 3)
+% 3.4 Speed Benchmark (Task 4)
+% 3.5 Ablation Studies
+
+\section{Discussion}
+% 4.1 Why neuromorphic features matter
+% 4.2 Clinical implications for Nipah therapeutics
+% 4.3 Limitations and future work
+
+\section{Conclusion}
+
+\end{document}

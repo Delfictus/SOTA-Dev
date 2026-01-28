@@ -1,0 +1,88 @@
+{
+  "dataset_name": "Combined_Calibration_Set",
+  "version": "1.0.0",
+  "description": "Combined calibration set with non-spike proteins (IL-2, PTP1B, KRAS) and spike proteins for comprehensive physics parameter training",
+  "targets": [
+    {
+      "name": "IL2_apo",
+      "family": "cytokine",
+      "description": "Human Interleukin-2 (apo form) - classic cryptic groove target",
+      "apo_pdb": "data/calibration/non_spike/1M47.pdb",
+      "holo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "target_residues": [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+      "core_residues": [15, 16, 17, 18, 19, 20, 85, 86, 87, 88, 89, 90],
+      "difficulty": "medium",
+      "expected_sasa_gain": 125.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "IL2_holo",
+      "family": "cytokine",
+      "description": "Human IL-2 with small molecule inhibitor - cryptic groove exposed",
+      "apo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "holo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "target_residues": [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+      "core_residues": [15, 16, 17, 18, 19, 20, 85, 86, 87, 88, 89, 90],
+      "difficulty": "easy",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "PTP1B_apo",
+      "family": "phosphatase",
+      "description": "Human Protein Tyrosine Phosphatase 1B (apo form) - allosteric site closed",
+      "apo_pdb": "data/calibration/non_spike/2HNP.pdb",
+      "holo_pdb": "data/calibration/non_spike/1T49.pdb",
+      "target_residues": [280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
+      "core_residues": [45, 46, 47, 48, 49, 50, 215, 216, 217, 218, 219, 220],
+      "difficulty": "hard",
+      "expected_sasa_gain": 180.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "KRAS_G12C_SWIIP",
+      "family": "gtpase",
+      "description": "KRAS G12C mutant with Switch II pocket binder (holo form)",
+      "apo_pdb": "data/calibration/non_spike/5V71.pdb",
+      "holo_pdb": "data/calibration/non_spike/5V71.pdb",
+      "target_residues": [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72],
+      "core_residues": [10, 11, 12, 13, 14, 15, 117, 118, 119, 120, 121, 122],
+      "difficulty": "easy",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "Spike_Closed",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 spike ectodomain CLOSED state - all RBDs down",
+      "apo_pdb": "data/calibration/spike/6VXX_prepared.pdb",
+      "holo_pdb": "data/calibration/spike/6VYB_prepared.pdb",
+      "target_residues": [417, 453, 455, 456, 473, 475, 476, 477, 484, 486, 487, 489, 493, 496, 498, 500, 501, 502, 505],
+      "core_residues": [330, 331, 332, 333, 334, 335, 360, 361, 362, 363, 364, 365],
+      "difficulty": "hard",
+      "expected_sasa_gain": 450.0,
+      "is_multimer": true,
+      "has_glycans": true,
+      "glycan_residues": [61, 122, 165, 234, 282, 331, 343, 603, 616, 657, 709, 717, 801, 1074],
+      "mechanism": "glycan_shield"
+    }
+  ],
+  "feature_config": {
+    "neighbor_cutoff": 8.0,
+    "contact_cutoff": 6.0,
+    "include_global": true,
+    "include_target_neighborhood": true,
+    "include_stability": true,
+    "include_family_flags": true,
+    "include_temporal": true,
+    "include_difficulty": true,
+    "include_glycan_awareness": true,
+    "include_mechanism": true,
+    "include_bio_chemistry": true,
+    "use_gpu_features": true
+  }
+}

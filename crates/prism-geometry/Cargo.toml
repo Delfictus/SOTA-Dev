@@ -1,0 +1,40 @@
+[package]
+name = "prism-geometry"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+
+# GPU acceleration
+cudarc = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# Serialization for telemetry
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# NVML for GPU metrics
+nvml-wrapper = "0.9"
+
+[dependencies.rand]
+workspace = true
+
+[dependencies.rand_chacha]
+workspace = true
+
+[dev-dependencies]
+env_logger = { workspace = true }
+rand = { workspace = true }
+
+[features]
+cuda = []

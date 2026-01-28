@@ -1,0 +1,57 @@
+[package]
+name = "prism-gnn"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Core dependencies
+prism-core = { workspace = true }
+prism-gpu = { workspace = true }
+
+# Async & error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Graph processing
+petgraph = { workspace = true }
+
+# Math & scientific
+nalgebra = { workspace = true }
+ndarray = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# Utilities
+dashmap = { workspace = true }
+ordered-float = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# GPU
+cudarc = { workspace = true, optional = true }
+
+# ONNX Runtime for production GNN inference with CUDA support
+ort = { workspace = true, optional = true }
+
+[features]
+default = []
+cuda = ["cudarc", "prism-gpu/cuda", "ort"]
+onnx = ["ort"]
+tensorrt = ["ort/tensorrt"]
+
+[dev-dependencies]
+criterion = "0.5"
+approx = "0.5"

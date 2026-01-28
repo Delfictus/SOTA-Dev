@@ -1,0 +1,85 @@
+[package]
+name = "prism"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PRISM-Fold: World-class GPU-accelerated graph coloring and molecular analysis"
+
+[[bin]]
+name = "prism"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+prism-pipeline = { workspace = true, features = ["cuda"] }
+prism-fluxnet = { workspace = true }
+prism-phases = { workspace = true, features = ["cuda"] }
+prism-gpu = { workspace = true, features = ["cuda"] }
+prism-gnn = { workspace = true }
+prism-lbs = { workspace = true }
+prism-mec = { workspace = true }
+
+# TUI Framework
+ratatui = { version = "0.28", features = ["all-widgets"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Metrics Server (HTTP)
+axum = { workspace = true }
+prometheus = { workspace = true }
+
+# Graph processing (for GNN)
+petgraph = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Concurrent data structures
+parking_lot = "0.12"
+
+# CLI argument parsing (for initial args before TUI)
+clap = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Time and formatting
+chrono = { workspace = true }
+humantime = "2.1"
+
+# Unicode and styling
+unicode-width = "0.1"
+textwrap = "0.16"
+
+# Configuration
+directories = "5.0"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "dimacs"
+harness = false
+
+[[test]]
+name = "pipeline_e2e"
+path = "../../tests/integration/pipeline_e2e.rs"
+
+[features]
+default = ["cuda"]
+cuda = []

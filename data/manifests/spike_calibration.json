@@ -1,0 +1,96 @@
+{
+  "dataset_name": "Spike_Calibration_Set",
+  "version": "1.0.0",
+  "description": "SARS-CoV-2 spike protein structures for calibrating large viral glycoprotein simulations",
+  "targets": [
+    {
+      "name": "Spike_Closed",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 spike glycoprotein ectodomain in CLOSED state - all RBDs down",
+      "apo_pdb": "data/calibration/spike/6VXX.pdb",
+      "holo_pdb": "data/calibration/spike/6VYB.pdb",
+      "target_residues": [369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385],
+      "core_residues": [330, 331, 332, 333, 334, 335, 520, 521, 522, 523, 524, 525, 570, 571, 572, 573],
+      "difficulty": "hard",
+      "expected_sasa_gain": 150.0,
+      "is_multimer": true,
+      "has_glycans": true
+    },
+    {
+      "name": "Spike_Open",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 spike glycoprotein ectodomain in OPEN state - one RBD up",
+      "apo_pdb": "data/calibration/spike/6VYB.pdb",
+      "holo_pdb": "data/calibration/spike/6VYB.pdb",
+      "target_residues": [369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385],
+      "core_residues": [330, 331, 332, 333, 334, 335, 520, 521, 522, 523, 524, 525, 570, 571, 572, 573],
+      "difficulty": "medium",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": true,
+      "has_glycans": true
+    },
+    {
+      "name": "Spike_S309_Ab",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 spike with S309 neutralizing antibody Fab (cryptic epitope exposed)",
+      "apo_pdb": "data/calibration/spike/6WPT.pdb",
+      "holo_pdb": "data/calibration/spike/6WPT.pdb",
+      "target_residues": [333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345],
+      "core_residues": [400, 401, 402, 403, 404, 405, 500, 501, 502, 503, 504, 505],
+      "difficulty": "easy",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": true,
+      "has_glycans": true
+    },
+    {
+      "name": "RBD_Neutralizing",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 RBD fragment with REGN10933/10987 neutralizing antibody cocktail",
+      "apo_pdb": "data/calibration/spike/6XDG.pdb",
+      "holo_pdb": "data/calibration/spike/6XDG.pdb",
+      "target_residues": [417, 453, 455, 456, 475, 476, 477, 478, 484, 485, 486, 487, 489, 493],
+      "core_residues": [350, 351, 352, 353, 354, 355, 450, 451, 452, 453, 454, 455],
+      "difficulty": "medium",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": false,
+      "has_glycans": false
+    }
+  ],
+  "training_parameters": {
+    "learning_rate": 0.0001,
+    "batch_size": 32,
+    "gamma": 0.99,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.05,
+    "epsilon_decay": 0.995,
+    "reward_weighting": {
+      "exposure_weight": 10.0,
+      "rmsd_weight": 7.5,
+      "stability_threshold": 3.5,
+      "target_bonus": 50.0,
+      "clash_penalty": 1.5,
+      "clash_distance": 1.5
+    }
+  },
+  "physics_parameter_ranges": {
+    "temperature": [0.5, 3.0],
+    "friction": [0.05, 0.5],
+    "spring_k": [1.0, 15.0],
+    "bias_strength": [0.0, 2.0]
+  },
+  "macro_step_config": {
+    "num_macro_steps": 10,
+    "steps_per_macro": 200000,
+    "allow_action_change": true,
+    "macro_gamma": 0.95
+  },
+  "feature_config": {
+    "neighbor_cutoff": 8.0,
+    "contact_cutoff": 6.0,
+    "include_global": true,
+    "include_target_neighborhood": true,
+    "include_stability": true,
+    "include_family_flags": true,
+    "include_temporal": true
+  }
+}

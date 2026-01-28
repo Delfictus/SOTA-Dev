@@ -1,0 +1,159 @@
+[workspace]
+resolver = "2"
+members = [
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PRISM Unified Entry Point
+    # ═══════════════════════════════════════════════════════════════════════════
+    "crates/prism",  # World-class TUI with AI dialogue interface
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Core Compute Crates
+    # ═══════════════════════════════════════════════════════════════════════════
+    "crates/prism-core",
+    "crates/prism-gpu",
+    "crates/prism-io",      # Revolutionary I/O with holographic format & async streaming
+    "crates/prism-geometry",
+    "crates/prism-fluxnet",
+    "crates/prism-phases",
+    "crates/prism-whcr",
+    "crates/prism-pipeline",
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Specialized Compute Crates
+    # ═══════════════════════════════════════════════════════════════════════════
+    "crates/prism-ontology",
+    "crates/prism-mec",
+    "crates/prism-physics",
+    "crates/prism-ve",  # Viral Evolution: Unified Escape + Fitness + Cycle
+    "crates/prism-ve-bench",  # VASIL Benchmark: GPU + FluxNet RL
+    "crates/prism-niv-bench",  # NiV-Bench: Neuromorphic Cryptic Epitope Prediction
+    "crates/prism-learning",  # PRISM-Zero v3.1: Self-calibrating RL engine with swappable datasets
+    "crates/prism-gnn",
+    "crates/prism-lbs",
+    "crates/prism-escape-extract",  # Real feature extraction for viral escape benchmark
+    "crates/prism-validation",      # Multi-tier validation: ATLAS, Apo-Holo, Retrospective
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Neuromorphic Holographic Stream (NHS) - Revolutionary Cryptic Site Detection
+    # ═══════════════════════════════════════════════════════════════════════════
+    "crates/prism-nhs",             # NHS: 30,000× faster than explicit solvent with UV bias
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Correlation and Evidence-Pack Generator
+    # ═══════════════════════════════════════════════════════════════════════════
+    "crates/prism-report",          # Site-level correlation + decision artifacts
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Foundation Crates (Production-grade GPU Implementations) - DISABLED: missing dirs
+    # ═══════════════════════════════════════════════════════════════════════════
+    # "foundation/shared-types",
+    # "foundation/prct-core",
+    # "foundation/quantum",
+    # "foundation/neuromorphic",
+]
+
+# Default package for `cargo run` - the unified TUI
+default-members = ["crates/prism-ve-bench"]
+
+# prism-cli has been fully deprecated and migrated to crates/prism
+# All config and metrics_server functionality is now in the unified TUI
+exclude = ["crates/prism-cli"]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+authors = ["PRISM-AI Research Team"]
+license = "MIT"
+repository = "https://github.com/prism-ai/prism"
+
+[workspace.dependencies]
+# Core error handling and async
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+toml = "0.8"
+
+# GPU acceleration - 0.18.2 with stream support
+cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"] }
+
+# ONNX Runtime for GNN inference
+ort = { version = "2.0.0-rc.10", features = ["cuda"] }
+
+# Math and scientific computing
+ndarray = "0.15"
+nalgebra = "0.32"
+rand = "0.8"
+rand_distr = "0.4"
+rand_chacha = "0.3"
+statrs = "0.16"
+num-complex = "0.4"
+rustfft = "6.2"
+ordered-float = "4.2"
+
+# Graph algorithms
+petgraph = "0.6"
+
+# Parallelism
+rayon = "1.7"
+crossbeam-utils = "0.8"
+
+# Telemetry and metrics
+prometheus = "0.13"
+axum = "0.7"
+hyper = "1.0"
+log = "0.4"
+env_logger = "0.10"
+
+# Database for telemetry
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+colored = "2.1"
+indicatif = "0.17"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+dashmap = "6.0"
+parking_lot = "0.12"
+lazy_static = "1.4"
+
+# Cryptography (for PTX signing)
+sha2 = "0.10"
+hex = "0.4"
+
+# Inter-crate dependencies (using new paths)
+prism-core = { path = "crates/prism-core" }
+prism-gpu = { path = "crates/prism-gpu" }
+prism-io = { path = "crates/prism-io" }
+prism-geometry = { path = "crates/prism-geometry" }
+prism-fluxnet = { path = "crates/prism-fluxnet" }
+prism-phases = { path = "crates/prism-phases" }
+prism-whcr = { path = "crates/prism-whcr" }
+prism-pipeline = { path = "crates/prism-pipeline" }
+prism-ontology = { path = "crates/prism-ontology" }
+prism-mec = { path = "crates/prism-mec" }
+prism-physics = { path = "crates/prism-physics" }
+prism-gnn = { path = "crates/prism-gnn" }
+prism-lbs = { path = "crates/prism-lbs" }
+prism-nhs = { path = "crates/prism-nhs" }
+prism-report = { path = "crates/prism-report" }
+# shared-types = { path = "foundation/shared-types" }  # DISABLED: missing dir
+# prct-core = { path = "foundation/prct-core" }  # DISABLED: missing dir
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug = true

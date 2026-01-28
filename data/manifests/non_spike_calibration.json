@@ -1,0 +1,135 @@
+{
+  "dataset_name": "Non_Spike_Calibration_Set",
+  "version": "1.0.0",
+  "description": "Non-viral protein targets for physics parameter calibration - cytokines, phosphatases, and GTPases with known cryptic pockets",
+  "targets": [
+    {
+      "name": "IL2_apo",
+      "family": "cytokine",
+      "description": "Human Interleukin-2 (apo form) - classic cryptic groove target",
+      "apo_pdb": "data/calibration/non_spike/1M47.pdb",
+      "holo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "target_residues": [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+      "core_residues": [15, 16, 17, 18, 19, 20, 85, 86, 87, 88, 89, 90],
+      "difficulty": "medium",
+      "expected_sasa_gain": 125.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "IL2_holo",
+      "family": "cytokine",
+      "description": "Human IL-2 complexed with small molecule inhibitor (holo form) - cryptic groove exposed",
+      "apo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "holo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "target_residues": [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+      "core_residues": [15, 16, 17, 18, 19, 20, 85, 86, 87, 88, 89, 90],
+      "difficulty": "easy",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "PTP1B_apo",
+      "family": "phosphatase",
+      "description": "Human Protein Tyrosine Phosphatase 1B (apo form) - allosteric site closed",
+      "apo_pdb": "data/calibration/non_spike/2HNP.pdb",
+      "holo_pdb": "data/calibration/non_spike/1T49.pdb",
+      "target_residues": [280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
+      "core_residues": [45, 46, 47, 48, 49, 50, 215, 216, 217, 218, 219, 220],
+      "difficulty": "hard",
+      "expected_sasa_gain": 180.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "PTP1B_holo",
+      "family": "phosphatase",
+      "description": "Human PTP1B with allosteric inhibitor bound - allosteric site exposed",
+      "apo_pdb": "data/calibration/non_spike/1T49.pdb",
+      "holo_pdb": "data/calibration/non_spike/1T49.pdb",
+      "target_residues": [280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
+      "core_residues": [45, 46, 47, 48, 49, 50, 215, 216, 217, 218, 219, 220],
+      "difficulty": "medium",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "KRAS_SOS_pocket",
+      "family": "gtpase",
+      "description": "KRAS with SOS-inhibiting ligand bound to distinct pocket",
+      "apo_pdb": "data/calibration/non_spike/4DSO.pdb",
+      "holo_pdb": "data/calibration/non_spike/4DSO.pdb",
+      "target_residues": [12, 13, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70],
+      "core_residues": [10, 11, 14, 15, 117, 118, 119, 120, 121, 122],
+      "difficulty": "hard",
+      "expected_sasa_gain": 95.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "KRAS_GDP_apo",
+      "family": "gtpase",
+      "description": "KRAS wild-type GDP-bound (apo form) - Switch II pocket closed",
+      "apo_pdb": "data/calibration/non_spike/4LPK.pdb",
+      "holo_pdb": "data/calibration/non_spike/5V71.pdb",
+      "target_residues": [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72],
+      "core_residues": [10, 11, 12, 13, 14, 15, 117, 118, 119, 120, 121, 122],
+      "difficulty": "medium",
+      "expected_sasa_gain": 110.0,
+      "is_multimer": false,
+      "has_glycans": false
+    },
+    {
+      "name": "KRAS_G12C_SWIIP",
+      "family": "gtpase",
+      "description": "KRAS G12C mutant with quinazoline Switch II pocket binder (holo form)",
+      "apo_pdb": "data/calibration/non_spike/5V71.pdb",
+      "holo_pdb": "data/calibration/non_spike/5V71.pdb",
+      "target_residues": [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72],
+      "core_residues": [10, 11, 12, 13, 14, 15, 117, 118, 119, 120, 121, 122],
+      "difficulty": "easy",
+      "expected_sasa_gain": 0.0,
+      "is_multimer": false,
+      "has_glycans": false
+    }
+  ],
+  "training_parameters": {
+    "learning_rate": 0.0001,
+    "batch_size": 32,
+    "gamma": 0.99,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.05,
+    "epsilon_decay": 0.995,
+    "reward_weighting": {
+      "exposure_weight": 10.0,
+      "rmsd_weight": 5.0,
+      "stability_threshold": 2.5,
+      "target_bonus": 50.0,
+      "clash_penalty": 1.0,
+      "clash_distance": 1.5
+    }
+  },
+  "physics_parameter_ranges": {
+    "temperature": [0.1, 5.0],
+    "friction": [0.01, 1.0],
+    "spring_k": [0.1, 10.0],
+    "bias_strength": [0.0, 2.0]
+  },
+  "macro_step_config": {
+    "num_macro_steps": 10,
+    "steps_per_macro": 100000,
+    "allow_action_change": true,
+    "macro_gamma": 0.95
+  },
+  "feature_config": {
+    "neighbor_cutoff": 8.0,
+    "contact_cutoff": 6.0,
+    "include_global": true,
+    "include_target_neighborhood": true,
+    "include_stability": true,
+    "include_family_flags": true,
+    "include_temporal": true
+  }
+}

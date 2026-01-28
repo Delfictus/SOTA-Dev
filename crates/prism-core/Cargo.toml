@@ -1,0 +1,45 @@
+[package]
+name = "prism-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+log = { workspace = true }
+
+# GPU support (optional)
+cudarc = { workspace = true, optional = true }
+
+# PRISM-Zero Flight Recorder (PZFR) Dependencies
+crossbeam-queue = "0.3"        # Lock-free ring buffer for telemetry
+arrow = { version = "53.0", optional = true }    # Zero-copy columnar data format (optional for future exports)
+ratatui = { version = "0.26", optional = true }  # Hacker-style terminal dashboard
+crossterm = { version = "0.27", optional = true } # Terminal control for TUI
+
+[[bin]]
+name = "prism-monitor"
+path = "src/bin/prism-monitor.rs"
+required-features = ["telemetry"]
+
+[[bin]]
+name = "first-light-test"
+path = "src/bin/first-light-test.rs"
+
+[features]
+default = []
+cuda = ["cudarc"]
+telemetry = ["ratatui", "crossterm"]  # Flight recorder dashboard feature
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = "3.8"

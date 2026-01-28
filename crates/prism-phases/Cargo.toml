@@ -1,0 +1,43 @@
+[package]
+name = "prism-phases"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+prism-gpu = { workspace = true }
+prism-geometry = { workspace = true }
+prism-fluxnet = { workspace = true }
+prism-whcr = { workspace = true }
+
+# GPU acceleration
+cudarc = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Random number generation (for memetic algorithm)
+rand = { workspace = true }
+
+# Synchronization primitives
+parking_lot = "0.12"
+
+[features]
+# CUDA GPU acceleration
+cuda = ["prism-gpu/cuda"]
+
+[dev-dependencies]
+# Testing utilities
+env_logger = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }

@@ -1,0 +1,863 @@
+#!/usr/bin/env python3
+"""
+PRISM4D Stage 2: Topology Preparation
+
+Takes a sanitized PDB from Stage 1 and creates AMBER ff14SB topology:
+1. Adds hydrogens at physiological pH (7.0)
+2. Applies AMBER ff14SB force field
+3. Energy minimizes to remove clashes
+4. Extracts all force field parameters
+5. Detects aromatic residues for UV pump targeting
+6. Exports topology JSON for PRISM GPU kernels
+
+Usage:
+    python stage2_topology.py sanitized.pdb topology.json
+    python stage2_topology.py sanitized.pdb topology.json --solvate
+    python stage2_topology.py sanitized.pdb topology.json --no-minimize
+
+Dependencies:
+    conda install -c conda-forge openmm
+"""
+
+import sys
+import json
+import argparse
+from pathlib import Path
+from collections import defaultdict
+
+try:
+    from openmm import app, unit
+    from openmm import *
+except ImportError:
+    print("ERROR: OpenMM not found.")
+    print("Install with: conda install -c conda-forge openmm")
+    sys.exit(1)
+
+
+# mbondi3 radii for GB implicit solvent (optimized for GBn2)
+# Reference: Nguyen, Roe, Simmerling, JCTC 2013
+MBONDI3_RADII = {
+    # Hydrogens - context dependent
+    'H': 1.2,       # Default H
+    'HC': 1.3,      # H on C
+    'H1': 1.3,      # Aliphatic H
+    'H2': 1.3,
+    'H3': 1.3,
+    'HA': 1.3,      # Aromatic H
+    'HO': 0.8,      # H on O (hydroxyl)
+    'HW': 0.8,      # Water H
+    'HP': 1.3,      # H on peptide N
+    'HN': 1.3,      # Amide H
+    'HS': 1.2,      # H on S
+    'HZ': 1.3,      # H on Lys NZ
+
+    # Carbons
+    'C': 1.7,       # Carbonyl C
+    'CA': 1.7,      # Alpha C
+    'CB': 1.7,      # Beta C
+    'CT': 1.7,      # Aliphatic C
+    'CC': 1.7,      # Aromatic C in His
+    'CW': 1.7,
+    'CV': 1.7,
+    'CR': 1.7,
+    'CK': 1.7,
+    'CQ': 1.7,
+    'CM': 1.7,
+    'CN': 1.7,
+    'CX': 1.7,
+    'CY': 1.7,
+    'CZ': 1.7,
+    'C*': 1.7,
+    'C0': 1.7,      # Calcium
+
+    # Nitrogens
+    'N': 1.55,      # Amide N
+    'NA': 1.55,     # Aromatic N with H
+    'NB': 1.55,     # Aromatic N without H
+    'NC': 1.55,
+    'N2': 1.55,     # Guanidinium N
+    'N3': 1.55,     # Charged N (Lys)
+    'NT': 1.55,     # Terminal N
+    'N*': 1.55,
+
+    # Oxygens
+    'O': 1.5,       # Carbonyl O
+    'O2': 1.5,      # Carboxyl O
+    'OH': 1.5,      # Hydroxyl O
+    'OS': 1.5,      # Ether O
+    'OW': 1.5,      # Water O
+    'OP': 1.5,      # Phosphate O
+
+    # Sulfurs
+    'S': 1.8,       # Thiol S
+    'SH': 1.8,      # Thiol S with H
+    'SS': 1.8,      # Disulfide S
+
+    # Phosphorus
+    'P': 1.85,
+
+    # Halogens
+    'F': 1.5,
+    'Cl': 1.7,
+    'Br': 1.85,
+    'I': 1.98,
+
+    # Metals
+    'Zn': 1.1,
+    'Fe': 1.3,
+    'Mg': 1.18,
+    'Ca': 1.37,
+    'Na': 1.87,
+    'K': 2.43,
+}
+
+# Element-based fallback radii
+ELEMENT_RADII = {
+    'H': 1.2,
+    'C': 1.7,
+    'N': 1.55,
+    'O': 1.5,
+    'S': 1.8,
+    'P': 1.85,
+    'F': 1.5,
+    'Cl': 1.7,
+    'Br': 1.85,
+    'I': 1.98,
+    'Zn': 1.1,
+    'Fe': 1.3,
+    'Mg': 1.18,
+    'Ca': 1.37,
+    'Na': 1.87,
+    'K': 2.43,
+}
+
+
+# =============================================================================
+# AROMATIC RING DETECTION FOR UV PUMP TARGETING
+# =============================================================================
+
+# Ring atom names for aromatic residues
+AROMATIC_RING_ATOMS = {
+    'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],  # 6-membered ring
+    'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],  # 6-membered ring
+    'TRP': ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],  # Fused 5+6 rings
+}
+
+# UV absorption properties at 280nm
+AROMATIC_EXTINCTION_280 = {
+    'TRP': 5500.0,  # Tryptophan: highest absorber
+    'TYR': 1490.0,  # Tyrosine: moderate
+    'PHE': 200.0,   # Phenylalanine: weak (but counts contribute)
+}
+
+
+def detect_aromatic_targets(atom_names, residue_names, residue_ids, positions, verbose=False):
+    """
+    Detect aromatic residues and their ring atoms for UV pump targeting.
+
+    Returns a list of aromatic targets, each containing:
+    - residue_idx: residue index
+    - residue_name: TRP, TYR, or PHE
+    - residue_id: PDB residue number
+    - ring_atom_indices: list of atom indices forming the aromatic ring
+    - ring_center: [x, y, z] center of the ring
+    - extinction_280: UV absorption coefficient at 280nm
+
+    This is pre-computed at prep time so nhs-adaptive doesn't need to scan
+    residue names at runtime.
+    """
+    aromatic_targets = []
+
+    # Group atoms by residue
+    residue_atoms = defaultdict(list)
+    for i, (name, res_name, res_id) in enumerate(zip(atom_names, residue_names, residue_ids)):
+        residue_atoms[(res_id, res_name)].append((i, name))
+
+    # Find aromatics
+    for (res_id, res_name), atoms in residue_atoms.items():
+        if res_name not in AROMATIC_RING_ATOMS:
+            continue
+
+        ring_names = AROMATIC_RING_ATOMS[res_name]
+        ring_atom_indices = []
+
+        # Find ring atom indices
+        for atom_idx, atom_name in atoms:
+            if atom_name in ring_names:
+                ring_atom_indices.append(atom_idx)
+
+        # Only include if we found enough ring atoms
+        min_ring_atoms = 5 if res_name == 'TRP' else 4
+        if len(ring_atom_indices) >= min_ring_atoms:
+            # Compute ring center
+            ring_center = [0.0, 0.0, 0.0]
+            for idx in ring_atom_indices:
+                ring_center[0] += positions[idx * 3]
+                ring_center[1] += positions[idx * 3 + 1]
+                ring_center[2] += positions[idx * 3 + 2]
+            n = len(ring_atom_indices)
+            ring_center = [c / n for c in ring_center]
+
+            # Get residue index (unique sequential)
+            residue_idx = len(aromatic_targets)
+
+            aromatic_targets.append({
+                'residue_idx': residue_idx,
+                'residue_name': res_name,
+                'residue_id': res_id,
+                'ring_atom_indices': ring_atom_indices,
+                'ring_center': ring_center,
+                'extinction_280': AROMATIC_EXTINCTION_280[res_name],
+            })
+
+    if verbose and aromatic_targets:
+        trp = sum(1 for t in aromatic_targets if t['residue_name'] == 'TRP')
+        tyr = sum(1 for t in aromatic_targets if t['residue_name'] == 'TYR')
+        phe = sum(1 for t in aromatic_targets if t['residue_name'] == 'PHE')
+        print(f"Aromatic targets: {len(aromatic_targets)} (TRP={trp}, TYR={tyr}, PHE={phe})")
+
+    return aromatic_targets
+
+
+def get_mbondi3_radius(element: str, atom_name: str, residue_name: str) -> float:
+    """
+    Get mbondi3 radius for an atom based on element, name, and residue context.
+
+    Returns radius in Angstroms for GB implicit solvent calculations.
+    """
+    # Special cases for hydrogens based on what they're bonded to
+    if element == 'H':
+        # Hydroxyl hydrogens (Ser, Thr, Tyr OH)
+        if atom_name in ('HG', 'HG1', 'HH', 'HE'):
+            if residue_name in ('SER', 'THR', 'TYR'):
+                return 0.8
+        # Water hydrogens
+        if residue_name in ('HOH', 'WAT', 'TIP3'):
+            return 0.8
+        # Thiol hydrogen (Cys)
+        if atom_name == 'HG' and residue_name == 'CYS':
+            return 1.2
+        # Default peptide/aliphatic H
+        return 1.3
+
+    # Try atom type first
+    if atom_name in MBONDI3_RADII:
+        return MBONDI3_RADII[atom_name]
+
+    # Try first two characters (for atom types like CA, CB, etc.)
+    if len(atom_name) >= 2 and atom_name[:2] in MBONDI3_RADII:
+        return MBONDI3_RADII[atom_name[:2]]
+
+    # Fallback to element
+    if element in ELEMENT_RADII:
+        return ELEMENT_RADII[element]
+
+    # Ultimate fallback
+    return 1.5
+
+
+def add_terminal_caps(modeller, forcefield, verbose=False):
+    """
+    Add ACE (N-terminal) and NME (C-terminal) caps to all protein chains.
+
+    NOTE: This function is currently disabled because PDBFixer's missingResidues
+    mechanism doesn't support adding terminal caps. The sanitized structures
+    already have proper terminal atoms (OXT for C-terminus, standard N for N-terminus)
+    which OpenMM handles correctly with standard charged terminal patches.
+
+    For most proteins (>50 residues), the charged termini have negligible effect
+    on the interior structure. ACE/NME caps are mainly important for small peptides.
+
+    Returns: (n_ace_added, n_nme_added) - always (0, 0) since capping is disabled
+    """
+    # Terminal capping is disabled - use standard charged termini
+    # The sanitized structures already have proper terminal atoms (OXT)
+    # which work correctly with AMBER ff14SB
+    if verbose:
+        print("  Note: Using standard charged termini (not ACE/NME caps)")
+    return 0, 0
+
+
+def assign_histidine_tautomers(topology):
+    """
+    Determine histidine tautomer based on hydrogen atoms present.
+
+    Returns dict mapping residue index to tautomer name (HID/HIE/HIP).
+    Also updates residue names in topology.
+
+    Tautomers:
+    - HID: delta nitrogen protonated (HD1 present on ND1)
+    - HIE: epsilon nitrogen protonated (HE2 present on NE2)
+    - HIP: doubly protonated (both HD1 and HE2 present)
+    """
+    his_tautomers = {}
+
+    for residue in topology.residues():
+        if residue.name != 'HIS':
+            continue
+
+        # Check which hydrogens are present
+        has_hd1 = False  # H on ND1 (delta nitrogen)
+        has_he2 = False  # H on NE2 (epsilon nitrogen)
+
+        for atom in residue.atoms():
+            if atom.name == 'HD1':
+                has_hd1 = True
+            elif atom.name == 'HE2':
+                has_he2 = True
+
+        # Determine tautomer
+        if has_hd1 and has_he2:
+            tautomer = 'HIP'  # Doubly protonated (+1 charge)
+        elif has_hd1:
+            tautomer = 'HID'  # Delta protonated
+        elif has_he2:
+            tautomer = 'HIE'  # Epsilon protonated
+        else:
+            tautomer = 'HID'  # Default to HID if unclear
+
+        his_tautomers[residue.index] = tautomer
+        # Note: OpenMM topology residue names are read-only after creation,
+        # but we track the tautomer for the output JSON
+
+    return his_tautomers
+
+
+def prepare_topology(
+    pdb_path: str,
+    output_path: str,
+    solvate: bool = False,
+    minimize: bool = True,
+    cap_termini: bool = True,
+    ph: float = 7.0,
+    hmr: bool = False,
+    verbose: bool = True
+) -> dict:
+    """
+    Prepare AMBER ff14SB topology from sanitized PDB.
+
+    Returns topology dict ready for PRISM GPU kernels.
+    """
+    if verbose:
+        print(f"Loading {pdb_path}...")
+
+    pdb = app.PDBFile(pdb_path)
+    modeller = app.Modeller(pdb.topology, pdb.positions)
+
+    # Use AMBER ff14SB force field
+    forcefield = app.ForceField('amber14-all.xml', 'amber14/tip3pfb.xml')
+
+    # Check if structure already has hydrogens
+    has_hydrogens = any(atom.element.symbol == 'H' for atom in modeller.topology.atoms())
+
+    # Always add hydrogens to ensure template compatibility
+    # OpenMM's addHydrogens will fix any missing or misnamed hydrogens
+    if verbose:
+        if has_hydrogens:
+            print(f"Re-adding hydrogens at pH {ph} (ensuring template compatibility)...")
+        else:
+            print(f"Adding hydrogens at pH {ph}...")
+
+    # Remove existing hydrogens first to avoid conflicts
+    toDelete = [atom for atom in modeller.topology.atoms() if atom.element.symbol == 'H']
+    modeller.delete(toDelete)
+
+    # Add terminal caps (ACE/NME) if requested
+    if cap_termini:
+        if verbose:
+            print("Adding terminal caps (ACE/NME)...")
+        n_caps, c_caps = add_terminal_caps(modeller, forcefield, verbose)
+        if verbose:
+            print(f"  Added {n_caps} ACE (N-term) and {c_caps} NME (C-term) caps")
+
+    # Add hydrogens with correct naming for force field templates
+    modeller.addHydrogens(forcefield, pH=ph)
+
+    # Assign proper histidine tautomer names based on protonation
+    # HID = delta protonated (HD1 on ND1)
+    # HIE = epsilon protonated (HE2 on NE2)
+    # HIP = doubly protonated (both HD1 and HE2)
+    his_tautomers = assign_histidine_tautomers(modeller.topology)
+    if verbose and his_tautomers:
+        hid = sum(1 for t in his_tautomers.values() if t == 'HID')
+        hie = sum(1 for t in his_tautomers.values() if t == 'HIE')
+        hip = sum(1 for t in his_tautomers.values() if t == 'HIP')
+        print(f"  Histidine tautomers: {hid} HID, {hie} HIE, {hip} HIP")
+
+    # Add solvent if requested
+    if solvate:
+        if verbose:
+            print("Adding solvent (TIP3P water + 0.15 M ions)...")
+        modeller.addSolvent(
+            forcefield,
+            model='tip3p',
+            padding=1.0 * unit.nanometer,
+            ionicStrength=0.15 * unit.molar
+        )
+
+    # Create system
+    if verbose:
+        print("Creating AMBER ff14SB system...")
+
+    if solvate:
+        system = forcefield.createSystem(
+            modeller.topology,
+            nonbondedMethod=app.PME,
+            nonbondedCutoff=1.0 * unit.nanometer,
+            constraints=None,  # We handle constraints ourselves
+            rigidWater=False,
+        )
+    else:
+        system = forcefield.createSystem(
+            modeller.topology,
+            nonbondedMethod=app.NoCutoff,
+            constraints=None,
+            rigidWater=False,
+        )
+
+    topology = modeller.topology
+    positions = modeller.positions
+    n_atoms = topology.getNumAtoms()
+
+    if verbose:
+        print(f"System has {n_atoms} atoms")
+
+    # Energy minimize if requested
+    if minimize:
+        if verbose:
+            print("Running energy minimization...")
+
+        integrator = LangevinMiddleIntegrator(
+            300 * unit.kelvin,
+            1 / unit.picosecond,
+            0.002 * unit.picosecond
+        )
+        simulation = app.Simulation(topology, system, integrator)
+        simulation.context.setPositions(positions)
+
+        # Get initial energy
+        state = simulation.context.getState(getEnergy=True)
+        pe_before = state.getPotentialEnergy().value_in_unit(unit.kilocalorie_per_mole)
+        if verbose:
+            print(f"  Initial PE: {pe_before:.1f} kcal/mol")
+
+        # Minimize
+        simulation.minimizeEnergy(maxIterations=1000)
+
+        # Get final energy and positions
+        state = simulation.context.getState(getEnergy=True, getPositions=True)
+        pe_after = state.getPotentialEnergy().value_in_unit(unit.kilocalorie_per_mole)
+        positions = state.getPositions()
+
+        if verbose:
+            print(f"  Final PE: {pe_after:.1f} kcal/mol (delta: {pe_after - pe_before:.1f})")
+
+    # Extract atom properties
+    if verbose:
+        print("Extracting atom properties...")
+
+    masses = []
+    elements = []
+    atom_names = []
+    residue_names = []
+    residue_ids = []
+    chain_ids = []
+    gb_radii = []  # mbondi3 radii for implicit solvent
+
+    for atom in topology.atoms():
+        masses.append(atom.element.mass.value_in_unit(unit.dalton))
+        elem = atom.element.symbol
+        elements.append(elem)
+        atom_names.append(atom.name)
+        # Use proper histidine tautomer name if available
+        res_name = atom.residue.name
+        if res_name == 'HIS' and atom.residue.index in his_tautomers:
+            res_name = his_tautomers[atom.residue.index]
+        residue_names.append(res_name)
+        residue_ids.append(atom.residue.index)
+        chain_ids.append(atom.residue.chain.id)
+        # Compute GB radius
+        gb_radii.append(get_mbondi3_radius(elem, atom.name, res_name))
+
+    # Extract positions (convert to Angstroms)
+    pos_flat = []
+    for pos in positions:
+        pos_flat.extend([
+            pos.x * 10,  # nm -> Angstrom
+            pos.y * 10,
+            pos.z * 10,
+        ])
+
+    # Extract force field parameters
+    if verbose:
+        print("Extracting force field parameters...")
+
+    bonds = []
+    angles = []
+    dihedrals = []
+    impropers = []
+    charges = [0.0] * n_atoms
+    lj_params = [{"sigma": 0.0, "epsilon": 0.0} for _ in range(n_atoms)]
+    exclusions = [set() for _ in range(n_atoms)]
+
+    for force in system.getForces():
+        force_name = force.__class__.__name__
+
+        if force_name == "HarmonicBondForce":
+            n_bonds = force.getNumBonds()
+            if verbose:
+                print(f"  Bonds: {n_bonds}")
+            for i in range(n_bonds):
+                p1, p2, r0, k = force.getBondParameters(i)
+                bonds.append({
+                    "i": p1,
+                    "j": p2,
+                    "r0": r0.value_in_unit(unit.angstrom),
+                    "k": k.value_in_unit(unit.kilocalorie_per_mole / unit.angstrom ** 2),
+                })
+                exclusions[p1].add(p2)
+                exclusions[p2].add(p1)
+
+        elif force_name == "HarmonicAngleForce":
+            n_angles = force.getNumAngles()
+            if verbose:
+                print(f"  Angles: {n_angles}")
+            for i in range(n_angles):
+                p1, p2, p3, theta0, k = force.getAngleParameters(i)
+                angles.append({
+                    "i": p1,
+                    "j": p2,
+                    "k_idx": p3,
+                    "theta0": theta0.value_in_unit(unit.radian),
+                    "force_k": k.value_in_unit(unit.kilocalorie_per_mole / unit.radian ** 2),
+                })
+                exclusions[p1].add(p3)
+                exclusions[p3].add(p1)
+
+        elif force_name == "PeriodicTorsionForce":
+            n_torsions = force.getNumTorsions()
+            if verbose:
+                print(f"  Dihedrals: {n_torsions}")
+            for i in range(n_torsions):
+                p1, p2, p3, p4, periodicity, phase, k = force.getTorsionParameters(i)
+                dihedrals.append({
+                    "i": p1,
+                    "j": p2,
+                    "k_idx": p3,
+                    "l": p4,
+                    "periodicity": periodicity,
+                    "phase": phase.value_in_unit(unit.radian),
+                    "force_k": k.value_in_unit(unit.kilocalorie_per_mole),
+                })
+
+        elif force_name == "NonbondedForce":
+            n_particles = force.getNumParticles()
+            if verbose:
+                print(f"  Non-bonded particles: {n_particles}")
+            for i in range(n_particles):
+                charge, sigma, epsilon = force.getParticleParameters(i)
+                charges[i] = charge.value_in_unit(unit.elementary_charge)
+                lj_params[i] = {
+                    "sigma": sigma.value_in_unit(unit.angstrom),
+                    "epsilon": epsilon.value_in_unit(unit.kilocalorie_per_mole),
+                }
+
+            # Extract exceptions (1-4 interactions)
+            n_exceptions = force.getNumExceptions()
+            if verbose:
+                print(f"  Exceptions: {n_exceptions}")
+            for i in range(n_exceptions):
+                p1, p2, chargeProd, sigma, epsilon = force.getExceptionParameters(i)
+                exclusions[p1].add(p2)
+                exclusions[p2].add(p1)
+
+    # Find water oxygens
+    water_oxygens = []
+    for residue in topology.residues():
+        if residue.name in ['HOH', 'WAT', 'TIP3']:
+            for atom in residue.atoms():
+                if atom.element.symbol == 'O':
+                    water_oxygens.append(atom.index)
+
+    if verbose and water_oxygens:
+        print(f"  Water molecules: {len(water_oxygens)}")
+
+    # Apply Hydrogen Mass Repartitioning if requested
+    # This must be done BEFORE h_clusters so inv_mass values are correct
+    hmr_applied = False
+    if hmr:
+        masses = apply_hmr(masses, bonds, elements, verbose=verbose)
+        hmr_applied = True
+
+    # Build H-bond clusters for constraints (uses HMR masses if applied)
+    h_clusters = build_h_clusters(topology, bonds, masses, elements)
+    if verbose:
+        print(f"  H-bond clusters: {len(h_clusters)}")
+
+    # Get box vectors ONLY for explicit solvent (when water is present)
+    # For implicit solvent, box_vectors cause PBC issues and temperature explosions
+    box_vectors = None
+    if solvate and water_oxygens and topology.getPeriodicBoxVectors() is not None:
+        bv = topology.getPeriodicBoxVectors()
+        bv_angstrom = [
+            bv[0][0].value_in_unit(unit.angstrom),
+            bv[1][1].value_in_unit(unit.angstrom),
+            bv[2][2].value_in_unit(unit.angstrom),
+        ]
+        if min(bv_angstrom) > 10.0:
+            box_vectors = bv_angstrom
+            if verbose:
+                print(f"  Box (explicit solvent): {bv_angstrom[0]:.1f} x {bv_angstrom[1]:.1f} x {bv_angstrom[2]:.1f} A")
+    elif verbose and topology.getPeriodicBoxVectors() is not None:
+        print(f"  Box vectors: skipped (implicit solvent)")
+
+    # Convert exclusions to lists
+    exclusions_list = [sorted(list(ex)) for ex in exclusions]
+
+    # Build CA indices for coarse-grained analysis
+    ca_indices = []
+    for i, (name, elem) in enumerate(zip(atom_names, elements)):
+        if name == 'CA' and elem == 'C':
+            ca_indices.append(i)
+
+    # Build output
+    output = {
+        "source_pdb": str(pdb_path),
+        "n_atoms": n_atoms,
+        "n_residues": len(set(residue_ids)),
+        "n_chains": len(set(chain_ids)),
+        "positions": pos_flat,
+        "masses": masses,
+        "elements": elements,
+        "atom_names": atom_names,
+        "residue_names": residue_names,
+        "residue_ids": residue_ids,
+        "chain_ids": chain_ids,
+        "ca_indices": ca_indices,
+        "charges": charges,
+        "lj_params": lj_params,
+        "gb_radii": gb_radii,  # mbondi3 radii for implicit solvent (GBn2)
+        "bonds": bonds,
+        "angles": angles,
+        "dihedrals": dihedrals,
+        "water_oxygens": water_oxygens,
+        "h_clusters": h_clusters,
+        "exclusions": exclusions_list,
+    }
+
+    if box_vectors:
+        output["box_vectors"] = box_vectors
+
+    # Add HMR metadata
+    output["hmr_applied"] = hmr_applied
+    if hmr_applied:
+        output["recommended_timestep_fs"] = 4.0
+    else:
+        output["recommended_timestep_fs"] = 2.0
+
+    # Detect aromatic targets for UV pump (Cryo-UV pipeline)
+    aromatic_targets = detect_aromatic_targets(
+        atom_names, residue_names, residue_ids, pos_flat, verbose
+    )
+    output["aromatic_targets"] = aromatic_targets
+    output["n_aromatics"] = len(aromatic_targets)
+
+    # Write JSON
+    if verbose:
+        print(f"Writing {output_path}...")
+
+    with open(output_path, 'w') as f:
+        json.dump(output, f)  # No indent for smaller file size
+
+    file_size_mb = Path(output_path).stat().st_size / (1024 * 1024)
+    if verbose:
+        print(f"Topology written ({file_size_mb:.2f} MB)")
+
+    return output
+
+
+def build_h_clusters(topology, bonds, masses, elements):
+    """Build H-bond constraint clusters from topology."""
+    h_neighbors = defaultdict(list)
+
+    for bond in bonds:
+        i, j = bond["i"], bond["j"]
+        r0 = bond["r0"]
+
+        if elements[i] == "H" and elements[j] != "H":
+            h_neighbors[j].append((i, r0))
+        elif elements[j] == "H" and elements[i] != "H":
+            h_neighbors[i].append((j, r0))
+
+    clusters = []
+    for heavy, hydrogens in h_neighbors.items():
+        is_nitrogen = elements[heavy] == "N"
+        mass_central = masses[heavy]
+        mass_h = masses[hydrogens[0][0]] if hydrogens else 1.008
+
+        n_h = len(hydrogens)
+        if n_h == 0:
+            continue
+
+        # Determine cluster type
+        if n_h == 1:
+            cluster_type = 1  # SINGLE_H
+        elif n_h == 2:
+            cluster_type = 4 if is_nitrogen else 2  # NH2 or CH2
+        elif n_h == 3:
+            cluster_type = 5 if is_nitrogen else 3  # NH3 or CH3
+        else:
+            continue
+
+        h_atoms = [h[0] for h in hydrogens[:3]]
+        bond_lengths = [h[1] for h in hydrogens[:3]]
+
+        while len(h_atoms) < 3:
+            h_atoms.append(-1)
+        while len(bond_lengths) < 3:
+            bond_lengths.append(0.0)
+
+        clusters.append({
+            "type": cluster_type,
+            "central_atom": heavy,
+            "hydrogen_atoms": h_atoms,
+            "bond_lengths": bond_lengths,
+            "n_hydrogens": n_h,
+            "inv_mass_central": 1.0 / mass_central,
+            "inv_mass_h": 1.0 / mass_h,
+        })
+
+    return clusters
+
+
+def apply_hmr(masses: list, bonds: list, elements: list, verbose: bool = True) -> list:
+    """
+    Apply Hydrogen Mass Repartitioning (HMR) for 4 fs timestep support.
+
+    Transfers mass from heavy atoms to bonded hydrogens, enabling larger
+    timesteps while maintaining SHAKE constraints on H-bonds.
+
+    Reference: Hopkins et al., J. Chem. Theory Comput. 2015, 11, 1864-1874
+               "Long-Time-Step Molecular Dynamics through Hydrogen Mass Repartitioning"
+
+    Args:
+        masses: List of atomic masses (amu)
+        bonds: List of bond dicts with 'i' and 'j' atom indices
+        elements: List of element symbols
+        verbose: Print HMR statistics
+
+    Returns:
+        Modified masses list with HMR applied
+    """
+    masses = masses.copy()
+    transfer = 1.5  # amu to transfer from heavy atom to H
+
+    # Pass 1: Count H bonds per heavy atom (for safety check)
+    h_count = defaultdict(int)
+    for bond in bonds:
+        i, j = bond["i"], bond["j"]
+        if elements[i] == "H" and elements[j] != "H":
+            h_count[j] += 1
+        elif elements[j] == "H" and elements[i] != "H":
+            h_count[i] += 1
+
+    # Pass 2: Apply HMR with safety check
+    n_modified = 0
+    for bond in bonds:
+        i, j = bond["i"], bond["j"]
+
+        # Identify H-heavy atom pair
+        if elements[i] == "H" and elements[j] != "H":
+            h_idx, heavy_idx = i, j
+        elif elements[j] == "H" and elements[i] != "H":
+            h_idx, heavy_idx = j, i
+        else:
+            continue
+
+        # Safety: don't let heavy atom go below 1.0 amu
+        # This handles cases like CH3 where 3 H's are bonded to one C
+        max_transfer = (masses[heavy_idx] - 1.0) / h_count[heavy_idx]
+        actual_transfer = min(transfer, max_transfer)
+
+        masses[heavy_idx] -= actual_transfer
+        masses[h_idx] += actual_transfer
+        n_modified += 1
+
+    if verbose:
+        h_masses = [m for m, e in zip(masses, elements) if e == "H"]
+        if h_masses:
+            print(f"✓ HMR APPLIED: {n_modified} H-bonds modified")
+            print(f"  H masses now: {min(h_masses):.3f} - {max(h_masses):.3f} amu")
+            print(f"  Recommended timestep: 4.0 fs (with SHAKE constraints)")
+
+    return masses
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='PRISM4D Stage 2: Topology Preparation',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s sanitized.pdb topology.json
+  %(prog)s sanitized.pdb topology.json --solvate
+  %(prog)s sanitized.pdb topology.json --no-minimize --ph 7.4
+        """
+    )
+
+    parser.add_argument('input', help='Sanitized PDB file from Stage 1')
+    parser.add_argument('output', help='Output topology JSON file')
+    parser.add_argument('--solvate', '-s', action='store_true',
+                        help='Add explicit TIP3P water + ions')
+    parser.add_argument('--no-minimize', action='store_true',
+                        help='Skip energy minimization')
+    parser.add_argument('--no-caps', action='store_true',
+                        help='Skip ACE/NME terminal capping (not recommended)')
+    parser.add_argument('--ph', type=float, default=7.0,
+                        help='pH for protonation state (default: 7.0)')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Suppress output')
+    parser.add_argument('--hmr', action='store_true',
+                        help='Apply Hydrogen Mass Repartitioning for 4 fs timestep')
+
+    args = parser.parse_args()
+
+    if not Path(args.input).exists():
+        print(f"ERROR: Input file not found: {args.input}", file=sys.stderr)
+        return 1
+
+    try:
+        result = prepare_topology(
+            args.input,
+            args.output,
+            solvate=args.solvate,
+            minimize=not args.no_minimize,
+            cap_termini=not args.no_caps,
+            ph=args.ph,
+            hmr=args.hmr,
+            verbose=not args.quiet
+        )
+
+        if not args.quiet:
+            print("\n=== Topology Summary ===")
+            print(f"Atoms: {result['n_atoms']}")
+            print(f"Residues: {result['n_residues']}")
+            print(f"Chains: {result['n_chains']}")
+            print(f"CA atoms: {len(result['ca_indices'])}")
+            print(f"Bonds: {len(result['bonds'])}")
+            print(f"Angles: {len(result['angles'])}")
+            print(f"Dihedrals: {len(result['dihedrals'])}")
+            if result['water_oxygens']:
+                print(f"Waters: {len(result['water_oxygens'])}")
+
+        return 0
+
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,40 @@
+[package]
+name = "prism-ve"
+version = "1.0.0"
+edition = "2021"
+authors = ["PRISM-VE Team"]
+description = "Unified Viral Evolution Platform: Escape + Fitness + Cycle Integration"
+repository = "https://github.com/Delfictus/PRISM-VE"
+license = "MIT OR Apache-2.0"
+keywords = ["viral-evolution", "escape-prediction", "fitness", "temporal-dynamics", "gpu"]
+categories = ["science", "bioinformatics"]
+
+[dependencies]
+prism-core = { path = "../prism-core" }
+prism-gpu = { path = "../prism-gpu" }
+prism-geometry = { path = "../prism-geometry" }
+
+# Data handling
+csv = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+
+# Scientific computing
+ndarray = "0.15"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+approx = "0.5"
+
+[features]
+default = []
+cuda = ["prism-gpu/cuda"]
+benchmarking = []

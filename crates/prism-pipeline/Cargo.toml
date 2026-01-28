@@ -1,0 +1,48 @@
+[package]
+name = "prism-pipeline"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+prism-fluxnet = { workspace = true }
+prism-gpu = { workspace = true, optional = true }
+prism-phases = { workspace = true }
+prism-whcr = { workspace = true }
+prism-ontology = { workspace = true }
+prism-mec = { workspace = true }
+prism-physics = { workspace = true }
+prism-gnn = { workspace = true }
+prism-lbs = { workspace = true, optional = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Telemetry and metrics
+prometheus = { workspace = true }
+sqlx = { workspace = true, optional = true }
+
+# Logging
+log = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+
+[features]
+default = []
+gpu = ["prism-gpu"]
+cuda = ["gpu", "prism-phases/cuda", "prism-gpu/cuda", "prism-mec/cuda", "prism-whcr/cuda"]
+telemetry_sqlite = ["sqlx"]
+lbs = ["prism-lbs"]

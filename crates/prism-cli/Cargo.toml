@@ -1,0 +1,49 @@
+[package]
+name = "prism-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "prism-cli"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+prism-pipeline = { workspace = true }
+prism-fluxnet = { workspace = true }
+prism-phases = { workspace = true }
+prism-gnn = { workspace = true }
+prism-mec = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Configuration
+toml = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+
+# Metrics server (HTTP)
+axum = { workspace = true }
+tokio = { workspace = true }
+prometheus = { workspace = true }
+
+# Graph processing
+petgraph = { workspace = true }
+
+[features]
+default = ["cuda"]
+cuda = ["prism-pipeline/cuda", "prism-phases/cuda"]

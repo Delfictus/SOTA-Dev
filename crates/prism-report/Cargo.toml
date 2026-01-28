@@ -1,0 +1,70 @@
+[package]
+name = "prism-report"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PRISM4D correlation and evidence-pack generator for cryo-UV cryptic site detection"
+
+[[bin]]
+name = "prism4d"
+path = "src/bin/prism4d.rs"
+
+[[bin]]
+name = "prism-report"
+path = "src/bin/prism_report.rs"
+
+[dependencies]
+# Workspace dependencies
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+rayon = { workspace = true }
+ndarray = { workspace = true }
+nalgebra = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
+
+# Internal dependencies
+prism-nhs = { workspace = true, optional = true }
+prism-physics = { workspace = true, optional = true }
+
+# GPU support (for prism4d run command)
+cudarc = { workspace = true, optional = true }
+
+# Report generation
+askama = "0.12"
+handlebars = "5.1"
+
+# Statistics
+statrs = { workspace = true }
+
+# File handling
+walkdir = "2.4"
+glob = "0.3"
+tempfile = "3.10"
+
+# Image/figure generation (SVG only - no system font dependencies)
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }
+plotters-svg = "0.3"
+
+# Process spawning for PyMOL/ChimeraX
+which = "6.0"
+
+# Interactive CLI
+dialoguer = "0.11"
+console = "0.15"
+indicatif = "0.17"
+
+[features]
+default = []
+gpu = ["prism-nhs/gpu", "prism-physics/cuda", "cudarc", "prism-nhs"]
+full = ["gpu", "prism-nhs", "prism-physics"]
+
+[dev-dependencies]
+tempfile = "3.10"

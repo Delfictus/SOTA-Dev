@@ -1,0 +1,19 @@
+[package]
+name = "prism-whcr"
+version = "0.2.0"
+edition = "2021"
+authors = ["PRISM Team"]
+license = "MIT"
+
+[dependencies]
+prism-core = { workspace = true }
+prism-gpu = { workspace = true }
+cudarc = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
+cuda = ["prism-gpu/cuda"]
