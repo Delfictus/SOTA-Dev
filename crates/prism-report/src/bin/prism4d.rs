@@ -130,7 +130,8 @@ use prism_nhs::{
     input::PrismPrepTopology,
 };
 #[cfg(feature = "gpu")]
-use prism_report::event_cloud::{AblationPhase, EventWriter, PocketEvent, TempPhase};
+use prism_report::event_cloud::{AblationPhase, EventWriter, PocketEvent, RawSpikeEvent, TempPhase};
+use std::io::Write;
 
 /// PRISM4D: Phase Resonance Integrated Solver Machine for Molecular Dynamics
 #[derive(Parser, Debug)]
@@ -255,6 +256,23 @@ struct FinalizeArgs {
     /// Skip ChimeraX session generation
     #[arg(long)]
     no_chimerax: bool,
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // BENCHMARK VALIDATION (Tier1/Tier2 Correlation)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Holo structure PDB for Tier 1 correlation (distance to ligand)
+    #[arg(long)]
+    holo: Option<PathBuf>,
+
+    /// Truth residues JSON for Tier 2 correlation (precision/recall)
+    #[arg(long)]
+    truth_residues: Option<PathBuf>,
+
+    /// Contact distance cutoff for auto-extracting truth residues from holo (Angstroms)
+    /// Used when --holo is provided but --truth-residues is not (structure-agnostic validation)
+    #[arg(long, default_value = "4.5")]
+    contact_cutoff: f32,
 }
 
 #[derive(Parser, Debug)]
@@ -298,6 +316,10 @@ struct RunArgs {
     /// Truth residues JSON for Tier 2 correlation (optional)
     #[arg(long)]
     truth_residues: Option<PathBuf>,
+
+    /// Contact distance cutoff for auto-extracting truth residues from holo (Angstroms)
+    #[arg(long, default_value = "4.5")]
+    contact_cutoff: f32,
 
     /// Start temperature (K) - cryogenic
     #[arg(long, default_value = "50.0")]
@@ -770,9 +792,16 @@ fn run_cryo_uv_engine(
     engine.set_temperature_protocol(temp_protocol.clone())?;
     engine.set_uv_config(uv_config);
 
-    // Create event writer for streaming output
+    // Create event writers for streaming output
     let mut event_writer = EventWriter::new(events_path)
         .with_context(|| format!("Failed to create event writer at {}", events_path.display()))?;
+
+    // Create spike event writer for raw spike data (enables UV enrichment calculation)
+    let spike_events_path = events_path.with_file_name("spike_events.jsonl");
+    let spike_writer_file = std::fs::File::create(&spike_events_path)
+        .with_context(|| format!("Failed to create spike_events.jsonl at {}", spike_events_path.display()))?;
+    let mut spike_writer = std::io::BufWriter::new(spike_writer_file);
+    log::info!("  Spike events will be saved to: {}", spike_events_path.display());
 
     // Run ablation protocol: Baseline -> CryoOnly -> CryoUv
     // If skip_ablation is true, only run CryoUv phase (3x faster)
@@ -859,10 +888,31 @@ fn run_cryo_uv_engine(
 
                     for spike in &gpu_spikes {
                         // Copy packed struct fields to avoid unaligned reference issues
+                        let spike_timestep = spike.timestep;
                         let spike_intensity = spike.intensity;
                         let spike_position = spike.position;
                         let spike_n_residues = spike.n_residues;
                         let spike_nearby_residues = spike.nearby_residues;
+
+                        // Save raw spike event for UV enrichment calculation
+                        let nearby_res_vec: Vec<i32> = spike_nearby_residues[..spike_n_residues.min(8) as usize]
+                            .iter()
+                            .filter(|&&r| r >= 0)
+                            .copied()
+                            .collect();
+
+                        let raw_spike = RawSpikeEvent {
+                            timestep: spike_timestep,
+                            position: spike_position,
+                            nearby_residues: nearby_res_vec,
+                            intensity: spike_intensity,
+                            phase: *phase,
+                            replicate_id,
+                        };
+
+                        // Write raw spike event (for true UV enrichment calculation)
+                        let spike_json = serde_json::to_string(&raw_spike)?;
+                        writeln!(spike_writer, "{}", spike_json)?;
 
                         // Track statistics
                         let volume = estimate_pocket_volume(spike_n_residues, spike_intensity);
@@ -920,6 +970,8 @@ fn run_cryo_uv_engine(
     }
 
     event_writer.flush()?;
+    spike_writer.flush()?;
+    log::info!("  ✓ Spike events saved for UV enrichment calculation");
 
     let elapsed = start_time.elapsed();
     let n_phases = if config.skip_ablation { 1 } else { 3 };
@@ -1059,8 +1111,9 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
     let config = ReportConfig {
         input_pdb: args.pdb.unwrap_or_else(|| args.out.join("reference.pdb")),
         output_dir: args.out.clone(),
-        holo_pdb: None,       // Tier1 removed
-        truth_residues: None, // Tier2 removed
+        holo_pdb: args.holo.clone(),          // Tier1 correlation (optional)
+        truth_residues: args.truth_residues.clone(), // Tier2 correlation (optional)
+        contact_cutoff: Some(args.contact_cutoff),   // Auto-truth extraction cutoff
         replicates: args.replicates, // For replica agreement filtering
         output_formats: prism_report::config::OutputFormats {
             html: true,
@@ -1255,6 +1308,7 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
         wavelengths: args.wavelengths.clone(),
         holo_pdb: args.holo.clone(),
         truth_residues: args.truth_residues.clone(),
+        contact_cutoff: Some(args.contact_cutoff),  // Auto-truth extraction cutoff
         temperature_protocol: TemperatureProtocol {
             start_temp: args.start_temp,
             end_temp: args.end_temp,

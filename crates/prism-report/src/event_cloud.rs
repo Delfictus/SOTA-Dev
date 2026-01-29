@@ -64,6 +64,30 @@ impl std::fmt::Display for TempPhase {
 // POCKET EVENT
 // =============================================================================
 
+// =============================================================================
+// RAW SPIKE EVENT (For UV Enrichment Calculation)
+// =============================================================================
+
+/// Raw spike event from GPU with timestep and residue data
+///
+/// This preserves the essential data needed to compute UV-on vs UV-off
+/// aromatic enrichment per site. Saved to spike_events.jsonl alongside events.jsonl.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawSpikeEvent {
+    /// Timestep when spike occurred
+    pub timestep: i32,
+    /// Spike position [x, y, z] in Å
+    pub position: [f32; 3],
+    /// Nearby residue IDs (within detection radius)
+    pub nearby_residues: Vec<i32>,
+    /// Spike intensity
+    pub intensity: f32,
+    /// Ablation phase
+    pub phase: AblationPhase,
+    /// Replicate ID
+    pub replicate_id: usize,
+}
+
 /// Single pocket opening event from the event-cloud
 ///
 /// This is the sparse representation persisted during stepping.

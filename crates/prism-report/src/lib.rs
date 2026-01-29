@@ -35,6 +35,7 @@ pub mod alignment;
 pub mod finalize;
 pub mod site_geometry;
 pub mod site_metrics;
+pub mod temporal_analytics;
 
 // Re-exports
 pub use config::{ReportConfig, AblationConfig};
@@ -46,7 +47,7 @@ pub use sites::{CrypticSite, SiteMetrics, SiteRanking};
 pub use ablation::{AblationResults, AblationMode};
 pub use reports::{HtmlReport, PdfReport};
 pub use outputs::SummaryJson;
-pub use event_cloud::{EventCloud, PocketEvent, AblationPhase, TempPhase, EventWriter, read_events};
+pub use event_cloud::{EventCloud, PocketEvent, RawSpikeEvent, AblationPhase, TempPhase, EventWriter, read_events};
 pub use voxelize::{VoxelGrid, Voxelizer, VoxelizationResult, write_mrc, voxelize_event_cloud};
 pub use alignment::{Alignment, VoxelLigandOverlap, kabsch_align, align_structures, compute_voxel_ligand_overlap};
 pub use finalize::{FinalizeStage, FinalizeResult};
@@ -56,6 +57,13 @@ pub use site_metrics::{
     SiteMetricsComputer,
     validate_coordinate_frames,
     sort_sites_deterministic,
+};
+
+// Temporal analytics exports
+pub use temporal_analytics::{
+    TrajectorySnapshot, TemporalTopology,
+    compute_temporal_metrics, compute_spike_lifetime_stats,
+    compute_phase_stats, compute_inter_site_correlation,
 };
 
 /// Crate version (from Cargo.toml)
