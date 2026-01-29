@@ -102,6 +102,8 @@ pub mod fused_engine;
 pub mod persistent_engine;
 #[cfg(feature = "gpu")]
 pub mod active_sensing;
+#[cfg(feature = "gpu")]
+pub mod ultimate_engine;
 pub mod input;
 pub mod mapping;
 pub mod neuromorphic;
@@ -130,9 +132,17 @@ pub use aromatic_proximity::{
 #[cfg(feature = "gpu")]
 pub use gpu::{NhsGpuEngine, FrameResult, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING};
 #[cfg(feature = "gpu")]
+#[allow(deprecated)]
 pub use fused_engine::{
-    NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig,
+    NhsAmberFusedEngine,
+    // Unified cryo-UV protocol (canonical method)
+    CryoUvProtocol,
+    // Deprecated (use CryoUvProtocol instead)
+    TemperatureProtocol,
+    UvProbeConfig,
+    // Spike events
     SpikeEvent as FusedSpikeEvent, EnsembleSnapshot, StepResult, RunSummary,
+    GpuSpikeEvent,  // Full spike event from GPU with timestamps and residues
     // Quality scoring types
     SpikeQualityScore, SpikeQualityCategory, SpikePersistenceTracker,
     // RMSD utilities
@@ -148,6 +158,11 @@ pub use active_sensing::{
 pub use persistent_engine::{
     PersistentNhsEngine, PersistentBatchConfig, BatchProcessor,
     StructureResult, PersistentEngineStats,
+};
+#[cfg(feature = "gpu")]
+pub use ultimate_engine::{
+    UltimateEngine, UltimateEngineConfig, UltimateStepResult,
+    OptimizationLevel, SimulationParams,
 };
 pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
 pub use adaptive::{
