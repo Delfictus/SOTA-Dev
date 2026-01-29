@@ -763,8 +763,12 @@ impl FinalizeStage {
             ablation.cryo_uv.total_spikes
         );
 
-        // Step 5: Compute UV response deltas per site
-        log::info!("\n[5/10] Computing UV response metrics...");
+        // Step 5a: Compute UV-LIF validation metrics per site (aromatic enrichment, event density)
+        log::info!("\n[5a/10] Computing UV-LIF validation metrics per site...");
+        self.compute_uv_lif_metrics(&mut sites, &event_cloud.events)?;
+
+        // Step 5b: Compute UV response deltas per site (from ablation if available)
+        log::info!("\n[5b/10] Computing UV response deltas (ablation comparison)...");
         self.compute_uv_response(&mut sites, &event_cloud.events, &ablation)?;
 
         // Step 6: Rank sites with deterministic ordering
@@ -949,6 +953,18 @@ impl FinalizeStage {
         }
         read_events(&self.events_path)
             .with_context(|| format!("Failed to read events from {}", self.events_path.display()))
+    }
+
+    /// Compute aromatic fraction for a set of residues (Trp/Tyr/Phe)
+    fn compute_aromatic_fraction(&self, residues: &[usize]) -> f32 {
+        if residues.is_empty() {
+            return 0.0;
+        }
+
+        // Load topology to check residue names
+        // TODO: Cache this or pass topology through
+        let aromatic_count = residues.len(); // Simplified - would need topology access
+        aromatic_count as f32 / residues.len() as f32
     }
 
     /// Cluster events into cryptic sites using DBSCAN-like algorithm
@@ -1402,6 +1418,63 @@ impl FinalizeStage {
 
         Ok(AblationResults::compute(baseline, cryo_only, cryo_uv))
     }
+
+    /// Compute UV-LIF validation metrics per site (aromatic enrichment, event density)
+    fn compute_uv_lif_metrics(
+        &self,
+        sites: &mut [CrypticSite],
+        events: &[PocketEvent],
+    ) -> Result<()> {
+        for site in sites.iter_mut() {
+            let aromatic_count = site.residue_names.iter()
+                .filter(|name| {
+                    let n = name.to_uppercase();
+                    n.contains("TRP") || n.contains("TYR") || n.contains("PHE") ||
+                    n == "W" || n == "Y" || n == "F"
+                })
+                .count();
+
+            let aromatic_fraction = if !site.residues.is_empty() {
+                aromatic_count as f32 / site.residues.len() as f32
+            } else {
+                0.0
+            };
+
+            let site_events: Vec<_> = events.iter()
+                .filter(|e| {
+                    if e.phase != AblationPhase::CryoUv {
+                        return false;
+                    }
+                    let dx = e.center_xyz[0] - site.centroid[0];
+                    let dy = e.center_xyz[1] - site.centroid[1];
+                    let dz = e.center_xyz[2] - site.centroid[2];
+                    let dist_sq = dx*dx + dy*dy + dz*dz;
+                    dist_sq < 64.0
+                })
+                .collect();
+
+            let total_spike_count: usize = site_events.iter().map(|e| e.spike_count).sum();
+            let event_density = if site.metrics.geometry.volume_mean > 0.0 {
+                total_spike_count as f32 / site.metrics.geometry.volume_mean as f32
+            } else {
+                0.0
+            };
+
+            let aromatic_enrichment = 1.0 + aromatic_fraction * 4.0;
+
+            site.metrics.uv_response.aromatic_enrichment = aromatic_enrichment;
+            site.metrics.uv_response.aromatic_fraction = aromatic_fraction;
+            site.metrics.uv_response.event_density = event_density;
+
+            if aromatic_fraction > 0.15 {
+                log::info!("    Site {}: {:.1}% aromatic, density={:.2}, enrichment={:.2}x",
+                    site.site_id, 100.0 * aromatic_fraction, event_density, aromatic_enrichment);
+            }
+        }
+
+        Ok(())
+    }
+
 
     /// Compute UV response metrics for each site
     fn compute_uv_response(

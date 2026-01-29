@@ -24,6 +24,11 @@ pub struct ReportConfig {
     /// Optional truth residues for Tier 2 correlation
     pub truth_residues: Option<PathBuf>,
 
+    /// Contact distance cutoff for auto-extracting truth residues from holo (Angstroms)
+    /// Used when --holo is provided but --truth-residues is not
+    /// Default: 4.5 Å (standard binding site definition)
+    pub contact_cutoff: Option<f32>,
+
     /// Temperature protocol
     pub temperature_protocol: TemperatureProtocol,
 
@@ -52,6 +57,7 @@ impl Default for ReportConfig {
             wavelengths: vec![258.0, 274.0, 280.0],
             holo_pdb: None,
             truth_residues: None,
+            contact_cutoff: None,  // Uses default 4.5Å in load_truth()
             temperature_protocol: TemperatureProtocol::default(),
             ablation: AblationConfig::default(),
             site_detection: SiteDetectionConfig::default(),
@@ -252,11 +258,11 @@ pub struct RankingWeights {
 impl Default for RankingWeights {
     fn default() -> Self {
         Self {
-            persistence: 0.25,
-            volume: 0.20,
-            uv_response: 0.25,
-            hydrophobicity: 0.15,
-            replica_agreement: 0.15,
+            persistence: 0.20,         // Reduced from 0.25
+            volume: 0.15,              // Reduced from 0.20
+            uv_response: 0.45,         // INCREASED from 0.25 (UV-LIF is primary validation)
+            hydrophobicity: 0.10,      // Reduced from 0.15
+            replica_agreement: 0.10,   // Reduced from 0.15
         }
     }
 }
