@@ -57,6 +57,9 @@ use crate::sites::{
     PersistenceMetrics, SiteMetrics, SiteRanking, UvResponseMetrics,
 };
 use crate::site_geometry::{compute_shape_from_points, compute_volume_statistics};
+use crate::temporal_analytics::{
+    compute_temporal_metrics, TrajectorySnapshot, TemporalTopology,
+};
 use crate::voxelize::voxelize_event_cloud;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -358,6 +361,8 @@ pub struct FinalizeStage {
     /// This should be <= the residue mapping radius (5Å) + small margin to ensure
     /// clustered site centroids are close enough for residue mapping to succeed.
     cluster_max_event_atom_dist: f32,
+    /// Optional path to trajectory ensemble PDB for temporal analytics
+    trajectory_path: Option<PathBuf>,
 }
 
 impl FinalizeStage {
@@ -419,7 +424,26 @@ impl FinalizeStage {
             master_seed,
             max_event_atom_dist,
             cluster_max_event_atom_dist,
+            trajectory_path: None,
         })
+    }
+
+    /// Create finalize stage with trajectory for temporal analytics
+    pub fn new_with_trajectory(
+        config: ReportConfig,
+        events_path: PathBuf,
+        topology_path: PathBuf,
+        trajectory_path: PathBuf,
+        master_seed: u64,
+        max_event_atom_dist: f32,
+    ) -> Result<Self> {
+        let mut stage = Self::new_with_topology(config, events_path, topology_path, master_seed, max_event_atom_dist)?;
+        if trajectory_path.exists() {
+            stage.trajectory_path = Some(trajectory_path);
+        } else {
+            log::warn!("Trajectory path does not exist: {}", trajectory_path.display());
+        }
+        Ok(stage)
     }
 
     /// DEPRECATED: Create finalize stage without explicit topology
@@ -779,10 +803,20 @@ impl FinalizeStage {
             pharma_report.rejected_pockets.len());
         log::info!("  Quality tier: {}", pharma_report.quality_assessment.quality_tier);
 
-        // Step 7: Tier1/Tier2 correlation REMOVED
-        // Per user requirement: These correlation types are removed entirely.
-        // All spatial metrics use topology.json only.
-        log::info!("\n[7/10] Skipping Tier1/Tier2 correlation (removed)...");
+        // Step 7: Temporal analytics (if trajectory available)
+        log::info!("\n[7/10] Computing temporal analytics...");
+        if let Some(ref traj_path) = self.trajectory_path {
+            match self.compute_temporal_analytics(&mut sites, &event_cloud.events, &metrics_topology, traj_path) {
+                Ok(n_computed) => {
+                    log::info!("  ✓ Temporal metrics computed for {} sites", n_computed);
+                }
+                Err(e) => {
+                    log::warn!("  ⚠ Temporal analytics failed: {}", e);
+                }
+            }
+        } else {
+            log::info!("  Skipped (no trajectory provided - use --trajectory to enable)");
+        }
 
         // Step 8: Voxelize event cloud
         log::info!("\n[8/10] Running post-run voxelization...");
@@ -1095,6 +1129,7 @@ impl FinalizeStage {
                     },
                     chemistry,
                     uv_response: UvResponseMetrics::default(),
+                    temporal: None, // Computed later if trajectory available
                 },
                 rank_score: 0.0,
                 confidence: mean_confidence,
@@ -1423,6 +1458,9 @@ impl FinalizeStage {
             site.metrics.uv_response = UvResponseMetrics {
                 delta_sasa,
                 delta_volume,
+                aromatic_enrichment: 0.0,  // TODO: Compute from spike events
+                aromatic_fraction: 0.0,    // TODO: Compute from residue composition
+                event_density: 0.0,        // TODO: Compute from events/volume
                 significance,
             };
         }
@@ -1443,8 +1481,275 @@ impl FinalizeStage {
             ))
     }
 
-    // load_holo() and load_truth() REMOVED
-    // Per user requirement: Tier1/Tier2 correlation removed entirely.
+    /// Load holo structure for Tier1 correlation (optional)
+    fn load_holo(&self) -> Option<crate::inputs::HoloStructure> {
+        self.config.holo_pdb.as_ref().and_then(|path| {
+            if path.exists() {
+                log::info!("  Loading holo structure: {}", path.display());
+                match crate::inputs::HoloStructure::load(path) {
+                    Ok(holo) => {
+                        log::info!("    Ligand atoms: {}", holo.ligand_atoms.len());
+                        Some(holo)
+                    }
+                    Err(e) => {
+                        log::warn!("  Failed to load holo: {}", e);
+                        None
+                    }
+                }
+            } else {
+                log::warn!("  Holo file not found: {}", path.display());
+                None
+            }
+        })
+    }
+
+    /// Load truth residues for Tier2 correlation (optional)
+    ///
+    /// Priority:
+    /// 1. Explicit truth file (--truth-residues)
+    /// 2. Auto-extract from holo structure (--holo) - structure-agnostic validation
+    fn load_truth(&self) -> Option<crate::inputs::TruthResidues> {
+        // Priority 1: Explicit truth file
+        if let Some(ref path) = self.config.truth_residues {
+            if path.exists() {
+                log::info!("  Loading truth residues from file: {}", path.display());
+                match crate::inputs::TruthResidues::load(path) {
+                    Ok(truth) => {
+                        log::info!("    Truth residues: {} (from file)", truth.residues.len());
+                        return Some(truth);
+                    }
+                    Err(e) => {
+                        log::warn!("  Failed to load truth file: {}", e);
+                    }
+                }
+            } else {
+                log::warn!("  Truth file not found: {}", path.display());
+            }
+        }
+
+        // Priority 2: Auto-extract from holo structure (structure-agnostic)
+        if let Some(ref holo_path) = self.config.holo_pdb {
+            if holo_path.exists() {
+                log::info!("  Auto-extracting truth residues from holo: {}", holo_path.display());
+                match crate::inputs::HoloStructure::load(holo_path) {
+                    Ok(mut holo) => {
+                        if holo.ligand_atoms.is_empty() {
+                            log::warn!("    No ligand atoms found in holo - skipping auto-extraction");
+                            return None;
+                        }
+
+                        // Extract contact residues (4.5Å cutoff - standard for binding site definition)
+                        let contact_cutoff = self.config.contact_cutoff.unwrap_or(4.5);
+                        let n_contacts = holo.extract_contact_residues(contact_cutoff);
+
+                        if n_contacts == 0 {
+                            log::warn!("    No contact residues found within {}Å - skipping", contact_cutoff);
+                            return None;
+                        }
+
+                        log::info!(
+                            "    Auto-extracted {} contact residues from {} ligand atoms ({}Å cutoff)",
+                            n_contacts,
+                            holo.ligand_atoms.len(),
+                            contact_cutoff
+                        );
+
+                        // Log ligand summary
+                        for lig in &holo.ligand_summary {
+                            log::info!("      Ligand: {} chain {} ({} atoms)", lig.resname, lig.chain, lig.n_atoms);
+                        }
+
+                        return Some(holo.to_truth_residues(holo_path));
+                    }
+                    Err(e) => {
+                        log::warn!("  Failed to load holo for auto-extraction: {}", e);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Load inputs::TopologyData for correlation computation
+    fn load_topology_for_correlation(&self) -> Result<crate::inputs::TopologyData> {
+        // Load MetricsTopologyData and convert to inputs::TopologyData
+        let metrics_topo = self.load_topology()?;
+
+        // Count unique residues and chains
+        let n_residues = metrics_topo.residue_ids.iter().map(|&x| x as usize).max().unwrap_or(0) + 1;
+        let n_chains = metrics_topo.chain_ids.iter().collect::<HashSet<_>>().len();
+
+        // Build CA indices (first atom of each residue)
+        let mut ca_indices = Vec::new();
+        let mut seen_residues = HashSet::new();
+        for (i, &res_id) in metrics_topo.residue_ids.iter().enumerate() {
+            if !seen_residues.contains(&res_id) {
+                ca_indices.push(i);
+                seen_residues.insert(res_id);
+            }
+        }
+
+        Ok(crate::inputs::TopologyData {
+            source_pdb: self.config.input_pdb.display().to_string(),
+            n_atoms: metrics_topo.n_atoms,
+            n_residues,
+            n_chains,
+            positions: metrics_topo.positions.clone(),
+            atom_names: vec!["CA".to_string(); metrics_topo.n_atoms], // Placeholder
+            residue_names: metrics_topo.residue_names.clone(),
+            residue_ids: metrics_topo.residue_ids.iter().map(|&x| x as usize).collect(),
+            chain_ids: metrics_topo.chain_ids.clone(),
+            aromatic_targets: vec![], // Not needed for correlation
+            n_aromatics: 0,
+            ca_indices,
+        })
+    }
+
+    /// Compute temporal analytics from trajectory for all sites
+    ///
+    /// Returns the number of sites that had temporal metrics computed.
+    fn compute_temporal_analytics(
+        &self,
+        sites: &mut [CrypticSite],
+        events: &[PocketEvent],
+        topology: &MetricsTopologyData,
+        trajectory_path: &PathBuf,
+    ) -> Result<usize> {
+        // Load trajectory frames
+        log::info!("  Loading trajectory from: {}", trajectory_path.display());
+        let frames = self.load_trajectory_frames(trajectory_path)?;
+        if frames.is_empty() {
+            log::warn!("  No trajectory frames found");
+            return Ok(0);
+        }
+        log::info!("  Loaded {} trajectory frames", frames.len());
+
+        // Compute n_residues from max residue_id
+        let n_residues = topology.residue_ids.iter().map(|&x| x as usize).max().unwrap_or(0) + 1;
+
+        // Find CA atom indices (first atom of each residue as proxy)
+        let mut ca_indices = Vec::new();
+        let mut seen_residues = HashSet::new();
+        for (i, &res_id) in topology.residue_ids.iter().enumerate() {
+            if !seen_residues.contains(&res_id) {
+                ca_indices.push(i);
+                seen_residues.insert(res_id);
+            }
+        }
+
+        // Create TemporalTopology (atom_names not available, use placeholders)
+        let temporal_topology = TemporalTopology {
+            residue_ids: topology.residue_ids.iter().map(|&x| x as usize).collect(),
+            residue_names: topology.residue_names.clone(),
+            atom_names: vec!["CA".to_string(); topology.n_atoms], // Placeholder
+            chain_ids: topology.chain_ids.clone(),
+            ca_indices,
+            n_residues,
+        };
+
+        // Estimate frame counts from trajectory (assume equal distribution)
+        // TODO: Get actual phase boundaries from events
+        let total_frames = frames.len();
+        let cold_frames = total_frames / 3;
+        let ramp_frames = total_frames / 3;
+        let warm_frames = total_frames - cold_frames - ramp_frames;
+
+        // Compute temporal metrics for each site
+        let mut computed = 0;
+        for site in sites.iter_mut() {
+            // Get events belonging to this site
+            let site_events: Vec<&PocketEvent> = events
+                .iter()
+                .filter(|e| {
+                    distance_f32(&site.centroid, &e.center_xyz) < self.config.site_detection.cluster_threshold
+                })
+                .collect();
+
+            if site_events.is_empty() {
+                continue;
+            }
+
+            // Convert site residues to HashSet
+            let site_residues: HashSet<usize> = site.residues.iter().map(|&x| x as usize).collect();
+
+            // Compute temporal metrics
+            let metrics = compute_temporal_metrics(
+                &site_events,
+                &site_residues,
+                Some(&temporal_topology),
+                Some(&frames),
+                cold_frames,
+                ramp_frames,
+                warm_frames,
+            );
+
+            site.metrics.temporal = Some(metrics);
+            computed += 1;
+        }
+
+        Ok(computed)
+    }
+
+    /// Load trajectory frames from ensemble PDB
+    fn load_trajectory_frames(&self, path: &PathBuf) -> Result<Vec<TrajectorySnapshot>> {
+        use std::io::{BufRead, BufReader};
+        use std::fs::File;
+
+        let file = File::open(path)
+            .context("Failed to open trajectory file")?;
+        let reader = BufReader::new(file);
+
+        let mut frames = Vec::new();
+        let mut current_positions: Vec<f32> = Vec::new();
+        let mut current_frame_idx = 0;
+        let mut current_timestep = 0;
+        let mut current_temp = 300.0f32;
+
+        for line in reader.lines() {
+            let line = line?;
+
+            if line.starts_with("MODEL") {
+                current_positions.clear();
+            } else if line.starts_with("REMARK") && line.contains("Timestep:") {
+                // Parse: "REMARK   Timestep: 1000 Time: 2.00ps Temp: 150.0K"
+                if let Some(ts_part) = line.split("Timestep:").nth(1) {
+                    if let Some(ts_str) = ts_part.split_whitespace().next() {
+                        current_timestep = ts_str.parse().unwrap_or(0);
+                    }
+                }
+                if let Some(temp_part) = line.split("Temp:").nth(1) {
+                    if let Some(temp_str) = temp_part.split("K").next() {
+                        current_temp = temp_str.trim().parse().unwrap_or(300.0);
+                    }
+                }
+            } else if line.starts_with("ATOM") || line.starts_with("HETATM") {
+                // Parse coordinates
+                if line.len() >= 54 {
+                    let x: f32 = line[30..38].trim().parse().unwrap_or(0.0);
+                    let y: f32 = line[38..46].trim().parse().unwrap_or(0.0);
+                    let z: f32 = line[46..54].trim().parse().unwrap_or(0.0);
+                    current_positions.push(x);
+                    current_positions.push(y);
+                    current_positions.push(z);
+                }
+            } else if line.starts_with("ENDMDL") {
+                if !current_positions.is_empty() {
+                    let n_atoms = current_positions.len() / 3;
+                    frames.push(TrajectorySnapshot {
+                        frame_idx: current_frame_idx,
+                        timestep: current_timestep,
+                        temperature: current_temp,
+                        positions: current_positions.clone(),
+                        n_atoms,
+                    });
+                    current_frame_idx += 1;
+                }
+            }
+        }
+
+        Ok(frames)
+    }
 
     /// Run post-run voxelization from event cloud
     fn run_voxelization(
@@ -1502,6 +1807,33 @@ impl FinalizeStage {
         // Multiply by replicates
         total_frames *= self.config.replicates;
 
+        // Compute Tier1/Tier2 correlation if holo/truth provided
+        let holo = self.load_holo();
+        let truth = self.load_truth();
+
+        let correlation = if holo.is_some() || truth.is_some() {
+            log::info!("  Computing Tier1/Tier2 correlation...");
+            // Load inputs::TopologyData for correlation computation
+            match self.load_topology_for_correlation() {
+                Ok(topo) => {
+                    let result = crate::correlation::CorrelationResult::compute(
+                        sites,
+                        holo.as_ref(),
+                        truth.as_ref(),
+                        &topo,
+                    );
+                    // Convert to summary format
+                    Some(crate::outputs::CorrelationSummary::from(&result))
+                }
+                Err(e) => {
+                    log::warn!("  Failed to load topology for correlation: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(SummaryJson {
             version: crate::PRISM4D_RELEASE.to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -1509,12 +1841,12 @@ impl FinalizeStage {
                 pdb_file: self.config.input_pdb.display().to_string(),
                 replicates: self.config.replicates,
                 wavelengths: self.config.wavelengths.clone(),
-                holo_file: None,  // Tier1 removed
-                truth_file: None, // Tier2 removed
+                holo_file: self.config.holo_pdb.as_ref().map(|p| p.display().to_string()),
+                truth_file: self.config.truth_residues.as_ref().map(|p| p.display().to_string()),
             },
             sites: sites.iter().map(SiteSummary::from).collect(),
             ablation: AblationSummary::from(ablation),
-            correlation: None, // Tier1/Tier2 correlation removed
+            correlation,
             ranking_weights: RankingWeights::default(),
             statistics: RunStatistics {
                 total_runtime_seconds: ablation.baseline.runtime_seconds

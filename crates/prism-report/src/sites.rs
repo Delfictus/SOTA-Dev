@@ -46,6 +46,10 @@ pub struct SiteMetrics {
     pub chemistry: ChemistryMetrics,
     /// UV response metrics (delta from ablation)
     pub uv_response: UvResponseMetrics,
+    /// Temporal analytics (from trajectory analysis)
+    /// Only populated if ensemble snapshots are provided
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub temporal: Option<TemporalMetrics>,
 }
 
 /// Persistence metrics
@@ -138,13 +142,23 @@ pub struct ChemistryMetrics {
     pub charged_fraction: f64,
 }
 
-/// UV response metrics (from ablation comparison)
+/// UV response metrics (from ablation comparison + spike enrichment)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UvResponseMetrics {
-    /// Delta SASA: (cryo+UV) - (cryo-only)
+    /// Delta SASA: (cryo+UV) - (cryo-only) - from ablation comparison
     pub delta_sasa: f64,
-    /// Delta volume: (cryo+UV) - (cryo-only)
+    /// Delta volume: (cryo+UV) - (cryo-only) - from ablation comparison
     pub delta_volume: f64,
+    /// Aromatic enrichment: (UV spike aromatic %) / (non-UV spike aromatic %)
+    /// CRITICAL METRIC: >1.5 means site is UV-validated, >2.0 is strong
+    #[serde(default)]
+    pub aromatic_enrichment: f32,
+    /// Aromatic fraction: % of site residues that are Trp/Tyr/Phe
+    #[serde(default)]
+    pub aromatic_fraction: f32,
+    /// Event density: spike events per cubic angstrom in this site
+    #[serde(default)]
+    pub event_density: f32,
     /// Response significance (p-value or z-score proxy)
     pub significance: f64,
 }
@@ -154,9 +168,181 @@ impl Default for UvResponseMetrics {
         Self {
             delta_sasa: 0.0,
             delta_volume: 0.0,
+            aromatic_enrichment: 0.0,
+            aromatic_fraction: 0.0,
+            event_density: 0.0,
             significance: 0.0,
         }
     }
+}
+
+// =============================================================================
+// TEMPORAL ANALYTICS (Trajectory-Derived Metrics)
+// =============================================================================
+
+/// Temporal metrics derived from trajectory analysis
+/// These metrics require ensemble snapshots (coordinate trajectories)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TemporalMetrics {
+    /// Spike lifetime statistics
+    pub lifetime: SpikeLifetimeStats,
+    /// Phase-resolved opening statistics
+    pub phase_stats: PhaseResolvedStats,
+    /// Contact breakage events associated with site opening
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub contact_breakages: Vec<ContactBreakage>,
+    /// Rotamer transitions associated with site opening
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub rotamer_transitions: Vec<RotamerTransition>,
+    /// Hydrogen bond changes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hbond_changes: Option<HydrogenBondChanges>,
+    /// Opening mechanism summary (human-readable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mechanism_summary: Option<String>,
+}
+
+/// Spike lifetime and autocorrelation statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpikeLifetimeStats {
+    /// Mean spike duration (frames)
+    pub mean_lifetime_frames: f64,
+    /// Median spike duration (frames)
+    pub median_lifetime_frames: f64,
+    /// Maximum spike duration (frames)
+    pub max_lifetime_frames: usize,
+    /// Number of distinct opening events
+    pub n_opening_events: usize,
+    /// Fraction of openings that recur (site reopens after closing)
+    pub recurrence_fraction: f64,
+    /// Mean time between recurrent openings (frames)
+    pub mean_recurrence_interval: Option<f64>,
+}
+
+impl Default for SpikeLifetimeStats {
+    fn default() -> Self {
+        Self {
+            mean_lifetime_frames: 0.0,
+            median_lifetime_frames: 0.0,
+            max_lifetime_frames: 0,
+            n_opening_events: 0,
+            recurrence_fraction: 0.0,
+            mean_recurrence_interval: None,
+        }
+    }
+}
+
+/// Phase-resolved statistics (cold/ramp/warm)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseResolvedStats {
+    /// Frame of first opening (absolute)
+    pub first_opening_frame: Option<usize>,
+    /// Temperature at first opening (K)
+    pub first_opening_temp_k: Option<f32>,
+    /// Phase at first opening
+    pub first_opening_phase: Option<String>,
+    /// Opening probability in cold phase (fraction of cold frames with site open)
+    pub cold_phase_probability: f64,
+    /// Opening probability in ramp phase
+    pub ramp_phase_probability: f64,
+    /// Opening probability in warm phase
+    pub warm_phase_probability: f64,
+    /// Dominant phase (where site is most often open)
+    pub dominant_phase: Option<String>,
+}
+
+impl Default for PhaseResolvedStats {
+    fn default() -> Self {
+        Self {
+            first_opening_frame: None,
+            first_opening_temp_k: None,
+            first_opening_phase: None,
+            cold_phase_probability: 0.0,
+            ramp_phase_probability: 0.0,
+            warm_phase_probability: 0.0,
+            dominant_phase: None,
+        }
+    }
+}
+
+/// Contact breakage event (residue pair that separated during opening)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactBreakage {
+    /// First residue ID
+    pub res_i: usize,
+    /// Second residue ID
+    pub res_j: usize,
+    /// Residue i name (e.g., "TYR")
+    pub res_i_name: String,
+    /// Residue j name
+    pub res_j_name: String,
+    /// Distance before opening (Å)
+    pub distance_before_a: f32,
+    /// Distance after opening (Å)
+    pub distance_after_a: f32,
+    /// Frame when contact broke
+    pub breakage_frame: usize,
+    /// Is this a gating contact? (one residue in site, one outside)
+    pub is_gating_contact: bool,
+}
+
+/// Rotamer transition (side-chain flip that exposed the site)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RotamerTransition {
+    /// Residue ID
+    pub residue_id: usize,
+    /// Residue name (e.g., "TYR")
+    pub residue_name: String,
+    /// Chi1 angle before (degrees)
+    pub chi1_before_deg: f32,
+    /// Chi1 angle after (degrees)
+    pub chi1_after_deg: f32,
+    /// Chi2 angle before (degrees, if applicable)
+    pub chi2_before_deg: Option<f32>,
+    /// Chi2 angle after (degrees, if applicable)
+    pub chi2_after_deg: Option<f32>,
+    /// Frame when transition occurred
+    pub transition_frame: usize,
+    /// Delta chi1 (degrees)
+    pub delta_chi1_deg: f32,
+    /// Is this an occluding residue? (blocks pocket when in original rotamer)
+    pub is_occluding: bool,
+}
+
+/// Hydrogen bond changes during site opening
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HydrogenBondChanges {
+    /// Protein-water H-bonds before opening
+    pub protein_water_before: usize,
+    /// Protein-water H-bonds after opening
+    pub protein_water_after: usize,
+    /// Net change in protein-water H-bonds (negative = dewetting)
+    pub protein_water_delta: i32,
+    /// Intra-protein H-bonds before opening
+    pub intra_protein_before: usize,
+    /// Intra-protein H-bonds after opening
+    pub intra_protein_after: usize,
+    /// Net change in intra-protein H-bonds
+    pub intra_protein_delta: i32,
+    /// Frame of measurement (snapshot with opening)
+    pub measurement_frame: usize,
+}
+
+/// Inter-site correlation (for allosteric analysis)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterSiteCorrelation {
+    /// First site ID
+    pub site_a: String,
+    /// Second site ID
+    pub site_b: String,
+    /// Pearson correlation of opening events (-1 to +1)
+    pub correlation: f64,
+    /// Mean time lag (frames): positive = A opens before B
+    pub mean_lag_frames: f64,
+    /// Are openings synchronized (|correlation| > 0.5)?
+    pub is_synchronized: bool,
+    /// Interpretation
+    pub interpretation: String,
 }
 
 /// Site ranking based on weighted scores
@@ -172,22 +358,43 @@ impl SiteRanking {
     }
 
     /// Compute rank score for a site
+    ///
+    /// Multi-tiered scoring that combines:
+    /// - Core dewetting physics (persistence, event density, hydrophobicity)
+    /// - UV-LIF validation (aromatic enrichment, aromatic clustering)
+    /// - Druggability (volume, shape)
     pub fn compute_score(&self, site: &CrypticSite) -> f64 {
         let w = &self.weights;
         let m = &site.metrics;
 
-        // Normalize each component to 0-1
+        // === TIER 1: Core Dewetting Physics (Primary Signal) ===
         let persistence_score = m.persistence.present_fraction;
-        let volume_score = (m.geometry.volume_mean / 500.0).min(1.0); // 500 Å³ = 1.0
-        let uv_score = (m.uv_response.delta_sasa.abs() / 100.0).min(1.0); // 100 Å² = 1.0
+        let event_density_score = (m.uv_response.event_density / 10.0).clamp(0.0, 1.0) as f64;
         let hydrophobicity_score = m.chemistry.hydrophobic_fraction;
+
+        // === TIER 2: UV-LIF Validation (Confidence Boost) ===
+        // Aromatic enrichment: >1.5x = validated site, >2.0x = strong
+        // Normalize: 1.5x→0.5, 2.0x→1.0, 3.0x→1.0 (saturate)
+        let aromatic_enrichment_raw = m.uv_response.aromatic_enrichment as f64;
+        let enrichment_score = ((aromatic_enrichment_raw - 1.0) / 1.0).clamp(0.0, 1.0);
+
+        // Aromatic clustering: % of residues that are Trp/Tyr/Phe
+        let aromatic_clustering_score = m.uv_response.aromatic_fraction as f64;
+
+        // Combined UV confidence: enrichment (primary) + clustering (secondary)
+        let uv_confidence = 0.7 * enrichment_score + 0.3 * aromatic_clustering_score;
+
+        // === TIER 3: Druggability (Practical Screening) ===
+        let volume_score = (m.geometry.volume_mean / 1000.0).clamp(0.0, 1.0); // 1000 Å³ = 1.0
         let replica_score = m.persistence.replica_agreement;
 
-        // Weighted sum (cast f32 weights to f64)
+        // === FINAL WEIGHTED SCORE ===
+        // UV confidence gets FULL uv_response weight (not delta SASA)
+        // This ensures UV-validated sites rank higher
         (w.persistence as f64) * persistence_score
             + (w.volume as f64) * volume_score
-            + (w.uv_response as f64) * uv_score
-            + (w.hydrophobicity as f64) * hydrophobicity_score
+            + (w.uv_response as f64) * uv_confidence  // UV-LIF validation boost
+            + (w.hydrophobicity as f64) * (hydrophobicity_score + event_density_score) / 2.0
             + (w.replica_agreement as f64) * replica_score
     }
 
