@@ -29,8 +29,7 @@ use std::time::Instant;
 #[cfg(feature = "gpu")]
 use prism_nhs::{
     PersistentBatchConfig, BatchProcessor, StructureResult,
-    PrismPrepTopology, TemperatureProtocol, UvProbeConfig,
-    PersistentNhsEngine, EnsembleSnapshot,
+    PrismPrepTopology, CryoUvProtocol, PersistentNhsEngine, EnsembleSnapshot,
 };
 
 #[derive(Parser, Debug)]
@@ -239,18 +238,22 @@ fn run_batch(
         // Load into engine
         engine.load_topology(&topology)?;
 
-        // Configure protocols
-        let temp_protocol = TemperatureProtocol {
+        // Configure unified cryo-UV protocol
+        let cryo_uv_protocol = CryoUvProtocol {
             start_temp: config.cryo_temp,
             end_temp: config.temperature,
+            cold_hold_steps: config.cryo_hold,
             ramp_steps: config.convergence_steps / 2,
-            hold_steps: config.cryo_hold,
+            warm_hold_steps: config.convergence_steps / 2,
             current_step: 0,
+            // UV-LIF coupling (validated parameters from benchmark)
+            uv_burst_energy: 30.0,
+            uv_burst_interval: 500,
+            uv_burst_duration: 50,
+            scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
+            wavelength_dwell_steps: 500,
         };
-        engine.set_temperature_protocol(temp_protocol)?;
-
-        let uv_config = UvProbeConfig::default();
-        engine.set_uv_config(uv_config)?;
+        engine.set_cryo_uv_protocol(cryo_uv_protocol)?;
 
         // Run simulation
         let total_steps = config.survey_steps + config.convergence_steps + config.precision_steps;

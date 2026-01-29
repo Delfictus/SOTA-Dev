@@ -32,8 +32,13 @@ use cudarc::driver::{
 use cudarc::nvrtc::Ptx;
 
 use crate::input::PrismPrepTopology;
+
+#[allow(deprecated)]
 use crate::fused_engine::{
-    NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig,
+    NhsAmberFusedEngine, CryoUvProtocol,
+    // Deprecated - kept for backward compatibility
+    TemperatureProtocol,
+    UvProbeConfig,
     StepResult, RunSummary, SpikeEvent, EnsembleSnapshot,
 };
 
@@ -135,7 +140,18 @@ impl PersistentNhsEngine {
 
         // Time module loading
         let mod_start = Instant::now();
-        let ptx_path = "target/ptx/nhs_amber_fused.ptx";
+
+        // Try multiple PTX locations
+        let ptx_candidates = [
+            "../prism-gpu/src/kernels/nhs_amber_fused.ptx",  // From workspace
+            "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx",  // From root
+            "target/ptx/nhs_amber_fused.ptx",  // Build output
+        ];
+
+        let ptx_path = ptx_candidates.iter()
+            .find(|p| Path::new(p).exists())
+            .ok_or_else(|| anyhow::anyhow!("nhs_amber_fused.ptx not found in any standard location"))?;
+
         let module = context
             .load_module(Ptx::from_file(ptx_path))
             .context("Failed to load NHS-AMBER fused PTX")?;
@@ -203,19 +219,40 @@ impl PersistentNhsEngine {
         Ok(())
     }
 
-    /// Configure temperature protocol
-    pub fn set_temperature_protocol(&mut self, protocol: TemperatureProtocol) -> Result<()> {
+    /// **Configure unified cryo-UV protocol (RECOMMENDED)**
+    ///
+    /// Sets the integrated cryo-thermal + UV-LIF protocol for the current topology.
+    /// This is the canonical PRISM4D cryptic site detection method.
+    pub fn set_cryo_uv_protocol(&mut self, protocol: CryoUvProtocol) -> Result<()> {
         if let Some(ref mut engine) = self.engine {
-            engine.set_temperature_protocol(protocol);
+            engine.set_cryo_uv_protocol(protocol)?;
             Ok(())
         } else {
             bail!("No topology loaded")
         }
     }
 
-    /// Configure UV probe
+    /// **DEPRECATED**: Configure temperature protocol separately
+    ///
+    /// Use `set_cryo_uv_protocol()` instead to configure the unified cryo-UV protocol.
+    #[deprecated(since = "1.2.0", note = "Use set_cryo_uv_protocol() instead")]
+    pub fn set_temperature_protocol(&mut self, protocol: TemperatureProtocol) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            #[allow(deprecated)]
+            engine.set_temperature_protocol(protocol)?;
+            Ok(())
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
+    /// **DEPRECATED**: Configure UV probe separately
+    ///
+    /// Use `set_cryo_uv_protocol()` instead to configure the unified cryo-UV protocol.
+    #[deprecated(since = "1.2.0", note = "Use set_cryo_uv_protocol() instead")]
     pub fn set_uv_config(&mut self, config: UvProbeConfig) -> Result<()> {
         if let Some(ref mut engine) = self.engine {
+            #[allow(deprecated)]
             engine.set_uv_config(config);
             Ok(())
         } else {
@@ -335,18 +372,22 @@ impl BatchProcessor {
             // Load into engine
             self.engine.load_topology(&topology)?;
 
-            // Configure protocols
-            let temp_protocol = TemperatureProtocol {
+            // Configure unified cryo-UV protocol
+            let cryo_uv_protocol = CryoUvProtocol {
                 start_temp: self.config.cryo_temp,
                 end_temp: self.config.temperature,
+                cold_hold_steps: self.config.cryo_hold,
                 ramp_steps: self.config.convergence_steps / 2,
-                hold_steps: self.config.cryo_hold,
+                warm_hold_steps: self.config.convergence_steps / 2,
                 current_step: 0,
+                // UV-LIF coupling (validated parameters)
+                uv_burst_energy: 30.0,
+                uv_burst_interval: 500,
+                uv_burst_duration: 50,
+                scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
+                wavelength_dwell_steps: 500,
             };
-            self.engine.set_temperature_protocol(temp_protocol)?;
-
-            let uv_config = UvProbeConfig::default();
-            self.engine.set_uv_config(uv_config)?;
+            self.engine.set_cryo_uv_protocol(cryo_uv_protocol)?;
 
             // Run all phases
             let total_steps = self.config.survey_steps
