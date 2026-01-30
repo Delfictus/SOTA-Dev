@@ -1033,11 +1033,16 @@ impl FinalizeStage {
                 entry.0 = entry.0.min(event.frame_idx);
                 entry.1 = entry.1.max(event.frame_idx);
             }
+            // CRITICAL FIX: Use MAX frame span, not SUM
+            // Replicates are independent samples of the SAME time period
+            // A site appearing in all 3 replicates is present multiple times within 7000 frames
+            // NOT spread across 21000 frames (3 × 7000)
             let total_frame_span: usize = frame_spans_by_run.values()
                 .map(|(min_f, max_f)| if max_f > min_f { max_f - min_f + 1 } else { 1 })
-                .sum();
+                .max()  // Take MAX across replicates, not SUM
+                .unwrap_or(1);
 
-            let persistence = event_identity_set.len() as f64 / total_frame_span.max(1) as f64;
+            let persistence = event_identity_set.len() as f64 / total_frame_span as f64;
             let n_unique_events = event_identity_set.len();
 
             if persistence < cfg.min_persistence as f64 {
