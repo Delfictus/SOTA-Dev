@@ -47,7 +47,7 @@ pub use sites::{CrypticSite, SiteMetrics, SiteRanking};
 pub use ablation::{AblationResults, AblationMode};
 pub use reports::{HtmlReport, PdfReport};
 pub use outputs::SummaryJson;
-pub use event_cloud::{EventCloud, PocketEvent, RawSpikeEvent, AblationPhase, TempPhase, EventWriter, read_events};
+pub use event_cloud::{EventCloud, PocketEvent, RawSpikeEvent, AblationPhase, TempPhase, EventWriter, read_events, read_spike_events};
 pub use voxelize::{VoxelGrid, Voxelizer, VoxelizationResult, write_mrc, voxelize_event_cloud};
 pub use alignment::{Alignment, VoxelLigandOverlap, kabsch_align, align_structures, compute_voxel_ligand_overlap};
 pub use finalize::{FinalizeStage, FinalizeResult};

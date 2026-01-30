@@ -298,6 +298,28 @@ impl EventWriter {
     }
 }
 
+/// Read raw spike events from spike_events.jsonl for UV enrichment calculation
+pub fn read_spike_events(path: impl AsRef<Path>) -> Result<Vec<RawSpikeEvent>> {
+    let file = File::open(path.as_ref())
+        .with_context(|| format!("Failed to open spike events: {}", path.as_ref().display()))?;
+    let reader = BufReader::new(file);
+
+    let mut events = Vec::new();
+    for (line_num, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| format!("Line {} read error", line_num + 1))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let event: RawSpikeEvent = serde_json::from_str(&line)
+            .with_context(|| format!("Failed to parse spike event on line {}", line_num + 1))?;
+        events.push(event);
+    }
+
+    Ok(events)
+}
+
 /// Read events from JSONL file
 pub fn read_events(path: impl AsRef<Path>) -> Result<EventCloud> {
     let file = File::open(path.as_ref())

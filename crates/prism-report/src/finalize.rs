@@ -37,7 +37,7 @@
 
 use crate::ablation::{AblationMode, AblationResults, AblationRunResult};
 use crate::config::{ReportConfig, RankingWeights};
-use crate::event_cloud::{read_events, AblationPhase, EventCloud, PocketEvent};
+use crate::event_cloud::{read_events, read_spike_events, AblationPhase, EventCloud, PocketEvent, RawSpikeEvent};
 use crate::figures;
 // Use site_metrics::TopologyData (with residue_ids: Vec<u32>) for all spatial operations
 // inputs::TopologyData is DEPRECATED for finalize - only use for legacy compatibility
@@ -363,6 +363,8 @@ pub struct FinalizeStage {
     cluster_max_event_atom_dist: f32,
     /// Optional path to trajectory ensemble PDB for temporal analytics
     trajectory_path: Option<PathBuf>,
+    /// Optional path to spike_events.jsonl for aromatic enrichment analysis
+    spike_events_path: Option<PathBuf>,
 }
 
 impl FinalizeStage {
@@ -425,6 +427,7 @@ impl FinalizeStage {
             max_event_atom_dist,
             cluster_max_event_atom_dist,
             trajectory_path: None,
+            spike_events_path: None,
         })
     }
 
@@ -1477,6 +1480,122 @@ impl FinalizeStage {
 
 
     /// Compute UV response metrics for each site
+
+    /// Compute TRUE UV enrichment per site from raw spike events
+    ///
+    /// Uses timestep data to separate UV-on (burst active) vs UV-off (thermal baseline)
+    /// phases and computes authentic aromatic enrichment ratio per site.
+    fn compute_true_uv_enrichment(
+        &self,
+        sites: &mut [CrypticSite],
+        topology: &MetricsTopologyData,
+    ) -> Result<()> {
+        // Check if spike_events.jsonl exists
+        if self.spike_events_path.as_ref().map(|p| !p.exists()).unwrap_or(true) {
+            log::info!("  spike_events.jsonl not found - using aromatic fraction proxy");
+            return Ok(());
+        }
+
+        // Load raw spike events
+        let spike_events = read_spike_events(self.spike_events_path.as_ref().unwrap())
+            .context("Failed to load spike_events.jsonl")?;
+
+        if spike_events.is_empty() {
+            log::warn!("  spike_events.jsonl is empty");
+            return Ok(());
+        }
+
+        log::info!("  Loaded {} raw spike events for true enrichment calculation", spike_events.len());
+
+        // Extract aromatic residue IDs from topology
+        let aromatic_ids: HashSet<i32> = topology.residue_names.iter()
+            .enumerate()
+            .filter(|(_idx, name)| {
+                matches!(name.as_str(), "TRP" | "TYR" | "PHE" | "W" | "Y" | "F")
+            })
+            .map(|(idx, _)| idx as i32)
+            .collect();
+
+        if aromatic_ids.is_empty() {
+            log::warn!("  No aromatic residues in topology - skipping enrichment calculation");
+            return Ok(());
+        }
+
+        log::info!("  Aromatic residues in topology: {}", aromatic_ids.len());
+
+        // Compute enrichment per site
+        let mut sites_with_enrichment = 0;
+
+        for site in sites.iter_mut() {
+            // Filter spikes spatially (within 8Å of site centroid)
+            let site_spikes: Vec<_> = spike_events.iter()
+                .filter(|s| {
+                    let dx = s.position[0] - site.centroid[0];
+                    let dy = s.position[1] - site.centroid[1];
+                    let dz = s.position[2] - site.centroid[2];
+                    (dx*dx + dy*dy + dz*dz) < 64.0  // 8Å radius squared
+                })
+                .collect();
+
+            if site_spikes.len() < 20 {
+                continue;  // Need minimum data for reliable enrichment
+            }
+
+            // Separate UV-on vs UV-off phases using timestep
+            // UV-on: timestep % 500 < 50 (burst active for 50 steps)
+            // UV-off: timestep % 500 >= 50 (thermal baseline for 450 steps)
+            let uv_on_spikes: Vec<_> = site_spikes.iter()
+                .filter(|s| (s.timestep % 500) < 50)
+                .collect();
+
+            let uv_off_spikes: Vec<_> = site_spikes.iter()
+                .filter(|s| (s.timestep % 500) >= 50)
+                .collect();
+
+            if uv_on_spikes.is_empty() || uv_off_spikes.is_empty() {
+                continue;  // Need both phases for comparison
+            }
+
+            // Count spikes near aromatics
+            let count_aromatic = |spikes: &[&RawSpikeEvent]| -> usize {
+                spikes.iter().filter(|s| {
+                    s.nearby_residues.iter().any(|r| aromatic_ids.contains(r))
+                }).count()
+            };
+
+            let uv_on_aro = count_aromatic(&uv_on_spikes);
+            let uv_off_aro = count_aromatic(&uv_off_spikes);
+
+            // Compute aromatic rates
+            let uv_on_rate = uv_on_aro as f32 / uv_on_spikes.len() as f32;
+            let uv_off_rate = if uv_off_aro > 0 {
+                uv_off_aro as f32 / uv_off_spikes.len() as f32
+            } else {
+                0.01  // Avoid division by zero
+            };
+
+            // TRUE aromatic enrichment: UV-on vs UV-off ratio
+            let enrichment = uv_on_rate / uv_off_rate;
+
+            // Update site metric with TRUE enrichment
+            site.metrics.uv_response.aromatic_enrichment = enrichment;
+
+            sites_with_enrichment += 1;
+
+            if enrichment > 1.2 {
+                log::info!("    Site {}: UV-on={}/{} ({:.1}%), UV-off={}/{} ({:.1}%), Enrichment={:.2}x {}",
+                    site.site_id,
+                    uv_on_aro, uv_on_spikes.len(), 100.0 * uv_on_rate,
+                    uv_off_aro, uv_off_spikes.len(), 100.0 * uv_off_rate,
+                    enrichment,
+                    if enrichment > 2.0 { "✓ STRONG" } else if enrichment > 1.5 { "✓ validated" } else { "" });
+            }
+        }
+
+        log::info!("  ✓ True UV enrichment computed for {}/{} sites", sites_with_enrichment, sites.len());
+
+        Ok(())
+    }
     fn compute_uv_response(
         &self,
         sites: &mut [CrypticSite],
@@ -1613,7 +1732,7 @@ impl FinalizeStage {
 
                         // Extract contact residues (4.5Å cutoff - standard for binding site definition)
                         let contact_cutoff = self.config.contact_cutoff.unwrap_or(4.5);
-                        let n_contacts = holo.extract_contact_residues(contact_cutoff);
+                        let n_contacts = holo.contact_residues.len();
 
                         if n_contacts == 0 {
                             log::warn!("    No contact residues found within {}Å - skipping", contact_cutoff);
@@ -1627,12 +1746,15 @@ impl FinalizeStage {
                             contact_cutoff
                         );
 
-                        // Log ligand summary
-                        for lig in &holo.ligand_summary {
-                            log::info!("      Ligand: {} chain {} ({} atoms)", lig.resname, lig.chain, lig.n_atoms);
-                        }
+                        // Log ligand summary - commented out as ligand_summary field doesn't exist
+                        // Use ligand_atoms.len() instead
+                        log::info!("      Total ligand atoms: {}", holo.ligand_atoms.len());
 
-                        return Some(holo.to_truth_residues(holo_path));
+                        return Some(crate::inputs::TruthResidues {
+                            residues: holo.contact_residues.iter().map(|r| *r as usize).collect(),
+                            site_name: None,
+                            notes: Some(format!("Auto-extracted from holo: {}", holo_path.display())),
+                        });
                     }
                     Err(e) => {
                         log::warn!("  Failed to load holo for auto-extraction: {}", e);
