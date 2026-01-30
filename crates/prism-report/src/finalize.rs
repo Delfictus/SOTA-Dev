@@ -1556,15 +1556,14 @@ impl FinalizeStage {
                 continue;  // Need both phases for comparison
             }
 
-            // Count spikes near aromatics
-            let count_aromatic = |spikes: &[&RawSpikeEvent]| -> usize {
-                spikes.iter().filter(|s| {
-                    s.nearby_residues.iter().any(|r| aromatic_ids.contains(r))
-                }).count()
-            };
+            // Count spikes near aromatics (separate functions to avoid closure type issues)
+            let uv_on_aro = uv_on_spikes.iter().filter(|s| {
+                s.nearby_residues.iter().any(|r| aromatic_ids.contains(r))
+            }).count();
 
-            let uv_on_aro = count_aromatic(&uv_on_spikes);
-            let uv_off_aro = count_aromatic(&uv_off_spikes);
+            let uv_off_aro = uv_off_spikes.iter().filter(|s| {
+                s.nearby_residues.iter().any(|r| aromatic_ids.contains(r))
+            }).count();
 
             // Compute aromatic rates
             let uv_on_rate = uv_on_aro as f32 / uv_on_spikes.len() as f32;
