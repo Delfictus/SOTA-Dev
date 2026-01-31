@@ -210,6 +210,10 @@ impl PersistentNhsEngine {
             self.grid_spacing,
         )?;
 
+        // NOTE: Ultimate kernel has bugs - using working fused kernel for now
+        // TODO: Fix ultimate_md.cu constant memory initialization
+        log::info!("Using standard fused kernel (ultimate has bugs - needs fix)");
+
         self.engine = Some(engine);
         self.current_topology_id = Some(topo_id.clone());
 

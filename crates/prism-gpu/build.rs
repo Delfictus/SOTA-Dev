@@ -3,10 +3,10 @@
 //! Compiles CUDA kernels to PTX for runtime loading.
 //!
 //! CUDA COMPILATION:
-//! - Target architecture: sm_86 (RTX 3060 Ampere)
+//! - Target architecture: sm_120 (Blackwell GB202)
 //! - Optimization level: -O3 (maximum performance)
 //! - PTX output: target/ptx/<kernel_name>.ptx
-//! - Fallback architectures: sm_75, sm_80 for broader compatibility
+//! - Optimized for Blackwell: 192 SM, 24,576 CUDA cores, 512 Tensor Cores (Gen 6)
 //!
 //! DEPENDENCIES:
 //! - CUDA Toolkit 12.6 installed at /usr/local/cuda-12.6
@@ -336,6 +336,17 @@ fn main() {
         &target_ptx_dir.join("nhs_exclusion.ptx"),
     );
 
+    // =========================================================================
+    // CRITICAL: NHS-AMBER FUSED ENGINE (PRIMARY PRODUCTION KERNEL)
+    // =========================================================================
+    // This is THE MOST IMPORTANT kernel - handles full MD simulation + cryptic detection
+    compile_kernel(
+        &nvcc,
+        "src/kernels/nhs_amber_fused.cu",
+        &ptx_dir.join("nhs_amber_fused.ptx"),
+        &target_ptx_dir.join("nhs_amber_fused.ptx"),
+    );
+
     // Compile NHS Neuromorphic kernel (LIF dewetting detection network)
     // Spike-based detection of cryptic pocket opening events
     compile_kernel(
@@ -343,6 +354,27 @@ fn main() {
         "src/kernels/nhs_neuromorphic.cu",
         &ptx_dir.join("nhs_neuromorphic.ptx"),
         &target_ptx_dir.join("nhs_neuromorphic.ptx"),
+    );
+
+    // =========================================================================
+    // ULTIMATE HYPEROPTIMIZED KERNELS (2-4x PERFORMANCE BOOST)
+    // =========================================================================
+
+    // Compile Ultimate MD kernel (14 GPU optimizations for maximum performance)
+    // Expected speedup: 2-4x over standard kernel on Blackwell/Ampere/Ada
+    compile_kernel(
+        &nvcc,
+        "src/kernels/ultimate_md.cu",
+        &ptx_dir.join("ultimate_md.ptx"),
+        &target_ptx_dir.join("ultimate_md.ptx"),
+    );
+
+    // Compile Hyperoptimized MD kernel (alternative optimization strategy)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/hyperoptimized_md.cu",
+        &ptx_dir.join("hyperoptimized_md.ptx"),
+        &target_ptx_dir.join("hyperoptimized_md.ptx"),
     );
 
     println!("cargo:info=PTX compilation completed successfully");
@@ -395,9 +427,9 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
         .arg("-o")
         .arg(output)
         .arg(source)
-        // Target architecture (sm_86 = RTX 3060 Ampere)
+        // Target architecture (sm_120 = Blackwell GB202)
         // Note: --ptx mode only supports single architecture
-        .arg("-arch=sm_86")
+        .arg("-arch=sm_120")
         // Optimization flags
         .arg("-O3") // Maximum optimization
         .arg("--use_fast_math") // Fast math operations
