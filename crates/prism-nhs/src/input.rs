@@ -28,6 +28,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::config::SolventMode;
+use crate::rt_targets::{identify_rt_targets, RtTargets};
+use crate::solvate::solvate_protein;
+
 // ============================================================================
 // ATOM TYPES FOR NHS
 // ============================================================================
@@ -230,7 +234,8 @@ impl PrismPrepTopology {
         for i in 0..self.n_atoms {
             let element = &self.elements[i];
             let atom_name = &self.atom_names[i];
-            let res_name = &self.residue_names[i];
+            let res_id = self.residue_ids[i];
+            let res_name = &self.residue_names[res_id];
             let charge = self.charges[i];
 
             let atom_type = if self.water_oxygens.contains(&i) {
@@ -404,23 +409,115 @@ pub struct NhsPreparedInput {
     pub grid_origin: [f32; 3],
     /// Required grid dimension
     pub grid_dim: usize,
+
+    // === RT Integration Fields [STAGE-1-PREP] ===
+    /// Solvent mode (implicit/explicit/hybrid)
+    pub solvent_mode: SolventMode,
+    /// Water atom indices (if explicit/hybrid)
+    pub water_atoms: Option<Vec<usize>>,
+    /// RT probe targets for spatial sensing
+    pub rt_targets: RtTargets,
+    /// Total atom count (protein + waters)
+    pub total_atoms: usize,
 }
 
 impl NhsPreparedInput {
-    /// Create prepared input from topology
-    pub fn from_topology(topology: PrismPrepTopology, grid_spacing: f32, padding: f32) -> Self {
+    /// Create prepared input from topology with RT support
+    ///
+    /// # Arguments
+    /// * `topology` - PRISM-PREP topology
+    /// * `grid_spacing` - Grid spacing for detection
+    /// * `padding` - Padding around protein
+    /// * `solvent_mode` - Solvent mode for RT integration
+    ///
+    /// # RT Integration [STAGE-1-PREP]
+    ///
+    /// This method now supports explicit solvation and RT target identification:
+    /// 1. If Explicit/Hybrid: Generate water box around protein
+    /// 2. Identify RT targets (protein atoms, water O, aromatic centers)
+    /// 3. Compute total atom count (protein + waters)
+    ///
+    /// # Returns
+    /// * `Result<Self>` - Prepared input with RT targets
+    pub fn from_topology(
+        mut topology: PrismPrepTopology,
+        grid_spacing: f32,
+        padding: f32,
+        solvent_mode: &SolventMode,
+    ) -> Result<Self> {
+        log::info!("Preparing system with {:?} solvent mode", solvent_mode);
+
+        // Step 1: Validate solvent mode
+        solvent_mode.validate()
+            .context("Invalid solvent mode configuration")?;
+
+        // Step 2: Solvate if explicit or hybrid mode
+        let water_atoms = if solvent_mode.requires_water() {
+            let padding_angstroms = match solvent_mode {
+                SolventMode::Explicit { padding_angstroms } => *padding_angstroms,
+                SolventMode::Hybrid { .. } => padding,  // Use grid padding
+                SolventMode::Implicit => 0.0,  // Won't reach here due to requires_water check
+            };
+
+            let protein_coords = topology.positions.clone();
+            let (water_coords, water_indices) = solvate_protein(&topology, &protein_coords, padding_angstroms)
+                .context("Failed to solvate protein")?;
+
+            let n_waters = water_indices.len();
+            log::info!("Added {} water molecules ({} atoms)", n_waters, water_coords.len() / 3);
+
+            // Append water positions to topology
+            topology.positions.extend_from_slice(&water_coords);
+
+            // Append water metadata to all arrays
+            for _ in 0..n_waters {
+                topology.elements.push("O".to_string());  // Water oxygen
+                topology.atom_names.push("O".to_string());
+                topology.residue_ids.push(topology.n_residues);  // All waters in same "residue"
+                topology.chain_ids.push("W".to_string());  // Water chain
+                topology.charges.push(-0.834);  // TIP3P oxygen charge
+                topology.masses.push(15.9994);  // Oxygen mass
+            }
+
+            topology.n_atoms += n_waters;
+            topology.residue_names.push("HOH".to_string());  // Water residue name
+            topology.n_residues += 1;  // All waters count as one "residue" for simplicity
+            topology.water_oxygens = water_indices.clone();
+
+            Some(water_indices)
+        } else {
+            log::info!("Implicit mode: no explicit waters added");
+            None
+        };
+
+        // Step 3: Identify RT targets
+        let rt_targets = identify_rt_targets(&topology, solvent_mode)
+            .context("Failed to identify RT targets")?;
+
+        log::info!("{}", rt_targets.summary());
+
+        // Step 4: Compute total atom count
+        let total_atoms = topology.n_atoms;
+
+        // Step 5: Convert to NHS format
         let (positions, types, charges, residues) = topology.to_nhs_format();
         let grid_origin = topology.grid_origin(padding);
         let grid_dim = topology.required_grid_dim(grid_spacing, padding);
 
         log::info!(
-            "Prepared NHS input: {} atoms, grid {}³ at origin {:?}",
-            topology.n_atoms,
+            "Prepared NHS input: {} atoms ({} protein{}), grid {}³ at origin {:?}",
+            total_atoms,
+            total_atoms - water_atoms.as_ref().map_or(0, |w| w.len()),
+            if water_atoms.is_some() {
+                format!(" + {} waters", water_atoms.as_ref().unwrap().len())
+            } else {
+                String::new()
+            },
             grid_dim,
             grid_origin
         );
 
-        Self {
+        Ok(Self {
             topology,
             positions,
             types,
@@ -428,13 +525,31 @@ impl NhsPreparedInput {
             residues,
             grid_origin,
             grid_dim,
-        }
+            solvent_mode: solvent_mode.clone(),
+            water_atoms,
+            rt_targets,
+            total_atoms,
+        })
     }
 
-    /// Load and prepare from file
-    pub fn load(path: impl AsRef<Path>, grid_spacing: f32, padding: f32) -> Result<Self> {
+    /// Load and prepare from file with RT support
+    ///
+    /// # Arguments
+    /// * `path` - Path to PRISM-PREP topology JSON
+    /// * `grid_spacing` - Grid spacing for detection
+    /// * `padding` - Padding around protein
+    /// * `solvent_mode` - Solvent mode for RT integration
+    ///
+    /// # Returns
+    /// * `Result<Self>` - Prepared input with RT targets
+    pub fn load(
+        path: impl AsRef<Path>,
+        grid_spacing: f32,
+        padding: f32,
+        solvent_mode: &SolventMode,
+    ) -> Result<Self> {
         let topology = PrismPrepTopology::load(path)?;
-        Ok(Self::from_topology(topology, grid_spacing, padding))
+        Self::from_topology(topology, grid_spacing, padding, solvent_mode)
     }
 }
 
@@ -471,5 +586,117 @@ mod tests {
             let stats = topology.atom_type_stats();
             println!("Atom type stats: {:?}", stats);
         }
+    }
+
+    // === RT Integration Tests [STAGE-1-PREP] ===
+
+    fn create_minimal_topology() -> PrismPrepTopology {
+        PrismPrepTopology {
+            source_pdb: "test.pdb".into(),
+            n_atoms: 5,
+            n_residues: 2,
+            n_chains: 1,
+            positions: vec![
+                0.0, 0.0, 0.0,   // Atom 0
+                1.0, 0.0, 0.0,   // Atom 1
+                2.0, 0.0, 0.0,   // Atom 2
+                3.0, 0.0, 0.0,   // Atom 3
+                4.0, 0.0, 0.0,   // Atom 4
+            ],
+            elements: vec!["C".into(), "N".into(), "O".into(), "C".into(), "C".into()],
+            atom_names: vec!["CA".into(), "N".into(), "O".into(), "CB".into(), "CG".into()],
+            residue_names: vec!["ALA".into(), "PHE".into()],
+            residue_ids: vec![0, 0, 0, 1, 1],
+            chain_ids: vec!["A".into(); 5],
+            charges: vec![0.0; 5],
+            masses: vec![12.0, 14.0, 16.0, 12.0, 12.0],
+            ca_indices: vec![0],
+            bonds: Vec::new(),
+            angles: Vec::new(),
+            dihedrals: Vec::new(),
+            lj_params: Vec::new(),
+            exclusions: Vec::new(),
+            h_clusters: Vec::new(),
+            water_oxygens: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_prepared_input_implicit_mode() {
+        let topology = create_minimal_topology();
+        let solvent_mode = SolventMode::Implicit;
+
+        let prepared = NhsPreparedInput::from_topology(
+            topology,
+            0.5,  // grid_spacing
+            10.0, // padding
+            &solvent_mode,
+        ).expect("Failed to prepare input");
+
+        // Check basic fields
+        assert_eq!(prepared.total_atoms, 5, "Should have 5 protein atoms");
+        assert!(prepared.water_atoms.is_none(), "Implicit mode should have no waters");
+
+        // Check RT targets
+        assert_eq!(prepared.rt_targets.protein_atoms.len(), 5, "Should have 5 protein heavy atoms");
+        assert!(prepared.rt_targets.water_atoms.is_none(), "Should have no water targets");
+        assert_eq!(prepared.rt_targets.aromatic_centers.len(), 1, "Should have 1 aromatic center (PHE)");
+
+        // Check total target count: 5 protein + 1 aromatic = 6
+        assert_eq!(prepared.rt_targets.total_targets, 6);
+
+        println!("Implicit mode: {}", prepared.rt_targets.summary());
+    }
+
+    #[test]
+    fn test_prepared_input_explicit_mode() {
+        let topology = create_minimal_topology();
+        let solvent_mode = SolventMode::Explicit { padding_angstroms: 5.0 };
+
+        let prepared = NhsPreparedInput::from_topology(
+            topology,
+            0.5,  // grid_spacing
+            10.0, // padding
+            &solvent_mode,
+        ).expect("Failed to prepare input");
+
+        // Check that waters were added
+        assert!(prepared.water_atoms.is_some(), "Explicit mode should have waters");
+        let n_waters = prepared.water_atoms.as_ref().unwrap().len();
+        assert!(n_waters > 0, "Should have added some waters");
+
+        // Total atoms = protein + waters
+        assert_eq!(prepared.total_atoms, 5 + n_waters);
+
+        // Check RT targets include waters
+        assert!(prepared.rt_targets.water_atoms.is_some(), "Should have water targets");
+        assert_eq!(prepared.rt_targets.water_atoms.as_ref().unwrap().len(), n_waters);
+
+        println!("Explicit mode: {}", prepared.rt_targets.summary());
+        println!("Added {} waters", n_waters);
+    }
+
+    #[test]
+    fn test_prepared_input_fields_populated() {
+        let topology = create_minimal_topology();
+        let solvent_mode = SolventMode::Implicit;
+
+        let prepared = NhsPreparedInput::from_topology(
+            topology.clone(),
+            0.5,
+            10.0,
+            &solvent_mode,
+        ).expect("Failed to prepare input");
+
+        // Check all standard fields
+        assert_eq!(prepared.positions.len(), 15, "Should have 5 atoms * 3 coords");
+        assert_eq!(prepared.types.len(), 5);
+        assert_eq!(prepared.charges.len(), 5);
+        assert_eq!(prepared.residues.len(), 5);
+        assert_eq!(prepared.grid_dim, topology.required_grid_dim(0.5, 10.0));
+
+        // Check RT fields
+        assert!(matches!(prepared.solvent_mode, SolventMode::Implicit));
+        assert_eq!(prepared.total_atoms, 5);
     }
 }
