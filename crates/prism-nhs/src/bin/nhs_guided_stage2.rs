@@ -71,6 +71,10 @@ struct Args {
     /// Grid dimension
     #[arg(long, default_value = "64")]
     grid_dim: usize,
+
+    /// Number of parallel replicas (3-5 recommended for 3-5x speedup)
+    #[arg(long, default_value = "0")]
+    replicas: usize,
 }
 
 /// Hotspot from Stage 1
@@ -223,6 +227,13 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
         args.grid_dim,
         1.5, // grid_spacing
     )?;
+
+    // [STAGE-2A-PERF] Initialize parallel replicas if requested (3-5x speedup)
+    if args.replicas > 0 {
+        log::info!("🚀 Initializing {} parallel replicas (expected 3-5x speedup)...", args.replicas);
+        engine.init_parallel_streams(args.replicas, &topology)?;
+        log::info!("✅ Parallel replicas initialized");
+    }
 
     // Configure for production (no cryo, stable temperature)
     let temp_protocol = TemperatureProtocol {
