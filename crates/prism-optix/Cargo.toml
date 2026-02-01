@@ -1,0 +1,25 @@
+[package]
+name = "prism-optix"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Safe Rust wrapper for NVIDIA OptiX 9.1.0 ray tracing API"
+
+# Safe, ergonomic wrapper over optix-sys
+# Provides RAII resource management, error handling, and safe abstractions
+
+[dependencies]
+optix-sys = { path = "../optix-sys" }
+cudarc = { version = "0.19", features = ["cuda-version-from-build-system", "driver"] }
+anyhow = "1.0"
+thiserror = "2.0"
+log = "0.4"
+
+[dev-dependencies]
+env_logger = "0.11"
+
+[lib]
+name = "prism_optix"
+path = "src/lib.rs"
