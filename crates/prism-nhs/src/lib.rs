@@ -103,6 +103,8 @@ pub mod fused_engine;
 #[cfg(feature = "gpu")]
 pub mod rt_probe;
 #[cfg(feature = "gpu")]
+pub mod rt_analysis;
+#[cfg(feature = "gpu")]
 pub mod persistent_engine;
 #[cfg(feature = "gpu")]
 pub mod active_sensing;
@@ -157,6 +159,11 @@ pub use fused_engine::{
 #[cfg(feature = "gpu")]
 pub use rt_probe::{
     RtProbeEngine, RtProbeConfig, RtProbeSnapshot,
+};
+#[cfg(feature = "gpu")]
+pub use rt_analysis::{
+    RtProbeAnalyzer, RtAnalysisConfig, RtAnalysisResults,
+    VoidFormationEvent, SolvationDisruptionEvent,
 };
 #[cfg(feature = "gpu")]
 pub use active_sensing::{
