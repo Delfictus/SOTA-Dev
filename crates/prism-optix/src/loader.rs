@@ -23,6 +23,39 @@ pub struct OptixApi {
         unsafe extern "C" fn(OptixDeviceContext, i32) -> OptixResult,
     pub device_context_set_cache_location:
         unsafe extern "C" fn(OptixDeviceContext, *const i8) -> OptixResult,
+
+    // BVH acceleration structure functions
+    pub accel_compute_memory_usage: unsafe extern "C" fn(
+        OptixDeviceContext,
+        *const OptixAccelBuildOptions,
+        *const OptixBuildInput,
+        ::std::os::raw::c_uint,
+        *mut OptixAccelBufferSizes,
+    ) -> OptixResult,
+    pub accel_build: unsafe extern "C" fn(
+        OptixDeviceContext,
+        CUstream,
+        *const OptixAccelBuildOptions,
+        *const OptixBuildInput,
+        ::std::os::raw::c_uint,
+        CUdeviceptr,
+        usize,
+        CUdeviceptr,
+        usize,
+        *mut OptixTraversableHandle,
+        *const OptixAccelEmitDesc,
+        ::std::os::raw::c_uint,
+    ) -> OptixResult,
+    pub accel_refit: unsafe extern "C" fn(
+        OptixDeviceContext,
+        CUstream,
+        OptixTraversableHandle,
+        *const OptixAccelBuildOptions,
+        *const OptixBuildInput,
+        ::std::os::raw::c_uint,
+        CUdeviceptr,
+        usize,
+    ) -> OptixResult,
 }
 
 impl OptixApi {
@@ -81,6 +114,59 @@ impl OptixApi {
         })?;
         let cache_location_ptr = *cache_location_fn;
 
+        // BVH acceleration structure functions
+        let accel_compute_memory_fn: libloading::Symbol<
+            unsafe extern "C" fn(
+                OptixDeviceContext,
+                *const OptixAccelBuildOptions,
+                *const OptixBuildInput,
+                ::std::os::raw::c_uint,
+                *mut OptixAccelBufferSizes,
+            ) -> OptixResult,
+        > = lib.get(b"optixAccelComputeMemoryUsage\0").map_err(|e| {
+            OptixError::InitializationFailed(format!(
+                "optixAccelComputeMemoryUsage not found: {}",
+                e
+            ))
+        })?;
+        let accel_compute_memory_ptr = *accel_compute_memory_fn;
+
+        let accel_build_fn: libloading::Symbol<
+            unsafe extern "C" fn(
+                OptixDeviceContext,
+                CUstream,
+                *const OptixAccelBuildOptions,
+                *const OptixBuildInput,
+                ::std::os::raw::c_uint,
+                CUdeviceptr,
+                usize,
+                CUdeviceptr,
+                usize,
+                *mut OptixTraversableHandle,
+                *const OptixAccelEmitDesc,
+                ::std::os::raw::c_uint,
+            ) -> OptixResult,
+        > = lib.get(b"optixAccelBuild\0").map_err(|e| {
+            OptixError::InitializationFailed(format!("optixAccelBuild not found: {}", e))
+        })?;
+        let accel_build_ptr = *accel_build_fn;
+
+        let accel_refit_fn: libloading::Symbol<
+            unsafe extern "C" fn(
+                OptixDeviceContext,
+                CUstream,
+                OptixTraversableHandle,
+                *const OptixAccelBuildOptions,
+                *const OptixBuildInput,
+                ::std::os::raw::c_uint,
+                CUdeviceptr,
+                usize,
+            ) -> OptixResult,
+        > = lib.get(b"optixAccelRefit\0").map_err(|e| {
+            OptixError::InitializationFailed(format!("optixAccelRefit not found: {}", e))
+        })?;
+        let accel_refit_ptr = *accel_refit_fn;
+
         // Leak the library to keep it loaded for the program lifetime
         std::mem::forget(lib);
 
@@ -90,6 +176,9 @@ impl OptixApi {
             device_context_destroy: destroy_ptr,
             device_context_set_cache_enabled: cache_enabled_ptr,
             device_context_set_cache_location: cache_location_ptr,
+            accel_compute_memory_usage: accel_compute_memory_ptr,
+            accel_build: accel_build_ptr,
+            accel_refit: accel_refit_ptr,
         })
     }
 

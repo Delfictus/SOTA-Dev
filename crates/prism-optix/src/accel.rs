@@ -123,21 +123,34 @@ impl AccelStructure {
         context: &OptixContext,
         _positions_gpu: *const f32,
         _radii_gpu: *const f32,
-        _num_atoms: usize,
+        num_atoms: usize,
         flags: BvhBuildFlags,
     ) -> Result<Self> {
-        // NOTE: Full implementation requires additional OptiX functions:
-        // - optixAccelComputeMemoryUsage
-        // - optixAccelBuild
-        // These will be added to loader.rs in subsequent commits
+        // TODO: COMPLETE BVH IMPLEMENTATION
+        //
+        // This requires:
+        // 1. Correctly mapping OptixBuildFlags enum values to u32
+        // 2. Setting up OptixAccelBuildOptions with proper build flags
+        // 3. Configuring OptixBuildInput for custom primitives (AABB)
+        // 4. Calling optixAccelComputeMemoryUsage to get buffer sizes
+        // 5. Allocating temp + output buffers with cuMemAlloc
+        // 6. Calling optixAccelBuild with all parameters
+        // 7. Freeing temp buffer and handling errors
+        //
+        // The OptiX API bindings from optix-sys need verification for:
+        // - Correct struct field names (buildFlags vs build_flags)
+        // - Correct enum variant paths
+        // - Correct constant names (OPTIX_GEOMETRY_FLAG_NONE location)
+        //
+        // Estimated effort: 4-6 hours for someone familiar with OptiX 7+ API
+        // Alternatively: Use OptiX samples as reference for correct API usage
 
-        log::info!(
-            "Building BVH for atoms (flags: allow_update={}, prefer_fast_trace={})",
-            flags.allow_update,
-            flags.prefer_fast_trace
+        log::warn!(
+            "BVH build for {} atoms - INFRASTRUCTURE ONLY (implementation incomplete)",
+            num_atoms
         );
+        log::warn!("OptiX functions loaded, but full BVH build requires API verification");
 
-        // Placeholder implementation
         Ok(Self {
             context: context as *const OptixContext,
             handle: 0,
@@ -155,17 +168,16 @@ impl AccelStructure {
     /// # Performance
     ///
     /// Target: <10ms for 100K atoms
-    pub fn refit(&mut self, _positions_gpu: *const f32) -> Result<()> {
+    pub fn refit(&mut self, _positions_gpu: *const f32, _radii_gpu: *const f32, _num_atoms: usize) -> Result<()> {
         if !self.can_update {
             return Err(OptixError::InvalidOperation(
                 "BVH was not built with allow_update flag".to_string(),
             ));
         }
 
-        log::debug!("Refitting BVH with updated positions");
-
-        // NOTE: Full implementation requires optixAccelRefit
-        // Will be added to loader.rs in subsequent commits
+        // TODO: Implement BVH refit using optixAccelRefit
+        // See build_custom_primitives for requirements
+        log::warn!("BVH refit - infrastructure only (implementation incomplete)");
 
         Ok(())
     }
@@ -189,12 +201,11 @@ impl AccelStructure {
 impl Drop for AccelStructure {
     fn drop(&mut self) {
         if !self.device_buffer.is_null() {
-            // NOTE: Full implementation requires CUDA memory deallocation
-            // For now, just log
             log::debug!(
-                "Dropping AccelStructure (buffer size: {} bytes)",
+                "Dropping AccelStructure (would free {} bytes if implemented)",
                 self.device_buffer_size
             );
+            // TODO: Free GPU memory with cuMemFree when BVH build is implemented
         }
     }
 }
