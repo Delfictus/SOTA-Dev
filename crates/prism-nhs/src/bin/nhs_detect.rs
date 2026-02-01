@@ -25,7 +25,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use prism_nhs::{
     avalanche::CrypticSiteEvent,
-    config::NhsConfig,
+    config::SolventMode,
     input::NhsPreparedInput,
 };
 use std::path::PathBuf;
@@ -82,6 +82,32 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    // === RT Integration [STAGE-1-INTEGRATION] ===
+    /// Solvent mode: implicit (fast), explicit (high-fidelity), or hybrid (adaptive)
+    ///
+    /// - implicit: No explicit waters, fastest (~1 μs/day simulation)
+    /// - explicit: Full water box, most accurate (~50-100 ns/day simulation)
+    /// - hybrid: Start implicit, switch to explicit for detected pockets
+    ///
+    /// Example: --solvent-mode explicit --water-padding 10.0
+    #[arg(long, default_value = "implicit")]
+    solvent_mode: String,
+
+    /// Water box padding (Angstroms) for explicit mode
+    ///
+    /// Typical: 10-15 Å creates ~20K-50K water molecules for small proteins
+    #[arg(long, default_value = "10.0")]
+    water_padding: f32,
+
+    /// Enable RT probe scanning (requires RTX GPU with RT cores)
+    ///
+    /// Uses 84 RT cores on RTX 5080 for spatial sensing:
+    /// - Solvation disruption detection (earliest signal)
+    /// - Geometric void detection via ray tracing
+    /// - Aromatic LIF (laser-induced fluorescence)
+    #[arg(long, default_value = "false")]
+    enable_rt: bool,
 }
 
 fn main() -> Result<()> {
@@ -112,14 +138,66 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&args.output)
         .with_context(|| format!("Failed to create output directory: {}", args.output.display()))?;
 
+    // Parse solvent mode [STAGE-1-INTEGRATION]
+    let solvent_mode = match args.solvent_mode.to_lowercase().as_str() {
+        "implicit" => SolventMode::Implicit,
+        "explicit" => SolventMode::Explicit {
+            padding_angstroms: args.water_padding,
+        },
+        "hybrid" => SolventMode::Hybrid {
+            exploration_steps: 100,
+            characterization_steps: 500,
+            switch_threshold: 0.6,
+        },
+        mode => anyhow::bail!(
+            "Invalid solvent mode: '{}'. Must be 'implicit', 'explicit', or 'hybrid'",
+            mode
+        ),
+    };
+
+    log::info!("Solvent mode: {:?}", solvent_mode);
+    if args.enable_rt {
+        log::info!("RT probe scanning: ENABLED (requires RTX GPU)");
+    } else {
+        log::info!("RT probe scanning: DISABLED");
+    }
+
     log::info!("Loading PRISM-PREP topology: {}", args.input.display());
-    let prepared = NhsPreparedInput::load(&args.input, args.spacing, args.padding)?;
+    let start_load = Instant::now();
+    let prepared = NhsPreparedInput::load(&args.input, args.spacing, args.padding, &solvent_mode)?;
+    let load_time = start_load.elapsed();
 
     log::info!(
-        "Structure: {} atoms, {} residues",
+        "Structure: {} atoms ({} total with waters), {} residues",
         prepared.topology.n_atoms,
+        prepared.total_atoms,
         prepared.topology.n_residues
     );
+    log::info!("Topology loading time: {:.2}s", load_time.as_secs_f64());
+
+    // RT Integration info [STAGE-1-INTEGRATION]
+    if let Some(ref water_atoms) = prepared.water_atoms {
+        println!("\nSolvation:");
+        println!("  Mode:             {:?}", prepared.solvent_mode);
+        println!("  Water molecules:  {}", water_atoms.len());
+        println!("  Total atoms:      {} ({} protein + {} waters)",
+                 prepared.total_atoms,
+                 prepared.total_atoms - water_atoms.len(),
+                 water_atoms.len());
+    } else {
+        println!("\nSolvation:");
+        println!("  Mode:             Implicit (no explicit waters)");
+        println!("  Total atoms:      {} (protein only)", prepared.total_atoms);
+    }
+
+    println!("\nRT Probe Targets:");
+    println!("  {}", prepared.rt_targets.summary());
+    if args.enable_rt {
+        println!("  Status:           RT scanning ENABLED");
+    } else {
+        println!("  Status:           RT scanning DISABLED (use --enable-rt to activate)");
+    }
+    println!();
 
     // Print atom type statistics
     let stats = prepared.topology.atom_type_stats();
@@ -137,11 +215,12 @@ fn main() -> Result<()> {
     if !aromatic.is_empty() {
         println!("UV Bias Targets ({} aromatic residues):", aromatic.len());
         for (i, res_id) in aromatic.iter().take(10).enumerate() {
-            // Find first atom with this residue ID to get the residue name
-            let res_name = prepared.topology.residue_ids.iter()
-                .position(|&r| r == *res_id)
-                .map(|atom_idx| prepared.topology.residue_names[atom_idx].as_str())
-                .unwrap_or("???");
+            // Get residue name by residue ID (not atom index)
+            let res_name = if *res_id < prepared.topology.residue_names.len() {
+                prepared.topology.residue_names[*res_id].as_str()
+            } else {
+                "???"
+            };
             println!("  {} - Residue {} ({})", i + 1, res_id, res_name);
         }
         if aromatic.len() > 10 {
@@ -193,7 +272,7 @@ fn run_gpu_detection(args: &Args, prepared: &NhsPreparedInput) -> Result<()> {
     println!("Running NHS detection ({} frames)...\n", args.frames);
 
     let mut total_spikes = 0;
-    let mut cryptic_events: Vec<CrypticSiteEvent> = Vec::new();
+    let _cryptic_events: Vec<CrypticSiteEvent> = Vec::new();  // For future use
     let start_time = Instant::now();
 
     // For now, we run multiple "frames" with the same positions
@@ -266,12 +345,22 @@ fn run_gpu_detection(args: &Args, prepared: &NhsPreparedInput) -> Result<()> {
         println!("✗ Performance target MISSED: {:.2} ms/frame > 2.0 ms", ms_per_frame);
     }
 
-    // Save results
+    // Save results (with RT integration info) [STAGE-1-INTEGRATION]
     let output_json = args.output.join("nhs_results.json");
     let results = serde_json::json!({
         "input": args.input.to_string_lossy(),
         "n_atoms": prepared.topology.n_atoms,
         "n_residues": prepared.topology.n_residues,
+        "total_atoms": prepared.total_atoms,
+        "n_waters": prepared.water_atoms.as_ref().map(|w| w.len()).unwrap_or(0),
+        "solvent_mode": format!("{:?}", prepared.solvent_mode),
+        "rt_targets": {
+            "protein_atoms": prepared.rt_targets.protein_atoms.len(),
+            "water_atoms": prepared.rt_targets.water_atoms.as_ref().map(|w| w.len()).unwrap_or(0),
+            "aromatic_centers": prepared.rt_targets.aromatic_centers.len(),
+            "total_targets": prepared.rt_targets.total_targets,
+        },
+        "rt_enabled": args.enable_rt,
         "n_frames": args.frames,
         "grid_dim": prepared.grid_dim,
         "grid_spacing": args.spacing,
