@@ -376,7 +376,7 @@ impl BatchProcessor {
             // Load into engine
             self.engine.load_topology(&topology)?;
 
-            // Configure unified cryo-UV protocol
+            // Configure unified cryo-UV protocol (with RT defaults) [STAGE-2A-RT]
             let cryo_uv_protocol = CryoUvProtocol {
                 start_temp: self.config.cryo_temp,
                 end_temp: self.config.temperature,
@@ -390,6 +390,8 @@ impl BatchProcessor {
                 uv_burst_duration: 50,
                 scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
                 wavelength_dwell_steps: 500,
+                // RT fields use defaults from standard()
+                ..CryoUvProtocol::standard()
             };
             self.engine.set_cryo_uv_protocol(cryo_uv_protocol)?;
 
