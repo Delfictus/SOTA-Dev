@@ -832,6 +832,219 @@ impl Default for HydrophobicityThresholds {
 }
 
 // =============================================================================
+// RT CORE INTEGRATION - SOLVENT MODE
+// =============================================================================
+// [STAGE-1-CONFIG]
+
+/// Solvent treatment mode for molecular dynamics simulation
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SolventMode {
+    /// Implicit solvent (Cryo-UV-LIF mean-field model)
+    /// - Fast: ~1 μs/day throughput
+    /// - No explicit water molecules
+    /// - Good for broad conformational exploration
+    Implicit,
+
+    /// Explicit solvent (TIP3P water model)
+    /// - High fidelity: ~50-100 ns/day throughput
+    /// - Full water box with specified padding
+    /// - Required for detailed solvation dynamics
+    Explicit {
+        /// Padding around protein bounding box (Angstroms)
+        /// Typical: 10-15 Å for adequate solvation shell
+        padding_angstroms: f32,
+    },
+
+    /// Hybrid mode: start implicit, switch to explicit for interesting regions
+    /// - Adaptive: mostly fast, occasionally detailed
+    /// - Best for efficient discovery + validation
+    /// - Switches when geometric voids detected by RT probes
+    Hybrid {
+        /// Number of steps to run in implicit exploration phase
+        exploration_steps: i32,
+
+        /// Number of steps to run in explicit characterization phase (per region)
+        characterization_steps: i32,
+
+        /// RMSD drift threshold (Å) to trigger explicit solvation
+        /// When conformational change exceeds this, switch to explicit
+        switch_threshold: f32,
+    },
+}
+
+impl Default for SolventMode {
+    fn default() -> Self {
+        Self::Implicit
+    }
+}
+
+impl SolventMode {
+    /// Validate configuration parameters
+    pub fn validate(&self) -> anyhow::Result<()> {
+        match self {
+            SolventMode::Implicit => Ok(()),
+            SolventMode::Explicit { padding_angstroms } => {
+                if *padding_angstroms <= 0.0 {
+                    anyhow::bail!("Explicit solvent padding must be > 0, got {}", padding_angstroms);
+                }
+                if *padding_angstroms < 8.0 {
+                    log::warn!("Explicit solvent padding {}Å is small (recommended: ≥10Å)", padding_angstroms);
+                }
+                Ok(())
+            }
+            SolventMode::Hybrid {
+                exploration_steps,
+                characterization_steps,
+                switch_threshold,
+            } => {
+                if *exploration_steps <= 0 {
+                    anyhow::bail!("Hybrid exploration_steps must be > 0, got {}", exploration_steps);
+                }
+                if *characterization_steps <= 0 {
+                    anyhow::bail!("Hybrid characterization_steps must be > 0, got {}", characterization_steps);
+                }
+                if *switch_threshold <= 0.0 {
+                    anyhow::bail!("Hybrid switch_threshold must be > 0, got {}", switch_threshold);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Check if this mode requires explicit water molecules
+    pub fn requires_water(&self) -> bool {
+        matches!(self, SolventMode::Explicit { .. } | SolventMode::Hybrid { .. })
+    }
+
+    /// Check if this mode starts with explicit solvent
+    pub fn starts_explicit(&self) -> bool {
+        matches!(self, SolventMode::Explicit { .. })
+    }
+}
+
+// =============================================================================
+// RT CORE INTEGRATION - PROBE CONFIGURATION
+// =============================================================================
+// [STAGE-1-CONFIG]
+
+/// Configuration for RT core spatial probing system
+/// Uses RTX 5080's 84 dedicated RT cores for real-time spatial sensing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RtProbeConfig {
+    /// Enable RT probe system (requires OptiX and compatible GPU)
+    pub enabled: bool,
+
+    /// Steps between probe bursts (e.g., 100 = probe every 100 MD steps)
+    /// Lower = more frequent probing, higher overhead
+    /// Higher = less frequent, lower overhead
+    /// Typical: 50-200 steps
+    pub probe_interval: i32,
+
+    /// Number of rays to fire from each attention point
+    /// More rays = better coverage, higher cost
+    /// Typical: 128-512 rays (uniform sphere sampling)
+    pub rays_per_point: usize,
+
+    /// Number of attention points (probe origins distributed around protein)
+    /// More points = better spatial coverage
+    /// Typical: 20-100 points
+    pub attention_points: usize,
+
+    /// Displacement threshold (Å) to trigger BVH refit
+    /// When max atomic displacement exceeds this, BVH is refitted
+    /// Typical: 0.3-0.7 Å (thermal fluctuation scale)
+    pub bvh_refit_threshold: f32,
+
+    /// Enable solvent probing (only for explicit solvent mode)
+    /// Fires rays through BVH-solvent to detect water disruption
+    /// Leading indicator for pocket opening (100-500 fs early signal)
+    pub enable_solvent_probes: bool,
+
+    /// Enable aromatic LIF (Laser-Induced Fluorescence) probing
+    /// Detects spatial excitation patterns around aromatic residues
+    /// Correlates with UV burst events
+    pub enable_aromatic_lif: bool,
+}
+
+impl Default for RtProbeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,  // RT cores are available, use them!
+            probe_interval: 100,
+            rays_per_point: 256,
+            attention_points: 50,
+            bvh_refit_threshold: 0.5,
+            enable_solvent_probes: false,  // Only for explicit mode
+            enable_aromatic_lif: true,     // Always useful
+        }
+    }
+}
+
+impl RtProbeConfig {
+    /// Validate configuration parameters
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if !self.enabled {
+            return Ok(());  // No validation needed if disabled
+        }
+
+        if self.probe_interval <= 0 {
+            anyhow::bail!("RT probe_interval must be > 0, got {}", self.probe_interval);
+        }
+
+        if self.rays_per_point == 0 {
+            anyhow::bail!("RT rays_per_point must be > 0, got {}", self.rays_per_point);
+        }
+
+        if self.rays_per_point > 1024 {
+            log::warn!("RT rays_per_point {} is very high (>1024 rays), may impact performance", self.rays_per_point);
+        }
+
+        if self.attention_points == 0 {
+            anyhow::bail!("RT attention_points must be > 0, got {}", self.attention_points);
+        }
+
+        if self.bvh_refit_threshold <= 0.0 {
+            anyhow::bail!("RT bvh_refit_threshold must be > 0, got {}", self.bvh_refit_threshold);
+        }
+
+        if self.bvh_refit_threshold > 2.0 {
+            log::warn!("RT bvh_refit_threshold {}Å is very large (>2Å), BVH may become stale", self.bvh_refit_threshold);
+        }
+
+        Ok(())
+    }
+
+    /// Estimate performance overhead as fraction of MD time
+    /// Returns approximate overhead (0.0 = no overhead, 0.1 = 10% overhead)
+    pub fn estimate_overhead(&self) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+
+        // Baseline: 50μs per probe burst for BVH-protein only
+        let base_cost_us = 50.0;
+
+        // Solvent probing adds ~150μs (larger BVH)
+        let solvent_cost_us = if self.enable_solvent_probes { 150.0 } else { 0.0 };
+
+        // Ray cost scales with ray count (roughly linear)
+        let ray_cost_us = (self.rays_per_point as f32) * (self.attention_points as f32) * 0.0001;
+
+        // Total probe cost per burst
+        let total_cost_us = base_cost_us + solvent_cost_us + ray_cost_us;
+
+        // MD timestep cost (typical: 1000-2000 μs per step)
+        let md_step_cost_us = 1500.0;
+
+        // Overhead = probe_cost / (interval * step_cost)
+        let overhead = total_cost_us / ((self.probe_interval as f32) * md_step_cost_us);
+
+        overhead
+    }
+}
+
+// =============================================================================
 // TESTS
 // =============================================================================
 
@@ -1255,6 +1468,226 @@ mod tests {
         println!("TRP@{:.0}nm = {:.2} K", TRP_LAMBDA_MAX + delta, trp_plus);
         println!("TRP@{:.0}nm = {:.2} K", TRP_LAMBDA_MAX - delta, trp_minus);
         println!("Relative diff = {:.1}%", relative_diff * 100.0);
+    }
+
+    // =========================================================================
+    // RT INTEGRATION TESTS - [STAGE-1-CONFIG]
+    // =========================================================================
+
+    #[test]
+    fn test_solvent_mode_default() {
+        let mode = SolventMode::default();
+        assert_eq!(mode, SolventMode::Implicit);
+        assert!(!mode.requires_water());
+        assert!(!mode.starts_explicit());
+    }
+
+    #[test]
+    fn test_solvent_mode_validation() {
+        // Implicit: always valid
+        assert!(SolventMode::Implicit.validate().is_ok());
+
+        // Explicit: valid with positive padding
+        assert!(SolventMode::Explicit { padding_angstroms: 10.0 }.validate().is_ok());
+
+        // Explicit: invalid with zero padding
+        assert!(SolventMode::Explicit { padding_angstroms: 0.0 }.validate().is_err());
+
+        // Explicit: invalid with negative padding
+        assert!(SolventMode::Explicit { padding_angstroms: -5.0 }.validate().is_err());
+
+        // Hybrid: valid with positive values
+        assert!(SolventMode::Hybrid {
+            exploration_steps: 100000,
+            characterization_steps: 10000,
+            switch_threshold: 0.5,
+        }.validate().is_ok());
+
+        // Hybrid: invalid with zero exploration steps
+        assert!(SolventMode::Hybrid {
+            exploration_steps: 0,
+            characterization_steps: 10000,
+            switch_threshold: 0.5,
+        }.validate().is_err());
+
+        // Hybrid: invalid with negative characterization steps
+        assert!(SolventMode::Hybrid {
+            exploration_steps: 100000,
+            characterization_steps: -1,
+            switch_threshold: 0.5,
+        }.validate().is_err());
+
+        // Hybrid: invalid with zero switch threshold
+        assert!(SolventMode::Hybrid {
+            exploration_steps: 100000,
+            characterization_steps: 10000,
+            switch_threshold: 0.0,
+        }.validate().is_err());
+    }
+
+    #[test]
+    fn test_solvent_mode_water_requirements() {
+        assert!(!SolventMode::Implicit.requires_water());
+        assert!(SolventMode::Explicit { padding_angstroms: 10.0 }.requires_water());
+        assert!(SolventMode::Hybrid {
+            exploration_steps: 100000,
+            characterization_steps: 10000,
+            switch_threshold: 0.5,
+        }.requires_water());
+
+        assert!(!SolventMode::Implicit.starts_explicit());
+        assert!(SolventMode::Explicit { padding_angstroms: 10.0 }.starts_explicit());
+        assert!(!SolventMode::Hybrid {
+            exploration_steps: 100000,
+            characterization_steps: 10000,
+            switch_threshold: 0.5,
+        }.starts_explicit());
+    }
+
+    #[test]
+    fn test_solvent_mode_serialization() {
+        // Test Implicit serialization
+        let implicit = SolventMode::Implicit;
+        let json = serde_json::to_string(&implicit).unwrap();
+        assert!(json.contains("\"type\":\"Implicit\""));
+        let deserialized: SolventMode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, implicit);
+
+        // Test Explicit serialization
+        let explicit = SolventMode::Explicit { padding_angstroms: 12.5 };
+        let json = serde_json::to_string(&explicit).unwrap();
+        assert!(json.contains("\"type\":\"Explicit\""));
+        assert!(json.contains("\"padding_angstroms\":12.5"));
+        let deserialized: SolventMode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, explicit);
+
+        // Test Hybrid serialization
+        let hybrid = SolventMode::Hybrid {
+            exploration_steps: 100000,
+            characterization_steps: 10000,
+            switch_threshold: 0.7,
+        };
+        let json = serde_json::to_string(&hybrid).unwrap();
+        assert!(json.contains("\"type\":\"Hybrid\""));
+        assert!(json.contains("\"exploration_steps\":100000"));
+        let deserialized: SolventMode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, hybrid);
+    }
+
+    #[test]
+    fn test_rt_probe_config_default() {
+        let config = RtProbeConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.probe_interval, 100);
+        assert_eq!(config.rays_per_point, 256);
+        assert_eq!(config.attention_points, 50);
+        assert_eq!(config.bvh_refit_threshold, 0.5);
+        assert!(!config.enable_solvent_probes);  // Off by default (explicit only)
+        assert!(config.enable_aromatic_lif);     // On by default
+    }
+
+    #[test]
+    fn test_rt_probe_config_validation() {
+        // Default config should be valid
+        assert!(RtProbeConfig::default().validate().is_ok());
+
+        // Disabled config doesn't need validation
+        let mut disabled = RtProbeConfig::default();
+        disabled.enabled = false;
+        disabled.probe_interval = -1;  // Invalid, but should pass when disabled
+        assert!(disabled.validate().is_ok());
+
+        // Invalid probe_interval
+        let mut invalid = RtProbeConfig::default();
+        invalid.probe_interval = 0;
+        assert!(invalid.validate().is_err());
+
+        invalid.probe_interval = -100;
+        assert!(invalid.validate().is_err());
+
+        // Invalid rays_per_point
+        let mut invalid = RtProbeConfig::default();
+        invalid.rays_per_point = 0;
+        assert!(invalid.validate().is_err());
+
+        // Invalid attention_points
+        let mut invalid = RtProbeConfig::default();
+        invalid.attention_points = 0;
+        assert!(invalid.validate().is_err());
+
+        // Invalid bvh_refit_threshold
+        let mut invalid = RtProbeConfig::default();
+        invalid.bvh_refit_threshold = 0.0;
+        assert!(invalid.validate().is_err());
+
+        invalid.bvh_refit_threshold = -0.5;
+        assert!(invalid.validate().is_err());
+
+        // Valid edge cases
+        let mut valid = RtProbeConfig::default();
+        valid.probe_interval = 1;  // Very frequent probing (valid but expensive)
+        assert!(valid.validate().is_ok());
+
+        valid.rays_per_point = 1;  // Minimal rays (valid but poor coverage)
+        assert!(valid.validate().is_ok());
+    }
+
+    #[test]
+    fn test_rt_probe_config_overhead_estimation() {
+        let default_config = RtProbeConfig::default();
+        let overhead = default_config.estimate_overhead();
+
+        // With default settings, overhead should be < 10%
+        assert!(overhead < 0.1, "Default RT config overhead too high: {:.1}%", overhead * 100.0);
+
+        // Disabled config has zero overhead
+        let mut disabled = RtProbeConfig::default();
+        disabled.enabled = false;
+        assert_eq!(disabled.estimate_overhead(), 0.0);
+
+        // Higher probe frequency increases overhead
+        let mut frequent = RtProbeConfig::default();
+        frequent.probe_interval = 10;  // 10x more frequent
+        let frequent_overhead = frequent.estimate_overhead();
+        assert!(frequent_overhead > overhead, "More frequent probing should have higher overhead");
+
+        // Solvent probing adds overhead
+        let mut with_solvent = RtProbeConfig::default();
+        with_solvent.enable_solvent_probes = true;
+        let solvent_overhead = with_solvent.estimate_overhead();
+        assert!(solvent_overhead > overhead, "Solvent probing should add overhead");
+
+        // More rays increases overhead
+        let mut many_rays = RtProbeConfig::default();
+        many_rays.rays_per_point = 1024;  // 4x more rays
+        let many_rays_overhead = many_rays.estimate_overhead();
+        assert!(many_rays_overhead > overhead, "More rays should increase overhead");
+    }
+
+    #[test]
+    fn test_rt_probe_config_serialization() {
+        let config = RtProbeConfig {
+            enabled: true,
+            probe_interval: 200,
+            rays_per_point: 512,
+            attention_points: 100,
+            bvh_refit_threshold: 0.7,
+            enable_solvent_probes: true,
+            enable_aromatic_lif: false,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"enabled\":true"));
+        assert!(json.contains("\"probe_interval\":200"));
+        assert!(json.contains("\"rays_per_point\":512"));
+
+        let deserialized: RtProbeConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.enabled, config.enabled);
+        assert_eq!(deserialized.probe_interval, config.probe_interval);
+        assert_eq!(deserialized.rays_per_point, config.rays_per_point);
+        assert_eq!(deserialized.attention_points, config.attention_points);
+        assert_eq!(deserialized.enable_solvent_probes, config.enable_solvent_probes);
+        assert_eq!(deserialized.enable_aromatic_lif, config.enable_aromatic_lif);
     }
 
     #[test]
