@@ -38,6 +38,7 @@ chrono = { version = "0.4", features = ["serde"] }
 prism-io = { path = "../prism-io" }
 prism-learning = { path = "../prism-learning" }
 prism-gpu = { path = "../prism-gpu" }
+prism-optix = { path = "../prism-optix" }
 
 [[bin]]
 name = "nhs-detect"

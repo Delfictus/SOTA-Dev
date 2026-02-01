@@ -101,6 +101,8 @@ pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod fused_engine;
 #[cfg(feature = "gpu")]
+pub mod rt_probe;
+#[cfg(feature = "gpu")]
 pub mod persistent_engine;
 #[cfg(feature = "gpu")]
 pub mod active_sensing;
@@ -149,6 +151,10 @@ pub use fused_engine::{
     SpikeQualityScore, SpikeQualityCategory, SpikePersistenceTracker,
     // RMSD utilities
     compute_rmsd_subset, find_atoms_near_position, compute_alignment_quality,
+};
+#[cfg(feature = "gpu")]
+pub use rt_probe::{
+    RtProbeEngine, RtProbeConfig, RtProbeSnapshot,
 };
 #[cfg(feature = "gpu")]
 pub use active_sensing::{
