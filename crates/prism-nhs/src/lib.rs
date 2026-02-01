@@ -93,6 +93,7 @@ pub mod adaptive;
 pub mod aromatic_proximity;
 pub mod avalanche;
 pub mod config;
+pub mod solvate;
 pub mod exclusion;
 #[cfg(feature = "gpu")]
 pub mod gpu;
