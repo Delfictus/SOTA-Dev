@@ -451,8 +451,8 @@ impl NhsPreparedInput {
         solvent_mode.validate()
             .context("Invalid solvent mode configuration")?;
 
-        // Step 2: Solvate if explicit or hybrid mode
-        let water_atoms = if solvent_mode.requires_water() {
+        // Step 2: Solvate if explicit mode (hybrid starts implicit, adds waters later in Stage 2b)
+        let water_atoms = if solvent_mode.starts_explicit() {
             let padding_angstroms = match solvent_mode {
                 SolventMode::Explicit { padding_angstroms } => *padding_angstroms,
                 SolventMode::Hybrid { .. } => padding,  // Use grid padding

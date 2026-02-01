@@ -904,8 +904,8 @@ impl SolventMode {
                 if *characterization_steps <= 0 {
                     anyhow::bail!("Hybrid characterization_steps must be > 0, got {}", characterization_steps);
                 }
-                if *switch_threshold <= 0.0 {
-                    anyhow::bail!("Hybrid switch_threshold must be > 0, got {}", switch_threshold);
+                if *switch_threshold <= 0.0 || *switch_threshold > 1.0 {
+                    anyhow::bail!("Hybrid switch_threshold must be in range (0.0, 1.0], got {}", switch_threshold);
                 }
                 Ok(())
             }
