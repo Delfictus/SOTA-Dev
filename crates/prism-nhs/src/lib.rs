@@ -114,6 +114,7 @@ pub mod neuromorphic;
 pub mod pipeline;
 pub mod trajectory;
 pub mod rmsf;
+pub mod clustering;
 pub mod uv_bias;
 
 // Re-exports for convenience
@@ -188,6 +189,9 @@ pub use trajectory::{
     write_ensemble_pdb, load_ensemble_pdb,
 };
 pub use rmsf::{RmsfAnalysis, RmsfCalculator};
+pub use clustering::{
+    ClusteringConfig, ClusteringResults, RepresentativeFrame, TrajectoryClusterer,
+};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
