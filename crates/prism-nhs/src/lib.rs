@@ -205,3 +205,4 @@ mod tests {
         assert!(config.uv_bias_enabled);
     }
 }
+pub mod simd_batch_integration;

@@ -37,6 +37,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Internal crates
 prism-io = { path = "../prism-io" }
 prism-learning = { path = "../prism-learning" }
+prism-gpu = { path = "../prism-gpu" }
 
 [[bin]]
 name = "nhs-detect"
@@ -95,3 +96,8 @@ required-features = ["gpu"]
 [dev-dependencies]
 tempfile = "3.0"
 tokio-test = "0.4"
+
+[[bin]]
+name = "nhs-simd-batch-test"
+path = "src/bin/nhs_simd_batch_test.rs"
+required-features = ["gpu"]
