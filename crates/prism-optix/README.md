@@ -17,10 +17,11 @@ This crate provides safe, ergonomic abstractions over the unsafe `optix-sys` FFI
 
 - ✅ **Comprehensive Error Handling**: Rich error types with context messages
 - ✅ **Type-Safe API**: No raw pointers in public API
-- ✅ **RAII Patterns**: Automatic resource cleanup (prepared for Phase 2.3)
+- ✅ **RAII Patterns**: Automatic resource cleanup
 - ✅ **CUDA Integration**: Works seamlessly with cudarc
-- 🔄 **Function Table**: Full OptiX API access (Phase 2.3)
-- 🔄 **BVH Acceleration**: Fast spatial queries (Phase 2.3)
+- ✅ **Function Table**: Dynamic OptiX API loading with libloading
+- ✅ **Context Management**: Full lifecycle (init, create, destroy, cache)
+- 🔄 **BVH Acceleration**: Infrastructure complete, full build/refit next
 
 ## Architecture
 
@@ -157,12 +158,13 @@ All 6 tests passing ✅
 - OptixContext foundation
 - 6 passing tests
 
-### Phase 2.3 🔄 Next
-- OptiX function table initialization
+### Phase 2.3 ✅ Complete (Current)
+- OptiX function table with libloading
 - Full context creation (init, create, destroy)
 - Cache management (location, enable/disable)
 - Log callback integration
-- BVH acceleration structure builders
+- BVH acceleration structure infrastructure
+- 9 passing tests
 
 ### Phase 2.4 🔄 Future
 - RT probe engine integration

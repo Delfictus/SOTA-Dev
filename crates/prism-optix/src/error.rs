@@ -49,6 +49,10 @@ pub enum OptixError {
     #[error("Acceleration structure error: {0}")]
     AccelError(String),
 
+    /// Invalid operation
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(String),
+
     /// Unknown OptiX error
     #[error("Unknown OptiX error (code {code}): {message}")]
     Unknown { code: u32, message: String },

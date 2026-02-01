@@ -70,12 +70,14 @@ pub use optix_sys::{
 };
 
 // Internal modules
+mod accel;
 mod context;
 mod context_impl;
 mod error;
 mod loader;
 
 // Public exports
+pub use accel::{AccelStructure, BvhBuildFlags, BvhInputType};
 pub use context::OptixContext;
 pub use error::{check_optix, OptixError, Result};
 
