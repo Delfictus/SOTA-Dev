@@ -102,3 +102,8 @@ tokio-test = "0.4"
 name = "nhs-simd-batch-test"
 path = "src/bin/nhs_simd_batch_test.rs"
 required-features = ["gpu"]
+
+[[bin]]
+name = "stage2b-process"
+path = "src/bin/stage2b_process.rs"
+required-features = ["gpu"]
