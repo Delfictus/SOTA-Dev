@@ -113,6 +113,7 @@ pub mod mapping;
 pub mod neuromorphic;
 pub mod pipeline;
 pub mod trajectory;
+pub mod rmsf;
 pub mod uv_bias;
 
 // Re-exports for convenience
@@ -186,6 +187,7 @@ pub use trajectory::{
     TrajectoryConfig, TrajectoryFrame, TrajectoryWriter, TrajectoryStats,
     write_ensemble_pdb, load_ensemble_pdb,
 };
+pub use rmsf::{RmsfAnalysis, RmsfCalculator};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
