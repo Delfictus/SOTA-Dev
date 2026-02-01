@@ -71,7 +71,9 @@ pub use optix_sys::{
 
 // Internal modules
 mod context;
+mod context_impl;
 mod error;
+mod loader;
 
 // Public exports
 pub use context::OptixContext;

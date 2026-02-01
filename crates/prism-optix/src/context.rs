@@ -2,33 +2,23 @@
 //
 // Safe RAII wrapper for OptixDeviceContext with automatic cleanup.
 // Manages OptiX context lifecycle and provides safe API access.
-//
-// NOTE: Full implementation of context creation requires OptiX function table
-// initialization, which will be implemented in Phase 2.3 (BVH acceleration).
-// This module provides the foundational types and structure.
 
-use crate::error::{OptixError, Result};
 use cudarc::driver::sys::CUcontext;
 use optix_sys::*;
-use std::ptr;
 
 /// Safe wrapper for OptixDeviceContext with RAII semantics
 ///
 /// This struct ensures proper cleanup of OptiX resources when dropped.
 /// Only one OptiX context should exist per CUDA context.
-///
-/// # Note
-///
-/// Full implementation requires OptiX function table init (Phase 2.3)
 pub struct OptixContext {
     /// Raw OptiX device context (handle)
-    handle: OptixDeviceContext,
+    pub(crate) handle: OptixDeviceContext,
 
     /// CUDA context this OptiX context is bound to
-    cuda_context: CUcontext,
+    pub(crate) cuda_context: CUcontext,
 
     /// Validation mode (affects performance vs safety trade-off)
-    validation_enabled: bool,
+    pub(crate) validation_enabled: bool,
 }
 
 impl OptixContext {
@@ -70,22 +60,14 @@ impl OptixContext {
         self.validation_enabled
     }
 
-    // NOTE: Additional methods (set_cache_location, set_cache_enabled, etc.)
-    // will be implemented in Phase 2.3 with full OptiX function table support
+    // NOTE: Full implementation in context_impl.rs:
+    // - init()
+    // - new()
+    // - set_cache_location()
+    // - set_cache_enabled()
 }
 
-impl Drop for OptixContext {
-    fn drop(&mut self) {
-        // NOTE: Actual destruction will be implemented in Phase 2.3
-        // with full OptiX function table support
-        if !self.handle.is_null() {
-            log::debug!("OptiX context handle dropped (destruction in Phase 2.3)");
-        }
-    }
-}
-
-// NOTE: OptiX log callback will be implemented in Phase 2.3
-// with full function table support
+// NOTE: Drop implementation in context_impl.rs
 
 // OptixContext is Send (can be moved between threads)
 // but not Sync (cannot be shared between threads without synchronization)

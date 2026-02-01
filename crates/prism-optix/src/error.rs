@@ -4,8 +4,6 @@
 // Converts OptixResult codes to Rust Result<T, E> pattern.
 
 use optix_sys::{OptixResult, OPTIX_VERSION};
-use std::ffi::CStr;
-use std::fmt;
 use thiserror::Error;
 
 /// OptiX error type with detailed error information
