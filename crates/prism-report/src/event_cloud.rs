@@ -320,6 +320,167 @@ pub fn read_spike_events(path: impl AsRef<Path>) -> Result<Vec<RawSpikeEvent>> {
     Ok(events)
 }
 
+// =============================================================================
+// STAGE 2B PROCESSED EVENTS (Quality-Scored Spikes)
+// =============================================================================
+
+/// Processed spike event from Stage 2b with quality scoring
+///
+/// Stage 2b processes raw spike events from Stage 2a and adds:
+/// - Quality scores based on RMSF convergence, clustering, RT correlation
+/// - Cluster assignments for thermodynamic weighting
+/// - RT probe correlation flags
+///
+/// This is the preferred input for Stage 3 when available, as it filters
+/// low-quality events and provides confidence weighting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessedSpikeEvent {
+    /// Timestep when spike occurred
+    pub timestep: i32,
+    /// Spike position [x, y, z] in Å
+    pub position: [f32; 3],
+    /// Temperature at spike (K)
+    #[serde(default)]
+    pub temperature: f32,
+    /// Spike intensity
+    pub intensity: f32,
+
+    /// Quality score (0-1) from Stage 2b analysis
+    pub quality_score: f32,
+    /// RMSF converged at this timestep
+    pub rmsf_converged: bool,
+    /// Cluster ID from trajectory clustering
+    pub cluster_id: usize,
+    /// Boltzmann weight of cluster
+    pub cluster_weight: f32,
+
+    /// RT probe void formation detected nearby (temporal correlation)
+    pub rt_void_nearby: bool,
+    /// RT probe solvation disruption detected nearby
+    pub rt_disruption_nearby: bool,
+    /// Is this a leading RT signal? (RT event precedes spike)
+    pub rt_leading_signal: bool,
+}
+
+impl ProcessedSpikeEvent {
+    /// Convert to RawSpikeEvent for backward compatibility
+    pub fn to_raw(&self, phase: AblationPhase, replicate_id: usize) -> RawSpikeEvent {
+        RawSpikeEvent {
+            timestep: self.timestep,
+            position: self.position,
+            nearby_residues: Vec::new(), // Not preserved in processed events
+            intensity: self.intensity,
+            phase,
+            replicate_id,
+        }
+    }
+
+    /// Check if this event passes quality threshold
+    pub fn is_high_quality(&self, threshold: f32) -> bool {
+        self.quality_score >= threshold
+    }
+}
+
+/// Read processed spike events from Stage 2b output (processed_events.jsonl)
+///
+/// These events have been filtered and scored by Stage 2b trajectory analysis.
+/// Returns events sorted by quality_score descending.
+pub fn read_processed_spike_events(path: impl AsRef<Path>) -> Result<Vec<ProcessedSpikeEvent>> {
+    let file = File::open(path.as_ref())
+        .with_context(|| format!("Failed to open processed events: {}", path.as_ref().display()))?;
+    let reader = BufReader::new(file);
+
+    let mut events = Vec::new();
+    for (line_num, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| format!("Line {} read error", line_num + 1))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let event: ProcessedSpikeEvent = serde_json::from_str(&line)
+            .with_context(|| format!("Failed to parse processed event on line {}", line_num + 1))?;
+        events.push(event);
+    }
+
+    // Sort by quality score descending (best first)
+    events.sort_by(|a, b| {
+        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    log::info!(
+        "Loaded {} processed events from Stage 2b (min score: {:.2}, max score: {:.2})",
+        events.len(),
+        events.last().map_or(0.0, |e| e.quality_score),
+        events.first().map_or(0.0, |e| e.quality_score)
+    );
+
+    Ok(events)
+}
+
+/// Read processed events if available, otherwise fall back to raw events
+///
+/// Prefers Stage 2b processed_events.jsonl for better quality filtering.
+/// Falls back to raw spike_events.jsonl if processed not available.
+///
+/// Returns: (events, is_processed) - tuple indicating data source
+pub fn read_best_available_events(
+    processed_path: impl AsRef<Path>,
+    raw_path: impl AsRef<Path>,
+) -> Result<(Vec<ProcessedSpikeEvent>, bool)> {
+    // Try processed events first (Stage 2b output)
+    if processed_path.as_ref().exists() {
+        match read_processed_spike_events(&processed_path) {
+            Ok(events) if !events.is_empty() => {
+                log::info!(
+                    "Using Stage 2b processed events: {} high-quality spikes",
+                    events.len()
+                );
+                return Ok((events, true));
+            }
+            Ok(_) => {
+                log::warn!("Stage 2b processed_events.jsonl is empty, falling back to raw");
+            }
+            Err(e) => {
+                log::warn!("Failed to read processed events: {}, falling back to raw", e);
+            }
+        }
+    }
+
+    // Fall back to raw spike events
+    if raw_path.as_ref().exists() {
+        let raw_events = read_spike_events(&raw_path)?;
+        log::info!(
+            "Using raw Stage 2a events: {} spikes (no quality scoring)",
+            raw_events.len()
+        );
+
+        // Convert to ProcessedSpikeEvent with default scores
+        let processed: Vec<ProcessedSpikeEvent> = raw_events
+            .into_iter()
+            .map(|raw| ProcessedSpikeEvent {
+                timestep: raw.timestep,
+                position: raw.position,
+                temperature: 300.0, // Default
+                intensity: raw.intensity,
+                quality_score: 0.5, // Neutral score for raw events
+                rmsf_converged: false,
+                cluster_id: 0,
+                cluster_weight: 0.1,
+                rt_void_nearby: false,
+                rt_disruption_nearby: false,
+                rt_leading_signal: false,
+            })
+            .collect();
+
+        return Ok((processed, false));
+    }
+
+    anyhow::bail!(
+        "No spike events found. Expected processed_events.jsonl or spike_events.jsonl"
+    );
+}
+
 /// Read events from JSONL file
 pub fn read_events(path: impl AsRef<Path>) -> Result<EventCloud> {
     let file = File::open(path.as_ref())

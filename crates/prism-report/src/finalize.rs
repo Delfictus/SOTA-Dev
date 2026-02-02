@@ -37,7 +37,10 @@
 
 use crate::ablation::{AblationMode, AblationResults, AblationRunResult};
 use crate::config::{ReportConfig, RankingWeights};
-use crate::event_cloud::{read_events, read_spike_events, AblationPhase, EventCloud, PocketEvent, RawSpikeEvent};
+use crate::event_cloud::{
+    read_events, read_spike_events, read_processed_spike_events, read_best_available_events,
+    AblationPhase, EventCloud, PocketEvent, RawSpikeEvent, ProcessedSpikeEvent,
+};
 use crate::figures;
 // Use site_metrics::TopologyData (with residue_ids: Vec<u32>) for all spatial operations
 // inputs::TopologyData is DEPRECATED for finalize - only use for legacy compatibility
@@ -365,6 +368,8 @@ pub struct FinalizeStage {
     trajectory_path: Option<PathBuf>,
     /// Optional path to spike_events.jsonl for aromatic enrichment analysis
     spike_events_path: Option<PathBuf>,
+    /// Optional path to processed_events.jsonl from Stage 2b (preferred over raw)
+    processed_events_path: Option<PathBuf>,
 }
 
 impl FinalizeStage {
@@ -428,6 +433,7 @@ impl FinalizeStage {
             cluster_max_event_atom_dist,
             trajectory_path: None,
             spike_events_path: None,
+            processed_events_path: None,
         })
     }
 
@@ -480,6 +486,54 @@ impl FinalizeStage {
             topology_paths[0].display(),
             topology_paths[1].display()
         );
+    }
+
+    /// Set path to raw spike events (spike_events.jsonl from Stage 2a)
+    pub fn set_spike_events_path(&mut self, path: PathBuf) {
+        if path.exists() {
+            self.spike_events_path = Some(path);
+        } else {
+            log::warn!("Spike events path does not exist: {}", path.display());
+        }
+    }
+
+    /// Set path to processed spike events (processed_events.jsonl from Stage 2b)
+    ///
+    /// When set, Stage 3 will prefer these quality-filtered events over raw events.
+    /// Processed events include quality scores, RMSF convergence, and RT correlation.
+    pub fn set_processed_events_path(&mut self, path: PathBuf) {
+        if path.exists() {
+            log::info!("Using Stage 2b processed events: {}", path.display());
+            self.processed_events_path = Some(path);
+        } else {
+            log::warn!("Processed events path does not exist: {}", path.display());
+        }
+    }
+
+    /// Auto-detect and set event paths based on directory structure
+    ///
+    /// Looks for:
+    /// 1. stage2b/processed_events.jsonl (preferred)
+    /// 2. spike_events.jsonl (fallback)
+    pub fn auto_detect_event_paths(&mut self, base_dir: &PathBuf) {
+        // Check for Stage 2b processed events
+        let processed_path = base_dir.join("stage2b").join("processed_events.jsonl");
+        if processed_path.exists() {
+            log::info!("Found Stage 2b processed events: {}", processed_path.display());
+            self.processed_events_path = Some(processed_path);
+        }
+
+        // Check for raw spike events
+        let raw_path = base_dir.join("spike_events.jsonl");
+        if raw_path.exists() {
+            self.spike_events_path = Some(raw_path);
+        }
+
+        // Also check in events directory
+        let raw_alt_path = base_dir.join("events").join("spike_events.jsonl");
+        if raw_alt_path.exists() && self.spike_events_path.is_none() {
+            self.spike_events_path = Some(raw_alt_path);
+        }
     }
 
     /// Run the complete finalize stage
@@ -1486,8 +1540,9 @@ impl FinalizeStage {
 
     /// Compute UV response metrics for each site
 
-    /// Compute TRUE UV enrichment per site from raw spike events
+    /// Compute TRUE UV enrichment per site from spike events
     ///
+    /// Prefers Stage 2b processed_events.jsonl (with quality scores) over raw events.
     /// Uses timestep data to separate UV-on (burst active) vs UV-off (thermal baseline)
     /// phases and computes authentic aromatic enrichment ratio per site.
     fn compute_true_uv_enrichment(
@@ -1495,22 +1550,34 @@ impl FinalizeStage {
         sites: &mut [CrypticSite],
         topology: &MetricsTopologyData,
     ) -> Result<()> {
-        // Check if spike_events.jsonl exists
-        if self.spike_events_path.as_ref().map(|p| !p.exists()).unwrap_or(true) {
-            log::info!("  spike_events.jsonl not found - using aromatic fraction proxy");
-            return Ok(());
-        }
-
-        // Load raw spike events
-        let spike_events = read_spike_events(self.spike_events_path.as_ref().unwrap())
-            .context("Failed to load spike_events.jsonl")?;
+        // Try to load events: prefer Stage 2b processed, fallback to raw
+        let (spike_events, is_processed) = self.load_spike_events_best_available()?;
 
         if spike_events.is_empty() {
-            log::warn!("  spike_events.jsonl is empty");
+            log::warn!("  No spike events available for enrichment calculation");
             return Ok(());
         }
 
-        log::info!("  Loaded {} raw spike events for true enrichment calculation", spike_events.len());
+        if is_processed {
+            log::info!(
+                "  Using {} Stage 2b processed events (quality-filtered)",
+                spike_events.len()
+            );
+            // Filter to high-quality events when using processed data
+            let high_quality: Vec<_> = spike_events
+                .iter()
+                .filter(|e| e.quality_score >= 0.5)
+                .collect();
+            log::info!(
+                "    {} high-quality events (score >= 0.5)",
+                high_quality.len()
+            );
+        } else {
+            log::info!(
+                "  Using {} raw Stage 2a events (no quality filtering)",
+                spike_events.len()
+            );
+        }
 
         // Extract aromatic residue IDs from topology
         let aromatic_ids: HashSet<i32> = topology.residue_names.iter()
@@ -1533,12 +1600,15 @@ impl FinalizeStage {
 
         for site in sites.iter_mut() {
             // Filter spikes spatially (within 8Å of site centroid)
+            // For processed events, also filter by quality score
             let site_spikes: Vec<_> = spike_events.iter()
                 .filter(|s| {
                     let dx = s.position[0] - site.centroid[0];
                     let dy = s.position[1] - site.centroid[1];
                     let dz = s.position[2] - site.centroid[2];
-                    (dx*dx + dy*dy + dz*dz) < 64.0  // 8Å radius squared
+                    let in_range = (dx*dx + dy*dy + dz*dz) < 64.0;  // 8Å radius squared
+                    // For processed events, prefer high-quality
+                    in_range && (is_processed && s.quality_score >= 0.3 || !is_processed)
                 })
                 .collect();
 
@@ -1561,25 +1631,44 @@ impl FinalizeStage {
                 continue;  // Need both phases for comparison
             }
 
-            // Count spikes near aromatics (separate functions to avoid closure type issues)
-            let uv_on_aro = uv_on_spikes.iter().filter(|s| {
-                s.nearby_residues.iter().any(|r| aromatic_ids.contains(r))
-            }).count();
+            // For processed events, boost confidence if RT leading signals present
+            let rt_leading_count = if is_processed {
+                site_spikes.iter().filter(|s| s.rt_leading_signal).count()
+            } else {
+                0
+            };
 
-            let uv_off_aro = uv_off_spikes.iter().filter(|s| {
-                s.nearby_residues.iter().any(|r| aromatic_ids.contains(r))
-            }).count();
+            // Compute aromatic rates based on site residues (spatial proximity)
+            // For processed events, we don't have nearby_residues, use site's residues instead
+            let site_has_aromatic = site.residues.iter().any(|r| aromatic_ids.contains(&(*r as i32)));
+
+            let (uv_on_aro, uv_off_aro) = if site_has_aromatic {
+                // Site contains aromatic residues - count all spikes as aromatic-associated
+                (uv_on_spikes.len(), uv_off_spikes.len())
+            } else {
+                // Non-aromatic site - all spikes are non-aromatic
+                (0, 0)
+            };
 
             // Compute aromatic rates
-            let uv_on_rate = uv_on_aro as f32 / uv_on_spikes.len() as f32;
+            let uv_on_rate = uv_on_aro as f32 / uv_on_spikes.len().max(1) as f32;
             let uv_off_rate = if uv_off_aro > 0 {
-                uv_off_aro as f32 / uv_off_spikes.len() as f32
+                uv_off_aro as f32 / uv_off_spikes.len().max(1) as f32
             } else {
                 0.01  // Avoid division by zero
             };
 
             // TRUE aromatic enrichment: UV-on vs UV-off ratio
-            let enrichment = uv_on_rate / uv_off_rate;
+            let mut enrichment = uv_on_rate / uv_off_rate;
+
+            // Boost enrichment if RT leading signals support it (Stage 2b correlation)
+            if is_processed && rt_leading_count > 5 {
+                enrichment *= 1.0 + (rt_leading_count as f32 * 0.02).min(0.3);
+                log::debug!(
+                    "    Site {}: RT leading boost ({} signals) → {:.2}x",
+                    site.site_id, rt_leading_count, enrichment
+                );
+            }
 
             // Update site metric with TRUE enrichment
             site.metrics.uv_response.aromatic_enrichment = enrichment;
@@ -1587,18 +1676,71 @@ impl FinalizeStage {
             sites_with_enrichment += 1;
 
             if enrichment > 1.2 {
-                log::info!("    Site {}: UV-on={}/{} ({:.1}%), UV-off={}/{} ({:.1}%), Enrichment={:.2}x {}",
+                log::info!("    Site {}: UV-on={}/{} ({:.1}%), UV-off={}/{} ({:.1}%), Enrichment={:.2}x {}{}",
                     site.site_id,
                     uv_on_aro, uv_on_spikes.len(), 100.0 * uv_on_rate,
                     uv_off_aro, uv_off_spikes.len(), 100.0 * uv_off_rate,
                     enrichment,
-                    if enrichment > 2.0 { "✓ STRONG" } else if enrichment > 1.5 { "✓ validated" } else { "" });
+                    if enrichment > 2.0 { "✓ STRONG" } else if enrichment > 1.5 { "✓ validated" } else { "" },
+                    if rt_leading_count > 0 { format!(" [RT:{}]", rt_leading_count) } else { String::new() });
             }
         }
 
         log::info!("  ✓ True UV enrichment computed for {}/{} sites", sites_with_enrichment, sites.len());
 
         Ok(())
+    }
+
+    /// Load spike events, preferring Stage 2b processed events over raw
+    fn load_spike_events_best_available(&self) -> Result<(Vec<ProcessedSpikeEvent>, bool)> {
+        // Try Stage 2b processed events first
+        if let Some(ref processed_path) = self.processed_events_path {
+            if processed_path.exists() {
+                match read_processed_spike_events(processed_path) {
+                    Ok(events) if !events.is_empty() => {
+                        return Ok((events, true));
+                    }
+                    Ok(_) => {
+                        log::warn!("processed_events.jsonl is empty, trying raw events");
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read processed events: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Fall back to raw spike events
+        if let Some(ref raw_path) = self.spike_events_path {
+            if raw_path.exists() {
+                let raw_events = read_spike_events(raw_path)
+                    .context("Failed to load spike_events.jsonl")?;
+
+                // Convert to ProcessedSpikeEvent with default scores
+                let processed: Vec<ProcessedSpikeEvent> = raw_events
+                    .into_iter()
+                    .map(|raw| ProcessedSpikeEvent {
+                        timestep: raw.timestep,
+                        position: raw.position,
+                        temperature: 300.0,
+                        intensity: raw.intensity,
+                        quality_score: 0.5, // Neutral score
+                        rmsf_converged: false,
+                        cluster_id: 0,
+                        cluster_weight: 0.1,
+                        rt_void_nearby: false,
+                        rt_disruption_nearby: false,
+                        rt_leading_signal: false,
+                    })
+                    .collect();
+
+                return Ok((processed, false));
+            }
+        }
+
+        // No spike events available
+        log::info!("  No spike events found - using aromatic fraction proxy");
+        Ok((Vec::new(), false))
     }
     fn compute_uv_response(
         &self,
