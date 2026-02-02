@@ -53,9 +53,20 @@ pub enum OptixError {
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
 
+    /// GPU memory allocation failed
+    #[error("GPU memory allocation failed: {0}")]
+    AllocationFailed(String),
+
     /// Unknown OptiX error
     #[error("Unknown OptiX error (code {code}): {message}")]
     Unknown { code: u32, message: String },
+}
+
+/// Implement conversion from OptixResult
+impl From<OptixResult> for OptixError {
+    fn from(result: OptixResult) -> Self {
+        OptixError::from_result(result, OptixError::optix_error_name(result))
+    }
 }
 
 impl OptixError {
