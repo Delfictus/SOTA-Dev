@@ -32,7 +32,7 @@ impl Default for RtProbeConfig {
 }
 
 /// RT probe snapshot
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RtProbeSnapshot {
     pub timestep: i32,
     pub hit_distances: Vec<f32>,
