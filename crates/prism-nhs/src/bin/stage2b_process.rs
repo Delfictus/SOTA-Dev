@@ -473,27 +473,39 @@ fn find_cluster_for_timestep(
     (best_cluster, best_weight)
 }
 
-/// Check if RT probe events are temporally correlated with this spike
+/// Check if RT probe events are spatiotemporally correlated with this spike
 ///
-/// Note: RT events don't have position data, so we use temporal correlation only.
+/// Uses both spatial (8Å radius) and temporal (500 timestep) proximity.
 #[cfg(feature = "gpu")]
 fn check_rt_proximity(
     spike: &RawSpikeEvent,
     rt: &RtAnalysisResults,
 ) -> (bool, bool, bool) {
-    const TIME_WINDOW: i32 = 500;         // timesteps for correlation
-    const LEADING_WINDOW: i32 = 200;      // timesteps before spike for leading signal
+    const SPATIAL_THRESHOLD_SQ: f32 = 64.0;  // 8Å radius squared
+    const TIME_WINDOW: i32 = 500;             // timesteps for correlation
+    const LEADING_WINDOW: i32 = 200;          // timesteps before spike for leading signal
 
     let spike_time = spike.timestep;
+    let spike_pos = spike.position;
 
     let mut void_nearby = false;
     let mut disruption_nearby = false;
     let mut leading_signal = false;
 
-    // Check void formation events (temporal proximity only)
+    // Check void formation events (spatiotemporal proximity)
     for void_event in &rt.void_events {
         let time_diff = (void_event.timestep - spike_time).abs();
-        if time_diff <= TIME_WINDOW {
+        if time_diff > TIME_WINDOW {
+            continue;
+        }
+
+        // Spatial check
+        let dx = void_event.position[0] - spike_pos[0];
+        let dy = void_event.position[1] - spike_pos[1];
+        let dz = void_event.position[2] - spike_pos[2];
+        let dist_sq = dx * dx + dy * dy + dz * dz;
+
+        if dist_sq <= SPATIAL_THRESHOLD_SQ {
             void_nearby = true;
 
             // Check if RT event precedes spike (leading signal)
@@ -503,10 +515,20 @@ fn check_rt_proximity(
         }
     }
 
-    // Check solvation disruption events (temporal proximity only)
+    // Check solvation disruption events (spatiotemporal proximity)
     for disruption in &rt.disruption_events {
         let time_diff = (disruption.timestep - spike_time).abs();
-        if time_diff <= TIME_WINDOW {
+        if time_diff > TIME_WINDOW {
+            continue;
+        }
+
+        // Spatial check
+        let dx = disruption.position[0] - spike_pos[0];
+        let dy = disruption.position[1] - spike_pos[1];
+        let dz = disruption.position[2] - spike_pos[2];
+        let dist_sq = dx * dx + dy * dy + dz * dz;
+
+        if dist_sq <= SPATIAL_THRESHOLD_SQ {
             disruption_nearby = true;
 
             // Solvation disruption is a strong leading indicator if it precedes spike
@@ -519,14 +541,26 @@ fn check_rt_proximity(
     (void_nearby, disruption_nearby, leading_signal)
 }
 
-/// Compute quality score for a spike event
+/// Compute quality score using 3-Tier Physics-Based Calibration
 ///
-/// Factors:
-/// - RMSF convergence: indicates equilibrated system
-/// - Cluster weight: higher weight = more thermodynamically significant
-/// - RT void nearby: corroborating evidence
-/// - RT leading signal: strongest indicator (RT precedes spike)
-/// - Intensity: raw signal strength
+/// This scoring is agnostic and generalizable - not calibrated to specific known
+/// cryptic sites, but to CATEGORICAL indicators of cryptic binding site physics:
+///
+/// ## Tier 1: Physical Mechanism (UV/Dewetting)
+/// At least one of these signals must be present:
+/// - **UV Aromatic Response**: Chromophore absorption triggers opening
+/// - **Dewetting Signal**: Water displacement from hydrophobic pocket
+///
+/// ## Tier 2: Thermodynamic Validity (Equilibrium)
+/// System must be in valid thermodynamic state:
+/// - **RMSF Convergence**: Trajectory is equilibrated
+/// - **Boltzmann Cluster Weight**: Appears in favorable conformational ensemble
+///
+/// ## Tier 3: Temporal Causality (RT Leading)
+/// Mechanistic evidence of pocket opening:
+/// - **RT Leading Signal**: Void formation BEFORE spike event (causal mechanism)
+///
+/// A TRUE cryptic site shows evidence from ≥2 of 3 tiers.
 #[cfg(feature = "gpu")]
 fn compute_quality_score(
     spike: &RawSpikeEvent,
@@ -536,36 +570,67 @@ fn compute_quality_score(
     rt_disruption_nearby: bool,
     rt_leading_signal: bool,
 ) -> f32 {
-    let mut score = 0.0f32;
+    // ==========================================================================
+    // TIER 1: Physical Mechanism (UV Aromatic or Dewetting)
+    // ==========================================================================
+    // UV signal: high intensity suggests chromophore-mediated opening
+    let uv_signal = (spike.intensity / 50.0).min(1.0);
 
-    // Base: intensity (normalized, assume max ~100)
-    score += (spike.intensity / 100.0).min(1.0) * 0.2;
+    // Dewetting signal: RT void detection indicates water displacement
+    let dewetting_signal = if rt_void_nearby { 1.0 } else { 0.0 };
 
-    // RMSF convergence: +0.15 if converged
-    if rmsf_converged {
-        score += 0.15;
-    }
+    // Tier 1 score: max of UV or dewetting (need at least one mechanism)
+    let tier1_score = uv_signal.max(dewetting_signal);
+    let tier1_pass = tier1_score >= 0.3;
 
-    // Cluster weight: +0.15 * weight (favors dominant clusters)
-    score += 0.15 * cluster_weight.min(1.0);
+    // ==========================================================================
+    // TIER 2: Thermodynamic Validity (Equilibrium State)
+    // ==========================================================================
+    // RMSF convergence: system is equilibrated
+    let equilibrium_score = if rmsf_converged { 1.0 } else { 0.3 };
 
-    // RT void nearby: +0.15
-    if rt_void_nearby {
-        score += 0.15;
-    }
+    // Boltzmann weight: thermodynamically favorable conformation
+    let boltzmann_score = cluster_weight.min(1.0);
 
-    // RT solvation disruption: +0.15
-    if rt_disruption_nearby {
-        score += 0.15;
-    }
+    // Tier 2 score: average of equilibrium indicators
+    let tier2_score = (equilibrium_score + boltzmann_score) / 2.0;
+    let tier2_pass = tier2_score >= 0.4;
 
-    // RT leading signal: +0.20 (strongest indicator)
-    if rt_leading_signal {
-        score += 0.20;
-    }
+    // ==========================================================================
+    // TIER 3: Temporal Causality (RT Leading Signal)
+    // ==========================================================================
+    // RT leading: void formation precedes spike (causal mechanism)
+    let causality_score = if rt_leading_signal {
+        1.0
+    } else if rt_disruption_nearby {
+        0.6  // Disruption without leading still indicates mechanism
+    } else {
+        0.0
+    };
+    let tier3_pass = causality_score >= 0.5;
 
-    // Ensure score is in [0, 1]
-    score.clamp(0.0, 1.0)
+    // ==========================================================================
+    // FINAL SCORE: Tier-weighted combination
+    // ==========================================================================
+    // Count passed tiers
+    let tiers_passed = [tier1_pass, tier2_pass, tier3_pass]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+
+    // Base score from tier contributions
+    // Weights: Tier1=0.35, Tier2=0.30, Tier3=0.35 (mechanism + causality emphasized)
+    let base_score = 0.35 * tier1_score + 0.30 * tier2_score + 0.35 * causality_score;
+
+    // Tier multiplier: reward multi-tier evidence
+    let tier_multiplier = match tiers_passed {
+        3 => 1.0,    // All three tiers: full score
+        2 => 0.85,   // Two tiers: high confidence
+        1 => 0.5,    // One tier: uncertain
+        _ => 0.2,    // No tiers: likely noise
+    };
+
+    (base_score * tier_multiplier).clamp(0.0, 1.0)
 }
 
 #[cfg(feature = "gpu")]

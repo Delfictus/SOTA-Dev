@@ -22,8 +22,8 @@ serde_json = "1.0"
 # Async streaming
 tokio = { version = "1.0", features = ["sync", "macros", "rt-multi-thread"] }
 
-# GPU acceleration - CUDA 13.x for NHS compute kernels (upgraded to 0.19 to match prism-optix)
-cudarc = { version = "0.19", features = ["std", "cuda-13010", "driver"], optional = true }
+# GPU acceleration - CUDA 12.x for NHS compute kernels
+cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"], optional = true }
 
 # Random number generation for UV burst patterns
 rand = "0.8"

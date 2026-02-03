@@ -41,7 +41,7 @@ members = [
     # ═══════════════════════════════════════════════════════════════════════════
     # Correlation and Evidence-Pack Generator
     # ═══════════════════════════════════════════════════════════════════════════
-    "crates/prism-report",          # Site-level correlation + decision artifacts
+    "crates/prism-report", "crates/optix-sys", "crates/prism-optix",          # Site-level correlation + decision artifacts
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Foundation Crates (Production-grade GPU Implementations) - DISABLED: missing dirs

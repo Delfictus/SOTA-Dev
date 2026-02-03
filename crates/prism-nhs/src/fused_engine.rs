@@ -1552,6 +1552,21 @@ pub struct NhsAmberFusedEngine {
     ultimate_engine: Option<UltimateEngine>,
     /// Current optimization level
     optimization_level: OptimizationLevel,
+
+    // ====================================================================
+    // RT PROBE ENGINE (OptiX ray tracing for void/solvation detection)
+    // ====================================================================
+    /// RT probe engine for hardware-accelerated spatial sensing
+    /// Uses RTX 5080's 84 RT cores for real-time void detection
+    rt_probe_engine: Option<crate::rt_probe::RtProbeEngine>,
+    /// Atomic radii buffer for BVH sphere primitives
+    d_atom_radii: Option<CudaSlice<f32>>,
+    /// Last timestep when RT probes were executed
+    last_rt_probe_timestep: i32,
+    /// Maximum atom displacement since last BVH refit
+    rt_max_displacement: f32,
+    /// RT probe snapshots collected during simulation
+    rt_probe_snapshots: Vec<crate::rt_probe::RtProbeSnapshot>,
 }
 
 #[cfg(feature = "gpu")]
@@ -2104,6 +2119,13 @@ impl NhsAmberFusedEngine {
             // Hyperoptimized kernel path (disabled by default)
             ultimate_engine: None,
             optimization_level: OptimizationLevel::Standard,
+
+            // RT Probe engine (initialized on first use)
+            rt_probe_engine: None,
+            d_atom_radii: None,
+            last_rt_probe_timestep: -1000,
+            rt_max_displacement: 0.0,
+            rt_probe_snapshots: Vec::new(),
 
             // Multi-stream parallel execution (initialized empty, created on demand)
             stream_pool: Vec::new(),
@@ -3036,6 +3058,169 @@ impl NhsAmberFusedEngine {
             log::debug!("Ultimate mode not enabled, falling back to standard kernel");
             self.step_batch(n_steps)
         }
+    }
+
+    // ========================================================================
+    // RT PROBE INTEGRATION (Hardware ray tracing for void detection)
+    // ========================================================================
+
+    /// Enable RT probe engine for hardware-accelerated void detection
+    ///
+    /// This initializes the OptiX ray tracing pipeline using the RTX 5080's
+    /// 84 dedicated RT cores for real-time spatial sensing.
+    ///
+    /// # Features
+    /// - BVH acceleration structure from atom spheres
+    /// - 256 rays per attention point
+    /// - Void detection via miss rate analysis
+    /// - Solvation variance tracking
+    /// - Aromatic LIF proximity correlation
+    pub fn enable_rt_probes(&mut self, config: crate::rt_probe::RtProbeConfig) -> Result<()> {
+        use crate::rt_probe::RtProbeEngine;
+        use prism_optix::OptixContext;
+
+        if self.rt_probe_engine.is_some() {
+            log::info!("RT probes already enabled");
+            return Ok(());
+        }
+
+        log::info!("Enabling RT probe engine: {} rays/point × {} attention points",
+            config.rays_per_point, config.attention_points);
+
+        // Initialize OptiX context
+        OptixContext::init()
+            .map_err(|e| anyhow::anyhow!("OptiX initialization failed: {}", e))?;
+
+        let optix_ctx = OptixContext::new(self.context.cu_ctx(), true)
+            .map_err(|e| anyhow::anyhow!("OptiX context creation failed: {}", e))?;
+
+        // Create RT probe engine
+        let mut rt_engine = RtProbeEngine::new(optix_ctx, config.clone())
+            .context("Failed to create RT probe engine")?;
+
+        // Initialize buffers
+        rt_engine.initialize_buffers(&self.stream)
+            .context("Failed to initialize RT probe buffers")?;
+
+        // Upload atomic radii for BVH spheres
+        let atom_radii = self.compute_atom_radii();
+        self.d_atom_radii = Some(self.stream.clone_htod(&atom_radii)?);
+
+        // Build initial BVH from current atom positions
+        let (positions_ptr, _guard1) = self.d_positions.device_ptr(&self.stream);
+        let (radii_ptr, _guard2) = self.d_atom_radii.as_ref().unwrap().device_ptr(&self.stream);
+
+        rt_engine.build_protein_bvh(positions_ptr, radii_ptr, self.n_atoms)
+            .context("Failed to build protein BVH")?;
+
+        // Set aromatic centers for LIF tracking
+        if config.track_aromatic_lif {
+            let aromatic_centers = self.get_aromatic_centers()?;
+            rt_engine.set_aromatic_centers(&aromatic_centers, &self.stream)?;
+        }
+
+        self.rt_probe_engine = Some(rt_engine);
+        log::info!("✅ RT probe engine enabled: BVH built, {} RT cores ready", 84);
+
+        Ok(())
+    }
+
+    /// Disable RT probe engine
+    pub fn disable_rt_probes(&mut self) {
+        self.rt_probe_engine = None;
+        self.d_atom_radii = None;
+        self.rt_probe_snapshots.clear();
+        log::info!("RT probe engine disabled");
+    }
+
+    /// Check if RT probes are enabled
+    pub fn has_rt_probes(&self) -> bool {
+        self.rt_probe_engine.is_some()
+    }
+
+    /// Run RT probes at current simulation state
+    ///
+    /// This performs hardware-accelerated ray casting from attention points
+    /// to detect voids, track solvation, and correlate with aromatic LIF.
+    pub fn run_rt_probes(&mut self) -> Result<Vec<crate::rt_probe::RtProbeSnapshot>> {
+        // Get config threshold first (immutable borrow)
+        let bvh_refit_threshold = self.rt_probe_engine.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("RT probes not enabled - call enable_rt_probes first"))?
+            .config()
+            .bvh_refit_threshold;
+
+        // Check if BVH needs refit based on atom displacement
+        let needs_refit = self.rt_max_displacement > bvh_refit_threshold;
+        if needs_refit {
+            let (positions_ptr, _guard1) = self.d_positions.device_ptr(&self.stream);
+            let (radii_ptr, _guard2) = self.d_atom_radii.as_ref().unwrap().device_ptr(&self.stream);
+            let rt_engine = self.rt_probe_engine.as_mut().unwrap();
+            rt_engine.refit_bvh(positions_ptr, radii_ptr)?;
+            self.rt_max_displacement = 0.0;
+            log::debug!("BVH refitted due to atom displacement");
+        }
+
+        // Get positions and aromatic centers (immutable borrows)
+        let positions = self.get_positions()?;
+        let aromatic_centers = self.get_aromatic_centers()?;
+        let timestep = self.timestep;
+        let stream = self.stream.clone();
+
+        // Now get mutable borrow for RT engine operations
+        let rt_engine = self.rt_probe_engine.as_mut().unwrap();
+
+        // Select attention points based on aromatics and protein surface
+        let probe_positions = rt_engine.select_attention_points(
+            &positions,
+            &aromatic_centers,
+            timestep as u32,
+        );
+
+        // Cast rays and collect snapshots
+        let snapshots = rt_engine.cast_rays(&probe_positions, timestep, &stream)?;
+
+        // Store snapshots (need to drop rt_engine borrow first by ending its scope)
+        drop(rt_engine);
+        self.rt_probe_snapshots.extend(snapshots.clone());
+        self.last_rt_probe_timestep = timestep;
+
+        Ok(snapshots)
+    }
+
+    /// Get collected RT probe snapshots
+    pub fn rt_probe_snapshots(&self) -> &[crate::rt_probe::RtProbeSnapshot] {
+        &self.rt_probe_snapshots
+    }
+
+    /// Clear collected RT probe snapshots
+    pub fn clear_rt_probe_snapshots(&mut self) {
+        self.rt_probe_snapshots.clear();
+    }
+
+    /// Compute atomic radii (van der Waals) for BVH sphere primitives
+    fn compute_atom_radii(&self) -> Vec<f32> {
+        // Standard VDW radii in Angstroms
+        // H=1.2, C=1.7, N=1.55, O=1.52, S=1.8
+        vec![1.7f32; self.n_atoms]  // Default to carbon radius
+        // TODO: Look up actual radii from topology atom types
+    }
+
+    /// Get aromatic ring center positions
+    fn get_aromatic_centers(&self) -> Result<Vec<[f32; 3]>> {
+        if self.n_aromatics == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Download aromatic centroids from GPU
+        let mut centroids = vec![0.0f32; self.n_aromatics * 3];
+        self.stream.memcpy_dtoh(&self.d_aromatic_centroids, &mut centroids)?;
+
+        // Convert to array of [f32; 3]
+        let centers: Vec<[f32; 3]> = (0..self.n_aromatics)
+            .map(|i| [centroids[i*3], centroids[i*3+1], centroids[i*3+2]])
+            .collect();
+
+        Ok(centers)
     }
 
     // ========================================================================

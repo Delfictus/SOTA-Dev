@@ -76,9 +76,9 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Use concurrent batch mode (AmberSimdBatch - 10-50x faster!)
+    /// Use sequential mode (slower, for debugging)
     #[arg(long)]
-    concurrent: bool,
+    sequential: bool,
 }
 
 fn main() -> Result<()> {
@@ -114,12 +114,12 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "gpu")]
     {
-        if args.concurrent {
-            log::info!("🚀 CONCURRENT MODE: Using AmberSimdBatch (10-50x faster!)");
-            run_batch_concurrent(&topology_paths, &args.output, config, args.skip_existing)?;
-        } else {
-            log::info!("Sequential mode (use --concurrent for 10-50x speedup)");
+        if args.sequential {
+            log::warn!("⚠️  Sequential mode enabled (10-50x slower than default)");
             run_batch(&topology_paths, &args.output, config, args.skip_existing, args.verbose)?;
+        } else {
+            log::info!("🚀 CONCURRENT MODE (DEFAULT): AmberSimdBatch enabled for 10-50x speedup");
+            run_batch_concurrent(&topology_paths, &args.output, config, args.skip_existing)?;
         }
     }
 

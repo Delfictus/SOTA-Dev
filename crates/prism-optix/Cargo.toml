@@ -12,7 +12,7 @@ description = "Safe Rust wrapper for NVIDIA OptiX 9.1.0 ray tracing API"
 
 [dependencies]
 optix-sys = { path = "../optix-sys" }
-cudarc = { version = "0.19", features = ["cuda-version-from-build-system", "driver"] }
+cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"] }
 anyhow = "1.0"
 thiserror = "2.0"
 log = "0.4"

@@ -41,6 +41,8 @@ impl Default for RtAnalysisConfig {
 pub struct VoidFormationEvent {
     /// Timestep when void formed
     pub timestep: i32,
+    /// Spatial position of void centroid [x, y, z] in Å
+    pub position: [f32; 3],
     /// Average hit distance increase (Å)
     pub distance_increase: f32,
     /// Aromatic LIF count in region
@@ -54,6 +56,8 @@ pub struct VoidFormationEvent {
 pub struct SolvationDisruptionEvent {
     /// Timestep when disruption detected
     pub timestep: i32,
+    /// Spatial position of disruption [x, y, z] in Å
+    pub position: [f32; 3],
     /// Solvation variance (Å)
     pub variance: f32,
     /// Is this a leading signal? (occurs before geometric void)
@@ -159,6 +163,7 @@ impl RtProbeAnalyzer {
                 if persistence_count >= self.config.min_persistence {
                     events.push(VoidFormationEvent {
                         timestep: snapshot.timestep,
+                        position: snapshot.probe_position,
                         distance_increase,
                         aromatic_lif_count: snapshot.aromatic_lif_count,
                         persistence: persistence_count,
@@ -193,6 +198,7 @@ impl RtProbeAnalyzer {
                 if variance >= self.config.disruption_threshold {
                     events.push(SolvationDisruptionEvent {
                         timestep: snapshots[i].timestep,
+                        position: snapshots[i].probe_position,
                         variance,
                         is_leading: false, // Will be set by identify_leading_signals
                         timesteps_until_void: None,
