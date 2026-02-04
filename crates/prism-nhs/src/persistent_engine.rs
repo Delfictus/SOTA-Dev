@@ -96,6 +96,21 @@ pub struct StructureResult {
     pub clustering_stats: Option<ClusteringStats>,
 }
 
+/// A residue lining a binding site pocket
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LiningResidue {
+    /// Chain identifier (e.g., "A", "B")
+    pub chain: String,
+    /// Residue sequence number
+    pub resid: i32,
+    /// Residue name (e.g., "ALA", "PHE")
+    pub resname: String,
+    /// Minimum distance from any atom to pocket centroid (Å)
+    pub min_distance: f32,
+    /// Number of atoms within cutoff
+    pub n_atoms_in_pocket: usize,
+}
+
 /// A clustered binding site detected from spike spatial patterns
 #[derive(Debug, Clone)]
 pub struct ClusteredBindingSite {
@@ -121,6 +136,8 @@ pub struct ClusteredBindingSite {
     pub classification: SiteClassification,
     /// Aromatic proximity analysis (if computed)
     pub aromatic_proximity: Option<AromaticProximityInfo>,
+    /// Residues lining this binding pocket (within cutoff distance)
+    pub lining_residues: Vec<LiningResidue>,
 }
 
 /// Aromatic residue proximity information for a binding site
@@ -213,13 +230,13 @@ impl DruggabilityScore {
             0.40 * volume_score + 0.30 * enclosure_score + 0.30 * hydrophobicity_score
         };
 
-        // Druggable threshold: overall >= 0.5 AND volume in reasonable range
-        // Bonus: sites with aromatics within 5Å get lower threshold
+        // Druggable threshold: overall >= threshold AND volume in reasonable range
+        // Bonus: sites with aromatics nearby get lower threshold (pi-stacking potential)
         let aromatic_bonus = aromatic_info
-            .map(|info| info.aromatics_within_5a > 0)
+            .map(|info| info.aromatics_within_5a > 0 || info.aromatic_score > 0.4)
             .unwrap_or(false);
-        let threshold = if aromatic_bonus { 0.45 } else { 0.5 };
-        let is_druggable = overall >= threshold && volume >= 100.0 && volume <= 2000.0;
+        let threshold = if aromatic_bonus { 0.40 } else { 0.48 };
+        let is_druggable = overall >= threshold && volume >= 50.0 && volume <= 3000.0;
 
         Self {
             overall,
@@ -919,6 +936,28 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Enable spike accumulation for analysis
+    ///
+    /// When enabled, spikes are downloaded from the GPU and accumulated
+    /// across sync intervals. Use `get_accumulated_spikes()` to retrieve.
+    pub fn set_spike_accumulation(&mut self, enabled: bool) {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_spike_accumulation(enabled);
+        }
+    }
+
+    /// Get accumulated spike events (GPU format with timestamps)
+    ///
+    /// Returns all spike events accumulated since spike accumulation was enabled.
+    /// Only populated when spike accumulation is enabled via `set_spike_accumulation(true)`.
+    pub fn get_accumulated_spikes(&self) -> Vec<crate::fused_engine::GpuSpikeEvent> {
+        if let Some(ref engine) = self.engine {
+            engine.get_accumulated_spikes().to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Get snapshots from current run
     pub fn get_snapshots(&self) -> Vec<EnsembleSnapshot> {
         if let Some(ref engine) = self.engine {
@@ -934,6 +973,22 @@ impl PersistentNhsEngine {
             engine.get_positions()
         } else {
             bail!("No topology loaded")
+        }
+    }
+
+    /// Enable UltimateEngine for 2-4x faster MD simulation
+    ///
+    /// Requires SM86+ GPU (Ampere/Ada/Blackwell) and topology to be loaded.
+    /// Uses mixed-precision, SoA layout, and other hyperoptimizations.
+    ///
+    /// Note: Must be called after load_topology() with the same topology.
+    pub fn enable_ultimate_mode(&mut self, topology: &PrismPrepTopology) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.enable_ultimate_mode(topology)?;
+            log::info!("✓ UltimateEngine enabled (2-4x faster MD)");
+            Ok(())
+        } else {
+            bail!("Engine not initialized - call load_topology() first")
         }
     }
 
@@ -967,12 +1022,12 @@ impl PersistentNhsEngine {
         let optixir_path = crate::rt_clustering::find_optixir_path()
             .context("Could not find rt_clustering.optixir")?;
 
-        // Create RT clustering config
+        // Create RT clustering config (tuned for binding pocket detection)
         let rt_config = crate::rt_clustering::RtClusteringConfig {
-            epsilon: 5.0,         // 5 Angstrom neighborhood
-            min_points: 3,        // Minimum 3 neighbors for core point
-            min_cluster_size: 50, // Minimum 50 points per cluster
-            rays_per_event: 32,   // 32 rays for neighbor finding
+            epsilon: 7.0,          // 7 Angstrom neighborhood (tighter clusters for pockets)
+            min_points: 4,         // Minimum 4 neighbors for core point
+            min_cluster_size: 20,  // Minimum 20 points per cluster (catch smaller pockets)
+            rays_per_event: 32,    // 32 rays for neighbor finding
         };
 
         // Create and initialize the RT engine
@@ -1233,6 +1288,7 @@ fn build_clustered_sites(
             druggability,
             classification,
             aromatic_proximity: None,  // Computed separately when aromatic positions available
+            lining_residues: Vec::new(),  // Computed separately when topology available
         });
     }
 
@@ -1282,6 +1338,100 @@ impl ClusteredBindingSite {
             .as_ref()
             .map(|p| p.aromatic_score)
             .unwrap_or(0.0)
+    }
+
+    /// Compute residues lining this binding pocket
+    ///
+    /// Finds all residues with at least one atom within `cutoff` distance
+    /// of the pocket centroid.
+    ///
+    /// # Arguments
+    /// * `positions` - Atom positions as flat [x0,y0,z0,x1,y1,z1,...] array
+    /// * `residue_ids` - Residue ID for each atom
+    /// * `residue_names` - Name of each residue (indexed by residue_id)
+    /// * `chain_ids` - Chain ID for each atom
+    /// * `cutoff` - Distance cutoff in Angstroms (default: 5.0)
+    pub fn compute_lining_residues(
+        &mut self,
+        positions: &[f32],
+        residue_ids: &[usize],
+        residue_names: &[String],
+        chain_ids: &[String],
+        cutoff: f32,
+    ) {
+        use std::collections::HashMap;
+
+        let n_atoms = positions.len() / 3;
+        let cx = self.centroid[0];
+        let cy = self.centroid[1];
+        let cz = self.centroid[2];
+        let cutoff_sq = cutoff * cutoff;
+
+        // Track per-residue: (chain, resname, min_distance, atom_count)
+        let mut residue_info: HashMap<(String, i32), (String, f32, usize)> = HashMap::new();
+
+        for i in 0..n_atoms {
+            let x = positions[i * 3];
+            let y = positions[i * 3 + 1];
+            let z = positions[i * 3 + 2];
+
+            let dx = x - cx;
+            let dy = y - cy;
+            let dz = z - cz;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
+
+            if dist_sq <= cutoff_sq {
+                let res_id = residue_ids[i];
+                let chain = chain_ids[i].clone();
+                let resname = if res_id < residue_names.len() {
+                    residue_names[res_id].clone()
+                } else {
+                    "UNK".to_string()
+                };
+                let dist = dist_sq.sqrt();
+
+                let key = (chain.clone(), res_id as i32);
+                residue_info
+                    .entry(key)
+                    .and_modify(|(_, min_d, count)| {
+                        if dist < *min_d {
+                            *min_d = dist;
+                        }
+                        *count += 1;
+                    })
+                    .or_insert((resname, dist, 1));
+            }
+        }
+
+        // Convert to LiningResidue list, sorted by distance
+        self.lining_residues = residue_info
+            .into_iter()
+            .map(|((chain, resid), (resname, min_distance, n_atoms))| LiningResidue {
+                chain,
+                resid,
+                resname,
+                min_distance,
+                n_atoms_in_pocket: n_atoms,
+            })
+            .collect();
+
+        self.lining_residues.sort_by(|a, b| {
+            a.min_distance.partial_cmp(&b.min_distance).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    /// Get lining residue IDs as a simple list (for validation comparisons)
+    pub fn lining_residue_ids(&self) -> Vec<i32> {
+        self.lining_residues.iter().map(|r| r.resid).collect()
+    }
+
+    /// Get formatted residue list string (e.g., "A:PHE347, A:TRP348, A:GLU349")
+    pub fn lining_residues_str(&self) -> String {
+        self.lining_residues
+            .iter()
+            .map(|r| format!("{}:{}{}", r.chain, r.resname, r.resid))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -1670,6 +1820,27 @@ impl BindingSiteFormatter {
                 if site.druggability.is_druggable { "✓" } else { "✗" },
                 site.classification,
             ));
+        }
+
+        // Lining residues for top sites
+        report.push_str("\n## Binding Site Residues (5Å cutoff)\n\n");
+        for (idx, site) in sites.iter().take(10).enumerate() {
+            if !site.lining_residues.is_empty() {
+                report.push_str(&format!("### Site {} ({:?})\n\n", idx + 1, site.classification));
+                report.push_str("| Chain | ResID | ResName | Distance (Å) | Atoms |\n");
+                report.push_str("|-------|-------|---------|--------------|-------|\n");
+                for res in site.lining_residues.iter().take(20) {
+                    report.push_str(&format!(
+                        "| {} | {} | {} | {:.2} | {} |\n",
+                        res.chain, res.resid, res.resname, res.min_distance, res.n_atoms_in_pocket
+                    ));
+                }
+                if site.lining_residues.len() > 20 {
+                    report.push_str(&format!("| ... | {} more residues | | | |\n",
+                        site.lining_residues.len() - 20));
+                }
+                report.push_str("\n");
+            }
         }
 
         report
