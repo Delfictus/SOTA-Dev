@@ -248,7 +248,7 @@ impl AccelStructure {
         // ========================================================================
         let mut buffer_sizes = MaybeUninit::<OptixAccelBufferSizes>::uninit();
         let result = unsafe {
-            (api.accel_compute_memory_usage)(
+            api.accel_compute_memory_usage(
                 optix_ctx,
                 &build_options,
                 &build_input,
@@ -301,7 +301,7 @@ impl AccelStructure {
         // ========================================================================
         let mut handle: OptixTraversableHandle = 0;
         let result = unsafe {
-            (api.accel_build)(
+            api.accel_build(
                 optix_ctx,
                 ptr::null_mut(), // CUstream: null = default stream
                 &build_options,
@@ -436,7 +436,7 @@ impl AccelStructure {
         // Compute memory for update operation
         let mut buffer_sizes = MaybeUninit::<OptixAccelBufferSizes>::uninit();
         let result = unsafe {
-            (api.accel_compute_memory_usage)(
+            api.accel_compute_memory_usage(
                 optix_ctx,
                 &build_options,
                 &build_input,
@@ -467,7 +467,7 @@ impl AccelStructure {
         // Perform Refit
         // ========================================================================
         let result = unsafe {
-            (api.accel_build)(
+            api.accel_build(
                 optix_ctx,
                 ptr::null_mut(), // default stream
                 &build_options,

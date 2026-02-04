@@ -105,6 +105,9 @@ pub struct PersistentNhsEngine {
     /// Currently loaded engine instance
     engine: Option<NhsAmberFusedEngine>,
 
+    /// RT-accelerated clustering engine (lazy initialized)
+    rt_engine: Option<crate::rt_clustering::RtClusteringEngine>,
+
     /// Pre-allocated buffer capacity
     max_atoms: usize,
 
@@ -118,6 +121,9 @@ pub struct PersistentNhsEngine {
     /// Initialization time tracking
     context_init_time_ms: u64,
     module_init_time_ms: u64,
+
+    /// RT engine initialization time (if initialized)
+    rt_init_time_ms: Option<u64>,
 
     /// Cumulative statistics
     structures_processed: usize,
@@ -168,12 +174,14 @@ impl PersistentNhsEngine {
             module,
             stream,
             engine: None,
+            rt_engine: None,  // Lazy initialized on first use
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
             grid_spacing: config.grid_spacing,
             current_topology_id: None,
             context_init_time_ms,
             module_init_time_ms,
+            rt_init_time_ms: None,
             structures_processed: 0,
             total_steps_run: 0,
             total_compute_time_ms: 0,
@@ -209,10 +217,6 @@ impl PersistentNhsEngine {
             self.grid_dim,
             self.grid_spacing,
         )?;
-
-        // NOTE: Ultimate kernel has bugs - using working fused kernel for now
-        // TODO: Fix ultimate_md.cu constant memory initialization
-        log::info!("Using standard fused kernel (ultimate has bugs - needs fix)");
 
         self.engine = Some(engine);
         self.current_topology_id = Some(topo_id.clone());
@@ -308,6 +312,186 @@ impl PersistentNhsEngine {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // RT-ACCELERATED CLUSTERING
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /// Check if RT cores are available for accelerated clustering
+    pub fn has_rt_clustering(&self) -> bool {
+        crate::rt_utils::has_rt_cores() && crate::rt_utils::is_optix_available()
+    }
+
+    /// Ensure the RT clustering pipeline is initialized (lazy init)
+    ///
+    /// Call this explicitly to pre-warm the pipeline, or let it initialize
+    /// lazily on first `cluster_spikes()` call.
+    pub fn ensure_rt_pipeline(&mut self) -> Result<bool> {
+        if self.rt_engine.is_some() {
+            return Ok(true);  // Already initialized
+        }
+
+        if !self.has_rt_clustering() {
+            log::debug!("RT clustering not available (no RT cores or OptiX)");
+            return Ok(false);
+        }
+
+        log::info!("🔷 Initializing OptiX RT pipeline for clustering...");
+        let start = Instant::now();
+
+        // Find the OptiX IR file
+        let optixir_path = crate::rt_clustering::find_optixir_path()
+            .context("Could not find rt_clustering.optixir")?;
+
+        // Create RT clustering config
+        let rt_config = crate::rt_clustering::RtClusteringConfig {
+            epsilon: 5.0,         // 5 Angstrom neighborhood
+            min_points: 3,        // Minimum 3 neighbors for core point
+            min_cluster_size: 50, // Minimum 50 points per cluster
+            rays_per_event: 32,   // 32 rays for neighbor finding
+        };
+
+        // Create and initialize the RT engine
+        let mut rt_engine = crate::rt_clustering::RtClusteringEngine::new(
+            self.context.clone(),
+            rt_config,
+        ).context("Failed to create RT clustering engine")?;
+
+        rt_engine.load_pipeline(&optixir_path)
+            .context("Failed to load RT clustering pipeline")?;
+
+        let init_time = start.elapsed().as_millis() as u64;
+        self.rt_init_time_ms = Some(init_time);
+        self.rt_engine = Some(rt_engine);
+
+        log::info!("  RT pipeline initialized: {}ms", init_time);
+        log::info!("  GPU Architecture: {}", crate::rt_utils::get_architecture_name());
+
+        Ok(true)
+    }
+
+    /// Cluster spike positions using RT-accelerated spatial queries
+    ///
+    /// Falls back to grid-based clustering if RT cores are unavailable.
+    ///
+    /// # Arguments
+    /// * `spike_positions` - Flat array of [x, y, z, x, y, z, ...] coordinates
+    ///
+    /// # Returns
+    /// Clustering result with cluster assignments and statistics
+    pub fn cluster_spikes(&mut self, spike_positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+        let num_spikes = spike_positions.len() / 3;
+
+        // Try RT-accelerated path
+        if self.ensure_rt_pipeline()? {
+            if let Some(ref mut rt_engine) = self.rt_engine {
+                log::debug!("Using RT-accelerated clustering for {} spikes", num_spikes);
+                return rt_engine.cluster(spike_positions);
+            }
+        }
+
+        // Fallback: simple grid-based clustering
+        log::debug!("Using fallback grid clustering for {} spikes", num_spikes);
+        self.fallback_grid_cluster(spike_positions)
+    }
+
+    /// Fallback grid-based clustering when RT cores unavailable
+    fn fallback_grid_cluster(&self, positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+        let num_points = positions.len() / 3;
+        let start = Instant::now();
+
+        // Simple single-linkage clustering using spatial hashing
+        // This is O(N) for sparse data but degrades to O(N²) for dense clusters
+        let epsilon = 5.0f32;
+        let cell_size = epsilon;
+
+        use std::collections::HashMap;
+
+        // Hash points into cells
+        let mut cells: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
+        for i in 0..num_points {
+            let x = positions[i * 3];
+            let y = positions[i * 3 + 1];
+            let z = positions[i * 3 + 2];
+            let cell = (
+                (x / cell_size).floor() as i32,
+                (y / cell_size).floor() as i32,
+                (z / cell_size).floor() as i32,
+            );
+            cells.entry(cell).or_default().push(i);
+        }
+
+        // Union-find for clustering
+        let mut parent: Vec<i32> = (0..num_points as i32).collect();
+
+        fn find(parent: &mut [i32], i: usize) -> i32 {
+            if parent[i] != i as i32 {
+                parent[i] = find(parent, parent[i] as usize);
+            }
+            parent[i]
+        }
+
+        fn union(parent: &mut [i32], a: usize, b: usize) {
+            let ra = find(parent, a);
+            let rb = find(parent, b);
+            if ra != rb {
+                parent[ra as usize] = rb;
+            }
+        }
+
+        // Find neighbors and union
+        let mut total_neighbors = 0usize;
+        for (&cell, points) in &cells {
+            // Check this cell and 26 neighbors
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
+                        if let Some(neighbors) = cells.get(&neighbor_cell) {
+                            for &i in points {
+                                let xi = positions[i * 3];
+                                let yi = positions[i * 3 + 1];
+                                let zi = positions[i * 3 + 2];
+
+                                for &j in neighbors {
+                                    if i >= j { continue; }
+                                    let xj = positions[j * 3];
+                                    let yj = positions[j * 3 + 1];
+                                    let zj = positions[j * 3 + 2];
+
+                                    let dist_sq = (xi - xj).powi(2) + (yi - yj).powi(2) + (zi - zj).powi(2);
+                                    if dist_sq <= epsilon * epsilon {
+                                        union(&mut parent, i, j);
+                                        total_neighbors += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Flatten and count clusters
+        let mut cluster_ids: Vec<i32> = Vec::with_capacity(num_points);
+        let mut cluster_counts: HashMap<i32, usize> = HashMap::new();
+
+        for i in 0..num_points {
+            let root = find(&mut parent, i);
+            cluster_ids.push(root);
+            *cluster_counts.entry(root).or_default() += 1;
+        }
+
+        let num_clusters = cluster_counts.len();
+        let gpu_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        Ok(crate::rt_clustering::RtClusteringResult {
+            cluster_ids,
+            num_clusters,
+            total_neighbors,
+            gpu_time_ms,
+        })
+    }
+
     /// Report cumulative statistics
     pub fn stats(&self) -> PersistentEngineStats {
         PersistentEngineStats {
@@ -376,7 +560,7 @@ impl BatchProcessor {
             // Load into engine
             self.engine.load_topology(&topology)?;
 
-            // Configure unified cryo-UV protocol (with RT defaults) [STAGE-2A-RT]
+            // Configure unified cryo-UV protocol
             let cryo_uv_protocol = CryoUvProtocol {
                 start_temp: self.config.cryo_temp,
                 end_temp: self.config.temperature,
@@ -390,8 +574,6 @@ impl BatchProcessor {
                 uv_burst_duration: 50,
                 scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
                 wavelength_dwell_steps: 500,
-                // RT fields use defaults from standard()
-                ..CryoUvProtocol::standard()
             };
             self.engine.set_cryo_uv_protocol(cryo_uv_protocol)?;
 

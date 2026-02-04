@@ -110,6 +110,10 @@ pub mod persistent_engine;
 pub mod active_sensing;
 #[cfg(feature = "gpu")]
 pub mod ultimate_engine;
+#[cfg(feature = "gpu")]
+pub mod rt_clustering;
+#[cfg(feature = "gpu")]
+pub mod rt_utils;
 pub mod input;
 pub mod mapping;
 pub mod neuromorphic;
@@ -181,6 +185,13 @@ pub use ultimate_engine::{
     UltimateEngine, UltimateEngineConfig, UltimateStepResult,
     OptimizationLevel, SimulationParams,
 };
+#[cfg(feature = "gpu")]
+pub use rt_clustering::{
+    RtClusteringEngine, RtClusteringConfig, RtClusteringResult,
+    find_optixir_path,
+};
+#[cfg(feature = "gpu")]
+pub use rt_utils::{has_rt_cores, is_optix_available, get_architecture_name};
 pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
 pub use adaptive::{
     AdaptiveGridProtocol, AdaptiveNhsEngine, AdaptiveStepResult, AdaptiveSummary,

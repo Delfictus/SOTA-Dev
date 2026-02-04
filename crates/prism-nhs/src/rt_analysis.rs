@@ -297,6 +297,7 @@ mod tests {
     fn create_test_snapshot(timestep: i32, hit_distance: f32, aromatic_lif: usize) -> RtProbeSnapshot {
         RtProbeSnapshot {
             timestep,
+            probe_position: [0.0, 0.0, 0.0], // Test probe at origin
             hit_distances: vec![hit_distance; 10], // 10 rays, same distance
             void_detected: hit_distance > 5.0,
             solvation_variance: Some(0.1),

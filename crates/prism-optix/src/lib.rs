@@ -75,11 +75,18 @@ mod context;
 mod context_impl;
 mod error;
 mod loader;
+mod module;
+mod pipeline;
 
 // Public exports
 pub use accel::{AccelStructure, BvhBuildFlags, BvhInputType};
 pub use context::OptixContext;
 pub use error::{check_optix, OptixError, Result};
+pub use module::{Module, ModuleCompileOptions, PipelineCompileOptions, OptimizationLevel, DebugLevel};
+pub use pipeline::{
+    Pipeline, PipelineLinkOptions, ProgramGroup, ShaderBindingTable,
+    SBT_RECORD_HEADER_SIZE, aligned_sbt_record_size,
+};
 
 /// OptiX version information
 pub mod version {

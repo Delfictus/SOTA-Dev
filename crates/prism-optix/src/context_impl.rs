@@ -19,7 +19,7 @@ impl crate::context::OptixContext {
     pub fn init() -> Result<()> {
         let api = OptixApi::get()?;
         unsafe {
-            check_optix((api.init)(), "OptiX initialization")?;
+            check_optix(api.init(), "OptiX initialization")?;
         }
         log::info!("OptiX API initialized (version {})", OPTIX_VERSION);
         Ok(())
@@ -70,7 +70,7 @@ impl crate::context::OptixContext {
             // Cast CUcontext from cudarc to optix-sys (same ABI)
             let cuda_ctx_ptr = cuda_context as *mut optix_sys::CUctx_st;
             check_optix(
-                (api.device_context_create)(cuda_ctx_ptr, &mut options, &mut handle),
+                api.device_context_create(cuda_ctx_ptr, &mut options, &mut handle),
                 "OptiX device context creation",
             )?;
         }
@@ -96,7 +96,7 @@ impl crate::context::OptixContext {
 
         unsafe {
             check_optix(
-                (api.device_context_set_cache_location)(self.handle, c_str.as_ptr()),
+                api.device_context_set_cache_location(self.handle, c_str.as_ptr()),
                 "Set OptiX cache location",
             )?;
         }
@@ -110,7 +110,7 @@ impl crate::context::OptixContext {
 
         unsafe {
             check_optix(
-                (api.device_context_set_cache_enabled)(self.handle, if enabled { 1 } else { 0 }),
+                api.device_context_set_cache_enabled(self.handle, if enabled { 1 } else { 0 }),
                 "Set OptiX cache enabled",
             )?;
         }
@@ -125,7 +125,7 @@ impl Drop for crate::context::OptixContext {
             if let Ok(api) = OptixApi::get() {
                 unsafe {
                     if let Err(e) = check_optix(
-                        (api.device_context_destroy)(self.handle),
+                        api.device_context_destroy(self.handle),
                         "OptiX context destruction",
                     ) {
                         log::error!("Failed to destroy OptiX context: {}", e);

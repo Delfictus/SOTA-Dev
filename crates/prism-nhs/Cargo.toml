@@ -39,6 +39,7 @@ prism-io = { path = "../prism-io" }
 prism-learning = { path = "../prism-learning" }
 prism-gpu = { path = "../prism-gpu" }
 prism-optix = { path = "../prism-optix" }
+optix-sys = { path = "../optix-sys" }
 
 [[bin]]
 name = "nhs-detect"
@@ -106,4 +107,14 @@ required-features = ["gpu"]
 [[bin]]
 name = "stage2b-process"
 path = "src/bin/stage2b_process.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "test-rt-clustering"
+path = "src/bin/test_rt_clustering.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "stress-rt-clustering"
+path = "src/bin/stress_rt_clustering.rs"
 required-features = ["gpu"]
