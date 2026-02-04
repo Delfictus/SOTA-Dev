@@ -179,6 +179,7 @@ pub use active_sensing::{
 pub use persistent_engine::{
     PersistentNhsEngine, PersistentBatchConfig, BatchProcessor,
     StructureResult, PersistentEngineStats,
+    ClusteredBindingSite, ClusteringStats, DruggabilityScore, SiteClassification,
 };
 #[cfg(feature = "gpu")]
 pub use ultimate_engine::{

@@ -131,9 +131,18 @@ pub struct RtClusteringEngine {
     fn_init_union_find: Option<CudaFunction>,
     fn_union_neighbors: Option<CudaFunction>,
     fn_flatten_clusters: Option<CudaFunction>,
+    fn_flatten_clusters_full: Option<CudaFunction>,
     fn_propagate_ids: Option<CudaFunction>,
     fn_count_sizes: Option<CudaFunction>,
     fn_filter_small: Option<CudaFunction>,
+
+    // Cached buffers for reuse (reduces allocation overhead)
+    cached_capacity: usize,  // Number of events buffers are sized for
+    cached_d_positions: Option<CudaSlice<f32>>,
+    cached_d_neighbor_counts: Option<CudaSlice<u32>>,
+    cached_d_neighbor_offsets: Option<CudaSlice<u32>>,
+    cached_d_parent: Option<CudaSlice<i32>>,
+    cached_d_cluster_ids: Option<CudaSlice<i32>>,
 }
 
 #[cfg(feature = "gpu")]
@@ -176,9 +185,17 @@ impl RtClusteringEngine {
             fn_init_union_find: None,
             fn_union_neighbors: None,
             fn_flatten_clusters: None,
+            fn_flatten_clusters_full: None,
             fn_propagate_ids: None,
             fn_count_sizes: None,
             fn_filter_small: None,
+            // Cached buffers (initialized on first use)
+            cached_capacity: 0,
+            cached_d_positions: None,
+            cached_d_neighbor_counts: None,
+            cached_d_neighbor_offsets: None,
+            cached_d_parent: None,
+            cached_d_cluster_ids: None,
         })
     }
 
@@ -313,6 +330,8 @@ impl RtClusteringEngine {
                 .context("Failed to load union_neighbors")?);
             self.fn_flatten_clusters = Some(cuda_module.load_function("flatten_clusters")
                 .context("Failed to load flatten_clusters")?);
+            self.fn_flatten_clusters_full = Some(cuda_module.load_function("flatten_clusters_full")
+                .context("Failed to load flatten_clusters_full")?);
             self.fn_propagate_ids = Some(cuda_module.load_function("propagate_cluster_ids")
                 .context("Failed to load propagate_cluster_ids")?);
             self.fn_count_sizes = Some(cuda_module.load_function("count_cluster_sizes")
@@ -623,20 +642,19 @@ impl RtClusteringEngine {
                     .context("Failed to launch union_neighbors")?;
             }
 
-            // Phase 6: Flatten clusters (run multiple times for convergence)
-            let fn_flatten = self.fn_flatten_clusters.as_ref().unwrap();
-            for _ in 0..3 {
-                unsafe {
-                    self.stream.launch_builder(fn_flatten)
-                        .arg(&d_parent)
-                        .arg(&num_events_u32)
-                        .launch(LaunchConfig {
-                            grid_dim: (blocks, 1, 1),
-                            block_dim: (256, 1, 1),
-                            shared_mem_bytes: 0,
-                        })
-                        .context("Failed to launch flatten_clusters")?;
-                }
+            // Phase 6: Flatten clusters (single pass with full path compression)
+            // Using flatten_clusters_full which does complete compression in one kernel
+            let fn_flatten_full = self.fn_flatten_clusters_full.as_ref().unwrap();
+            unsafe {
+                self.stream.launch_builder(fn_flatten_full)
+                    .arg(&d_parent)
+                    .arg(&num_events_u32)
+                    .launch(LaunchConfig {
+                        grid_dim: (blocks, 1, 1),
+                        block_dim: (256, 1, 1),
+                        shared_mem_bytes: 0,
+                    })
+                    .context("Failed to launch flatten_clusters_full")?;
             }
 
             // Phase 7: Propagate cluster IDs
@@ -691,6 +709,65 @@ impl RtClusteringEngine {
             total_neighbors: final_total_neighbors,
             gpu_time_ms: gpu_time,
         })
+    }
+}
+
+/// Explicit Drop implementation for proper resource cleanup order
+///
+/// OptiX resources must be destroyed BEFORE the CUDA context to avoid segfaults.
+/// Drop order: SBT records → Pipelines → Program Groups → Module → OptixContext → CUDA Context
+#[cfg(feature = "gpu")]
+impl Drop for RtClusteringEngine {
+    fn drop(&mut self) {
+        log::debug!("Dropping RtClusteringEngine - cleaning up in correct order");
+
+        // Step 1: Drop cached buffers (CudaSlice depends on context)
+        drop(self.cached_d_positions.take());
+        drop(self.cached_d_neighbor_counts.take());
+        drop(self.cached_d_neighbor_offsets.take());
+        drop(self.cached_d_parent.take());
+        drop(self.cached_d_cluster_ids.take());
+
+        // Step 2: Drop SBT records (device memory)
+        drop(self.d_raygen_record.take());
+        drop(self.d_miss_record.take());
+        drop(self.d_hitgroup_record.take());
+        drop(self.d_raygen_build_record.take());
+        drop(self.d_miss_build_record.take());
+        drop(self.d_hitgroup_build_record.take());
+
+        // Step 3: Drop pipelines (reference program groups)
+        drop(self.pipeline.take());
+        drop(self.pipeline_build.take());
+
+        // Step 4: Drop program groups (reference module)
+        drop(self.raygen_pg.take());
+        drop(self.miss_pg.take());
+        drop(self.hitgroup_pg.take());
+        drop(self.raygen_build_pg.take());
+        drop(self.miss_build_pg.take());
+        drop(self.hitgroup_build_pg.take());
+
+        // Step 5: Drop module (references OptixContext)
+        drop(self.module.take());
+
+        // Step 6: Drop CUDA module (references CUDA context)
+        // Note: Functions don't need explicit drop, they're tied to module
+        self.fn_compute_offsets = None;
+        self.fn_init_union_find = None;
+        self.fn_union_neighbors = None;
+        self.fn_flatten_clusters = None;
+        self.fn_flatten_clusters_full = None;
+        self.fn_propagate_ids = None;
+        self.fn_count_sizes = None;
+        self.fn_filter_small = None;
+        drop(self.cuda_module.take());
+
+        // Step 7: OptixContext and CUDA context are dropped automatically
+        // (optix_ctx is not Option, so it drops last)
+        // The CUDA context (Arc) may outlive this if shared elsewhere
+
+        log::debug!("RtClusteringEngine cleanup complete");
     }
 }
 

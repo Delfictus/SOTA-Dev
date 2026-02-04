@@ -90,6 +90,146 @@ pub struct StructureResult {
     pub spike_events: Vec<SpikeEvent>,
     pub snapshots: Vec<EnsembleSnapshot>,
     pub final_temperature: f32,
+    /// Clustered binding sites from RT-accelerated spatial analysis
+    pub clustered_sites: Vec<ClusteredBindingSite>,
+    /// RT clustering statistics
+    pub clustering_stats: Option<ClusteringStats>,
+}
+
+/// A clustered binding site detected from spike spatial patterns
+#[derive(Debug, Clone)]
+pub struct ClusteredBindingSite {
+    /// Cluster ID (unique per analysis run)
+    pub cluster_id: i32,
+    /// Centroid position [x, y, z] in Angstroms
+    pub centroid: [f32; 3],
+    /// Number of spikes in this cluster
+    pub spike_count: usize,
+    /// Spike indices belonging to this cluster
+    pub spike_indices: Vec<usize>,
+    /// Average spike intensity in cluster
+    pub avg_intensity: f32,
+    /// Estimated volume (convex hull approximation) in Å³
+    pub estimated_volume: f32,
+    /// Bounding box dimensions [dx, dy, dz] in Angstroms
+    pub bounding_box: [f32; 3],
+    /// Quality score for this binding site (0.0-1.0)
+    pub quality_score: f32,
+    /// Druggability assessment
+    pub druggability: DruggabilityScore,
+    /// Site classification
+    pub classification: SiteClassification,
+}
+
+/// Druggability score for a binding site
+#[derive(Debug, Clone, Default)]
+pub struct DruggabilityScore {
+    /// Overall druggability (0.0-1.0)
+    pub overall: f32,
+    /// Volume contribution (0.0-1.0) - sites need 200-800 Å³
+    pub volume_score: f32,
+    /// Enclosure score (0.0-1.0) - how enclosed the pocket is
+    pub enclosure_score: f32,
+    /// Hydrophobicity score (0.0-1.0) - dewetting signal strength
+    pub hydrophobicity_score: f32,
+    /// Is this likely a druggable pocket?
+    pub is_druggable: bool,
+}
+
+impl DruggabilityScore {
+    /// Compute druggability from binding site properties
+    pub fn from_site(volume: f32, avg_intensity: f32, bounding_box: &[f32; 3]) -> Self {
+        // Volume scoring: optimal range 200-800 Å³
+        let volume_score = if volume < 100.0 {
+            volume / 100.0 * 0.3  // Too small
+        } else if volume < 200.0 {
+            0.3 + (volume - 100.0) / 100.0 * 0.4  // Getting better
+        } else if volume <= 800.0 {
+            0.7 + (1.0 - (volume - 200.0) / 600.0 * 0.3).max(0.7)  // Optimal
+        } else if volume <= 1500.0 {
+            0.7 - (volume - 800.0) / 700.0 * 0.3  // Large but ok
+        } else {
+            0.4 - (volume - 1500.0) / 2000.0 * 0.2  // Too large (surface area)
+        }.clamp(0.0, 1.0);
+
+        // Enclosure: ratio of volume to bounding box volume
+        let bb_volume = bounding_box[0] * bounding_box[1] * bounding_box[2];
+        let enclosure_score = if bb_volume > 0.0 {
+            (volume / bb_volume).clamp(0.0, 1.0) * 0.7 + 0.3  // Bias toward enclosed
+        } else {
+            0.0
+        };
+
+        // Hydrophobicity: spike intensity indicates dewetting strength
+        let hydrophobicity_score = (avg_intensity / 10.0).clamp(0.0, 1.0);
+
+        // Overall: weighted combination
+        let overall = 0.4 * volume_score + 0.3 * enclosure_score + 0.3 * hydrophobicity_score;
+
+        // Druggable threshold: overall >= 0.5 AND volume in reasonable range
+        let is_druggable = overall >= 0.5 && volume >= 100.0 && volume <= 2000.0;
+
+        Self {
+            overall,
+            volume_score,
+            enclosure_score,
+            hydrophobicity_score,
+            is_druggable,
+        }
+    }
+}
+
+/// Classification of detected binding site
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SiteClassification {
+    /// Traditional active site (large, persistent)
+    ActiveSite,
+    /// Allosteric binding site (remote from active site)
+    Allosteric,
+    /// Cryptic site (only appears transiently)
+    Cryptic,
+    /// Protein-protein interaction surface
+    PpiSurface,
+    /// Membrane interface region
+    MembraneInterface,
+    /// Unclassified
+    Unknown,
+}
+
+impl Default for SiteClassification {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl SiteClassification {
+    /// Classify based on spike patterns and volume
+    pub fn from_properties(spike_count: usize, volume: f32, _avg_intensity: f32) -> Self {
+        if volume >= 400.0 && spike_count >= 50 {
+            Self::ActiveSite
+        } else if volume >= 200.0 && volume <= 600.0 && spike_count >= 20 {
+            Self::Cryptic  // Moderate size, fewer spikes → transient
+        } else if volume >= 150.0 && spike_count >= 10 {
+            Self::Allosteric
+        } else if volume >= 800.0 {
+            Self::PpiSurface  // Large surface areas
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+/// Statistics from RT clustering
+#[derive(Debug, Clone)]
+pub struct ClusteringStats {
+    /// Number of clusters found
+    pub num_clusters: usize,
+    /// Total neighbor pairs examined
+    pub total_neighbors: usize,
+    /// GPU time in milliseconds
+    pub gpu_time_ms: f64,
+    /// Whether RT cores were used (vs fallback)
+    pub used_rt_cores: bool,
 }
 
 /// Persistent engine that keeps GPU state alive across structures
@@ -283,6 +423,48 @@ impl PersistentNhsEngine {
         } else {
             bail!("No topology loaded")
         }
+    }
+
+    /// Run simulation and automatically cluster spike events
+    ///
+    /// Convenience method that:
+    /// 1. Runs the simulation for n_steps
+    /// 2. Collects spike events
+    /// 3. Clusters them using RT cores (or fallback)
+    /// 4. Returns structured binding site information
+    ///
+    /// # Example
+    /// ```ignore
+    /// let (summary, sites, stats) = engine.run_and_cluster(1_000_000)?;
+    /// for site in &sites {
+    ///     println!("Binding site at {:?} with {} spikes", site.centroid, site.spike_count);
+    /// }
+    /// ```
+    pub fn run_and_cluster(&mut self, n_steps: i32) -> Result<(RunSummary, Vec<ClusteredBindingSite>, Option<ClusteringStats>)> {
+        let summary = self.run(n_steps)?;
+        let spike_events = self.get_spike_events();
+
+        if spike_events.is_empty() {
+            return Ok((summary, Vec::new(), None));
+        }
+
+        // Extract positions
+        let positions: Vec<f32> = spike_events.iter()
+            .flat_map(|s| s.position.iter().copied())
+            .collect();
+
+        // Cluster using RT cores or fallback
+        let used_rt = self.has_rt_clustering();
+        let result = self.cluster_spikes(&positions)?;
+        let sites = build_clustered_sites(&spike_events, &result);
+        let stats = ClusteringStats {
+            num_clusters: result.num_clusters,
+            total_neighbors: result.total_neighbors,
+            gpu_time_ms: result.gpu_time_ms,
+            used_rt_cores: used_rt,
+        };
+
+        Ok((summary, sites, Some(stats)))
     }
 
     /// Get spike events from current run
@@ -518,6 +700,103 @@ pub struct PersistentEngineStats {
     pub overhead_saved_ms: u64,
 }
 
+/// Convert RT clustering results into binding site structures
+#[cfg(feature = "gpu")]
+fn build_clustered_sites(
+    spike_events: &[SpikeEvent],
+    clustering_result: &crate::rt_clustering::RtClusteringResult,
+) -> Vec<ClusteredBindingSite> {
+    use std::collections::HashMap;
+
+    if spike_events.is_empty() {
+        return Vec::new();
+    }
+
+    // Group spikes by cluster
+    let mut cluster_spikes: HashMap<i32, Vec<(usize, &SpikeEvent)>> = HashMap::new();
+    for (idx, (spike, &cluster_id)) in spike_events.iter()
+        .zip(clustering_result.cluster_ids.iter())
+        .enumerate()
+    {
+        if cluster_id >= 0 {  // Skip noise points (-1)
+            cluster_spikes.entry(cluster_id)
+                .or_default()
+                .push((idx, spike));
+        }
+    }
+
+    // Build site structures for each cluster
+    let mut sites = Vec::with_capacity(cluster_spikes.len());
+    for (cluster_id, spikes) in cluster_spikes {
+        if spikes.is_empty() {
+            continue;
+        }
+
+        // Compute centroid
+        let mut centroid = [0.0f32; 3];
+        let mut sum_intensity = 0.0f32;
+        let mut min_pos = [f32::MAX; 3];
+        let mut max_pos = [f32::MIN; 3];
+
+        for (_, spike) in &spikes {
+            centroid[0] += spike.position[0];
+            centroid[1] += spike.position[1];
+            centroid[2] += spike.position[2];
+            sum_intensity += spike.intensity;
+
+            // Update bounding box
+            for i in 0..3 {
+                min_pos[i] = min_pos[i].min(spike.position[i]);
+                max_pos[i] = max_pos[i].max(spike.position[i]);
+            }
+        }
+
+        let n = spikes.len() as f32;
+        centroid[0] /= n;
+        centroid[1] /= n;
+        centroid[2] /= n;
+
+        let bounding_box = [
+            max_pos[0] - min_pos[0],
+            max_pos[1] - min_pos[1],
+            max_pos[2] - min_pos[2],
+        ];
+
+        // Estimate volume as bounding box volume (rough approximation)
+        let estimated_volume = bounding_box[0] * bounding_box[1] * bounding_box[2];
+        let avg_intensity = sum_intensity / n;
+        let spike_count = spikes.len();
+
+        // Compute druggability score
+        let druggability = DruggabilityScore::from_site(estimated_volume, avg_intensity, &bounding_box);
+
+        // Classify site
+        let classification = SiteClassification::from_properties(spike_count, estimated_volume, avg_intensity);
+
+        // Overall quality score: combines spike count, intensity, and druggability
+        let spike_quality = (spike_count as f32 / 100.0).clamp(0.0, 1.0);
+        let intensity_quality = (avg_intensity / 10.0).clamp(0.0, 1.0);
+        let quality_score = 0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
+
+        sites.push(ClusteredBindingSite {
+            cluster_id,
+            centroid,
+            spike_count,
+            spike_indices: spikes.iter().map(|(idx, _)| *idx).collect(),
+            avg_intensity,
+            estimated_volume,
+            bounding_box,
+            quality_score,
+            druggability,
+            classification,
+        });
+    }
+
+    // Sort by spike count (most significant first)
+    sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
+    sites
+}
+
 /// Batch processor using persistent engine
 #[cfg(feature = "gpu")]
 pub struct BatchProcessor {
@@ -586,13 +865,52 @@ impl BatchProcessor {
 
             let wall_time_ms = struct_start.elapsed().as_millis() as u64;
 
+            // Collect spike events
+            let spike_events = self.engine.get_spike_events();
+
+            // RT-accelerated clustering of spike positions
+            let (clustered_sites, clustering_stats) = if !spike_events.is_empty() {
+                // Extract positions for clustering
+                let spike_positions: Vec<f32> = spike_events.iter()
+                    .flat_map(|s| s.position.iter().copied())
+                    .collect();
+
+                // Cluster using RT cores (or fallback)
+                let used_rt = self.engine.has_rt_clustering();
+                match self.engine.cluster_spikes(&spike_positions) {
+                    Ok(result) => {
+                        let sites = build_clustered_sites(&spike_events, &result);
+                        let stats = ClusteringStats {
+                            num_clusters: result.num_clusters,
+                            total_neighbors: result.total_neighbors,
+                            gpu_time_ms: result.gpu_time_ms,
+                            used_rt_cores: used_rt,
+                        };
+                        log::info!("  📊 Clustered {} spikes → {} binding sites ({:.1}ms, {})",
+                            spike_events.len(),
+                            sites.len(),
+                            result.gpu_time_ms,
+                            if used_rt { "RT cores" } else { "fallback" });
+                        (sites, Some(stats))
+                    }
+                    Err(e) => {
+                        log::warn!("  ⚠️ Clustering failed: {}", e);
+                        (Vec::new(), None)
+                    }
+                }
+            } else {
+                (Vec::new(), None)
+            };
+
             results.push(StructureResult {
                 structure_id,
                 total_steps,
                 wall_time_ms,
-                spike_events: self.engine.get_spike_events(),
+                spike_events,
                 snapshots: self.engine.get_snapshots(),
                 final_temperature: summary.end_temperature,
+                clustered_sites,
+                clustering_stats,
             });
 
             log::info!("  ✓ Completed in {}ms ({:.1} steps/sec)",
