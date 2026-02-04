@@ -65,6 +65,14 @@ struct Args {
     #[arg(long, default_value = "8.0")]
     lining_cutoff: f32,
 
+    /// Number of replicas to run in parallel (improves sampling accuracy)
+    #[arg(long, default_value = "1")]
+    replicas: usize,
+
+    /// Base random seed for replica initialization (each replica uses seed + replica_id)
+    #[arg(long, default_value = "42")]
+    replica_seed: u64,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -162,21 +170,54 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
         }
     }
 
-    // Run simulation
-    log::info!("\n[3/6] Running MD simulation ({} steps)...", args.steps);
+    // Run simulation with replicas for improved sampling
+    let n_replicas = args.replicas.max(1);
+    let steps_per_replica = args.steps;
+
+    log::info!("\n[3/6] Running MD simulation ({} steps x {} replicas)...",
+        steps_per_replica, n_replicas);
+
     let sim_start = Instant::now();
-    let summary = engine.run(args.steps)?;
+    let mut all_spikes = Vec::new();
+    let mut final_temperature = 0.0f32;
+    let mut total_snapshots = 0usize;
+
+    for replica_id in 0..n_replicas {
+        let replica_seed = args.replica_seed + replica_id as u64;
+
+        if n_replicas > 1 {
+            log::info!("  Replica {}/{} (seed: {})...", replica_id + 1, n_replicas, replica_seed);
+
+            // Reset engine state for each replica (re-initialize with different seed)
+            engine.reset_for_replica(replica_seed)?;
+        }
+
+        let summary = engine.run(steps_per_replica)?;
+
+        // Collect spikes from this replica
+        let replica_spikes = engine.get_accumulated_spikes();
+        let spike_count = replica_spikes.len();
+        all_spikes.extend(replica_spikes);
+
+        final_temperature = summary.end_temperature;
+        total_snapshots += engine.get_snapshots().len();
+
+        if n_replicas > 1 {
+            log::info!("    Replica {} complete: {} spikes, T={:.1}K",
+                replica_id + 1, spike_count, summary.end_temperature);
+        }
+    }
+
     let sim_time = sim_start.elapsed();
+    let total_steps = steps_per_replica as usize * n_replicas;
 
     log::info!("  ✓ Completed in {:.1}s ({:.0} steps/sec)",
         sim_time.as_secs_f64(),
-        args.steps as f64 / sim_time.as_secs_f64());
+        total_steps as f64 / sim_time.as_secs_f64());
 
-    // Collect spikes (use accumulated GPU spikes for clustering)
-    let all_spikes = engine.get_accumulated_spikes();
-    log::info!("  Raw spikes collected: {}", all_spikes.len());
-    log::info!("  Snapshots: {}", engine.get_snapshots().len());
-    log::info!("  Final temperature: {:.1}K", summary.end_temperature);
+    log::info!("  Raw spikes collected: {} (from {} replicas)", all_spikes.len(), n_replicas);
+    log::info!("  Snapshots: {}", total_snapshots);
+    log::info!("  Final temperature: {:.1}K", final_temperature);
 
     // Intensity pre-filtering: keep only top 20% by intensity to reduce noise
     let accumulated_spikes = if all_spikes.len() > 1000 {

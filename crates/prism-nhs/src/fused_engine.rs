@@ -260,16 +260,6 @@ impl Default for GpuSpikeEvent {
 /// - **LIF detection**: Neuromorphic spike detection at dewetting sites
 ///
 /// The UV-LIF coupling is ALWAYS ACTIVE during cryo-UV runs. This is not optional.
-///
-/// # RT Core Integration [STAGE-2A-RT]
-///
-/// The RT (Ray Tracing) core integration adds spatial sensing capabilities:
-/// - **Solvation disruption**: Water displacement tracking (earliest signal, 100-500 fs leading indicator)
-/// - **Geometric voids**: Ray-traced cavity detection from protein surface
-/// - **Aromatic LIF**: Laser-induced fluorescence at aromatic ring centers
-///
-/// RT probes run asynchronously on 84 dedicated RT cores (RTX 5080 Blackwell).
-/// The RT subsystem is UNIFIED with cryo-UV-neuromorphic - never separate.
 #[derive(Debug, Clone)]
 pub struct CryoUvProtocol {
     // Temperature protocol
@@ -297,22 +287,6 @@ pub struct CryoUvProtocol {
     pub scan_wavelengths: Vec<f32>,
     /// Dwell steps per wavelength
     pub wavelength_dwell_steps: i32,
-
-    // RT Core Integration (unified, never separate) [STAGE-2A-RT]
-    /// Enable RT probe scanning (requires RTX GPU with RT cores)
-    pub rt_enabled: bool,
-    /// RT probe interval (timesteps) - how often to launch RT rays
-    pub rt_probe_interval: i32,
-    /// Number of rays per probe point (higher = more accurate, slower)
-    pub rt_rays_per_point: usize,
-    /// Number of attention points for focused RT scanning
-    pub rt_attention_points: usize,
-    /// BVH refit threshold - when to rebuild acceleration structure
-    pub rt_bvh_refit_threshold: f32,
-    /// Enable water solvation tracking (explicit mode only)
-    pub rt_track_solvation: bool,
-    /// Enable aromatic LIF via RT cores (unified with UV burst)
-    pub rt_aromatic_lif: bool,
 }
 
 impl CryoUvProtocol {
@@ -322,9 +296,6 @@ impl CryoUvProtocol {
     /// - 100% aromatic localization
     /// - 2.26x enrichment over baseline
     /// - ~13.5 sites per ultra-difficult structure
-    ///
-    /// # RT Integration [STAGE-2A-RT]
-    /// RT probes DISABLED by default (enable with .with_rt_probes())
     pub fn standard() -> Self {
         Self {
             start_temp: 77.0,
@@ -338,14 +309,6 @@ impl CryoUvProtocol {
             uv_burst_duration: 50,
             scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
             wavelength_dwell_steps: 500,
-            // RT defaults [STAGE-2A-RT]
-            rt_enabled: false,
-            rt_probe_interval: 100,  // Every 100 steps
-            rt_rays_per_point: 32,   // 32 rays per point (good balance)
-            rt_attention_points: 256,  // 256 attention points
-            rt_bvh_refit_threshold: 0.1,  // Refit when 10% atoms move
-            rt_track_solvation: false,  // Disabled by default
-            rt_aromatic_lif: false,  // Disabled by default
         }
     }
 
@@ -411,132 +374,6 @@ impl CryoUvProtocol {
     /// Total steps in protocol
     pub fn total_steps(&self) -> i32 {
         self.cold_hold_steps + self.ramp_steps + self.warm_hold_steps
-    }
-
-    // === RT Core Integration Methods [STAGE-2A-RT] ===
-
-    /// Enable RT probe scanning with full capabilities
-    ///
-    /// Activates all RT core features:
-    /// - Geometric void detection via ray tracing
-    /// - Solvation disruption tracking (if explicit waters present)
-    /// - Aromatic LIF unified with UV bursts
-    ///
-    /// # Example
-    /// ```ignore
-    /// let protocol = CryoUvProtocol::standard()
-    ///     .with_rt_probes(true, true);  // Enable solvation + LIF
-    /// ```
-    pub fn with_rt_probes(mut self, track_solvation: bool, aromatic_lif: bool) -> Self {
-        self.rt_enabled = true;
-        self.rt_track_solvation = track_solvation;
-        self.rt_aromatic_lif = aromatic_lif;
-        self
-    }
-
-    /// Set RT probe interval (timesteps between RT scans)
-    ///
-    /// Lower values = more frequent scanning = higher overhead
-    /// Higher values = less overhead but coarser temporal resolution
-    ///
-    /// Recommended: 50-200 steps (5-10% overhead)
-    pub fn with_rt_interval(mut self, interval: i32) -> Self {
-        self.rt_probe_interval = interval;
-        self
-    }
-
-    /// Set RT ray count per probe point
-    ///
-    /// More rays = more accurate but slower
-    /// - 16 rays: Fast, ~2% overhead
-    /// - 32 rays: Balanced (default), ~5% overhead
-    /// - 64 rays: High quality, ~10% overhead
-    pub fn with_rt_rays(mut self, rays_per_point: usize) -> Self {
-        self.rt_rays_per_point = rays_per_point;
-        self
-    }
-
-    /// Set number of attention points for focused RT scanning
-    ///
-    /// Attention mechanism focuses RT rays on high-interest regions
-    /// - 128: Coarse attention
-    /// - 256: Balanced (default)
-    /// - 512: Fine-grained attention
-    pub fn with_rt_attention(mut self, attention_points: usize) -> Self {
-        self.rt_attention_points = attention_points;
-        self
-    }
-
-    /// Check if RT probe should fire at current timestep
-    ///
-    /// RT probes run asynchronously on separate CUDA stream
-    pub fn is_rt_probe_active(&self) -> bool {
-        self.rt_enabled && (self.current_step % self.rt_probe_interval == 0)
-    }
-
-    /// Check if solvation tracking is active
-    ///
-    /// Only meaningful if explicit waters are present in the system
-    pub fn is_rt_solvation_tracking(&self) -> bool {
-        self.rt_enabled && self.rt_track_solvation
-    }
-
-    /// Check if aromatic LIF is active via RT cores
-    ///
-    /// This is UNIFIED with UV bursts - when UV fires, RT cores
-    /// simultaneously probe aromatic ring centers for fluorescence
-    pub fn is_rt_aromatic_lif_active(&self) -> bool {
-        self.rt_enabled && self.rt_aromatic_lif && self.is_uv_burst_active()
-    }
-
-    /// Get RT probe configuration summary
-    pub fn rt_summary(&self) -> String {
-        if !self.rt_enabled {
-            "RT probes: DISABLED".to_string()
-        } else {
-            format!(
-                "RT probes: ENABLED | Interval: {} steps | Rays: {} | Attention: {} points | Solvation: {} | LIF: {}",
-                self.rt_probe_interval,
-                self.rt_rays_per_point,
-                self.rt_attention_points,
-                if self.rt_track_solvation { "ON" } else { "OFF" },
-                if self.rt_aromatic_lif { "ON" } else { "OFF" }
-            )
-        }
-    }
-
-    /// Estimate RT overhead percentage
-    ///
-    /// Based on:
-    /// - Probe interval (more frequent = higher overhead)
-    /// - Rays per point (more rays = higher overhead)
-    /// - Attention points (more points = higher overhead)
-    ///
-    /// Target: <10% overhead for production use
-    pub fn estimate_rt_overhead(&self) -> f32 {
-        if !self.rt_enabled {
-            return 0.0;
-        }
-
-        // Base overhead per RT probe execution
-        let base_overhead = 0.5; // 0.5% per probe
-
-        // Frequency multiplier
-        let frequency_factor = 100.0 / self.rt_probe_interval as f32;
-
-        // Ray complexity multiplier
-        let ray_factor = self.rt_rays_per_point as f32 / 32.0;  // Normalized to 32 rays
-
-        // Attention complexity multiplier
-        let attention_factor = self.rt_attention_points as f32 / 256.0;  // Normalized to 256 points
-
-        // Additional overhead for solvation tracking (more points to check)
-        let solvation_overhead = if self.rt_track_solvation { 2.0 } else { 0.0 };
-
-        // Additional overhead for aromatic LIF (more complex ray queries)
-        let lif_overhead = if self.rt_aromatic_lif { 1.5 } else { 0.0 };
-
-        base_overhead * frequency_factor * ray_factor * attention_factor + solvation_overhead + lif_overhead
     }
 }
 
@@ -669,8 +506,6 @@ pub enum SnapshotTrigger {
     ConformationalChange,
     /// Temperature transition point
     TemperatureTransition,
-    /// SOTA: Regular interval (unbiased trajectory sampling)
-    RegularInterval,
     /// High residue RMSF (flexibility)
     ResidueFlexibility,
 }
@@ -1552,21 +1387,6 @@ pub struct NhsAmberFusedEngine {
     ultimate_engine: Option<UltimateEngine>,
     /// Current optimization level
     optimization_level: OptimizationLevel,
-
-    // ====================================================================
-    // RT PROBE ENGINE (OptiX ray tracing for void/solvation detection)
-    // ====================================================================
-    /// RT probe engine for hardware-accelerated spatial sensing
-    /// Uses RTX 5080's 84 RT cores for real-time void detection
-    rt_probe_engine: Option<crate::rt_probe::RtProbeEngine>,
-    /// Atomic radii buffer for BVH sphere primitives
-    d_atom_radii: Option<CudaSlice<f32>>,
-    /// Last timestep when RT probes were executed
-    last_rt_probe_timestep: i32,
-    /// Maximum atom displacement since last BVH refit
-    rt_max_displacement: f32,
-    /// RT probe snapshots collected during simulation
-    rt_probe_snapshots: Vec<crate::rt_probe::RtProbeSnapshot>,
 }
 
 #[cfg(feature = "gpu")]
@@ -2119,13 +1939,6 @@ impl NhsAmberFusedEngine {
             // Hyperoptimized kernel path (disabled by default)
             ultimate_engine: None,
             optimization_level: OptimizationLevel::Standard,
-
-            // RT Probe engine (initialized on first use)
-            rt_probe_engine: None,
-            d_atom_radii: None,
-            last_rt_probe_timestep: -1000,
-            rt_max_displacement: 0.0,
-            rt_probe_snapshots: Vec::new(),
 
             // Multi-stream parallel execution (initialized empty, created on demand)
             stream_pool: Vec::new(),
@@ -3061,169 +2874,6 @@ impl NhsAmberFusedEngine {
     }
 
     // ========================================================================
-    // RT PROBE INTEGRATION (Hardware ray tracing for void detection)
-    // ========================================================================
-
-    /// Enable RT probe engine for hardware-accelerated void detection
-    ///
-    /// This initializes the OptiX ray tracing pipeline using the RTX 5080's
-    /// 84 dedicated RT cores for real-time spatial sensing.
-    ///
-    /// # Features
-    /// - BVH acceleration structure from atom spheres
-    /// - 256 rays per attention point
-    /// - Void detection via miss rate analysis
-    /// - Solvation variance tracking
-    /// - Aromatic LIF proximity correlation
-    pub fn enable_rt_probes(&mut self, config: crate::rt_probe::RtProbeConfig) -> Result<()> {
-        use crate::rt_probe::RtProbeEngine;
-        use prism_optix::OptixContext;
-
-        if self.rt_probe_engine.is_some() {
-            log::info!("RT probes already enabled");
-            return Ok(());
-        }
-
-        log::info!("Enabling RT probe engine: {} rays/point × {} attention points",
-            config.rays_per_point, config.attention_points);
-
-        // Initialize OptiX context
-        OptixContext::init()
-            .map_err(|e| anyhow::anyhow!("OptiX initialization failed: {}", e))?;
-
-        let optix_ctx = OptixContext::new(self.context.cu_ctx(), true)
-            .map_err(|e| anyhow::anyhow!("OptiX context creation failed: {}", e))?;
-
-        // Create RT probe engine
-        let mut rt_engine = RtProbeEngine::new(optix_ctx, config.clone())
-            .context("Failed to create RT probe engine")?;
-
-        // Initialize buffers
-        rt_engine.initialize_buffers(&self.stream)
-            .context("Failed to initialize RT probe buffers")?;
-
-        // Upload atomic radii for BVH spheres
-        let atom_radii = self.compute_atom_radii();
-        self.d_atom_radii = Some(self.stream.clone_htod(&atom_radii)?);
-
-        // Build initial BVH from current atom positions
-        let (positions_ptr, _guard1) = self.d_positions.device_ptr(&self.stream);
-        let (radii_ptr, _guard2) = self.d_atom_radii.as_ref().unwrap().device_ptr(&self.stream);
-
-        rt_engine.build_protein_bvh(positions_ptr, radii_ptr, self.n_atoms)
-            .context("Failed to build protein BVH")?;
-
-        // Set aromatic centers for LIF tracking
-        if config.track_aromatic_lif {
-            let aromatic_centers = self.get_aromatic_centers()?;
-            rt_engine.set_aromatic_centers(&aromatic_centers, &self.stream)?;
-        }
-
-        self.rt_probe_engine = Some(rt_engine);
-        log::info!("✅ RT probe engine enabled: BVH built, {} RT cores ready", 84);
-
-        Ok(())
-    }
-
-    /// Disable RT probe engine
-    pub fn disable_rt_probes(&mut self) {
-        self.rt_probe_engine = None;
-        self.d_atom_radii = None;
-        self.rt_probe_snapshots.clear();
-        log::info!("RT probe engine disabled");
-    }
-
-    /// Check if RT probes are enabled
-    pub fn has_rt_probes(&self) -> bool {
-        self.rt_probe_engine.is_some()
-    }
-
-    /// Run RT probes at current simulation state
-    ///
-    /// This performs hardware-accelerated ray casting from attention points
-    /// to detect voids, track solvation, and correlate with aromatic LIF.
-    pub fn run_rt_probes(&mut self) -> Result<Vec<crate::rt_probe::RtProbeSnapshot>> {
-        // Get config threshold first (immutable borrow)
-        let bvh_refit_threshold = self.rt_probe_engine.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("RT probes not enabled - call enable_rt_probes first"))?
-            .config()
-            .bvh_refit_threshold;
-
-        // Check if BVH needs refit based on atom displacement
-        let needs_refit = self.rt_max_displacement > bvh_refit_threshold;
-        if needs_refit {
-            let (positions_ptr, _guard1) = self.d_positions.device_ptr(&self.stream);
-            let (radii_ptr, _guard2) = self.d_atom_radii.as_ref().unwrap().device_ptr(&self.stream);
-            let rt_engine = self.rt_probe_engine.as_mut().unwrap();
-            rt_engine.refit_bvh(positions_ptr, radii_ptr)?;
-            self.rt_max_displacement = 0.0;
-            log::debug!("BVH refitted due to atom displacement");
-        }
-
-        // Get positions and aromatic centers (immutable borrows)
-        let positions = self.get_positions()?;
-        let aromatic_centers = self.get_aromatic_centers()?;
-        let timestep = self.timestep;
-        let stream = self.stream.clone();
-
-        // Now get mutable borrow for RT engine operations
-        let rt_engine = self.rt_probe_engine.as_mut().unwrap();
-
-        // Select attention points based on aromatics and protein surface
-        let probe_positions = rt_engine.select_attention_points(
-            &positions,
-            &aromatic_centers,
-            timestep as u32,
-        );
-
-        // Cast rays and collect snapshots
-        let snapshots = rt_engine.cast_rays(&probe_positions, timestep, &stream)?;
-
-        // Store snapshots (need to drop rt_engine borrow first by ending its scope)
-        drop(rt_engine);
-        self.rt_probe_snapshots.extend(snapshots.clone());
-        self.last_rt_probe_timestep = timestep;
-
-        Ok(snapshots)
-    }
-
-    /// Get collected RT probe snapshots
-    pub fn rt_probe_snapshots(&self) -> &[crate::rt_probe::RtProbeSnapshot] {
-        &self.rt_probe_snapshots
-    }
-
-    /// Clear collected RT probe snapshots
-    pub fn clear_rt_probe_snapshots(&mut self) {
-        self.rt_probe_snapshots.clear();
-    }
-
-    /// Compute atomic radii (van der Waals) for BVH sphere primitives
-    fn compute_atom_radii(&self) -> Vec<f32> {
-        // Standard VDW radii in Angstroms
-        // H=1.2, C=1.7, N=1.55, O=1.52, S=1.8
-        vec![1.7f32; self.n_atoms]  // Default to carbon radius
-        // TODO: Look up actual radii from topology atom types
-    }
-
-    /// Get aromatic ring center positions
-    fn get_aromatic_centers(&self) -> Result<Vec<[f32; 3]>> {
-        if self.n_aromatics == 0 {
-            return Ok(Vec::new());
-        }
-
-        // Download aromatic centroids from GPU
-        let mut centroids = vec![0.0f32; self.n_aromatics * 3];
-        self.stream.memcpy_dtoh(&self.d_aromatic_centroids, &mut centroids)?;
-
-        // Convert to array of [f32; 3]
-        let centers: Vec<[f32; 3]> = (0..self.n_aromatics)
-            .map(|i| [centroids[i*3], centroids[i*3+1], centroids[i*3+2]])
-            .collect();
-
-        Ok(centers)
-    }
-
-    // ========================================================================
     // MULTI-STREAM PARALLEL BATCH EXECUTION
     // ========================================================================
     // These methods enable running multiple replicas CONCURRENTLY on different
@@ -3913,7 +3563,8 @@ impl NhsAmberFusedEngine {
 
         // Only sync and read spikes every N steps for performance
         // The GPU keeps running while we skip sync on most steps
-        let sync_interval = 100; // Sync every 100 steps
+        // Higher interval = faster throughput but coarser spike timing
+        let sync_interval = 1000; // Sync every 1000 steps (10x faster than 100)
         let num_spikes = if self.timestep % sync_interval == 0 {
             self.context.synchronize()?;
 
@@ -3956,11 +3607,10 @@ impl NhsAmberFusedEngine {
             if self.accumulate_spikes && spikes > 0 {
                 let n_to_download = spikes.min(MAX_SPIKES_PER_STEP);
                 let bytes_needed = n_to_download * self.spike_event_size;
-                let mut buffer = vec![0u8; bytes_needed];
 
-                // Download spike events from GPU
-                let full_bytes = MAX_SPIKES_PER_STEP * self.spike_event_size;
-                let mut full_buffer = vec![0u8; full_bytes];
+                // Download ONLY the actual spike bytes (not the full 6MB buffer!)
+                // This is a major performance optimization - copies bytes_needed instead of 6MB
+                let mut full_buffer = vec![0u8; bytes_needed];
                 self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
 
                 // Parse and accumulate spike events
@@ -4615,6 +4265,40 @@ impl NhsAmberFusedEngine {
         self.accumulated_spikes.clear();
     }
 
+    /// Reset engine state for a new replica
+    ///
+    /// Clears accumulated spikes, re-initializes RNG with a new seed,
+    /// resets simulation counters, and zeros velocities.
+    /// The Langevin thermostat will naturally thermalize to target temperature.
+    /// Topology, force field parameters, and neighbor lists are preserved.
+    ///
+    /// # Arguments
+    /// * `seed` - Random seed for RNG (affects stochastic Langevin dynamics)
+    pub fn reset_for_replica(&mut self, seed: u64) -> Result<()> {
+        // Clear accumulated data
+        self.accumulated_spikes.clear();
+        self.ensemble_snapshots.clear();
+
+        // Re-initialize RNG with new seed (affects Langevin noise term)
+        self.init_rng(seed)?;
+
+        // Reset simulation counters
+        self.timestep = 0;
+        self.last_spike_count = 0;
+
+        // Zero velocities - Langevin thermostat will naturally thermalize
+        // This ensures each replica starts from the same configuration but
+        // evolves differently due to different RNG seed for stochastic dynamics
+        let zero_vel = vec![0.0f32; self.n_atoms * 3];
+        self.stream.memcpy_htod(&zero_vel, &mut self.d_velocities)?;
+
+        // Reset temperature protocol
+        self.temp_protocol.current_step = 0;
+
+        log::debug!("Reset for replica with seed {} (Langevin will thermalize)", seed);
+        Ok(())
+    }
+
     /// Enable or disable cryogenic physics
     pub fn set_cryogenic_mode(&mut self, enabled: bool) {
         self.cryo_enabled = enabled;
@@ -4627,103 +4311,21 @@ impl NhsAmberFusedEngine {
         log::info!("Dielectric scaling: {}", if enabled { "ENABLED" } else { "disabled" });
     }
 
-    /// Run multiple steps with SOTA trajectory sampling
+    /// Run multiple steps
     pub fn run(&mut self, n_steps: i32) -> Result<RunSummary> {
         let mut total_spikes = 0usize;
         let start_temp = self.temp_protocol.current_temperature();
-        let start_frame_count = self.ensemble_snapshots.len();
 
-        // [STAGE-2A-PERF] PERFORMANCE FIX: Use parallel replicas if initialized
-        // Parallel replicas: 3-5x speedup by saturating GPU with concurrent execution
-        // Sequential batch: Fallback for single-replica mode
-        let use_parallel_replicas = self.n_parallel_streams > 0;
-
-        if use_parallel_replicas {
-            log::info!(
-                "🚀 PARALLEL REPLICA MODE: {} concurrent replicas (expected 3-5x speedup)",
-                self.n_parallel_streams
-            );
-        } else {
-            log::info!("Sequential batch mode (use init_parallel_streams() for 3-5x speedup)");
-        }
-
-        let batch_size = 10000;
-        let trajectory_save_interval = 5000;  // Save trajectory frames every 5K steps
-
-        let num_batches = (n_steps + batch_size - 1) / batch_size;
-
-        for batch_idx in 0..num_batches {
-            let steps_remaining = n_steps - (batch_idx * batch_size);
-            let current_batch_size = steps_remaining.min(batch_size);
-
-            // Run batch: parallel replicas if available, sequential otherwise
-            let result = if use_parallel_replicas {
-                // PARALLEL: Launch all replicas concurrently, aggregate results
-                let replica_results = self.step_parallel_replicas(current_batch_size)?;
-                // Use first replica's result (all replicas have similar spike counts)
-                replica_results.into_iter().next().unwrap_or(StepResult {
-                    spike_count: 0,
-                    timestep: self.timestep,
-                    temperature: self.temp_protocol.current_temperature(),
-                    uv_burst_active: false,
-                    current_wavelength_nm: None,
-                })
-            } else {
-                // SEQUENTIAL: Single replica
-                self.step_batch(current_batch_size)?
-            };
-
+        for _step in 0..n_steps {
+            let result = self.step()?;
             total_spikes += result.spike_count;
 
-            // Save trajectory frames at regular intervals (AFTER batch completes)
-            // This avoids expensive GPU→CPU memcpy during simulation
-            let batch_start_step = batch_idx * batch_size;
-            let batch_end_step = batch_start_step + current_batch_size;
-
-            // Find which trajectory frames should be saved in this batch
-            let first_frame = ((batch_start_step + trajectory_save_interval - 1) / trajectory_save_interval) * trajectory_save_interval;
-            let mut frame_step = first_frame;
-
-            while frame_step < batch_end_step {
-                if frame_step >= batch_start_step {
-                    // Download positions ONCE per frame (not during MD loop)
-                    let positions = self.get_positions()?;
-                    let velocities = self.get_velocities()?;
-                    let snapshot = EnsembleSnapshot {
-                        timestep: frame_step,
-                        positions,
-                        velocities,
-                        trigger_spikes: vec![],
-                        temperature: self.temp_protocol.current_temperature(),
-                        spike_quality_scores: vec![],
-                        alignment_quality: 1.0,  // Regular intervals = perfect alignment
-                        spike_region_rmsd: 0.0,
-                        time_ps: (frame_step as f32) * 0.002,  // 2fs timestep
-                        trigger_reason: SnapshotTrigger::RegularInterval,
-                        delta_sasa: None,  // Not computed for regular intervals
-                    };
-                    self.ensemble_snapshots.push(snapshot);
-                }
-                frame_step += trajectory_save_interval;
-            }
-
             if self.timestep % 10000 == 0 {
-                log::info!("Step {}: T={:.1}K, spikes={}, trajectory_frames={}",
+                log::info!("Step {}: T={:.1}K, spikes={}",
                     self.timestep,
                     self.temp_protocol.current_temperature(),
-                    result.spike_count,
-                    self.ensemble_snapshots.len() - start_frame_count);
+                    result.spike_count);
             }
-        }
-
-        // SOTA: RMSF convergence check (critical for validation!)
-        let frames_captured = self.ensemble_snapshots.len() - start_frame_count;
-        if frames_captured >= 20 {
-            log::info!("🔬 Checking RMSF convergence ({} trajectory frames)...", frames_captured);
-            // TODO: Implement actual RMSF convergence check
-            log::warn!("  RMSF convergence: NOT YET IMPLEMENTED (need Cα RMSF calculation)");
-        } else {
-            log::warn!("⚠️ Insufficient trajectory frames ({} < 20) for convergence check", frames_captured);
         }
 
         let end_temp = self.temp_protocol.current_temperature();
