@@ -180,6 +180,9 @@ pub use persistent_engine::{
     PersistentNhsEngine, PersistentBatchConfig, BatchProcessor,
     StructureResult, PersistentEngineStats,
     ClusteredBindingSite, ClusteringStats, DruggabilityScore, SiteClassification,
+    AromaticProximityInfo, enhance_sites_with_aromatics,
+    SitePersistenceTracker, TrackedSite, PersistenceAnalysis,
+    BindingSiteFormatter, write_binding_site_visualizations,
 };
 #[cfg(feature = "gpu")]
 pub use ultimate_engine::{

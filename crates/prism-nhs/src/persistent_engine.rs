@@ -119,6 +119,29 @@ pub struct ClusteredBindingSite {
     pub druggability: DruggabilityScore,
     /// Site classification
     pub classification: SiteClassification,
+    /// Aromatic proximity analysis (if computed)
+    pub aromatic_proximity: Option<AromaticProximityInfo>,
+}
+
+/// Aromatic residue proximity information for a binding site
+#[derive(Debug, Clone, Default)]
+pub struct AromaticProximityInfo {
+    /// Distance to nearest TRP residue (Å), None if no TRP in structure
+    pub nearest_trp_distance: Option<f32>,
+    /// Distance to nearest TYR residue (Å)
+    pub nearest_tyr_distance: Option<f32>,
+    /// Distance to nearest PHE residue (Å)
+    pub nearest_phe_distance: Option<f32>,
+    /// Distance to nearest aromatic (any type)
+    pub nearest_aromatic_distance: f32,
+    /// Number of aromatics within 5Å
+    pub aromatics_within_5a: usize,
+    /// Number of aromatics within 8Å
+    pub aromatics_within_8a: usize,
+    /// Aromatic residue indices within 8Å
+    pub nearby_aromatic_residues: Vec<u32>,
+    /// Aromatic score (0.0-1.0) based on proximity
+    pub aromatic_score: f32,
 }
 
 /// Druggability score for a binding site
@@ -132,13 +155,25 @@ pub struct DruggabilityScore {
     pub enclosure_score: f32,
     /// Hydrophobicity score (0.0-1.0) - dewetting signal strength
     pub hydrophobicity_score: f32,
+    /// Aromatic score (0.0-1.0) - proximity to aromatics for pi-stacking
+    pub aromatic_score: f32,
     /// Is this likely a druggable pocket?
     pub is_druggable: bool,
 }
 
 impl DruggabilityScore {
-    /// Compute druggability from binding site properties
+    /// Compute druggability from binding site properties (without aromatic info)
     pub fn from_site(volume: f32, avg_intensity: f32, bounding_box: &[f32; 3]) -> Self {
+        Self::from_site_with_aromatics(volume, avg_intensity, bounding_box, None)
+    }
+
+    /// Compute druggability with aromatic proximity information
+    pub fn from_site_with_aromatics(
+        volume: f32,
+        avg_intensity: f32,
+        bounding_box: &[f32; 3],
+        aromatic_info: Option<&AromaticProximityInfo>,
+    ) -> Self {
         // Volume scoring: optimal range 200-800 Å³
         let volume_score = if volume < 100.0 {
             volume / 100.0 * 0.3  // Too small
@@ -163,18 +198,172 @@ impl DruggabilityScore {
         // Hydrophobicity: spike intensity indicates dewetting strength
         let hydrophobicity_score = (avg_intensity / 10.0).clamp(0.0, 1.0);
 
-        // Overall: weighted combination
-        let overall = 0.4 * volume_score + 0.3 * enclosure_score + 0.3 * hydrophobicity_score;
+        // Aromatic score: based on proximity to aromatic residues
+        // Aromatics enable pi-stacking with drug molecules
+        let aromatic_score = aromatic_info
+            .map(|info| info.aromatic_score)
+            .unwrap_or(0.5);  // Default to neutral if not computed
+
+        // Overall: weighted combination (with aromatics)
+        let overall = if aromatic_info.is_some() {
+            // With aromatic info: 30% volume, 20% enclosure, 25% hydrophobicity, 25% aromatic
+            0.30 * volume_score + 0.20 * enclosure_score + 0.25 * hydrophobicity_score + 0.25 * aromatic_score
+        } else {
+            // Without aromatic info: original weights
+            0.40 * volume_score + 0.30 * enclosure_score + 0.30 * hydrophobicity_score
+        };
 
         // Druggable threshold: overall >= 0.5 AND volume in reasonable range
-        let is_druggable = overall >= 0.5 && volume >= 100.0 && volume <= 2000.0;
+        // Bonus: sites with aromatics within 5Å get lower threshold
+        let aromatic_bonus = aromatic_info
+            .map(|info| info.aromatics_within_5a > 0)
+            .unwrap_or(false);
+        let threshold = if aromatic_bonus { 0.45 } else { 0.5 };
+        let is_druggable = overall >= threshold && volume >= 100.0 && volume <= 2000.0;
 
         Self {
             overall,
             volume_score,
             enclosure_score,
             hydrophobicity_score,
+            aromatic_score,
             is_druggable,
+        }
+    }
+}
+
+impl AromaticProximityInfo {
+    /// Compute aromatic proximity for a site centroid given aromatic residue positions
+    ///
+    /// # Arguments
+    /// * `site_centroid` - [x, y, z] position of binding site center
+    /// * `aromatic_positions` - List of (residue_id, aromatic_type, [x, y, z]) for each aromatic
+    ///
+    /// # Aromatic Types
+    /// * 0 = TRP (tryptophan)
+    /// * 1 = TYR (tyrosine)
+    /// * 2 = PHE (phenylalanine)
+    pub fn compute(
+        site_centroid: &[f32; 3],
+        aromatic_positions: &[(u32, u8, [f32; 3])],
+    ) -> Self {
+        if aromatic_positions.is_empty() {
+            return Self::default();
+        }
+
+        let mut nearest_trp: Option<f32> = None;
+        let mut nearest_tyr: Option<f32> = None;
+        let mut nearest_phe: Option<f32> = None;
+        let mut nearest_any = f32::MAX;
+        let mut within_5a = 0usize;
+        let mut within_8a = 0usize;
+        let mut nearby_residues = Vec::new();
+
+        for &(residue_id, aromatic_type, pos) in aromatic_positions {
+            let dx = pos[0] - site_centroid[0];
+            let dy = pos[1] - site_centroid[1];
+            let dz = pos[2] - site_centroid[2];
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+            // Track nearest by type
+            match aromatic_type {
+                0 => {  // TRP
+                    if nearest_trp.map_or(true, |d| dist < d) {
+                        nearest_trp = Some(dist);
+                    }
+                }
+                1 => {  // TYR
+                    if nearest_tyr.map_or(true, |d| dist < d) {
+                        nearest_tyr = Some(dist);
+                    }
+                }
+                2 => {  // PHE
+                    if nearest_phe.map_or(true, |d| dist < d) {
+                        nearest_phe = Some(dist);
+                    }
+                }
+                _ => {}
+            }
+
+            // Track nearest any
+            if dist < nearest_any {
+                nearest_any = dist;
+            }
+
+            // Count within distance thresholds
+            if dist <= 5.0 {
+                within_5a += 1;
+            }
+            if dist <= 8.0 {
+                within_8a += 1;
+                nearby_residues.push(residue_id);
+            }
+        }
+
+        // Compute aromatic score based on proximity
+        // Higher score for closer aromatics, especially TRP (strongest UV absorber)
+        let aromatic_score = Self::compute_aromatic_score(
+            nearest_trp,
+            nearest_tyr,
+            nearest_phe,
+            within_5a,
+        );
+
+        Self {
+            nearest_trp_distance: nearest_trp,
+            nearest_tyr_distance: nearest_tyr,
+            nearest_phe_distance: nearest_phe,
+            nearest_aromatic_distance: if nearest_any < f32::MAX { nearest_any } else { 0.0 },
+            aromatics_within_5a: within_5a,
+            aromatics_within_8a: within_8a,
+            nearby_aromatic_residues: nearby_residues,
+            aromatic_score,
+        }
+    }
+
+    /// Compute aromatic score from distances
+    fn compute_aromatic_score(
+        nearest_trp: Option<f32>,
+        nearest_tyr: Option<f32>,
+        nearest_phe: Option<f32>,
+        within_5a: usize,
+    ) -> f32 {
+        // TRP is most important (strongest UV absorber, best for pi-stacking)
+        let trp_score = nearest_trp
+            .map(|d| Self::distance_to_score(d, 1.5))  // TRP weight 1.5x
+            .unwrap_or(0.0);
+
+        // TYR is moderate
+        let tyr_score = nearest_tyr
+            .map(|d| Self::distance_to_score(d, 1.0))
+            .unwrap_or(0.0);
+
+        // PHE is weakest
+        let phe_score = nearest_phe
+            .map(|d| Self::distance_to_score(d, 0.7))
+            .unwrap_or(0.0);
+
+        // Combine scores (take best + bonus for multiple)
+        let base_score = trp_score.max(tyr_score).max(phe_score);
+        let multi_bonus = (within_5a as f32 * 0.05).min(0.2);  // Up to 0.2 bonus
+
+        (base_score + multi_bonus).clamp(0.0, 1.0)
+    }
+
+    /// Convert distance to score (closer = higher)
+    fn distance_to_score(distance: f32, weight: f32) -> f32 {
+        if distance < 3.0 {
+            // Direct contact: highest score
+            weight * 1.0
+        } else if distance < 5.0 {
+            // Close proximity: good score
+            weight * (1.0 - (distance - 3.0) / 2.0 * 0.3)
+        } else if distance < 8.0 {
+            // Medium range: moderate score
+            weight * (0.7 - (distance - 5.0) / 3.0 * 0.3)
+        } else {
+            // Distal: low score
+            weight * (0.4 - (distance - 8.0) / 10.0 * 0.4).max(0.0)
         }
     }
 }
@@ -230,6 +419,260 @@ pub struct ClusteringStats {
     pub gpu_time_ms: f64,
     /// Whether RT cores were used (vs fallback)
     pub used_rt_cores: bool,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SITE PERSISTENCE TRACKING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Tracks binding site persistence across trajectory frames
+///
+/// Sites that persist across multiple frames are more reliable drug targets.
+/// Transient sites may be cryptic pockets that only appear during conformational changes.
+#[derive(Debug, Clone)]
+pub struct SitePersistenceTracker {
+    /// Tracked sites by unique ID
+    tracked_sites: Vec<TrackedSite>,
+    /// Spatial matching threshold (Å)
+    match_threshold: f32,
+    /// Total frames processed
+    total_frames: usize,
+    /// Next unique site ID
+    next_site_id: u64,
+}
+
+/// A binding site being tracked across frames
+#[derive(Debug, Clone)]
+pub struct TrackedSite {
+    /// Unique ID for this site across all frames
+    pub site_id: u64,
+    /// Running average centroid position
+    pub avg_centroid: [f32; 3],
+    /// Running average volume
+    pub avg_volume: f32,
+    /// Number of frames this site was detected
+    pub frame_count: usize,
+    /// First frame this site appeared
+    pub first_frame: usize,
+    /// Most recent frame this site was seen
+    pub last_frame: usize,
+    /// Consecutive frames detected (current streak)
+    pub consecutive_frames: usize,
+    /// Maximum consecutive detection streak
+    pub max_consecutive: usize,
+    /// Running average spike count
+    pub avg_spike_count: f32,
+    /// Running average quality score
+    pub avg_quality: f32,
+    /// Is this site considered persistent? (detected in >50% of frames)
+    pub is_persistent: bool,
+    /// Site classification (most common across frames)
+    pub classification: SiteClassification,
+    /// Frame-by-frame spike counts for variability analysis
+    spike_history: Vec<usize>,
+}
+
+/// Result of persistence analysis
+#[derive(Debug, Clone)]
+pub struct PersistenceAnalysis {
+    /// Total frames analyzed
+    pub total_frames: usize,
+    /// All tracked sites with persistence info
+    pub sites: Vec<TrackedSite>,
+    /// Number of persistent sites (>50% frame presence)
+    pub persistent_count: usize,
+    /// Number of transient sites (<50% frame presence)
+    pub transient_count: usize,
+    /// Average site lifetime (frames)
+    pub avg_lifetime: f32,
+}
+
+impl SitePersistenceTracker {
+    /// Create a new persistence tracker
+    ///
+    /// # Arguments
+    /// * `match_threshold` - Maximum distance (Å) for sites to be considered the same
+    pub fn new(match_threshold: f32) -> Self {
+        Self {
+            tracked_sites: Vec::new(),
+            match_threshold,
+            total_frames: 0,
+            next_site_id: 0,
+        }
+    }
+
+    /// Process binding sites from a single frame
+    ///
+    /// Matches sites to existing tracked sites or creates new ones.
+    pub fn process_frame(&mut self, frame_sites: &[ClusteredBindingSite]) {
+        self.total_frames += 1;
+        let current_frame = self.total_frames;
+
+        // Mark all sites as not-seen-this-frame
+        let mut matched = vec![false; self.tracked_sites.len()];
+
+        for site in frame_sites {
+            // Find best matching tracked site
+            let mut best_match: Option<usize> = None;
+            let mut best_dist = f32::MAX;
+
+            for (idx, tracked) in self.tracked_sites.iter().enumerate() {
+                if matched[idx] {
+                    continue;
+                }
+
+                let dist = Self::distance(&site.centroid, &tracked.avg_centroid);
+                if dist < self.match_threshold && dist < best_dist {
+                    best_match = Some(idx);
+                    best_dist = dist;
+                }
+            }
+
+            if let Some(idx) = best_match {
+                // Update existing site
+                self.update_tracked_site(idx, site, current_frame);
+                matched[idx] = true;
+            } else {
+                // Create new tracked site
+                self.create_tracked_site(site, current_frame);
+            }
+        }
+
+        // Update sites not seen this frame (break consecutive streak)
+        for (idx, was_matched) in matched.iter().enumerate() {
+            if !was_matched {
+                self.tracked_sites[idx].consecutive_frames = 0;
+            }
+        }
+
+        // Update persistence status for all sites
+        self.update_persistence_status();
+    }
+
+    /// Update an existing tracked site with new detection
+    fn update_tracked_site(&mut self, idx: usize, site: &ClusteredBindingSite, frame: usize) {
+        let tracked = &mut self.tracked_sites[idx];
+
+        // Update running averages
+        let n = tracked.frame_count as f32;
+        tracked.avg_centroid[0] = (tracked.avg_centroid[0] * n + site.centroid[0]) / (n + 1.0);
+        tracked.avg_centroid[1] = (tracked.avg_centroid[1] * n + site.centroid[1]) / (n + 1.0);
+        tracked.avg_centroid[2] = (tracked.avg_centroid[2] * n + site.centroid[2]) / (n + 1.0);
+        tracked.avg_volume = (tracked.avg_volume * n + site.estimated_volume) / (n + 1.0);
+        tracked.avg_spike_count = (tracked.avg_spike_count * n + site.spike_count as f32) / (n + 1.0);
+        tracked.avg_quality = (tracked.avg_quality * n + site.quality_score) / (n + 1.0);
+
+        tracked.frame_count += 1;
+        tracked.last_frame = frame;
+        tracked.consecutive_frames += 1;
+        tracked.max_consecutive = tracked.max_consecutive.max(tracked.consecutive_frames);
+        tracked.spike_history.push(site.spike_count);
+
+        // Keep most common classification (or use most recent if better quality)
+        if site.quality_score > tracked.avg_quality * 1.2 {
+            tracked.classification = site.classification;
+        }
+    }
+
+    /// Create a new tracked site
+    fn create_tracked_site(&mut self, site: &ClusteredBindingSite, frame: usize) {
+        let site_id = self.next_site_id;
+        self.next_site_id += 1;
+
+        self.tracked_sites.push(TrackedSite {
+            site_id,
+            avg_centroid: site.centroid,
+            avg_volume: site.estimated_volume,
+            frame_count: 1,
+            first_frame: frame,
+            last_frame: frame,
+            consecutive_frames: 1,
+            max_consecutive: 1,
+            avg_spike_count: site.spike_count as f32,
+            avg_quality: site.quality_score,
+            is_persistent: false,
+            classification: site.classification,
+            spike_history: vec![site.spike_count],
+        });
+    }
+
+    /// Update persistence status for all sites
+    fn update_persistence_status(&mut self) {
+        let threshold = self.total_frames as f32 * 0.5;  // 50% of frames
+
+        for site in &mut self.tracked_sites {
+            site.is_persistent = site.frame_count as f32 >= threshold;
+        }
+    }
+
+    /// Get final persistence analysis
+    pub fn analyze(&self) -> PersistenceAnalysis {
+        let persistent_count = self.tracked_sites.iter().filter(|s| s.is_persistent).count();
+        let transient_count = self.tracked_sites.len() - persistent_count;
+
+        let avg_lifetime = if self.tracked_sites.is_empty() {
+            0.0
+        } else {
+            self.tracked_sites.iter()
+                .map(|s| s.frame_count as f32)
+                .sum::<f32>() / self.tracked_sites.len() as f32
+        };
+
+        PersistenceAnalysis {
+            total_frames: self.total_frames,
+            sites: self.tracked_sites.clone(),
+            persistent_count,
+            transient_count,
+            avg_lifetime,
+        }
+    }
+
+    /// Get tracked sites sorted by persistence (most persistent first)
+    pub fn get_persistent_sites(&self) -> Vec<&TrackedSite> {
+        let mut sites: Vec<_> = self.tracked_sites.iter().collect();
+        sites.sort_by(|a, b| {
+            // Sort by frame_count descending, then by avg_quality descending
+            b.frame_count.cmp(&a.frame_count)
+                .then_with(|| b.avg_quality.partial_cmp(&a.avg_quality).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        sites
+    }
+
+    /// Calculate Euclidean distance between two positions
+    fn distance(a: &[f32; 3], b: &[f32; 3]) -> f32 {
+        let dx = a[0] - b[0];
+        let dy = a[1] - b[1];
+        let dz = a[2] - b[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+}
+
+impl TrackedSite {
+    /// Calculate spike count variability (coefficient of variation)
+    pub fn spike_variability(&self) -> f32 {
+        if self.spike_history.len() < 2 {
+            return 0.0;
+        }
+
+        let mean = self.avg_spike_count;
+        if mean < 0.001 {
+            return 0.0;
+        }
+
+        let variance: f32 = self.spike_history.iter()
+            .map(|&x| (x as f32 - mean).powi(2))
+            .sum::<f32>() / self.spike_history.len() as f32;
+
+        variance.sqrt() / mean  // CV
+    }
+
+    /// Get frame presence ratio (0.0 to 1.0)
+    pub fn presence_ratio(&self, total_frames: usize) -> f32 {
+        if total_frames == 0 {
+            return 0.0;
+        }
+        self.frame_count as f32 / total_frames as f32
+    }
 }
 
 /// Persistent engine that keeps GPU state alive across structures
@@ -789,12 +1232,73 @@ fn build_clustered_sites(
             quality_score,
             druggability,
             classification,
+            aromatic_proximity: None,  // Computed separately when aromatic positions available
         });
     }
 
     // Sort by spike count (most significant first)
     sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
     sites
+}
+
+impl ClusteredBindingSite {
+    /// Enhance this binding site with aromatic proximity analysis
+    ///
+    /// Updates the aromatic_proximity field and recalculates druggability score.
+    ///
+    /// # Arguments
+    /// * `aromatic_positions` - List of (residue_id, aromatic_type, [x, y, z])
+    ///   - aromatic_type: 0=TRP, 1=TYR, 2=PHE
+    pub fn compute_aromatic_proximity(&mut self, aromatic_positions: &[(u32, u8, [f32; 3])]) {
+        let info = AromaticProximityInfo::compute(&self.centroid, aromatic_positions);
+
+        // Recalculate druggability with aromatic info
+        self.druggability = DruggabilityScore::from_site_with_aromatics(
+            self.estimated_volume,
+            self.avg_intensity,
+            &self.bounding_box,
+            Some(&info),
+        );
+
+        // Update quality score
+        let spike_quality = (self.spike_count as f32 / 100.0).clamp(0.0, 1.0);
+        let intensity_quality = (self.avg_intensity / 10.0).clamp(0.0, 1.0);
+        self.quality_score = 0.25 * spike_quality
+            + 0.25 * intensity_quality
+            + 0.3 * self.druggability.overall
+            + 0.2 * info.aromatic_score;
+
+        self.aromatic_proximity = Some(info);
+    }
+
+    /// Check if this site has been analyzed for aromatic proximity
+    pub fn has_aromatic_analysis(&self) -> bool {
+        self.aromatic_proximity.is_some()
+    }
+
+    /// Get the aromatic score (0.0 if not analyzed)
+    pub fn aromatic_score(&self) -> f32 {
+        self.aromatic_proximity
+            .as_ref()
+            .map(|p| p.aromatic_score)
+            .unwrap_or(0.0)
+    }
+}
+
+/// Enhance a list of binding sites with aromatic proximity analysis
+#[cfg(feature = "gpu")]
+pub fn enhance_sites_with_aromatics(
+    sites: &mut [ClusteredBindingSite],
+    aromatic_positions: &[(u32, u8, [f32; 3])],
+) {
+    for site in sites.iter_mut() {
+        site.compute_aromatic_proximity(aromatic_positions);
+    }
+
+    // Re-sort by quality score after enhancement
+    sites.sort_by(|a, b| {
+        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal)
+    });
 }
 
 /// Batch processor using persistent engine
@@ -933,6 +1437,279 @@ impl BatchProcessor {
 
         Ok(results)
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VISUALIZATION OUTPUT FORMATTERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Output formatter for binding site visualization
+pub struct BindingSiteFormatter;
+
+impl BindingSiteFormatter {
+    /// Generate PDB file with pseudo-atoms at binding site centroids
+    ///
+    /// Creates HETATM records with:
+    /// - Atom name "BS" (Binding Site)
+    /// - Residue name based on classification (DRG=druggable, CRY=cryptic, etc.)
+    /// - B-factor = quality score * 100
+    /// - Occupancy = druggability score
+    pub fn to_pdb(sites: &[ClusteredBindingSite]) -> String {
+        let mut pdb = String::new();
+        pdb.push_str("REMARK   PRISM4D Binding Site Detection Results\n");
+        pdb.push_str("REMARK   Pseudo-atoms at binding site centroids\n");
+        pdb.push_str("REMARK   B-factor = quality score * 100\n");
+        pdb.push_str("REMARK   Occupancy = druggability score\n");
+        pdb.push_str("REMARK\n");
+
+        for (idx, site) in sites.iter().enumerate() {
+            let atom_num = idx + 1;
+            let res_name = match site.classification {
+                SiteClassification::ActiveSite => "ACT",
+                SiteClassification::Allosteric => "ALO",
+                SiteClassification::Cryptic => "CRY",
+                SiteClassification::PpiSurface => "PPI",
+                SiteClassification::MembraneInterface => "MEM",
+                SiteClassification::Unknown => "UNK",
+            };
+
+            // PDB HETATM format
+            // HETATM    1  BS  DRG A   1      10.000  20.000  30.000  0.80 50.00
+            pdb.push_str(&format!(
+                "HETATM{:5}  BS  {} A{:4}    {:8.3}{:8.3}{:8.3}{:6.2}{:6.2}\n",
+                atom_num,
+                res_name,
+                atom_num,
+                site.centroid[0],
+                site.centroid[1],
+                site.centroid[2],
+                site.druggability.overall,
+                site.quality_score * 100.0,
+            ));
+        }
+
+        pdb.push_str("END\n");
+        pdb
+    }
+
+    /// Generate PyMOL script for visualization
+    ///
+    /// Creates colored spheres at binding sites with:
+    /// - Green = druggable
+    /// - Yellow = cryptic
+    /// - Orange = allosteric
+    /// - Gray = unknown
+    /// - Sphere size based on estimated volume
+    pub fn to_pymol(sites: &[ClusteredBindingSite], structure_name: &str) -> String {
+        let mut script = String::new();
+
+        script.push_str("# PRISM4D Binding Site Visualization\n");
+        script.push_str("# Generated by prism-nhs\n\n");
+
+        // Create pseudoatom objects for each site
+        for (idx, site) in sites.iter().enumerate() {
+            let site_name = format!("site_{}", idx + 1);
+            let [x, y, z] = site.centroid;
+
+            // Create pseudoatom
+            script.push_str(&format!(
+                "pseudoatom {}, pos=[{:.3}, {:.3}, {:.3}]\n",
+                site_name, x, y, z
+            ));
+
+            // Color based on classification
+            let color = match site.classification {
+                SiteClassification::ActiveSite => "forest",
+                SiteClassification::Allosteric => "orange",
+                SiteClassification::Cryptic => "yellow",
+                SiteClassification::PpiSurface => "cyan",
+                SiteClassification::MembraneInterface => "magenta",
+                SiteClassification::Unknown => "gray50",
+            };
+            script.push_str(&format!("color {}, {}\n", color, site_name));
+
+            // Show as sphere with size based on volume
+            let radius = (site.estimated_volume / (4.0 / 3.0 * std::f32::consts::PI)).powf(1.0 / 3.0).max(2.0);
+            script.push_str(&format!("show spheres, {}\n", site_name));
+            script.push_str(&format!("set sphere_scale, {:.2}, {}\n", radius / 5.0, site_name));
+            script.push_str(&format!("set sphere_transparency, 0.5, {}\n", site_name));
+        }
+
+        // Group all sites
+        if !sites.is_empty() {
+            let site_names: Vec<String> = (1..=sites.len()).map(|i| format!("site_{}", i)).collect();
+            script.push_str(&format!("\ngroup binding_sites, {}\n", site_names.join(" ")));
+        }
+
+        // Load structure if provided
+        if !structure_name.is_empty() {
+            script.push_str(&format!("\n# Load structure (uncomment and adjust path)\n"));
+            script.push_str(&format!("# load {}.pdb, protein\n", structure_name));
+            script.push_str("# show cartoon, protein\n");
+            script.push_str("# color gray80, protein\n");
+        }
+
+        // Add legend
+        script.push_str("\n# Color Legend:\n");
+        script.push_str("# Green (forest) = Active Site\n");
+        script.push_str("# Orange = Allosteric\n");
+        script.push_str("# Yellow = Cryptic\n");
+        script.push_str("# Cyan = PPI Surface\n");
+        script.push_str("# Magenta = Membrane Interface\n");
+        script.push_str("# Gray = Unknown\n");
+
+        script
+    }
+
+    /// Generate ChimeraX script for visualization
+    pub fn to_chimerax(sites: &[ClusteredBindingSite], structure_name: &str) -> String {
+        let mut script = String::new();
+
+        script.push_str("# PRISM4D Binding Site Visualization\n");
+        script.push_str("# Generated by prism-nhs\n\n");
+
+        // Create markers for each site
+        script.push_str("# Create marker set for binding sites\n");
+        script.push_str("marker delete #2\n");  // Clean up any existing markers
+
+        for (idx, site) in sites.iter().enumerate() {
+            let [x, y, z] = site.centroid;
+
+            // Color based on classification
+            let color = match site.classification {
+                SiteClassification::ActiveSite => "forest green",
+                SiteClassification::Allosteric => "orange",
+                SiteClassification::Cryptic => "gold",
+                SiteClassification::PpiSurface => "cyan",
+                SiteClassification::MembraneInterface => "magenta",
+                SiteClassification::Unknown => "gray",
+            };
+
+            // Radius based on volume
+            let radius = (site.estimated_volume / (4.0 / 3.0 * std::f32::consts::PI)).powf(1.0 / 3.0).max(2.0);
+
+            script.push_str(&format!(
+                "marker #2 position {:.3},{:.3},{:.3} color {} radius {:.2}\n",
+                x, y, z, color, radius
+            ));
+
+            // Add label
+            script.push_str(&format!(
+                "2dlabels text \"Site {} ({:.0}%)\" xpos 0.02 ypos {} color white\n",
+                idx + 1,
+                site.druggability.overall * 100.0,
+                0.95 - idx as f32 * 0.03
+            ));
+        }
+
+        // Load structure if provided
+        if !structure_name.is_empty() {
+            script.push_str(&format!("\n# Load structure (uncomment and adjust path)\n"));
+            script.push_str(&format!("# open {}.pdb\n", structure_name));
+            script.push_str("# cartoon\n");
+            script.push_str("# color #1 gray\n");
+        }
+
+        // Style adjustments
+        script.push_str("\n# Visual adjustments\n");
+        script.push_str("lighting soft\n");
+        script.push_str("set bgColor white\n");
+
+        script
+    }
+
+    /// Generate summary report in Markdown format
+    pub fn to_markdown_report(
+        sites: &[ClusteredBindingSite],
+        structure_name: &str,
+        persistence: Option<&PersistenceAnalysis>,
+    ) -> String {
+        let mut report = String::new();
+
+        report.push_str(&format!("# PRISM4D Binding Site Analysis: {}\n\n", structure_name));
+
+        // Summary statistics
+        report.push_str("## Summary\n\n");
+        report.push_str(&format!("- **Total Sites Detected:** {}\n", sites.len()));
+
+        let druggable_count = sites.iter().filter(|s| s.druggability.is_druggable).count();
+        report.push_str(&format!("- **Druggable Sites:** {}\n", druggable_count));
+
+        // Classification breakdown
+        let mut class_counts = std::collections::HashMap::new();
+        for site in sites {
+            *class_counts.entry(format!("{:?}", site.classification)).or_insert(0) += 1;
+        }
+        report.push_str("\n### Classification Breakdown\n\n");
+        for (class, count) in class_counts {
+            report.push_str(&format!("- {}: {}\n", class, count));
+        }
+
+        // Persistence info if available
+        if let Some(pers) = persistence {
+            report.push_str("\n## Persistence Analysis\n\n");
+            report.push_str(&format!("- **Total Frames Analyzed:** {}\n", pers.total_frames));
+            report.push_str(&format!("- **Persistent Sites (>50% frames):** {}\n", pers.persistent_count));
+            report.push_str(&format!("- **Transient Sites (<50% frames):** {}\n", pers.transient_count));
+            report.push_str(&format!("- **Average Site Lifetime:** {:.1} frames\n", pers.avg_lifetime));
+        }
+
+        // Top sites table
+        report.push_str("\n## Top Binding Sites\n\n");
+        report.push_str("| Rank | Position (Å) | Volume (Å³) | Spikes | Quality | Druggable | Class |\n");
+        report.push_str("|------|--------------|-------------|--------|---------|-----------|-------|\n");
+
+        for (idx, site) in sites.iter().take(10).enumerate() {
+            report.push_str(&format!(
+                "| {} | ({:.1}, {:.1}, {:.1}) | {:.0} | {} | {:.2} | {} | {:?} |\n",
+                idx + 1,
+                site.centroid[0], site.centroid[1], site.centroid[2],
+                site.estimated_volume,
+                site.spike_count,
+                site.quality_score,
+                if site.druggability.is_druggable { "✓" } else { "✗" },
+                site.classification,
+            ));
+        }
+
+        report
+    }
+}
+
+/// Write binding sites to multiple visualization formats
+pub fn write_binding_site_visualizations(
+    sites: &[ClusteredBindingSite],
+    base_path: &std::path::Path,
+    structure_name: &str,
+) -> Result<()> {
+    use std::fs;
+    use std::io::Write;
+
+    // Write PDB
+    let pdb_path = base_path.with_extension("binding_sites.pdb");
+    let mut pdb_file = fs::File::create(&pdb_path)?;
+    pdb_file.write_all(BindingSiteFormatter::to_pdb(sites).as_bytes())?;
+    log::info!("Wrote binding sites PDB: {}", pdb_path.display());
+
+    // Write PyMOL script
+    let pml_path = base_path.with_extension("binding_sites.pml");
+    let mut pml_file = fs::File::create(&pml_path)?;
+    pml_file.write_all(BindingSiteFormatter::to_pymol(sites, structure_name).as_bytes())?;
+    log::info!("Wrote PyMOL script: {}", pml_path.display());
+
+    // Write ChimeraX script
+    let cxc_path = base_path.with_extension("binding_sites.cxc");
+    let mut cxc_file = fs::File::create(&cxc_path)?;
+    cxc_file.write_all(BindingSiteFormatter::to_chimerax(sites, structure_name).as_bytes())?;
+    log::info!("Wrote ChimeraX script: {}", cxc_path.display());
+
+    // Write Markdown report
+    let md_path = base_path.with_extension("binding_sites.md");
+    let mut md_file = fs::File::create(&md_path)?;
+    md_file.write_all(BindingSiteFormatter::to_markdown_report(sites, structure_name, None).as_bytes())?;
+    log::info!("Wrote Markdown report: {}", md_path.display());
+
+    Ok(())
 }
 
 // Stub for non-GPU builds
