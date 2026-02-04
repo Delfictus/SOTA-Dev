@@ -184,6 +184,8 @@ pub use persistent_engine::{
     SitePersistenceTracker, TrackedSite, PersistenceAnalysis,
     BindingSiteFormatter, write_binding_site_visualizations,
     LiningResidue,
+    // Multi-scale clustering
+    ScaleCluster, MergedCluster, MultiScaleClusteringResult,
 };
 #[cfg(feature = "gpu")]
 pub use ultimate_engine::{

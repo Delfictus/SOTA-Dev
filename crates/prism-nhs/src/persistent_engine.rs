@@ -439,6 +439,78 @@ pub struct ClusteringStats {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MULTI-SCALE CLUSTERING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Cluster found at a single scale (epsilon value)
+#[derive(Debug, Clone)]
+pub struct ScaleCluster {
+    /// Cluster centroid [x, y, z]
+    pub centroid: [f32; 3],
+    /// Number of spikes in this cluster
+    pub spike_count: usize,
+    /// Spike indices belonging to this cluster
+    pub spike_indices: Vec<usize>,
+    /// Epsilon value (scale) at which this cluster was found
+    pub epsilon: f32,
+    /// Original cluster ID from DBSCAN at this scale
+    pub original_cluster_id: i32,
+    /// Persistence score (how many scales this cluster appears at)
+    pub persistence: usize,
+}
+
+/// Merged cluster from multiple scales
+#[derive(Debug, Clone)]
+pub struct MergedCluster {
+    /// Merged centroid (average across scales)
+    pub centroid: [f32; 3],
+    /// Total unique spikes across all scales
+    pub spike_count: usize,
+    /// Union of spike indices from all contributing scale clusters
+    pub spike_indices: Vec<usize>,
+    /// Persistence: number of scales this cluster appears at
+    pub persistence: usize,
+    /// List of epsilon values where this cluster was detected
+    pub scales: Vec<f32>,
+}
+
+/// Result of multi-scale clustering
+#[derive(Debug, Clone)]
+pub struct MultiScaleClusteringResult {
+    /// Merged clusters sorted by confidence (persistence × spike_count)
+    pub clusters: Vec<MergedCluster>,
+    /// Number of epsilon scales used
+    pub total_scales: usize,
+    /// Epsilon values tested
+    pub epsilon_values: Vec<f32>,
+}
+
+impl MultiScaleClusteringResult {
+    /// Convert to cluster IDs array (for compatibility with single-scale API)
+    ///
+    /// Returns cluster ID for each spike position, using the merged cluster assignments.
+    /// Spikes not in any persistent cluster get -1 (noise).
+    pub fn to_cluster_ids(&self, num_spikes: usize) -> Vec<i32> {
+        let mut cluster_ids = vec![-1i32; num_spikes];
+
+        for (cluster_idx, cluster) in self.clusters.iter().enumerate() {
+            for &spike_idx in &cluster.spike_indices {
+                if spike_idx < num_spikes {
+                    cluster_ids[spike_idx] = cluster_idx as i32;
+                }
+            }
+        }
+
+        cluster_ids
+    }
+
+    /// Get the number of persistent clusters
+    pub fn num_clusters(&self) -> usize {
+        self.clusters.len()
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SITE PERSISTENCE TRACKING
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1089,6 +1161,204 @@ impl PersistentNhsEngine {
         self.fallback_grid_cluster(spike_positions)
     }
 
+    /// Multi-scale clustering for robust, structure-agnostic binding site detection
+    ///
+    /// Runs DBSCAN clustering at multiple epsilon values and tracks cluster persistence
+    /// across scales. Clusters that appear at multiple scales are more likely to be
+    /// real binding sites rather than noise.
+    ///
+    /// # Algorithm
+    /// 1. Run clustering at epsilon values: [5.0, 7.0, 10.0, 14.0] Angstroms
+    /// 2. For each scale, compute cluster centroids
+    /// 3. Find clusters that "persist" (have similar centroids) across ≥2 scales
+    /// 4. Merge overlapping clusters and assign persistence scores
+    /// 5. Return clusters sorted by persistence × spike_count
+    ///
+    /// # Arguments
+    /// * `spike_positions` - Flat array of [x, y, z, x, y, z, ...] coordinates
+    ///
+    /// # Returns
+    /// MultiScaleClusteringResult with persistence-scored clusters
+    pub fn multi_scale_cluster_spikes(
+        &mut self,
+        spike_positions: &[f32],
+    ) -> Result<MultiScaleClusteringResult> {
+        use std::collections::HashMap;
+
+        let num_spikes = spike_positions.len() / 3;
+        let epsilon_scales = [5.0f32, 7.0, 10.0, 14.0];
+        let merge_distance = 8.0f32; // Clusters within 8Å are considered the same site
+
+        log::info!("Running multi-scale clustering on {} spikes at {} scales",
+            num_spikes, epsilon_scales.len());
+
+        // Track clusters across scales: (centroid, spike_count, epsilon, cluster_id)
+        let mut all_clusters: Vec<ScaleCluster> = Vec::new();
+
+        // Run clustering at each scale
+        for &epsilon in &epsilon_scales {
+            // Create RT engine with this epsilon
+            let rt_config = crate::rt_clustering::RtClusteringConfig {
+                epsilon,
+                min_points: 4,
+                min_cluster_size: 15, // Lower threshold for multi-scale
+                rays_per_event: 32,
+            };
+
+            // We need to create a new RT engine for each epsilon
+            // (The BVH sphere radii depend on epsilon)
+            let optixir_path = crate::rt_clustering::find_optixir_path()
+                .context("Could not find rt_clustering.optixir")?;
+
+            let mut rt_engine = crate::rt_clustering::RtClusteringEngine::new(
+                self.context.clone(),
+                rt_config,
+            ).context("Failed to create RT clustering engine")?;
+
+            rt_engine.load_pipeline(&optixir_path)
+                .context("Failed to load RT clustering pipeline")?;
+
+            let result = rt_engine.cluster(spike_positions)?;
+
+            log::info!("  Scale ε={:.1}Å: {} clusters, {} neighbors",
+                epsilon, result.num_clusters, result.total_neighbors);
+
+            // Compute centroids for each cluster at this scale
+            let mut cluster_points: HashMap<i32, Vec<usize>> = HashMap::new();
+            for (idx, &cluster_id) in result.cluster_ids.iter().enumerate() {
+                if cluster_id >= 0 {
+                    cluster_points.entry(cluster_id).or_default().push(idx);
+                }
+            }
+
+            for (cluster_id, point_indices) in cluster_points {
+                if point_indices.len() < 15 {
+                    continue; // Skip tiny clusters
+                }
+
+                // Compute centroid
+                let mut cx = 0.0f32;
+                let mut cy = 0.0f32;
+                let mut cz = 0.0f32;
+                for &idx in &point_indices {
+                    cx += spike_positions[idx * 3];
+                    cy += spike_positions[idx * 3 + 1];
+                    cz += spike_positions[idx * 3 + 2];
+                }
+                let n = point_indices.len() as f32;
+                cx /= n;
+                cy /= n;
+                cz /= n;
+
+                all_clusters.push(ScaleCluster {
+                    centroid: [cx, cy, cz],
+                    spike_count: point_indices.len(),
+                    spike_indices: point_indices,
+                    epsilon,
+                    original_cluster_id: cluster_id,
+                    persistence: 1, // Will be updated during merge
+                });
+            }
+        }
+
+        log::info!("  Total clusters across all scales: {}", all_clusters.len());
+
+        // Merge clusters that overlap across scales
+        let mut merged_clusters: Vec<MergedCluster> = Vec::new();
+        let mut used = vec![false; all_clusters.len()];
+
+        for i in 0..all_clusters.len() {
+            if used[i] {
+                continue;
+            }
+
+            // Start a new merged cluster
+            let mut merge_group: Vec<usize> = vec![i];
+            used[i] = true;
+
+            // Find all clusters within merge_distance of this centroid
+            let ci = &all_clusters[i];
+            for j in (i + 1)..all_clusters.len() {
+                if used[j] {
+                    continue;
+                }
+
+                let cj = &all_clusters[j];
+                let dist = ((ci.centroid[0] - cj.centroid[0]).powi(2)
+                    + (ci.centroid[1] - cj.centroid[1]).powi(2)
+                    + (ci.centroid[2] - cj.centroid[2]).powi(2))
+                    .sqrt();
+
+                if dist <= merge_distance {
+                    merge_group.push(j);
+                    used[j] = true;
+                }
+            }
+
+            // Compute merged cluster properties
+            let scales_present: std::collections::HashSet<u32> = merge_group
+                .iter()
+                .map(|&idx| (all_clusters[idx].epsilon * 10.0) as u32)
+                .collect();
+            let persistence = scales_present.len();
+
+            // Merge spike indices (union across scales)
+            let mut all_spike_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let mut sum_cx = 0.0f32;
+            let mut sum_cy = 0.0f32;
+            let mut sum_cz = 0.0f32;
+
+            for &idx in &merge_group {
+                let c = &all_clusters[idx];
+                sum_cx += c.centroid[0];
+                sum_cy += c.centroid[1];
+                sum_cz += c.centroid[2];
+                for &spike_idx in &c.spike_indices {
+                    all_spike_indices.insert(spike_idx);
+                }
+            }
+
+            let n = merge_group.len() as f32;
+            let merged_centroid = [sum_cx / n, sum_cy / n, sum_cz / n];
+            let merged_spike_count = all_spike_indices.len();
+
+            merged_clusters.push(MergedCluster {
+                centroid: merged_centroid,
+                spike_count: merged_spike_count,
+                spike_indices: all_spike_indices.into_iter().collect(),
+                persistence,
+                scales: scales_present.into_iter().map(|s| s as f32 / 10.0).collect(),
+            });
+        }
+
+        // Sort by persistence * spike_count (higher = more confident)
+        merged_clusters.sort_by(|a, b| {
+            let score_a = a.persistence * a.spike_count;
+            let score_b = b.persistence * b.spike_count;
+            score_b.cmp(&score_a)
+        });
+
+        // Filter to clusters with persistence >= 2 (appear at multiple scales)
+        let persistent_clusters: Vec<MergedCluster> = merged_clusters
+            .into_iter()
+            .filter(|c| c.persistence >= 2)
+            .collect();
+
+        log::info!("  Multi-scale result: {} persistent clusters (appear at ≥2 scales)",
+            persistent_clusters.len());
+
+        for (i, c) in persistent_clusters.iter().take(5).enumerate() {
+            log::info!("    #{}: {} spikes, persistence={}, scales={:?}",
+                i + 1, c.spike_count, c.persistence, c.scales);
+        }
+
+        Ok(MultiScaleClusteringResult {
+            clusters: persistent_clusters,
+            total_scales: epsilon_scales.len(),
+            epsilon_values: epsilon_scales.to_vec(),
+        })
+    }
+
     /// Fallback grid-based clustering when RT cores unavailable
     fn fallback_grid_cluster(&self, positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
         let num_points = positions.len() / 3;
@@ -1275,8 +1545,47 @@ fn build_clustered_sites(
             max_pos[2] - min_pos[2],
         ];
 
-        // Estimate volume as bounding box volume (rough approximation)
-        let estimated_volume = bounding_box[0] * bounding_box[1] * bounding_box[2];
+        // Estimate pocket volume using voxel density method
+        // Grid the space at 2Å resolution and count occupied voxels
+        let voxel_size = 2.0f32;
+        let estimated_volume = if bounding_box[0] > 0.0 && bounding_box[1] > 0.0 && bounding_box[2] > 0.0 {
+            let nx = ((bounding_box[0] / voxel_size).ceil() as usize).max(1);
+            let ny = ((bounding_box[1] / voxel_size).ceil() as usize).max(1);
+            let nz = ((bounding_box[2] / voxel_size).ceil() as usize).max(1);
+
+            // Use HashSet to count unique voxels occupied by spikes
+            let mut occupied_voxels = std::collections::HashSet::new();
+            for (_, spike) in &spikes {
+                let vx = ((spike.position[0] - min_pos[0]) / voxel_size) as i32;
+                let vy = ((spike.position[1] - min_pos[1]) / voxel_size) as i32;
+                let vz = ((spike.position[2] - min_pos[2]) / voxel_size) as i32;
+
+                // Mark this voxel and its immediate neighbors (small neighborhood)
+                for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        for dz in -1..=1 {
+                            let key = (vx + dx, vy + dy, vz + dz);
+                            occupied_voxels.insert(key);
+                        }
+                    }
+                }
+            }
+
+            // Volume = occupied voxels * voxel volume
+            let voxel_volume = voxel_size.powi(3);
+            let raw_volume = occupied_voxels.len() as f32 * voxel_volume;
+
+            // Apply packing efficiency correction (sphere packing ~74% efficiency)
+            // and cap at reasonable pocket sizes
+            let pocket_volume = raw_volume * 0.74;
+
+            // Sanity bounds: typical pockets are 100-2000 Å³
+            pocket_volume.clamp(50.0, 5000.0)
+        } else {
+            // Degenerate case: estimate from spike count
+            (spikes.len() as f32 * 15.0).clamp(50.0, 2000.0)
+        };
+
         let avg_intensity = sum_intensity / n;
         let spike_count = spikes.len();
 

@@ -225,8 +225,8 @@ impl PrismPrepTopology {
     pub fn classify_atoms(&self) -> Vec<NhsAtomType> {
         let mut types = Vec::with_capacity(self.n_atoms);
 
-        // Aromatic residues
-        let aromatic_residues = ["TRP", "TYR", "PHE", "HIS"];
+        // Aromatic residues (including histidine protonation states)
+        let aromatic_residues = ["TRP", "TYR", "PHE", "HIS", "HID", "HIE", "HIP"];
 
         // Backbone atom names
         let backbone_atoms = ["N", "CA", "C", "O", "OXT"];

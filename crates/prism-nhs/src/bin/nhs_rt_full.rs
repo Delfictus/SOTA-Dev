@@ -73,6 +73,11 @@ struct Args {
     #[arg(long, default_value = "42")]
     replica_seed: u64,
 
+    /// Enable multi-scale clustering for structure-agnostic detection
+    /// Runs clustering at multiple epsilon values and finds persistent sites
+    #[arg(long, default_value = "false")]
+    multi_scale: bool,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -240,7 +245,8 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
     };
 
     // RT-accelerated spike clustering
-    log::info!("\n[4/6] RT-accelerated spike clustering...");
+    let cluster_mode = if args.multi_scale { "multi-scale" } else { "single-scale" };
+    log::info!("\n[4/6] RT-accelerated spike clustering ({})...", cluster_mode);
     let mut clustered_sites = if !accumulated_spikes.is_empty() && args.rt_clustering {
         // Copy positions from packed struct to avoid alignment issues
         let positions: Vec<f32> = accumulated_spikes.iter()
@@ -251,26 +257,63 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
             .collect();
 
         let cluster_start = Instant::now();
-        match engine.cluster_spikes(&positions) {
-            Ok(result) => {
-                log::info!("  ✓ Clustering complete: {} clusters, {} neighbor pairs, {:.2}ms",
-                    result.num_clusters, result.total_neighbors, result.gpu_time_ms);
 
-                // Build clustered binding sites
-                let all_sites = build_sites_from_clustering(&accumulated_spikes, &result);
+        if args.multi_scale {
+            // Multi-scale clustering for structure-agnostic detection
+            match engine.multi_scale_cluster_spikes(&positions) {
+                Ok(ms_result) => {
+                    log::info!("  ✓ Multi-scale clustering complete: {} persistent clusters",
+                        ms_result.num_clusters());
 
-                // Post-filter: keep only significant clusters (>50 spikes)
-                let min_spikes = 50;
-                let sites: Vec<_> = all_sites.into_iter()
-                    .filter(|s| s.spike_count >= min_spikes)
-                    .collect();
-                log::info!("  Binding sites: {} (filtered from {} clusters, min {} spikes)",
-                    sites.len(), result.num_clusters, min_spikes);
-                sites
+                    // Convert multi-scale result to cluster IDs for site building
+                    let cluster_ids = ms_result.to_cluster_ids(accumulated_spikes.len());
+                    let fake_result = prism_nhs::rt_clustering::RtClusteringResult {
+                        cluster_ids,
+                        num_clusters: ms_result.num_clusters(),
+                        total_neighbors: 0, // Not tracked in multi-scale
+                        gpu_time_ms: cluster_start.elapsed().as_secs_f64() * 1000.0,
+                    };
+
+                    // Build clustered binding sites
+                    let all_sites = build_sites_from_clustering(&accumulated_spikes, &fake_result);
+
+                    // Post-filter: keep only significant clusters (>50 spikes)
+                    let min_spikes = 50;
+                    let sites: Vec<_> = all_sites.into_iter()
+                        .filter(|s| s.spike_count >= min_spikes)
+                        .collect();
+                    log::info!("  Binding sites: {} (filtered, min {} spikes)",
+                        sites.len(), min_spikes);
+                    sites
+                }
+                Err(e) => {
+                    log::warn!("  ⚠ Multi-scale clustering failed: {}", e);
+                    Vec::new()
+                }
             }
-            Err(e) => {
-                log::warn!("  ⚠ Clustering failed: {}", e);
-                Vec::new()
+        } else {
+            // Single-scale clustering (original behavior)
+            match engine.cluster_spikes(&positions) {
+                Ok(result) => {
+                    log::info!("  ✓ Clustering complete: {} clusters, {} neighbor pairs, {:.2}ms",
+                        result.num_clusters, result.total_neighbors, result.gpu_time_ms);
+
+                    // Build clustered binding sites
+                    let all_sites = build_sites_from_clustering(&accumulated_spikes, &result);
+
+                    // Post-filter: keep only significant clusters (>50 spikes)
+                    let min_spikes = 50;
+                    let sites: Vec<_> = all_sites.into_iter()
+                        .filter(|s| s.spike_count >= min_spikes)
+                        .collect();
+                    log::info!("  Binding sites: {} (filtered from {} clusters, min {} spikes)",
+                        sites.len(), result.num_clusters, min_spikes);
+                    sites
+                }
+                Err(e) => {
+                    log::warn!("  ⚠ Clustering failed: {}", e);
+                    Vec::new()
+                }
             }
         }
     } else {
@@ -509,7 +552,35 @@ fn build_sites_from_clustering(
             max_pos[1] - min_pos[1],
             max_pos[2] - min_pos[2],
         ];
-        let estimated_volume = bounding_box[0] * bounding_box[1] * bounding_box[2];
+
+        // Estimate pocket volume using voxel density method (2Å resolution)
+        let voxel_size = 2.0f32;
+        let estimated_volume = if bounding_box[0] > 0.0 && bounding_box[1] > 0.0 && bounding_box[2] > 0.0 {
+            let mut occupied_voxels = std::collections::HashSet::new();
+            for (_, spike) in &spikes {
+                let pos = spike.position;
+                let vx = ((pos[0] - min_pos[0]) / voxel_size) as i32;
+                let vy = ((pos[1] - min_pos[1]) / voxel_size) as i32;
+                let vz = ((pos[2] - min_pos[2]) / voxel_size) as i32;
+
+                // Mark voxel and immediate neighbors
+                for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        for dz in -1..=1 {
+                            occupied_voxels.insert((vx + dx, vy + dy, vz + dz));
+                        }
+                    }
+                }
+            }
+
+            let voxel_volume = voxel_size.powi(3);
+            let raw_volume = occupied_voxels.len() as f32 * voxel_volume;
+            // Packing efficiency correction, clamped to reasonable pocket sizes
+            (raw_volume * 0.74).clamp(50.0, 5000.0)
+        } else {
+            (spikes.len() as f32 * 15.0).clamp(50.0, 2000.0)
+        };
+
         let avg_intensity = sum_intensity / n;
         let spike_count = spikes.len();
 

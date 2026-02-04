@@ -210,8 +210,8 @@ fn identify_heavy_atoms(topology: &PrismPrepTopology) -> Result<Vec<usize>> {
 fn compute_aromatic_centers(topology: &PrismPrepTopology) -> Result<Vec<Vec3>> {
     let mut centers = Vec::new();
 
-    // Aromatic residue names to look for
-    const AROMATIC_RESIDUES: &[&str] = &["PHE", "TYR", "TRP", "HIS"];
+    // Aromatic residue names to look for (including histidine protonation states)
+    const AROMATIC_RESIDUES: &[&str] = &["PHE", "TYR", "TRP", "HIS", "HID", "HIE", "HIP"];
 
     // Track residues we've already processed
     let mut processed_residues = std::collections::HashSet::new();
