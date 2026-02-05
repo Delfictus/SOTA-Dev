@@ -1292,6 +1292,98 @@ impl PersistentNhsEngine {
     /// real binding sites rather than noise.
     ///
     /// # Algorithm
+    /// Compute adaptive epsilon values from k-NN distance distribution
+    ///
+    /// Samples spike positions and computes the k-th nearest neighbor distance
+    /// for each sample. Returns epsilon values at key percentiles that capture
+    /// the natural clustering scales in the data.
+    ///
+    /// # Arguments
+    /// * `positions` - Flat array of [x, y, z, x, y, z, ...] coordinates
+    /// * `k` - Number of nearest neighbors to consider (default: 4 for DBSCAN min_points)
+    /// * `sample_size` - Number of points to sample (default: 1000)
+    ///
+    /// # Returns
+    /// Vector of epsilon values at 25th, 50th, 75th, and 90th percentiles
+    pub fn compute_adaptive_epsilon(
+        positions: &[f32],
+        k: usize,
+        sample_size: usize,
+    ) -> Vec<f32> {
+        let n_points = positions.len() / 3;
+        if n_points < k + 1 {
+            // Not enough points, return default
+            return vec![5.0, 7.0, 10.0, 14.0];
+        }
+
+        // Sample points (evenly spaced or random)
+        let sample_indices: Vec<usize> = if n_points <= sample_size {
+            (0..n_points).collect()
+        } else {
+            let step = n_points / sample_size;
+            (0..sample_size).map(|i| i * step).collect()
+        };
+
+        // Compute k-NN distance for each sampled point
+        let mut knn_distances: Vec<f32> = Vec::with_capacity(sample_indices.len());
+
+        for &i in &sample_indices {
+            let xi = positions[i * 3];
+            let yi = positions[i * 3 + 1];
+            let zi = positions[i * 3 + 2];
+
+            // Compute distances to all other points (brute force for simplicity)
+            let mut distances: Vec<f32> = Vec::with_capacity(n_points.min(1000));
+            for j in 0..n_points.min(5000) { // Limit comparison for performance
+                if i == j { continue; }
+                let xj = positions[j * 3];
+                let yj = positions[j * 3 + 1];
+                let zj = positions[j * 3 + 2];
+                let d = ((xi - xj).powi(2) + (yi - yj).powi(2) + (zi - zj).powi(2)).sqrt();
+                distances.push(d);
+            }
+
+            // Get k-th smallest distance
+            if distances.len() >= k {
+                distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                knn_distances.push(distances[k - 1]);
+            }
+        }
+
+        if knn_distances.is_empty() {
+            return vec![5.0, 7.0, 10.0, 14.0];
+        }
+
+        // Sort k-NN distances
+        knn_distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Extract percentiles: 25th, 50th, 75th, 90th
+        let n = knn_distances.len();
+        let p25 = knn_distances[n / 4].clamp(3.0, 8.0);
+        let p50 = knn_distances[n / 2].clamp(5.0, 12.0);
+        let p75 = knn_distances[3 * n / 4].clamp(7.0, 18.0);
+        let p90 = knn_distances[9 * n / 10].clamp(10.0, 25.0);
+
+        // Ensure monotonically increasing and minimum spacing
+        let mut epsilons = vec![p25];
+        for &e in &[p50, p75, p90] {
+            if e > epsilons.last().unwrap() + 1.5 {
+                epsilons.push(e);
+            }
+        }
+
+        // Ensure we have at least 3 scales
+        while epsilons.len() < 3 {
+            let last = *epsilons.last().unwrap();
+            epsilons.push((last * 1.4).min(25.0));
+        }
+
+        log::info!("Adaptive epsilon: {:?} (from k-NN analysis, k={})", epsilons, k);
+        epsilons
+    }
+
+    /// Multi-scale clustering with automatic or fixed epsilon selection
+    ///
     /// 1. Run clustering at epsilon values: [5.0, 7.0, 10.0, 14.0] Angstroms
     /// 2. For each scale, compute cluster centroids
     /// 3. Find clusters that "persist" (have similar centroids) across ≥2 scales
@@ -1307,10 +1399,34 @@ impl PersistentNhsEngine {
         &mut self,
         spike_positions: &[f32],
     ) -> Result<MultiScaleClusteringResult> {
+        self.multi_scale_cluster_spikes_with_epsilon(spike_positions, None)
+    }
+
+    /// Multi-scale clustering with optional custom epsilon values
+    ///
+    /// # Arguments
+    /// * `spike_positions` - Flat array of [x, y, z, x, y, z, ...] coordinates
+    /// * `custom_epsilon` - If Some, use these values; if None, use adaptive selection
+    pub fn multi_scale_cluster_spikes_with_epsilon(
+        &mut self,
+        spike_positions: &[f32],
+        custom_epsilon: Option<Vec<f32>>,
+    ) -> Result<MultiScaleClusteringResult> {
         use std::collections::HashMap;
 
         let num_spikes = spike_positions.len() / 3;
-        let epsilon_scales = [5.0f32, 7.0, 10.0, 14.0];
+
+        // Determine epsilon values: custom, adaptive, or default
+        let epsilon_scales: Vec<f32> = if let Some(eps) = custom_epsilon {
+            log::info!("Using custom epsilon values: {:?}", eps);
+            eps
+        } else if num_spikes > 1000 {
+            // Use adaptive selection for large datasets
+            Self::compute_adaptive_epsilon(spike_positions, 4, 1000)
+        } else {
+            // Default values for small datasets
+            vec![5.0, 7.0, 10.0, 14.0]
+        };
         let merge_distance = 8.0f32; // Clusters within 8Å are considered the same site
 
         log::info!("Running multi-scale clustering on {} spikes at {} scales",

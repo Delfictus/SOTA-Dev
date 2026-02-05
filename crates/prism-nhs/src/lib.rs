@@ -114,6 +114,8 @@ pub mod ultimate_engine;
 pub mod rt_clustering;
 #[cfg(feature = "gpu")]
 pub mod rt_utils;
+#[cfg(feature = "gpu")]
+pub mod parallel_replica;
 pub mod input;
 pub mod mapping;
 pub mod neuromorphic;
@@ -199,6 +201,10 @@ pub use rt_clustering::{
 };
 #[cfg(feature = "gpu")]
 pub use rt_utils::{has_rt_cores, is_optix_available, get_architecture_name};
+#[cfg(feature = "gpu")]
+pub use parallel_replica::{
+    ParallelReplicaEngine, ParallelReplicaResult, ParallelSpikeEvent,
+};
 pub use input::{NhsAtomType, NhsPreparedInput, PrismPrepTopology};
 pub use adaptive::{
     AdaptiveGridProtocol, AdaptiveNhsEngine, AdaptiveStepResult, AdaptiveSummary,

@@ -428,11 +428,11 @@ impl AmberSimdBatch {
 
         let stream = context.default_stream();
 
-        // Pre-allocate GPU buffers
+        // Pre-allocate GPU buffers (INCREASED for GBA: 31588 bonds, 57064 angles, 107968 dihedrals!)
         let max_total_atoms = max_atoms_per_struct * max_batch_size;
-        let max_total_bonds = 20000 * max_batch_size;
-        let max_total_angles = 30000 * max_batch_size;
-        let max_total_dihedrals = 50000 * max_batch_size;
+        let max_total_bonds = 35000 * max_batch_size;
+        let max_total_angles = 60000 * max_batch_size;
+        let max_total_dihedrals = 120000 * max_batch_size;
 
         let d_positions = stream.alloc_zeros::<f32>(max_total_atoms * 3)?;
         let d_velocities = stream.alloc_zeros::<f32>(max_total_atoms * 3)?;
@@ -491,7 +491,7 @@ impl AmberSimdBatch {
             minimize_kernel,
             apply_offsets_kernel,
             remove_offsets_kernel,
-            use_cell_list: true,  // Cell lists enabled (50x faster)
+            use_cell_list: false,  // DEBUG: Disabled to test O(N²) kernel
             batch_descs: Vec::with_capacity(max_batch_size),
             d_positions,
             d_velocities,
@@ -1333,12 +1333,10 @@ impl AmberSimdBatch {
     /// Internal run method used by both run() and equilibrate()
     /// Dispatches to SOTA optimized path or legacy path based on configuration
     fn run_internal(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
-        // Use SOTA optimized path if Verlet list is enabled
-        if self.verlet_list.is_some() {
-            return self.run_internal_sota(n_steps, dt, temperature, gamma);
-        }
-
-        // Fall through to legacy path
+        // DEBUG: Force legacy path to isolate livelock issue
+        // The SOTA path with Verlet lists is causing hangs
+        // TODO: Debug and fix SOTA path
+        log::info!("Using legacy path (SOTA disabled for debugging)");
         self.run_internal_legacy(n_steps, dt, temperature, gamma)
     }
 
@@ -2467,6 +2465,33 @@ impl AmberSimdBatch {
         } else {
             self.batch_descs[structure_id].n_atoms
         }
+    }
+
+    /// Get all positions from GPU (flattened: [x0,y0,z0, x1,y1,z1, ...] for all structures)
+    pub fn get_positions(&self) -> Result<Vec<f32>> {
+        let mut positions = vec![0.0f32; self.total_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
+        Ok(positions)
+    }
+
+    /// Get all velocities from GPU (flattened: [vx0,vy0,vz0, vx1,vy1,vz1, ...] for all structures)
+    pub fn get_velocities(&self) -> Result<Vec<f32>> {
+        let mut velocities = vec![0.0f32; self.total_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        Ok(velocities)
+    }
+
+    /// Set all velocities on GPU (must match total_atoms * 3 length)
+    pub fn set_velocities(&mut self, velocities: &[f32]) -> Result<()> {
+        if velocities.len() != self.total_atoms * 3 {
+            bail!(
+                "Velocity array length mismatch: got {}, expected {}",
+                velocities.len(),
+                self.total_atoms * 3
+            );
+        }
+        self.stream.memcpy_htod(velocities, &mut self.d_velocities)?;
+        Ok(())
     }
 }
 

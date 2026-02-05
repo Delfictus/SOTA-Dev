@@ -23,6 +23,7 @@ use prism_nhs::{
     AromaticProximityInfo, enhance_sites_with_aromatics,
     BindingSiteFormatter, write_binding_site_visualizations,
     PrismPrepTopology,
+    ParallelReplicaEngine,
 };
 
 #[derive(Parser)]
@@ -82,6 +83,16 @@ struct Args {
     /// ~60% faster than standard while maintaining detection quality
     #[arg(long, default_value = "false")]
     fast: bool,
+
+    /// Enable true parallel replica execution via AmberSimdBatch
+    /// All replicas run simultaneously on GPU (vs sequential when disabled)
+    #[arg(long, default_value = "false")]
+    parallel: bool,
+
+    /// Enable adaptive epsilon selection from k-NN distribution
+    /// Automatically determines optimal clustering scales per structure
+    #[arg(long, default_value = "true")]
+    adaptive_epsilon: bool,
 
     /// Verbose output
     #[arg(short, long)]
@@ -174,7 +185,8 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
             wavelength_dwell_steps: 500,
         }
     };
-    engine.set_cryo_uv_protocol(protocol)?;
+    let target_end_temp = protocol.end_temp;
+    engine.set_cryo_uv_protocol(protocol.clone())?;
 
     // Enable spike accumulation for analysis
     engine.set_spike_accumulation(true);
@@ -199,38 +211,78 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
     let mut final_temperature = 0.0f32;
     let mut total_snapshots = 0usize;
 
-    for replica_id in 0..n_replicas {
-        let replica_seed = args.replica_seed + replica_id as u64;
+    // Choose parallel or sequential execution
+    if args.parallel && n_replicas > 1 {
+        // Parallel replica execution via AmberSimdBatch
+        log::info!("  Mode: PARALLEL (AmberSimdBatch, {} replicas simultaneous)", n_replicas);
 
-        if n_replicas > 1 {
-            log::info!("  Replica {}/{} (seed: {})...", replica_id + 1, n_replicas, replica_seed);
+        let mut parallel_engine = ParallelReplicaEngine::new(
+            n_replicas,
+            &topology,
+            protocol.clone(),
+        )?;
 
-            // Reset engine state for each replica (re-initialize with different seed)
-            engine.reset_for_replica(replica_seed)?;
+        let frame_interval = 500; // Extract frames every 500 steps for spike detection
+        let result = parallel_engine.run(steps_per_replica as usize, frame_interval)?;
+
+        // Convert parallel spikes to GpuSpikeEvent format
+        for spike in result.spikes {
+            all_spikes.push(prism_nhs::fused_engine::GpuSpikeEvent {
+                timestep: spike.timestep as i32,
+                voxel_idx: 0, // Not tracked in parallel mode
+                position: spike.position,
+                intensity: spike.intensity,
+                nearby_residues: [0; 8], // Not tracked in parallel mode
+                n_residues: 0,
+            });
         }
 
-        let summary = engine.run(steps_per_replica)?;
+        final_temperature = target_end_temp;
+        total_snapshots = 0; // Not tracked in parallel mode
 
-        // Collect spikes from this replica
-        let replica_spikes = engine.get_accumulated_spikes();
-        let spike_count = replica_spikes.len();
-        all_spikes.extend(replica_spikes);
-
-        final_temperature = summary.end_temperature;
-        total_snapshots += engine.get_snapshots().len();
-
+        log::info!("  ✓ Parallel complete: {:.1}s ({:.0} steps/sec aggregate)",
+            result.elapsed_seconds, result.throughput);
+    } else {
+        // Sequential replica execution (original behavior)
         if n_replicas > 1 {
-            log::info!("    Replica {} complete: {} spikes, T={:.1}K",
-                replica_id + 1, spike_count, summary.end_temperature);
+            log::info!("  Mode: SEQUENTIAL ({} replicas one at a time)", n_replicas);
         }
+
+        for replica_id in 0..n_replicas {
+            let replica_seed = args.replica_seed + replica_id as u64;
+
+            if n_replicas > 1 {
+                log::info!("  Replica {}/{} (seed: {})...", replica_id + 1, n_replicas, replica_seed);
+
+                // Reset engine state for each replica (re-initialize with different seed)
+                engine.reset_for_replica(replica_seed)?;
+            }
+
+            let summary = engine.run(steps_per_replica)?;
+
+            // Collect spikes from this replica
+            let replica_spikes = engine.get_accumulated_spikes();
+            let spike_count = replica_spikes.len();
+            all_spikes.extend(replica_spikes);
+
+            final_temperature = summary.end_temperature;
+            total_snapshots += engine.get_snapshots().len();
+
+            if n_replicas > 1 {
+                log::info!("    Replica {} complete: {} spikes, T={:.1}K",
+                    replica_id + 1, spike_count, summary.end_temperature);
+            }
+        }
+
+        let sim_time_seq = sim_start.elapsed();
+        let total_steps_seq = steps_per_replica as usize * n_replicas;
+        log::info!("  ✓ Completed in {:.1}s ({:.0} steps/sec)",
+            sim_time_seq.as_secs_f64(),
+            total_steps_seq as f64 / sim_time_seq.as_secs_f64());
     }
 
     let sim_time = sim_start.elapsed();
     let total_steps = steps_per_replica as usize * n_replicas;
-
-    log::info!("  ✓ Completed in {:.1}s ({:.0} steps/sec)",
-        sim_time.as_secs_f64(),
-        total_steps as f64 / sim_time.as_secs_f64());
 
     log::info!("  Raw spikes collected: {} (from {} replicas)", all_spikes.len(), n_replicas);
     log::info!("  Snapshots: {}", total_snapshots);
@@ -272,7 +324,13 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
 
         if args.multi_scale {
             // Multi-scale clustering for structure-agnostic detection
-            match engine.multi_scale_cluster_spikes(&positions) {
+            // Use adaptive epsilon (k-NN based) or fixed values
+            let custom_epsilon = if args.adaptive_epsilon {
+                None // Let the engine compute from k-NN distribution
+            } else {
+                Some(vec![5.0f32, 7.0, 10.0, 14.0]) // Fixed default values
+            };
+            match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon) {
                 Ok(ms_result) => {
                     log::info!("  ✓ Multi-scale clustering complete: {} persistent clusters",
                         ms_result.num_clusters());
