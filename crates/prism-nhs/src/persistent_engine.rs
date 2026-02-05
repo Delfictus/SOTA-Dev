@@ -174,8 +174,81 @@ pub struct DruggabilityScore {
     pub hydrophobicity_score: f32,
     /// Aromatic score (0.0-1.0) - proximity to aromatics for pi-stacking
     pub aromatic_score: f32,
+    /// Catalytic score (0.0-1.0) - enzyme active site potential
+    pub catalytic_score: f32,
     /// Is this likely a druggable pocket?
     pub is_druggable: bool,
+}
+
+/// Catalytic residue types for enzyme active site detection
+pub const CATALYTIC_RESIDUES: &[&str] = &["GLU", "ASP", "HIS", "HID", "HIE", "HIP", "SER", "CYS", "LYS"];
+
+/// Compute catalytic score from lining residues
+///
+/// Enzyme active sites typically have:
+/// - Multiple catalytic residues (GLU, ASP, HIS, SER, CYS, LYS)
+/// - Catalytic residues clustered within 6Å of pocket center
+/// - At least 2-3 catalytic residues for enzymatic activity
+pub fn compute_catalytic_score(lining_residues: &[LiningResidue]) -> (f32, usize) {
+    if lining_residues.is_empty() {
+        return (0.0, 0);
+    }
+
+    // Count catalytic residues and their proximity
+    let mut catalytic_count = 0;
+    let mut close_catalytic = 0; // Within 5Å
+    let mut total_catalytic_distance = 0.0f32;
+
+    for res in lining_residues {
+        if CATALYTIC_RESIDUES.contains(&res.resname.as_str()) {
+            catalytic_count += 1;
+            total_catalytic_distance += res.min_distance;
+            if res.min_distance <= 5.0 {
+                close_catalytic += 1;
+            }
+        }
+    }
+
+    if catalytic_count == 0 {
+        return (0.0, 0);
+    }
+
+    // Score components:
+    // 1. Count score: 2-3 catalytic residues is optimal for enzyme activity
+    let count_score: f32 = match catalytic_count {
+        0 => 0.0,
+        1 => 0.3,
+        2 => 0.7,
+        3 => 1.0,
+        4 => 0.95,
+        5 => 0.9,
+        _ => 0.85, // Many catalytic residues still good
+    };
+
+    // 2. Proximity score: closer catalytic residues = more likely active site
+    let avg_distance = total_catalytic_distance / catalytic_count as f32;
+    let proximity_score: f32 = if avg_distance <= 3.0 {
+        1.0
+    } else if avg_distance <= 5.0 {
+        0.9
+    } else if avg_distance <= 7.0 {
+        0.7
+    } else {
+        0.5
+    };
+
+    // 3. Close clustering bonus: multiple catalytic residues within 5Å
+    let clustering_bonus: f32 = match close_catalytic {
+        0 => 0.0,
+        1 => 0.1,
+        2 => 0.2,
+        _ => 0.3,
+    };
+
+    // Combined score
+    let score: f32 = (0.5 * count_score + 0.3 * proximity_score + 0.2 * clustering_bonus).clamp(0.0, 1.0);
+
+    (score, catalytic_count)
 }
 
 impl DruggabilityScore {
@@ -244,8 +317,59 @@ impl DruggabilityScore {
             enclosure_score,
             hydrophobicity_score,
             aromatic_score,
+            catalytic_score: 0.0, // Computed separately with lining residues
             is_druggable,
         }
+    }
+
+    /// Compute druggability with full context: aromatics AND catalytic residues
+    ///
+    /// Enzyme active sites are druggable through:
+    /// - Substrate mimics (competitive inhibitors)
+    /// - Covalent inhibitors (targeting catalytic Ser/Cys)
+    /// - Allosteric modulation
+    ///
+    /// This method properly scores polar enzyme sites that would fail
+    /// traditional hydrophobic druggability metrics.
+    pub fn from_site_with_catalytic(
+        volume: f32,
+        avg_intensity: f32,
+        bounding_box: &[f32; 3],
+        aromatic_info: Option<&AromaticProximityInfo>,
+        lining_residues: &[LiningResidue],
+    ) -> Self {
+        // Start with base scoring
+        let mut score = Self::from_site_with_aromatics(volume, avg_intensity, bounding_box, aromatic_info);
+
+        // Compute catalytic score
+        let (catalytic_score, catalytic_count) = compute_catalytic_score(lining_residues);
+        score.catalytic_score = catalytic_score;
+
+        // For enzyme active sites: adjust scoring to account for polar nature
+        if catalytic_count >= 2 && catalytic_score >= 0.5 {
+            // This is likely an enzyme active site
+            // Recalculate overall with catalytic contribution
+            // Enzyme sites: 25% volume, 15% enclosure, 15% hydrophobicity, 20% aromatic, 25% catalytic
+            let aromatic = aromatic_info.map(|i| i.aromatic_score).unwrap_or(0.5);
+            score.overall = 0.25 * score.volume_score
+                + 0.15 * score.enclosure_score
+                + 0.15 * score.hydrophobicity_score
+                + 0.20 * aromatic
+                + 0.25 * catalytic_score;
+
+            // Enzyme active sites with good catalytic score are druggable
+            // (substrate mimics, covalent inhibitors, etc.)
+            // Note: Large enzyme sites have low volume_score, so use lower threshold
+            let enzyme_threshold = 0.35; // Lower threshold for enzyme sites
+            // Note: Large multi-subunit enzymes (aldolases, etc.) can have
+            // binding sites up to ~8000 Å³. Use < comparison to avoid
+            // floating-point boundary issues with clamped volumes.
+            score.is_druggable = score.overall >= enzyme_threshold
+                && volume >= 50.0
+                && volume < 8001.0; // Enzyme sites can be quite large
+        }
+
+        score
     }
 }
 
@@ -1576,11 +1700,10 @@ fn build_clustered_sites(
             let raw_volume = occupied_voxels.len() as f32 * voxel_volume;
 
             // Apply packing efficiency correction (sphere packing ~74% efficiency)
-            // and cap at reasonable pocket sizes
             let pocket_volume = raw_volume * 0.74;
 
-            // Sanity bounds: typical pockets are 100-2000 Å³
-            pocket_volume.clamp(50.0, 5000.0)
+            // Sanity bounds: typical pockets 100-2000 Å³, large enzyme sites up to 8000 Å³
+            pocket_volume.clamp(50.0, 8000.0)
         } else {
             // Degenerate case: estimate from spike count
             (spikes.len() as f32 * 15.0).clamp(50.0, 2000.0)
@@ -1742,6 +1865,23 @@ impl ClusteredBindingSite {
         self.lining_residues.sort_by(|a, b| {
             a.min_distance.partial_cmp(&b.min_distance).unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // Recompute druggability with catalytic scoring
+        self.recompute_druggability_with_catalytic();
+    }
+
+    /// Recompute druggability score including catalytic residue analysis
+    ///
+    /// Called after lining residues are computed to update druggability
+    /// for enzyme active sites that would otherwise fail hydrophobic scoring.
+    pub fn recompute_druggability_with_catalytic(&mut self) {
+        self.druggability = DruggabilityScore::from_site_with_catalytic(
+            self.estimated_volume,
+            self.avg_intensity,
+            &self.bounding_box,
+            self.aromatic_proximity.as_ref(),
+            &self.lining_residues,
+        );
     }
 
     /// Get lining residue IDs as a simple list (for validation comparisons)

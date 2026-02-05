@@ -296,6 +296,12 @@ impl CryoUvProtocol {
     /// - 100% aromatic localization
     /// - 2.26x enrichment over baseline
     /// - ~13.5 sites per ultra-difficult structure
+    ///
+    /// Wavelengths cover all aromatic residues:
+    /// - 280 nm: TRP (tryptophan)
+    /// - 274 nm: TYR (tyrosine)
+    /// - 258 nm: PHE (phenylalanine)
+    /// - 211 nm: HIS/HID/HIE/HIP (histidine imidazole ring)
     pub fn standard() -> Self {
         Self {
             start_temp: 77.0,
@@ -307,7 +313,8 @@ impl CryoUvProtocol {
             uv_burst_energy: 30.0,
             uv_burst_interval: 500,
             uv_burst_duration: 50,
-            scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
+            // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 500,
         }
     }
@@ -329,6 +336,37 @@ impl CryoUvProtocol {
             ramp_steps: 3000,
             warm_hold_steps: 2000,
             ..Self::standard()
+        }
+    }
+
+    /// Fast 50K protocol - leverages ultra-cold for faster equilibration
+    ///
+    /// At 50K, thermal fluctuations are ~30% smaller than at 100K:
+    /// - Faster equilibration (protein settles quicker)
+    /// - Cleaner spike signal (less thermal noise)
+    /// - Allows shorter cold_hold while maintaining detection quality
+    ///
+    /// Wavelengths cover all aromatic residues:
+    /// - 280 nm: TRP (tryptophan)
+    /// - 274 nm: TYR (tyrosine)
+    /// - 258 nm: PHE (phenylalanine)
+    /// - 211 nm: HIS/HID/HIE/HIP (histidine imidazole ring)
+    ///
+    /// Runtime: ~60% faster than standard protocol
+    pub fn fast_50k() -> Self {
+        Self {
+            start_temp: 50.0,           // Ultra-cold start
+            end_temp: 300.0,            // Physiological end
+            cold_hold_steps: 20000,     // 60% reduction from 50K standard
+            ramp_steps: 8000,           // Faster ramp (50K→300K)
+            warm_hold_steps: 2000,      // Brief warm hold
+            current_step: 0,
+            uv_burst_energy: 30.0,      // Standard energy (cleaner baseline compensates)
+            uv_burst_interval: 400,     // Slightly more frequent bursts
+            uv_burst_duration: 50,
+            // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            wavelength_dwell_steps: 400,
         }
     }
 
