@@ -220,6 +220,39 @@ __device__ void tensor_core_distances_16x16(
 }
 
 // ============================================================================
+// TENSOR CORE DISTANCE MATRIX KERNEL (ENTRY POINT)
+// ============================================================================
+
+/**
+ * @brief Kernel wrapper for tensor_core_distances_16x16 device function
+ *
+ * This is the __global__ entry point that can be launched from host code.
+ * Calls the __device__ helper function for actual Tensor Core computation.
+ */
+extern "C" __global__ void tensor_core_distances_16x16_kernel(
+    const half* __restrict__ coords_a,
+    const half* __restrict__ coords_b,
+    const float* __restrict__ norm_sq_a,
+    const float* __restrict__ norm_sq_b,
+    float* __restrict__ dist_sq
+) {
+    // Allocate shared memory for WMMA operations
+    __shared__ half smem_a[16 * 4];
+    __shared__ half smem_b[4 * 16];
+
+    // Call the device function
+    tensor_core_distances_16x16(
+        coords_a,
+        coords_b,
+        norm_sq_a,
+        norm_sq_b,
+        dist_sq,
+        smem_a,
+        smem_b
+    );
+}
+
+// ============================================================================
 // TENSOR CORE NON-BONDED FORCE KERNEL
 // ============================================================================
 

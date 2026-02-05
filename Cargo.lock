@@ -3978,6 +3978,7 @@ dependencies = [
  "cudarc",
  "env_logger 0.10.2",
  "log",
+ "optix-sys",
  "prism-gpu",
  "prism-io",
  "prism-learning",

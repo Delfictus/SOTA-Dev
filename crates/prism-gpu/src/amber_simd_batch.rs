@@ -1333,11 +1333,13 @@ impl AmberSimdBatch {
     /// Internal run method used by both run() and equilibrate()
     /// Dispatches to SOTA optimized path or legacy path based on configuration
     fn run_internal(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
-        // DEBUG: Force legacy path to isolate livelock issue
-        // The SOTA path with Verlet lists is causing hangs
-        // TODO: Debug and fix SOTA path
-        log::info!("Using legacy path (SOTA disabled for debugging)");
-        self.run_internal_legacy(n_steps, dt, temperature, gamma)
+        if self.opt_config.use_verlet_list {
+            log::info!("Using SOTA path with Verlet neighbor lists");
+            self.run_internal_sota(n_steps, dt, temperature, gamma)
+        } else {
+            log::info!("Using legacy path (Verlet lists disabled)");
+            self.run_internal_legacy(n_steps, dt, temperature, gamma)
+        }
     }
 
     /// SOTA Optimized MD integration loop
@@ -1577,7 +1579,30 @@ impl AmberSimdBatch {
             // KEY OPTIMIZATION: Reuse the SAME Verlet list!
             // Atoms have moved at most dt * v_max ≈ 0.01-0.1 Å per step
             // Verlet skin is 2.0 Å, so list is still valid
-            // (No cell list or Verlet list rebuild needed!)
+            //
+            // CRITICAL FIX: Although Verlet list is still valid, we still use md_step_cell_list_kernel
+            // which requires valid cell lists. Must rebuild cell list at NEW positions x(t+dt).
+            // (Future: refactor to use verlet.compute_nonbonded() directly and skip cell lists entirely)
+
+            // Rebuild cell list at new positions x(t+dt)
+            unsafe {
+                let mut builder = self.stream.launch_builder(&self.zero_cell_counts_kernel);
+                builder.arg(&self.d_cell_counts);
+                builder.arg(&MAX_TOTAL_CELLS);
+                builder.launch(zero_cfg)?;
+            }
+            unsafe {
+                let mut builder = self.stream.launch_builder(&self.build_cell_list_kernel);
+                builder.arg(&self.d_positions);
+                builder.arg(&self.d_cell_list);
+                builder.arg(&self.d_cell_counts);
+                builder.arg(&self.d_atom_cell);
+                builder.arg(&origin_x);
+                builder.arg(&origin_y);
+                builder.arg(&origin_z);
+                builder.arg(&total_atoms_i32);
+                builder.launch(build_cfg)?;
+            }
 
             let zero_energies2 = vec![0.0f32; self.alloc_energies_size];
             self.stream.memcpy_htod(&zero_energies2, &mut self.d_energies)?;

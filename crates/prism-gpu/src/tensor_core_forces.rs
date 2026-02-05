@@ -99,8 +99,8 @@ impl TensorCoreForces {
             .load_function("tensor_core_nonbonded")
             .context("Failed to load tensor_core_nonbonded")?;
         let tensor_core_distances_kernel = module
-            .load_function("tensor_core_distances_16x16")
-            .context("Failed to load tensor_core_distances_16x16")?;
+            .load_function("tensor_core_distances_16x16_kernel")
+            .context("Failed to load tensor_core_distances_16x16_kernel")?;
 
         // Allocate GPU buffers
         let d_norms_sq = stream.alloc_zeros::<f32>(n_atoms)?;

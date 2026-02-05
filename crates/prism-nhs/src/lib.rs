@@ -116,6 +116,10 @@ pub mod rt_clustering;
 pub mod rt_utils;
 #[cfg(feature = "gpu")]
 pub mod parallel_replica;
+#[cfg(feature = "gpu")]
+pub mod gpu_knn;
+pub mod composition;
+pub mod batch_scheduler;
 pub mod input;
 pub mod mapping;
 pub mod neuromorphic;
@@ -222,6 +226,15 @@ pub use trajectory::{
 pub use rmsf::{RmsfAnalysis, RmsfCalculator};
 pub use clustering::{
     ClusteringConfig, ClusteringResults, RepresentativeFrame, TrajectoryClusterer,
+};
+pub use composition::{
+    StructureComposition, ResidueKey, ResidueInfo, ChainInfo,
+    MemoryTier, ComplexityTier, SpikeDensityTier, BatchCompatibility,
+    MemoryProfile, BatchGroup, group_for_batch,
+};
+pub use batch_scheduler::{
+    BatchScheduler, BatchSchedulerConfig, ExecutionSchedule, ScheduledBatch,
+    ScheduleStats, BatchExecutionResult, BatchExecutionSummary,
 };
 
 /// Crate version
