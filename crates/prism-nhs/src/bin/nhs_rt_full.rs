@@ -311,6 +311,10 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
     // RT-accelerated spike clustering
     let cluster_mode = if args.multi_scale { "multi-scale" } else { "single-scale" };
     log::info!("\n[4/6] RT-accelerated spike clustering ({})...", cluster_mode);
+
+    // Track epsilon info for JSON output (outside block for scope)
+    let mut epsilon_info: Option<(Vec<f32>, bool, Option<usize>, Option<usize>)> = None;
+
     let mut clustered_sites = if !accumulated_spikes.is_empty() && args.rt_clustering {
         // Copy positions from packed struct to avoid alignment issues
         let positions: Vec<f32> = accumulated_spikes.iter()
@@ -334,6 +338,14 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
                 Ok(ms_result) => {
                     log::info!("  ✓ Multi-scale clustering complete: {} persistent clusters",
                         ms_result.num_clusters());
+
+                    // Capture epsilon info for JSON output
+                    epsilon_info = Some((
+                        ms_result.epsilon_values.clone(),
+                        ms_result.adaptive_epsilon,
+                        ms_result.knn_k,
+                        ms_result.num_spikes_sampled,
+                    ));
 
                     // Convert multi-scale result to cluster IDs for site building
                     let cluster_ids = ms_result.to_cluster_ids(accumulated_spikes.len());
@@ -456,6 +468,24 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
         // Also write JSON summary (with lining residues for top 100 sites)
         let json_path = output_base.with_extension("binding_sites.json");
         let catalytic_residues = ["GLU", "ASP", "HIS", "SER", "CYS", "LYS"];
+
+        // Build adaptive epsilon info for JSON
+        let epsilon_json = if let Some((values, is_adaptive, knn_k, num_sampled)) = &epsilon_info {
+            serde_json::json!({
+                "computed_values": values,
+                "source": if *is_adaptive { "knn_adaptive" } else { "fixed" },
+                "knn_k": knn_k,
+                "num_spikes_sampled": num_sampled,
+            })
+        } else {
+            serde_json::json!({
+                "computed_values": null,
+                "source": "single_scale",
+                "knn_k": null,
+                "num_spikes_sampled": null,
+            })
+        };
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "total_steps": args.steps,
@@ -464,6 +494,7 @@ fn run_full_pipeline(args: &Args) -> Result<()> {
             "binding_sites": clustered_sites.len(),
             "druggable_sites": clustered_sites.iter().filter(|s| s.druggability.is_druggable).count(),
             "lining_residue_cutoff_angstroms": args.lining_cutoff,
+            "adaptive_epsilon": epsilon_json,
             "sites": clustered_sites.iter().take(100).map(|s| {
                 let catalytic_count = s.lining_residues.iter()
                     .filter(|r| catalytic_residues.contains(&r.resname.as_str()))

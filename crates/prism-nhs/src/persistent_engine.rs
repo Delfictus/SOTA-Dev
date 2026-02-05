@@ -607,6 +607,12 @@ pub struct MultiScaleClusteringResult {
     pub total_scales: usize,
     /// Epsilon values tested
     pub epsilon_values: Vec<f32>,
+    /// Whether adaptive epsilon was used (vs fixed)
+    pub adaptive_epsilon: bool,
+    /// k value used for k-NN (if adaptive)
+    pub knn_k: Option<usize>,
+    /// Number of spikes sampled for k-NN (if adaptive)
+    pub num_spikes_sampled: Option<usize>,
 }
 
 impl MultiScaleClusteringResult {
@@ -1417,16 +1423,23 @@ impl PersistentNhsEngine {
         let num_spikes = spike_positions.len() / 3;
 
         // Determine epsilon values: custom, adaptive, or default
-        let epsilon_scales: Vec<f32> = if let Some(eps) = custom_epsilon {
-            log::info!("Using custom epsilon values: {:?}", eps);
-            eps
-        } else if num_spikes > 1000 {
-            // Use adaptive selection for large datasets
-            Self::compute_adaptive_epsilon(spike_positions, 4, 1000)
-        } else {
-            // Default values for small datasets
-            vec![5.0, 7.0, 10.0, 14.0]
-        };
+        // Track whether adaptive was used for output
+        let knn_k = 4usize;
+        let sample_size = 1000usize;
+        let (epsilon_scales, is_adaptive, actual_sample_size): (Vec<f32>, bool, Option<usize>) =
+            if let Some(eps) = custom_epsilon {
+                log::info!("Using fixed epsilon values: {:?}", eps);
+                (eps, false, None)
+            } else if num_spikes > 1000 {
+                // Use adaptive selection for large datasets
+                let actual_samples = num_spikes.min(sample_size);
+                let eps = Self::compute_adaptive_epsilon(spike_positions, knn_k, sample_size);
+                (eps, true, Some(actual_samples))
+            } else {
+                // Default values for small datasets
+                log::info!("Using default epsilon values (small dataset): [5.0, 7.0, 10.0, 14.0]");
+                (vec![5.0, 7.0, 10.0, 14.0], false, None)
+            };
         let merge_distance = 8.0f32; // Clusters within 8Å are considered the same site
 
         log::info!("Running multi-scale clustering on {} spikes at {} scales",
@@ -1595,7 +1608,10 @@ impl PersistentNhsEngine {
         Ok(MultiScaleClusteringResult {
             clusters: persistent_clusters,
             total_scales: epsilon_scales.len(),
-            epsilon_values: epsilon_scales.to_vec(),
+            epsilon_values: epsilon_scales,
+            adaptive_epsilon: is_adaptive,
+            knn_k: if is_adaptive { Some(knn_k) } else { None },
+            num_spikes_sampled: actual_sample_size,
         })
     }
 
