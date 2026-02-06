@@ -102,7 +102,7 @@ pub struct RtClusteringEngine {
     context: Arc<CudaContext>,
     stream: Arc<CudaStream>,
     optix_ctx: OptixContext,
-    config: RtClusteringConfig,
+    pub config: RtClusteringConfig,
 
     // OptiX pipeline components
     module: Option<Module>,

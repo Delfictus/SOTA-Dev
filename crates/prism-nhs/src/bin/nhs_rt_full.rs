@@ -657,9 +657,155 @@ fn run_full_pipeline_internal(
         } else {
             // Single-scale clustering (original behavior)
             match engine.cluster_spikes(&positions) {
-                Ok(result) => {
+                Ok(mut result) => {
                     log::info!("  ✓ Clustering complete: {} clusters, {} neighbor pairs, {:.2}ms",
                         result.num_clusters, result.total_neighbors, result.gpu_time_ms);
+
+                    // ── Mega-cluster subdivision via voxel density peaks ──
+                    // When a single DBSCAN cluster absorbs >50% of all spikes,
+                    // the protein is compact enough that all spike clouds form one
+                    // density-connected component (percolation).  Instead of
+                    // re-running DBSCAN at tighter epsilon (which causes a phase
+                    // transition from one mega-cluster to dust), we find density
+                    // peaks on a 3D voxel grid and partition spikes around them.
+                    let total_spikes = accumulated_spikes.len();
+                    let mega_threshold = (total_spikes as f64 * 0.50) as usize;
+                    {
+                        let mut counts: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+                        for &cid in &result.cluster_ids {
+                            if cid >= 0 {
+                                *counts.entry(cid).or_insert(0) += 1;
+                            }
+                        }
+                        let mega = counts.iter()
+                            .max_by_key(|(_, &c)| c)
+                            .map(|(&id, &c)| (id, c));
+
+                        if let Some((mega_id, mega_count)) = mega {
+                            if mega_count > mega_threshold {
+                                log::info!("  Mega-cluster {} detected: {} spikes ({:.0}% of total)",
+                                    mega_id, mega_count,
+                                    mega_count as f64 / total_spikes as f64 * 100.0);
+                                log::info!("  Applying voxel density peak subdivision...");
+
+                                // Extract mega-cluster spike indices
+                                let mega_indices: Vec<usize> = result.cluster_ids.iter()
+                                    .enumerate()
+                                    .filter(|(_, &cid)| cid == mega_id)
+                                    .map(|(i, _)| i)
+                                    .collect();
+
+                                // Compute bounding box
+                                let (mut min_x, mut min_y, mut min_z) = (f32::MAX, f32::MAX, f32::MAX);
+                                let (mut max_x, mut max_y, mut max_z) = (f32::MIN, f32::MIN, f32::MIN);
+                                for &i in &mega_indices {
+                                    let (x, y, z) = (positions[i*3], positions[i*3+1], positions[i*3+2]);
+                                    min_x = min_x.min(x); min_y = min_y.min(y); min_z = min_z.min(z);
+                                    max_x = max_x.max(x); max_y = max_y.max(y); max_z = max_z.max(z);
+                                }
+
+                                // Voxel grid: 3Å cells (roughly 1 aromatic spike cloud diameter)
+                                let cell = 3.0_f32;
+                                let nx = ((max_x - min_x) / cell).ceil() as usize + 1;
+                                let ny = ((max_y - min_y) / cell).ceil() as usize + 1;
+                                let nz = ((max_z - min_z) / cell).ceil() as usize + 1;
+
+                                // Count spikes per voxel
+                                let mut grid = vec![0u32; nx * ny * nz];
+                                let voxel_idx = |x: f32, y: f32, z: f32| -> usize {
+                                    let ix = ((x - min_x) / cell) as usize;
+                                    let iy = ((y - min_y) / cell) as usize;
+                                    let iz = ((z - min_z) / cell) as usize;
+                                    ix.min(nx-1) + iy.min(ny-1) * nx + iz.min(nz-1) * nx * ny
+                                };
+
+                                for &i in &mega_indices {
+                                    let vi = voxel_idx(positions[i*3], positions[i*3+1], positions[i*3+2]);
+                                    grid[vi] += 1;
+                                }
+
+                                // Find density peaks: voxels that are local maxima among 26 neighbors
+                                let mut peaks: Vec<(usize, u32)> = Vec::new(); // (voxel_idx, count)
+                                for iz in 0..nz {
+                                    for iy in 0..ny {
+                                        for ix in 0..nx {
+                                            let vi = ix + iy * nx + iz * nx * ny;
+                                            let c = grid[vi];
+                                            if c == 0 { continue; }
+                                            let mut is_peak = true;
+                                            for dz in -1i32..=1 {
+                                                for dy in -1i32..=1 {
+                                                    for dx in -1i32..=1 {
+                                                        if dx == 0 && dy == 0 && dz == 0 { continue; }
+                                                        let (jx, jy, jz) = (ix as i32 + dx, iy as i32 + dy, iz as i32 + dz);
+                                                        if jx >= 0 && jx < nx as i32 && jy >= 0 && jy < ny as i32 && jz >= 0 && jz < nz as i32 {
+                                                            let ji = jx as usize + jy as usize * nx + jz as usize * nx * ny;
+                                                            if grid[ji] > c {
+                                                                is_peak = false;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if is_peak {
+                                                peaks.push((vi, c));
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Sort peaks by density (descending) and filter weak ones
+                                peaks.sort_by(|a, b| b.1.cmp(&a.1));
+                                let peak_threshold = if let Some(top) = peaks.first() {
+                                    (top.1 as f32 * 0.05) as u32  // keep peaks with >5% of max density
+                                } else {
+                                    0
+                                };
+                                let peaks: Vec<_> = peaks.into_iter().filter(|(_, c)| *c >= peak_threshold.max(10)).collect();
+
+                                if peaks.len() >= 2 {
+                                    // Compute peak centers in Angstrom coordinates
+                                    let peak_centers: Vec<[f32; 3]> = peaks.iter().map(|&(vi, _)| {
+                                        let iz = vi / (nx * ny);
+                                        let iy = (vi % (nx * ny)) / nx;
+                                        let ix = vi % nx;
+                                        [
+                                            min_x + (ix as f32 + 0.5) * cell,
+                                            min_y + (iy as f32 + 0.5) * cell,
+                                            min_z + (iz as f32 + 0.5) * cell,
+                                        ]
+                                    }).collect();
+
+                                    // Assign each mega-cluster spike to nearest peak
+                                    let max_existing = result.cluster_ids.iter().max().copied().unwrap_or(0);
+                                    for &i in &mega_indices {
+                                        let (x, y, z) = (positions[i*3], positions[i*3+1], positions[i*3+2]);
+                                        let mut best_peak = 0usize;
+                                        let mut best_d2 = f32::MAX;
+                                        for (pi, pc) in peak_centers.iter().enumerate() {
+                                            let d2 = (x - pc[0]).powi(2) + (y - pc[1]).powi(2) + (z - pc[2]).powi(2);
+                                            if d2 < best_d2 {
+                                                best_d2 = d2;
+                                                best_peak = pi;
+                                            }
+                                        }
+                                        result.cluster_ids[i] = max_existing + 1 + best_peak as i32;
+                                    }
+                                    let new_max = result.cluster_ids.iter().max().copied().unwrap_or(0);
+                                    result.num_clusters = (new_max + 1) as usize;
+
+                                    log::info!("  Voxel grid: {}x{}x{} (cell={:.1}Å), {} density peaks found",
+                                        nx, ny, nz, cell, peak_centers.len());
+                                    for (pi, (pc, &(_, count))) in peak_centers.iter().zip(peaks.iter()).enumerate().take(10) {
+                                        log::info!("    Peak {}: ({:.1}, {:.1}, {:.1}) density={}",
+                                            pi, pc[0], pc[1], pc[2], count);
+                                    }
+                                } else {
+                                    log::info!("  Only {} density peak(s) found; keeping original mega-cluster", peaks.len());
+                                }
+                            }
+                        }
+                    }
 
                     // Build clustered binding sites
                     let all_sites = build_sites_from_clustering(&accumulated_spikes, &result);

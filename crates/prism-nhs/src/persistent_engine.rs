@@ -1303,6 +1303,25 @@ impl PersistentNhsEngine {
         self.fallback_grid_cluster(spike_positions)
     }
 
+    /// Re-cluster spikes at a specific epsilon (for mega-cluster subdivision).
+    /// Temporarily overrides the RT engine's epsilon, clusters, then restores it.
+    pub fn cluster_spikes_at_epsilon(&mut self, spike_positions: &[f32], epsilon: f32) -> Result<crate::rt_clustering::RtClusteringResult> {
+        if let Some(ref mut rt_engine) = self.rt_engine {
+            let saved = rt_engine.config.epsilon;
+            rt_engine.config.epsilon = epsilon;
+            let result = rt_engine.cluster(spike_positions);
+            rt_engine.config.epsilon = saved;
+            result
+        } else {
+            anyhow::bail!("RT clustering engine not initialized")
+        }
+    }
+
+    /// Get the current adaptive epsilon value
+    pub fn current_epsilon(&self) -> Option<f32> {
+        self.rt_engine.as_ref().map(|e| e.config.epsilon)
+    }
+
     /// Multi-scale clustering for robust, structure-agnostic binding site detection
     ///
     /// Runs DBSCAN clustering at multiple epsilon values and tracks cluster persistence
