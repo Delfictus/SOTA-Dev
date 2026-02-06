@@ -641,7 +641,12 @@ fn run_full_pipeline_internal(
                     let all_sites = build_sites_from_clustering(&accumulated_spikes, &fake_result);
 
                     // Post-filter: keep only significant clusters (min 2% of total spikes)
-                    let min_spikes = (accumulated_spikes.len() as f64 * 0.02).ceil() as usize;
+                    // Adaptive min-spikes: scale with aromatic count so that
+                    // per-aromatic clusters survive filtering in large proteins.
+                    // min = max(50, 0.3 * spikes_per_aromatic)
+                    let n_arom = aromatic_positions.len().max(1);
+                    let spikes_per_arom = accumulated_spikes.len() as f64 / n_arom as f64;
+                    let min_spikes = (spikes_per_arom * 0.3).ceil().max(50.0) as usize;
                     let sites: Vec<_> = all_sites.into_iter()
                         .filter(|s| s.spike_count >= min_spikes)
                         .collect();
@@ -811,7 +816,12 @@ fn run_full_pipeline_internal(
                     let all_sites = build_sites_from_clustering(&accumulated_spikes, &result);
 
                     // Post-filter: keep only significant clusters (min 2% of total spikes)
-                    let min_spikes = (accumulated_spikes.len() as f64 * 0.02).ceil() as usize;
+                    // Adaptive min-spikes: scale with aromatic count so that
+                    // per-aromatic clusters survive filtering in large proteins.
+                    // min = max(50, 0.3 * spikes_per_aromatic)
+                    let n_arom = aromatic_positions.len().max(1);
+                    let spikes_per_arom = accumulated_spikes.len() as f64 / n_arom as f64;
+                    let min_spikes = (spikes_per_arom * 0.3).ceil().max(50.0) as usize;
                     let sites: Vec<_> = all_sites.into_iter()
                         .filter(|s| s.spike_count >= min_spikes)
                         .collect();
