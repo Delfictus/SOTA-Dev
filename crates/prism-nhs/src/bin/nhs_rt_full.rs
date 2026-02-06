@@ -88,8 +88,8 @@ struct Args {
     #[arg(long, default_value = "false")]
     multi_scale: bool,
 
-    /// Fast 50K protocol - uses ultra-cold start for faster equilibration
-    /// ~60% faster than standard while maintaining detection quality
+    /// Fast 35K protocol - high-energy UV (42 kcal/mol, +40%) for faster detection
+    /// 14K cold + 6K ramp + 15K warm = 35K total, UV burst every 250 steps
     #[arg(long, default_value = "false")]
     fast: bool,
 
@@ -206,8 +206,14 @@ fn main() -> Result<()> {
 }
 
 /// Run from Stage 1B manifest (batch mode)
+/// ONE CudaContext created once. Structures sorted by atom count into size tiers.
+/// Each tier gets a right-sized AmberSimdBatch (no padding waste). Tiers run
+/// SEQUENTIALLY on the same context. Batch dropped between tiers to free GPU memory.
+/// ZERO threads.
 #[cfg(feature = "gpu")]
 fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
+    use cudarc::driver::CudaContext;
+
     let total_start = Instant::now();
 
     println!("╔═══════════════════════════════════════════════════════════════╗");
@@ -225,76 +231,107 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
     log::info!("Manifest loaded: {} structures in {} batches",
         manifest.total_structures, manifest.total_batches);
 
-    // Override replicas from manifest if not explicitly set (backward compat - now using per-batch replicas)
-    let _replicas = if args.replicas == 1 && manifest.replicas > 1 {
-        manifest.replicas
-    } else {
-        args.replicas
-    };
-
     // Create output directory
     std::fs::create_dir_all(&args.output)?;
 
-    // PARALLEL BATCH EXECUTION: Run all batches concurrently on shared GPU
-    // Total memory (92MB) << GPU capacity (16GB), so launch all batches at once
-    log::info!("Launching {} batches in parallel on shared GPU...", manifest.total_batches);
-
-    use std::thread;
-    use std::sync::{Arc, Mutex};
-
-    let results_mutex = Arc::new(Mutex::new(Vec::new()));
-    let mut handles = Vec::new();
+    // Collect ALL structures from ALL batches into ONE flat list
+    let mut all_structures: Vec<ManifestStructure> = Vec::new();
+    let mut max_batch_replicas: usize = 0;
 
     for batch in &manifest.batches {
-        let batch = batch.clone();
-        let args = args.clone();
-        let results_clone = Arc::clone(&results_mutex);
+        let batch_replicas = batch.replicas_per_structure;
+        max_batch_replicas = max_batch_replicas.max(batch_replicas);
+        log::info!("  Collecting batch {}: {} structures, {} replicas (tier: {})",
+            batch.batch_id, batch.structures.len(), batch_replicas, batch.memory_tier);
+        all_structures.extend(batch.structures.clone());
+    }
 
-        let handle = thread::spawn(move || {
-            let batch_replicas = batch.replicas_per_structure;
-            log::info!("═══ Batch {} ({} tier, {} structures, {} replicas) ═══",
-                batch.batch_id, batch.memory_tier, batch.structures.len(), batch_replicas);
+    // Determine replica count: CLI override > manifest-level > max per-batch > 1
+    let replicas = if args.replicas > 1 {
+        args.replicas
+    } else if manifest.replicas > 1 {
+        manifest.replicas
+    } else {
+        max_batch_replicas.max(1)
+    };
 
-            log::info!("  GPU-concurrent execution: {} structures × {} replicas = {} total in AmberSimdBatch",
-                batch.structures.len(), batch_replicas, batch.structures.len() * batch_replicas);
+    // Sort ALL structures by atom count for size-tier grouping
+    all_structures.sort_by_key(|s| s.atoms);
 
-            // Run entire batch concurrently on GPU with replicas
-            match run_batch_gpu_concurrent(&batch.structures, &args, batch_replicas) {
-                Ok(batch_results) => {
-                    results_clone.lock().unwrap().extend(batch_results);
-                }
-                Err(e) => {
-                    log::error!("  ✗ Batch {} execution failed: {}", batch.batch_id, e);
-                    // Mark all structures in batch as failed
-                    let mut failed_results = Vec::new();
-                    for structure in &batch.structures {
-                        failed_results.push(StructureRunResult {
-                            name: structure.name.clone(),
-                            success: false,
-                            error: Some(format!("Batch GPU execution failed: {}", e)),
-                            elapsed_seconds: 0.0,
-                            sites_found: None,
-                            druggable_sites: None,
-                        });
-                    }
-                    results_clone.lock().unwrap().extend(failed_results);
+    // Group into size tiers: small (≤5000), medium (≤20000), large (>20000)
+    // Each tier gets a right-sized AmberSimdBatch — no padding waste
+    let mut tier_small: Vec<ManifestStructure> = Vec::new();
+    let mut tier_medium: Vec<ManifestStructure> = Vec::new();
+    let mut tier_large: Vec<ManifestStructure> = Vec::new();
+
+    for structure in &all_structures {
+        match structure.atoms {
+            0..=5000 => tier_small.push(structure.clone()),
+            5001..=20000 => tier_medium.push(structure.clone()),
+            _ => tier_large.push(structure.clone()),
+        }
+    }
+
+    let tiers: Vec<(&str, Vec<ManifestStructure>)> = vec![
+        ("small (≤5K atoms)", tier_small),
+        ("medium (5K-20K atoms)", tier_medium),
+        ("large (>20K atoms)", tier_large),
+    ].into_iter().filter(|(_, v)| !v.is_empty()).collect();
+
+    log::info!("SIZE-TIER SEQUENTIAL BATCHING: {} structures across {} tiers",
+        all_structures.len(), tiers.len());
+    for (name, tier) in &tiers {
+        let min_atoms = tier.iter().map(|s| s.atoms).min().unwrap_or(0);
+        let max_atoms = tier.iter().map(|s| s.atoms).max().unwrap_or(0);
+        log::info!("  Tier {}: {} structures ({}-{} atoms), {} entries with {} replicas",
+            name, tier.len(), min_atoms, max_atoms, tier.len() * replicas, replicas);
+    }
+
+    // Create ONE CudaContext for the entire run
+    log::info!("Creating ONE CudaContext (device 0)...");
+    let context = CudaContext::new(0)?;
+    log::info!("ONE CudaContext. ZERO threads. {} tiers sequentially.", tiers.len());
+
+    // Run each tier SEQUENTIALLY on the same context
+    // Each tier creates a right-sized AmberSimdBatch, runs MD, drops batch to free GPU memory
+    let mut all_results: Vec<StructureRunResult> = Vec::new();
+
+    for (tier_idx, (tier_name, tier_structures)) in tiers.iter().enumerate() {
+        let tier_start = Instant::now();
+        let max_atoms = tier_structures.iter().map(|s| s.atoms).max().unwrap_or(0);
+
+        log::info!("═══ Tier {}/{}: {} ({} structures, max {} atoms) ═══",
+            tier_idx + 1, tiers.len(), tier_name, tier_structures.len(), max_atoms);
+
+        // Create right-sized batch for this tier (Arc::clone keeps context alive)
+        match run_batch_gpu_concurrent(tier_structures, args, replicas, context.clone()) {
+            Ok(tier_results) => {
+                let tier_success = tier_results.iter().filter(|r| r.success).count();
+                log::info!("  Tier {} complete: {}/{} successful in {:.1}s",
+                    tier_name, tier_success, tier_structures.len(),
+                    tier_start.elapsed().as_secs_f64());
+                all_results.extend(tier_results);
+            }
+            Err(e) => {
+                log::error!("  Tier {} failed: {}", tier_name, e);
+                for s in tier_structures {
+                    all_results.push(StructureRunResult {
+                        name: s.name.clone(),
+                        success: false,
+                        error: Some(format!("Tier GPU execution failed: {}", e)),
+                        elapsed_seconds: 0.0,
+                        sites_found: None,
+                        druggable_sites: None,
+                    });
                 }
             }
-        });
-
-        handles.push(handle);
+        }
+        // AmberSimdBatch is dropped here — GPU memory freed before next tier
+        log::info!("  Tier {} batch dropped, GPU memory freed.", tier_name);
     }
 
-    // Wait for all batches to complete
-    log::info!("Waiting for all {} batches to complete...", handles.len());
-    for handle in handles {
-        handle.join().unwrap();
-    }
-
-    // Extract final results
-    let results = results_mutex.lock().unwrap().clone();
-    let successful = results.iter().filter(|r| r.success).count();
-    let failed = results.iter().filter(|r| !r.success).count();
+    let successful = all_results.iter().filter(|r| r.success).count();
+    let failed = all_results.iter().filter(|r| !r.success).count();
 
     // Write summary
     let total_elapsed = total_start.elapsed().as_secs_f64();
@@ -304,7 +341,7 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
         successful,
         failed,
         total_elapsed_seconds: total_elapsed,
-        results,
+        results: all_results,
     };
 
     let summary_path = args.output.join("batch_summary.json");
@@ -319,6 +356,7 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
     println!("║ Total structures: {:>4}                                       ║", manifest.total_structures);
     println!("║ Successful:       {:>4}                                       ║", successful);
     println!("║ Failed:           {:>4}                                       ║", failed);
+    println!("║ Size tiers:       {:>4}                                       ║", tiers.len());
     println!("║ Total time:       {:>6.1}s                                    ║", total_elapsed);
     println!("╚═══════════════════════════════════════════════════════════════╝");
     println!();
@@ -402,8 +440,8 @@ fn run_full_pipeline_internal(
 
     // Configure cryo-UV protocol
     let protocol = if args.fast {
-        log::info!("  Protocol: Fast 50K (60% faster, full aromatic coverage)");
-        CryoUvProtocol::fast_50k()
+        log::info!("  Protocol: Fast 35K (high-energy UV, 42 kcal/mol, burst every 250 steps)");
+        CryoUvProtocol::fast_35k()
     } else {
         // Standard protocol with user-configurable temperatures
         CryoUvProtocol {
@@ -438,10 +476,10 @@ fn run_full_pipeline_internal(
     // Run simulation with replicas for improved sampling
     let n_replicas = n_replicas.max(1);
 
-    // --fast overrides step count to use optimized 50K protocol
+    // --fast overrides step count to use optimized 35K protocol
     let steps_per_replica = if args.fast {
-        // fast_50k protocol: 20K cold + 8K ramp + 2K warm = 30K, but we add margin
-        50_000  // Total 50K steps for fast validation
+        // fast_35k protocol: 14K cold + 6K ramp + 15K warm = 35K total
+        35_000
     } else {
         args.steps
     };
@@ -531,20 +569,20 @@ fn run_full_pipeline_internal(
     log::info!("  Snapshots: {}", total_snapshots);
     log::info!("  Final temperature: {:.1}K", final_temperature);
 
-    // Intensity pre-filtering: keep only top 20% by intensity to reduce noise
+    // Intensity pre-filtering: keep only top 2% by intensity to reduce noise
     let accumulated_spikes = if all_spikes.len() > 1000 {
-        // Compute intensity threshold (80th percentile)
+        // Compute intensity threshold (98th percentile)
         let mut intensities: Vec<f32> = all_spikes.iter()
             .map(|s| s.intensity)
             .collect();
         intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let threshold_idx = (intensities.len() as f32 * 0.80) as usize;
+        let threshold_idx = (intensities.len() as f32 * 0.98) as usize;
         let intensity_threshold = intensities.get(threshold_idx).copied().unwrap_or(0.0);
 
         let filtered: Vec<_> = all_spikes.into_iter()
             .filter(|s| s.intensity >= intensity_threshold)
             .collect();
-        log::info!("  Intensity filter: kept {} spikes (top 20%, threshold={:.2})",
+        log::info!("  Intensity filter: kept {} spikes (top 2%, threshold={:.2})",
             filtered.len(), intensity_threshold);
         filtered
     } else {
@@ -602,12 +640,12 @@ fn run_full_pipeline_internal(
                     // Build clustered binding sites
                     let all_sites = build_sites_from_clustering(&accumulated_spikes, &fake_result);
 
-                    // Post-filter: keep only significant clusters (>50 spikes)
-                    let min_spikes = 50;
+                    // Post-filter: keep only significant clusters (min 2% of total spikes)
+                    let min_spikes = (accumulated_spikes.len() as f64 * 0.02).ceil() as usize;
                     let sites: Vec<_> = all_sites.into_iter()
                         .filter(|s| s.spike_count >= min_spikes)
                         .collect();
-                    log::info!("  Binding sites: {} (filtered, min {} spikes)",
+                    log::info!("  Binding sites: {} (filtered, min {} spikes = 2%)",
                         sites.len(), min_spikes);
                     sites
                 }
@@ -626,12 +664,12 @@ fn run_full_pipeline_internal(
                     // Build clustered binding sites
                     let all_sites = build_sites_from_clustering(&accumulated_spikes, &result);
 
-                    // Post-filter: keep only significant clusters (>50 spikes)
-                    let min_spikes = 50;
+                    // Post-filter: keep only significant clusters (min 2% of total spikes)
+                    let min_spikes = (accumulated_spikes.len() as f64 * 0.02).ceil() as usize;
                     let sites: Vec<_> = all_sites.into_iter()
                         .filter(|s| s.spike_count >= min_spikes)
                         .collect();
-                    log::info!("  Binding sites: {} (filtered from {} clusters, min {} spikes)",
+                    log::info!("  Binding sites: {} (filtered from {} clusters, min {} spikes = 2%)",
                         sites.len(), result.num_clusters, min_spikes);
                     sites
                 }
@@ -793,20 +831,22 @@ fn run_full_pipeline_internal(
     Ok((total_sites, druggable_sites))
 }
 
-/// Run batch of structures concurrently on GPU using AmberSimdBatch
+/// Run batch of structures on GPU using AmberSimdBatch with an externally-provided CudaContext.
+/// The batch is right-sized to max_atoms of the provided structures (no padding waste).
+/// Caller creates ONE CudaContext and passes it to each tier.
 #[cfg(feature = "gpu")]
 fn run_batch_gpu_concurrent(
     structures: &[ManifestStructure],
     args: &Args,
     replicas: usize,
+    context: std::sync::Arc<cudarc::driver::CudaContext>,
 ) -> Result<Vec<StructureRunResult>> {
     use prism_gpu::{AmberSimdBatch, OptimizationConfig};
-    use cudarc::driver::CudaContext;
     use prism_nhs::fused_engine::GpuSpikeEvent;
 
     let batch_start = Instant::now();
 
-    // Find max atoms for batch sizing
+    // Find max atoms for batch sizing — right-sized to this tier
     let max_atoms = structures.iter().map(|s| s.atoms).max().unwrap_or(0);
     let n_structures = structures.len();
     let total_entries = n_structures * replicas;
@@ -814,8 +854,6 @@ fn run_batch_gpu_concurrent(
     log::info!("    Creating AmberSimdBatch: {} structures × {} replicas = {} total entries, max {} atoms",
         n_structures, replicas, total_entries, max_atoms);
 
-    // Create CUDA context and batch
-    let context = CudaContext::new(0)?;
     // Use MAXIMUM config: Verlet + Tensor Cores + FP16 + Async pipeline
     // RTX 5080 Blackwell has 5th gen Tensor Cores - use them
     let opt_config = OptimizationConfig::maximum();
@@ -879,11 +917,11 @@ fn run_batch_gpu_concurrent(
         total_entries, n_structures, replicas);
 
     // Determine steps
-    let steps_per_structure = if args.fast { 50_000 } else { args.steps as usize };
+    let steps_per_structure = if args.fast { 35_000 } else { args.steps as usize };
 
     // Configure protocol
     let protocol = if args.fast {
-        CryoUvProtocol::fast_50k()
+        CryoUvProtocol::fast_35k()
     } else {
         CryoUvProtocol {
             start_temp: args.cryo_temp,
@@ -1041,13 +1079,13 @@ fn run_batch_gpu_concurrent(
         let mut per_replica_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
 
         for (replica_idx, replica_spikes) in per_replica_spikes.iter().enumerate() {
-            // Apply intensity filtering per replica (top 20%)
+            // Apply intensity filtering per replica (top 2%)
             let filtered_spikes = if replica_spikes.len() > 1000 {
                 let mut intensities: Vec<f32> = replica_spikes.iter()
                     .map(|s| s.intensity)
                     .collect();
                 intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let threshold_idx = (intensities.len() as f32 * 0.80) as usize;
+                let threshold_idx = (intensities.len() as f32 * 0.98) as usize;
                 let intensity_threshold = intensities.get(threshold_idx).copied().unwrap_or(0.0);
 
                 replica_spikes.iter()
@@ -1085,7 +1123,7 @@ fn run_batch_gpu_concurrent(
                             };
 
                             let all_sites = build_sites_from_clustering(&filtered_spikes, &fake_result);
-                            let min_spikes = 50;
+                            let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
                             all_sites.into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
                                 .collect()
@@ -1096,7 +1134,7 @@ fn run_batch_gpu_concurrent(
                     match engine.cluster_spikes(&positions) {
                         Ok(result) => {
                             let all_sites = build_sites_from_clustering(&filtered_spikes, &result);
-                            let min_spikes = 50;
+                            let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
                             all_sites.into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
                                 .collect()
@@ -1542,8 +1580,8 @@ fn extract_aromatic_positions(topology: &PrismPrepTopology) -> Vec<(u32, u8, [f3
         cy /= n;
         cz /= n;
 
-        // Determine aromatic type from residue name
-        let aromatic_type = if let Some(name) = topology.residue_names.get(res_idx) {
+        // Determine aromatic type from residue name (use first atom's name, not res_idx as atom index)
+        let aromatic_type = if let Some(name) = topology.residue_names.get(atoms[0]) {
             match name.trim().to_uppercase().as_str() {
                 "TRP" => 0u8,
                 "TYR" => 1u8,

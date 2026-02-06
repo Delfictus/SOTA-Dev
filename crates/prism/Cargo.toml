@@ -15,7 +15,6 @@ path = "src/main.rs"
 prism-core = { workspace = true }
 prism-pipeline = { workspace = true, features = ["cuda"] }
 prism-fluxnet = { workspace = true }
-prism-phases = { workspace = true, features = ["cuda"] }
 prism-gpu = { workspace = true, features = ["cuda"] }
 prism-gnn = { workspace = true }
 prism-lbs = { workspace = true }

@@ -3698,7 +3698,6 @@ dependencies = [
  "prism-gpu",
  "prism-lbs",
  "prism-mec",
- "prism-phases",
  "prism-pipeline",
  "prometheus",
  "ratatui 0.28.1",
@@ -3899,7 +3898,6 @@ dependencies = [
  "prism-core",
  "prism-gnn",
  "prism-gpu",
- "prism-phases",
  "prism-whcr",
  "proptest",
  "pyo3",
@@ -4058,26 +4056,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prism-phases"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "cudarc",
- "env_logger 0.10.2",
- "log",
- "parking_lot",
- "prism-core",
- "prism-fluxnet",
- "prism-geometry",
- "prism-gpu",
- "prism-whcr",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "prism-physics"
 version = "0.3.0"
 dependencies = [
@@ -4123,7 +4101,6 @@ dependencies = [
  "prism-lbs",
  "prism-mec",
  "prism-ontology",
- "prism-phases",
  "prism-physics",
  "prism-whcr",
  "prometheus",

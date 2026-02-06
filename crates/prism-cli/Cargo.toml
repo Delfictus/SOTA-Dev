@@ -14,7 +14,6 @@ path = "src/main.rs"
 prism-core = { workspace = true }
 prism-pipeline = { workspace = true }
 prism-fluxnet = { workspace = true }
-prism-phases = { workspace = true }
 prism-gnn = { workspace = true }
 prism-mec = { workspace = true }
 
@@ -46,4 +45,4 @@ petgraph = { workspace = true }
 
 [features]
 default = ["cuda"]
-cuda = ["prism-pipeline/cuda", "prism-phases/cuda"]
+cuda = ["prism-pipeline/cuda"]

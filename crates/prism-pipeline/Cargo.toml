@@ -10,7 +10,6 @@ license.workspace = true
 prism-core = { workspace = true }
 prism-fluxnet = { workspace = true }
 prism-gpu = { workspace = true, optional = true }
-prism-phases = { workspace = true }
 prism-whcr = { workspace = true }
 prism-ontology = { workspace = true }
 prism-mec = { workspace = true }
@@ -43,6 +42,6 @@ chrono = { workspace = true }
 [features]
 default = []
 gpu = ["prism-gpu"]
-cuda = ["gpu", "prism-phases/cuda", "prism-gpu/cuda", "prism-mec/cuda", "prism-whcr/cuda"]
+cuda = ["gpu", "prism-gpu/cuda", "prism-mec/cuda", "prism-whcr/cuda"]
 telemetry_sqlite = ["sqlx"]
 lbs = ["prism-lbs"]

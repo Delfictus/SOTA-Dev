@@ -1239,9 +1239,21 @@ impl PersistentNhsEngine {
         let optixir_path = crate::rt_clustering::find_optixir_path()
             .context("Could not find rt_clustering.optixir")?;
 
-        // Create RT clustering config (tuned for binding pocket detection)
+        // Adaptive epsilon: scale inversely with cube root of atom count.
+        // Larger proteins need tighter clustering to resolve distinct pockets.
+        //   ≤500 atoms  → 3.0 Å  (small, e.g. crambin)
+        //   ~2000 atoms → 2.0 Å  (medium)
+        //   ~4000 atoms → 1.5 Å  (large, e.g. TEM-1)
+        //   ~8000 atoms → 1.2 Å  (very large)
+        // Formula: epsilon = 3.0 * (500 / n_atoms)^(1/3), clamped to [1.2, 3.0]
+        let n_atoms = self.engine.as_ref().map(|e| e.n_atoms()).unwrap_or(500);
+        let adaptive_epsilon = (3.0_f32 * (500.0_f32 / n_atoms as f32).cbrt())
+            .clamp(1.2, 3.0);
+        log::info!("  Adaptive epsilon: {:.2}Å (n_atoms={})", adaptive_epsilon, n_atoms);
+
+        // Create RT clustering config with adaptive epsilon
         let rt_config = crate::rt_clustering::RtClusteringConfig {
-            epsilon: 7.0,          // 7 Angstrom neighborhood (tighter clusters for pockets)
+            epsilon: adaptive_epsilon,
             min_points: 4,         // Minimum 4 neighbors for core point
             min_cluster_size: 20,  // Minimum 20 points per cluster (catch smaller pockets)
             rays_per_event: 32,    // 32 rays for neighbor finding
@@ -1949,6 +1961,10 @@ impl ClusteredBindingSite {
         // Track per-residue: (chain, resname, min_distance, atom_count)
         let mut residue_info: HashMap<(String, i32), (String, f32, usize)> = HashMap::new();
 
+        // Accumulate pocket atom positions for centroid refinement
+        let mut pocket_sum = [0.0f64; 3];
+        let mut pocket_count = 0u32;
+
         for i in 0..n_atoms {
             let x = positions[i * 3];
             let y = positions[i * 3 + 1];
@@ -1960,6 +1976,12 @@ impl ClusteredBindingSite {
             let dist_sq = dx * dx + dy * dy + dz * dz;
 
             if dist_sq <= cutoff_sq {
+                // Accumulate for pocket centroid
+                pocket_sum[0] += x as f64;
+                pocket_sum[1] += y as f64;
+                pocket_sum[2] += z as f64;
+                pocket_count += 1;
+
                 let res_id = residue_ids[i];
                 let chain = chain_ids[i].clone();
                 let resname = if res_id < residue_names.len() {
@@ -1982,7 +2004,64 @@ impl ClusteredBindingSite {
             }
         }
 
-        // Convert to LiningResidue list, sorted by distance
+        // Refine centroid: shift from aromatic probe position toward pocket interior.
+        // The spike centroid sits at the aromatic ring (pocket wall). The actual pocket
+        // center is shifted toward the protein interior. We detect the interior direction
+        // using a large (15Å) hemisphere count: more atoms on the protein-interior side
+        // than the solvent-exposed side gives the correction vector and magnitude.
+        if pocket_count >= 10 {
+            // Protein center of mass
+            let mut com = [0.0f64; 3];
+            for j in 0..n_atoms {
+                com[0] += positions[j * 3] as f64;
+                com[1] += positions[j * 3 + 1] as f64;
+                com[2] += positions[j * 3 + 2] as f64;
+            }
+            let na = n_atoms as f64;
+            com[0] /= na;
+            com[1] /= na;
+            com[2] /= na;
+
+            // Direction from spike centroid toward protein COM
+            let dir = [com[0] - cx as f64, com[1] - cy as f64, com[2] - cz as f64];
+            let dir_mag = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+
+            if dir_mag > 0.5 {
+                let ux = dir[0] / dir_mag;
+                let uy = dir[1] / dir_mag;
+                let uz = dir[2] / dir_mag;
+
+                // Use 15Å sphere for asymmetry detection (much larger than lining cutoff)
+                // to capture the surface-vs-interior signal that's invisible at 8Å.
+                let asym_radius_sq = 15.0f64 * 15.0;
+                let mut toward = 0u32;
+                let mut away = 0u32;
+                for j in 0..n_atoms {
+                    let ax = positions[j * 3] as f64 - cx as f64;
+                    let ay = positions[j * 3 + 1] as f64 - cy as f64;
+                    let az = positions[j * 3 + 2] as f64 - cz as f64;
+                    let d2 = ax * ax + ay * ay + az * az;
+                    if d2 <= asym_radius_sq {
+                        let dot = ax * ux + ay * uy + az * uz;
+                        if dot > 0.0 { toward += 1; } else { away += 1; }
+                    }
+                }
+
+                let total = (toward + away) as f64;
+                if total > 0.0 {
+                    let asymmetry = (toward as f64 - away as f64) / total;
+                    // Shift proportional to asymmetry; max 4Å.
+                    let shift = (asymmetry * 10.0).clamp(0.0, 4.0);
+                    if shift > 0.1 {
+                        self.centroid[0] += (ux * shift) as f32;
+                        self.centroid[1] += (uy * shift) as f32;
+                        self.centroid[2] += (uz * shift) as f32;
+                    }
+                }
+            }
+        }
+
+        // Convert to LiningResidue list, sorted by distance from refined centroid
         self.lining_residues = residue_info
             .into_iter()
             .map(|((chain, resid), (resname, min_distance, n_atoms))| LiningResidue {

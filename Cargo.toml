@@ -14,7 +14,7 @@ members = [
     "crates/prism-io",      # Revolutionary I/O with holographic format & async streaming
     "crates/prism-geometry",
     "crates/prism-fluxnet",
-    "crates/prism-phases",
+    # "crates/prism-phases",  # REMOVED: legacy crate with broken GPU imports, pollutes build
     "crates/prism-whcr",
     "crates/prism-pipeline",
 
@@ -135,7 +135,7 @@ prism-gpu = { path = "crates/prism-gpu" }
 prism-io = { path = "crates/prism-io" }
 prism-geometry = { path = "crates/prism-geometry" }
 prism-fluxnet = { path = "crates/prism-fluxnet" }
-prism-phases = { path = "crates/prism-phases" }
+# prism-phases REMOVED — dead legacy crate
 prism-whcr = { path = "crates/prism-whcr" }
 prism-pipeline = { path = "crates/prism-pipeline" }
 prism-ontology = { path = "crates/prism-ontology" }

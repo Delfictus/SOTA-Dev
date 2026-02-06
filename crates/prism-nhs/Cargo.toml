@@ -118,3 +118,8 @@ required-features = ["gpu"]
 name = "stress-rt-clustering"
 path = "src/bin/stress_rt_clustering.rs"
 required-features = ["gpu"]
+
+[[bin]]
+name = "nhs_rt_full"
+path = "src/bin/nhs_rt_full.rs"
+required-features = ["gpu"]

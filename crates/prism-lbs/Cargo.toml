@@ -11,7 +11,6 @@ keywords = ["protein", "binding-sites", "drug-discovery", "gpu", "quantum"]
 [dependencies]
 # Core dependencies
 prism-core = { workspace = true }
-prism-phases = { workspace = true }
 prism-gpu = { workspace = true, features = ["cuda"] }
 prism-gnn = { workspace = true }
 prism-whcr = { workspace = true }

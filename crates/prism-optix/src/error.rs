@@ -57,6 +57,10 @@ pub enum OptixError {
     #[error("GPU memory allocation failed: {0}")]
     AllocationFailed(String),
 
+    /// Module creation/compilation error
+    #[error("Module error: {0}")]
+    ModuleError(String),
+
     /// Unknown OptiX error
     #[error("Unknown OptiX error (code {code}): {message}")]
     Unknown { code: u32, message: String },
