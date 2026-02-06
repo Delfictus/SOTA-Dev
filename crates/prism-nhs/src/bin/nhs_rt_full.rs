@@ -418,6 +418,36 @@ fn run_full_pipeline_internal(
     let aromatic_positions = extract_aromatic_positions(&topology);
     log::info!("  Aromatics: {} (TRP/TYR/PHE)", aromatic_positions.len());
 
+    // Minimum atom guard: GPU buffers require >= 500 atoms
+    if topology.n_atoms < 500 {
+        log::warn!("Protein too small for GPU analysis (minimum 500 atoms, got {})", topology.n_atoms);
+        let output_base = output_dir.join(&structure_name);
+        let json_path = output_base.with_extension("binding_sites.json");
+        let json_output = serde_json::json!({
+            "structure": structure_name,
+            "total_steps": 0,
+            "simulation_time_sec": 0.0,
+            "spike_count": 0,
+            "binding_sites": 0,
+            "druggable_sites": 0,
+            "skipped": true,
+            "skip_reason": format!("Protein too small for GPU analysis ({} atoms, minimum 500)", topology.n_atoms),
+        });
+        std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
+        log::info!("Empty result written to {}", json_path.display());
+        let total_time = start_time.elapsed();
+        log::info!("\n╔═══════════════════════════════════════════════════════════════╗");
+        log::info!("║  PIPELINE COMPLETE                                            ║");
+        log::info!("╠═══════════════════════════════════════════════════════════════╣");
+        log::info!("║  Structure: {:<48} ║", structure_name);
+        log::info!("║  Total time: {:<46.1}s ║", total_time.as_secs_f64());
+        log::info!("║  SKIPPED: Too few atoms ({:<4} < 500)                         ║", topology.n_atoms);
+        log::info!("║  Binding sites: {:<43} ║", 0);
+        log::info!("║  Druggable sites: {:<41} ║", 0);
+        log::info!("╚═══════════════════════════════════════════════════════════════╝");
+        return Ok((0, 0));
+    }
+
     // Initialize engine
     log::info!("\n[2/6] Initializing GPU engine...");
     let config = PersistentBatchConfig {
