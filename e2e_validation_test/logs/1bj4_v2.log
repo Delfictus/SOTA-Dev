@@ -1,0 +1,74 @@
+[2026-02-05T09:00:56Z INFO  nhs_rt_full] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-05T09:00:56Z INFO  nhs_rt_full] ║     PRISM4D NHS RT-FULL PIPELINE                              ║
+[2026-02-05T09:00:56Z INFO  nhs_rt_full] ║     RT-Core Accelerated Binding Site Detection                ║
+[2026-02-05T09:00:56Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-05T09:00:56Z INFO  nhs_rt_full] 
+    [1/6] Loading topology: /home/diddy/Desktop/Prism4D-bio/e2e_validation_test/prep/1bj4.topology.json
+[2026-02-05T09:00:56Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: /home/diddy/Desktop/Prism4D-bio/e2e_validation_test/prep/1bj4.topology.json
+[2026-02-05T09:00:56Z INFO  prism_nhs::input] Loaded topology: 7261 atoms, 470 residues, 1 chains
+[2026-02-05T09:00:56Z INFO  nhs_rt_full]   Atoms: 7261
+[2026-02-05T09:00:56Z INFO  nhs_rt_full]   Residues: 470
+[2026-02-05T09:00:56Z INFO  nhs_rt_full]   Aromatics: 5 (TRP/TYR/PHE)
+[2026-02-05T09:00:56Z INFO  nhs_rt_full] 
+    [2/6] Initializing GPU engine...
+[2026-02-05T09:00:56Z INFO  prism_nhs::persistent_engine] 🚀 Initializing Persistent NHS Engine (max_atoms: 15000)
+[2026-02-05T09:00:57Z INFO  prism_nhs::persistent_engine]   CUDA context: 147ms
+[2026-02-05T09:00:57Z INFO  prism_nhs::persistent_engine]   PTX module: 2ms
+[2026-02-05T09:00:57Z INFO  prism_nhs::persistent_engine] ✅ Persistent engine ready (total init: 149ms)
+[2026-02-05T09:00:57Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1bj4_sanitized (7261 atoms)
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 7261 atoms, grid 64³
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Cell grid: 8x11x10 = 880 cells (cell size 10 Å)
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=7261)
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 37 aromatics with ring atom indices
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Uploaded topology: 7334 bonds, 13261 angles, 24852 dihedrals
+[2026-02-05T09:00:57Z INFO  prism_nhs::fused_engine] Excited state: 37 aromatics mapped
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (58009 with atoms, avg 3.0 atoms/voxel, max 16)
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 37 aromatics (cutoff 5.0A)
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Computed ring normals for 37 aromatics
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 37 aromatics
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   Bonds: 7334, Angles: 13261, Dihedrals: 24852
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 2322
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   UV Targets: 37
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-05T09:00:58Z INFO  prism_nhs::persistent_engine]   Topology loaded: 1113ms
+[2026-02-05T09:00:58Z INFO  nhs_rt_full]   RT-core clustering: ✓ Available
+[2026-02-05T09:00:58Z INFO  nhs_rt_full]   Protocol: Fast 50K (60% faster, full aromatic coverage)
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=20000, ramp=8000, warm_hold=2000
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   UV bursts: 30kcal/mol every 400 steps (50 step duration)
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-05T09:00:58Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 7261 atoms
+[2026-02-05T09:00:58Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-05T09:00:58Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-05T09:00:58Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-05T09:00:58Z INFO  nhs_rt_full]   UltimateEngine: ✓ Enabled (2-4x faster MD)
+[2026-02-05T09:00:58Z INFO  nhs_rt_full] 
+    [3/6] Running MD simulation (50000 steps x 3 replicas)...
+[2026-02-05T09:00:58Z INFO  nhs_rt_full]   Mode: PARALLEL (AmberSimdBatch, 3 replicas simultaneous)
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica] Creating ParallelReplicaEngine: 3 replicas × 7261 atoms
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] AmberSimdBatch initialized: max 3 structures × 7261 atoms
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   Aromatic atoms for UV bursts: 767
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica] Finalizing parallel replica batch (uploading to GPU)...
+[2026-02-05T09:00:58Z INFO  prism_gpu::h_constraints] 🔗 HConstraints: 6966 clusters (3975 single, 2064 CH2/NH2, 927 CH3/NH3)
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] H-constraints: 6966 clusters (10884 total constraints, DOF adjusted)
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] SOTA optimizations enabled:
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - Verlet list: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - Tensor Cores: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 3 structures, 21783 atoms
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   ✓ Batch finalized: 3 replicas ready
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica] Running parallel replicas: 50000 steps × 3 replicas
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   Protocol phases: cold=20000, ramp=8000, warm=22000
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   [1/3] Cold hold at 50K (20000 steps)...
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 21783 atoms, 500 steps
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)

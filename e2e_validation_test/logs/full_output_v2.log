@@ -1,0 +1,59 @@
+╔══════════════════════════════════════════════════════════════════╗
+║     PRISM4D E2E Validation Pipeline v2 - 20260205_004843     ║
+║     10 structures × 3 replicas × 50K steps (--fast)              ║
+╚══════════════════════════════════════════════════════════════════╝
+
+=== STAGE 2: NHS-RT-FULL Pipeline (--fast = 50K steps) ===
+Config: --fast --rt-clustering --parallel --replicas 3 --adaptive-epsilon --multi-scale
+Started: Thu Feb  5 12:48:43 AM PST 2026
+
+  [RUN] 1a4q (3 replicas, 50K steps, RT+BVH+Cryo-UV)...
+[2026-02-05T08:54:43Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+[2026-02-05T08:56:14Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-05T08:56:14Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 35778 atoms, 500 steps
+[2026-02-05T08:56:14Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+[2026-02-05T08:57:47Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-05T08:57:47Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 35778 atoms, 500 steps
+[2026-02-05T08:57:47Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+[2026-02-05T08:59:21Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-05T08:59:21Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 35778 atoms, 500 steps
+[2026-02-05T08:59:21Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+    → Completed in 651s
+
+  [RUN] 1ade (3 replicas, 50K steps, RT+BVH+Cryo-UV)...
+[2026-02-05T08:59:36Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: NO
+[2026-02-05T08:59:36Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: NO
+[2026-02-05T08:59:36Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: NO
+[2026-02-05T08:59:36Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 3 structures, 39882 atoms
+[2026-02-05T08:59:36Z INFO  prism_nhs::parallel_replica]   ✓ Batch finalized: 3 replicas ready
+[2026-02-05T08:59:36Z INFO  prism_nhs::parallel_replica] Running parallel replicas: 50000 steps × 3 replicas
+[2026-02-05T08:59:36Z INFO  prism_nhs::parallel_replica]   Protocol phases: cold=20000, ramp=8000, warm=22000
+[2026-02-05T08:59:36Z INFO  prism_nhs::parallel_replica]   [1/3] Cold hold at 50K (20000 steps)...
+[2026-02-05T08:59:36Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 39882 atoms, 500 steps
+[2026-02-05T08:59:36Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+    → Completed in 82s
+
+  [RUN] 1bj4 (3 replicas, 50K steps, RT+BVH+Cryo-UV)...
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: NO
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 3 structures, 21783 atoms
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   ✓ Batch finalized: 3 replicas ready
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica] Running parallel replicas: 50000 steps × 3 replicas
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   Protocol phases: cold=20000, ramp=8000, warm=22000
+[2026-02-05T09:00:58Z INFO  prism_nhs::parallel_replica]   [1/3] Cold hold at 50K (20000 steps)...
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 21783 atoms, 500 steps
+[2026-02-05T09:00:58Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+    → Completed in 15s
+
+  [RUN] 1btl (3 replicas, 50K steps, RT+BVH+Cryo-UV)...
+[2026-02-05T09:01:12Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: NO
+[2026-02-05T09:01:12Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: NO
+[2026-02-05T09:01:12Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: NO
+[2026-02-05T09:01:12Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 3 structures, 12219 atoms
+[2026-02-05T09:01:12Z INFO  prism_nhs::parallel_replica]   ✓ Batch finalized: 3 replicas ready
+[2026-02-05T09:01:12Z INFO  prism_nhs::parallel_replica] Running parallel replicas: 50000 steps × 3 replicas
+[2026-02-05T09:01:12Z INFO  prism_nhs::parallel_replica]   Protocol phases: cold=20000, ramp=8000, warm=22000
+[2026-02-05T09:01:12Z INFO  prism_nhs::parallel_replica]   [1/3] Cold hold at 50K (20000 steps)...
+[2026-02-05T09:01:12Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 12219 atoms, 500 steps
+[2026-02-05T09:01:12Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)

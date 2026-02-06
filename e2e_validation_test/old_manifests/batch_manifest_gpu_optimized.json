@@ -1,0 +1,433 @@
+{
+  "generated_at": "2026-02-05T13:29:17.977043476+00:00",
+  "pipeline_version": "prism4d-0.1.0",
+  "gpu_memory_mb": 16000,
+  "replicas": 3,
+  "total_structures": 10,
+  "total_batches": 3,
+  "batches": [
+    {
+      "batch_id": 0,
+      "structures": [
+        {
+          "name": "1btl_sanitized",
+          "topology_path": "e2e_validation_test/prep/1btl.topology.json",
+          "atoms": 4073,
+          "residues": 263,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 1,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Simple",
+            "hydrophobic_surface_ratio": 0.37288135,
+            "aromatic_count": 19,
+            "ring_residue_count": 31,
+            "aromatic_density": 0.07224335,
+            "predicted_spike_density": 372.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 2,
+            "estimated_workload": 4.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "1a4q_sanitized",
+          "topology_path": "e2e_validation_test/prep/1a4q.topology.json",
+          "atoms": 11926,
+          "residues": 780,
+          "chains": [
+            "A",
+            "B"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 5,
+          "complexity_factors": {
+            "chain_count": 2,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Complex",
+            "hydrophobic_surface_ratio": 0.35856575,
+            "aromatic_count": 122,
+            "ring_residue_count": 132,
+            "aromatic_density": 0.15641026,
+            "predicted_spike_density": 1584.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 22,
+            "estimated_workload": 10.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "combined_chains",
+          "topology_path": "e2e_validation_test/prep/1ere.topology.json",
+          "atoms": 22878,
+          "residues": 1410,
+          "chains": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 8,
+          "complexity_factors": {
+            "chain_count": 6,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Complex",
+            "hydrophobic_surface_ratio": 0.6625811,
+            "aromatic_count": 0,
+            "ring_residue_count": 32,
+            "aromatic_density": 0.0,
+            "predicted_spike_density": 384.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 22,
+            "estimated_workload": 10.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "1g1f_sanitized",
+          "topology_path": "e2e_validation_test/prep/1g1f.topology.json",
+          "atoms": 4878,
+          "residues": 301,
+          "chains": [
+            "A",
+            "B"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 2,
+          "complexity_factors": {
+            "chain_count": 2,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Complex",
+            "hydrophobic_surface_ratio": 0.34057972,
+            "aromatic_count": 62,
+            "ring_residue_count": 50,
+            "aromatic_density": 0.20598006,
+            "predicted_spike_density": 600.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 22,
+            "estimated_workload": 10.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        }
+      ],
+      "concurrency": 4,
+      "memory_tier": "Small",
+      "estimated_total_gpu_mb": 240,
+      "batch_group_id": 0,
+      "replicas_per_structure": 15
+    },
+    {
+      "batch_id": 1,
+      "structures": [
+        {
+          "name": "1igt_sanitized",
+          "topology_path": "e2e_validation_test/prep/1igt.topology.json",
+          "atoms": 20148,
+          "residues": 1316,
+          "chains": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 9,
+          "complexity_factors": {
+            "chain_count": 4,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Complex",
+            "hydrophobic_surface_ratio": 0.35388127,
+            "aromatic_count": 206,
+            "ring_residue_count": 242,
+            "aromatic_density": 0.15653495,
+            "predicted_spike_density": 2904.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 22,
+            "estimated_workload": 10.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "1crn_sanitized",
+          "topology_path": "e2e_validation_test/prep/1crn.topology.json",
+          "atoms": 642,
+          "residues": 46,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 0,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "Medium",
+            "dynamics_complexity": "Simple",
+            "hydrophobic_surface_ratio": 0.53333336,
+            "aromatic_count": 0,
+            "ring_residue_count": 8,
+            "aromatic_density": 0.0,
+            "predicted_spike_density": 96.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 1,
+            "estimated_workload": 2.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "1ade_sanitized",
+          "topology_path": "e2e_validation_test/prep/1ade.topology.json",
+          "atoms": 13294,
+          "residues": 862,
+          "chains": [
+            "A",
+            "B"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 5,
+          "complexity_factors": {
+            "chain_count": 2,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.36570743,
+            "aromatic_count": 117,
+            "ring_residue_count": 110,
+            "aromatic_density": 0.13573086,
+            "predicted_spike_density": 1320.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 12,
+            "estimated_workload": 6.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "1bj4_sanitized",
+          "topology_path": "e2e_validation_test/prep/1bj4.topology.json",
+          "atoms": 7261,
+          "residues": 470,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 3,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.3355856,
+            "aromatic_count": 62,
+            "ring_residue_count": 72,
+            "aromatic_density": 0.1319149,
+            "predicted_spike_density": 864.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 12,
+            "estimated_workload": 6.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        }
+      ],
+      "concurrency": 4,
+      "memory_tier": "Small",
+      "estimated_total_gpu_mb": 255,
+      "batch_group_id": 0,
+      "replicas_per_structure": 15
+    },
+    {
+      "batch_id": 2,
+      "structures": [
+        {
+          "name": "1hhp_sanitized",
+          "topology_path": "e2e_validation_test/prep/1hhp.topology.json",
+          "atoms": 1564,
+          "residues": 99,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 0,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.4117647,
+            "aromatic_count": 14,
+            "ring_residue_count": 12,
+            "aromatic_density": 0.14141414,
+            "predicted_spike_density": 144.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 12,
+            "estimated_workload": 6.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        },
+        {
+          "name": "1qmf_sanitized",
+          "topology_path": "e2e_validation_test/prep/1qmf.topology.json",
+          "atoms": 8460,
+          "residues": 559,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 3,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.2951128,
+            "aromatic_count": 82,
+            "ring_residue_count": 73,
+            "aromatic_density": 0.14669052,
+            "predicted_spike_density": 876.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 12,
+            "estimated_workload": 6.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        }
+      ],
+      "concurrency": 2,
+      "memory_tier": "Small",
+      "estimated_total_gpu_mb": 45,
+      "batch_group_id": 0,
+      "replicas_per_structure": 15
+    }
+  ],
+  "execution_order": [
+    "1btl_sanitized",
+    "1a4q_sanitized",
+    "combined_chains",
+    "1g1f_sanitized",
+    "1igt_sanitized",
+    "1crn_sanitized",
+    "1ade_sanitized",
+    "1bj4_sanitized",
+    "1hhp_sanitized",
+    "1qmf_sanitized"
+  ],
+  "statistics": {
+    "by_memory_tier": {
+      "small": 10,
+      "medium": 0,
+      "large": 0
+    },
+    "by_complexity": {
+      "small": 2,
+      "medium": 4,
+      "large": 4
+    },
+    "by_spike_density": {
+      "small": 0,
+      "medium": 1,
+      "large": 9
+    },
+    "total_estimated_gpu_mb": 108,
+    "max_concurrency": 4,
+    "structures_with_issues": 0
+  }
+}
