@@ -1075,7 +1075,13 @@ impl UvProbeConfig {
         let p_absorb = sigma * fluence;
 
         // Heat yield
-        let eta = DEFAULT_HEAT_YIELD;  // 1.0
+        let eta = match chromophore_type {
+            0 => crate::config::HEAT_YIELD_TRP,
+            1 => crate::config::HEAT_YIELD_TYR,
+            2 => crate::config::HEAT_YIELD_PHE,
+            3 => crate::config::HEAT_YIELD_DISULFIDE,
+            _ => crate::config::HEAT_YIELD_TRP,
+        };
 
         // Energy deposited
         let e_dep = e_photon * p_absorb * eta;

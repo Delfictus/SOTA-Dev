@@ -1,0 +1,24 @@
+   --> crates/prism-optix/src/error.rs:211:13
+   --> crates/prism-optix/src/error.rs:211:13
+  --> crates/prism-optix/src/error.rs:34:23
+  --> crates/prism-optix/src/error.rs:34:38
+  --> crates/prism-optix/src/error.rs:66:15
+  --> crates/prism-optix/src/error.rs:66:26
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `prism-report` (test "determinism_test") due to 2 previous errors
+error: could not compile `prism-report` (test "integration_test") due to 3 previous errors; 1 warning emitted
+27 | use log::{info, warn, error, debug};
+error[E0432]: unresolved imports `prism_validation::data_acquisition::DataAcquisition`, `prism_validation::data_acquisition::DataSource`
+error[E0432]: unresolved imports `prism_validation::cryptic_sites::CrypticSiteConfig`, `prism_validation::cryptic_sites::CrypticSiteDetector`, `prism_validation::cryptic_sites::CrypticConfidence`, `prism_validation::cryptic_sites::parse_pdb_simple`
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `prism-validation` (bin "detect-cryptic-sites" test) due to 1 previous error
+error: could not compile `prism-validation` (bin "acquire-data" test) due to 1 previous error
+error[E0063]: missing field `temporal` in initializer of `SiteMetrics`
+error[E0063]: missing field `temporal` in initializer of `SiteMetrics`
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `prism-report` (lib test) due to 2 previous errors; 13 warnings emitted

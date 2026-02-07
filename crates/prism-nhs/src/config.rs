@@ -129,6 +129,17 @@ pub const DEFAULT_HEAT_YIELD: f32 = 1.0;
 /// Alias for backward compatibility - energy_deposition_fraction IS heat_yield (η)
 pub const DEFAULT_ENERGY_DEPOSITION_FRACTION: f32 = DEFAULT_HEAT_YIELD;
 
+/// Per-chromophore heat yields η = (1 - Φ_fluorescence - Φ_ISC)
+/// Literature: Lakowicz, Principles of Fluorescence Spectroscopy, 3rd ed.
+/// TRP: Φ_f = 0.13 (Szabo & Rayner 1980), Φ_ISC = 0.13 (Bent & Hayon 1975)
+/// TYR: Φ_f = 0.14 (Lakowicz), Φ_ISC = 0.03 (Bent & Hayon 1975)
+/// PHE: Φ_f = 0.024 (Lakowicz), Φ_ISC = 0.006 (estimated)
+/// S-S: No fluorescence from σ→σ* transition
+pub const HEAT_YIELD_TRP: f32 = 0.74;        // 1 - 0.13 - 0.13
+pub const HEAT_YIELD_TYR: f32 = 0.83;        // 1 - 0.14 - 0.03
+pub const HEAT_YIELD_PHE: f32 = 0.97;        // 1 - 0.024 - 0.006
+pub const HEAT_YIELD_DISULFIDE: f32 = 1.00;  // No fluorescence pathway
+
 /// Effective degrees of freedom for local heating (N_eff)
 /// These are EFFECTIVE DOF PROXIES calibrated for local temperature response,
 /// NOT literal atom counts. Values chosen to match experimental heating profiles.
@@ -185,9 +196,9 @@ pub fn extinction_to_cross_section(epsilon: f32) -> f32 {
 /// - F = 0.024 photons/Å²
 /// - p = 0.00514 (< 0.01 single-photon threshold)
 /// - E_photon = 4.428 eV
-/// - E_dep = 0.0228 eV
+/// - E_dep = 0.01687 eV (η_TRP=0.74)
 /// - N_eff = 9
-/// - ΔT ≈ 19.6 K
+/// - ΔT ≈ 14.5 K (η_TRP=0.74)
 pub fn log_uv_calibration_diagnostic(
     chromophore: &str,
     wavelength_nm: f32,
@@ -229,7 +240,7 @@ pub fn validate_trp_calibration() -> (f32, f32) {
     let sigma = extinction_to_cross_section(epsilon);  // 0.21409
     let p_absorb = sigma * CALIBRATED_PHOTON_FLUENCE;  // ~0.00514
     let e_photon = wavelength_to_ev(280.0);  // 4.428 eV
-    let e_dep = e_photon * p_absorb * DEFAULT_HEAT_YIELD;
+    let e_dep = e_photon * p_absorb * HEAT_YIELD_TRP;
     let delta_t = e_dep / (1.5 * KB_EV_K * NEFF_TRP);
 
     log_uv_calibration_diagnostic(
@@ -237,14 +248,14 @@ pub fn validate_trp_calibration() -> (f32, f32) {
         280.0,
         epsilon,
         CALIBRATED_PHOTON_FLUENCE,
-        DEFAULT_HEAT_YIELD,
+        HEAT_YIELD_TRP,  // Physics-corrected: η_TRP = 0.74
         NEFF_TRP,
     );
 
     // Verify expected values
     assert!((sigma - 0.21409).abs() < 0.001, "σ_TRP mismatch: got {}", sigma);
     assert!((p_absorb - 0.00514).abs() < 0.0001, "p_absorb mismatch: got {}", p_absorb);
-    assert!((delta_t - 19.6).abs() < 1.0, "ΔT mismatch: expected ~19.6K, got {:.1}K", delta_t);
+    assert!((delta_t - 14.5).abs() < 1.0, "ΔT mismatch: expected ~14.5K (η=0.74), got {:.1}K", delta_t);
 
     (delta_t, p_absorb)
 }
@@ -294,7 +305,7 @@ pub fn compute_heating_at_wavelength(chromophore_type: i32, wavelength_nm: f32) 
     let e_photon = wavelength_to_ev(wavelength_nm);
 
     // Energy deposited
-    let e_dep = e_photon * p_absorb * DEFAULT_HEAT_YIELD;
+    let e_dep = e_photon * p_absorb * HEAT_YIELD_TRP;
 
     // N_eff for this chromophore
     let n_eff = match chromophore_type {
@@ -1167,17 +1178,17 @@ mod tests {
             "E_photon wrong: got {}, expected ~4.428", e_photon);
 
         // Step 6: Heat yield
-        let eta = DEFAULT_HEAT_YIELD;
-        assert!((eta - 1.0).abs() < 0.01, "η wrong");
+        let eta = HEAT_YIELD_TRP;  // Physics-corrected
+        assert!((eta - 0.74).abs() < 0.01, "η_TRP wrong: expected 0.74");
 
         // Step 7: Energy deposited
         // E_dep = E_γ × p × η
         let e_dep = e_photon * p_absorb * eta;
-        let expected_e_dep = 4.428 * 0.00514 * 1.0;
+        let expected_e_dep = 4.428 * 0.00514 * 0.74;
         assert!((e_dep - expected_e_dep).abs() < 0.001,
             "E_dep calculation wrong: got {}, expected {}", e_dep, expected_e_dep);
-        assert!((e_dep - 0.0228).abs() < 0.001,
-            "E_dep wrong: got {}, expected ~0.0228", e_dep);
+        assert!((e_dep - 0.01687).abs() < 0.001,
+            "E_dep wrong: got {}, expected ~0.01687 (η=0.74)", e_dep);
 
         // Step 8: Effective DOF
         let n_eff = NEFF_TRP;
@@ -1186,11 +1197,11 @@ mod tests {
         // Step 9: Temperature rise
         // ΔT = E_dep / (3/2 × k_B × N_eff)
         let delta_t = e_dep / (1.5 * KB_EV_K * n_eff);
-        let expected_dt = 0.0228 / (1.5 * 8.617e-5 * 9.0);
+        let expected_dt = 0.01687 / (1.5 * 8.617e-5 * 9.0);
         assert!((delta_t - expected_dt).abs() < 0.5,
             "ΔT calculation wrong: got {}, expected {}", delta_t, expected_dt);
-        assert!((delta_t - 19.6).abs() < 1.0,
-            "CALIBRATION FAILED: ΔT = {} K, expected ~19.6 K", delta_t);
+        assert!((delta_t - 14.5).abs() < 1.0,
+            "CALIBRATION FAILED: ΔT = {} K, expected ~14.5 K (η=0.74)", delta_t);
 
         println!("=== Physics Chain Verification PASSED ===");
         println!("ε = {:.0} M⁻¹cm⁻¹", epsilon);
@@ -1364,11 +1375,11 @@ mod tests {
         let delta_t = compute_heating_at_wavelength(0, 280.0);  // 0 = TRP
 
         // Should be approximately 19.6K at peak
-        assert!((delta_t - 19.6).abs() < 1.5,
-            "TRP@280nm ΔT wrong: expected ~19.6K, got {:.2}K", delta_t);
+        assert!((delta_t - 14.5).abs() < 1.5,
+            "TRP@280nm ΔT wrong: expected ~14.5K (η=0.74), got {:.2}K", delta_t);
 
         println!("=== Wavelength Test: TRP@280nm ===");
-        println!("ΔT = {:.2} K (expected ~19.6 K)", delta_t);
+        println!("ΔT = {:.2} K (expected ~14.5 K (η=0.74))", delta_t);
     }
 
     #[test]
@@ -1704,9 +1715,9 @@ mod tests {
         // GPU computes: sigma = compute_extinction_at_wavelength(0, 280.0) * 3.823e-5
         // At peak: epsilon = 5600, sigma = 0.21409, same as CPU peak
 
-        // The test passes if CPU heating at peak matches our expected ~19.6K
-        assert!((cpu_trp_280 - 19.6).abs() < 2.0,
-            "GPU parity: CPU TRP@280nm = {:.2}K, expected ~19.6K", cpu_trp_280);
+        // The test passes if CPU heating at peak matches our expected ~14.5K (η=0.74)
+        assert!((cpu_trp_280 - 14.5).abs() < 2.0,
+            "GPU parity: CPU TRP@280nm = {:.2}K, expected ~14.5K (η=0.74)", cpu_trp_280);
 
         // Verify CPU off-peak decay matches GPU Gaussian model
         // At 258nm (22nm away from 280nm), with σ≈6.4nm:

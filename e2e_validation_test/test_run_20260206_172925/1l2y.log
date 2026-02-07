@@ -1,0 +1,23 @@
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║     PRISM4D NHS RT-FULL PIPELINE                              ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║     RT-Core Accelerated Binding Site Detection                ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] 
+    [1/6] Loading topology: e2e_validation_test/prep/1l2y.topology.json
+[2026-02-07T01:29:25Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1l2y.topology.json
+[2026-02-07T01:29:25Z INFO  prism_nhs::input] Loaded topology: 304 atoms, 20 residues, 1 chains
+[2026-02-07T01:29:25Z INFO  nhs_rt_full]   Atoms: 304
+[2026-02-07T01:29:25Z INFO  nhs_rt_full]   Residues: 20
+[2026-02-07T01:29:25Z INFO  nhs_rt_full]   Aromatics: 2 (TRP/TYR/PHE)
+[2026-02-07T01:29:25Z WARN  nhs_rt_full] Protein too small for GPU analysis (minimum 500 atoms, got 304)
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] Empty result written to e2e_validation_test/test_run_20260206_172925/1l2y/1l2y.binding_sites.json
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] 
+    ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║  PIPELINE COMPLETE                                            ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ╠═══════════════════════════════════════════════════════════════╣
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║  Structure: 1l2y.topology                                    ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║  Total time: 0.0                                           s ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║  SKIPPED: Too few atoms (304  < 500)                         ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║  Binding sites: 0                                           ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ║  Druggable sites: 0                                         ║
+[2026-02-07T01:29:25Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝

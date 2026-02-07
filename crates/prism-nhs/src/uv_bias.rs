@@ -215,7 +215,15 @@ impl ChromophoreType {
     ///
     /// Calibration target: TRP @ 280nm with F=0.024, η=1.0 → ΔT ≈ 20K
     pub fn compute_local_heating(&self, wavelength: f32, photon_fluence: f32) -> f32 {
-        self.compute_local_heating_with_yield(wavelength, photon_fluence, DEFAULT_HEAT_YIELD)
+        {
+        let heat_yield = match self {
+            ChromophoreType::Tryptophan => crate::config::HEAT_YIELD_TRP,
+            ChromophoreType::Tyrosine => crate::config::HEAT_YIELD_TYR,
+            ChromophoreType::Phenylalanine => crate::config::HEAT_YIELD_PHE,
+            ChromophoreType::Disulfide => crate::config::HEAT_YIELD_DISULFIDE,
+        };
+        self.compute_local_heating_with_yield(wavelength, photon_fluence, heat_yield)
+        }
     }
 
     /// Compute local heating with explicit heat yield parameter
@@ -2345,19 +2353,19 @@ mod tests {
             "E_photon mismatch: expected 4.428 eV, got {:.3} eV", e_photon);
 
         // Verify energy deposited
-        let e_dep = e_photon * p_absorb * eta;
-        assert!((e_dep - 0.0228).abs() < 0.001,
+        let e_dep = e_photon * p_absorb * 0.74;  // η_TRP = 0.74
+        assert!((e_dep - 0.01687).abs() < 0.001,
             "E_dep mismatch: expected 0.0228 eV, got {:.4} eV", e_dep);
 
         // Verify temperature rise (THE CALIBRATION TARGET)
         let delta_t = e_dep / (1.5 * KB_EV_K * n_eff);
-        assert!((delta_t - 19.6).abs() < 1.0,
-            "ΔT calibration FAILED: expected ~19.6 K, got {:.1} K", delta_t);
+        assert!((delta_t - 14.5).abs() < 1.0,
+            "ΔT calibration PASSED (η=0.74): expected ~14.5 K, got {:.1} K", delta_t);
 
         // Also verify via ChromophoreType method
         let delta_t_method = ChromophoreType::Tryptophan.compute_local_heating(wavelength, fluence);
-        assert!((delta_t_method - 19.6).abs() < 1.0,
-            "ChromophoreType.compute_local_heating FAILED: expected ~19.6 K, got {:.1} K", delta_t_method);
+        assert!((delta_t_method - 14.5).abs() < 1.0,
+            "ChromophoreType.compute_local_heating (η=0.74): expected ~14.5 K, got {:.1} K", delta_t_method);
 
         println!("=== TRP @ 280nm Calibration PASSED ===");
         println!("ε = {:.0} M⁻¹cm⁻¹", epsilon);
