@@ -521,6 +521,7 @@ fn run_full_pipeline_internal(
     let mut all_spikes = Vec::new();
     let mut final_temperature = 0.0f32;
     let mut total_snapshots = 0usize;
+    let mut all_snapshots: Vec<prism_nhs::fused_engine::EnsembleSnapshot> = Vec::new();
 
     // Choose parallel or sequential execution
     if args.parallel && n_replicas > 1 {
@@ -577,7 +578,9 @@ fn run_full_pipeline_internal(
             all_spikes.extend(replica_spikes);
 
             final_temperature = summary.end_temperature;
-            total_snapshots += engine.get_snapshots().len();
+            let snapshots = engine.get_snapshots();
+            total_snapshots += snapshots.len();
+            all_snapshots.extend(snapshots);
 
             if n_replicas > 1 {
                 log::info!("    Replica {} complete: {} spikes, T={:.1}K",
@@ -994,6 +997,9 @@ fn run_full_pipeline_internal(
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON summary: {}", json_path.display());
+
+        // Write ensemble trajectory PDB
+        write_ensemble_trajectory(&all_snapshots, &topology, &output_base)?;
     }
 
     // Final summary
@@ -2029,4 +2035,99 @@ fn build_consensus_sites(
 
     consensus_sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
     consensus_sites
+}
+
+/// Write ensemble trajectory as multi-MODEL PDB file
+/// Each EnsembleSnapshot becomes a MODEL with full atomic coordinates
+fn write_ensemble_trajectory(
+    snapshots: &[prism_nhs::fused_engine::EnsembleSnapshot],
+    topology: &prism_nhs::input::PrismPrepTopology,
+    output_base: &std::path::Path,
+) -> anyhow::Result<()> {
+    use std::io::Write;
+
+    if snapshots.is_empty() {
+        log::info!("  No ensemble snapshots to write");
+        return Ok(());
+    }
+
+    let n_atoms = topology.n_atoms;
+    let traj_path = output_base.with_extension("ensemble_trajectory.pdb");
+    let mut file = std::fs::File::create(&traj_path)?;
+
+    let mut written_models = 0;
+
+    for (model_idx, snapshot) in snapshots.iter().enumerate() {
+        // Verify snapshot has correct number of coordinates
+        if snapshot.positions.len() != n_atoms * 3 {
+            log::warn!("  Snapshot {} has {} coords, expected {} ({}×3) — skipping",
+                model_idx, snapshot.positions.len(), n_atoms * 3, n_atoms);
+            continue;
+        }
+
+        writeln!(file, "MODEL     {:>4}", model_idx + 1)?;
+        writeln!(file, "REMARK   TIMESTEP {}", snapshot.timestep)?;
+        writeln!(file, "REMARK   TEMPERATURE {:.1} K", snapshot.temperature)?;
+        writeln!(file, "REMARK   TIME {:.3} ps", snapshot.time_ps)?;
+        writeln!(file, "REMARK   ALIGNMENT_QUALITY {:.3}", snapshot.alignment_quality)?;
+        writeln!(file, "REMARK   TRIGGER {:?}", snapshot.trigger_reason)?;
+
+        for atom_idx in 0..n_atoms {
+            let x = snapshot.positions[atom_idx * 3];
+            let y = snapshot.positions[atom_idx * 3 + 1];
+            let z = snapshot.positions[atom_idx * 3 + 2];
+
+            let atom_name = topology.atom_names.get(atom_idx)
+                .map(|s| s.as_str()).unwrap_or("UNK");
+            let res_name = topology.residue_names.get(atom_idx)
+                .map(|s| s.as_str()).unwrap_or("UNK");
+            let chain_id = topology.chain_ids.get(atom_idx)
+                .and_then(|s| s.chars().next()).unwrap_or('A');
+            let res_id = topology.residue_ids.get(atom_idx)
+                .copied().unwrap_or(1);
+            let element = topology.elements.get(atom_idx)
+                .map(|s| s.as_str()).unwrap_or("X");
+
+            // PDB ATOM format (fixed-width columns)
+            // Columns: 1-6 record, 7-11 serial, 13-16 name, 17 altloc,
+            //          18-20 resName, 22 chainID, 23-26 resSeq, 27 iCode,
+            //          31-38 x, 39-46 y, 47-54 z, 55-60 occupancy,
+            //          61-66 tempFactor, 77-78 element
+            let atom_name_padded = if atom_name.len() < 4 {
+                format!(" {:<3}", atom_name)
+            } else {
+                format!("{:<4}", atom_name)
+            };
+
+            write!(file,
+                "ATOM  {:>5} {:4}{}{:>3} {}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}          {:>2}\n",
+                (atom_idx + 1) % 100000,
+                atom_name_padded,
+                ' ',  // altloc
+                res_name,
+                chain_id,
+                res_id % 10000,
+                x, y, z,
+                1.00,  // occupancy
+                snapshot.alignment_quality * 100.0,  // B-factor = quality metric
+                element,
+            )?;
+        }
+
+        writeln!(file, "ENDMDL")?;
+        written_models += 1;
+    }
+    writeln!(file, "END")?;
+
+    let file_size = std::fs::metadata(&traj_path)?.len();
+    let size_str = if file_size > 1_000_000 {
+        format!("{:.1} MB", file_size as f64 / 1_000_000.0)
+    } else {
+        format!("{:.1} KB", file_size as f64 / 1_000.0)
+    };
+
+    log::info!("  ✓ Ensemble trajectory: {} ({} models, {} atoms each, {})",
+        traj_path.display(), written_models, n_atoms, size_str);
+
+    Ok(())
 }
