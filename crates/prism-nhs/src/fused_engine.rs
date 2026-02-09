@@ -1809,11 +1809,11 @@ impl NhsAmberFusedEngine {
 
             for atom_idx in 0..n_atoms {
                 let res_id = topology.residue_ids[atom_idx] as i32;
-                if seen_res_ids.contains(&res_id) {
+                if seen_res_ids.contains(&res_id) && !matches!(topology.residue_names[atom_idx].as_str(), "TRP") {
                     continue;
                 }
                 let res_name = topology.residue_names[atom_idx].as_str();
-                if !matches!(res_name, "LEU" | "ILE" | "VAL") {
+                if !matches!(res_name, "LEU" | "ILE" | "VAL" | "TRP") {
                     continue;
                 }
                 seen_res_ids.insert(res_id);
@@ -1827,7 +1827,7 @@ impl NhsAmberFusedEngine {
                 for (aidx, &atom_res) in topology.residue_ids.iter().enumerate() {
                     if atom_res as i32 == res_id && atom_count < 16 {
                         target.atom_indices[atom_count] = aidx as i32;
-                        atom_to_aromatic[aidx] = aromatic_idx as i32;
+                        if atom_to_aromatic[aidx] < 0 { atom_to_aromatic[aidx] = aromatic_idx as i32; }
                         atom_count += 1;
                     }
                 }
@@ -1841,7 +1841,7 @@ impl NhsAmberFusedEngine {
                 cosolvent_count += 1;
             }
             if cosolvent_count > 0 {
-                log::info!("🧪 Benzene cosolvent: injected {} virtual probes on LEU/ILE/VAL residues",
+                log::info!("🧪 Benzene cosolvent: injected {} virtual probes on LEU/ILE/VAL/TRP residues",
                     cosolvent_count);
             }
         }
@@ -4440,23 +4440,59 @@ impl NhsAmberFusedEngine {
         self.accumulated_spikes.clear();
         self.ensemble_snapshots.clear();
 
-        // Re-initialize RNG with new seed (affects Langevin noise term)
+        // Re-initialize GPU RNG with new seed (affects Langevin noise in kernels)
         self.init_rng(seed)?;
 
         // Reset simulation counters
         self.timestep = 0;
         self.last_spike_count = 0;
 
-        // Zero velocities - Langevin thermostat will naturally thermalize
-        // This ensures each replica starts from the same configuration but
-        // evolves differently due to different RNG seed for stochastic dynamics
-        let zero_vel = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_htod(&zero_vel, &mut self.d_velocities)?;
+        // Generate seeded Maxwell-Boltzmann velocities for true trajectory divergence.
+        // Each replica gets deterministically different initial velocities from its seed,
+        // ensuring warm-phase dynamics diverge even with identical starting positions.
+        {
+            use rand::SeedableRng;
+            use rand_distr::{Distribution, Normal};
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let mut velocities = vec![0.0f32; self.n_atoms * 3];
+            const KB: f32 = 0.001987204;
+            let temp = self.temp_protocol.start_temp.max(50.0);
+            // Download masses from GPU
+            let mut masses = vec![0.0f32; self.n_atoms];
+            self.stream.memcpy_dtoh(&self.d_masses, &mut masses)?;
+            for i in 0..self.n_atoms {
+                let mass = masses[i];
+                if mass <= 0.0 { continue; }
+                let sigma = (KB * temp / mass).sqrt();
+                let normal = Normal::new(0.0f64, sigma as f64).unwrap();
+                velocities[i * 3] = normal.sample(&mut rng) as f32;
+                velocities[i * 3 + 1] = normal.sample(&mut rng) as f32;
+                velocities[i * 3 + 2] = normal.sample(&mut rng) as f32;
+            }
+            // Remove center of mass velocity
+            let mut com_vel = [0.0f32; 3];
+            let mut total_mass = 0.0f32;
+            for i in 0..self.n_atoms {
+                let m = masses[i];
+                com_vel[0] += m * velocities[i * 3];
+                com_vel[1] += m * velocities[i * 3 + 1];
+                com_vel[2] += m * velocities[i * 3 + 2];
+                total_mass += m;
+            }
+            if total_mass > 0.0 {
+                for i in 0..self.n_atoms {
+                    velocities[i * 3] -= com_vel[0] / total_mass;
+                    velocities[i * 3 + 1] -= com_vel[1] / total_mass;
+                    velocities[i * 3 + 2] -= com_vel[2] / total_mass;
+                }
+            }
+            self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+        }
 
         // Reset temperature protocol
         self.temp_protocol.current_step = 0;
 
-        log::debug!("Reset for replica with seed {} (Langevin will thermalize)", seed);
+        log::debug!("Reset for replica with seed {} (seeded MB velocities + GPU RNG)", seed);
         Ok(())
     }
 
