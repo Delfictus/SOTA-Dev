@@ -1797,7 +1797,8 @@ impl NhsAmberFusedEngine {
         // depositing heat at hydrophobic surfaces via virtual ¹B₂ᵤ absorption.
         // GPU kernel default case: ratio_sqrt=1.0 (correct: benzene has no dipole).
         // Enabled via PRISM4D_COSOLVENT=1 environment variable.
-        let cosolvent_enabled = std::env::var("PRISM4D_COSOLVENT")
+        // BNZ cosolvent always enabled for cryptic site detection
+        let cosolvent_enabled = true; // was: std::env::var("PRISM4D_COSOLVENT")
             .map(|v| v == "1" || v.to_lowercase() == "true")
             .unwrap_or(false);
 
@@ -4487,6 +4488,19 @@ impl NhsAmberFusedEngine {
                 }
             }
             self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+            // Apply small seeded position perturbations (~0.01Å Gaussian).
+            // CRITICAL: equilibration gamma=1000 erases velocity differences in ~5 steps,
+            // but position displacements create different force landscapes that persist.
+            // 0.01Å is sub-bond-length (C-C ~1.5Å) so structure stays valid.
+            let jitter_normal = Normal::new(0.0f64, 0.01f64).unwrap();
+            let mut positions = vec![0.0f32; self.n_atoms * 3];
+            self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
+            for i in 0..self.n_atoms {
+                positions[i * 3] += jitter_normal.sample(&mut rng) as f32;
+                positions[i * 3 + 1] += jitter_normal.sample(&mut rng) as f32;
+                positions[i * 3 + 2] += jitter_normal.sample(&mut rng) as f32;
+            }
+            self.stream.memcpy_htod(&positions, &mut self.d_positions)?;
         }
 
         // Reset temperature protocol
