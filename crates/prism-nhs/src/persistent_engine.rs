@@ -2042,7 +2042,7 @@ impl ClusteredBindingSite {
                 pocket_count += 1;
 
                 let internal_id = residue_ids[i];
-                let res_id = if internal_id < residue_pdb_ids.len() { residue_pdb_ids[internal_id] } else { internal_id as i32 };
+                let res_id = if internal_id < residue_pdb_ids.len() { residue_pdb_ids[internal_id] + 1 } else { (internal_id + 1) as i32 };
                 let chain = chain_ids[i].clone();
                 let resname = if i < residue_names.len() {
                     residue_names[i].clone()
