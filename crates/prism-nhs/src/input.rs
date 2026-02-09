@@ -146,8 +146,17 @@ pub struct HCluster {
     pub inv_mass_h: f64,
 }
 
+/// Metadata for a single residue from the topology
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResidueMetadata {
+    pub residue_idx: usize,
+    pub residue_name: String,
+    pub residue_id: i32,
+}
+
 /// PRISM-PREP topology JSON structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+
 pub struct PrismPrepTopology {
     /// Source PDB file
     pub source_pdb: String,
@@ -191,6 +200,9 @@ pub struct PrismPrepTopology {
     /// Water oxygen indices
     #[serde(default)]
     pub water_oxygens: Vec<usize>,
+    /// List of residue metadata (mapping indices to PDB IDs)
+    #[serde(default)]
+    pub residues: Vec<ResidueMetadata>,
 }
 
 impl PrismPrepTopology {

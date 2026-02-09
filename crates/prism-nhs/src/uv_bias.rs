@@ -46,11 +46,12 @@
 
 use crate::config::{NhsConfig, UvBiasConfig, UvSpectroscopyConfig, ABSORPTION_NORMALIZATION};
 use crate::config::{TRP_EXTINCTION_280, TYR_EXTINCTION_280, PHE_EXTINCTION_280};
-use crate::config::{TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX};
-use crate::config::{TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH};
+use crate::config::{TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX, BENZENE_LAMBDA_MAX};
+use crate::config::{TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH, BENZENE_BANDWIDTH};
 use crate::config::{DISULFIDE_EXTINCTION_250, DISULFIDE_BOND_MAX_DISTANCE};
+use crate::config::{BENZENE_EXTINCTION_254};
 use crate::config::{wavelength_to_ev, extinction_to_cross_section, KB_EV_K};
-use crate::config::{NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE};
+use crate::config::{NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE, NEFF_BENZENE};
 use crate::config::{CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD};
 use anyhow::Result;
 use rand::Rng;
@@ -129,6 +130,10 @@ pub enum ChromophoreType {
     Phenylalanine,
     /// Disulfide bond - σ→σ* transition
     Disulfide,
+    /// Virtual benzene cosolvent probe - ¹B₂ᵤ π→π* at hydrophobic surfaces
+    /// Targets LEU/ILE/VAL sidechains; deposits heat via virtual UV absorption
+    /// Physics: Dawson 1968 (Φ_f), Cundall 1972 (Φ_isc), Pantos 1978 (ε)
+    Cosolvent,
 }
 
 /// Aromatic residue types (alias for backward compatibility)
@@ -142,6 +147,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => "TYR",
             ChromophoreType::Phenylalanine => "PHE",
             ChromophoreType::Disulfide => "CYS-CYS",
+            ChromophoreType::Cosolvent => "BNZ",
         }
     }
 
@@ -152,6 +158,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => TYR_LAMBDA_MAX,
             ChromophoreType::Phenylalanine => PHE_LAMBDA_MAX,
             ChromophoreType::Disulfide => DISULFIDE_LAMBDA_MAX,
+            ChromophoreType::Cosolvent => BENZENE_LAMBDA_MAX,
         }
     }
 
@@ -162,6 +169,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => TYR_EXTINCTION_280,
             ChromophoreType::Phenylalanine => PHE_EXTINCTION_280,
             ChromophoreType::Disulfide => DISULFIDE_EXTINCTION_250,
+            ChromophoreType::Cosolvent => BENZENE_EXTINCTION_254,
         }
     }
 
@@ -172,6 +180,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => TYR_BANDWIDTH,
             ChromophoreType::Phenylalanine => PHE_BANDWIDTH,
             ChromophoreType::Disulfide => DISULFIDE_BANDWIDTH,
+            ChromophoreType::Cosolvent => BENZENE_BANDWIDTH,
         }
     }
 
@@ -182,6 +191,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => "π→π* (phenol)",
             ChromophoreType::Phenylalanine => "π→π* (benzyl)",
             ChromophoreType::Disulfide => "σ→σ* (S-S)",
+            ChromophoreType::Cosolvent => "π→π* (¹B₂ᵤ benzene cosolvent)",
         }
     }
 
@@ -221,6 +231,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => crate::config::HEAT_YIELD_TYR,
             ChromophoreType::Phenylalanine => crate::config::HEAT_YIELD_PHE,
             ChromophoreType::Disulfide => crate::config::HEAT_YIELD_DISULFIDE,
+            ChromophoreType::Cosolvent => crate::config::HEAT_YIELD_BENZENE,
         };
         self.compute_local_heating_with_yield(wavelength, photon_fluence, heat_yield)
         }
@@ -247,6 +258,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => NEFF_TYR,        // 10.0 - Phenol ring (6) + OH (4)
             ChromophoreType::Phenylalanine => NEFF_PHE,   // 9.0 - Benzene ring + side chain
             ChromophoreType::Disulfide => NEFF_DISULFIDE, // 2.0 - S-S bond
+            ChromophoreType::Cosolvent => NEFF_BENZENE,   // 6.0 - Benzene ring only
         };
 
         // Convert to temperature increase via equipartition
@@ -261,6 +273,7 @@ impl ChromophoreType {
             ChromophoreType::Tyrosine => NEFF_TYR,
             ChromophoreType::Phenylalanine => NEFF_PHE,
             ChromophoreType::Disulfide => NEFF_DISULFIDE,
+            ChromophoreType::Cosolvent => NEFF_BENZENE,
         }
     }
 
@@ -283,6 +296,8 @@ impl ChromophoreType {
             "TRP" | "W" => Some(ChromophoreType::Tryptophan),
             "TYR" | "Y" => Some(ChromophoreType::Tyrosine),
             "PHE" | "F" => Some(ChromophoreType::Phenylalanine),
+            // Virtual benzene cosolvent targets: aliphatic hydrophobic residues
+            "LEU" | "L" | "ILE" | "I" | "VAL" | "V" => Some(ChromophoreType::Cosolvent),
             _ => None,
         }
     }
@@ -296,13 +311,14 @@ impl ChromophoreType {
         ]
     }
 
-    /// All chromophore types including disulfide
+    /// All chromophore types including disulfide and cosolvent
     pub fn all_types() -> &'static [ChromophoreType] {
         &[
             ChromophoreType::Tryptophan,
             ChromophoreType::Tyrosine,
             ChromophoreType::Phenylalanine,
             ChromophoreType::Disulfide,
+            ChromophoreType::Cosolvent,
         ]
     }
 }
@@ -1075,6 +1091,7 @@ impl UvBiasEngine {
             ChromophoreType::Tyrosine => &["CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"],  // Include OH for π system
             ChromophoreType::Tryptophan => &["CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3", "CH2"],
             ChromophoreType::Disulfide => &["SG"],  // Sulfur atoms only
+            ChromophoreType::Cosolvent => &["CB", "CG"],  // Aliphatic sidechain center for virtual BNZ probe
         };
 
         // Filter atoms to only include ring atoms in this residue

@@ -990,6 +990,44 @@ impl PersistentNhsEngine {
         })
     }
 
+    /// Create persistent engine on an explicit CUDA stream (for multi-stream concurrency).
+    /// Shares context + module with other engines — each gets its own stream for GPU overlap.
+    pub fn new_on_stream(
+        config: &PersistentBatchConfig,
+        context: Arc<CudaContext>,
+        module: Arc<CudaModule>,
+        stream: Arc<CudaStream>,
+    ) -> Result<Self> {
+        log::info!("Persistent NHS Engine on dedicated stream (max_atoms: {})", config.max_atoms);
+        Ok(Self {
+            context,
+            module,
+            stream,
+            engine: None,
+            rt_engine: None,
+            max_atoms: config.max_atoms,
+            grid_dim: config.grid_dim,
+            grid_spacing: config.grid_spacing,
+            current_topology_id: None,
+            context_init_time_ms: 0,
+            module_init_time_ms: 0,
+            rt_init_time_ms: None,
+            structures_processed: 0,
+            total_steps_run: 0,
+            total_compute_time_ms: 0,
+        })
+    }
+
+    /// Access the shared CUDA context (for creating additional streams)
+    pub fn cuda_context(&self) -> &Arc<CudaContext> {
+        &self.context
+    }
+
+    /// Access the compiled PTX module (for sharing across engines)
+    pub fn cuda_module(&self) -> &Arc<CudaModule> {
+        &self.module
+    }
+
     /// Load a new topology (hot-swap)
     ///
     /// If the new topology fits in existing buffers, reuses them.
@@ -1013,8 +1051,9 @@ impl PersistentNhsEngine {
         // Create new engine instance with shared context
         // Note: In a more optimized version, we would reuse GPU buffers
         // For now, we benefit from shared context + module
-        let engine = NhsAmberFusedEngine::new(
+        let engine = NhsAmberFusedEngine::new_on_stream(
             self.context.clone(),
+            self.stream.clone(),
             topology,
             self.grid_dim,
             self.grid_spacing,
@@ -1967,6 +2006,7 @@ impl ClusteredBindingSite {
         residue_ids: &[usize],
         residue_names: &[String],
         chain_ids: &[String],
+        residue_pdb_ids: &[i32],
         cutoff: f32,
     ) {
         use std::collections::HashMap;
@@ -2001,10 +2041,11 @@ impl ClusteredBindingSite {
                 pocket_sum[2] += z as f64;
                 pocket_count += 1;
 
-                let res_id = residue_ids[i];
+                let internal_id = residue_ids[i];
+                let res_id = if internal_id < residue_pdb_ids.len() { residue_pdb_ids[internal_id] } else { internal_id as i32 };
                 let chain = chain_ids[i].clone();
-                let resname = if res_id < residue_names.len() {
-                    residue_names[res_id].clone()
+                let resname = if internal_id < residue_names.len() {
+                    residue_names[internal_id].clone()
                 } else {
                     "UNK".to_string()
                 };

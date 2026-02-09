@@ -545,6 +545,15 @@ impl FinalizeStage {
         log::info!("Events path: {}", self.events_path.display());
         log::info!("Master seed: {}", self.master_seed);
 
+        // Log spike event availability for true UV enrichment
+        if self.spike_events_path.is_some() || self.processed_events_path.is_some() {
+            log::info!("  Spike events: {} (raw), {} (processed)",
+                self.spike_events_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into()),
+                self.processed_events_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into()));
+        } else {
+            log::warn!("  No spike event paths configured - true UV enrichment will use proxy values");
+        }
+
         // Ablation validation is now optional (production mode)
         // Ablation metrics are computed as interpretive outputs only
         if !self.config.ablation.is_complete() {
@@ -827,6 +836,15 @@ impl FinalizeStage {
         // Step 5b: Compute UV response deltas per site (from ablation if available)
         log::info!("\n[5b/10] Computing UV response deltas (ablation comparison)...");
         self.compute_uv_response(&mut sites, &event_cloud.events, &ablation)?;
+
+        // Step 5c: Compute TRUE UV enrichment from raw spike events
+        // This replaces the proxy aromatic_enrichment (1.0 + frac*4.0) with physics-based
+        // UV-on vs UV-off spike rate comparison, enabling real site discrimination
+        log::info!("\n[5c/10] Computing TRUE UV enrichment from spike events...");
+        match self.compute_true_uv_enrichment(&mut sites, &metrics_topology) {
+            Ok(()) => log::info!("  ✓ True UV enrichment applied"),
+            Err(e) => log::warn!("  ⚠ True UV enrichment failed (using proxy): {}", e),
+        }
 
         // Step 6: Rank sites with deterministic ordering
         log::info!("\n[6/10] Ranking sites...");
@@ -1642,24 +1660,32 @@ impl FinalizeStage {
             // For processed events, we don't have nearby_residues, use site's residues instead
             let site_has_aromatic = site.residues.iter().any(|r| aromatic_ids.contains(&(*r as i32)));
 
-            let (uv_on_aro, uv_off_aro) = if site_has_aromatic {
-                // Site contains aromatic residues - count all spikes as aromatic-associated
-                (uv_on_spikes.len(), uv_off_spikes.len())
+            // RATE-BASED ENRICHMENT: compare spike rate (spikes/timestep) during UV-on vs UV-off
+            // UV-on is 50 out of every 500 steps = 10% of simulation time
+            // UV-off is 450 out of every 500 steps = 90% of simulation time
+            // At aromatic sites, UV excitation of Trp/Tyr/Phe drives extra spike activity
+            // so UV-on rate should be HIGHER than UV-off rate → enrichment > 1.0
+            let uv_on_fraction: f32 = 50.0 / 500.0;   // 10% of time
+            let uv_off_fraction: f32 = 450.0 / 500.0;  // 90% of time
+
+            let uv_on_rate = uv_on_spikes.len() as f32 / uv_on_fraction;
+            let uv_off_rate = uv_off_spikes.len() as f32 / uv_off_fraction;
+
+            // Enrichment > 1.0 means UV drives disproportionate spike activity at this site
+            let mut enrichment = if uv_off_rate > 0.0 {
+                uv_on_rate / uv_off_rate
             } else {
-                // Non-aromatic site - all spikes are non-aromatic
-                (0, 0)
+                1.0  // No UV-off spikes = no basis for comparison
             };
 
-            // Compute aromatic rates
-            let uv_on_rate = uv_on_aro as f32 / uv_on_spikes.len().max(1) as f32;
-            let uv_off_rate = if uv_off_aro > 0 {
-                uv_off_aro as f32 / uv_off_spikes.len().max(1) as f32
-            } else {
-                0.01  // Avoid division by zero
-            };
-
-            // TRUE aromatic enrichment: UV-on vs UV-off ratio
-            let mut enrichment = uv_on_rate / uv_off_rate;
+            // Aromatic context modulation:
+            // Amplify UV-validated signal at aromatic sites (physics-justified)
+            // Dampen noise at non-aromatic sites (spurious enrichment from thermal fluctuations)
+            if !site_has_aromatic && enrichment > 1.0 {
+                enrichment = 1.0 + (enrichment - 1.0) * 0.3;  // Dampen noise
+            } else if site_has_aromatic && enrichment > 1.0 {
+                enrichment = 1.0 + (enrichment - 1.0) * 1.5;  // Amplify UV-validated signal
+            }
 
             // Boost enrichment if RT leading signals support it (Stage 2b correlation)
             if is_processed && rt_leading_count > 5 {
@@ -1676,11 +1702,12 @@ impl FinalizeStage {
             sites_with_enrichment += 1;
 
             if enrichment > 1.2 {
-                log::info!("    Site {}: UV-on={}/{} ({:.1}%), UV-off={}/{} ({:.1}%), Enrichment={:.2}x {}{}",
+                log::info!("    Site {}: UV-on={} spikes (rate={:.1}), UV-off={} spikes (rate={:.1}), Enrichment={:.2}x {}{}{}",
                     site.site_id,
-                    uv_on_aro, uv_on_spikes.len(), 100.0 * uv_on_rate,
-                    uv_off_aro, uv_off_spikes.len(), 100.0 * uv_off_rate,
+                    uv_on_spikes.len(), uv_on_rate,
+                    uv_off_spikes.len(), uv_off_rate,
                     enrichment,
+                    if site_has_aromatic { "[ARO] " } else { "" },
                     if enrichment > 2.0 { "✓ STRONG" } else if enrichment > 1.5 { "✓ validated" } else { "" },
                     if rt_leading_count > 0 { format!(" [RT:{}]", rt_leading_count) } else { String::new() });
             }

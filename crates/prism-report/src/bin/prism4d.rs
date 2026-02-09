@@ -1146,7 +1146,7 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
 
     // Create finalize stage with mandatory topology path
     // Uses two-tier filtering: filter_initial_dist for tight pass, filter_max_dist for global max
-    let stage = FinalizeStage::new_with_topology_full(
+    let mut stage = FinalizeStage::new_with_topology_full(
         config,
         args.events.clone(),
         args.topology.clone(),
@@ -1154,6 +1154,10 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
         args.filter_initial_dist,
         args.filter_max_dist,
     )?;
+
+    // Auto-detect spike_events.jsonl for true UV enrichment calculation
+    let events_base_dir = args.events.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+    stage.auto_detect_event_paths(&events_base_dir);
 
     let start_time = std::time::Instant::now();
     let result = stage.run()?;
@@ -1402,7 +1406,7 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
 
     // Use new_with_topology_full with explicit topology path (mandatory)
     // Two-tier filtering: max_event_atom_dist for voxelization, cluster_max_event_atom_dist for clustering
-    let stage = FinalizeStage::new_with_topology_full(
+    let mut stage = FinalizeStage::new_with_topology_full(
         report_config.clone(),
         events_path,
         topology_path.clone(),
@@ -1410,6 +1414,11 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
         args.max_event_atom_dist,
         args.cluster_max_event_atom_dist,
     )?;
+
+    // Auto-detect spike_events.jsonl for true UV enrichment calculation
+    let events_base_dir = report_config.output_dir.clone();
+    stage.auto_detect_event_paths(&events_base_dir);
+
     let result = stage.run()?;
 
     // Print summary

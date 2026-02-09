@@ -2141,6 +2141,10 @@ impl AmberSimdBatch {
     }
 
     /// Get total atoms
+    pub fn max_atoms_per_struct(&self) -> usize {
+        self.max_atoms_per_struct
+    }
+
     pub fn total_atoms(&self) -> usize {
         self.total_atoms
     }
@@ -2494,25 +2498,28 @@ impl AmberSimdBatch {
 
     /// Get all positions from GPU (flattened: [x0,y0,z0, x1,y1,z1, ...] for all structures)
     pub fn get_positions(&self) -> Result<Vec<f32>> {
-        let mut positions = vec![0.0f32; self.total_atoms * 3];
+        let gpu_size = self.max_atoms_per_struct * self.max_batch_size * 3;
+        let mut positions = vec![0.0f32; gpu_size];
         self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
         Ok(positions)
     }
 
     /// Get all velocities from GPU (flattened: [vx0,vy0,vz0, vx1,vy1,vz1, ...] for all structures)
     pub fn get_velocities(&self) -> Result<Vec<f32>> {
-        let mut velocities = vec![0.0f32; self.total_atoms * 3];
+        let gpu_size = self.max_atoms_per_struct * self.max_batch_size * 3;
+        let mut velocities = vec![0.0f32; gpu_size];
         self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         Ok(velocities)
     }
 
-    /// Set all velocities on GPU (must match total_atoms * 3 length)
+    /// Set all velocities on GPU (must match GPU buffer size)
     pub fn set_velocities(&mut self, velocities: &[f32]) -> Result<()> {
-        if velocities.len() != self.total_atoms * 3 {
+        let gpu_size = self.max_atoms_per_struct * self.max_batch_size * 3;
+        if velocities.len() != gpu_size {
             bail!(
                 "Velocity array length mismatch: got {}, expected {}",
                 velocities.len(),
-                self.total_atoms * 3
+                gpu_size
             );
         }
         self.stream.memcpy_htod(velocities, &mut self.d_velocities)?;

@@ -37,10 +37,10 @@ use crate::input::PrismPrepTopology;
 use crate::config::{
     extinction_to_cross_section, wavelength_to_ev, KB_EV_K,
     CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD,
-    NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE,
-    TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX,
-    TRP_EXTINCTION_280, TYR_EXTINCTION_274, PHE_EXTINCTION_258, DISULFIDE_EXTINCTION_250,
-    TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH,
+    NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE, NEFF_BENZENE,
+    TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX, BENZENE_LAMBDA_MAX,
+    TRP_EXTINCTION_280, TYR_EXTINCTION_274, PHE_EXTINCTION_258, DISULFIDE_EXTINCTION_250, BENZENE_EXTINCTION_254,
+    TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH, BENZENE_BANDWIDTH,
 };
 
 // Import ultimate engine for hyperoptimized kernel path
@@ -130,6 +130,7 @@ impl Default for GpuHCluster {
 
 /// UV target for CUDA kernel (matches UVTarget in nhs_amber_fused.cu)
 /// CUDA struct: residue_id (4), atom_indices[16] (64), n_atoms (4), absorption_strength (4), aromatic_type (4) = 80 bytes
+/// CANONICAL: 0=TRP, 1=TYR, 2=PHE, 3=S-S, 4=BNZ
 #[cfg(feature = "gpu")]
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
@@ -436,6 +437,8 @@ pub struct TemperatureProtocol {
     pub ramp_steps: i32,
     /// Number of steps to hold at end temperature
     pub hold_steps: i32,
+    /// Number of steps to hold at start temperature before ramping (cryo baseline)
+    pub cold_hold_steps: i32,
     /// Current step in protocol
     pub current_step: i32,
 }
@@ -448,6 +451,7 @@ impl TemperatureProtocol {
             end_temp: 300.0,
             ramp_steps: 0,
             hold_steps: 100000,
+            cold_hold_steps: 0,
             current_step: 0,
         }
     }
@@ -459,6 +463,7 @@ impl TemperatureProtocol {
             end_temp: 300.0,
             ramp_steps,
             hold_steps,
+            cold_hold_steps: 0,
             current_step: 0,
         }
     }
@@ -470,6 +475,7 @@ impl TemperatureProtocol {
             end_temp: 300.0,
             ramp_steps: 50000,
             hold_steps: 50000,
+            cold_hold_steps: 0,
             current_step: 0,
         }
     }
@@ -481,19 +487,27 @@ impl TemperatureProtocol {
             end_temp: 300.0,
             ramp_steps: 100000,
             hold_steps: 50000,
+            cold_hold_steps: 0,
             current_step: 0,
         }
     }
 
     /// Get current temperature
     pub fn current_temperature(&self) -> f32 {
+        // Phase 1: Cold hold -- constant at start_temp
+        if self.current_step < self.cold_hold_steps {
+            return self.start_temp;
+        }
+        // Phase 2: Ramp from start_temp -> end_temp
+        let ramp_elapsed = self.current_step - self.cold_hold_steps;
         if self.ramp_steps == 0 {
             return self.end_temp;
         }
-        if self.current_step < self.ramp_steps {
-            let t = self.current_step as f32 / self.ramp_steps as f32;
+        if ramp_elapsed < self.ramp_steps {
+            let t = ramp_elapsed as f32 / self.ramp_steps as f32;
             self.start_temp + t * (self.end_temp - self.start_temp)
         } else {
+            // Phase 3: Warm hold -- constant at end_temp
             self.end_temp
         }
     }
@@ -505,12 +519,12 @@ impl TemperatureProtocol {
 
     /// Check if protocol is complete
     pub fn is_complete(&self) -> bool {
-        self.current_step >= self.ramp_steps + self.hold_steps
+        self.current_step >= self.cold_hold_steps + self.ramp_steps + self.hold_steps
     }
 
     /// Total steps in protocol
     pub fn total_steps(&self) -> i32 {
-        self.ramp_steps + self.hold_steps
+        self.cold_hold_steps + self.ramp_steps + self.hold_steps
     }
 }
 
@@ -939,6 +953,10 @@ pub struct UvProbeConfig {
     /// Enable disulfide targeting at 250nm
     pub target_disulfides: bool,
 
+    /// Enable virtual benzene cosolvent probes on hydrophobic residues (LEU/ILE/VAL)
+    /// When enabled, injects type-4 UV targets on aliphatic sidechains at 254nm
+    pub enable_cosolvent_probes: bool,
+
     /// Track local temperature per aromatic
     pub track_local_temperature: bool,
     /// Per-aromatic local temperature deltas (K)
@@ -969,6 +987,7 @@ impl Default for UvProbeConfig {
             dwell_steps: 1000,
             steps_at_wavelength: 0,
             target_disulfides: false,
+            enable_cosolvent_probes: false,
             track_local_temperature: true,
             local_temp_deltas: Vec::new(),
             thermal_dissipation_tau: 5.0,
@@ -993,9 +1012,23 @@ impl UvProbeConfig {
     pub fn publication_quality() -> Self {
         Self {
             frequency_hopping_enabled: true,
-            scan_wavelengths: vec![250.0, 258.0, 265.0, 274.0, 280.0, 290.0],
+            scan_wavelengths: vec![250.0, 254.0, 258.0, 265.0, 274.0, 280.0, 290.0],
             dwell_steps: 500,
             target_disulfides: true,
+            track_local_temperature: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create config for benzene cosolvent probe mode
+    /// Optimized wavelength scan centered on BNZ 254nm + PHE 258nm region
+    pub fn cosolvent_mode() -> Self {
+        Self {
+            frequency_hopping_enabled: true,
+            scan_wavelengths: vec![250.0, 254.0, 258.0, 274.0, 280.0],
+            dwell_steps: 500,
+            enable_cosolvent_probes: true,
+            target_disulfides: false,
             track_local_temperature: true,
             ..Default::default()
         }
@@ -1018,15 +1051,17 @@ impl UvProbeConfig {
     ///   1 = TYR (Tyrosine)
     ///   2 = PHE (Phenylalanine)
     ///   3 = S-S (Disulfide)
+    ///   4 = BNZ (Benzene cosolvent)
     pub fn extinction_at_wavelength(&self, chromophore_type: i32) -> f32 {
         let wavelength = self.current_wavelength();
 
-        // CANONICAL ordering: 0=TRP, 1=TYR, 2=PHE, 3=S-S
+        // CANONICAL ordering: 0=TRP, 1=TYR, 2=PHE, 3=S-S, 4=BNZ
         let (lambda_max, epsilon_max, bandwidth) = match chromophore_type {
             0 => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // TRP @ 280nm
             1 => (TYR_LAMBDA_MAX, TYR_EXTINCTION_274, TYR_BANDWIDTH),      // TYR @ 274nm
             2 => (PHE_LAMBDA_MAX, PHE_EXTINCTION_258, PHE_BANDWIDTH),      // PHE @ 258nm
             3 => (DISULFIDE_LAMBDA_MAX, DISULFIDE_EXTINCTION_250, DISULFIDE_BANDWIDTH), // S-S @ 250nm
+            4 => (BENZENE_LAMBDA_MAX, BENZENE_EXTINCTION_254, BENZENE_BANDWIDTH), // BNZ @ 254nm
             _ => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // Default to TRP
         };
 
@@ -1080,6 +1115,7 @@ impl UvProbeConfig {
             1 => crate::config::HEAT_YIELD_TYR,
             2 => crate::config::HEAT_YIELD_PHE,
             3 => crate::config::HEAT_YIELD_DISULFIDE,
+            4 => crate::config::HEAT_YIELD_BENZENE,
             _ => crate::config::HEAT_YIELD_TRP,
         };
 
@@ -1087,12 +1123,13 @@ impl UvProbeConfig {
         let e_dep = e_photon * p_absorb * eta;
 
         // CORRECTED N_eff values (effective DOF proxies)
-        // CANONICAL ordering: 0=TRP, 1=TYR, 2=PHE, 3=S-S
+        // CANONICAL ordering: 0=TRP, 1=TYR, 2=PHE, 3=S-S, 4=BNZ
         let n_eff = match chromophore_type {
             0 => NEFF_TRP,       // 9.0 - Indole ring
             1 => NEFF_TYR,       // 10.0 - Phenol + OH system
             2 => NEFF_PHE,       // 9.0 - Benzene + side chain
             3 => NEFF_DISULFIDE, // 2.0 - S-S bond
+            4 => NEFF_BENZENE,   // 6.0 - Benzene ring only
             _ => NEFF_TRP,
         };
 
@@ -1370,7 +1407,7 @@ pub struct NhsAmberFusedEngine {
     d_franck_condon_progress: CudaSlice<f32>,  // [n_aromatics] - relaxation progress
     d_ground_state_charges: CudaSlice<f32>,    // [n_atoms] - original charges
     d_atom_to_aromatic: CudaSlice<i32>,        // [n_atoms] - -1 or aromatic index
-    d_aromatic_type: CudaSlice<i32>,           // [n_aromatics] - CANONICAL: 0=TRP,1=TYR,2=PHE,3=S-S
+    d_aromatic_type: CudaSlice<i32>,           // [n_aromatics] - CANONICAL: 0=TRP,1=TYR,2=PHE,3=S-S,4=BNZ
     d_ring_normals: CudaSlice<f32>,            // [n_aromatics * 3] - precomputed normals
     d_aromatic_centroids: CudaSlice<f32>,      // [n_aromatics * 3] - aromatic ring centroid positions (updated per-step)
     d_aromatic_neighbors: CudaSlice<u8>,       // [n_aromatics] - AromaticNeighbors structs
@@ -1448,6 +1485,18 @@ impl NhsAmberFusedEngine {
         grid_dim: usize,
         grid_spacing: f32,
     ) -> Result<Self> {
+        let stream = context.default_stream();
+        Self::new_on_stream(context, stream, topology, grid_dim, grid_spacing)
+    }
+
+    /// Create new fused engine with explicit CUDA stream (for multi-stream concurrency).
+    pub fn new_on_stream(
+        context: Arc<CudaContext>,
+        stream: Arc<CudaStream>,
+        topology: &PrismPrepTopology,
+        grid_dim: usize,
+        grid_spacing: f32,
+    ) -> Result<Self> {
         log::info!("Creating NHS-AMBER Fused Engine: {} atoms, grid {}³",
             topology.n_atoms, grid_dim);
 
@@ -1455,7 +1504,6 @@ impl NhsAmberFusedEngine {
             bail!("Grid dimension {} exceeds maximum {}", grid_dim, MAX_GRID_DIM);
         }
 
-        let stream = context.default_stream();
         let n_atoms = topology.n_atoms;
         let total_voxels = grid_dim * grid_dim * grid_dim;
 
@@ -1688,7 +1736,7 @@ impl NhsAmberFusedEngine {
         // ====================================================================
 
         let uv_target_size = std::mem::size_of::<GpuUVTarget>();
-        let aromatic_residues: Vec<i32> = topology.aromatic_residues()
+        let mut aromatic_residues: Vec<i32> = topology.aromatic_residues()
             .into_iter()
             .map(|r| r as i32)
             .collect();
@@ -1721,6 +1769,7 @@ impl NhsAmberFusedEngine {
             //   1 = TYR (Tyrosine)
             //   2 = PHE (Phenylalanine)
             //   3 = S-S (Disulfide)
+            //   4 = BNZ (Benzene cosolvent)
             let res_name = topology.residue_ids.iter()
                 .position(|&r| r as i32 == res_id)
                 .map(|idx| topology.residue_names[idx].as_str())
@@ -1739,6 +1788,64 @@ impl NhsAmberFusedEngine {
 
             uv_targets.push(target);
         }
+
+        // ====================================================================
+        // VIRTUAL BENZENE COSOLVENT TARGETS (LEU/ILE/VAL)
+        // ====================================================================
+        // Inject type-4 UV targets on aliphatic hydrophobic sidechains.
+        // These simulate a 0.2M benzene cosolvent (Tan et al. 2016, PMC5515508)
+        // depositing heat at hydrophobic surfaces via virtual ¹B₂ᵤ absorption.
+        // GPU kernel default case: ratio_sqrt=1.0 (correct: benzene has no dipole).
+        // Enabled via PRISM4D_COSOLVENT=1 environment variable.
+        let cosolvent_enabled = std::env::var("PRISM4D_COSOLVENT")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false);
+
+        if cosolvent_enabled {
+            let mut cosolvent_count = 0usize;
+            // Collect unique residue IDs for hydrophobic residues not already targeted
+            let mut seen_res_ids: std::collections::HashSet<i32> = 
+                aromatic_residues.iter().copied().collect();
+
+            for atom_idx in 0..n_atoms {
+                let res_id = topology.residue_ids[atom_idx] as i32;
+                if seen_res_ids.contains(&res_id) {
+                    continue;
+                }
+                let res_name = topology.residue_names[atom_idx].as_str();
+                if !matches!(res_name, "LEU" | "ILE" | "VAL") {
+                    continue;
+                }
+                seen_res_ids.insert(res_id);
+
+                // Build cosolvent target for this residue
+                let aromatic_idx = uv_targets.len();
+                let mut target = GpuUVTarget::default();
+                target.residue_id = res_id;
+
+                let mut atom_count = 0;
+                for (aidx, &atom_res) in topology.residue_ids.iter().enumerate() {
+                    if atom_res as i32 == res_id && atom_count < 16 {
+                        target.atom_indices[atom_count] = aidx as i32;
+                        atom_to_aromatic[aidx] = aromatic_idx as i32;
+                        atom_count += 1;
+                    }
+                }
+                target.n_atoms = atom_count as i32;
+                // BNZ cosolvent: ε=204 vs TRP ε=5600 → absorption ~0.036 relative
+                target.absorption_strength = 0.036;
+                target.aromatic_type = 4;  // BNZ = 4 (canonical)
+                aromatic_types.push(4);
+                aromatic_residues.push(res_id);
+                uv_targets.push(target);
+                cosolvent_count += 1;
+            }
+            if cosolvent_count > 0 {
+                log::info!("🧪 Benzene cosolvent: injected {} virtual probes on LEU/ILE/VAL residues",
+                    cosolvent_count);
+            }
+        }
+
         let n_uv_targets = uv_targets.len().min(MAX_UV_TARGETS);
         let n_aromatics = n_uv_targets;  // Same as UV targets
         let d_uv_targets: CudaSlice<u8> = stream.alloc_zeros((n_uv_targets.max(1) * uv_target_size))?;
@@ -1926,7 +2033,10 @@ impl NhsAmberFusedEngine {
             dielectric_scaling: true,
 
             temp_protocol: TemperatureProtocol::physiological(),
-            uv_config: UvProbeConfig::default(),
+            uv_config: UvProbeConfig {
+                enable_cosolvent_probes: cosolvent_enabled,
+                ..UvProbeConfig::default()
+            },
 
             aromatic_residues,
             aromatic_types: aromatic_types.clone(),
@@ -3351,6 +3461,7 @@ impl NhsAmberFusedEngine {
             end_temp: protocol.end_temp,
             ramp_steps: protocol.ramp_steps,
             hold_steps: protocol.warm_hold_steps,
+            cold_hold_steps: protocol.cold_hold_steps,
             current_step: protocol.current_step,
         };
 
@@ -3477,7 +3588,7 @@ impl NhsAmberFusedEngine {
                     let p_absorb = sigma * fluence;
                     let e_photon = crate::config::wavelength_to_ev(wavelength);
                     let chromophore_name = match aromatic_type {
-                        0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "S-S", _ => "UNK"
+                        0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "S-S", 4 => "BNZ", _ => "UNK"
                     };
                     log::debug!(
                         "[UV CPU] step={} type={} λ={:.0}nm σ={:.5}Å² F={:.4} p={:.6} E_γ={:.3}eV ΔT={:.2}K",

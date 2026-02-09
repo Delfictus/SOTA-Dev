@@ -59,6 +59,9 @@ pub const TYR_LAMBDA_MAX: f32 = 274.0;
 pub const PHE_LAMBDA_MAX: f32 = 258.0;
 /// Disulfide λmax - σ→σ* transition
 pub const DISULFIDE_LAMBDA_MAX: f32 = 250.0;
+/// Benzene virtual cosolvent λmax - ¹B₂ᵤ π→π* (6₀¹ vibronic peak)
+/// Callomon, Dunn & Mills (1966), Philos. Trans. R. Soc. A 259, 499–532
+pub const BENZENE_LAMBDA_MAX: f32 = 254.0;
 
 // ------------------------- Extinction Coefficients (M⁻¹cm⁻¹) ----------------
 /// Tryptophan molar extinction coefficient at 280nm (M⁻¹cm⁻¹)
@@ -74,6 +77,10 @@ pub const PHE_EXTINCTION_258: f32 = 200.0;
 pub const PHE_EXTINCTION_280: f32 = 200.0;
 /// Disulfide molar extinction coefficient at 250nm
 pub const DISULFIDE_EXTINCTION_250: f32 = 300.0;
+/// Benzene molar extinction coefficient at 254nm (¹B₂ᵤ band)
+/// Pantos, Philis & Bolovinos (1978), J. Mol. Spectrosc. 72, 36–43
+/// Confirmed: PhotochemCAD (Du et al. 1998), Fally et al. (2009)
+pub const BENZENE_EXTINCTION_254: f32 = 204.0;
 
 // ----------------------------- Spectral Bandwidths (nm FWHM) ----------------
 /// Tryptophan bandwidth
@@ -84,6 +91,10 @@ pub const TYR_BANDWIDTH: f32 = 12.0;
 pub const PHE_BANDWIDTH: f32 = 10.0;
 /// Disulfide bandwidth (broader due to conformational heterogeneity)
 pub const DISULFIDE_BANDWIDTH: f32 = 20.0;
+/// Benzene bandwidth - identical ¹B₂ᵤ chromophore as PHE (4nm blue-shifted)
+/// Must match PHE_BANDWIDTH: same transition, same vibronic envelope
+/// Bernstein & Lee (1981), J. Chem. Phys. 74(6), 3159
+pub const BENZENE_BANDWIDTH: f32 = PHE_BANDWIDTH;
 
 /// Water extinction at 280nm - TRANSPARENT
 /// This is the key insight: water doesn't absorb UV at aromatic wavelengths
@@ -139,6 +150,12 @@ pub const HEAT_YIELD_TRP: f32 = 0.74;        // 1 - 0.13 - 0.13
 pub const HEAT_YIELD_TYR: f32 = 0.83;        // 1 - 0.14 - 0.03
 pub const HEAT_YIELD_PHE: f32 = 0.97;        // 1 - 0.024 - 0.006
 pub const HEAT_YIELD_DISULFIDE: f32 = 1.00;  // No fluorescence pathway
+/// Benzene virtual cosolvent: η = 1 - Φ_f(0.05) - Φ_isc(0.24) = 0.71
+/// Φ_f: Dawson & Windsor (1968), J. Phys. Chem. 72, 3251 (solution phase)
+/// Φ_isc: Cundall & Robinson (1972), J. Chem. Soc. Faraday Trans. 2, 68, 1691
+///   Dilute limit (~0.2M): Φ_T = 0.24 (no excimer-enhanced ISC)
+///   Matches Tan et al. (2016) cosolvent MD concentration (0.2M benzene)
+pub const HEAT_YIELD_BENZENE: f32 = 0.71;
 
 /// Effective degrees of freedom for local heating (N_eff)
 /// These are EFFECTIVE DOF PROXIES calibrated for local temperature response,
@@ -147,6 +164,9 @@ pub const NEFF_TRP: f32 = 9.0;   // Indole ring system - effective DOF proxy
 pub const NEFF_TYR: f32 = 10.0;  // Phenol + hydroxyl system - effective DOF proxy
 pub const NEFF_PHE: f32 = 9.0;   // Benzene + methylene system - effective DOF proxy
 pub const NEFF_DISULFIDE: f32 = 2.0;  // S-S bond - 2 atoms involved in stretch
+/// Benzene virtual cosolvent - 6 ring carbons only (no sidechain)
+/// Follows engine convention: TRP(9 ring)→9.0, PHE(6 ring+3 SC)→9.0, BNZ(6 ring)→6.0
+pub const NEFF_BENZENE: f32 = 6.0;
 
 /// Single-photon regime threshold
 /// Absorption probability must satisfy p << 1
@@ -271,13 +291,14 @@ pub fn wavelength_to_ev(wavelength_nm: f32) -> f32 {
 /// ε(λ) = ε_max × exp(-(λ - λ_max)² / (2σ²))
 /// where σ = FWHM / 2.355
 ///
-/// CANONICAL chromophore_type: 0=TRP, 1=TYR, 2=PHE, 3=S-S
+/// CANONICAL chromophore_type: 0=TRP, 1=TYR, 2=PHE, 3=S-S, 4=BNZ
 pub fn extinction_at_wavelength(chromophore_type: i32, wavelength_nm: f32) -> f32 {
     let (lambda_max, epsilon_max, bandwidth) = match chromophore_type {
         0 => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // TRP @ 280nm
         1 => (TYR_LAMBDA_MAX, TYR_EXTINCTION_274, TYR_BANDWIDTH),      // TYR @ 274nm
         2 => (PHE_LAMBDA_MAX, PHE_EXTINCTION_258, PHE_BANDWIDTH),      // PHE @ 258nm
         3 => (DISULFIDE_LAMBDA_MAX, DISULFIDE_EXTINCTION_250, DISULFIDE_BANDWIDTH), // S-S @ 250nm
+        4 => (BENZENE_LAMBDA_MAX, BENZENE_EXTINCTION_254, BENZENE_BANDWIDTH), // BNZ @ 254nm
         _ => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // Default to TRP
     };
 
@@ -290,7 +311,7 @@ pub fn extinction_at_wavelength(chromophore_type: i32, wavelength_nm: f32) -> f3
 /// Compute local heating (ΔT in K) for a chromophore at a specific wavelength
 /// Uses full physics chain: ε(λ) → σ(λ) → p → E_dep → ΔT
 ///
-/// CANONICAL chromophore_type: 0=TRP, 1=TYR, 2=PHE, 3=S-S
+/// CANONICAL chromophore_type: 0=TRP, 1=TYR, 2=PHE, 3=S-S, 4=BNZ
 pub fn compute_heating_at_wavelength(chromophore_type: i32, wavelength_nm: f32) -> f32 {
     // Get wavelength-dependent extinction
     let epsilon = extinction_at_wavelength(chromophore_type, wavelength_nm);
@@ -304,8 +325,18 @@ pub fn compute_heating_at_wavelength(chromophore_type: i32, wavelength_nm: f32) 
     // Photon energy at this wavelength
     let e_photon = wavelength_to_ev(wavelength_nm);
 
+    // Per-chromophore heat yield
+    let eta = match chromophore_type {
+        0 => HEAT_YIELD_TRP,
+        1 => HEAT_YIELD_TYR,
+        2 => HEAT_YIELD_PHE,
+        3 => HEAT_YIELD_DISULFIDE,
+        4 => HEAT_YIELD_BENZENE,
+        _ => HEAT_YIELD_TRP,
+    };
+
     // Energy deposited
-    let e_dep = e_photon * p_absorb * HEAT_YIELD_TRP;
+    let e_dep = e_photon * p_absorb * eta;
 
     // N_eff for this chromophore
     let n_eff = match chromophore_type {
@@ -313,6 +344,7 @@ pub fn compute_heating_at_wavelength(chromophore_type: i32, wavelength_nm: f32) 
         1 => NEFF_TYR,
         2 => NEFF_PHE,
         3 => NEFF_DISULFIDE,
+        4 => NEFF_BENZENE,
         _ => NEFF_TRP,
     };
 
@@ -321,7 +353,8 @@ pub fn compute_heating_at_wavelength(chromophore_type: i32, wavelength_nm: f32) 
 }
 
 /// Standard wavelengths for frequency hopping protocol (nm)
-pub const FREQUENCY_HOP_WAVELENGTHS: [f32; 5] = [258.0, 265.0, 274.0, 280.0, 290.0];
+/// Includes 254nm for benzene cosolvent probe coverage
+pub const FREQUENCY_HOP_WAVELENGTHS: [f32; 6] = [250.0, 254.0, 258.0, 274.0, 280.0, 290.0];
 
 /// Disulfide bond maximum distance (Å) for S-S detection
 pub const DISULFIDE_BOND_MAX_DISTANCE: f32 = 2.5;

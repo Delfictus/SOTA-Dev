@@ -90,6 +90,10 @@ struct Args {
     #[arg(long, default_value = "50000")]
     hold_steps: i32,
 
+    /// Cold hold steps at start temperature before ramping (cryo baseline)
+    #[arg(long, default_value = "0")]
+    cold_hold_steps: i32,
+
     /// Grid spacing in Angstroms
     #[arg(short, long, default_value = "1.0")]
     spacing: f32,
@@ -271,11 +275,13 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
             println!("  Start: {:.1}K", args.start_temp);
             println!("  End:   {:.1}K", args.end_temp);
             println!("  Ramp:  {} steps", args.ramp_steps);
+            println!("  Cold hold: {} steps", args.cold_hold_steps);
             TemperatureProtocol {
                 start_temp: args.start_temp,
                 end_temp: args.end_temp,
                 ramp_steps: args.ramp_steps,
                 hold_steps: args.hold_steps,
+                cold_hold_steps: args.cold_hold_steps,
                 current_step: 0,
             }
         }
@@ -393,12 +399,12 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         total_spikes += result.spike_count;
 
         // Track spikes by phase
-        let phase = if step < temp_protocol.ramp_steps / 3 {
-            0  // Cold phase
-        } else if step < temp_protocol.ramp_steps {
+        let phase = if step < temp_protocol.cold_hold_steps {
+            0  // Cold hold phase
+        } else if step < temp_protocol.cold_hold_steps + temp_protocol.ramp_steps {
             1  // Ramp phase
         } else {
-            2  // Warm phase
+            2  // Warm hold phase
         };
         phase_spikes[phase] += result.spike_count;
 
@@ -514,6 +520,7 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         "protocol": format!("{:?}", args.protocol),
         "start_temp": temp_protocol.start_temp,
         "end_temp": temp_protocol.end_temp,
+        "cold_hold_steps": temp_protocol.cold_hold_steps,
         "total_steps": total_steps,
         "total_spikes": total_spikes,
         "phase_spikes": {

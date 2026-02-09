@@ -1,0 +1,17 @@
+{
+  "manifest_path": "e2e_validation_test/manifest_myc.json",
+  "total_structures": 1,
+  "successful": 1,
+  "failed": 0,
+  "total_elapsed_seconds": 377.346556025,
+  "results": [
+    {
+      "name": "1nkp_dimer",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 377.182658474,
+      "sites_found": 0,
+      "druggable_sites": 0
+    }
+  ]
+}

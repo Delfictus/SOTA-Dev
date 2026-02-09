@@ -1,0 +1,365 @@
+╔═══════════════════════════════════════════════════════════════╗
+║     PRISM4D NHS RT-FULL - BATCH MODE (from manifest)          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+[2026-02-08T23:02:05Z INFO  nhs_rt_full] Loading manifest: e2e_validation_test/manifest_myc.json
+[2026-02-08T23:02:05Z INFO  nhs_rt_full] Manifest loaded: 1 structures in 1 batches
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]   Collecting batch 0: 1 structures, 10 replicas (tier: Small)
+[2026-02-08T23:02:05Z INFO  nhs_rt_full] SIZE-TIER SEQUENTIAL BATCHING: 1 structures across 1 tiers
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]   Tier small (≤5K atoms): 1 structures (2879-2879 atoms), 10 entries with 10 replicas
+[2026-02-08T23:02:05Z INFO  nhs_rt_full] Creating ONE CudaContext (device 0)...
+[2026-02-08T23:02:05Z INFO  nhs_rt_full] ONE CudaContext. ZERO threads. 1 tiers sequentially.
+[2026-02-08T23:02:05Z INFO  nhs_rt_full] ═══ Tier 1/1: small (≤5K atoms) (1 structures, max 2879 atoms) ═══
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]     Creating AmberSimdBatch: 1 structures × 10 replicas = 10 total entries, max 2879 atoms
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] AmberSimdBatch initialized: max 10 structures × 2879 atoms
+[2026-02-08T23:02:05Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1nkp_dimer.topology.json
+[2026-02-08T23:02:05Z INFO  prism_nhs::input] Loaded topology: 2879 atoms, 171 residues, 2 chains
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]       Loaded: 1nkp_dimer (2879 atoms, 123 aromatics) → 10 replicas starting at ID 0
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]     Finalizing batch for GPU upload...
+[2026-02-08T23:02:05Z INFO  prism_gpu::h_constraints] 🔗 HConstraints: 9060 clusters (4610 single, 3380 CH2/NH2, 1070 CH3/NH3)
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] H-constraints: 9060 clusters (14580 total constraints, DOF adjusted)
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] Initializing FP16 parameter buffers...
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   FP16 buffers: 28790 atoms (56 KB saved)
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] Initializing Verlet neighbor list...
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   Verlet list: 28790 atoms, skin=2.0Å, rebuild threshold=1.0Å
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] Initializing Tensor Core force calculator...
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   Tensor Cores: enabled (WMMA 16×16 tiles)
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] Initializing async MD pipeline...
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   Async pipeline: enabled (bonded/non-bonded overlap)
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] SOTA optimizations enabled:
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   - Verlet list: YES
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   - Tensor Cores: YES
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: YES
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: YES
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: YES
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 10 structures, 28790 atoms
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]       ✓ Batch ready: 10 total entries (1 structures × 10 replicas) on GPU
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]     Running 35000 steps per replica (batch executes in lockstep)...
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]       Protocol phases: cold=14000, ramp=6000, warm=15000
+[2026-02-08T23:02:05Z INFO  nhs_rt_full]     [1/3] Cold hold at 50K (14000 steps)...
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:05Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:10Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 166.7 steps/rebuild)
+[2026-02-08T23:02:10Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:10Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:10Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:16Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 333.3 steps/rebuild)
+[2026-02-08T23:02:16Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:16Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:16Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:21Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 500.0 steps/rebuild)
+[2026-02-08T23:02:21Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:21Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:21Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:26Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 666.7 steps/rebuild)
+[2026-02-08T23:02:26Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:26Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:26Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:32Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 833.3 steps/rebuild)
+[2026-02-08T23:02:32Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:32Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:32Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:37Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 1000.0 steps/rebuild)
+[2026-02-08T23:02:37Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:37Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:37Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:42Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 1166.7 steps/rebuild)
+[2026-02-08T23:02:42Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:42Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:42Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:48Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 1333.3 steps/rebuild)
+[2026-02-08T23:02:48Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:48Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:48Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:53Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 1500.0 steps/rebuild)
+[2026-02-08T23:02:53Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:53Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:53Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:02:58Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 1666.7 steps/rebuild)
+[2026-02-08T23:02:58Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:02:58Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:02:58Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:04Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 1833.3 steps/rebuild)
+[2026-02-08T23:03:04Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:04Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:04Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:09Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 2000.0 steps/rebuild)
+[2026-02-08T23:03:09Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:09Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:09Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:14Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 2166.7 steps/rebuild)
+[2026-02-08T23:03:14Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:14Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:14Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:20Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 2333.3 steps/rebuild)
+[2026-02-08T23:03:20Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:20Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:20Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:25Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 2500.0 steps/rebuild)
+[2026-02-08T23:03:25Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:25Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:25Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:30Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 2666.7 steps/rebuild)
+[2026-02-08T23:03:30Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:30Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:30Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:36Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 2833.3 steps/rebuild)
+[2026-02-08T23:03:36Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:36Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:36Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:41Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 3000.0 steps/rebuild)
+[2026-02-08T23:03:41Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:41Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:41Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:46Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 3166.7 steps/rebuild)
+[2026-02-08T23:03:46Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:46Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:46Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:52Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 3333.3 steps/rebuild)
+[2026-02-08T23:03:52Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:52Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:52Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:03:57Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 3500.0 steps/rebuild)
+[2026-02-08T23:03:57Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:03:57Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:03:57Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:02Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 3666.7 steps/rebuild)
+[2026-02-08T23:04:02Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:02Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:02Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:08Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 3833.3 steps/rebuild)
+[2026-02-08T23:04:08Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:08Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:08Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:13Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 4000.0 steps/rebuild)
+[2026-02-08T23:04:13Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:13Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:13Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:19Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3125.0 steps/rebuild)
+[2026-02-08T23:04:19Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:19Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:19Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:24Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3250.0 steps/rebuild)
+[2026-02-08T23:04:24Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:24Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:24Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:29Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3375.0 steps/rebuild)
+[2026-02-08T23:04:29Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:29Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:29Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:35Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3500.0 steps/rebuild)
+[2026-02-08T23:04:35Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:35Z INFO  nhs_rt_full]     [2/3] Ramping 50K → 300K (6000 steps)...
+[2026-02-08T23:04:35Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:35Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:40Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3625.0 steps/rebuild)
+[2026-02-08T23:04:40Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:40Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:40Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:46Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3750.0 steps/rebuild)
+[2026-02-08T23:04:46Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:46Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:46Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:51Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 3875.0 steps/rebuild)
+[2026-02-08T23:04:51Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:51Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:51Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:04:56Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4000.0 steps/rebuild)
+[2026-02-08T23:04:56Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:04:56Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:04:56Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:02Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4125.0 steps/rebuild)
+[2026-02-08T23:05:02Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:02Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:02Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:07Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4250.0 steps/rebuild)
+[2026-02-08T23:05:07Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:07Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:07Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:13Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4375.0 steps/rebuild)
+[2026-02-08T23:05:13Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:13Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:13Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:18Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4500.0 steps/rebuild)
+[2026-02-08T23:05:18Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:18Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:18Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:23Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4625.0 steps/rebuild)
+[2026-02-08T23:05:23Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:23Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:23Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:29Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4750.0 steps/rebuild)
+[2026-02-08T23:05:29Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:29Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:29Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:34Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 4875.0 steps/rebuild)
+[2026-02-08T23:05:34Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:34Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:34Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:40Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 4 Verlet rebuilds (avg 5000.0 steps/rebuild)
+[2026-02-08T23:05:40Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:40Z INFO  nhs_rt_full]     [3/3] Warm hold at 300K (15000 steps)...
+[2026-02-08T23:05:40Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:40Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:45Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4100.0 steps/rebuild)
+[2026-02-08T23:05:45Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:45Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:45Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:50Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4200.0 steps/rebuild)
+[2026-02-08T23:05:50Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:50Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:50Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:05:56Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4300.0 steps/rebuild)
+[2026-02-08T23:05:56Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:05:56Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:05:56Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:01Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4400.0 steps/rebuild)
+[2026-02-08T23:06:01Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:01Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:01Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:07Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4500.0 steps/rebuild)
+[2026-02-08T23:06:07Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:07Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:07Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:12Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4600.0 steps/rebuild)
+[2026-02-08T23:06:12Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:12Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:12Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:18Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4700.0 steps/rebuild)
+[2026-02-08T23:06:18Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:18Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:18Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:23Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4800.0 steps/rebuild)
+[2026-02-08T23:06:23Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:23Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:23Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:28Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 4900.0 steps/rebuild)
+[2026-02-08T23:06:28Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:28Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:28Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:34Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 5 Verlet rebuilds (avg 5000.0 steps/rebuild)
+[2026-02-08T23:06:34Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:34Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:34Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:39Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4250.0 steps/rebuild)
+[2026-02-08T23:06:39Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:39Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:39Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:45Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4333.3 steps/rebuild)
+[2026-02-08T23:06:45Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:45Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:45Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:50Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4416.7 steps/rebuild)
+[2026-02-08T23:06:50Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:50Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:50Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:06:56Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4500.0 steps/rebuild)
+[2026-02-08T23:06:56Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:06:56Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:06:56Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:01Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4583.3 steps/rebuild)
+[2026-02-08T23:07:01Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:01Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:01Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:06Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4666.7 steps/rebuild)
+[2026-02-08T23:07:06Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:06Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:06Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:12Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4750.0 steps/rebuild)
+[2026-02-08T23:07:12Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:12Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:12Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:17Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4833.3 steps/rebuild)
+[2026-02-08T23:07:17Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:17Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:17Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:23Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 4916.7 steps/rebuild)
+[2026-02-08T23:07:23Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:23Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:23Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:28Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 6 Verlet rebuilds (avg 5000.0 steps/rebuild)
+[2026-02-08T23:07:28Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:28Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:28Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:33Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4357.1 steps/rebuild)
+[2026-02-08T23:07:33Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:33Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:33Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:39Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4428.6 steps/rebuild)
+[2026-02-08T23:07:39Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:39Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:39Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:44Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4500.0 steps/rebuild)
+[2026-02-08T23:07:44Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:44Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:44Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:50Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4571.4 steps/rebuild)
+[2026-02-08T23:07:50Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:50Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:50Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:07:55Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4642.9 steps/rebuild)
+[2026-02-08T23:07:55Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:07:55Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:07:55Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:08:01Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4714.3 steps/rebuild)
+[2026-02-08T23:08:01Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:08:01Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:08:01Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:08:06Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4785.7 steps/rebuild)
+[2026-02-08T23:08:06Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:08:06Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:08:06Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:08:11Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4857.1 steps/rebuild)
+[2026-02-08T23:08:11Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:08:11Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:08:11Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:08:17Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 4928.6 steps/rebuild)
+[2026-02-08T23:08:17Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:08:17Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 10 structures, 28790 atoms, 500 steps
+[2026-02-08T23:08:17Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-08T23:08:22Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 7 Verlet rebuilds (avg 5000.0 steps/rebuild)
+[2026-02-08T23:08:22Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]     ✓ Batch MD complete in 377.2s
+[2026-02-08T23:08:22Z INFO  prism_nhs::persistent_engine] 🚀 Initializing Persistent NHS Engine (max_atoms: 15000)
+[2026-02-08T23:08:22Z INFO  prism_nhs::persistent_engine]   CUDA context: 0ms
+[2026-02-08T23:08:22Z INFO  prism_nhs::persistent_engine]   PTX module: 2ms
+[2026-02-08T23:08:22Z INFO  prism_nhs::persistent_engine] ✅ Persistent engine ready (total init: 2ms)
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]     Processing 1nkp_dimer (10 replicas): 0 total raw spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 0: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 1: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 2: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 3: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 4: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 5: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 6: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 7: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 8: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 9: 0 spikes
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 0: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 1: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 2: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 3: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 4: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 5: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 6: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 7: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 8: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Replica 9: 0 filtered spikes → 0 sites
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Consensus analysis: site must appear in 7/10 replicas
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Consensus sites: 0
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       Final binding sites: 0
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]       ✓ Complete: 0 sites (0 druggable) in 0.0s
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]   Tier small (≤5K atoms) complete: 1/1 successful in 377.2s
+[2026-02-08T23:08:22Z INFO  nhs_rt_full]   Tier small (≤5K atoms) batch dropped, GPU memory freed.
+
+╔═══════════════════════════════════════════════════════════════╗
+║                    BATCH RUN COMPLETE                         ║
+╠═══════════════════════════════════════════════════════════════╣
+║ Total structures:    1                                       ║
+║ Successful:          1                                       ║
+║ Failed:              0                                       ║
+║ Size tiers:          1                                       ║
+║ Total time:        377.3s                                    ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Summary written to: e2e_validation_test/results_myc_dimer/batch_summary.json

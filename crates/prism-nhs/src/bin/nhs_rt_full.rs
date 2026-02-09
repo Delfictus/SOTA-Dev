@@ -98,6 +98,13 @@ struct Args {
     #[arg(long, default_value = "false")]
     parallel: bool,
 
+    /// True multi-stream concurrency: N independent CUDA streams each running
+    /// the FULL cryo-UV-BNZ-RT pipeline. Creates N PersistentNhsEngine instances
+    /// on separate streams for maximum GPU utilization. Results are aggregated
+    /// via consensus clustering across all streams.
+    #[arg(long, default_value = "0")]
+    multi_stream: usize,
+
     /// Enable adaptive epsilon selection from k-NN distribution
     /// Automatically determines optimal clustering scales per structure
     #[arg(long, default_value = "true")]
@@ -368,6 +375,9 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
 /// Run single structure (original behavior)
 #[cfg(feature = "gpu")]
 fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
+    if args.multi_stream > 1 {
+        return run_multi_stream_pipeline(args, topology_path, args.multi_stream);
+    }
     run_single_structure_internal(topology_path, &args.output, args, args.replicas)?;
     Ok(())
 }
@@ -481,11 +491,11 @@ fn run_full_pipeline_internal(
             ramp_steps: config.convergence_steps / 2,
             warm_hold_steps: config.convergence_steps / 2,
             current_step: 0,
-            uv_burst_energy: 30.0,
-            uv_burst_interval: 500,
+            uv_burst_energy: 50.0,
+            uv_burst_interval: 250,
             uv_burst_duration: 50,
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,
         }
     };
@@ -646,7 +656,7 @@ fn run_full_pipeline_internal(
             let custom_epsilon = if args.adaptive_epsilon {
                 None // Let the engine compute from k-NN distribution
             } else {
-                Some(vec![5.0f32, 7.0, 10.0, 14.0]) // Fixed default values
+                Some(vec![2.5f32, 3.5, 5.0, 7.0]) // Fixed default values
             };
             match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon) {
                 Ok(ms_result) => {
@@ -881,6 +891,21 @@ fn run_full_pipeline_internal(
         let druggable_count = clustered_sites.iter().filter(|s| s.druggability.is_druggable).count();
         log::info!("  ✓ Analyzed {} sites, {} druggable", clustered_sites.len(), druggable_count);
 
+        // Create mapping from internal index to PDB ID
+        let mut pdb_id_map = Vec::new();
+        if !topology.residues.is_empty() {
+            let max_idx = topology.residues.iter().map(|r| r.residue_idx).max().unwrap_or(0);
+            pdb_id_map.resize(max_idx + 1, 0);
+            for r in &topology.residues {
+                if r.residue_idx < pdb_id_map.len() {
+                    pdb_id_map[r.residue_idx] = r.residue_id;
+                }
+            }
+        } else {
+            // Fallback if metadata is missing
+            let max_id = *topology.residue_ids.iter().max().unwrap_or(&0);
+            pdb_id_map = (0..=max_id).map(|i| i as i32).collect();
+        }
         // Compute lining residues for top sites (limit to top 100 for performance)
         let lining_cutoff = args.lining_cutoff;
         for site in clustered_sites.iter_mut().take(100) {
@@ -889,6 +914,7 @@ fn run_full_pipeline_internal(
                 &topology.residue_ids,
                 &topology.residue_names,
                 &topology.chain_ids,
+                &pdb_id_map,
                 lining_cutoff,
             );
         }
@@ -1122,10 +1148,10 @@ fn run_batch_gpu_concurrent(
             ramp_steps: args.steps / 4,
             warm_hold_steps: args.steps / 4,
             current_step: 0,
-            uv_burst_energy: 30.0,
-            uv_burst_interval: 500,
+            uv_burst_energy: 50.0,
+            uv_burst_interval: 250,
             uv_burst_duration: 50,
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,
         }
     };
@@ -1301,7 +1327,7 @@ fn run_batch_gpu_concurrent(
                     let custom_epsilon = if args.adaptive_epsilon {
                         None
                     } else {
-                        Some(vec![5.0f32, 7.0, 10.0, 14.0])
+                        Some(vec![2.5f32, 3.5, 5.0, 7.0])
                     };
 
                     match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon) {
@@ -1398,6 +1424,21 @@ fn run_batch_gpu_concurrent(
             log::info!("      Aromatic analysis: {} druggable sites", druggable_count);
         }
 
+        // Create mapping from internal index to PDB ID
+        let mut pdb_id_map = Vec::new();
+        if !topology.residues.is_empty() {
+            let max_idx = topology.residues.iter().map(|r| r.residue_idx).max().unwrap_or(0);
+            pdb_id_map.resize(max_idx + 1, 0);
+            for r in &topology.residues {
+                if r.residue_idx < pdb_id_map.len() {
+                    pdb_id_map[r.residue_idx] = r.residue_id;
+                }
+            }
+        } else {
+            // Fallback if metadata is missing
+            let max_id = *topology.residue_ids.iter().max().unwrap_or(&0);
+            pdb_id_map = (0..=max_id).map(|i| i as i32).collect();
+        }
         // Compute lining residues
         let lining_cutoff = args.lining_cutoff;
         for site in clustered_sites.iter_mut().take(100) {
@@ -1406,6 +1447,7 @@ fn run_batch_gpu_concurrent(
                 &topology.residue_ids,
                 &topology.residue_names,
                 &topology.chain_ids,
+                &pdb_id_map,
                 lining_cutoff,
             );
         }
@@ -1516,7 +1558,7 @@ fn run_batch_phase(
 
         // Apply UV burst if at interval
         if *current_step % uv_interval < frame_interval {
-            apply_batch_uv_burst(batch, aromatic_indices_per_structure, topologies, uv_energy)?;
+            apply_batch_uv_burst(batch, aromatic_indices_per_structure, topologies, uv_energy, *current_step)?;
         }
 
         // Extract positions and detect spikes per entry (structure × replica)
@@ -1527,7 +1569,7 @@ fn run_batch_phase(
             let aromatic_indices = &aromatic_indices_per_structure[struct_idx];
 
             // Extract per-entry positions from batch
-            let start_idx = entry_idx * n_atoms * 3;
+            let start_idx = entry_idx * batch.max_atoms_per_struct() * 3;
             let end_idx = start_idx + n_atoms * 3;
             let positions = &all_positions[start_idx..end_idx];
 
@@ -1588,7 +1630,7 @@ fn run_batch_ramp_phase(
 
         // Apply UV burst if at interval
         if *current_step % uv_interval < frame_interval {
-            apply_batch_uv_burst(batch, aromatic_indices_per_structure, topologies, uv_energy)?;
+            apply_batch_uv_burst(batch, aromatic_indices_per_structure, topologies, uv_energy, *current_step)?;
         }
 
         // Extract positions and detect spikes per entry (structure × replica)
@@ -1599,7 +1641,7 @@ fn run_batch_ramp_phase(
             let aromatic_indices = &aromatic_indices_per_structure[struct_idx];
 
             // Extract per-entry positions from batch
-            let start_idx = entry_idx * n_atoms * 3;
+            let start_idx = entry_idx * batch.max_atoms_per_struct() * 3;
             let end_idx = start_idx + n_atoms * 3;
             let positions = &all_positions[start_idx..end_idx];
 
@@ -1625,12 +1667,26 @@ fn apply_batch_uv_burst(
     batch: &mut prism_gpu::AmberSimdBatch,
     aromatic_indices_per_structure: &[Vec<usize>],
     topologies: &[PrismPrepTopology],
-    energy: f32,
+    _energy: f32,
+    current_step: usize,
 ) -> Result<()> {
-    // Download current velocities
-    let mut velocities = batch.get_velocities()?;
+    use prism_nhs::config::{
+        extinction_to_cross_section, wavelength_to_ev,
+        CALIBRATED_PHOTON_FLUENCE,
+        HEAT_YIELD_TRP, HEAT_YIELD_TYR, HEAT_YIELD_PHE,
+        KB_EV_K, NEFF_TRP, NEFF_TYR, NEFF_PHE,
+    };
 
-    let velocity_boost = (2.0 * energy / 12.0).sqrt(); // Approximate for carbon mass
+    // Wavelength cycling: rotate through chromophore-specific wavelengths
+    // 280nm=TRP, 274nm=TYR, 258nm=PHE, 211nm=HIS
+    let wavelengths = [280.0f32, 274.0, 258.0, 211.0];
+    let wavelength = wavelengths[current_step / 250 % wavelengths.len()];
+
+    let mut velocities = batch.get_velocities()?;
+    let max_stride = batch.max_atoms_per_struct() * 3;
+
+    // Seed RNG from current_step for reproducible but varying directions
+    let mut rng_state: u64 = current_step as u64 * 6364136223846793005 + 1442695040888963407;
 
     for (struct_idx, aromatic_indices) in aromatic_indices_per_structure.iter().enumerate() {
         if aromatic_indices.is_empty() {
@@ -1638,25 +1694,90 @@ fn apply_batch_uv_burst(
         }
 
         let topology = &topologies[struct_idx];
-        let n_atoms = topology.n_atoms;
-        let offset = struct_idx * n_atoms * 3;
+        let offset = struct_idx * max_stride;
 
         for &atom_idx in aromatic_indices {
+            if atom_idx >= topology.residue_names.len() {
+                continue;
+            }
+
+            // Classify chromophore from residue name
+            let res_name = &topology.residue_names[atom_idx];
+            let (chromophore_type, heat_yield, n_eff) = match res_name.as_str() {
+                "TRP" => (0i32, HEAT_YIELD_TRP, NEFF_TRP),
+                "TYR" => (1, HEAT_YIELD_TYR, NEFF_TYR),
+                "PHE" => (2, HEAT_YIELD_PHE, NEFF_PHE),
+                "HIS" | "HID" | "HIE" | "HIP" => (3, 0.95f32, 6.0f32),
+                _ => continue,
+            };
+
+            // Wavelength-dependent extinction (Gaussian band model, FWHM ~15nm)
+            let (peak_wavelength, peak_extinction) = match chromophore_type {
+                0 => (280.0f32, 5500.0f32),  // TRP: indole
+                1 => (274.0, 1490.0),          // TYR: phenol
+                2 => (258.0, 200.0),           // PHE: benzene
+                3 => (211.0, 5700.0),          // HIS: imidazole
+                _ => continue,
+            };
+            let sigma_nm = 7.5f32; // Gaussian width
+            let delta = wavelength - peak_wavelength;
+            let extinction = peak_extinction * (-0.5 * (delta / sigma_nm).powi(2)).exp();
+
+            // Skip if negligible absorption at this wavelength
+            if extinction < 10.0 {
+                continue;
+            }
+
+            // Physics: absorption cross-section and probability
+            let cross_section = extinction_to_cross_section(extinction);
+            let p_absorb = cross_section * CALIBRATED_PHOTON_FLUENCE;
+
+            // Stochastic absorption check (PCG-style fast hash)
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(
+                (struct_idx as u64) << 32 | atom_idx as u64
+            );
+            let rand_val = ((rng_state >> 33) as f32) / (u32::MAX as f32);
+            if rand_val > p_absorb {
+                continue; // Photon not absorbed by this chromophore
+            }
+
+            // Energy deposited: E_photon * heat_yield
+            let e_photon = wavelength_to_ev(wavelength);
+            let e_dep = e_photon * heat_yield;
+
+            // Local heating: delta_T = E_dep / (1.5 * k_B * N_eff)
+            let delta_t_kelvin = e_dep / (1.5 * KB_EV_K * n_eff);
+
+            // Use real atomic mass from topology
+            let mass_amu = if atom_idx < topology.masses.len() {
+                topology.masses[atom_idx].max(1.0)
+            } else {
+                12.0
+            };
+
+            // KE -> velocity: v = sqrt(2 * KE_eV * 96.485 / mass_amu) in Å/ps
+            let ke_ev = 1.5 * KB_EV_K * delta_t_kelvin;
+            let velocity_boost = (2.0 * ke_ev * 96.485 / mass_amu).sqrt().max(0.0);
+
+            // Proper uniform random direction on unit sphere
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u1 = ((rng_state >> 33) as f32) / (u32::MAX as f32);
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u2 = ((rng_state >> 33) as f32) / (u32::MAX as f32);
+            let cos_theta = 2.0 * u1 - 1.0;
+            let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+            let phi = 2.0 * std::f32::consts::PI * u2;
+
             let base = offset + atom_idx * 3;
             if base + 2 < velocities.len() {
-                // Add random direction burst
-                let theta = (struct_idx as f32 * 0.7 + atom_idx as f32 * 1.3) % std::f32::consts::TAU;
-                let phi = (struct_idx as f32 * 1.1 + atom_idx as f32 * 0.9) % std::f32::consts::PI;
-                velocities[base] += velocity_boost * theta.sin() * phi.cos();
-                velocities[base + 1] += velocity_boost * theta.sin() * phi.sin();
-                velocities[base + 2] += velocity_boost * theta.cos();
+                velocities[base]     += velocity_boost * sin_theta * phi.cos();
+                velocities[base + 1] += velocity_boost * sin_theta * phi.sin();
+                velocities[base + 2] += velocity_boost * cos_theta;
             }
         }
     }
 
-    // Upload modified velocities
     batch.set_velocities(&velocities)?;
-
     Ok(())
 }
 
@@ -1736,6 +1857,331 @@ fn detect_spikes_from_positions(
     }
 
     spikes
+}
+
+/// True multi-stream pipeline: N independent CUDA streams, each running
+/// the full cryo-UV-BNZ-RT stack. One CudaContext, one PTX module, N streams.
+/// Results aggregated via consensus clustering.
+#[cfg(feature = "gpu")]
+fn run_multi_stream_pipeline(
+    args: &Args,
+    topology_path: &PathBuf,
+    n_streams: usize,
+) -> Result<()> {
+    use cudarc::driver::CudaContext;
+    use cudarc::nvrtc::Ptx;
+    use std::path::Path;
+
+    let total_start = Instant::now();
+
+    log::info!("╔═══════════════════════════════════════════════════════════════╗");
+    log::info!("║  TRUE MULTI-STREAM PIPELINE ({} concurrent streams)           ║", n_streams);
+    log::info!("║  Full cryo-UV-BNZ-RT on each independent CUDA stream          ║");
+    log::info!("╚═══════════════════════════════════════════════════════════════╝");
+
+    // ── ONE context, ONE module ──
+    let context = CudaContext::new(0).context("CUDA context")?;
+
+    let ptx_candidates = [
+        "../prism-gpu/src/kernels/nhs_amber_fused.ptx",
+        "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx",
+        "target/ptx/nhs_amber_fused.ptx",
+    ];
+    let ptx_path = ptx_candidates.iter()
+        .find(|p| Path::new(p).exists())
+        .ok_or_else(|| anyhow::anyhow!("nhs_amber_fused.ptx not found"))?;
+    let module = context
+        .load_module(Ptx::from_file(ptx_path))
+        .context("Failed to load PTX")?;
+
+    // ── N independent streams ──
+    let streams: Vec<std::sync::Arc<cudarc::driver::CudaStream>> = (0..n_streams)
+        .map(|_| context.new_stream())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .context("Failed to create CUDA streams")?;
+    log::info!("  ✓ {} CUDA streams created on shared context", n_streams);
+
+    // ── Load topology ONCE ──
+    let topology = PrismPrepTopology::load(topology_path)
+        .with_context(|| format!("Failed to load: {}", topology_path.display()))?;
+
+    let structure_name = topology_path.file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "structure".to_string());
+
+    let aromatic_positions = extract_aromatic_positions(&topology);
+    log::info!("  Structure: {} ({} atoms, {} aromatics)",
+        structure_name, topology.n_atoms, aromatic_positions.len());
+
+    if topology.n_atoms < 500 {
+        anyhow::bail!("Protein too small for GPU analysis ({} atoms, min 500)", topology.n_atoms);
+    }
+
+    let config = PersistentBatchConfig {
+        max_atoms: topology.n_atoms.max(15000),
+        survey_steps: args.steps / 2,
+        convergence_steps: args.steps / 4,
+        precision_steps: args.steps / 4,
+        temperature: args.temperature,
+        cryo_temp: args.cryo_temp,
+        cryo_hold: 50000,
+        ..Default::default()
+    };
+
+    let steps_per_stream = if args.fast { 35_000i32 } else { args.steps };
+
+    let protocol = if args.fast {
+        CryoUvProtocol::fast_35k()
+    } else {
+        CryoUvProtocol {
+            start_temp: args.cryo_temp,
+            end_temp: args.temperature,
+            cold_hold_steps: config.cryo_hold,
+            ramp_steps: config.convergence_steps / 2,
+            warm_hold_steps: config.convergence_steps / 2,
+            current_step: 0,
+            uv_burst_energy: 50.0,
+            uv_burst_interval: 250,
+            uv_burst_duration: 50,
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
+            wavelength_dwell_steps: 500,
+        }
+    };
+    let _target_end_temp = protocol.end_temp;
+
+    // ── Run N engines on N threads (scoped for safe borrowing) ──
+    log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
+    let sim_start = Instant::now();
+
+    let stream_results: Vec<Result<Vec<prism_nhs::fused_engine::GpuSpikeEvent>>> =
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..n_streams).map(|i| {
+                let ctx = context.clone();
+                let mod_ = module.clone();
+                let stream_i = streams[i].clone();
+                let topo_ref = &topology;
+                let config_ref = &config;
+                let prot = protocol.clone();
+                let seed = args.replica_seed + i as u64 * 12345;
+                let ultimate = args.ultimate_mode;
+                let steps = steps_per_stream;
+
+                s.spawn(move || -> Result<Vec<prism_nhs::fused_engine::GpuSpikeEvent>> {
+                    log::info!("    [stream {}] Starting (seed: {})...", i, seed);
+
+                    let mut engine = PersistentNhsEngine::new_on_stream(
+                        config_ref, ctx, mod_, stream_i,
+                    )?;
+                    engine.load_topology(topo_ref)?;
+                    engine.set_cryo_uv_protocol(prot)?;
+                    engine.set_spike_accumulation(true);
+
+                    if ultimate {
+                        match engine.enable_ultimate_mode(topo_ref) {
+                            Ok(()) => log::info!("    [stream {}] UltimateEngine: ✓", i),
+                            Err(e) => log::warn!("    [stream {}] UltimateEngine: ✗ {}", i, e),
+                        }
+                    }
+
+                    engine.reset_for_replica(seed)?;
+                    let summary = engine.run(steps)?;
+                    let spikes = engine.get_accumulated_spikes();
+
+                    log::info!("    [stream {}] Complete: {} spikes, T={:.1}K",
+                        i, spikes.len(), summary.end_temperature);
+                    Ok(spikes)
+                })
+            }).collect();
+
+            handles.into_iter()
+                .map(|h| h.join().expect("stream thread panicked"))
+                .collect()
+        });
+
+    let sim_elapsed = sim_start.elapsed();
+    log::info!("  ✓ All {} streams complete in {:.1}s", n_streams, sim_elapsed.as_secs_f64());
+
+    // ── Aggregate: per-stream filtering + clustering → consensus ──
+    log::info!("\n  Aggregating results across {} streams...", n_streams);
+
+    let mut cluster_engine = PersistentNhsEngine::new(&config)?;
+    cluster_engine.load_topology(&topology)?;
+
+    let mut per_stream_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
+    let mut per_stream_stats: Vec<serde_json::Value> = Vec::new();
+
+    for (i, result) in stream_results.into_iter().enumerate() {
+        let raw_spikes = match result {
+            Ok(spikes) => spikes,
+            Err(e) => {
+                log::error!("    Stream {} failed: {}", i, e);
+                per_stream_stats.push(serde_json::json!({
+                    "stream_id": i, "error": e.to_string(),
+                }));
+                per_stream_sites.push(Vec::new());
+                continue;
+            }
+        };
+
+        let filtered = if raw_spikes.len() > 1000 {
+            let mut intensities: Vec<f32> = raw_spikes.iter().map(|s| s.intensity).collect();
+            intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let idx = (intensities.len() as f32 * 0.98) as usize;
+            let threshold = intensities.get(idx).copied().unwrap_or(0.0);
+            raw_spikes.into_iter().filter(|s| s.intensity >= threshold).collect::<Vec<_>>()
+        } else {
+            raw_spikes
+        };
+
+        let sites = if !filtered.is_empty() && args.rt_clustering {
+            let positions: Vec<f32> = filtered.iter()
+                .flat_map(|s| { let p = s.position; [p[0], p[1], p[2]].into_iter() })
+                .collect();
+
+            if args.multi_scale {
+                let eps = if args.adaptive_epsilon { None } else { Some(vec![2.5f32, 3.5, 5.0, 7.0]) };
+                match cluster_engine.multi_scale_cluster_spikes_with_epsilon(&positions, eps) {
+                    Ok(ms) => {
+                        let ids = ms.to_cluster_ids(filtered.len());
+                        let fake = prism_nhs::rt_clustering::RtClusteringResult {
+                            cluster_ids: ids, num_clusters: ms.num_clusters(),
+                            total_neighbors: 0, gpu_time_ms: 0.0,
+                        };
+                        let all = build_sites_from_clustering(&filtered, &fake);
+                        let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
+                        all.into_iter().filter(|s| s.spike_count >= min_s).collect()
+                    }
+                    Err(_) => Vec::new()
+                }
+            } else {
+                match cluster_engine.cluster_spikes(&positions) {
+                    Ok(r) => {
+                        let all = build_sites_from_clustering(&filtered, &r);
+                        let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
+                        all.into_iter().filter(|s| s.spike_count >= min_s).collect()
+                    }
+                    Err(_) => Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        log::info!("    Stream {}: {} filtered spikes → {} sites", i, filtered.len(), sites.len());
+        per_stream_stats.push(serde_json::json!({
+            "stream_id": i,
+            "raw_spikes": filtered.len(),
+            "sites_found": sites.len(),
+            "druggable_sites": sites.iter().filter(|s| s.druggability.is_druggable).count(),
+        }));
+        per_stream_sites.push(sites);
+    }
+
+    let consensus_threshold = if n_streams >= 3 {
+        (n_streams as f32 * 0.67).ceil() as usize
+    } else {
+        1
+    };
+    log::info!("  Consensus threshold: {}/{} streams", consensus_threshold, n_streams);
+
+    let mut clustered_sites = if n_streams == 1 && !per_stream_sites.is_empty() {
+        per_stream_sites.into_iter().next().unwrap_or_default()
+    } else {
+        build_consensus_sites(&per_stream_sites, consensus_threshold, 5.0)
+    };
+    log::info!("  Consensus binding sites: {}", clustered_sites.len());
+
+    if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
+        enhance_sites_with_aromatics(&mut clustered_sites, &aromatic_positions);
+    }
+
+    let mut pdb_id_map = Vec::new();
+    if !topology.residues.is_empty() {
+        let max_idx = topology.residues.iter().map(|r| r.residue_idx).max().unwrap_or(0);
+        pdb_id_map.resize(max_idx + 1, 0);
+        for r in &topology.residues {
+            if r.residue_idx < pdb_id_map.len() {
+                pdb_id_map[r.residue_idx] = r.residue_id;
+            }
+        }
+    } else {
+        let max_id = *topology.residue_ids.iter().max().unwrap_or(&0);
+        pdb_id_map = (0..=max_id).map(|i| i as i32).collect();
+    }
+
+    let catalytic_residues = ["GLU", "ASP", "HIS", "SER", "CYS", "LYS"];
+    for site in clustered_sites.iter_mut().take(100) {
+        site.compute_lining_residues(
+            &topology.positions, &topology.residue_ids,
+            &topology.residue_names, &topology.chain_ids,
+            &pdb_id_map, args.lining_cutoff,
+        );
+    }
+
+    std::fs::create_dir_all(&args.output)?;
+    let output_base = args.output.join(&structure_name);
+
+    if !clustered_sites.is_empty() {
+        write_binding_site_visualizations(&clustered_sites, &output_base, &structure_name)?;
+
+        let json_path = output_base.with_extension("binding_sites.json");
+        let json_output = serde_json::json!({
+            "structure": structure_name,
+            "mode": "multi_stream",
+            "n_streams": n_streams,
+            "total_steps_per_stream": steps_per_stream,
+            "simulation_time_sec": sim_elapsed.as_secs_f64(),
+            "consensus_threshold": consensus_threshold,
+            "per_stream_stats": per_stream_stats,
+            "binding_sites": clustered_sites.len(),
+            "druggable_sites": clustered_sites.iter().filter(|s| s.druggability.is_druggable).count(),
+            "lining_residue_cutoff_angstroms": args.lining_cutoff,
+            "sites": clustered_sites.iter().take(100).map(|s| {
+                let cat_count = s.lining_residues.iter()
+                    .filter(|r| catalytic_residues.contains(&r.resname.as_str())).count();
+                serde_json::json!({
+                    "id": s.cluster_id,
+                    "centroid": s.centroid,
+                    "volume": s.estimated_volume,
+                    "spike_count": s.spike_count,
+                    "quality_score": s.quality_score,
+                    "druggability": s.druggability.overall,
+                    "is_druggable": s.druggability.is_druggable,
+                    "classification": format!("{:?}", s.classification),
+                    "aromatic_score": s.aromatic_proximity.as_ref().map(|p| p.aromatic_score),
+                    "catalytic_residue_count": cat_count,
+                    "lining_residues": s.lining_residues.iter().map(|r| {
+                        serde_json::json!({
+                            "chain": r.chain, "resid": r.resid, "resname": r.resname,
+                            "min_distance": r.min_distance, "n_atoms": r.n_atoms_in_pocket,
+                            "is_catalytic": catalytic_residues.contains(&r.resname.as_str()),
+                        })
+                    }).collect::<Vec<_>>(),
+                    "residue_ids": s.lining_residue_ids(),
+                })
+            }).collect::<Vec<_>>(),
+        });
+        std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
+        log::info!("  ✓ JSON: {}", json_path.display());
+    }
+
+    let total_time = total_start.elapsed();
+    let druggable = clustered_sites.iter().filter(|s| s.druggability.is_druggable).count();
+
+    log::info!("\n╔═══════════════════════════════════════════════════════════════╗");
+    log::info!("║  MULTI-STREAM PIPELINE COMPLETE                               ║");
+    log::info!("╠═══════════════════════════════════════════════════════════════╣");
+    log::info!("║  Structure: {:<48} ║", structure_name);
+    log::info!("║  CUDA streams: {:<44} ║", n_streams);
+    log::info!("║  Steps/stream: {:<44} ║", steps_per_stream);
+    log::info!("║  Simulation time: {:<40.1}s ║", sim_elapsed.as_secs_f64());
+    log::info!("║  Total time: {:<46.1}s ║", total_time.as_secs_f64());
+    log::info!("║  Consensus sites: {:<41} ║", clustered_sites.len());
+    log::info!("║  Druggable sites: {:<41} ║", druggable);
+    log::info!("║  Consensus: {}/{:<41} ║", consensus_threshold, n_streams);
+    log::info!("╚═══════════════════════════════════════════════════════════════╝");
+
+    Ok(())
 }
 
 /// Extract aromatic residue positions from topology
