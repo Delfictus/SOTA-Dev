@@ -551,11 +551,19 @@ fn run_full_pipeline_internal(
         for spike in result.spikes {
             all_spikes.push(prism_nhs::fused_engine::GpuSpikeEvent {
                 timestep: spike.timestep as i32,
-                voxel_idx: 0, // Not tracked in parallel mode
+                voxel_idx: 0,
                 position: spike.position,
                 intensity: spike.intensity,
-                nearby_residues: [0; 8], // Not tracked in parallel mode
+                nearby_residues: [0; 8],
                 n_residues: 0,
+                spike_source: 0,
+                wavelength_nm: 0.0,
+                aromatic_type: -1,
+                aromatic_residue_id: -1,
+                water_density: 0.0,
+                vibrational_energy: 0.0,
+                n_nearby_excited: 0,
+                _padding: 0,
             });
         }
 
@@ -1851,6 +1859,14 @@ fn detect_spikes_from_positions(
                     intensity,
                     nearby_residues: [0; 8],
                     n_residues: 0,
+                    spike_source: 0,
+                    wavelength_nm: 0.0,
+                    aromatic_type: -1,
+                    aromatic_residue_id: -1,
+                    water_density: 0.0,
+                    vibrational_energy: 0.0,
+                    n_nearby_excited: 0,
+                    _padding: 0,
                 });
             }
         }

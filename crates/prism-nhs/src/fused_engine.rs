@@ -219,6 +219,8 @@ pub struct GpuTemperatureProtocol {
 #[cfg(feature = "gpu")]
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
+#[repr(C)]
 pub struct GpuSpikeEvent {
     pub timestep: i32,
     pub voxel_idx: i32,
@@ -226,6 +228,15 @@ pub struct GpuSpikeEvent {
     pub intensity: f32,
     pub nearby_residues: [i32; 8],
     pub n_residues: i32,
+    // Enhanced metadata for downstream docking/analysis
+    pub spike_source: i32,           // 1=UV, 2=LIF
+    pub wavelength_nm: f32,          // UV wavelength (0 for LIF)
+    pub aromatic_type: i32,          // 0=TRP, 1=TYR, 2=PHE, 3=SS, -1=none
+    pub aromatic_residue_id: i32,    // closest excited aromatic residue (-1 for LIF)
+    pub water_density: f32,          // local water density
+    pub vibrational_energy: f32,     // UV energy deposited (0 for LIF)
+    pub n_nearby_excited: i32,       // excited aromatics in range (pi-stacking)
+    pub _padding: i32,               // pad to 96 bytes
 }
 
 #[cfg(feature = "gpu")]
@@ -235,6 +246,14 @@ impl Default for GpuSpikeEvent {
             timestep: 0,
             voxel_idx: 0,
             position: [0.0; 3],
+            spike_source: 0,
+            wavelength_nm: 0.0,
+            aromatic_type: -1,
+            aromatic_residue_id: -1,
+            water_density: 0.0,
+            vibrational_energy: 0.0,
+            n_nearby_excited: 0,
+            _padding: 0,
             intensity: 0.0,
             nearby_residues: [0; 8],
             n_residues: 0,
@@ -3367,7 +3386,8 @@ impl NhsAmberFusedEngine {
 
             // Download spike events
             if n_spikes > 0 {
-                let mut spike_bytes = vec![0u8; n_spikes * self.spike_event_size];
+                let full_size = MAX_SPIKES_PER_STEP * self.spike_event_size;
+                let mut spike_bytes = vec![0u8; full_size];
                 stream.memcpy_dtoh(&replica.d_spike_events, &mut spike_bytes)?;
 
                 // Convert bytes to SpikeEvent structs
@@ -3770,7 +3790,7 @@ impl NhsAmberFusedEngine {
 
                 // Download ONLY the actual spike bytes (not the full 6MB buffer!)
                 // This is a major performance optimization - copies bytes_needed instead of 6MB
-                let mut full_buffer = vec![0u8; bytes_needed];
+                let mut full_buffer = vec![0u8; MAX_SPIKES_PER_STEP * self.spike_event_size];
                 self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
 
                 // Parse and accumulate spike events
@@ -3813,6 +3833,40 @@ impl NhsAmberFusedEngine {
                         full_buffer[offset + 58], full_buffer[offset + 59],
                     ]);
 
+                    // Parse enhanced metadata (offsets 60-91)
+                    let spike_source = i32::from_le_bytes([
+                        full_buffer[offset + 60], full_buffer[offset + 61],
+                        full_buffer[offset + 62], full_buffer[offset + 63],
+                    ]);
+                    let wavelength_nm = f32::from_le_bytes([
+                        full_buffer[offset + 64], full_buffer[offset + 65],
+                        full_buffer[offset + 66], full_buffer[offset + 67],
+                    ]);
+                    let aromatic_type = i32::from_le_bytes([
+                        full_buffer[offset + 68], full_buffer[offset + 69],
+                        full_buffer[offset + 70], full_buffer[offset + 71],
+                    ]);
+                    let aromatic_residue_id = i32::from_le_bytes([
+                        full_buffer[offset + 72], full_buffer[offset + 73],
+                        full_buffer[offset + 74], full_buffer[offset + 75],
+                    ]);
+                    let water_density = f32::from_le_bytes([
+                        full_buffer[offset + 76], full_buffer[offset + 77],
+                        full_buffer[offset + 78], full_buffer[offset + 79],
+                    ]);
+                    let vibrational_energy = f32::from_le_bytes([
+                        full_buffer[offset + 80], full_buffer[offset + 81],
+                        full_buffer[offset + 82], full_buffer[offset + 83],
+                    ]);
+                    let n_nearby_excited = i32::from_le_bytes([
+                        full_buffer[offset + 84], full_buffer[offset + 85],
+                        full_buffer[offset + 86], full_buffer[offset + 87],
+                    ]);
+                    if self.accumulated_spikes.len() < 5 {
+                        log::info!("SPIKE DEBUG #{}: pos=[{:.2}, {:.2}, {:.2}] voxel={} src={} wl={:.0} arom_type={} intensity={:.3}",
+                            self.accumulated_spikes.len(), pos_x, pos_y, pos_z, voxel_idx, spike_source, wavelength_nm, aromatic_type, intensity);
+                        log::info!("  raw bytes[0..24]: {:?}", &full_buffer[offset..offset+24]);
+                    }
                     self.accumulated_spikes.push(GpuSpikeEvent {
                         timestep,
                         voxel_idx,
@@ -3820,6 +3874,14 @@ impl NhsAmberFusedEngine {
                         intensity,
                         nearby_residues,
                         n_residues,
+                        spike_source,
+                        wavelength_nm,
+                        aromatic_type,
+                        aromatic_residue_id,
+                        water_density,
+                        vibrational_energy,
+                        n_nearby_excited,
+                        _padding: 0,
                     });
                 }
             }
@@ -4378,6 +4440,14 @@ impl NhsAmberFusedEngine {
                 intensity,
                 nearby_residues,
                 n_residues,
+                spike_source: 0,
+                wavelength_nm: 0.0,
+                aromatic_type: -1,
+                aromatic_residue_id: -1,
+                water_density: 0.0,
+                vibrational_energy: 0.0,
+                n_nearby_excited: 0,
+                _padding: 0,
             });
         }
 

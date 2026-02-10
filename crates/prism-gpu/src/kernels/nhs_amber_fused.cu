@@ -57,7 +57,7 @@
 #define WATER_DENSITY_BULK 0.0334f  // molecules/A^3
 #define LIF_THRESHOLD 0.5f           // Tuned threshold for cryo-UV water density changes
 #define LIF_RESET 0.0f              // Reset potential
-#define REFRACTORY_STEPS 50       // 50 steps * 0.002ps = 0.1ps refractory period
+#define REFRACTORY_STEPS 250       // 50 steps * 0.002ps = 0.1ps refractory period
 #define UV_WAVELENGTH 280.0f        // nm - aromatic absorption
 
 // ============================================================================
@@ -198,6 +198,15 @@ struct SpikeEvent {
     float intensity;
     int nearby_residues[8];
     int n_residues;
+    // Enhanced metadata for downstream docking/analysis
+    int spike_source;           // 1=UV, 2=LIF
+    float wavelength_nm;        // UV wavelength that triggered (0 for LIF)
+    int aromatic_type;          // 0=TRP, 1=TYR, 2=PHE, 3=SS, -1=none/LIF
+    int aromatic_residue_id;    // residue ID of closest excited aromatic (-1 for LIF)
+    float water_density;        // local water density at spike voxel
+    float vibrational_energy;   // energy deposited by UV excitation (0 for LIF)
+    int n_nearby_excited;       // number of excited aromatics in range (pi-stacking)
+    int _padding;               // pad to 96 bytes (16-byte aligned)
 };
 
 // Warp matrix entry - maps voxel to atoms
@@ -557,14 +566,14 @@ __device__ bool lif_neuron_update(
     const float NOISE_FLOOR = 0.002f;
     float abs_change = fabsf(density_change);
     // Increased amplification (10x) for cryo-UV detection
-    float bidirectional_signal = (abs_change > NOISE_FLOOR) ? (abs_change - NOISE_FLOOR) * 10.0f : 0.0f;
+    float bidirectional_signal = (abs_change > NOISE_FLOOR) ? (abs_change - NOISE_FLOOR) * 1.0f : 0.0f;
 
     // Exclusion-weighted term: detect hydrophobic dewetting zones
     float density_deviation = fabsf(water_density_current - WATER_DENSITY_BULK);
     const float EXCLUSION_NOISE_FLOOR = 0.005f;  // Lower floor for cryptic sites
     // Increased weight (5x) for exclusion-based detection
     float exclusion_signal = (density_deviation > EXCLUSION_NOISE_FLOOR) ?
-        (density_deviation - EXCLUSION_NOISE_FLOOR) * 5.0f : 0.0f;
+        (density_deviation - EXCLUSION_NOISE_FLOOR) * 0.5f : 0.0f;
 
     float combined_signal = bidirectional_signal + exclusion_signal;
 
@@ -670,12 +679,27 @@ __device__ void capture_spike_event(
     float3 voxel_center,
     float intensity,
     const WarpEntry& warp_entry,
-    const int* residue_ids
+    const int* residue_ids,
+    int spike_source,            // 1=UV, 2=LIF
+    float wavelength_nm,         // UV wavelength (0 for LIF)
+    int aromatic_type,           // 0=TRP,1=TYR,2=PHE,3=SS,-1=none
+    int aromatic_residue_id,     // closest excited aromatic residue (-1 for LIF)
+    float water_density,         // local water density
+    float vibrational_energy,    // UV energy deposited (0 for LIF)
+    int n_nearby_excited         // excited aromatics in range
 ) {
     event.timestep = timestep;
     event.voxel_idx = voxel_idx;
     event.position = voxel_center;
     event.intensity = intensity;
+    event.spike_source = spike_source;
+    event.wavelength_nm = wavelength_nm;
+    event.aromatic_type = aromatic_type;
+    event.aromatic_residue_id = aromatic_residue_id;
+    event.water_density = water_density;
+    event.vibrational_energy = vibrational_energy;
+    event.n_nearby_excited = n_nearby_excited;
+    event._padding = 0;
     event.n_residues = 0;
 
     // Map to nearby residues via warp matrix
@@ -1202,7 +1226,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // into the LIF membrane potential, creating DIRECT UV→spike coupling
     // that's phase-locked to UV bursts.
 
-    float tau_mem = 10.0f;  // Membrane time constant
+    float tau_mem = 0.1f;  // Membrane time constant (real decay per step)
 
     for (int v = tid; v < total_voxels; v += gridDim.x * blockDim.x) {
         // Refractory countdown: decrement if >0, only fire-able when ==0
@@ -1248,6 +1272,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             int n_nearby_excited = 0;
             float total_vib_energy = 0.0f;
             float min_distance_to_excited = 1000.0f;  // Track closest excited aromatic
+            int closest_excited_idx = -1;  // Index of closest excited aromatic
 
             for (int a = 0; a < n_aromatics; a++) {
                 if (!d_is_excited[a]) continue;
@@ -1268,7 +1293,10 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 if (dist < UV_DETECTION_RADIUS) {
                     n_nearby_excited++;
                     total_vib_energy += d_vibrational_energy[a];
-                    min_distance_to_excited = fminf(min_distance_to_excited, dist);
+                    if (dist < min_distance_to_excited) {
+                        min_distance_to_excited = dist;
+                        closest_excited_idx = a;
+                    }
                 }
             }
 
@@ -1372,6 +1400,19 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 spike_grid[v] = REFRACTORY_STEPS;
                 spike_intensity = uv_signal;  // Use UV signal as intensity
 
+                // Extract closest aromatic metadata for enhanced spike event
+                int _arom_type = (closest_excited_idx >= 0) ? d_aromatic_type[closest_excited_idx] : -1;
+                int _arom_res = -1;
+                if (closest_excited_idx >= 0) {
+                    for (int wi = 0; wi < warp_matrix[v].n_atoms && _arom_res < 0; wi++) {
+                        int ai = warp_matrix[v].atom_indices[wi];
+                        if (ai >= 0 && ai < n_atoms && d_atom_to_aromatic[ai] == closest_excited_idx) {
+                            _arom_res = residue_ids[ai];
+                        }
+                    }
+                }
+                float _vib_e = (closest_excited_idx >= 0) ? d_vibrational_energy[closest_excited_idx] : 0.0f;
+
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
                     capture_spike_event(
@@ -1381,7 +1422,14 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         voxel_center,
                         spike_intensity,
                         warp_matrix[v],
-                        residue_ids
+                        residue_ids,
+                        1,                      // spike_source = UV
+                        uv_wavelength_nm,       // wavelength
+                        _arom_type,             // aromatic_type
+                        _arom_res,              // aromatic_residue_id
+                        water_density[v],       // water_density
+                        _vib_e,                 // vibrational_energy
+                        n_nearby_excited        // n_nearby_excited
                     );
                 }
 
@@ -1423,7 +1471,14 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         voxel_center,
                         spike_intensity,
                         warp_matrix[v],
-                        residue_ids
+                        residue_ids,
+                        2,                  // spike_source = LIF
+                        0.0f,               // no wavelength
+                        -1,                 // no aromatic type
+                        -1,                 // no aromatic residue
+                        water_density[v],   // water_density
+                        0.0f,               // no vibrational energy
+                        0                   // no nearby excited
                     );
                 }
             }
