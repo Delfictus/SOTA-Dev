@@ -1953,7 +1953,7 @@ fn run_multi_stream_pipeline(
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
     let sim_start = Instant::now();
 
-    let stream_results: Vec<Result<Vec<prism_nhs::fused_engine::GpuSpikeEvent>>> =
+    let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>)>> =
         std::thread::scope(|s| {
             let handles: Vec<_> = (0..n_streams).map(|i| {
                 let ctx = context.clone();
@@ -1966,7 +1966,7 @@ fn run_multi_stream_pipeline(
                 let ultimate = args.ultimate_mode;
                 let steps = steps_per_stream;
 
-                s.spawn(move || -> Result<Vec<prism_nhs::fused_engine::GpuSpikeEvent>> {
+                s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
 
                     let mut engine = PersistentNhsEngine::new_on_stream(
@@ -1986,10 +1986,11 @@ fn run_multi_stream_pipeline(
                     engine.reset_for_replica(seed)?;
                     let summary = engine.run(steps)?;
                     let spikes = engine.get_accumulated_spikes();
+                    let snapshots = engine.get_snapshots();
 
-                    log::info!("    [stream {}] Complete: {} spikes, T={:.1}K",
-                        i, spikes.len(), summary.end_temperature);
-                    Ok(spikes)
+                    log::info!("    [stream {}] Complete: {} spikes, {} snapshots, T={:.1}K",
+                        i, spikes.len(), snapshots.len(), summary.end_temperature);
+                    Ok((spikes, snapshots))
                 })
             }).collect();
 
@@ -2009,16 +2010,18 @@ fn run_multi_stream_pipeline(
 
     let mut per_stream_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
     let mut per_stream_stats: Vec<serde_json::Value> = Vec::new();
+    let mut all_stream_snapshots: Vec<Vec<prism_nhs::fused_engine::EnsembleSnapshot>> = Vec::new();
 
     for (i, result) in stream_results.into_iter().enumerate() {
-        let raw_spikes = match result {
-            Ok(spikes) => spikes,
+        let (raw_spikes, stream_snapshots) = match result {
+            Ok((spikes, snaps)) => (spikes, snaps),
             Err(e) => {
                 log::error!("    Stream {} failed: {}", i, e);
                 per_stream_stats.push(serde_json::json!({
                     "stream_id": i, "error": e.to_string(),
                 }));
                 per_stream_sites.push(Vec::new());
+                all_stream_snapshots.push(Vec::new());
                 continue;
             }
         };
@@ -2075,6 +2078,7 @@ fn run_multi_stream_pipeline(
             "druggable_sites": sites.iter().filter(|s| s.druggability.is_druggable).count(),
         }));
         per_stream_sites.push(sites);
+        all_stream_snapshots.push(stream_snapshots);
     }
 
     let consensus_threshold = if n_streams >= 3 {
@@ -2084,10 +2088,19 @@ fn run_multi_stream_pipeline(
     };
     log::info!("  Consensus threshold: {}/{} streams", consensus_threshold, n_streams);
 
+    // DEBUG: Log per-stream site centroids
+    for (i, sites) in per_stream_sites.iter().enumerate() {
+        for (j, site) in sites.iter().enumerate() {
+            log::info!("    Stream {} site {}: centroid=[{:.1}, {:.1}, {:.1}], spikes={}, intensity={:.3}",
+                i, j, site.centroid[0], site.centroid[1], site.centroid[2],
+                site.spike_count, site.avg_intensity);
+        }
+    }
+
     let mut clustered_sites = if n_streams == 1 && !per_stream_sites.is_empty() {
         per_stream_sites.into_iter().next().unwrap_or_default()
     } else {
-        build_consensus_sites(&per_stream_sites, consensus_threshold, 5.0)
+        build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0)
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
@@ -2163,6 +2176,16 @@ fn run_multi_stream_pipeline(
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
+    }
+
+    // Write per-stream ensemble trajectories
+    for (i, snapshots) in all_stream_snapshots.iter().enumerate() {
+        if !snapshots.is_empty() {
+            let stem = structure_name.strip_suffix(".topology").unwrap_or(&structure_name);
+            let stream_base = args.output.join(format!("{}_stream{:02}", stem, i));
+            write_ensemble_trajectory(snapshots, &topology, &stream_base)?;
+            log::info!("  ✓ Trajectory stream {}: {} frames", i, snapshots.len());
+        }
     }
 
     let total_time = total_start.elapsed();

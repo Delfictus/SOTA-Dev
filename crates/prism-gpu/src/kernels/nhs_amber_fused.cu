@@ -57,6 +57,7 @@
 #define WATER_DENSITY_BULK 0.0334f  // molecules/A^3
 #define LIF_THRESHOLD 0.5f           // Tuned threshold for cryo-UV water density changes
 #define LIF_RESET 0.0f              // Reset potential
+#define REFRACTORY_STEPS 50       // 50 steps * 0.002ps = 0.1ps refractory period
 #define UV_WAVELENGTH 280.0f        // nm - aromatic absorption
 
 // ============================================================================
@@ -1204,7 +1205,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     float tau_mem = 10.0f;  // Membrane time constant
 
     for (int v = tid; v < total_voxels; v += gridDim.x * blockDim.x) {
-        spike_grid[v] = 0;  // Reset spike flag
+        // Refractory countdown: decrement if >0, only fire-able when ==0
+        if (spike_grid[v] > 0) { spike_grid[v]--; continue; }
         float spike_intensity = 0.0f;
 
         // Compute voxel center position (needed for UV signal computation)
@@ -1367,7 +1369,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 voxel_n_atoms > 0 &&
                 min_distance_to_excited < MAX_SPIKE_DISTANCE &&
                 voxel_has_aromatic_atom) {
-                spike_grid[v] = 1;
+                spike_grid[v] = REFRACTORY_STEPS;
                 spike_intensity = uv_signal;  // Use UV signal as intensity
 
                 int spike_idx = atomicAdd(spike_count, 1);
@@ -1409,7 +1411,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             );
 
             if (spike) {
-                spike_grid[v] = 1;
+                spike_grid[v] = REFRACTORY_STEPS;
 
                 // Capture spike event with proper intensity
                 int spike_idx = atomicAdd(spike_count, 1);

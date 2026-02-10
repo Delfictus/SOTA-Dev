@@ -1420,17 +1420,6 @@ pub struct NhsAmberFusedEngine {
     d_aromatic_n_atoms: CudaSlice<i32>,       // [n_aromatics] - count of atoms per aromatic
 
     // ====================================================================
-    // DISPLACEMENT-BASED SPIKE DETECTION (nhs_spike_detect.cu)
-    // ====================================================================
-    spike_detect_kernel: CudaFunction,
-    spike_reset_kernel: CudaFunction,
-    d_prev_positions: CudaSlice<f32>,          // [n_atoms * 3] - previous step positions
-    d_spike_detect_aromatic_indices: CudaSlice<i32>,  // [n_spike_detect_aromatics] - flat aromatic atom indices
-    d_spike_detect_events: CudaSlice<u8>,      // [MAX_SPIKES_PER_STEP * spike_event_size]
-    d_spike_detect_count: CudaSlice<i32>,      // [1] - atomic counter
-    n_spike_detect_aromatics: usize,           // Number of individual aromatic atoms
-
-    // ====================================================================
     // O(N) CELL LIST / NEIGHBOR LIST BUFFERS
     // ====================================================================
     // Cell list constants (matches CUDA kernel)
@@ -1889,53 +1878,6 @@ impl NhsAmberFusedEngine {
         let d_aromatic_atom_indices: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1) * 16)?;
         let d_aromatic_n_atoms: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1))?;
 
-        // ================================================================
-        // DISPLACEMENT-BASED SPIKE DETECTION: Load kernel + allocate buffers
-        // ================================================================
-        // Build flat list of all individual aromatic ATOM indices
-        // Uses atom_to_aromatic mapping already built above
-        let spike_detect_atom_indices: Vec<i32> = atom_to_aromatic.iter()
-            .enumerate()
-            .filter(|(_, &arom_idx)| arom_idx >= 0)
-            .map(|(atom_idx, _)| atom_idx as i32)
-            .collect();
-        let n_spike_detect_aromatics = spike_detect_atom_indices.len();
-        log::info!("Spike detect: {} individual aromatic atoms from {} groups",
-                   n_spike_detect_aromatics, n_aromatics);
-
-        // Allocate GPU buffers for spike detection
-        let d_prev_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
-        let mut d_spike_detect_aromatic_indices: CudaSlice<i32> = stream.alloc_zeros(n_spike_detect_aromatics.max(1))?;
-        if n_spike_detect_aromatics > 0 {
-            stream.memcpy_htod(&spike_detect_atom_indices, &mut d_spike_detect_aromatic_indices)?;
-        }
-        let d_spike_detect_events: CudaSlice<u8> = stream.alloc_zeros(MAX_SPIKES_PER_STEP * std::mem::size_of::<GpuSpikeEvent>())?;
-        let d_spike_detect_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
-
-        // Load nhs_spike_detect PTX
-        let spike_detect_module = {
-            let spike_ptx_paths = vec![
-                std::path::PathBuf::from("crates/prism-gpu/src/kernels/nhs_spike_detect_sm120.ptx"),
-                std::path::PathBuf::from("crates/prism-gpu/src/kernels/nhs_spike_detect.ptx"),
-            ];
-            let mut loaded = None;
-            for path in &spike_ptx_paths {
-                if path.exists() {
-                    match context.load_module(Ptx::from_file(&path.display().to_string())) {
-                        Ok(m) => {
-                            log::info!("Loaded spike_detect PTX from: {}", path.display());
-                            loaded = Some(m);
-                            break;
-                        }
-                        Err(e) => log::warn!("Failed to load spike_detect PTX from {}: {}", path.display(), e),
-                    }
-                }
-            }
-            loaded.ok_or_else(|| anyhow::anyhow!("Failed to load nhs_spike_detect PTX"))?
-        };
-        let spike_detect_kernel = spike_detect_module.load_function("nhs_spike_detect")?;
-        let spike_reset_kernel = spike_detect_module.load_function("nhs_spike_reset_counter")?;
-
         // ====================================================================
         // ALLOCATE O(N) CELL LIST / NEIGHBOR LIST BUFFERS
         // ====================================================================
@@ -2117,14 +2059,6 @@ impl NhsAmberFusedEngine {
             // Aromatic topology buffers for init kernels (Issue #3 fix)
             d_aromatic_atom_indices,
             d_aromatic_n_atoms,
-            // Displacement-based spike detection
-            spike_detect_kernel,
-            spike_reset_kernel,
-            d_prev_positions,
-            d_spike_detect_aromatic_indices,
-            d_spike_detect_events,
-            d_spike_detect_count,
-            n_spike_detect_aromatics,
 
             // O(N) cell list / neighbor list buffers
             cell_size: CELL_SIZE,
@@ -2318,8 +2252,6 @@ impl NhsAmberFusedEngine {
     ) -> Result<()> {
         // Positions (flatten [x,y,z] format)
         self.stream.memcpy_htod(&topology.positions, &mut self.d_positions)?;
-        // Initialize prev_positions to same as initial (no displacement on first step)
-        self.stream.memcpy_dtod(&self.d_positions, &mut self.d_prev_positions)?;
 
         // Initialize velocities from Maxwell-Boltzmann at starting temperature
         let temp = self.temp_protocol.current_temperature();
@@ -3784,44 +3716,6 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
 
-        // ================================================================
-        // DISPLACEMENT-BASED SPIKE DETECTION (runs every step on GPU)
-        // ================================================================
-        if self.n_spike_detect_aromatics > 0 {
-            let n_aromatics_detect_i32 = self.n_spike_detect_aromatics as i32;
-            let n_atoms_i32 = self.n_atoms as i32;
-            let displacement_threshold: f32 = 0.05;  // Angstroms
-            let proximity_threshold: f32 = 6.0;     // Angstroms
-            let max_nearby: i32 = 20;
-            let max_spikes_detect_i32 = MAX_SPIKES_PER_STEP as i32;
-
-            unsafe {
-                self.stream
-                    .launch_builder(&self.spike_detect_kernel)
-                    .arg(&self.d_positions)
-                    .arg(&self.d_prev_positions)
-                    .arg(&self.d_spike_detect_aromatic_indices)
-                    .arg(&n_aromatics_detect_i32)
-                    .arg(&n_atoms_i32)
-                    .arg(&self.timestep)
-                    .arg(&displacement_threshold)
-                    .arg(&proximity_threshold)
-                    .arg(&max_nearby)
-                    .arg(&mut self.d_spike_detect_events)
-                    .arg(&mut self.d_spike_detect_count)
-                    .arg(&max_spikes_detect_i32)
-                    .launch(LaunchConfig {
-                        grid_dim: (((self.n_spike_detect_aromatics + 255) / 256) as u32, 1, 1),
-                        block_dim: (256, 1, 1),
-                        shared_mem_bytes: 0,
-                    })
-            }
-            .context("Failed to launch nhs_spike_detect kernel")?;
-
-            // Copy current positions -> prev for next step displacement calc
-            self.stream.memcpy_dtod(&self.d_positions, &mut self.d_prev_positions)?;
-        }
-
         // Advance protocols (CPU-side, no sync needed)
         self.temp_protocol.advance();
         self.uv_config.advance();
@@ -3834,9 +3728,8 @@ impl NhsAmberFusedEngine {
         let num_spikes = if self.timestep % sync_interval == 0 {
             self.context.synchronize()?;
 
-            // Read displacement-based spike count (from nhs_spike_detect kernel)
             let mut spike_count_host = [0i32];
-            self.stream.memcpy_dtoh(&self.d_spike_detect_count, &mut spike_count_host)?;
+            self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
             let spikes = spike_count_host[0] as usize;
 
             // Activity-based snapshot capture - multiple triggers
@@ -3873,12 +3766,12 @@ impl NhsAmberFusedEngine {
             // If spike accumulation is enabled, download and store spikes before reset
             if self.accumulate_spikes && spikes > 0 {
                 let n_to_download = spikes.min(MAX_SPIKES_PER_STEP);
+                let bytes_needed = n_to_download * self.spike_event_size;
 
-                // Download displacement-based spike events (from nhs_spike_detect kernel)
-                // cudarc requires host buffer >= device buffer, so allocate full size
-                let full_device_size = MAX_SPIKES_PER_STEP * self.spike_event_size;
-                let mut full_buffer = vec![0u8; full_device_size];
-                self.stream.memcpy_dtoh(&self.d_spike_detect_events, &mut full_buffer)?;
+                // Download ONLY the actual spike bytes (not the full 6MB buffer!)
+                // This is a major performance optimization - copies bytes_needed instead of 6MB
+                let mut full_buffer = vec![0u8; bytes_needed];
+                self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
 
                 // Parse and accumulate spike events
                 for i in 0..n_to_download {
@@ -3931,11 +3824,10 @@ impl NhsAmberFusedEngine {
                 }
             }
 
-            // Reset BOTH spike counters for next sync interval
+            // Reset spike count for next sync interval
             // This must happen AFTER we've read the spike count to preserve accumulated spikes
             let zero = [0i32];
-            self.stream.memcpy_htod(&zero, &mut self.d_spike_count)?;         // fused LIF (still runs, ignored)
-            self.stream.memcpy_htod(&zero, &mut self.d_spike_detect_count)?;  // displacement-based (primary)
+            self.stream.memcpy_htod(&zero, &mut self.d_spike_count)?;
 
             spikes
         } else {
