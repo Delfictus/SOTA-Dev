@@ -819,7 +819,11 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // O(N) Neighbor list (optional - pass nullptr to use O(N²) all-pairs)
     const int* neighbor_list,       // [n_atoms * NEIGHBOR_LIST_SIZE] or nullptr
     const int* n_neighbors,         // [n_atoms] or nullptr
-    int use_neighbor_list           // 1 = use O(N) path, 0 = use O(N²) path
+    int use_neighbor_list,          // 1 = use O(N) path, 0 = use O(N²) path
+    // Electrostatic Flux Probe (EFP)
+    float* efp_potential,            // [grid_dim³]
+    float* efp_potential_prev,       // [grid_dim³]
+    float* efp_lif_potential         // [grid_dim³]
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1488,6 +1492,80 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     __syncthreads();
 
     // ========================================================================
+    // ====================================================================
+    // ELECTROSTATIC FLUX PROBE (EFP) - Polar Binding Site Detection
+    // ====================================================================
+    for (int efp_v = tid; efp_v < total_voxels; efp_v += gridDim.x * blockDim.x) {
+        if (warp_matrix[efp_v].n_atoms == 0) continue;
+
+        int efp_vz = efp_v / (grid_dim * grid_dim);
+        int efp_vy = (efp_v / grid_dim) % grid_dim;
+        int efp_vx = efp_v % grid_dim;
+        float3 efp_center = make_float3(
+            grid_origin_x + (efp_vx + 0.5f) * grid_spacing,
+            grid_origin_y + (efp_vy + 0.5f) * grid_spacing,
+            grid_origin_z + (efp_vz + 0.5f) * grid_spacing
+        );
+
+        float phi = 0.0f;
+        int n_charged_nearby = 0;
+
+        for (int wi = 0; wi < warp_matrix[efp_v].n_atoms; wi++) {
+            int ai = warp_matrix[efp_v].atom_indices[wi];
+            if (ai < 0 || ai >= n_atoms) continue;
+            float q = charges[ai];
+            if (fabsf(q) < 0.3f) continue;
+
+            float3 ap = positions[ai];
+            float dx = efp_center.x - ap.x;
+            float dy = efp_center.y - ap.y;
+            float dz = efp_center.z - ap.z;
+            float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+
+            if (dist > 0.5f && dist < 8.0f) {
+                float eps_r = fmaxf(4.0f * dist, 4.0f);
+                phi += q / (eps_r * dist);
+                n_charged_nearby++;
+            }
+        }
+
+        // Water-electrostatic coupling
+        float wd_change = fabsf(water_density[efp_v] - water_density_prev[efp_v]);
+        float polar_water_signal = fabsf(phi) * wd_change * 10.0f;
+
+        float phi_prev = efp_potential_prev[efp_v];
+        efp_potential[efp_v] = phi;
+
+        float flux = fabsf(phi - phi_prev);
+        float polar_signal = flux * 50.0f + polar_water_signal;
+
+        if (n_charged_nearby >= 2 && spike_grid[efp_v] == 0) {
+            const float EFP_TAU = 0.5f;
+            const float EFP_THRESHOLD = 0.8f;
+            float efp_decay = expf(-dt / EFP_TAU);
+            efp_lif_potential[efp_v] = efp_decay * efp_lif_potential[efp_v] + polar_signal;
+
+            if (efp_lif_potential[efp_v] > EFP_THRESHOLD) {
+                spike_grid[efp_v] = REFRACTORY_STEPS;
+                float polar_intensity = efp_lif_potential[efp_v];
+                efp_lif_potential[efp_v] = LIF_RESET;
+
+                int si = atomicAdd(spike_count, 1);
+                if (si < max_spikes) {
+                    int polar_type = (phi > 0.0f) ? 5 : 6;
+                    capture_spike_event(
+                        spike_events[si], timestep, efp_v, efp_center,
+                        polar_intensity, warp_matrix[efp_v], residue_ids,
+                        3, 0.0f, polar_type, -1,
+                        water_density[efp_v], flux, n_charged_nearby
+                    );
+                }
+            }
+        }
+        efp_potential_prev[efp_v] = phi;
+    }
+    __syncthreads();
+
     // PHASE 6: UV BIAS PUMP-PROBE (TRUE EXCITED STATE DYNAMICS)
     // ========================================================================
     //
@@ -1586,6 +1664,21 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
 // ============================================================================
 // INITIALIZATION KERNELS
 // ============================================================================
+
+// Initialize EFP state
+extern "C" __global__ void init_efp_state(
+    float* efp_potential,
+    float* efp_potential_prev,
+    float* efp_lif_potential,
+    int total_voxels
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < total_voxels) {
+        efp_potential[idx] = 0.0f;
+        efp_potential_prev[idx] = 0.0f;
+        efp_lif_potential[idx] = 0.0f;
+    }
+}
 
 extern "C" __global__ void init_rng_states(
     curandState* states,

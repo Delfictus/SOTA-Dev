@@ -2200,7 +2200,7 @@ fn run_multi_stream_pipeline(
     // Export spike events with enhanced metadata for pharmacophore mapping
     if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
         let arom_type_name = |t: i32| -> &str {
-            match t { 0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "SS", 4 => "BNZ", _ => "UNK" }
+            match t { 0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "SS", 4 => "BNZ", 5 => "CATION", 6 => "ANION", _ => "UNK" }
         };
         let lining_cutoff = args.lining_cutoff;
         for site in &clustered_sites {
@@ -2233,7 +2233,7 @@ fn run_multi_stream_pipeline(
                         "intensity": intensity,
                         "type": arom_type_name(atype),
                         "wavelength_nm": wl,
-                        "spike_source": if src == 1 { "UV" } else { "LIF" },
+                        "spike_source": match src { 1 => "UV", 3 => "EFP", _ => "LIF" },
                         "aromatic_residue_id": arom_res,
                         "water_density": wd,
                         "vibrational_energy": ve,

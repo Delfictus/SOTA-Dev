@@ -1379,6 +1379,10 @@ pub struct NhsAmberFusedEngine {
     d_water_density_prev: CudaSlice<f32>,
     d_lif_potential: CudaSlice<f32>,
     d_spike_grid: CudaSlice<i32>,
+    // EFP buffers
+    d_efp_potential: CudaSlice<f32>,
+    d_efp_potential_prev: CudaSlice<f32>,
+    d_efp_lif_potential: CudaSlice<f32>,
 
     // Spike output (events as raw bytes)
     d_spike_events: CudaSlice<u8>,
@@ -1961,6 +1965,9 @@ impl NhsAmberFusedEngine {
         let d_water_density_prev: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_efp_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_efp_potential_prev: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_efp_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
 
         // ====================================================================
         // ALLOCATE SPIKE OUTPUT
@@ -2028,6 +2035,9 @@ impl NhsAmberFusedEngine {
             d_water_density_prev,
             d_lif_potential,
             d_spike_grid,
+            d_efp_potential,
+            d_efp_potential_prev,
+            d_efp_lif_potential,
 
             d_spike_events,
             spike_event_size,
@@ -3732,6 +3742,10 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_neighbor_list)
                 .arg(&self.d_n_neighbors)
                 .arg(&(if self.use_neighbor_list { 1i32 } else { 0i32 }))
+                // EFP buffers
+                .arg(&self.d_efp_potential)
+                .arg(&self.d_efp_potential_prev)
+                .arg(&self.d_efp_lif_potential)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -4035,6 +4049,10 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_neighbor_list)
                     .arg(&self.d_n_neighbors)
                     .arg(&(if self.use_neighbor_list { 1i32 } else { 0i32 }))
+                    // EFP buffers
+                    .arg(&self.d_efp_potential)
+                    .arg(&self.d_efp_potential_prev)
+                    .arg(&self.d_efp_lif_potential)
                     .launch(cfg)
             }
             .context("Failed to launch nhs_amber_fused_step kernel")?;
