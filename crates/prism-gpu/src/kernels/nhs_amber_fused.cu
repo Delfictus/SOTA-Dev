@@ -566,14 +566,14 @@ __device__ bool lif_neuron_update(
     const float NOISE_FLOOR = 0.002f;
     float abs_change = fabsf(density_change);
     // Increased amplification (10x) for cryo-UV detection
-    float bidirectional_signal = (abs_change > NOISE_FLOOR) ? (abs_change - NOISE_FLOOR) * 1.0f : 0.0f;
+    float bidirectional_signal = (abs_change > NOISE_FLOOR) ? (abs_change - NOISE_FLOOR) * 3.0f : 0.0f;
 
     // Exclusion-weighted term: detect hydrophobic dewetting zones
     float density_deviation = fabsf(water_density_current - WATER_DENSITY_BULK);
     const float EXCLUSION_NOISE_FLOOR = 0.005f;  // Lower floor for cryptic sites
     // Increased weight (5x) for exclusion-based detection
     float exclusion_signal = (density_deviation > EXCLUSION_NOISE_FLOOR) ?
-        (density_deviation - EXCLUSION_NOISE_FLOOR) * 0.5f : 0.0f;
+        (density_deviation - EXCLUSION_NOISE_FLOOR) * 2.0f : 0.0f;
 
     float combined_signal = bidirectional_signal + exclusion_signal;
 

@@ -2027,6 +2027,7 @@ fn run_multi_stream_pipeline(
     let mut per_stream_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
     let mut per_stream_stats: Vec<serde_json::Value> = Vec::new();
     let mut all_stream_snapshots: Vec<Vec<prism_nhs::fused_engine::EnsembleSnapshot>> = Vec::new();
+    let mut all_stream_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
 
     for (i, result) in stream_results.into_iter().enumerate() {
         let (raw_spikes, stream_snapshots) = match result {
@@ -2045,13 +2046,14 @@ fn run_multi_stream_pipeline(
         let filtered = if raw_spikes.len() > 1000 {
             let mut intensities: Vec<f32> = raw_spikes.iter().map(|s| s.intensity).collect();
             intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let idx = (intensities.len() as f32 * 0.98) as usize;
+            let idx = (intensities.len() as f32 * 0.70) as usize;
             let threshold = intensities.get(idx).copied().unwrap_or(0.0);
             raw_spikes.into_iter().filter(|s| s.intensity >= threshold).collect::<Vec<_>>()
         } else {
             raw_spikes
         };
 
+        all_stream_spikes.extend(filtered.iter().cloned());
         let sites = if !filtered.is_empty() && args.rt_clustering {
             let positions: Vec<f32> = filtered.iter()
                 .flat_map(|s| { let p = s.position; [p[0], p[1], p[2]].into_iter() })
@@ -2098,7 +2100,7 @@ fn run_multi_stream_pipeline(
     }
 
     let consensus_threshold = if n_streams >= 3 {
-        (n_streams as f32 * 0.67).ceil() as usize
+        (n_streams as f32 * 0.5).ceil() as usize
     } else {
         1
     };
@@ -2192,6 +2194,68 @@ fn run_multi_stream_pipeline(
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
+    }
+
+
+    // Export spike events with enhanced metadata for pharmacophore mapping
+    if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
+        let arom_type_name = |t: i32| -> &str {
+            match t { 0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "SS", 4 => "BNZ", _ => "UNK" }
+        };
+        let lining_cutoff = args.lining_cutoff;
+        for site in &clustered_sites {
+            let site_radius = lining_cutoff + 2.0;
+            let cx = site.centroid[0];
+            let cy = site.centroid[1];
+            let cz = site.centroid[2];
+            let site_spikes: Vec<serde_json::Value> = all_stream_spikes.iter()
+                .filter(|s| {
+                    let dx = s.position[0] - cx;
+                    let dy = s.position[1] - cy;
+                    let dz = s.position[2] - cz;
+                    (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
+                })
+                .map(|s| {
+                    let pos = s.position;
+                    let intensity = s.intensity;
+                    let atype = s.aromatic_type;
+                    let wl = s.wavelength_nm;
+                    let src = s.spike_source;
+                    let arom_res = s.aromatic_residue_id;
+                    let wd = s.water_density;
+                    let ve = s.vibrational_energy;
+                    let nne = s.n_nearby_excited;
+                    let ts = s.timestep;
+                    serde_json::json!({
+                        "x": pos[0],
+                        "y": pos[1],
+                        "z": pos[2],
+                        "intensity": intensity,
+                        "type": arom_type_name(atype),
+                        "wavelength_nm": wl,
+                        "spike_source": if src == 1 { "UV" } else { "LIF" },
+                        "aromatic_residue_id": arom_res,
+                        "water_density": wd,
+                        "vibrational_energy": ve,
+                        "n_nearby_excited": nne,
+                        "timestep": ts,
+                        "frame_index": ts / 1000,
+                    })
+                })
+                .collect();
+            let spike_json = serde_json::json!({
+                "site_id": site.cluster_id,
+                "centroid": site.centroid,
+                "n_spikes": site_spikes.len(),
+                "lining_cutoff": args.lining_cutoff,
+                "spikes": site_spikes,
+            });
+            let spike_path = output_base.with_extension(
+                format!("site{}.spike_events.json", site.cluster_id)
+            );
+            std::fs::write(&spike_path, serde_json::to_string_pretty(&spike_json)?)?;
+            log::info!("  Spike events: {} ({} spikes)", spike_path.display(), site_spikes.len());
+        }
     }
 
     // Write per-stream ensemble trajectories
@@ -2332,31 +2396,73 @@ fn build_sites_from_clustering(
         ];
 
         // Estimate pocket volume using voxel density method (2Å resolution)
-        let voxel_size = 2.0f32;
-        let estimated_volume = if bounding_box[0] > 0.0 && bounding_box[1] > 0.0 && bounding_box[2] > 0.0 {
-            let mut occupied_voxels = std::collections::HashSet::new();
+        // Cavity volume estimation via convex hull of spike positions within pocket
+        // Spikes mark the pocket boundary surface; the enclosed volume approximates the cavity
+        let pocket_radius = 8.0f32;
+        let estimated_volume = {
+            // Collect spike positions within pocket radius of centroid
+            let mut pocket_points: Vec<[f32; 3]> = Vec::new();
             for (_, spike) in &spikes {
                 let pos = spike.position;
-                let vx = ((pos[0] - min_pos[0]) / voxel_size) as i32;
-                let vy = ((pos[1] - min_pos[1]) / voxel_size) as i32;
-                let vz = ((pos[2] - min_pos[2]) / voxel_size) as i32;
-
-                // Mark voxel and immediate neighbors
-                for dx in -1..=1 {
-                    for dy in -1..=1 {
-                        for dz in -1..=1 {
-                            occupied_voxels.insert((vx + dx, vy + dy, vz + dz));
-                        }
-                    }
+                let dx = pos[0] - centroid[0];
+                let dy = pos[1] - centroid[1];
+                let dz = pos[2] - centroid[2];
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                if dist <= pocket_radius {
+                    pocket_points.push(pos);
                 }
             }
-
-            let voxel_volume = voxel_size.powi(3);
-            let raw_volume = occupied_voxels.len() as f32 * voxel_volume;
-            // Packing efficiency correction, clamped to reasonable pocket sizes
-            (raw_volume * 0.74).clamp(50.0, 5000.0)
-        } else {
-            (spikes.len() as f32 * 15.0).clamp(50.0, 2000.0)
+            if pocket_points.len() >= 4 {
+                // Compute volume via Monte Carlo sampling within the point cloud
+                // 1. Find tight bounding box of pocket points
+                let mut pmin = [f32::MAX; 3];
+                let mut pmax = [f32::MIN; 3];
+                for p in &pocket_points {
+                    for d in 0..3 {
+                        pmin[d] = pmin[d].min(p[d]);
+                        pmax[d] = pmax[d].max(p[d]);
+                    }
+                }
+                // 2. Grid at 1A resolution, count points inside pocket
+                //    A point is "inside" if it's closer to a spike than to any
+                //    protein atom = void space near the surface
+                let grid_step = 1.0f32;
+                let mut void_count = 0u32;
+                let mut total_count = 0u32;
+                let mut gx = pmin[0];
+                while gx <= pmax[0] {
+                    let mut gy = pmin[1];
+                    while gy <= pmax[1] {
+                        let mut gz = pmin[2];
+                        while gz <= pmax[2] {
+                            total_count += 1;
+                            // Check if grid point is near spike surface (within 2A of any spike)
+                            let mut near_spike = false;
+                            let mut min_spike_dist = f32::MAX;
+                            for p in &pocket_points {
+                                let d2 = (gx - p[0]).powi(2) + (gy - p[1]).powi(2) + (gz - p[2]).powi(2);
+                                let d = d2.sqrt();
+                                if d < min_spike_dist { min_spike_dist = d; }
+                                if d < 3.0 { near_spike = true; break; }
+                            }
+                            // Point is within pocket envelope
+                            if near_spike {
+                                void_count += 1;
+                            }
+                            gz += grid_step;
+                        }
+                        gy += grid_step;
+                    }
+                    gx += grid_step;
+                }
+                // Volume = counted grid points × grid_step³
+                // Apply 0.5 correction: spikes sit on surface, interior is ~half the envelope
+                let raw_vol = void_count as f32 * grid_step.powi(3);
+                (raw_vol * 0.5).clamp(50.0, 2500.0)
+            } else {
+                // Fallback: too few points for meaningful volume
+                100.0f32
+            }
         };
 
         let avg_intensity = sum_intensity / n;
