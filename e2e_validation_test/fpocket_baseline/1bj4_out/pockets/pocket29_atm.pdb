@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    29:
+HEADER 0  - Pocket Score                      : -0.1015
+HEADER 1  - Drug Score                        : 0.0088
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 4.2600
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.7724
+HEADER 5  - Mean B-factor of pocket residues  : 0.2109
+HEADER 6  - Hydrophobicity Score              : -5.0000
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.1667
+HEADER 9  - Pocket volume (Monte Carlo)       : 297.4834
+HEADER 10 - Pocket volume (convex hull)       : 5.1113
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.5294
+ATOM    667  CD1 LEU A  95      80.763  64.761 192.374  0.00  0.00           C 0
+ATOM    690   CD LYS A  98      80.082  69.308 190.559  0.00  0.00           C 0
+ATOM    660  CG2 THR A  94      76.865  69.592 196.134  0.00  0.00           C 0
+ATOM    692   NZ LYS A  98      82.099  67.772 190.486  0.77  8.75           N 0
+ATOM    628    N GLU A  91      78.175  65.301 200.614  0.79  1.09           N 0
+ATOM    595    O GLU A  87      79.721  65.197 203.466  0.38  7.50           O 0
+ATOM    633   CG GLU A  91      81.570  65.746 200.399  0.00  0.00           C 0
+ATOM    624   CB ASP A  90      76.190  66.849 202.598  0.00  0.00           C 0
+ATOM    662   CA LEU A  95      78.055  65.464 193.695  0.00  0.00           C 0
+ATOM    658   CB THR A  94      76.502  68.312 196.876  0.00  0.00           C 0
+ATOM    659  OG1 THR A  94      75.738  68.651 198.041  0.77  2.14           O 0
+ATOM    657    O THR A  94      76.412  67.728 193.706  0.00  0.00           O 0
+ATOM    661    N LEU A  95      77.239  65.934 194.810  0.00  0.00           N 0
+ATOM    631    O GLU A  91      78.769  64.963 197.215  0.50  5.36           O 0
+ATOM    623    O ASP A  90      76.618  66.370 199.392  0.54  2.14           O 0
+ATOM    665   CB LEU A  95      79.063  64.411 194.170  0.00  0.00           C 0
+ATOM    622    C ASP A  90      76.962  65.818 200.439  0.00  0.00           C 0
+ATOM    629   CA GLU A  91      79.175  65.338 199.553  0.00  0.00           C 0
+TER
+END

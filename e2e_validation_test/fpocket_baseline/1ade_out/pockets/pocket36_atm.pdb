@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    36:
+HEADER 0  - Pocket Score                      : -0.0135
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 4.1260
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6664
+HEADER 5  - Mean B-factor of pocket residues  : 0.3192
+HEADER 6  - Hydrophobicity Score              : 36.0000
+HEADER 7  - Polarity Score                    :     1
+HEADER 8  - Amino Acid based volume Score     : 4.5000
+HEADER 9  - Pocket volume (Monte Carlo)       : 239.6425
+HEADER 10 - Pocket volume (convex hull)       : 2.3687
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2667
+ATOM   5781   CZ PHE B 170     -44.287  12.784  31.767  0.00  0.00           C 0
+ATOM   5819  ND2 ASN B 174     -46.588  10.468  30.671  0.90  2.19           N 0
+ATOM   5780  CE2 PHE B 170     -44.327  11.631  32.559  0.00  0.00           C 0
+ATOM   5818  OD1 ASN B 174     -48.756  10.758  30.155  0.00  0.00           O 0
+ATOM   5817   CG ASN B 174     -47.564  10.982  29.933  0.00  0.00           C 0
+ATOM   1684  OD1 ASN A 174     -46.432  17.839  32.811  0.00  0.00           O 0
+ATOM   1681    O ASN A 174     -43.408  15.028  34.734  0.56  4.29           O 0
+ATOM   1683   CG ASN A 174     -45.805  17.359  31.874  0.00  0.00           C 0
+ATOM   1682   CB ASN A 174     -44.657  16.453  32.121  0.00  0.00           C 0
+ATOM   5816   CB ASN B 174     -47.149  11.833  28.761  0.00  0.00           C 0
+ATOM   5815    O ASN B 174     -48.441  13.346  26.105  0.58  8.57           O 0
+ATOM   1647   CZ PHE A 170     -46.297  15.824  27.697  0.00  0.00           C 0
+ATOM   1685  ND2 ASN A 174     -46.085  17.625  30.618  0.00  0.00           N 0
+TER
+END

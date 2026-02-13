@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    74:
+HEADER 0  - Pocket Score                      : -0.0957
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    19
+HEADER 3  - Mean alpha-sphere radius          : 4.1219
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5540
+HEADER 5  - Mean B-factor of pocket residues  : 0.4045
+HEADER 6  - Hydrophobicity Score              : 14.7500
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.5000
+HEADER 9  - Pocket volume (Monte Carlo)       : 339.3857
+HEADER 10 - Pocket volume (convex hull)       : 8.3222
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 2.0000
+HEADER 13 - Number of apolar alpha sphere     :     3
+HEADER 14 - Proportion of apolar alpha sphere : 0.1579
+ATOM   1754  OE2 GLU A 187      -0.738 -32.547  17.947  0.00  0.00           O 0
+ATOM   1741  CE2 TYR A 186      -3.363 -34.457  23.478  0.00  0.00           C 0
+ATOM   1150  CD2 LEU A 125       0.477 -34.715  23.405  0.00  0.00           C 0
+ATOM   1149  CD1 LEU A 125       1.087 -32.345  24.112  0.00  0.00           C 0
+ATOM   2029    O CYS A 214      -3.396 -28.979  25.046  0.49  3.21           O 0
+ATOM   1993   CG ARG A 211      -6.364 -31.252  22.637  0.00  0.00           C 0
+ATOM   1994   CD ARG A 211      -6.388 -32.125  21.392  0.00  0.00           C 0
+ATOM   4093   CB THR B 231      -1.581 -24.082  23.135  0.00  0.00           C 0
+ATOM   2008    O ASN A 212      -8.081 -24.774  22.954  0.65  5.36           O 0
+ATOM   4092    O THR B 231      -1.564 -21.591  22.019  0.00  0.00           O 0
+ATOM   4095  CG2 THR B 231      -0.743 -24.631  21.973  0.00  0.00           C 0
+ATOM   2019    O GLU A 213      -4.424 -24.920  25.293  0.45  2.14           O 0
+ATOM   4094  OG1 THR B 231      -1.872 -25.148  24.047  0.68  2.14           O 0
+ATOM   1751   CG GLU A 187      -2.631 -33.989  18.212  0.00  0.00           C 0
+ATOM   1991    O ARG A 211      -6.814 -28.451  23.399  0.56  7.50           O 0
+ATOM   1997  NH1 ARG A 211      -5.816 -31.803  18.650  0.28  4.37           N 0
+ATOM   1996   CZ ARG A 211      -7.012 -31.454  19.103  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,79 @@
+{
+  "generated_at": "2026-02-07T23:50:00Z",
+  "pipeline_version": "prism4d-0.1.0",
+  "gpu_memory_mb": 16000,
+  "replicas": 10,
+  "total_structures": 1,
+  "total_batches": 1,
+  "execution_order": [
+    "1nkp_dimer"
+  ],
+  "statistics": {
+    "by_memory_tier": {
+      "small": 1,
+      "medium": 0,
+      "large": 0
+    },
+    "by_complexity": {
+      "small": 1,
+      "medium": 0,
+      "large": 0
+    },
+    "by_spike_density": {
+      "small": 0,
+      "medium": 0,
+      "large": 1
+    },
+    "total_estimated_gpu_mb": 1,
+    "max_concurrency": 1,
+    "structures_with_issues": 0
+  },
+  "batches": [
+    {
+      "batch_id": 0,
+      "structures": [
+        {
+          "name": "1nkp_dimer",
+          "topology_path": "e2e_validation_test/prep/1nkp_dimer.topology.json",
+          "atoms": 2879,
+          "residues": 171,
+          "chains": [
+            "A",
+            "B"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 1,
+          "complexity_factors": {
+            "chain_count": 2,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 5.6316,
+            "aromatic_count": 15,
+            "ring_residue_count": 15,
+            "aromatic_density": 0.0877,
+            "predicted_spike_density": 180.0,
+            "secondary_structure_class": "Helix",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 0,
+            "estimated_workload": 6.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true,
+              "hydrophobic_surface_estimated": false,
+              "secondary_structure_computed": true,
+              "domain_count_computed": true,
+              "chain_breaks_computed": true
+            }
+          }
+        }
+      ],
+      "concurrency": 1,
+      "memory_tier": "Small",
+      "estimated_total_gpu_mb": 1,
+      "batch_group_id": 0,
+      "replicas_per_structure": 10
+    }
+  ]
+}

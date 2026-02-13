@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    24:
+HEADER 0  - Pocket Score                      : -0.0043
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 4.1002
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6985
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 10.6000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8000
+HEADER 9  - Pocket volume (Monte Carlo)       : 184.2130
+HEADER 10 - Pocket volume (convex hull)       : 2.3624
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.3500
+ATOM   7137   CB ARG D 503      12.635  24.395  91.513  0.00  0.00           C 0
+ATOM   7142  NH1 ARG D 503      15.895  21.828  93.712  0.00  0.00           N 0
+ATOM   7139   CD ARG D 503      14.070  22.370  91.656  0.00  0.00           C 0
+ATOM   7138   CG ARG D 503      14.058  23.885  91.653  0.00  0.00           C 0
+ATOM   7164  OE1 GLN D 506      14.178  26.464  95.781  0.00  0.00           O 0
+ATOM   7070  CD1 LEU D 495      10.835  20.279  91.744  0.00  0.00           C 0
+ATOM   7071  CD2 LEU D 495      10.474  17.996  92.580  0.00  0.00           C 0
+ATOM   7102   CD GLN D 499       6.815  20.277  95.218  0.00  0.00           C 0
+ATOM   7103  OE1 GLN D 499       7.094  19.197  94.705  0.96  3.21           O 0
+ATOM   7104  NE2 GLN D 499       6.905  20.540  96.506  0.68  6.56           N 0
+ATOM   7100   CB GLN D 499       7.498  22.012  93.605  0.00  0.00           C 0
+ATOM   7099    O GLN D 499       9.207  24.131  91.996  0.00  0.00           O 0
+ATOM   7131  OE1 GLN D 502       7.291  26.846  96.333  0.61  6.43           O 0
+ATOM   7097   CA GLN D 499       7.205  23.418  93.118  0.00  0.00           C 0
+ATOM   7128   CB GLN D 502       8.875  27.394  93.959  0.00  0.00           C 0
+ATOM   7165  NE2 GLN D 506      12.458  27.779  96.403  0.00  0.00           N 0
+ATOM   7133    N ARG D 503      11.150  26.256  92.089  0.72  1.09           N 0
+TER
+END

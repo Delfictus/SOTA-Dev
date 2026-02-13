@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    15:
+HEADER 0  - Pocket Score                      : 0.0911
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 4.0441
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6994
+HEADER 5  - Mean B-factor of pocket residues  : 0.0826
+HEADER 6  - Hydrophobicity Score              : 8.0000
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 289.9019
+HEADER 10 - Pocket volume (convex hull)       : 11.4935
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 2.0000
+HEADER 13 - Number of apolar alpha sphere     :     3
+HEADER 14 - Proportion of apolar alpha sphere : 0.1765
+ATOM   8266  OXT ALA B 431      -2.772   1.297  -2.138  0.00  0.00           O 0
+ATOM   6621    O ASP B 260      -4.303   4.172   1.315  0.00  0.00           O 0
+ATOM   2445  NH1 ARG A 257      -3.845   8.821   0.661  0.00  0.00           N 0
+ATOM   7255   OG SER B 325      -6.633   6.332  -1.284  0.71  1.07           O 0
+ATOM   6634  CD2 TYR B 261      -6.050   2.773  -3.052  0.00  0.00           C 0
+ATOM   8042   CG PRO B 409      -6.035   7.786  -9.128  0.00  0.00           C 0
+ATOM   7253    O SER B 325      -6.956   7.602  -5.652  0.00  0.00           O 0
+ATOM   8214   NE ARG B 426      -3.449   3.625  -9.158  0.00  0.00           N 0
+ATOM   8217  NH2 ARG B 426      -4.254   5.492 -10.228  0.00  0.00           N 0
+ATOM   8035  CG2 VAL B 408      -9.071  11.922  -6.059  0.00  0.00           C 0
+ATOM   8043   CD PRO B 409      -6.394   9.189  -8.722  0.00  0.00           C 0
+ATOM   8027    O GLY B 407      -6.273  13.403  -8.163  0.00  0.00           O 0
+ATOM   7244    O LEU B 324      -8.098  10.076  -2.775  0.56  4.29           O 0
+ATOM   2446  NH2 ARG A 257      -5.547   9.857  -0.453  0.00  0.00           N 0
+ATOM   7251   CA SER B 325      -7.434   7.438  -3.291  0.00  0.00           C 0
+ATOM   7254   CB SER B 325      -6.993   6.128  -2.633  0.00  0.00           C 0
+ATOM   8265   CB ALA B 431      -2.765   1.337  -4.942  0.00  0.00           C 0
+ATOM   6636  CE2 TYR B 261      -6.496   3.009  -4.348  0.00  0.00           C 0
+ATOM   8060  OD2 ASP B 411      -6.811   3.842  -7.925  0.72  1.07           O 0
+TER
+END

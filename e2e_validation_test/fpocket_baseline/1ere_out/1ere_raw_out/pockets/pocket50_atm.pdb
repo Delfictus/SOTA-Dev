@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    50:
+HEADER 0  - Pocket Score                      : -0.0623
+HEADER 1  - Drug Score                        : 0.0043
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.8597
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5031
+HEADER 5  - Mean B-factor of pocket residues  : 0.1020
+HEADER 6  - Hydrophobicity Score              : 62.2857
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 5.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 188.6990
+HEADER 10 - Pocket volume (convex hull)       : 3.1134
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.8235
+ATOM   2235  CG2 ILE B 358      35.767  53.190 154.879  0.00  0.00           C 0
+ATOM   2414  CD1 LEU B 379      32.100  53.599 152.411  0.00  0.00           C 0
+ATOM   2269   CG LYS B 362      34.783  57.948 156.761  0.00  0.00           C 0
+ATOM   2232    O ILE B 358      36.054  56.284 153.754  0.00  0.00           O 0
+ATOM   2311  CE2 PHE B 367      30.537  57.958 154.029  0.00  0.00           C 0
+ATOM   2270   CD LYS B 362      33.429  58.076 157.442  0.00  0.00           C 0
+ATOM   2271   CE LYS B 362      33.243  57.135 158.619  0.00  0.00           C 0
+ATOM   2350  CD2 LEU B 372      28.594  55.751 161.277  0.00  0.00           C 0
+ATOM   2376  OE1 GLN B 375      29.742  57.477 157.379  0.89  2.14           O 0
+ATOM   2272   NZ LYS B 362      32.112  57.527 159.530  0.74  8.75           N 0
+ATOM   2384  CG2 VAL B 376      28.137  51.017 156.375  0.00  0.00           C 0
+ATOM   2347   CB LEU B 372      26.618  54.282 160.915  0.00  0.00           C 0
+ATOM   2346    O LEU B 372      26.637  53.676 157.691  0.67  1.07           O 0
+ATOM   2373   CB GLN B 375      28.180  56.051 155.476  0.00  0.00           C 0
+ATOM   2378    N VAL B 376      27.483  53.136 154.625  0.00  0.00           N 0
+TER
+END

@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    22:
+HEADER 0  - Pocket Score                      : -0.1136
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    21
+HEADER 3  - Mean alpha-sphere radius          : 3.8964
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5044
+HEADER 5  - Mean B-factor of pocket residues  : 0.3806
+HEADER 6  - Hydrophobicity Score              : 20.1429
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 304.9839
+HEADER 10 - Pocket volume (convex hull)       : 16.7139
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.3810
+ATOM   1897   NZ LYS A 249      66.528  21.340   6.297  0.53  8.75           N 0
+ATOM   1970  OD2 ASP A 259      68.490  20.506   9.599  0.00  0.00           O 0
+ATOM   1847  OE1 GLU A 242      61.807  25.916  11.253  0.55  9.64           O 0
+ATOM   1848  OE2 GLU A 242      60.281  24.512  10.486  0.58  9.64           O 0
+ATOM   2007  CD2 LEU A 263      68.090  26.774   9.553  0.00  0.00           C 0
+ATOM   1870   CB LYS A 246      60.014  22.192   4.146  0.00  0.00           C 0
+ATOM   1843    O GLU A 242      60.212  25.134   6.102  0.61  1.07           O 0
+ATOM   1872   CD LYS A 246      58.517  20.296   4.939  0.00  0.00           C 0
+ATOM   1846   CD GLU A 242      60.723  25.666  10.678  0.00  0.00           C 0
+ATOM   1867   CA LYS A 246      61.291  22.581   3.396  0.00  0.00           C 0
+ATOM   1871   CG LYS A 246      59.631  20.705   3.976  0.00  0.00           C 0
+ATOM   1895   CD LYS A 249      66.021  20.530   3.954  0.00  0.00           C 0
+ATOM   1896   CE LYS A 249      66.230  21.731   4.880  0.00  0.00           C 0
+ATOM   1864  CG1 VAL A 245      64.717  24.937   4.753  0.00  0.00           C 0
+ATOM   1838  CE2 PHE A 241      64.385  29.012   8.070  0.00  0.00           C 0
+ATOM   1841   CA GLU A 242      60.053  26.857   7.718  0.00  0.00           C 0
+ATOM   1863   CB VAL A 245      63.808  26.144   4.479  0.00  0.00           C 0
+ATOM   1866    N LYS A 246      61.653  23.998   3.592  0.00  0.00           N 0
+TER
+END

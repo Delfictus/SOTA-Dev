@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    19:
+HEADER 0  - Pocket Score                      : -0.0789
+HEADER 1  - Drug Score                        : 0.0000
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9243
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5142
+HEADER 5  - Mean B-factor of pocket residues  : 0.2595
+HEADER 6  - Hydrophobicity Score              : -28.8333
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 207.4643
+HEADER 10 - Pocket volume (convex hull)       : 1.5911
+HEADER 11 - Charge Score                      :    -3
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     0
+HEADER 14 - Proportion of apolar alpha sphere : 0.0000
+ATOM   1922   CB THR A 430     102.965  77.734  48.744  0.00  0.00           C 0
+ATOM   3472  OD1 ASP A 648     101.702  71.601  44.916  0.77  4.29           O 0
+ATOM   3495  OE2 GLU A 651     100.458  74.673  48.042  0.27  5.36           O 0
+ATOM   1924  CG2 THR A 430     101.673  78.080  48.037  0.00  0.00           C 0
+ATOM   1925    N ASP A 431     104.732  75.390  49.730  0.64  2.19           N 0
+ATOM   3494  OE1 GLU A 651     101.107  72.920  49.190  0.00  0.00           O 0
+ATOM   1931  OD1 ASP A 431     107.567  75.559  47.518  0.00  0.00           O 0
+ATOM   1926   CA ASP A 431     106.054  74.860  50.026  0.00  0.00           C 0
+ATOM   1893  NH1 ARG A 426     101.449  70.795  47.552  0.46  1.09           N 0
+ATOM   1933    N GLU A 432     105.249  73.268  51.628  0.53  1.09           N 0
+ATOM   1936    O GLU A 432     106.133  70.671  51.621  0.00  0.00           O 0
+ATOM   1894  NH2 ARG A 426     102.686  68.972  46.944  0.30  7.66           N 0
+ATOM   1892   CZ ARG A 426     101.883  69.570  47.810  0.00  0.00           C 0
+TER
+END

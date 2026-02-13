@@ -1,0 +1,34 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    42:
+HEADER 0  - Pocket Score                      : -0.0486
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.8878
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5562
+HEADER 5  - Mean B-factor of pocket residues  : 0.3771
+HEADER 6  - Hydrophobicity Score              : 3.8333
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 172.5138
+HEADER 10 - Pocket volume (convex hull)       : 2.4800
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     1
+HEADER 14 - Proportion of apolar alpha sphere : 0.0667
+ATOM   8370  OE1 GLU E 419      30.259  60.410  49.200  0.71  2.14           O 0
+ATOM   9230   CE MET E 528      33.821  59.780  46.493  0.00  0.00           C 0
+ATOM   9221   CB SER E 527      31.787  56.326  43.942  0.00  0.00           C 0
+ATOM   9253   CD LYS E 531      28.963  59.818  43.955  0.00  0.00           C 0
+ATOM   8371  OE2 GLU E 419      29.420  58.996  50.660  0.00  0.00           O 0
+ATOM   9222   OG SER E 527      32.971  56.159  44.693  0.84  8.57           O 0
+ATOM   8366    O GLU E 419      35.275  58.988  50.122  0.00  0.00           O 0
+ATOM   8373   CA GLY E 420      35.329  57.000  51.876  0.00  0.00           C 0
+ATOM   8369   CD GLU E 419      30.289  59.850  50.330  0.00  0.00           C 0
+ATOM   8372    N GLY E 420      34.663  58.263  52.095  0.39  1.09           N 0
+ATOM   8365    C GLU E 419      34.668  59.207  51.171  0.00  0.00           C 0
+ATOM   9194  CD2 HIS E 524      36.678  57.129  47.680  0.00  0.00           C 0
+TER
+END

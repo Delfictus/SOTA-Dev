@@ -492,7 +492,7 @@ fn run_full_pipeline_internal(
             warm_hold_steps: config.convergence_steps / 2,
             current_step: 0,
             uv_burst_energy: 50.0,
-            uv_burst_interval: 250,
+            uv_burst_interval: 100,
             uv_burst_duration: 50,
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
@@ -664,7 +664,7 @@ fn run_full_pipeline_internal(
             let custom_epsilon = if args.adaptive_epsilon {
                 None // Let the engine compute from k-NN distribution
             } else {
-                Some(vec![2.5f32, 3.5, 5.0, 7.0]) // Fixed default values
+                Some(vec![1.5f32, 2.5, 3.5, 5.0]) // Tighter for high-density runs
             };
             match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon) {
                 Ok(ms_result) => {
@@ -1157,7 +1157,7 @@ fn run_batch_gpu_concurrent(
             warm_hold_steps: args.steps / 4,
             current_step: 0,
             uv_burst_energy: 50.0,
-            uv_burst_interval: 250,
+            uv_burst_interval: 100,
             uv_burst_duration: 50,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,
@@ -1957,7 +1957,7 @@ fn run_multi_stream_pipeline(
             warm_hold_steps: config.convergence_steps / 2,
             current_step: 0,
             uv_burst_energy: 50.0,
-            uv_burst_interval: 250,
+            uv_burst_interval: 100,
             uv_burst_duration: 50,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,

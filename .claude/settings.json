@@ -1,0 +1,81 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-before-stop.sh",
+            "timeout": 60
+          },
+          {
+            "type": "prompt",
+            "prompt": "You are a verification auditor. Analyze the conversation transcript provided in $ARGUMENTS.\n\nYour job is to check whether Claude made any UNVERIFIED claims. Specifically:\n\n1. Did Claude claim code compiles without running `cargo check` or `cargo build`?\n2. Did Claude claim tests pass without running `cargo test`?\n3. Did Claude say a function, struct, module, or file exists without using Read/Grep to verify?\n4. Did Claude say 'this should work' or 'this will work' without actually running it?\n5. Did Claude fabricate or paraphrase command output instead of showing real output?\n6. Did Claude claim a feature is 'implemented' or 'complete' without verification?\n\nIf ANY of the above are true, respond with:\n{\"decision\": \"block\", \"reason\": \"UNVERIFIED CLAIM DETECTED: [specific claim]. You MUST run the relevant verification command (cargo check, cargo test, or read the file) and show the actual output before finishing.\"}\n\nAlso check `stop_hook_active` in the input. If it is true, this is a re-check. Be more lenient but still verify that the previously flagged issue was actually resolved with real command output.\n\nIf all claims are verified with actual command output, respond with:\n{\"decision\": \"approve\", \"reason\": \"All claims verified.\"}",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-reminder.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "You are a verification auditor for a subagent. Analyze the subagent conversation in $ARGUMENTS.\n\nCheck whether the subagent made unverified claims about code compiling, tests passing, or features being implemented without actually running verification commands.\n\nIf unverified claims exist, respond with:\n{\"decision\": \"block\", \"reason\": \"Subagent made unverified claims. Run cargo check/cargo test and show actual output.\"}\n\nIf all claims are backed by actual command output, respond with:\n{\"decision\": \"approve\", \"reason\": \"Verified.\"}",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "Bash(cargo check*)",
+      "Bash(cargo test*)",
+      "Bash(cargo build*)",
+      "Bash(cargo clippy*)",
+      "Bash(cargo run*)",
+      "Bash(cargo fmt*)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(git *)",
+      "Bash(rustfmt *)",
+      "Bash(scripts/prism-prep*)",
+      "Bash(echo *)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(env *)",
+      "Bash(tree *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(chmod 777*)"
+    ]
+  }
+}

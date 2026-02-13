@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     2:
+HEADER 0  - Pocket Score                      : 0.1386
+HEADER 1  - Drug Score                        : 0.0137
+HEADER 2  - Number of alpha spheres           :    23
+HEADER 3  - Mean alpha-sphere radius          : 3.9576
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5364
+HEADER 5  - Mean B-factor of pocket residues  : 0.0387
+HEADER 6  - Hydrophobicity Score              : 22.3750
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.6250
+HEADER 9  - Pocket volume (Monte Carlo)       : 222.5157
+HEADER 10 - Pocket volume (convex hull)       : 2.3645
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 12.0000
+HEADER 13 - Number of apolar alpha sphere     :    13
+HEADER 14 - Proportion of apolar alpha sphere : 0.5652
+ATOM    818    N GLU A 104      77.660  59.153  17.942  0.00  0.00           N 0
+ATOM    806    O ILE A 102      77.986  61.525  14.291  0.00  0.00           O 0
+ATOM    813    C THR A 103      78.425  60.245  17.948  0.00  0.00           C 0
+ATOM    832   OG SER A 105      78.804  54.633  15.014  0.00  0.00           O 0
+ATOM    333    C PRO A  44      86.036  59.685  13.410  0.00  0.00           C 0
+ATOM    334    O PRO A  44      87.045  59.275  13.949  0.00  0.00           O 0
+ATOM    330   CB ALA A  43      82.143  62.262  15.181  0.00  0.00           C 0
+ATOM    338    N HIS A  45      85.006  58.887  13.180  0.67  1.09           N 0
+ATOM    339   CA HIS A  45      85.016  57.477  13.510  0.00  0.00           C 0
+ATOM    819   CA GLU A 104      78.078  57.913  18.585  0.00  0.00           C 0
+ATOM    870  CE2 PHE A 109      79.056  56.375  11.734  0.00  0.00           C 0
+ATOM    342   CB HIS A  45      83.623  56.868  13.195  0.00  0.00           C 0
+ATOM    814    O THR A 103      79.441  60.319  18.626  0.00  0.00           O 0
+ATOM    345  CD2 HIS A  45      82.986  54.844  14.693  0.00  0.00           C 0
+ATOM    329    O ALA A  43      83.145  60.958  12.414  0.00  0.00           O 0
+ATOM    809  CG2 ILE A 102      76.214  58.539  14.181  0.00  0.00           C 0
+ATOM    337   CD PRO A  44      85.457  62.984  14.398  0.00  0.00           C 0
+ATOM    331    N PRO A  44      84.868  61.953  13.507  0.00  0.00           N 0
+ATOM    827    N SER A 105      78.039  55.650  17.697  0.62  2.19           N 0
+TER
+END

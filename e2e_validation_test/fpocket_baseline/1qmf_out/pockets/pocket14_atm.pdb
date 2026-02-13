@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    14:
+HEADER 0  - Pocket Score                      : -0.0396
+HEADER 1  - Drug Score                        : 0.0012
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.0040
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5078
+HEADER 5  - Mean B-factor of pocket residues  : 0.2023
+HEADER 6  - Hydrophobicity Score              : -4.2857
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.1429
+HEADER 9  - Pocket volume (Monte Carlo)       : 173.2175
+HEADER 10 - Pocket volume (convex hull)       : 3.3540
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.5000
+ATOM   3269   CG GLU A 609      96.480  80.225  84.587  0.00  0.00           C 0
+ATOM   2747   CB PRO A 540      95.222  76.329  87.728  0.00  0.00           C 0
+ATOM   2748   CG PRO A 540      96.407  77.062  87.227  0.00  0.00           C 0
+ATOM   3272  OE2 GLU A 609      96.607  81.644  86.504  0.63  7.50           O 0
+ATOM   3299   CB ALA A 613      91.554  81.229  82.292  0.00  0.00           C 0
+ATOM   3267    O GLU A 609      94.253  79.722  81.881  0.00  0.00           O 0
+ATOM   2749   CD PRO A 540      96.701  76.323  85.942  0.00  0.00           C 0
+ATOM   3295    N ALA A 613      91.546  79.082  81.114  0.00  0.00           N 0
+ATOM   2746    O PRO A 540      93.522  74.035  86.726  0.25  4.29           O 0
+ATOM   3324  OD2 ASP A 616      88.377  76.546  83.725  0.00  0.00           O 0
+ATOM   3293   CB SER A 612      92.861  76.140  81.038  0.00  0.00           C 0
+ATOM   2762  NE2 GLN A 542      92.027  72.843  82.744  0.50  7.66           N 0
+ATOM   2741  CG1 VAL A 539      95.676  74.345  82.920  0.00  0.00           C 0
+ATOM   3291    C SER A 612      91.102  77.884  80.726  0.00  0.00           C 0
+ATOM   3296   CA ALA A 613      90.705  80.077  81.776  0.00  0.00           C 0
+TER
+END

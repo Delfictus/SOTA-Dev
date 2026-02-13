@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    27:
+HEADER 0  - Pocket Score                      : 0.0189
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    22
+HEADER 3  - Mean alpha-sphere radius          : 3.9410
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5567
+HEADER 5  - Mean B-factor of pocket residues  : 0.2416
+HEADER 6  - Hydrophobicity Score              : 27.2857
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 239.3826
+HEADER 10 - Pocket volume (convex hull)       : 8.6694
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.3182
+ATOM   8205  CD2 LEU B 425      -7.638   0.361 -16.678  0.00  0.00           C 0
+ATOM   8189    N ILE B 424      -9.909  -3.431 -13.943  0.45  2.19           N 0
+ATOM   7831  OD1 ASP B 387      -7.391  -4.161 -22.038  0.00  0.00           O 0
+ATOM   8192    O ILE B 424      -6.862  -3.157 -13.398  0.00  0.00           O 0
+ATOM   7826   CA ASP B 387     -10.563  -3.617 -21.757  0.00  0.00           C 0
+ATOM   7834    N ARG B 388      -9.922  -1.282 -22.073  0.74  2.19           N 0
+ATOM   8186   SD MET B 423     -12.010  -1.253 -19.272  0.00  0.00           S 0
+ATOM   7844  NH2 ARG B 388      -4.798  -0.057 -19.899  0.00  0.00           N 0
+ATOM   7843  NH1 ARG B 388      -5.304   1.966 -18.902  0.48  4.37           N 0
+ATOM   8201    O LEU B 425      -4.409  -0.215 -12.929  0.00  0.00           O 0
+ATOM   8199   CA LEU B 425      -6.646  -0.416 -13.771  0.00  0.00           C 0
+ATOM   7841   NE ARG B 388      -6.933   0.793 -20.051  0.52  2.19           N 0
+ATOM   7815    O LYS B 386     -11.300  -5.371 -19.716  0.00  0.00           O 0
+ATOM   8184   CB MET B 423     -11.576  -2.046 -16.749  0.00  0.00           C 0
+ATOM   8185   CG MET B 423     -12.240  -2.456 -18.015  0.00  0.00           C 0
+ATOM   8181   CA MET B 423     -11.534  -3.161 -15.716  0.00  0.00           C 0
+ATOM   8174    O THR B 422     -12.586  -5.722 -15.763  0.48  7.50           O 0
+TER
+END

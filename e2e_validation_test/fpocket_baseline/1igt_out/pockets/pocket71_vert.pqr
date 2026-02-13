@@ -1,0 +1,43 @@
+HEADER
+HEADER This is a pqr format file writen by the programm fpocket.                 
+HEADER It represent the voronoi vertices of a single pocket found by the         
+HEADER algorithm.                                                                
+HEADER                                                                           
+HEADER Information about the pocket    71:
+HEADER 0  - Pocket Score                      : -0.0758
+HEADER 1  - Drug Score                        : 0.0055
+HEADER 2  - Number of V. Vertices             :    21
+HEADER 3  - Mean alpha-sphere radius          : 3.9278
+HEADER 4  - Mean alpha-sphere SA              : 0.4741
+HEADER 5  - Mean B-factor                     : 0.5743
+HEADER 6  - Hydrophobicity Score              : 15.0000
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Volume Score                      : 3.6667
+HEADER 9  - Real volume (approximation)       : 375.8292
+HEADER 10 - Charge Score                      :     1
+HEADER 11 - Local hydrophobic density Score   : 11.0000
+HEADER 12 - Number of apolar alpha sphere     :    12
+HEADER 13 - Proportion of apolar alpha sphere : 0.5714
+ATOM      1    C STP    71      14.190  -8.078   1.627    0.00     4.65
+ATOM      2    O STP    71      13.548  -6.252   3.140    0.00     4.09
+ATOM      3    O STP    71      11.071  -6.505  -2.415    0.00     4.39
+ATOM      4    O STP    71      12.204  -8.046   0.735    0.00     4.57
+ATOM      5    C STP    71      10.635  -5.789  -0.288    0.00     3.64
+ATOM      6    O STP    71      13.534  -6.205   3.152    0.00     4.07
+ATOM      7    C STP    71      13.027  -5.743   3.178    0.00     3.90
+ATOM      8    O STP    71      12.882  -6.054   3.075    0.00     3.94
+ATOM      9    C STP    71      12.924  -6.049   3.052    0.00     3.97
+ATOM     10    O STP    71      11.376  -7.087   1.521    0.00     4.06
+ATOM     11    O STP    71      11.556  -7.074   1.398    0.00     4.19
+ATOM     12    C STP    71      10.730  -5.902   0.418    0.00     3.66
+ATOM     13    C STP    71      10.305  -4.540  -0.077    0.00     3.46
+ATOM     14    C STP    71       9.158  -2.995  -0.030    0.00     3.41
+ATOM     15    C STP    71       9.085  -2.956  -0.331    0.00     3.46
+ATOM     16    O STP    71       9.059  -2.902  -0.385    0.00     3.46
+ATOM     17    C STP    71       9.321  -3.663  -2.363    0.00     4.12
+ATOM     18    C STP    71      10.096  -4.623  -1.964    0.00     4.00
+ATOM     19    C STP    71      10.205  -4.737  -1.794    0.00     3.96
+ATOM     20    C STP    71      10.219  -4.744  -2.013    0.00     4.05
+ATOM     21    O STP    71       9.061  -2.863  -0.317    0.00     3.45
+TER
+END

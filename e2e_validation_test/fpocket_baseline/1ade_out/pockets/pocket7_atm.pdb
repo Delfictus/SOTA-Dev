@@ -1,0 +1,59 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     7:
+HEADER 0  - Pocket Score                      : 0.1556
+HEADER 1  - Drug Score                        : 0.0000
+HEADER 2  - Number of alpha spheres           :    56
+HEADER 3  - Mean alpha-sphere radius          : 4.0428
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4543
+HEADER 5  - Mean B-factor of pocket residues  : 0.1081
+HEADER 6  - Hydrophobicity Score              : 12.8333
+HEADER 7  - Polarity Score                    :    13
+HEADER 8  - Amino Acid based volume Score     : 4.4444
+HEADER 9  - Pocket volume (Monte Carlo)       : 758.5887
+HEADER 10 - Pocket volume (convex hull)       : 116.0526
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.1071
+ATOM   2066  OE1 GLN A 213      -4.678  21.588  -3.447  0.58  9.64           O 0
+ATOM   2064   CG GLN A 213      -3.836  20.764  -1.349  0.00  0.00           C 0
+ATOM   2052  NH2 ARG A 212      -5.612  17.847  -0.567  0.00  0.00           N 0
+ATOM   2051  NH1 ARG A 212      -3.710  16.706  -0.013  0.00  0.00           N 0
+ATOM   2065   CD GLN A 213      -4.936  21.246  -2.299  0.00  0.00           C 0
+ATOM   2464   OH TYR A 258      -6.372  13.826   0.212  0.39  3.21           O 0
+ATOM   8027    O GLY B 407      -6.273  13.403  -8.163  0.00  0.00           O 0
+ATOM   2067  NE2 GLN A 213      -6.162  21.271  -1.817  0.00  0.00           N 0
+ATOM   8018    O THR B 406      -9.903  15.905  -7.641  0.00  0.00           O 0
+ATOM   2022  OD2 ASP A 209      -8.499  20.089  -0.533  0.41  6.43           O 0
+ATOM   2032  NE2 GLN A 210      -8.644  23.860  -0.997  0.00  0.00           N 0
+ATOM   2031  OE1 GLN A 210      -6.922  25.108  -1.747  0.00  0.00           O 0
+ATOM   7555  OG1 THR B 357     -13.953  25.182  -3.468  0.43  7.50           O 0
+ATOM   7546  OG1 THR B 356     -13.390  26.190  -7.744  0.55  7.50           O 0
+ATOM   7244    O LEU B 324      -8.098  10.076  -2.775  0.56  4.29           O 0
+ATOM   8035  CG2 VAL B 408      -9.071  11.922  -6.059  0.00  0.00           C 0
+ATOM   7198  CG1 VAL B 319     -10.586  14.162  -3.647  0.00  0.00           C 0
+ATOM   2446  NH2 ARG A 257      -5.547   9.857  -0.453  0.00  0.00           N 0
+ATOM   8025   CA GLY B 407      -7.660  15.169  -9.034  0.00  0.00           C 0
+ATOM   7202   CA GLN B 320     -11.826  16.154   0.204  0.00  0.00           C 0
+ATOM   7205   CB GLN B 320     -12.123  17.650   0.081  0.00  0.00           C 0
+ATOM   7156    O ARG B 316     -13.810  17.656  -3.052  0.52  3.21           O 0
+ATOM   7201    N GLN B 320     -12.417  15.508  -0.956  0.00  0.00           N 0
+ATOM   7170    N ARG B 317     -16.024  17.744  -3.293  0.00  0.00           N 0
+ATOM   7155    C ARG B 316     -14.800  17.621  -3.778  0.00  0.00           C 0
+ATOM   7556  CG2 THR B 357     -15.329  24.156  -1.829  0.00  0.00           C 0
+ATOM   7171   CA ARG B 317     -16.211  17.907  -1.849  0.00  0.00           C 0
+ATOM   2021  OD1 ASP A 209      -7.644  18.703   0.905  0.56  1.07           O 0
+ATOM   7158   CG ARG B 316     -13.210  18.380  -7.118  0.00  0.00           C 0
+ATOM   7134    O VAL B 313     -17.686  19.558  -5.555  0.36  1.07           O 0
+ATOM   7551   CA THR B 357     -16.150  24.473  -4.188  0.00  0.00           C 0
+ATOM   7159   CD ARG B 316     -12.604  19.627  -7.737  0.00  0.00           C 0
+ATOM   7209  NE2 GLN B 320     -12.221  20.607   0.009  0.00  0.00           N 0
+ATOM   1994  OD1 ASP A 206     -11.693  24.072  -0.504  0.58  3.21           O 0
+ATOM   7162  NH1 ARG B 316     -14.112  21.944  -7.723  0.00  0.00           N 0
+ATOM   7157   CB ARG B 316     -14.159  18.687  -5.961  0.00  0.00           C 0
+ATOM   7544    O THR B 356     -15.493  23.622  -6.737  0.00  0.00           O 0
+TER
+END

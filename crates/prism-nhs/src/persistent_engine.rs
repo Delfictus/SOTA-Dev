@@ -68,7 +68,7 @@ pub struct PersistentBatchConfig {
 impl Default for PersistentBatchConfig {
     fn default() -> Self {
         Self {
-            max_atoms: 15000,  // Handle 4B7Q (~12K atoms) with margin
+            max_atoms: 20000,  // Handle large structures (1DLO ~16K atoms)
             grid_dim: 64,
             grid_spacing: 1.5,
             survey_steps: 500000,    // 1ns

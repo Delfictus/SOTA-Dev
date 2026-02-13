@@ -377,6 +377,15 @@ fn main() {
         &target_ptx_dir.join("hyperoptimized_md.ptx"),
     );
 
+    // Compile Pharmacophore Gaussian splatting kernel
+    // Replaces Python pharmacophore_extract.py with GPU-accelerated density mapping
+    compile_kernel(
+        &nvcc,
+        "src/kernels/pharmacophore_splat.cu",
+        &ptx_dir.join("pharmacophore_splat.ptx"),
+        &target_ptx_dir.join("pharmacophore_splat.ptx"),
+    );
+
     println!("cargo:info=PTX compilation completed successfully");
 }
 

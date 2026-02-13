@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    51:
+HEADER 0  - Pocket Score                      : -0.0237
+HEADER 1  - Drug Score                        : 0.0031
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.9411
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5719
+HEADER 5  - Mean B-factor of pocket residues  : 0.3685
+HEADER 6  - Hydrophobicity Score              : 5.8571
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 5.2857
+HEADER 9  - Pocket volume (Monte Carlo)       : 283.3418
+HEADER 10 - Pocket volume (convex hull)       : 11.6362
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 11.0000
+HEADER 13 - Number of apolar alpha sphere     :    12
+HEADER 14 - Proportion of apolar alpha sphere : 0.7500
+ATOM   7566   CE LYS C 142     -33.539  22.764  20.999  0.00  0.00           C 0
+ATOM   7884  CE2 TYR C 173     -34.387  19.738  17.076  0.00  0.00           C 0
+ATOM   7779  CD1 TRP C 163     -29.301  19.246  19.715  0.00  0.00           C 0
+ATOM   7882  CD2 TYR C 173     -33.417  18.733  17.095  0.00  0.00           C 0
+ATOM   7215   NZ LYS C 103     -34.107  24.298  13.979  0.00  0.00           N 0
+ATOM   7237  OE2 GLU C 105     -36.506  23.484  17.495  0.55  2.14           O 0
+ATOM   7777   CB TRP C 163     -27.715  20.450  18.105  0.00  0.00           C 0
+ATOM   7778   CG TRP C 163     -28.186  19.992  19.448  0.00  0.00           C 0
+ATOM   7780  CD2 TRP C 163     -27.670  20.410  20.717  0.00  0.00           C 0
+ATOM   7792    O THR C 164     -30.361  19.924  15.149  0.73  4.29           O 0
+ATOM   7804  OD1 ASP C 165     -31.457  23.854  12.717  0.00  0.00           O 0
+ATOM   7776    O TRP C 163     -26.466  20.590  15.212  0.43  3.21           O 0
+ATOM   7783  CE3 TRP C 163     -26.561  21.174  21.112  0.00  0.00           C 0
+ATOM   7567   NZ LYS C 142     -33.337  23.644  22.199  0.54  4.37           N 0
+ATOM   7785  CZ3 TRP C 163     -26.359  21.411  22.470  0.00  0.00           C 0
+ATOM   7786  CH2 TRP C 163     -27.246  20.897  23.433  0.00  0.00           C 0
+ATOM   7782  CE2 TRP C 163     -28.540  19.906  21.709  0.00  0.00           C 0
+ATOM   7784  CZ2 TRP C 163     -28.338  20.144  23.073  0.00  0.00           C 0
+TER
+END

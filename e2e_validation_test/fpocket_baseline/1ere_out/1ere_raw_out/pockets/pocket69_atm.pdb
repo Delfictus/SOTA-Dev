@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    69:
+HEADER 0  - Pocket Score                      : -0.0910
+HEADER 1  - Drug Score                        : 0.0023
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.8338
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5504
+HEADER 5  - Mean B-factor of pocket residues  : 0.2953
+HEADER 6  - Hydrophobicity Score              : 12.8000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.4000
+HEADER 9  - Pocket volume (Monte Carlo)       : 257.5006
+HEADER 10 - Pocket volume (convex hull)       : 8.3981
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 12.0000
+HEADER 13 - Number of apolar alpha sphere     :    13
+HEADER 14 - Proportion of apolar alpha sphere : 0.7647
+ATOM    911   CB ASP A 426      11.406  48.954 144.534  0.00  0.00           C 0
+ATOM    883   CB GLU A 423      14.465  44.939 143.057  0.00  0.00           C 0
+ATOM    914  OD2 ASP A 426      10.590  47.529 146.301  0.62  4.29           O 0
+ATOM    880   CA GLU A 423      13.093  45.582 143.002  0.00  0.00           C 0
+ATOM    915    N MET A 427      12.575  50.575 142.083  0.78  1.09           N 0
+ATOM   3044    O TYR B 459      16.030  53.954 145.393  0.71  5.36           O 0
+ATOM   3059  CG2 THR B 460      17.792  50.858 146.004  0.00  0.00           C 0
+ATOM   3054   CA THR B 460      17.696  52.963 147.349  0.00  0.00           C 0
+ATOM    882    O GLU A 423      13.268  47.771 142.015  0.00  0.00           O 0
+ATOM    909    C ASP A 426      11.527  50.902 142.852  0.00  0.00           C 0
+ATOM    910    O ASP A 426      11.176  52.085 143.041  0.68  6.43           O 0
+ATOM    920   CG MET A 427      15.467  50.239 141.617  0.00  0.00           C 0
+ATOM    884   CG GLU A 423      14.635  43.901 144.141  0.00  0.00           C 0
+ATOM    921   SD MET A 427      16.870  49.639 140.649  0.00  0.00           S 0
+ATOM    922   CE MET A 427      16.149  48.109 140.031  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    17:
+HEADER 0  - Pocket Score                      : -0.0496
+HEADER 1  - Drug Score                        : 0.0004
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.5251
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4418
+HEADER 5  - Mean B-factor of pocket residues  : 0.2329
+HEADER 6  - Hydrophobicity Score              : 29.5000
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 104.9023
+HEADER 10 - Pocket volume (convex hull)       : 0.4440
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.3750
+ATOM    781   NZ LYS A 283     111.692  83.551  82.491  0.54  4.37           N 0
+ATOM   3211    O GLU A 602     106.607  81.641  81.707  0.52  9.64           O 0
+ATOM    721  OE1 GLN A 276     104.544  85.342  80.195  0.00  0.00           O 0
+ATOM    743   CB ALA A 279     109.826  86.620  78.762  0.00  0.00           C 0
+ATOM    722  NE2 GLN A 276     104.902  83.147  79.932  0.00  0.00           N 0
+ATOM    748   CB PHE A 280     110.759  81.937  76.550  0.00  0.00           C 0
+ATOM    780   CE LYS A 283     112.537  83.120  81.340  0.00  0.00           C 0
+ATOM   3210    C GLU A 602     107.176  80.543  81.670  0.00  0.00           C 0
+ATOM    745   CA PHE A 280     111.783  82.912  77.165  0.00  0.00           C 0
+ATOM    717    O GLN A 276     108.234  83.992  76.785  0.00  0.00           O 0
+ATOM    744    N PHE A 280     111.209  84.253  77.192  0.00  0.00           N 0
+ATOM   3218   CA PHE A 603     106.764  80.187  79.265  0.00  0.00           C 0
+ATOM   3217    N PHE A 603     107.267  79.791  80.574  0.00  0.00           N 0
+ATOM   3221   CB PHE A 603     107.747  79.706  78.181  0.00  0.00           C 0
+TER
+END

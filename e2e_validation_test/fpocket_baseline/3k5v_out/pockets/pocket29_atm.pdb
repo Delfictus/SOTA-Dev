@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    29:
+HEADER 0  - Pocket Score                      : -0.0900
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 3.7464
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4440
+HEADER 5  - Mean B-factor of pocket residues  : 0.5469
+HEADER 6  - Hydrophobicity Score              : 20.6667
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.5000
+HEADER 9  - Pocket volume (Monte Carlo)       : 138.0931
+HEADER 10 - Pocket volume (convex hull)       : 3.7489
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 4.0000
+HEADER 13 - Number of apolar alpha sphere     :     5
+HEADER 14 - Proportion of apolar alpha sphere : 0.2500
+ATOM   3661    N THR B 411      40.103  37.538  11.364  0.71  1.09           N 0
+ATOM   3666  OG1 THR B 411      39.541  37.076  14.161  0.47  7.50           O 0
+ATOM   4034   OG SER B 457      37.757  30.686  13.659  0.63  5.36           O 0
+ATOM   3657   CB ASP B 410      41.886  35.351   9.447  0.00  0.00           C 0
+ATOM   3662   CA THR B 411      38.786  37.792  11.958  0.00  0.00           C 0
+ATOM   3656    O ASP B 410      39.323  37.052   9.293  0.00  0.00           O 0
+ATOM   3757   CD LYS B 423      34.355  31.966   9.718  0.00  0.00           C 0
+ATOM   3664    O THR B 411      36.878  38.652  10.773  0.58  2.14           O 0
+ATOM   4088  CD2 LEU B 464      35.716  34.632   6.920  0.00  0.00           C 0
+ATOM   3660  OD2 ASP B 410      40.452  33.812   8.335  0.00  0.00           O 0
+ATOM   3655    C ASP B 410      40.262  37.159  10.095  0.00  0.00           C 0
+ATOM   3759   NZ LYS B 423      35.841  30.225   8.648  0.04  5.47           N 0
+ATOM   3772  CZ3 TRP B 424      34.567  35.512  13.883  0.00  0.00           C 0
+ATOM   3773  CH2 TRP B 424      34.889  34.815  15.074  0.00  0.00           C 0
+ATOM   3751    N LYS B 423      32.235  35.883   9.665  0.00  0.00           N 0
+ATOM   3756   CG LYS B 423      33.384  33.095   9.399  0.00  0.00           C 0
+ATOM   3755   CB LYS B 423      32.689  33.672  10.659  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    83:
+HEADER 0  - Pocket Score                      : -0.1708
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 4.2362
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5552
+HEADER 5  - Mean B-factor of pocket residues  : 0.1978
+HEADER 6  - Hydrophobicity Score              : 11.1111
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.2222
+HEADER 9  - Pocket volume (Monte Carlo)       : 536.6332
+HEADER 10 - Pocket volume (convex hull)       : 32.2690
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.4118
+ATOM   9936   CG LEU D 178     -15.070  28.356  16.095  0.00  0.00           C 0
+ATOM   9989   OH TYR D 185     -15.589  29.265  12.203  0.74  8.57           O 0
+ATOM   9986  CE1 TYR D 185     -15.713  26.982  12.907  0.00  0.00           C 0
+ATOM   9937  CD1 LEU D 178     -15.829  28.732  17.361  0.00  0.00           C 0
+ATOM   8695  OE2 GLU D  42     -22.322  33.777  14.881  0.00  0.00           O 0
+ATOM   8684   CB PRO D  41     -21.380  32.446  11.409  0.00  0.00           C 0
+ATOM   8685   CG PRO D  41     -20.531  33.434  10.677  0.00  0.00           C 0
+ATOM   9924   CA VAL D 177     -17.749  23.980  15.979  0.00  0.00           C 0
+ATOM   9920    O ALA D 176     -19.387  23.953  13.737  0.00  0.00           O 0
+ATOM   9929  CG2 VAL D 177     -18.716  24.705  18.170  0.00  0.00           C 0
+ATOM   9938  CD2 LEU D 178     -14.160  29.505  15.642  0.00  0.00           C 0
+ATOM   8683    O PRO D  41     -24.292  31.262  12.003  0.00  0.00           O 0
+ATOM   9746  OE2 GLU D 150     -18.829  25.780   9.375  0.00  0.00           O 0
+ATOM   8705   NZ LYS D  43     -24.929  29.675   8.860  0.00  0.00           N 0
+ATOM   9931    N LEU D 178     -16.011  25.470  16.831  0.00  0.00           N 0
+ATOM   8704   CE LYS D  43     -26.032  29.600   9.872  0.00  0.00           C 0
+ATOM   9914   CB PRO D 175     -23.359  22.386  13.151  0.00  0.00           C 0
+ATOM   9911   CA PRO D 175     -22.263  21.617  12.429  0.00  0.00           C 0
+TER
+END

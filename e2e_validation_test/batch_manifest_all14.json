@@ -1,0 +1,522 @@
+{
+  "generated_at": "2026-02-07T06:25:00",
+  "pipeline_version": "prism4d-0.1.0",
+  "gpu_memory_mb": 16000,
+  "replicas": 3,
+  "total_structures": 14,
+  "total_batches": 4,
+  "statistics": {
+    "by_memory_tier": {
+      "small": 3,
+      "medium": 4,
+      "large": 5,
+      "xlarge": 2
+    },
+    "by_complexity": {
+      "small": 3,
+      "medium": 4,
+      "large": 7
+    },
+    "by_spike_density": {
+      "small": 0,
+      "medium": 2,
+      "large": 12
+    },
+    "total_estimated_gpu_mb": 500,
+    "max_concurrency": 5,
+    "structures_with_issues": 0
+  },
+  "batches": [
+    {
+      "batch_id": 0,
+      "concurrency": 3,
+      "memory_tier": "Small",
+      "estimated_total_gpu_mb": 20,
+      "batch_group_id": 0,
+      "replicas_per_structure": 3,
+      "structures": [
+        {
+          "name": "1l2y_sanitized",
+          "topology_path": "e2e_validation_test/prep/1l2y.topology.json",
+          "atoms": 912,
+          "residues": 60,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 1,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Low",
+            "hydrophobic_surface_ratio": 0.3,
+            "aromatic_count": 10,
+            "ring_residue_count": 8,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 500.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 0,
+            "estimated_workload": 1.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1crn_sanitized",
+          "topology_path": "e2e_validation_test/prep/1crn.topology.json",
+          "atoms": 1926,
+          "residues": 46,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 1,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Low",
+            "hydrophobic_surface_ratio": 0.3,
+            "aromatic_count": 20,
+            "ring_residue_count": 15,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 800.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 0,
+            "estimated_workload": 2.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1hhp_sanitized",
+          "topology_path": "e2e_validation_test/prep/1hhp.topology.json",
+          "atoms": 4692,
+          "residues": 99,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Small",
+          "estimated_gpu_mb": 2,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 40,
+            "ring_residue_count": 35,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1000.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 0,
+            "estimated_workload": 3.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "batch_id": 1,
+      "concurrency": 4,
+      "memory_tier": "Medium",
+      "estimated_total_gpu_mb": 80,
+      "batch_group_id": 1,
+      "replicas_per_structure": 3,
+      "structures": [
+        {
+          "name": "1maz_sanitized",
+          "topology_path": "e2e_validation_test/prep/1maz.topology.json",
+          "atoms": 6816,
+          "residues": 440,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Medium",
+          "estimated_gpu_mb": 3,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 50,
+            "ring_residue_count": 45,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1100.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 1,
+            "estimated_workload": 4.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1btl_sanitized",
+          "topology_path": "e2e_validation_test/prep/1btl.topology.json",
+          "atoms": 12219,
+          "residues": 263,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Medium",
+          "estimated_gpu_mb": 5,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 80,
+            "ring_residue_count": 70,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1200.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 1,
+            "estimated_workload": 5.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1g1f_sanitized",
+          "topology_path": "e2e_validation_test/prep/1g1f.topology.json",
+          "atoms": 14634,
+          "residues": 301,
+          "chains": [
+            "A",
+            "B"
+          ],
+          "memory_tier": "Medium",
+          "estimated_gpu_mb": 6,
+          "complexity_factors": {
+            "chain_count": 2,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 100,
+            "ring_residue_count": 90,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1300.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 1,
+            "estimated_workload": 6.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1w50_sanitized",
+          "topology_path": "e2e_validation_test/prep/1w50.topology.json",
+          "atoms": 17592,
+          "residues": 1100,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Medium",
+          "estimated_gpu_mb": 7,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "Moderate",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 120,
+            "ring_residue_count": 100,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1400.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 1,
+            "estimated_workload": 7.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "batch_id": 2,
+      "concurrency": 5,
+      "memory_tier": "Large",
+      "estimated_total_gpu_mb": 200,
+      "batch_group_id": 2,
+      "replicas_per_structure": 3,
+      "structures": [
+        {
+          "name": "1bj4_sanitized",
+          "topology_path": "e2e_validation_test/prep/1bj4.topology.json",
+          "atoms": 21783,
+          "residues": 1400,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Large",
+          "estimated_gpu_mb": 9,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 150,
+            "ring_residue_count": 130,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1500.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 2,
+            "estimated_workload": 8.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1qmf_sanitized",
+          "topology_path": "e2e_validation_test/prep/1qmf.topology.json",
+          "atoms": 25380,
+          "residues": 1600,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Large",
+          "estimated_gpu_mb": 10,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 170,
+            "ring_residue_count": 150,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1600.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 2,
+            "estimated_workload": 9.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "3k5v_sanitized",
+          "topology_path": "e2e_validation_test/prep/3k5v.topology.json",
+          "atoms": 27417,
+          "residues": 1700,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Large",
+          "estimated_gpu_mb": 11,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 180,
+            "ring_residue_count": 160,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1700.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 2,
+            "estimated_workload": 10.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1a4q_sanitized",
+          "topology_path": "e2e_validation_test/prep/1a4q.topology.json",
+          "atoms": 35778,
+          "residues": 2300,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Large",
+          "estimated_gpu_mb": 14,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 200,
+            "ring_residue_count": 180,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1800.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 2,
+            "estimated_workload": 12.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1ade_sanitized",
+          "topology_path": "e2e_validation_test/prep/1ade.topology.json",
+          "atoms": 39882,
+          "residues": 2600,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "Large",
+          "estimated_gpu_mb": 16,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 220,
+            "ring_residue_count": 200,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 1900.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 2,
+            "estimated_workload": 14.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "batch_id": 3,
+      "concurrency": 2,
+      "memory_tier": "XLarge",
+      "estimated_total_gpu_mb": 400,
+      "batch_group_id": 3,
+      "replicas_per_structure": 3,
+      "structures": [
+        {
+          "name": "1igt_sanitized",
+          "topology_path": "e2e_validation_test/prep/1igt.topology.json",
+          "atoms": 60444,
+          "residues": 3900,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "XLarge",
+          "estimated_gpu_mb": 24,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 300,
+            "ring_residue_count": 270,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 2000.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 3,
+            "estimated_workload": 20.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        },
+        {
+          "name": "1ere_sanitized",
+          "topology_path": "e2e_validation_test/prep/1ere.topology.json",
+          "atoms": 68634,
+          "residues": 4400,
+          "chains": [
+            "A"
+          ],
+          "memory_tier": "XLarge",
+          "estimated_gpu_mb": 28,
+          "complexity_factors": {
+            "chain_count": 1,
+            "estimated_spike_density": "High",
+            "dynamics_complexity": "High",
+            "hydrophobic_surface_ratio": 0.35,
+            "aromatic_count": 350,
+            "ring_residue_count": 310,
+            "aromatic_density": 0.13,
+            "predicted_spike_density": 2200.0,
+            "secondary_structure_class": "Coil",
+            "domain_count": 1,
+            "has_quality_issues": false,
+            "batch_group_id": 3,
+            "estimated_workload": 24.0,
+            "computation_flags": {
+              "chain_count_computed": true,
+              "aromatic_density_computed": true,
+              "spike_density_estimated": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "execution_order": [
+    "1l2y_sanitized",
+    "1crn_sanitized",
+    "1hhp_sanitized",
+    "1maz_sanitized",
+    "1btl_sanitized",
+    "1g1f_sanitized",
+    "1w50_sanitized",
+    "1bj4_sanitized",
+    "1qmf_sanitized",
+    "3k5v_sanitized",
+    "1a4q_sanitized",
+    "1ade_sanitized",
+    "1igt_sanitized",
+    "1ere_sanitized"
+  ]
+}

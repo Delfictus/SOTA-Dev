@@ -1,0 +1,330 @@
+{
+  "adaptive_epsilon": {
+    "computed_values": [
+      3.0,
+      5.0,
+      7.0,
+      10.0
+    ],
+    "knn_k": 4,
+    "num_spikes_sampled": 1000,
+    "source": "knn_adaptive"
+  },
+  "binding_sites": 1,
+  "druggable_sites": 1,
+  "lining_residue_cutoff_angstroms": 8.0,
+  "simulation_time_sec": 92.266106183,
+  "sites": [
+    {
+      "aromatic_score": 0.4671937823295593,
+      "catalytic_residue_count": 15,
+      "centroid": [
+        4.758506774902344,
+        3.3456268310546875,
+        30.377208709716797
+      ],
+      "classification": "ActiveSite",
+      "druggability": 0.4723014235496521,
+      "id": 0,
+      "is_druggable": true,
+      "lining_residues": [
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 1.167364239692688,
+          "n_atoms": 19,
+          "resid": 220,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 2.0800061225891113,
+          "n_atoms": 21,
+          "resid": 208,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 2.7329299449920654,
+          "n_atoms": 14,
+          "resid": 45,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 2.9855916500091553,
+          "n_atoms": 19,
+          "resid": 219,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 4.208495616912842,
+          "n_atoms": 11,
+          "resid": 209,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 4.346670150756836,
+          "n_atoms": 10,
+          "resid": 221,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 4.54201602935791,
+          "n_atoms": 12,
+          "resid": 207,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 4.781412124633789,
+          "n_atoms": 11,
+          "resid": 236,
+          "resname": "LEU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 4.805771350860596,
+          "n_atoms": 13,
+          "resid": 48,
+          "resname": "THR"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 4.899999141693115,
+          "n_atoms": 14,
+          "resid": 234,
+          "resname": "LEU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 4.9627532958984375,
+          "n_atoms": 13,
+          "resid": 164,
+          "resname": "ASP"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 4.995944499969482,
+          "n_atoms": 8,
+          "resid": 185,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 5.3637237548828125,
+          "n_atoms": 7,
+          "resid": 218,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 5.407055854797363,
+          "n_atoms": 11,
+          "resid": 160,
+          "resname": "ASP"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 5.7984819412231445,
+          "n_atoms": 6,
+          "resid": 235,
+          "resname": "LEU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 5.8874945640563965,
+          "n_atoms": 5,
+          "resid": 210,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 6.112589359283447,
+          "n_atoms": 3,
+          "resid": 233,
+          "resname": "LEU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 6.326094150543213,
+          "n_atoms": 5,
+          "resid": 46,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 6.661011219024658,
+          "n_atoms": 3,
+          "resid": 191,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 6.712662696838379,
+          "n_atoms": 5,
+          "resid": 42,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 6.7409186363220215,
+          "n_atoms": 2,
+          "resid": 44,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 6.824130535125732,
+          "n_atoms": 4,
+          "resid": 188,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.014325141906738,
+          "n_atoms": 4,
+          "resid": 194,
+          "resname": "ASP"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.024622440338135,
+          "n_atoms": 3,
+          "resid": 195,
+          "resname": "ASP"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 7.25832986831665,
+          "n_atoms": 2,
+          "resid": 206,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.3415398597717285,
+          "n_atoms": 3,
+          "resid": 47,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 7.477829456329346,
+          "n_atoms": 2,
+          "resid": 49,
+          "resname": "THR"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 7.493120193481445,
+          "n_atoms": 2,
+          "resid": 222,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.601210117340088,
+          "n_atoms": 1,
+          "resid": 101,
+          "resname": "LYS"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.686192989349365,
+          "n_atoms": 2,
+          "resid": 43,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.707736015319824,
+          "n_atoms": 1,
+          "resid": 155,
+          "resname": "LYS"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 7.726787567138672,
+          "n_atoms": 1,
+          "resid": 232,
+          "resname": "LEU"
+        }
+      ],
+      "quality_score": 0.703810453414917,
+      "residue_ids": [
+        220,
+        208,
+        45,
+        219,
+        209,
+        221,
+        207,
+        236,
+        48,
+        234,
+        164,
+        185,
+        218,
+        160,
+        235,
+        210,
+        233,
+        46,
+        191,
+        42,
+        44,
+        188,
+        194,
+        195,
+        206,
+        47,
+        49,
+        222,
+        101,
+        43,
+        155,
+        232
+      ],
+      "spike_count": 47963,
+      "volume": 5000.0
+    }
+  ],
+  "spike_count": 50000,
+  "structure": "1btl.topology",
+  "total_steps": 5000
+}

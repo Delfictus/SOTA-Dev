@@ -117,6 +117,8 @@ pub mod rt_utils;
 #[cfg(feature = "gpu")]
 pub mod parallel_replica;
 #[cfg(feature = "gpu")]
+pub mod pharmacophore_gpu;
+#[cfg(feature = "gpu")]
 pub mod gpu_knn;
 pub mod composition;
 pub mod batch_scheduler;

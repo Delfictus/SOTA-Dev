@@ -1,0 +1,58 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    54:
+HEADER 0  - Pocket Score                      : -0.0638
+HEADER 1  - Drug Score                        : 0.0106
+HEADER 2  - Number of alpha spheres           :    59
+HEADER 3  - Mean alpha-sphere radius          : 3.7133
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4723
+HEADER 5  - Mean B-factor of pocket residues  : 0.2083
+HEADER 6  - Hydrophobicity Score              : 16.1333
+HEADER 7  - Polarity Score                    :    11
+HEADER 8  - Amino Acid based volume Score     : 4.2667
+HEADER 9  - Pocket volume (Monte Carlo)       : 521.8887
+HEADER 10 - Pocket volume (convex hull)       : 95.8209
+HEADER 11 - Charge Score                      :     4
+HEADER 12 - Local hydrophobic density Score   : 13.8333
+HEADER 13 - Number of apolar alpha sphere     :    24
+HEADER 14 - Proportion of apolar alpha sphere : 0.4068
+ATOM   7498  CD2 HIS D 547      35.060  40.566  80.449  0.00  0.00           C 0
+ATOM   7489    O ALA D 546      35.707  44.069  77.382  0.00  0.00           O 0
+ATOM   7490   CB ALA D 546      36.535  41.025  76.647  0.00  0.00           C 0
+ATOM   7500  NE2 HIS D 547      33.870  39.902  80.597  0.00  0.00           N 0
+ATOM   7492   CA HIS D 547      35.762  43.580  80.115  0.00  0.00           C 0
+ATOM   7499  CE1 HIS D 547      33.120  40.581  81.432  0.00  0.00           C 0
+ATOM   6186   SG CYS D 381      29.626  40.658  78.224  0.00  0.00           S 0
+ATOM   6152  CE1AHIS D 377      29.195  41.996  74.131  0.00  0.00           C 0
+ATOM   6815  CG2 THR D 460      26.656  45.535  76.037  0.00  0.00           C 0
+ATOM   6176   CB GLU D 380      34.498  38.490  75.530  0.00  0.00           C 0
+ATOM   6181    N CYS D 381      31.981  37.920  77.295  0.00  0.00           N 0
+ATOM   6174    C GLU D 380      33.284  37.785  77.545  0.00  0.00           C 0
+ATOM   6179  OE1 GLU D 380      34.609  40.105  73.396  0.41  9.64           O 0
+ATOM   7497  ND1 HIS D 547      33.769  41.664  81.821  0.66  6.56           N 0
+ATOM   5378  NE2 HIS C 516      28.402  44.310  82.802  0.75  7.66           N 0
+ATOM   7494    O HIS D 547      35.418  45.857  80.570  0.52  8.57           O 0
+ATOM   5409   NZ LYS C 520      32.449  46.457  84.423  0.55  9.84           N 0
+ATOM   4640   CG GLU C 423      30.178  52.163  77.618  0.00  0.00           C 0
+ATOM   5339   CB HIS C 513      20.913  42.523  82.391  0.00  0.00           C 0
+ATOM   5338    O HIS C 513      22.529  44.283  84.760  0.00  0.00           O 0
+ATOM   4677   SD MET C 427      25.971  47.555  80.836  0.00  0.00           S 0
+ATOM   5386   CE MET C 517      20.821  46.716  83.021  0.00  0.00           C 0
+ATOM   6175    O GLU D 380      33.718  38.049  78.653  0.00  0.00           O 0
+ATOM   4676   CG MET C 427      24.878  48.082  79.506  0.00  0.00           C 0
+ATOM   4675   CB MET C 427      23.601  48.677  80.073  0.00  0.00           C 0
+ATOM   5407   CD LYS C 520      30.184  47.325  84.145  0.00  0.00           C 0
+ATOM   5377  CE1 HIS C 516      28.926  43.374  83.556  0.00  0.00           C 0
+ATOM   6801   CB TYR D 459      21.561  43.737  77.319  0.00  0.00           C 0
+ATOM   5376  CD2 HIS C 516      27.067  44.373  83.053  0.00  0.00           C 0
+ATOM   6148  ND1AHIS D 377      30.072  41.354  73.384  0.61  9.84           N 0
+ATOM   6814  OG1 THR D 460      26.154  43.307  76.561  0.66  3.21           O 0
+ATOM   6783    O SER D 456      25.192  39.676  79.158  0.59  2.14           O 0
+ATOM   6813   CB THR D 460      26.450  44.148  75.445  0.00  0.00           C 0
+ATOM   5344  CD2AHIS C 513      22.479  40.878  81.129  0.00  0.00           C 0
+ATOM   5336   CA HIS C 513      21.684  42.330  83.681  0.00  0.00           C 0
+ATOM   7246  NH2 ARG D 515      25.084  40.282  82.094  0.74  3.28           N 0
+TER
+END

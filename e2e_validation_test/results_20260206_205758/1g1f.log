@@ -1,0 +1,18 @@
+[2026-02-07T04:57:58Z INFO  nhs_rt_full] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-07T04:57:58Z INFO  nhs_rt_full] ║     PRISM4D NHS RT-FULL PIPELINE                              ║
+[2026-02-07T04:57:58Z INFO  nhs_rt_full] ║     RT-Core Accelerated Binding Site Detection                ║
+[2026-02-07T04:57:58Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-07T04:57:58Z INFO  nhs_rt_full] 
+    [1/6] Loading topology: e2e_validation_test/prep/1g1f.topology.json
+[2026-02-07T04:57:58Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1g1f.topology.json
+[2026-02-07T04:57:58Z INFO  prism_nhs::input] Loaded topology: 4878 atoms, 301 residues, 2 chains
+[2026-02-07T04:57:58Z INFO  nhs_rt_full]   Atoms: 4878
+[2026-02-07T04:57:58Z INFO  nhs_rt_full]   Residues: 301
+[2026-02-07T04:57:58Z INFO  nhs_rt_full]   Aromatics: 29 (TRP/TYR/PHE)
+[2026-02-07T04:57:58Z INFO  nhs_rt_full] 
+    [2/6] Initializing GPU engine...
+[2026-02-07T04:57:58Z INFO  prism_nhs::persistent_engine] 🚀 Initializing Persistent NHS Engine (max_atoms: 15000)
+Error: Failed to create CUDA context
+
+Caused by:
+    DriverError(CUDA_ERROR_DEVICE_UNAVAILABLE, "CUDA-capable device(s) is/are busy or unavailable")

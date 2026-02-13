@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    38:
+HEADER 0  - Pocket Score                      : -0.0447
+HEADER 1  - Drug Score                        : 0.0026
+HEADER 2  - Number of alpha spheres           :    24
+HEADER 3  - Mean alpha-sphere radius          : 3.7154
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3698
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 35.2222
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 178.4636
+HEADER 10 - Pocket volume (convex hull)       : 8.9960
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 12.0000
+HEADER 13 - Number of apolar alpha sphere     :    13
+HEADER 14 - Proportion of apolar alpha sphere : 0.5417
+ATOM  10330    O ALA F 430      46.075  30.391  34.916  0.80  2.14           O 0
+ATOM  10349   CB SER F 433      45.927  27.819  32.961  0.00  0.00           C 0
+ATOM  10328   CA ALA F 430      44.058  31.159  33.815  0.00  0.00           C 0
+ATOM  10350   OG SER F 433      46.543  27.388  31.775  0.00  0.00           O 0
+ATOM   8680  CD2 TYR E 459      47.823  34.424  35.638  0.00  0.00           C 0
+ATOM   8765   CD LYS E 472      50.027  33.940  29.773  0.00  0.00           C 0
+ATOM   8767   NZ LYS E 472      47.784  35.057  29.728  0.83  6.56           N 0
+ATOM  10331   CB ALA F 430      44.065  32.663  33.669  0.00  0.00           C 0
+ATOM   8803  NE2 HIS E 476      53.456  33.533  33.678  0.83  2.19           N 0
+ATOM   8669    O VAL E 458      48.846  37.316  31.620  0.00  0.00           O 0
+ATOM   8672  CG2 VAL E 458      51.843  37.570  32.447  0.00  0.00           C 0
+ATOM   8766   CE LYS E 472      48.655  33.997  29.118  0.00  0.00           C 0
+ATOM  10391   CE MET F 437      51.703  29.133  32.437  0.00  0.00           C 0
+ATOM  10351    N ARG F 434      48.003  28.226  35.129  0.60  1.09           N 0
+ATOM  10390   SD MET F 437      52.076  27.810  31.265  0.00  0.00           S 0
+ATOM   8740  CD2 LEU E 469      50.272  29.978  26.561  0.00  0.00           C 0
+ATOM  10355   CB ARG F 434      49.461  30.024  36.079  0.00  0.00           C 0
+ATOM  10357   CD ARG F 434      51.502  31.575  36.383  0.00  0.00           C 0
+ATOM   8682  CE2 TYR E 459      48.948  34.066  36.372  0.00  0.00           C 0
+TER
+END

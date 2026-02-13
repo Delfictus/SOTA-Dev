@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    42:
+HEADER 0  - Pocket Score                      : -0.0516
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9163
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6020
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : -11.1429
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 192.8977
+HEADER 10 - Pocket volume (convex hull)       : 5.5709
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     1
+HEADER 14 - Proportion of apolar alpha sphere : 0.0667
+ATOM   4970   NZ LYS C 467      19.336  39.016 116.623  0.00  0.00           N 0
+ATOM   4221   CB THR C 371      17.873  41.796 112.640  0.00  0.00           C 0
+ATOM   4238  ND1 HIS C 373      21.884  46.194 113.800  0.70  5.47           N 0
+ATOM   4222  OG1 THR C 371      18.638  41.467 111.456  0.00  0.00           O 0
+ATOM   4236   CB HIS C 373      21.832  45.143 111.475  0.00  0.00           C 0
+ATOM    544  OE2 GLU A 380      20.901  45.823 116.784  0.56  8.57           O 0
+ATOM   4223  CG2 THR C 371      17.637  40.557 113.466  0.00  0.00           C 0
+ATOM   4968   CD LYS C 467      18.944  37.459 114.677  0.00  0.00           C 0
+ATOM   1823   CG GLU A 542      16.400  42.857 116.484  0.00  0.00           C 0
+ATOM   1847   CB ASP A 545      19.904  39.418 120.546  0.00  0.00           C 0
+ATOM   1845    C ASP A 545      21.066  41.289 121.558  0.00  0.00           C 0
+ATOM   1846    O ASP A 545      22.212  40.963 121.835  0.62  5.36           O 0
+ATOM   1852   CA ALA A 546      21.760  43.504 120.873  0.00  0.00           C 0
+ATOM   1821    O GLU A 542      17.900  42.478 119.744  0.47  1.07           O 0
+ATOM   1851    N ALA A 546      20.752  42.487 121.112  0.00  0.00           N 0
+TER
+END

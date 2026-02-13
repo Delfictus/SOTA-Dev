@@ -1286,7 +1286,7 @@ const MAX_SPIKES_PER_STEP: usize = 100000;
 const MAX_H_CLUSTERS: usize = 10000;
 
 /// Maximum UV targets
-const MAX_UV_TARGETS: usize = 256;
+const MAX_UV_TARGETS: usize = 1024;
 
 /// Maximum number of parallel streams for concurrent replica execution
 const MAX_PARALLEL_STREAMS: usize = 8;
@@ -1727,7 +1727,7 @@ impl NhsAmberFusedEngine {
             exclusion_offsets.push(exclusion_list.len() as i32);
         }
         let d_exclusion_list: CudaSlice<i32> = stream.alloc_zeros(exclusion_list.len().max(1))?;
-        let d_exclusion_offsets: CudaSlice<i32> = stream.alloc_zeros(exclusion_offsets.len())?;
+        let d_exclusion_offsets: CudaSlice<i32> = stream.alloc_zeros(exclusion_offsets.len().max(1))?;
 
         // ====================================================================
         // BUILD SHAKE H-CLUSTERS

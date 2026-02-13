@@ -1,0 +1,34 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    24:
+HEADER 0  - Pocket Score                      : -0.0564
+HEADER 1  - Drug Score                        : 0.0009
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.9022
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5247
+HEADER 5  - Mean B-factor of pocket residues  : 0.2222
+HEADER 6  - Hydrophobicity Score              : 6.0000
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 164.8687
+HEADER 10 - Pocket volume (convex hull)       : 1.6617
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.3750
+ATOM   1956  NH2 ARG A 260      77.499  52.001 178.907  0.00  0.00           N 0
+ATOM   3601   CB PRO A 478      77.201  44.318 181.661  0.00  0.00           C 0
+ATOM   1954   CZ ARG A 260      76.420  51.231 178.875  0.00  0.00           C 0
+ATOM   3602   CG PRO A 478      77.265  44.008 180.193  0.00  0.00           C 0
+ATOM    375   CB SER A  58      78.454  49.687 184.894  0.00  0.00           C 0
+ATOM   1953   NE ARG A 260      75.540  51.285 179.869  0.51  3.28           N 0
+ATOM   1955  NH1 ARG A 260      76.228  50.396 177.861  0.68  6.56           N 0
+ATOM    358    O PHE A  56      74.012  47.829 182.248  0.00  0.00           O 0
+ATOM    372   CA SER A  58      77.693  48.384 185.121  0.00  0.00           C 0
+ATOM    371    N SER A  58      76.256  48.626 185.053  0.54  1.09           N 0
+ATOM   3061   CB SER A 410      74.451  46.987 177.182  0.00  0.00           C 0
+ATOM   3060    O SER A 410      77.193  45.588 176.588  0.00  0.00           O 0
+TER
+END

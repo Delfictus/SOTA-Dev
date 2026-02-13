@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    10:
+HEADER 0  - Pocket Score                      : 0.0680
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 4.1491
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5539
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : -24.0000
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 6.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 247.3736
+HEADER 10 - Pocket volume (convex hull)       : 2.8952
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1250
+ATOM   1677    O ARG B  11      70.372  75.072  19.966  0.54  2.14           O 0
+ATOM   1829   CE LYS B  18      63.712  75.199  23.524  0.00  0.00           C 0
+ATOM   1763  NH2 ARG B  14      70.381  80.090  20.187  0.64  8.75           N 0
+ATOM   1832   NZ LYS B  18      62.734  75.570  22.460  0.00  0.00           N 0
+ATOM   1757   NE ARG B  14      70.755  79.154  22.248  0.74  7.66           N 0
+ATOM   1776  OD1 ASP B  15      65.579  72.706  20.686  0.48  9.64           O 0
+ATOM   1748   CB ARG B  14      70.719  76.388  23.387  0.00  0.00           C 0
+ATOM   2136  NH2 ARG B  38      65.623  75.895  27.679  0.50  5.47           N 0
+ATOM   1754   CD ARG B  14      71.536  78.838  23.453  0.00  0.00           C 0
+ATOM   1747    O ARG B  14      69.053  73.858  24.578  0.79  1.07           O 0
+ATOM   1746    C ARG B  14      69.711  74.103  23.568  0.00  0.00           C 0
+ATOM   1766    N ASP B  15      69.355  73.693  22.352  0.00  0.00           N 0
+ATOM   1772   CB ASP B  15      67.973  72.619  20.632  0.00  0.00           C 0
+ATOM   1768   CA ASP B  15      68.145  72.902  22.130  0.00  0.00           C 0
+ATOM   2133  NH1 ARG B  38      67.478  76.573  28.855  0.00  0.00           N 0
+TER
+END

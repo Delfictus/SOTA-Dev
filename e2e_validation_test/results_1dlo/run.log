@@ -1,0 +1,124 @@
+[2026-02-10T19:30:10Z INFO  nhs_rt_full] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-10T19:30:10Z INFO  nhs_rt_full] ║  TRUE MULTI-STREAM PIPELINE (10 concurrent streams)           ║
+[2026-02-10T19:30:10Z INFO  nhs_rt_full] ║  Full cryo-UV-BNZ-RT on each independent CUDA stream          ║
+[2026-02-10T19:30:10Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]   ✓ 10 CUDA streams created on shared context
+[2026-02-10T19:30:11Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1dlo.topology.json
+[2026-02-10T19:30:11Z INFO  prism_nhs::input] Loaded topology: 15981 atoms, 971 residues, 2 chains
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]   Structure: 1dlo.topology (15981 atoms, 99 aromatics)
+[2026-02-10T19:30:11Z INFO  nhs_rt_full] 
+      🚀 Launching 10 independent trajectories...
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 0] Starting (seed: 42)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 1] Starting (seed: 12387)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 2] Starting (seed: 24732)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 3] Starting (seed: 37077)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 4] Starting (seed: 49422)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 5] Starting (seed: 61767)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 6] Starting (seed: 74112)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 7] Starting (seed: 86457)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 8] Starting (seed: 98802)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  nhs_rt_full]     [stream 9] Starting (seed: 111147)...
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1dlo_sanitized (15981 atoms)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 15981 atoms, grid 64³
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: target/ptx/nhs_amber_fused.ptx
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 1085 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Cell grid: 12x11x11 = 1452 cells (cell size 10 Å)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+[2026-02-10T19:30:11Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=15981)
+
+thread '<unnamed>' (1845428) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread '<unnamed>' (1845429) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845425) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845426) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845432) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845431) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845427) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845433) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845424) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread '<unnamed>' (1845430) panicked at /home/diddy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cudarc-0.18.2/src/driver/safe/core.rs:1327:9:
+assertion failed: dst.len() >= src.len()
+
+thread 'main' (1845415) panicked at crates/prism-nhs/src/bin/nhs_rt_full.rs:2014:35:
+stream thread panicked: Any { .. }

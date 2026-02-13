@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    47:
+HEADER 0  - Pocket Score                      : -0.0657
+HEADER 1  - Drug Score                        : 0.0024
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.7611
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4726
+HEADER 5  - Mean B-factor of pocket residues  : 0.2212
+HEADER 6  - Hydrophobicity Score              : 45.7500
+HEADER 7  - Polarity Score                    :     1
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 119.0236
+HEADER 10 - Pocket volume (convex hull)       : 0.8730
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.8235
+ATOM   7579   CB LEU B 360     -21.862  27.322   3.792  0.00  0.00           C 0
+ATOM   7592    C ALA B 362     -26.543  28.762   3.653  0.00  0.00           C 0
+ATOM   7594   CB ALA B 362     -25.988  28.400   6.063  0.00  0.00           C 0
+ATOM   7581  CD1 LEU B 360     -20.359  29.002   5.051  0.00  0.00           C 0
+ATOM   7593    O ALA B 362     -26.953  29.908   3.835  0.53  6.43           O 0
+ATOM   1453  CD1 PHE A 152     -25.416  33.553   7.290  0.00  0.00           C 0
+ATOM   1455  CE1 PHE A 152     -24.027  33.761   7.324  0.00  0.00           C 0
+ATOM   7602  OD1 ASP B 363     -25.030  31.353  -0.046  0.66  8.57           O 0
+ATOM   7601   CG ASP B 363     -24.240  30.394   0.087  0.00  0.00           C 0
+ATOM   7603  OD2 ASP B 363     -23.001  30.480  -0.105  0.48  6.43           O 0
+ATOM   1457   CZ PHE A 152     -23.191  32.724   7.693  0.00  0.00           C 0
+ATOM   7596    N ASP B 363     -26.107  28.348   2.472  0.00  0.00           N 0
+ATOM   7600   CB ASP B 363     -24.816  29.074   0.528  0.00  0.00           C 0
+ATOM   1456  CE2 PHE A 152     -23.726  31.495   8.027  0.00  0.00           C 0
+TER
+END

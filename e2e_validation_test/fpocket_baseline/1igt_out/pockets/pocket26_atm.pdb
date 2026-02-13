@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    26:
+HEADER 0  - Pocket Score                      : 0.0334
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 4.0741
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6760
+HEADER 5  - Mean B-factor of pocket residues  : 0.1827
+HEADER 6  - Hydrophobicity Score              : 43.3333
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.3333
+HEADER 9  - Pocket volume (Monte Carlo)       : 271.4978
+HEADER 10 - Pocket volume (convex hull)       : 6.7173
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 4.0000
+HEADER 13 - Number of apolar alpha sphere     :     5
+HEADER 14 - Proportion of apolar alpha sphere : 0.2941
+ATOM   4919   CB HIS B 329      -3.733 -28.905 -38.397  0.00  0.00           C 0
+ATOM   4932   CB GLN B 330      -5.923 -25.662 -41.510  0.00  0.00           C 0
+ATOM   4911  NE2 GLN B 328      -8.138 -28.251 -39.476  0.00  0.00           N 0
+ATOM   4928    N GLN B 330      -4.856 -26.491 -39.460  0.00  0.00           N 0
+ATOM   4935  OE1 GLN B 330      -4.214 -25.697 -44.153  0.00  0.00           O 0
+ATOM   4921  ND1 HIS B 329      -4.889 -30.782 -37.169  0.00  0.00           N 0
+ATOM   4910  OE1 GLN B 328      -7.793 -29.709 -37.795  0.00  0.00           O 0
+ATOM   4375   CA ILE B 266      -2.430 -34.806 -39.206  0.00  0.00           C 0
+ATOM   4380  CG2 ILE B 266      -2.465 -34.804 -41.705  0.00  0.00           C 0
+ATOM   4920   CG HIS B 329      -3.739 -30.212 -37.672  0.00  0.00           C 0
+ATOM   4378   CB ILE B 266      -2.737 -35.637 -40.463  0.00  0.00           C 0
+ATOM   4377    O ILE B 266      -3.925 -34.966 -37.329  0.00  0.00           O 0
+ATOM   4922  CD2 HIS B 329      -2.743 -31.090 -37.412  0.00  0.00           C 0
+ATOM   4359    O LEU B 264       1.754 -32.427 -40.264  0.15  8.57           O 0
+ATOM   4374    N ILE B 266      -0.996 -34.591 -39.096  0.00  0.00           N 0
+ATOM   4351    O VAL B 263       0.026 -29.457 -38.333  0.43  4.29           O 0
+ATOM   4923  CE1 HIS B 329      -4.602 -31.955 -36.634  0.00  0.00           C 0
+TER
+END

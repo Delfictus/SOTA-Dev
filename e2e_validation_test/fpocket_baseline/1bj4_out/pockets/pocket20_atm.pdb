@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    20:
+HEADER 0  - Pocket Score                      : -0.0215
+HEADER 1  - Drug Score                        : 0.0033
+HEADER 2  - Number of alpha spheres           :    27
+HEADER 3  - Mean alpha-sphere radius          : 3.8473
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5262
+HEADER 5  - Mean B-factor of pocket residues  : 0.1001
+HEADER 6  - Hydrophobicity Score              : -5.7500
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.8750
+HEADER 9  - Pocket volume (Monte Carlo)       : 236.2599
+HEADER 10 - Pocket volume (convex hull)       : 13.6308
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 9.0000
+HEADER 13 - Number of apolar alpha sphere     :    10
+HEADER 14 - Proportion of apolar alpha sphere : 0.3704
+ATOM    465    O ASN A  71      71.485  54.192 208.036  0.39  6.43           O 0
+ATOM    486  CD2 TYR A  73      66.721  56.056 208.720  0.00  0.00           C 0
+ATOM    457    O ASN A  70      70.815  52.472 204.566  0.00  0.00           O 0
+ATOM    488  CE2 TYR A  73      65.512  55.431 208.403  0.00  0.00           C 0
+ATOM   2279    O PRO A 304      68.064  57.117 201.978  0.52  5.36           O 0
+ATOM    489   CZ TYR A  73      64.514  56.156 207.767  0.00  0.00           C 0
+ATOM    485  CD1 TYR A  73      65.919  58.105 207.781  0.00  0.00           C 0
+ATOM    487  CE1 TYR A  73      64.708  57.494 207.460  0.00  0.00           C 0
+ATOM   2273   CA GLY A 303      64.801  58.672 204.232  0.00  0.00           C 0
+ATOM    484   CG TYR A  73      66.945  57.396 208.406  0.00  0.00           C 0
+ATOM    473    O LYS A  72      70.769  57.123 205.364  0.53  1.07           O 0
+ATOM   2290  CD2 HIS A 305      65.501  54.644 200.312  0.00  0.00           C 0
+ATOM   2309  CE1 HIS A 307      69.455  52.106 199.719  0.00  0.00           C 0
+ATOM   2292  NE2 HIS A 305      64.404  53.821 200.396  0.50  7.66           N 0
+ATOM    490   OH TYR A  73      63.350  55.529 207.391  0.00  0.00           O 0
+ATOM   2284   CA HIS A 305      68.264  55.679 199.606  0.00  0.00           C 0
+ATOM    480   CA TYR A  73      69.167  58.152 207.396  0.00  0.00           C 0
+ATOM   2275    O GLY A 303      64.780  57.432 202.191  0.73  3.21           O 0
+ATOM   2274    C GLY A 303      65.293  58.351 202.837  0.00  0.00           C 0
+TER
+END

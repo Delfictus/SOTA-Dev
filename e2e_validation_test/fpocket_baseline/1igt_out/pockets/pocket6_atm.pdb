@@ -1,0 +1,34 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     6:
+HEADER 0  - Pocket Score                      : 0.1283
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 4.1071
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5736
+HEADER 5  - Mean B-factor of pocket residues  : 0.0736
+HEADER 6  - Hydrophobicity Score              : -9.6667
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 3.8333
+HEADER 9  - Pocket volume (Monte Carlo)       : 151.6286
+HEADER 10 - Pocket volume (convex hull)       : 0.7495
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     1
+HEADER 14 - Proportion of apolar alpha sphere : 0.0667
+ATOM   4293    O PRO B 257       2.748 -24.179 -28.220  0.66  1.07           O 0
+ATOM   4312   NZ LYS B 259       5.576 -28.863 -25.874  0.00  0.00           N 0
+ATOM   4309   CG LYS B 259       4.907 -29.189 -28.574  0.00  0.00           C 0
+ATOM   4311   CE LYS B 259       5.968 -27.778 -26.816  0.00  0.00           C 0
+ATOM   4304    N LYS B 259       3.171 -27.448 -30.303  0.00  0.00           N 0
+ATOM   4437  OG1 THR B 273      -0.769 -25.079 -23.948  0.00  0.00           O 0
+ATOM   4421  CG2 ILE B 271      -3.002 -29.184 -27.363  0.00  0.00           C 0
+ATOM   4422  CD1 ILE B 271      -3.390 -27.958 -24.879  0.00  0.00           C 0
+ATOM   4420  CG1 ILE B 271      -3.467 -27.083 -26.085  0.00  0.00           C 0
+ATOM   4346  OD2 ASP B 262       1.218 -30.729 -29.852  0.00  0.00           O 0
+ATOM   4418    O ILE B 271      -1.468 -25.686 -28.452  0.00  0.00           O 0
+ATOM   4298   CA PRO B 258       1.502 -25.702 -30.097  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,42 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    59:
+HEADER 0  - Pocket Score                      : -0.0832
+HEADER 1  - Drug Score                        : 0.0026
+HEADER 2  - Number of alpha spheres           :    29
+HEADER 3  - Mean alpha-sphere radius          : 3.9756
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4682
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 26.3636
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 3.8182
+HEADER 9  - Pocket volume (Monte Carlo)       : 321.4815
+HEADER 10 - Pocket volume (convex hull)       : 22.2291
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 15.0000
+HEADER 13 - Number of apolar alpha sphere     :    16
+HEADER 14 - Proportion of apolar alpha sphere : 0.5517
+ATOM   9841  OD1 ASP F 369      49.349  29.868  69.872  0.52  9.64           O 0
+ATOM   9401   CB LEU F 306      52.565  24.313  68.117  0.00  0.00           C 0
+ATOM   9397    N LEU F 306      53.428  26.475  69.068  0.46  3.28           N 0
+ATOM   9402   CG LEU F 306      52.199  23.403  69.302  0.00  0.00           C 0
+ATOM   9842  OD2 ASP F 369      50.566  30.390  68.109  0.00  0.00           O 0
+ATOM   9403  CD1 LEU F 306      51.025  22.538  68.781  0.00  0.00           C 0
+ATOM   9791    O ARG F 363      46.595  23.700  62.027  0.65  6.43           O 0
+ATOM   9789   CA ARG F 363      44.398  23.836  62.900  0.00  0.00           C 0
+ATOM   9782    O LYS F 362      43.657  25.648  64.864  0.52  9.64           O 0
+ATOM   9833  CG1 VAL F 368      45.352  28.034  69.195  0.00  0.00           C 0
+ATOM   9807   CA PRO F 365      49.795  26.303  63.142  0.00  0.00           C 0
+ATOM   9810   CB PRO F 365      51.119  25.617  62.755  0.00  0.00           C 0
+ATOM   9802    O VAL F 364      47.364  27.425  62.733  0.53  1.07           O 0
+ATOM   9832   CB VAL F 368      44.845  28.309  67.816  0.00  0.00           C 0
+ATOM   9811   CG PRO F 365      50.541  24.380  62.100  0.00  0.00           C 0
+ATOM   9431  CD2 LEU F 310      54.108  21.571  64.611  0.00  0.00           C 0
+ATOM   9813    N GLY F 366      49.771  28.338  64.487  0.36  2.19           N 0
+ATOM   9405    N ALA F 307      53.519  26.485  66.291  0.54  1.09           N 0
+ATOM   9486   CB ALA F 318      50.712  20.469  61.024  0.00  0.00           C 0
+ATOM   9790    C ARG F 363      45.589  24.400  62.149  0.00  0.00           C 0
+TER
+END

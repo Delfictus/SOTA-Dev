@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    32:
+HEADER 0  - Pocket Score                      : -0.1220
+HEADER 1  - Drug Score                        : 0.0011
+HEADER 2  - Number of alpha spheres           :    22
+HEADER 3  - Mean alpha-sphere radius          : 4.0802
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.7079
+HEADER 5  - Mean B-factor of pocket residues  : 0.8133
+HEADER 6  - Hydrophobicity Score              : 54.0000
+HEADER 7  - Polarity Score                    :     1
+HEADER 8  - Amino Acid based volume Score     : 4.5000
+HEADER 9  - Pocket volume (Monte Carlo)       : 279.5782
+HEADER 10 - Pocket volume (convex hull)       : 6.7418
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.3636
+ATOM   2776  OE1 GLU B 300      33.582  64.737  13.289  0.00  0.00           O 0
+ATOM   2748    O MET B 297      37.984  61.656  12.755  0.64  7.50           O 0
+ATOM   2752   CE MET B 297      39.504  63.710   9.015  0.00  0.00           C 0
+ATOM   2751   SD MET B 297      40.846  64.221  10.084  0.00  0.00           S 0
+ATOM   2769    N GLU B 300      35.737  63.016  17.216  0.63  2.19           N 0
+ATOM   2773   CB GLU B 300      33.730  63.504  15.852  0.00  0.00           C 0
+ATOM   2767  CG1 VAL B 299      37.928  65.003  19.365  0.00  0.00           C 0
+ATOM   2770   CA GLU B 300      34.269  63.042  17.214  0.00  0.00           C 0
+ATOM   2804  CD1 LEU B 303      34.704  65.341  21.598  0.00  0.00           C 0
+ATOM   2774   CG GLU B 300      34.499  62.967  14.636  0.00  0.00           C 0
+ATOM   2766   CB VAL B 299      38.515  64.224  18.182  0.00  0.00           C 0
+ATOM   2747    C MET B 297      39.081  61.686  13.316  0.00  0.00           C 0
+ATOM   2775   CD GLU B 300      34.035  63.569  13.309  0.00  0.00           C 0
+ATOM   2777  OE2 GLU B 300      34.130  62.869  12.276  0.72  3.21           O 0
+ATOM   2746   CA MET B 297      40.252  62.454  12.693  0.00  0.00           C 0
+ATOM   2762    N VAL B 299      38.300  62.113  16.856  0.50  1.09           N 0
+ATOM   2745    N MET B 297      41.353  62.683  13.627  0.33  5.47           N 0
+TER
+END

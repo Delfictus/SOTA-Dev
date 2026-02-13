@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    29:
+HEADER 0  - Pocket Score                      : -0.0245
+HEADER 1  - Drug Score                        : 0.0012
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.8707
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5259
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 12.8000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.4000
+HEADER 9  - Pocket volume (Monte Carlo)       : 260.0342
+HEADER 10 - Pocket volume (convex hull)       : 6.6444
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.7333
+ATOM   8393   CB GLU E 423      39.014  52.779  54.396  0.00  0.00           C 0
+ATOM  10569  CG2 THR F 460      42.249  46.666  57.454  0.00  0.00           C 0
+ATOM   8430   CG MET E 427      43.702  49.673  53.618  0.00  0.00           C 0
+ATOM   8392    O GLU E 423      42.217  52.767  54.120  0.71  1.07           O 0
+ATOM   8431   SD MET E 427      42.667  48.932  52.337  0.00  0.00           S 0
+ATOM  10554    O TYR F 459      45.773  47.004  57.768  0.72  6.43           O 0
+ATOM   8421   CB ASP E 426      43.444  53.475  57.263  0.00  0.00           C 0
+ATOM  10564   CA THR F 460      43.806  45.668  59.117  0.00  0.00           C 0
+ATOM   8390   CA GLU E 423      40.127  53.727  54.792  0.00  0.00           C 0
+ATOM   8394   CG GLU E 423      37.777  52.932  55.260  0.00  0.00           C 0
+ATOM   8424  OD2 ASP E 426      42.050  54.547  58.918  0.00  0.00           O 0
+ATOM   8425    N MET E 427      45.012  52.091  54.829  0.00  0.00           N 0
+ATOM   8419    C ASP E 426      45.460  52.745  55.882  0.00  0.00           C 0
+ATOM   8420    O ASP E 426      46.560  52.514  56.382  0.79  5.36           O 0
+TER
+END

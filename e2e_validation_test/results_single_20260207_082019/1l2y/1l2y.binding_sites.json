@@ -1,0 +1,10 @@
+{
+  "binding_sites": 0,
+  "druggable_sites": 0,
+  "simulation_time_sec": 0.0,
+  "skip_reason": "Protein too small for GPU analysis (304 atoms, minimum 500)",
+  "skipped": true,
+  "spike_count": 0,
+  "structure": "1l2y.topology",
+  "total_steps": 0
+}

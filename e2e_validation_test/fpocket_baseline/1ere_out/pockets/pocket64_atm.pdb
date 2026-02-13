@@ -1,0 +1,45 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    64:
+HEADER 0  - Pocket Score                      : -0.0942
+HEADER 1  - Drug Score                        : 0.0004
+HEADER 2  - Number of alpha spheres           :    30
+HEADER 3  - Mean alpha-sphere radius          : 3.9586
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5031
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : -29.7500
+HEADER 7  - Polarity Score                    :     8
+HEADER 8  - Amino Acid based volume Score     : 3.7500
+HEADER 9  - Pocket volume (Monte Carlo)       : 299.3124
+HEADER 10 - Pocket volume (convex hull)       : 24.2957
+HEADER 11 - Charge Score                      :    -3
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.1333
+ATOM   4207  OD1 ASP C 369       7.536  40.253 109.942  0.68  8.57           O 0
+ATOM   3757    N SER C 305       4.168  35.830 109.907  0.48  8.75           N 0
+ATOM   3761   CB SER C 305       5.742  36.644 108.192  0.00  0.00           C 0
+ATOM   1793  OD2 ASP A 538       9.308  37.060 114.837  0.36  8.57           O 0
+ATOM   4993  OE2 GLU C 470      14.467  34.022 113.897  0.00  0.00           O 0
+ATOM   1792  OD1 ASP A 538      11.125  36.875 116.066  0.46  8.57           O 0
+ATOM   4204    O ASP C 369      12.265  39.674 110.747  0.68  2.14           O 0
+ATOM   4206   CG ASP C 369       8.306  39.646 109.140  0.00  0.00           C 0
+ATOM   4205   CB ASP C 369       9.807  39.560 109.326  0.00  0.00           C 0
+ATOM   5026  ND1 HIS C 474      10.116  35.348 106.955  0.52  8.75           N 0
+ATOM   5016   CB ASP C 473      14.372  30.106 106.312  0.00  0.00           C 0
+ATOM   4988    O GLU C 470      15.088  33.047 108.489  0.63  1.07           O 0
+ATOM   5058  NH2 ARG C 477      10.528  29.778 107.270  0.36  5.47           N 0
+ATOM   5019  OD2 ASP C 473      15.161  28.276 107.506  0.00  0.00           O 0
+ATOM   5028  CE1 HIS C 474       9.328  36.389 106.806  0.00  0.00           C 0
+ATOM   4208  OD2 ASP C 369       7.883  39.050 108.107  0.86  1.07           O 0
+ATOM   5024   CB HIS C 474      12.594  34.866 106.945  0.00  0.00           C 0
+ATOM   5025   CG HIS C 474      11.424  35.812 106.840  0.00  0.00           C 0
+ATOM   4990   CG GLU C 470      15.292  33.077 111.873  0.00  0.00           C 0
+ATOM   4989   CB GLU C 470      16.139  31.901 111.440  0.00  0.00           C 0
+ATOM   5002  OE2 GLU C 471      16.213  38.451 110.514  0.65  4.29           O 0
+ATOM   4995   CA GLU C 471      16.770  35.226 108.239  0.00  0.00           C 0
+ATOM   4986   CA GLU C 470      16.495  31.823 109.972  0.00  0.00           C 0
+TER
+END

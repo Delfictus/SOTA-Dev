@@ -3975,6 +3975,7 @@ dependencies = [
  "clap",
  "cudarc",
  "env_logger 0.10.2",
+ "glob",
  "log",
  "optix-sys",
  "prism-gpu",

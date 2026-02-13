@@ -1,0 +1,42 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    10:
+HEADER 0  - Pocket Score                      : 0.1318
+HEADER 1  - Drug Score                        : 0.0015
+HEADER 2  - Number of alpha spheres           :    33
+HEADER 3  - Mean alpha-sphere radius          : 3.6507
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4193
+HEADER 5  - Mean B-factor of pocket residues  : 0.1543
+HEADER 6  - Hydrophobicity Score              : 21.2000
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.3000
+HEADER 9  - Pocket volume (Monte Carlo)       : 131.2520
+HEADER 10 - Pocket volume (convex hull)       : 5.1324
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 9.0000
+HEADER 13 - Number of apolar alpha sphere     :    10
+HEADER 14 - Proportion of apolar alpha sphere : 0.3030
+ATOM  10911   CA GLN F 506      56.482  32.715  41.101  0.00  0.00           C 0
+ATOM   8824  CD1 LEU E 479      56.280  38.165  36.412  0.00  0.00           C 0
+ATOM   8822   CB LEU E 479      58.738  37.807  36.523  0.00  0.00           C 0
+ATOM  10914   CB GLN F 506      56.782  31.736  39.967  0.00  0.00           C 0
+ATOM   8796  ND1 HIS E 476      55.162  34.427  34.699  0.00  0.00           N 0
+ATOM   8793    O HIS E 476      59.806  35.275  34.548  0.00  0.00           O 0
+ATOM   8832  OD1 ASP E 480      61.007  33.431  37.432  0.58  2.14           O 0
+ATOM   8686   OH TYR E 459      50.804  34.835  37.811  0.21  2.14           O 0
+ATOM  10913    O GLN F 506      54.155  32.773  41.499  0.48  1.07           O 0
+ATOM  10360   NE ARG F 434      52.930  31.615  36.772  0.26  1.09           N 0
+ATOM   8798  CE1 HIS E 476      53.841  34.236  34.733  0.00  0.00           C 0
+ATOM  10943   CB LEU F 509      53.958  36.802  41.597  0.00  0.00           C 0
+ATOM   8821    O LEU E 479      61.475  37.835  38.287  0.00  0.00           O 0
+ATOM   8856  OG1 THR E 483      61.695  36.995  41.063  0.52  2.14           O 0
+ATOM  10915   CGAGLN F 506      58.224  31.567  39.570  0.00  0.00           C 0
+ATOM  10921  NE2AGLN F 506      59.485  31.109  37.578  0.55  2.19           N 0
+ATOM   8657  ND2 ASN E 455      52.423  38.128  38.532  0.00  0.00           N 0
+ATOM  10945  CD1 LEU F 509      55.991  37.733  40.569  0.00  0.00           C 0
+ATOM  10910    N GLN F 506      57.605  33.000  41.985  0.00  0.00           N 0
+ATOM  10909   CB ALA F 505      59.666  35.155  43.156  0.00  0.00           C 0
+TER
+END

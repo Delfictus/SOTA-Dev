@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    24:
+HEADER 0  - Pocket Score                      : -0.0991
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9905
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5300
+HEADER 5  - Mean B-factor of pocket residues  : 0.3579
+HEADER 6  - Hydrophobicity Score              : 2.2222
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.4444
+HEADER 9  - Pocket volume (Monte Carlo)       : 235.0811
+HEADER 10 - Pocket volume (convex hull)       : 6.1064
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.4667
+ATOM    505    O GLY A 229      91.315  89.332  42.235  0.37  5.36           O 0
+ATOM    504    C GLY A 229      90.354  89.922  42.739  0.00  0.00           C 0
+ATOM    511  OG1 THR A 230      88.658  89.012  40.164  0.00  0.00           O 0
+ATOM    503   CA GLY A 229      90.003  89.698  44.203  0.00  0.00           C 0
+ATOM    586   CE LYS A 259      86.007  84.732  47.031  0.00  0.00           C 0
+ATOM    563   CB MET A 256      85.607  90.937  42.218  0.00  0.00           C 0
+ATOM    564   CG MET A 256      84.631  90.517  41.137  0.00  0.00           C 0
+ATOM    478    O SER A 225      92.104  86.072  45.205  0.50  6.43           O 0
+ATOM    484    O ILE A 226      90.444  87.049  48.090  0.45  1.07           O 0
+ATOM    584   CG LYS A 259      86.776  86.511  48.645  0.00  0.00           C 0
+ATOM   2354  ND2 ASN A 487      83.852  90.145  45.826  0.81  2.19           N 0
+ATOM    565   SD MET A 256      82.971  90.288  41.760  0.00  0.00           S 0
+ATOM   2339  OD2 ASP A 485      82.390  86.144  47.042  0.00  0.00           O 0
+ATOM    570    O ASP A 257      86.626  90.992  46.621  0.41  2.14           O 0
+TER
+END

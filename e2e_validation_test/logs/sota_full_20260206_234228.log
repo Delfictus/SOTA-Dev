@@ -1,0 +1,62 @@
+╔═══════════════════════════════════════════════════════════════╗
+║     PRISM4D NHS RT-FULL - BATCH MODE (from manifest)          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+[2026-02-07T07:42:28Z INFO  nhs_rt_full] Loading manifest: e2e_validation_test/batch_manifest_final.json
+[2026-02-07T07:42:28Z INFO  nhs_rt_full] Manifest loaded: 10 structures in 3 batches
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]   Collecting batch 0: 4 structures, 15 replicas (tier: Small)
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]   Collecting batch 1: 4 structures, 15 replicas (tier: Small)
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]   Collecting batch 2: 2 structures, 15 replicas (tier: Small)
+[2026-02-07T07:42:28Z INFO  nhs_rt_full] SIZE-TIER SEQUENTIAL BATCHING: 10 structures across 3 tiers
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]   Tier small (≤5K atoms): 4 structures (642-4878 atoms), 60 entries with 15 replicas
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]   Tier medium (5K-20K atoms): 4 structures (7261-13294 atoms), 60 entries with 15 replicas
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]   Tier large (>20K atoms): 2 structures (20148-22878 atoms), 30 entries with 15 replicas
+[2026-02-07T07:42:28Z INFO  nhs_rt_full] Creating ONE CudaContext (device 0)...
+[2026-02-07T07:42:28Z INFO  nhs_rt_full] ONE CudaContext. ZERO threads. 3 tiers sequentially.
+[2026-02-07T07:42:28Z INFO  nhs_rt_full] ═══ Tier 1/3: small (≤5K atoms) (4 structures, max 4878 atoms) ═══
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]     Creating AmberSimdBatch: 4 structures × 15 replicas = 60 total entries, max 4878 atoms
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] AmberSimdBatch initialized: max 60 structures × 4878 atoms
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1crn.topology.json
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loaded topology: 642 atoms, 46 residues, 1 chains
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]       Loaded: 1crn_sanitized (642 atoms, 62 aromatics) → 15 replicas starting at ID 0
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1hhp.topology.json
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loaded topology: 1564 atoms, 99 residues, 1 chains
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]       Loaded: 1hhp_sanitized (1564 atoms, 110 aromatics) → 15 replicas starting at ID 15
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1btl.topology.json
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loaded topology: 4073 atoms, 263 residues, 1 chains
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]       Loaded: 1btl_sanitized (4073 atoms, 281 aromatics) → 15 replicas starting at ID 30
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1g1f.topology.json
+[2026-02-07T07:42:28Z INFO  prism_nhs::input] Loaded topology: 4878 atoms, 301 residues, 2 chains
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]       Loaded: 1g1f_sanitized (4878 atoms, 613 aromatics) → 15 replicas starting at ID 45
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]     Finalizing batch for GPU upload...
+[2026-02-07T07:42:28Z INFO  prism_gpu::h_constraints] 🔗 HConstraints: 53160 clusters (29730 single, 16320 CH2/NH2, 7110 CH3/NH3)
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] H-constraints: 53160 clusters (83700 total constraints, DOF adjusted)
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] Initializing FP16 parameter buffers...
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   FP16 buffers: 167355 atoms (326 KB saved)
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] Initializing Verlet neighbor list...
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   Verlet list: 167355 atoms, skin=2.0Å, rebuild threshold=1.0Å
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] Initializing Tensor Core force calculator...
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   Tensor Cores: enabled (WMMA 16×16 tiles)
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] Initializing async MD pipeline...
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   Async pipeline: enabled (bonded/non-bonded overlap)
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] SOTA optimizations enabled:
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   - Verlet list: YES
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   - Tensor Cores: YES
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: YES
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: YES
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: YES
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 60 structures, 167355 atoms
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]       ✓ Batch ready: 60 total entries (4 structures × 15 replicas) on GPU
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]     Running 35000 steps per replica (batch executes in lockstep)...
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]       Protocol phases: cold=14000, ramp=6000, warm=15000
+[2026-02-07T07:42:28Z INFO  nhs_rt_full]     [1/3] Cold hold at 50K (14000 steps)...
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 60 structures, 167355 atoms, 500 steps
+[2026-02-07T07:42:28Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-07T07:44:25Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 166.7 steps/rebuild)
+[2026-02-07T07:44:25Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-07T07:44:25Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 60 structures, 167355 atoms, 500 steps
+[2026-02-07T07:44:25Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists
+[2026-02-07T07:46:22Z INFO  prism_gpu::amber_simd_batch] SOTA MD complete: 500 steps, 3 Verlet rebuilds (avg 333.3 steps/rebuild)
+[2026-02-07T07:46:22Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-07T07:46:22Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 60 structures, 167355 atoms, 500 steps
+[2026-02-07T07:46:22Z INFO  prism_gpu::amber_simd_batch] Using SOTA path with Verlet neighbor lists

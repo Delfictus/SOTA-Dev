@@ -1,0 +1,9 @@
+╔═══════════════════════════════════════════════════════════════╗
+║     PRISM4D NHS RT-FULL - BATCH MODE (from manifest)          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+[2026-02-07T06:29:17Z INFO  nhs_rt_full] Loading manifest: e2e_validation_test/batch_manifest_all14.json
+Error: Failed to parse manifest JSON
+
+Caused by:
+    missing field `execution_order` at line 65 column 1

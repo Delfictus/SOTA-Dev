@@ -1,0 +1,43 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    74:
+HEADER 0  - Pocket Score                      : -0.1436
+HEADER 1  - Drug Score                        : 0.0016
+HEADER 2  - Number of alpha spheres           :    27
+HEADER 3  - Mean alpha-sphere radius          : 4.0111
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4817
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 23.7500
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 327.5711
+HEADER 10 - Pocket volume (convex hull)       : 22.1056
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.5185
+ATOM   7913    O ARG E 363      63.861  50.333  31.387  0.75  5.36           O 0
+ATOM   7929   CA PRO E 365      64.060  46.117  30.774  0.00  0.00           C 0
+ATOM   7904    O LYS E 362      61.285  51.122  27.659  0.00  0.00           O 0
+ATOM   7525  CD1 LEU E 306      69.016  46.931  25.959  0.00  0.00           C 0
+ATOM   7924    O VAL E 364      61.613  47.311  30.477  0.57  2.14           O 0
+ATOM   7935    N GLY E 366      62.811  44.736  29.191  0.39  4.37           N 0
+ATOM   7911   CA ARG E 363      62.665  51.847  30.003  0.00  0.00           C 0
+ATOM   7933   CG PRO E 365      65.708  46.873  32.187  0.00  0.00           C 0
+ATOM   7608   CB ALA E 318      68.486  49.293  33.718  0.00  0.00           C 0
+ATOM   7553  CD2 LEU E 310      70.608  45.687  30.897  0.00  0.00           C 0
+ATOM   7519    N LEU E 306      67.515  42.577  25.872  0.40  2.19           N 0
+ATOM   7964  OD2 ASP E 369      62.486  42.232  25.664  0.00  0.00           O 0
+ATOM   7963  OD1 ASP E 369      62.632  43.529  23.837  0.67  8.57           O 0
+ATOM   7523   CB LEU E 306      68.412  44.719  26.769  0.00  0.00           C 0
+ATOM   7524   CG LEU E 306      69.191  45.424  25.641  0.00  0.00           C 0
+ATOM   7932   CB PRO E 365      65.247  45.558  31.568  0.00  0.00           C 0
+ATOM   7954   CB VAL E 368      60.621  48.100  24.855  0.00  0.00           C 0
+ATOM   7912    C ARG E 363      62.748  50.655  30.942  0.00  0.00           C 0
+ATOM   7518   OG SER E 305      64.518  41.250  26.629  0.57  1.07           O 0
+ATOM   7955  CG1 VAL E 368      61.431  47.684  23.666  0.00  0.00           C 0
+ATOM   7527    N ALA E 307      66.897  42.808  28.562  0.00  0.00           N 0
+TER
+END

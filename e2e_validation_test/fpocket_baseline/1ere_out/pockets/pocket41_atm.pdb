@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    41:
+HEADER 0  - Pocket Score                      : -0.0514
+HEADER 1  - Drug Score                        : 0.0014
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.8274
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5370
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 12.8000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.4000
+HEADER 9  - Pocket volume (Monte Carlo)       : 247.1570
+HEADER 10 - Pocket volume (convex hull)       : 8.1250
+HEADER 11 - Charge Score                      :    -2
+HEADER 12 - Local hydrophobic density Score   : 11.0000
+HEADER 13 - Number of apolar alpha sphere     :    12
+HEADER 14 - Proportion of apolar alpha sphere : 0.7500
+ATOM   1164    O TYR A 459      31.823  53.568 123.250  0.49  1.07           O 0
+ATOM   2787   CB ASP B 426      36.416  48.590 124.331  0.00  0.00           C 0
+ATOM   2786    O ASP B 426      36.621  51.751 125.704  0.67  4.29           O 0
+ATOM   2785    C ASP B 426      36.260  50.583 125.947  0.00  0.00           C 0
+ATOM   2791    N MET B 427      35.223  50.294 126.740  0.00  0.00           N 0
+ATOM   1179  CG2 THR A 460      30.036  50.433 122.802  0.00  0.00           C 0
+ATOM   2796   CG MET B 427      32.326  49.996 127.228  0.00  0.00           C 0
+ATOM   1174   CA THR A 460      30.135  52.479 121.354  0.00  0.00           C 0
+ATOM   2760   CG GLU B 423      33.238  43.541 124.887  0.00  0.00           C 0
+ATOM   2790  OD2 ASP B 426      37.224  47.143 122.584  0.63  5.36           O 0
+ATOM   2758    O GLU B 423      34.433  47.446 126.902  0.63  2.14           O 0
+ATOM   2759   CB GLU B 423      33.382  44.638 125.929  0.00  0.00           C 0
+ATOM   2797   SD MET B 427      30.954  49.295 128.150  0.00  0.00           S 0
+ATOM   2756   CA GLU B 423      34.758  45.262 126.004  0.00  0.00           C 0
+TER
+END

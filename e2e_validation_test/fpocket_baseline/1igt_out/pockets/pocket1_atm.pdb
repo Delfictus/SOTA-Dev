@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     1:
+HEADER 0  - Pocket Score                      : 0.2647
+HEADER 1  - Drug Score                        : 0.0010
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.9509
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6191
+HEADER 5  - Mean B-factor of pocket residues  : 0.2933
+HEADER 6  - Hydrophobicity Score              : 6.0000
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.1429
+HEADER 9  - Pocket volume (Monte Carlo)       : 247.3826
+HEADER 10 - Pocket volume (convex hull)       : 8.7568
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 2.0000
+HEADER 13 - Number of apolar alpha sphere     :     3
+HEADER 14 - Proportion of apolar alpha sphere : 0.1667
+ATOM  10565   CA PRO D 258      34.263 -11.227 -17.088  0.00  0.00           C 0
+ATOM  10571    N LYS D 259      34.426 -12.337 -19.227  0.00  0.00           N 0
+ATOM  10577   CD LYS D 259      31.971 -11.803 -20.930  0.00  0.00           C 0
+ATOM  10613  OD2 ASP D 262      37.083 -10.285 -21.423  0.56  3.21           O 0
+ATOM  10704  OG1 THR D 273      31.904  -4.085 -16.958  0.00  0.00           O 0
+ATOM  10552  CD2 PHE D 256      26.788  -6.613 -17.045  0.00  0.00           C 0
+ATOM  10703   CB THR D 273      30.798  -4.513 -16.151  0.00  0.00           C 0
+ATOM  10705  CG2 THR D 273      29.651  -3.524 -16.310  0.00  0.00           C 0
+ATOM  10549   CB PHE D 256      28.457  -8.234 -16.113  0.00  0.00           C 0
+ATOM  10550   CG PHE D 256      27.062  -7.865 -16.507  0.00  0.00           C 0
+ATOM  10579   NZ LYS D 259      29.740 -11.284 -19.892  0.00  0.00           N 0
+ATOM  10560    O PRO D 257      31.575 -11.076 -17.124  0.00  0.00           O 0
+ATOM  10548    O PHE D 256      30.931  -8.840 -14.346  0.00  0.00           O 0
+ATOM  10685    O ILE D 271      34.993  -8.187 -15.975  0.00  0.00           O 0
+ATOM  10686   CB ILE D 271      36.565  -5.890 -17.194  0.00  0.00           C 0
+ATOM  10687  CG1 ILE D 271      37.506  -5.916 -18.408  0.00  0.00           C 0
+ATOM  10699    N THR D 273      32.104  -5.775 -14.469  0.00  0.00           N 0
+TER
+END

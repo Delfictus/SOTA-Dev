@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    22:
+HEADER 0  - Pocket Score                      : 0.0405
+HEADER 1  - Drug Score                        : 0.0233
+HEADER 2  - Number of alpha spheres           :    21
+HEADER 3  - Mean alpha-sphere radius          : 3.7439
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4110
+HEADER 5  - Mean B-factor of pocket residues  : 0.1710
+HEADER 6  - Hydrophobicity Score              : 29.3333
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.5000
+HEADER 9  - Pocket volume (Monte Carlo)       : 146.0928
+HEADER 10 - Pocket volume (convex hull)       : 2.4269
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 14.0000
+HEADER 13 - Number of apolar alpha sphere     :    15
+HEADER 14 - Proportion of apolar alpha sphere : 0.7143
+ATOM   9285    O GLY D  96     -38.957  39.790 -11.317  0.37  6.43           O 0
+ATOM   9298  CD1 TYR D 100H    -42.249  40.523  -9.505  0.00  0.00           C 0
+ATOM   9300  CE1 TYR D 100H    -42.812  39.996 -10.674  0.00  0.00           C 0
+ATOM   6729  CE2 TYR C  49     -43.744  36.406  -7.407  0.00  0.00           C 0
+ATOM   6727  CD2 TYR C  49     -43.148  36.841  -6.232  0.00  0.00           C 0
+ATOM   6787  ND1 HIS C  55     -41.004  32.971  -8.399  0.71  5.47           N 0
+ATOM   6731   OH TYR C  49     -45.091  36.839  -9.307  0.67  4.29           O 0
+ATOM   9324   CB ALA D 100J    -38.609  39.965  -4.047  0.00  0.00           C 0
+ATOM   6724   CB TYR C  49     -42.625  38.615  -4.517  0.00  0.00           C 0
+ATOM   6725   CG TYR C  49     -43.301  38.149  -5.786  0.00  0.00           C 0
+ATOM   6700  CD2 LEU C  46     -39.147  35.867  -5.190  0.00  0.00           C 0
+ATOM   9283   CA GLY D  96     -37.145  39.216  -9.837  0.00  0.00           C 0
+ATOM   9323    O ALA D 100J    -36.512  39.605  -6.367  0.00  0.00           O 0
+ATOM   9292    N TYR D 100H    -40.169  42.556  -8.913  0.00  0.00           N 0
+ATOM   9339   CB ASP D 101     -36.908  35.580  -8.590  0.00  0.00           C 0
+ATOM   9342  OD2 ASP D 101     -36.212  35.267 -10.826  0.68  7.50           O 0
+ATOM   6789  CE1 HIS C  55     -39.890  32.553  -8.974  0.00  0.00           C 0
+TER
+END

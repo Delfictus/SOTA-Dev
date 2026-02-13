@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    65:
+HEADER 0  - Pocket Score                      : -0.0797
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9289
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5763
+HEADER 5  - Mean B-factor of pocket residues  : 0.2305
+HEADER 6  - Hydrophobicity Score              : 16.8889
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 3.8889
+HEADER 9  - Pocket volume (Monte Carlo)       : 231.0372
+HEADER 10 - Pocket volume (convex hull)       : 6.6602
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 4.0000
+HEADER 13 - Number of apolar alpha sphere     :     5
+HEADER 14 - Proportion of apolar alpha sphere : 0.3333
+ATOM   9810    N GLY F 366      49.771  28.338  64.487  0.36  2.19           N 0
+ATOM   9397    N LEU F 306      53.428  26.475  69.068  0.39  2.19           N 0
+ATOM   9839  OD2 ASP F 369      50.566  30.390  68.109  0.00  0.00           O 0
+ATOM   9401   CB LEU F 306      52.565  24.313  68.117  0.00  0.00           C 0
+ATOM   9402    N ALA F 307      53.519  26.485  66.291  0.54  1.09           N 0
+ATOM   9838  OD1 ASP F 369      49.349  29.868  69.872  0.50  7.50           O 0
+ATOM   9830  CG1 VAL F 368      45.352  28.034  69.195  0.00  0.00           C 0
+ATOM   9804   CA PRO F 365      49.795  26.303  63.142  0.00  0.00           C 0
+ATOM   9808   CG PRO F 365      50.541  24.380  62.100  0.00  0.00           C 0
+ATOM   9807   CB PRO F 365      51.119  25.617  62.755  0.00  0.00           C 0
+ATOM   9829   CB VAL F 368      44.845  28.309  67.816  0.00  0.00           C 0
+ATOM   9799    O VAL F 364      47.364  27.425  62.733  0.53  1.07           O 0
+ATOM   9779    O LYS F 362      43.657  25.648  64.864  0.52  9.64           O 0
+ATOM   9788    O ARG F 363      46.595  23.700  62.027  0.65  6.43           O 0
+ATOM   9787    C ARG F 363      45.589  24.400  62.149  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,174 @@
+[2026-02-07T20:49:08Z INFO  nhs_rt_full] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-07T20:49:08Z INFO  nhs_rt_full] ║     PRISM4D NHS RT-FULL PIPELINE                              ║
+[2026-02-07T20:49:08Z INFO  nhs_rt_full] ║     RT-Core Accelerated Binding Site Detection                ║
+[2026-02-07T20:49:08Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-07T20:49:08Z INFO  nhs_rt_full] 
+    [1/6] Loading topology: e2e_validation_test/prep/1crn.topology.json
+[2026-02-07T20:49:08Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: e2e_validation_test/prep/1crn.topology.json
+[2026-02-07T20:49:08Z INFO  prism_nhs::input] Loaded topology: 642 atoms, 46 residues, 1 chains
+[2026-02-07T20:49:08Z INFO  nhs_rt_full]   Atoms: 642
+[2026-02-07T20:49:08Z INFO  nhs_rt_full]   Residues: 46
+[2026-02-07T20:49:08Z INFO  nhs_rt_full]   Aromatics: 3 (TRP/TYR/PHE)
+[2026-02-07T20:49:08Z INFO  nhs_rt_full] 
+    [2/6] Initializing GPU engine...
+[2026-02-07T20:49:08Z INFO  prism_nhs::persistent_engine] 🚀 Initializing Persistent NHS Engine (max_atoms: 15000)
+[2026-02-07T20:49:09Z INFO  prism_nhs::persistent_engine]   CUDA context: 246ms
+[2026-02-07T20:49:09Z INFO  prism_nhs::persistent_engine]   PTX module: 3ms
+[2026-02-07T20:49:09Z INFO  prism_nhs::persistent_engine] ✅ Persistent engine ready (total init: 249ms)
+[2026-02-07T20:49:09Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 1crn_sanitized (642 atoms)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 642 atoms, grid 64³
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Cell grid: 5x5x5 = 125 cells (cell size 10 Å)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=642)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 3 aromatics with ring atom indices
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Uploaded topology: 652 bonds, 1183 angles, 2289 dihedrals
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Excited state: 3 aromatics mapped
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (8636 with atoms, avg 0.4 atoms/voxel, max 16)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 3 aromatics (cutoff 5.0A)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Computed ring normals for 3 aromatics
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 3 aromatics
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   Bonds: 652, Angles: 1183, Dihedrals: 2289
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 204
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   UV Targets: 3
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-07T20:49:09Z INFO  prism_nhs::persistent_engine]   Topology loaded: 141ms
+[2026-02-07T20:49:09Z INFO  nhs_rt_full]   RT-core clustering: ✓ Available
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   Temperature: 100K → 300K
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=50000, ramp=625, warm_hold=625
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   UV bursts: 50kcal/mol every 250 steps (50 step duration)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-07T20:49:09Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 642 atoms
+[2026-02-07T20:49:09Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-07T20:49:09Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-07T20:49:09Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-07T20:49:09Z INFO  nhs_rt_full]   UltimateEngine: ✓ Enabled (2-4x faster MD)
+[2026-02-07T20:49:09Z INFO  nhs_rt_full] 
+    [3/6] Running MD simulation (5000 steps x 5 replicas)...
+[2026-02-07T20:49:09Z INFO  nhs_rt_full]   Mode: SEQUENTIAL (5 replicas one at a time)
+[2026-02-07T20:49:09Z INFO  nhs_rt_full]   Replica 1/5 (seed: 42)...
+[2026-02-07T20:49:27Z INFO  nhs_rt_full]     Replica 1 complete: 500000 spikes, T=300.0K
+[2026-02-07T20:49:27Z INFO  nhs_rt_full]   Replica 2/5 (seed: 43)...
+[2026-02-07T20:49:47Z INFO  nhs_rt_full]     Replica 2 complete: 500000 spikes, T=300.0K
+[2026-02-07T20:49:47Z INFO  nhs_rt_full]   Replica 3/5 (seed: 44)...
+[2026-02-07T20:50:06Z INFO  nhs_rt_full]     Replica 3 complete: 500000 spikes, T=300.0K
+[2026-02-07T20:50:06Z INFO  nhs_rt_full]   Replica 4/5 (seed: 45)...
+[2026-02-07T20:50:24Z INFO  nhs_rt_full]     Replica 4 complete: 500000 spikes, T=300.0K
+[2026-02-07T20:50:24Z INFO  nhs_rt_full]   Replica 5/5 (seed: 46)...
+[2026-02-07T20:50:43Z INFO  nhs_rt_full]     Replica 5 complete: 500000 spikes, T=300.0K
+[2026-02-07T20:50:43Z INFO  nhs_rt_full]   ✓ Completed in 93.8s (266 steps/sec)
+[2026-02-07T20:50:43Z INFO  nhs_rt_full]   Raw spikes collected: 2500000 (from 5 replicas)
+[2026-02-07T20:50:43Z INFO  nhs_rt_full]   Snapshots: 25
+[2026-02-07T20:50:43Z INFO  nhs_rt_full]   Final temperature: 300.0K
+[2026-02-07T20:50:43Z INFO  nhs_rt_full]   Intensity filter: kept 50000 spikes (top 2%, threshold=1.05)
+[2026-02-07T20:50:43Z INFO  nhs_rt_full] 
+    [4/6] RT-accelerated spike clustering (multi-scale)...
+[2026-02-07T20:50:43Z INFO  prism_nhs::persistent_engine] Adaptive epsilon: [3.0, 5.0, 7.0, 10.0] (from k-NN analysis, k=4)
+[2026-02-07T20:50:43Z INFO  prism_nhs::persistent_engine] Running multi-scale clustering on 50000 spikes at 4 scales
+[2026-02-07T20:50:43Z INFO  prism_optix::loader] OptiX: Our function table size: 480 bytes
+[2026-02-07T20:50:43Z INFO  prism_optix::loader] OptiX: ABI version 118 accepted our table size (480 bytes)
+[2026-02-07T20:50:43Z INFO  prism_optix::loader] OptiX function table loaded successfully (ABI version 118, table_size=480 bytes)
+[2026-02-07T20:50:43Z INFO  prism_optix::context_impl] OptiX API initialized (version 90100)
+[2026-02-07T20:50:43Z INFO  prism_optix::context_impl] Created OptiX context (validation: false)
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] RT clustering engine created
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] Loading RT clustering pipeline from: crates/prism-gpu/src/kernels/rt_clustering.optixir
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] RT clustering params struct size: 88 bytes
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] Phase 2 (build neighbors) pipeline created
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] Loading CUDA kernels from: crates/prism-gpu/src/kernels/rt_clustering_cuda.ptx
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] CUDA union-find kernels loaded
+[2026-02-07T20:50:43Z INFO  prism_nhs::rt_clustering] RT clustering pipeline loaded successfully
+[2026-02-07T20:50:43Z INFO  prism_optix::accel] Building BVH for 50000 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-07T20:50:43Z INFO  prism_optix::accel] ✅ BVH build complete: 50000 spheres, handle=0x773e1380000c, size=4334464 bytes (4.13 MB)
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1400999 raw neighbor hits from 50000 events
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1400999 total neighbor pairs
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] RT clustering: 50000 events, 1400999 neighbors, 110 clusters, 1090.91ms
+[2026-02-07T20:50:44Z INFO  prism_nhs::persistent_engine]   Scale ε=3.0Å: 110 clusters, 1400999 neighbors
+[2026-02-07T20:50:44Z INFO  prism_optix::context_impl] OptiX API initialized (version 90100)
+[2026-02-07T20:50:44Z INFO  prism_optix::context_impl] Created OptiX context (validation: false)
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] RT clustering engine created
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Loading RT clustering pipeline from: crates/prism-gpu/src/kernels/rt_clustering.optixir
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] RT clustering params struct size: 88 bytes
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Phase 2 (build neighbors) pipeline created
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] Loading CUDA kernels from: crates/prism-gpu/src/kernels/rt_clustering_cuda.ptx
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] CUDA union-find kernels loaded
+[2026-02-07T20:50:44Z INFO  prism_nhs::rt_clustering] RT clustering pipeline loaded successfully
+[2026-02-07T20:50:44Z INFO  prism_optix::accel] Building BVH for 50000 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-07T20:50:44Z INFO  prism_optix::accel] ✅ BVH build complete: 50000 spheres, handle=0x773e1380000c, size=4334464 bytes (4.13 MB)
+[2026-02-07T20:50:45Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1502125 raw neighbor hits from 50000 events
+[2026-02-07T20:50:45Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1502125 total neighbor pairs
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] RT clustering: 50000 events, 1502125 neighbors, 123 clusters, 1433.27ms
+[2026-02-07T20:50:46Z INFO  prism_nhs::persistent_engine]   Scale ε=5.0Å: 123 clusters, 1502125 neighbors
+[2026-02-07T20:50:46Z INFO  prism_optix::context_impl] OptiX API initialized (version 90100)
+[2026-02-07T20:50:46Z INFO  prism_optix::context_impl] Created OptiX context (validation: false)
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] RT clustering engine created
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Loading RT clustering pipeline from: crates/prism-gpu/src/kernels/rt_clustering.optixir
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] RT clustering params struct size: 88 bytes
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Phase 2 (build neighbors) pipeline created
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Loading CUDA kernels from: crates/prism-gpu/src/kernels/rt_clustering_cuda.ptx
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] CUDA union-find kernels loaded
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] RT clustering pipeline loaded successfully
+[2026-02-07T20:50:46Z INFO  prism_optix::accel] Building BVH for 50000 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-07T20:50:46Z INFO  prism_optix::accel] ✅ BVH build complete: 50000 spheres, handle=0x773e1380000c, size=4334464 bytes (4.13 MB)
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1506798 raw neighbor hits from 50000 events
+[2026-02-07T20:50:46Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1506798 total neighbor pairs
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] RT clustering: 50000 events, 1506798 neighbors, 114 clusters, 1459.70ms
+[2026-02-07T20:50:47Z INFO  prism_nhs::persistent_engine]   Scale ε=7.0Å: 114 clusters, 1506798 neighbors
+[2026-02-07T20:50:47Z INFO  prism_optix::context_impl] OptiX API initialized (version 90100)
+[2026-02-07T20:50:47Z INFO  prism_optix::context_impl] Created OptiX context (validation: false)
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] RT clustering engine created
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] Loading RT clustering pipeline from: crates/prism-gpu/src/kernels/rt_clustering.optixir
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] RT clustering params struct size: 88 bytes
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] Phase 2 (build neighbors) pipeline created
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] Loading CUDA kernels from: crates/prism-gpu/src/kernels/rt_clustering_cuda.ptx
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] CUDA union-find kernels loaded
+[2026-02-07T20:50:47Z INFO  prism_nhs::rt_clustering] RT clustering pipeline loaded successfully
+[2026-02-07T20:50:47Z INFO  prism_optix::accel] Building BVH for 50000 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-07T20:50:47Z INFO  prism_optix::accel] ✅ BVH build complete: 50000 spheres, handle=0x773e1380000c, size=4334464 bytes (4.13 MB)
+[2026-02-07T20:50:48Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1440164 raw neighbor hits from 50000 events
+[2026-02-07T20:50:48Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1440164 total neighbor pairs
+[2026-02-07T20:50:49Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-07T20:50:49Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-07T20:50:49Z INFO  prism_nhs::rt_clustering] RT clustering: 50000 events, 1440164 neighbors, 120 clusters, 2051.74ms
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine]   Scale ε=10.0Å: 120 clusters, 1440164 neighbors
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine]   Total clusters across all scales: 4
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine]   Multi-scale result: 1 persistent clusters (appear at ≥2 scales)
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine]     #1: 49896 spikes, persistence=4, scales=[10.0, 3.0, 5.0, 7.0]
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]   ✓ Multi-scale clustering complete: 1 persistent clusters
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]   Binding sites: 1 (filtered, min 5000 spikes = 2%)
+[2026-02-07T20:50:49Z INFO  nhs_rt_full] 
+    [5/6] Aromatic proximity analysis...
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]   ✓ Analyzed 1 sites, 0 druggable
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]     #1: ActiveSite at (9.0, 9.8, 6.9), quality=0.70, druggable=true
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]         Residues (28, 5 catalytic): A:THR29, A:THR12, A:THR25, A:CYS31, A:THR26, A:THR8, A:CYS30, A:THR...
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]         Catalytic: A:CYS31 (2.4Å), A:CYS30 (4.3Å), A:CYS32 (6.0Å), A:CYS33 (7.1Å), A:CYS43 (7.9Å)
+[2026-02-07T20:50:49Z INFO  nhs_rt_full] 
+    [6/6] Generating visualization output...
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine] Wrote binding sites PDB: e2e_validation_test/results_tight_20260207_124717/1crn/1crn.binding_sites.pdb
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine] Wrote PyMOL script: e2e_validation_test/results_tight_20260207_124717/1crn/1crn.binding_sites.pml
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine] Wrote ChimeraX script: e2e_validation_test/results_tight_20260207_124717/1crn/1crn.binding_sites.cxc
+[2026-02-07T20:50:49Z INFO  prism_nhs::persistent_engine] Wrote Markdown report: e2e_validation_test/results_tight_20260207_124717/1crn/1crn.binding_sites.md
+[2026-02-07T20:50:49Z INFO  nhs_rt_full]   ✓ JSON summary: e2e_validation_test/results_tight_20260207_124717/1crn/1crn.binding_sites.json
+[2026-02-07T20:50:50Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: e2e_validation_test/results_tight_20260207_124717/1crn/1crn.ensemble_trajectory.pdb (25 models, 642 atoms each, 1.3 MB)
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] 
+    ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  PIPELINE COMPLETE                                            ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ╠═══════════════════════════════════════════════════════════════╣
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  Structure: 1crn.topology                                    ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  Total time: 101.2                                         s ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  Spikes detected: 50000                                     ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  Binding sites: 1                                           ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  Druggable sites: 1                                         ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ║  RT cores used: Yes                                         ║
+[2026-02-07T20:50:50Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝

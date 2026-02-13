@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    34:
+HEADER 0  - Pocket Score                      : -0.1305
+HEADER 1  - Drug Score                        : 0.0000
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.0344
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5056
+HEADER 5  - Mean B-factor of pocket residues  : 0.5856
+HEADER 6  - Hydrophobicity Score              : 7.3333
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.8333
+HEADER 9  - Pocket volume (Monte Carlo)       : 241.9659
+HEADER 10 - Pocket volume (convex hull)       : 8.4352
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     0
+HEADER 14 - Proportion of apolar alpha sphere : 0.0000
+ATOM   3540  CE1 HIS B 394      34.535  30.116  36.773  0.00  0.00           C 0
+ATOM   3099   OH TYR B 339      40.244  34.004  39.080  0.00  0.00           O 0
+ATOM   3218  OE2 GLU B 353      35.725  27.008  40.449  0.00  0.00           O 0
+ATOM   3215   CG GLU B 353      36.257  26.466  38.176  0.00  0.00           C 0
+ATOM   3147   OH TYR B 345      36.911  31.291  34.599  0.53  9.64           O 0
+ATOM   3541  NE2 HIS B 394      33.682  29.660  37.673  0.67  1.09           N 0
+ATOM   3098   CZ TYR B 339      40.037  34.558  37.835  0.00  0.00           C 0
+ATOM   3097  CE2 TYR B 339      40.937  34.304  36.809  0.00  0.00           C 0
+ATOM   3524    N ASN B 393      34.200  35.302  39.870  0.48  3.28           N 0
+ATOM   3538  ND1 HIS B 394      33.978  31.146  36.158  0.58  1.09           N 0
+ATOM   3532    N HIS B 394      33.021  34.138  37.609  0.28  1.09           N 0
+ATOM   3530  OD1 ASN B 393      33.734  34.461  42.876  0.54  8.57           O 0
+ATOM   3522  OE1 GLU B 392      38.014  37.155  40.957  0.86  7.50           O 0
+ATOM   3096  CE1 TYR B 339      38.930  35.361  37.614  0.00  0.00           C 0
+ATOM   3525   CA ASN B 393      33.033  34.419  40.017  0.00  0.00           C 0
+TER
+END
