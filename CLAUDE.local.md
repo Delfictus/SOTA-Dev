@@ -1,28 +1,23 @@
-# WT-1: Spike → Pharmacophore + Generative Models
+# WT-3: Multi-Stage Filtering + Ranking
 
 ## YOUR WRITE SCOPE
-- `scripts/genphore/` — spike_to_pharmacophore.py, run_phoregen.py, run_pgmg.py, generate.py
-- `tools/PhoreGen/`, `tools/PGMG/` — git clones (gitignored)
-- `envs/phoregen.yml`, `envs/pgmg.yml`
-- `tests/test_genphore/`
+- `scripts/filters/` — filter_pipeline.py, stage1-6, ranking.py
+- `data/pains_catalog.csv`, `data/reference_fingerprints/`
+- `tests/test_filters/`
 
 ## MISSION
-Convert PRISM spike JSON to pharmacophore format. Run PhoreGen (1000 mols, diffusion) + PGMG (10000 mols, VAE). Output List[GeneratedMolecule].
+6-stage cascade: Validity → Drug-likeness → PAINS → Pharmacophore re-validation → Novelty → Diversity. Output ranked List[FilteredCandidate].
 
-## KEY ALGORITHM (spike_to_pharmacophore.py)
-1. Parse spike JSON → per-type (BNZ/TYR/CATION/ANION)
-2. Intensity-weighted centroid per type within pocket
-3. Map: BNZ→AR, TYR→AR+HBD/HBA, CATION→PI, ANION→NI, high water_density→HBD/HBA
-4. Exclusion spheres from lining residue heavy atoms
-5. Validate >=2 features, protein reference frame
+## CONFIG DEFAULTS
+top_n=5, qed>=0.3, sa<=6.0, tanimoto_novelty<0.85, diversity_cutoff=0.4, min_pharmacophore_matches=3, distance_tolerance=1.5A
 
 ## INTEGRATION TEST
 ```bash
-python scripts/genphore/generate.py \
-    --spike-json snapshots/kras_site1/spikes.json \
-    --output-dir /tmp/genphore_test/ \
-    --n-phoregen 100 --n-pgmg 1000
+python scripts/filters/filter_pipeline.py \
+    --molecules /tmp/genphore_test/molecules_meta.json \
+    --pharmacophore /tmp/genphore_test/pharmacophore.json \
+    --top-n 5 --output /tmp/filter_test/candidates.json
 ```
 
-## READS (not writes): scripts/interfaces/
+## READS: scripts/interfaces/
 ## READ the full blueprint: docs/prism4d-complete-worktree-blueprint.md
