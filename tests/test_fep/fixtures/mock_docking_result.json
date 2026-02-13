@@ -1,0 +1,32 @@
+{
+  "compound_id": "CPD_TEST_001",
+  "smiles": "c1cc(N)c(O)c(F)c1C(=O)O",
+  "site_id": 0,
+  "receptor_pdb": "tests/test_fep/fixtures/mock_protein.pdb",
+  "poses": [
+    {
+      "pose_rank": 1,
+      "mol_block": "\n     RDKit          3D\n\n 11 11  0  0  0  0  0  0  0  0999 V2000\n   15.0000   22.0000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   16.4000   22.0000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   17.1000   23.2000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   16.4000   24.4000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   15.0000   24.4000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   14.3000   23.2000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   17.1000   20.8000   16.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n   17.1000   25.6000   16.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   12.9000   23.2000   16.0000 F   0  0  0  0  0  0  0  0  0  0  0  0\n   18.5000   23.2000   16.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   19.2000   24.4000   16.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  2  0\n  2  3  1  0\n  3  4  2  0\n  4  5  1  0\n  5  6  2  0\n  6  1  1  0\n  2  7  1  0\n  4  8  1  0\n  6  9  1  0\n  3 10  1  0\n 10 11  2  0\nM  END",
+      "vina_score": -7.5,
+      "cnn_score": 0.82,
+      "cnn_affinity": -8.1,
+      "rmsd_lb": 0.0,
+      "rmsd_ub": 0.0
+    },
+    {
+      "pose_rank": 2,
+      "mol_block": "mock_pose_2",
+      "vina_score": -6.8,
+      "cnn_score": 0.75,
+      "cnn_affinity": -7.2,
+      "rmsd_lb": 1.2,
+      "rmsd_ub": 2.1
+    }
+  ],
+  "best_vina_score": -7.5,
+  "best_cnn_affinity": -8.1,
+  "docking_engine": "unidock+gnina",
+  "box_center": [16.0, 23.0, 16.0],
+  "box_size": [20.0, 20.0, 20.0],
+  "exhaustiveness": 32
+}

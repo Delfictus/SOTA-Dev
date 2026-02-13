@@ -1,0 +1,37 @@
+# WT-2: OpenFE ABFE/RBFE Pipeline
+# conda env create -f envs/fep.yml
+name: prism4d-fep
+channels:
+  - conda-forge
+  - omnia
+  - defaults
+dependencies:
+  - python>=3.10,<3.12
+  # Alchemical FEP framework
+  - openfe>=1.1
+  - gufe>=1.1
+  - cinnabar>=0.4
+  # MD engine
+  - openmm>=8.1
+  - openmmforcefields>=0.13
+  - openmmtools>=0.23
+  - pdbfixer>=1.9
+  # Molecular handling
+  - rdkit>=2023.09
+  - mdtraj>=1.9.9
+  - mdanalysis>=2.6
+  # LOMAP for atom mappings (RBFE)
+  - lomap2>=3.0
+  # Numeric / scientific
+  - numpy>=1.24
+  - scipy>=1.11
+  - pymbar>=4.0
+  # Serialization / CLI
+  - pyyaml
+  - click
+  # Testing
+  - pytest>=7.4
+  - pytest-cov
+  - pip
+  - pip:
+    - openfe-analysis>=0.2
