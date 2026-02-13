@@ -13,10 +13,14 @@ WT-0 interfaces (this package):
     PipelineConfig, DockingConfig, FilterConfig, FEPConfig
     ResidueMapping, ResidueEntry
 
-WT-9 will add V2 interfaces in separate modules (tautomer_state,
-explicit_solvent_result, water_map, ensemble_score, pocket_dynamics,
-membrane_system, viewer_payload).  Those are NOT part of this package
-until WT-9 merges.
+WT-9 V2 interfaces (additive — no modifications to WT-0 types):
+    TautomerState, TautomerEnsemble
+    ExplicitSolventResult
+    HydrationSite, WaterMap
+    EnsembleMMGBSA, InteractionEntropy
+    PocketDynamics
+    MembraneSystem
+    ViewerPayload
 """
 
 from .spike_pharmacophore import (
@@ -36,6 +40,15 @@ from .pipeline_config import (
     PipelineConfig,
 )
 from .residue_mapping import ResidueEntry, ResidueMapping
+
+# ── V2 interfaces (WT-9) ─────────────────────────────────────────────────
+from .tautomer_state import TautomerState, TautomerEnsemble
+from .explicit_solvent_result import ExplicitSolventResult
+from .water_map import HydrationSite, WaterMap
+from .ensemble_score import EnsembleMMGBSA, InteractionEntropy
+from .pocket_dynamics import PocketDynamics
+from .membrane_system import MembraneSystem
+from .viewer_payload import ViewerPayload
 
 __all__ = [
     # spike_pharmacophore
@@ -60,4 +73,22 @@ __all__ = [
     # residue_mapping
     "ResidueEntry",
     "ResidueMapping",
+    # ── V2 (WT-9) ──
+    # tautomer_state
+    "TautomerState",
+    "TautomerEnsemble",
+    # explicit_solvent_result
+    "ExplicitSolventResult",
+    # water_map
+    "HydrationSite",
+    "WaterMap",
+    # ensemble_score
+    "EnsembleMMGBSA",
+    "InteractionEntropy",
+    # pocket_dynamics
+    "PocketDynamics",
+    # membrane_system
+    "MembraneSystem",
+    # viewer_payload
+    "ViewerPayload",
 ]
