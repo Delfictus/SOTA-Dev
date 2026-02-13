@@ -1,23 +1,21 @@
-# WT-3: Multi-Stage Filtering + Ranking
+# WT-5: Pre-Processing Enhancements
 
 ## YOUR WRITE SCOPE
-- `scripts/filters/` — filter_pipeline.py, stage1-6, ranking.py
-- `data/pains_catalog.csv`, `data/reference_fingerprints/`
-- `tests/test_filters/`
+- `scripts/preprocessing/` — tautomer_enumeration.py, membrane_builder.py, protein_fixer.py, target_classifier.py
+- `envs/preprocessing.yml`
+- `tests/test_preprocessing/`
 
 ## MISSION
-6-stage cascade: Validity → Drug-likeness → PAINS → Pharmacophore re-validation → Novelty → Diversity. Output ranked List[FilteredCandidate].
+Biological context awareness: tautomer/protomer enumeration at pH 7.4 (Dimorphite-DL + RDKit), membrane embedding for GPCRs (packmol-memgen + OPM), PDB fixing (PDBFixer).
 
-## CONFIG DEFAULTS
-top_n=5, qed>=0.3, sa<=6.0, tanimoto_novelty<0.85, diversity_cutoff=0.4, min_pharmacophore_matches=3, distance_tolerance=1.5A
+## CRITICAL INTEGRATION
+ALL ligands from WT-1 must pass through tautomer_enumeration.py BEFORE entering WT-3 filters or WT-2 FEP. Wrong protonation = invalid docking + invalid FEP.
 
 ## INTEGRATION TEST
 ```bash
-python scripts/filters/filter_pipeline.py \
-    --molecules /tmp/genphore_test/molecules_meta.json \
-    --pharmacophore /tmp/genphore_test/pharmacophore.json \
-    --top-n 5 --output /tmp/filter_test/candidates.json
+python scripts/preprocessing/tautomer_enumeration.py --smiles "CC(=O)Oc1ccccc1C(=O)O" --ph 7.4
+python scripts/preprocessing/target_classifier.py --pdb tests/test_preprocessing/fixtures/beta2_adrenergic.pdb
 ```
 
-## READS: scripts/interfaces/
+## READS: scripts/interfaces/ (v2: TautomerEnsemble, MembraneSystem)
 ## READ the full blueprint: docs/prism4d-complete-worktree-blueprint.md
