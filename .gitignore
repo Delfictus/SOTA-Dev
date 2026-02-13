@@ -10,3 +10,4 @@ tuned_test/
 PRISM4D-COMPLETE-HANDOFF-WITH-ALL-CUDA/
 PRISM4D-COMPLETE-WITH-CUDA/
 *.ensemble_trajectory.pdb
+__pycache__/
