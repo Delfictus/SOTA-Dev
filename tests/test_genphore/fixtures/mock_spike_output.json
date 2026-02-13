@@ -1,0 +1,45 @@
+{
+  "site_id": 0,
+  "centroid": [59.073, 49.083, 49.577],
+  "n_spikes": 30,
+  "lining_cutoff": 8.0,
+  "spikes": [
+    {"type": "BNZ", "x": 58.5, "y": 48.2, "z": 49.0, "intensity": 0.85, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.12, "water_density": 0.005, "frame_index": 0, "timestep": 0, "n_nearby_excited": 3, "aromatic_residue_id": 64},
+    {"type": "BNZ", "x": 58.8, "y": 48.5, "z": 49.2, "intensity": 0.92, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.15, "water_density": 0.004, "frame_index": 1, "timestep": 50, "n_nearby_excited": 4, "aromatic_residue_id": 64},
+    {"type": "BNZ", "x": 59.1, "y": 48.0, "z": 48.8, "intensity": 0.78, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.10, "water_density": 0.006, "frame_index": 2, "timestep": 100, "n_nearby_excited": 2, "aromatic_residue_id": 63},
+    {"type": "BNZ", "x": 58.6, "y": 48.3, "z": 49.1, "intensity": 0.88, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.11, "water_density": 0.005, "frame_index": 3, "timestep": 150, "n_nearby_excited": 3, "aromatic_residue_id": 64},
+    {"type": "BNZ", "x": 59.0, "y": 48.4, "z": 49.3, "intensity": 0.80, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.13, "water_density": 0.007, "frame_index": 4, "timestep": 200, "n_nearby_excited": 3, "aromatic_residue_id": 63},
+
+    {"type": "TYR", "x": 60.2, "y": 50.1, "z": 50.5, "intensity": 0.72, "wavelength_nm": 274, "spike_source": "UV", "vibrational_energy": 0.08, "water_density": 0.015, "frame_index": 0, "timestep": 0, "n_nearby_excited": 2, "aromatic_residue_id": 67},
+    {"type": "TYR", "x": 60.5, "y": 50.3, "z": 50.8, "intensity": 0.68, "wavelength_nm": 274, "spike_source": "UV", "vibrational_energy": 0.07, "water_density": 0.018, "frame_index": 1, "timestep": 50, "n_nearby_excited": 1, "aromatic_residue_id": 67},
+    {"type": "TYR", "x": 60.0, "y": 49.9, "z": 50.3, "intensity": 0.75, "wavelength_nm": 274, "spike_source": "UV", "vibrational_energy": 0.09, "water_density": 0.012, "frame_index": 2, "timestep": 100, "n_nearby_excited": 2, "aromatic_residue_id": 67},
+    {"type": "TYR", "x": 60.3, "y": 50.0, "z": 50.6, "intensity": 0.70, "wavelength_nm": 274, "spike_source": "UV", "vibrational_energy": 0.06, "water_density": 0.020, "frame_index": 3, "timestep": 150, "n_nearby_excited": 1, "aromatic_residue_id": 67},
+    {"type": "TYR", "x": 60.1, "y": 50.2, "z": 50.4, "intensity": 0.65, "wavelength_nm": 274, "spike_source": "UV", "vibrational_energy": 0.05, "water_density": 0.022, "frame_index": 4, "timestep": 200, "n_nearby_excited": 1, "aromatic_residue_id": 67},
+
+    {"type": "CATION", "x": 57.0, "y": 47.5, "z": 48.0, "intensity": 0.55, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.008, "frame_index": 0, "timestep": 0, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "CATION", "x": 57.2, "y": 47.3, "z": 48.2, "intensity": 0.60, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.009, "frame_index": 1, "timestep": 50, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "CATION", "x": 56.8, "y": 47.7, "z": 47.8, "intensity": 0.50, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.010, "frame_index": 2, "timestep": 100, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "CATION", "x": 57.1, "y": 47.4, "z": 48.1, "intensity": 0.58, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.007, "frame_index": 3, "timestep": 150, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+
+    {"type": "ANION", "x": 61.5, "y": 51.0, "z": 51.2, "intensity": 0.45, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.011, "frame_index": 0, "timestep": 0, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "ANION", "x": 61.8, "y": 51.2, "z": 51.5, "intensity": 0.42, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.013, "frame_index": 1, "timestep": 50, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "ANION", "x": 61.3, "y": 50.8, "z": 51.0, "intensity": 0.48, "wavelength_nm": 0, "spike_source": "EFP", "vibrational_energy": 0.0, "water_density": 0.010, "frame_index": 2, "timestep": 100, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+
+    {"type": "UNK", "x": 56.0, "y": 46.5, "z": 47.0, "intensity": 0.35, "wavelength_nm": 0, "spike_source": "LIF", "vibrational_energy": 0.0, "water_density": 0.003, "frame_index": 0, "timestep": 0, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "UNK", "x": 56.2, "y": 46.7, "z": 47.2, "intensity": 0.30, "wavelength_nm": 0, "spike_source": "LIF", "vibrational_energy": 0.0, "water_density": 0.002, "frame_index": 1, "timestep": 50, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "UNK", "x": 55.8, "y": 46.3, "z": 46.8, "intensity": 0.38, "wavelength_nm": 0, "spike_source": "LIF", "vibrational_energy": 0.0, "water_density": 0.004, "frame_index": 2, "timestep": 100, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+
+    {"type": "PHE", "x": 57.5, "y": 49.0, "z": 50.0, "intensity": 0.40, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.03, "water_density": 0.002, "frame_index": 0, "timestep": 0, "n_nearby_excited": 1, "aromatic_residue_id": 65},
+    {"type": "PHE", "x": 57.8, "y": 49.2, "z": 50.2, "intensity": 0.38, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.02, "water_density": 0.001, "frame_index": 1, "timestep": 50, "n_nearby_excited": 1, "aromatic_residue_id": 65},
+
+    {"type": "TRP", "x": 62.0, "y": 52.0, "z": 48.5, "intensity": 0.90, "wavelength_nm": 280, "spike_source": "UV", "vibrational_energy": 0.20, "water_density": 0.003, "frame_index": 0, "timestep": 0, "n_nearby_excited": 5, "aromatic_residue_id": 66},
+    {"type": "TRP", "x": 62.3, "y": 52.2, "z": 48.8, "intensity": 0.88, "wavelength_nm": 280, "spike_source": "UV", "vibrational_energy": 0.18, "water_density": 0.004, "frame_index": 1, "timestep": 50, "n_nearby_excited": 4, "aromatic_residue_id": 66},
+    {"type": "TRP", "x": 61.8, "y": 51.8, "z": 48.3, "intensity": 0.85, "wavelength_nm": 280, "spike_source": "UV", "vibrational_energy": 0.19, "water_density": 0.002, "frame_index": 2, "timestep": 100, "n_nearby_excited": 5, "aromatic_residue_id": 66},
+
+    {"type": "SS", "x": 55.0, "y": 45.5, "z": 46.0, "intensity": 0.25, "wavelength_nm": 250, "spike_source": "UV", "vibrational_energy": 0.01, "water_density": 0.001, "frame_index": 0, "timestep": 0, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+    {"type": "SS", "x": 55.2, "y": 45.7, "z": 46.2, "intensity": 0.22, "wavelength_nm": 250, "spike_source": "UV", "vibrational_energy": 0.01, "water_density": 0.002, "frame_index": 1, "timestep": 50, "n_nearby_excited": 0, "aromatic_residue_id": -1},
+
+    {"type": "BNZ", "x": 58.9, "y": 48.1, "z": 49.0, "intensity": 0.15, "wavelength_nm": 258, "spike_source": "UV", "vibrational_energy": 0.02, "water_density": 0.008, "frame_index": 5, "timestep": 250, "n_nearby_excited": 1, "aromatic_residue_id": 64},
+    {"type": "TYR", "x": 60.4, "y": 50.5, "z": 50.7, "intensity": 0.10, "wavelength_nm": 274, "spike_source": "UV", "vibrational_energy": 0.01, "water_density": 0.025, "frame_index": 5, "timestep": 250, "n_nearby_excited": 0, "aromatic_residue_id": 67}
+  ]
+}
