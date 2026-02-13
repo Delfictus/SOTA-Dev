@@ -1,0 +1,33 @@
+{
+  "pocket_id": 0,
+  "description": "Expected hydration sites for KRAS G12C Switch II pocket",
+  "notes": "Based on known crystallographic waters in PDB 6GJ8",
+  "expected_sites": [
+    {
+      "x": 11.2,
+      "y": -1.8,
+      "z": 9.1,
+      "classification": "CONSERVED_HAPPY",
+      "occupancy_expected_min": 0.85,
+      "comment": "Catalytic water near Switch II, bridges D57-G12"
+    },
+    {
+      "x": 14.3,
+      "y": -3.0,
+      "z": 7.5,
+      "classification": "CONSERVED_UNHAPPY",
+      "occupancy_expected_min": 0.70,
+      "comment": "Frustrated water in hydrophobic sub-pocket, displaceable"
+    },
+    {
+      "x": 9.8,
+      "y": -5.2,
+      "z": 10.0,
+      "classification": "CONSERVED_HAPPY",
+      "occupancy_expected_min": 0.90,
+      "comment": "Deeply buried water coordinating Mg2+ shell"
+    }
+  ],
+  "expected_n_displaceable": 1,
+  "expected_total_displacement_kcal": 1.5
+}
