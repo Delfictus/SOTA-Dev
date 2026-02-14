@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRISM-4D Viewer — {{TARGET_NAME}}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.css" crossorigin>
+<style>
+/* ── Reset & base ────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:#0d1117;color:#c9d1d9;overflow:hidden}
+.mono{font-family:"SF Mono",Monaco,Consolas,"Liberation Mono",monospace;font-size:0.85em}
+
+/* ── Main layout ─────────────────────────────────────────────── */
+#app{display:flex;height:100vh;width:100vw}
+#viewer-container{flex:1;position:relative;min-width:0;background:#161b22}
+#viewer-3d{width:100%;height:100%}
+
+/* ── Report panel ────────────────────────────────────────────── */
+.report-panel{width:380px;min-width:300px;max-width:450px;background:#161b22;
+  border-left:1px solid #30363d;overflow-y:auto;display:flex;flex-direction:column}
+.report-header{display:flex;justify-content:space-between;align-items:center;
+  padding:16px;background:#1c2128;cursor:pointer;border-bottom:1px solid #30363d;
+  position:sticky;top:0;z-index:10}
+.report-header h2{font-size:1.1em;color:#58a6ff}
+.collapse-icon{font-size:1.2em;color:#8b949e;user-select:none}
+.report-body{padding:12px 16px}
+.report-section{margin-bottom:20px}
+.report-section h3{font-size:0.9em;color:#8b949e;text-transform:uppercase;
+  letter-spacing:0.05em;border-bottom:1px solid #21262d;padding-bottom:6px;margin-bottom:10px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px}
+dt{color:#8b949e;font-size:0.85em}
+dd{color:#c9d1d9;font-size:0.85em}
+
+/* ── P_open badges ───────────────────────────────────────────── */
+.popen-stable{color:#3fb950}
+.popen-transient{color:#d29922}
+.popen-rare{color:#f85149}
+.popen-na{color:#8b949e}
+
+/* ── Controls toolbar ────────────────────────────────────────── */
+.controls-toolbar{position:absolute;top:8px;left:8px;right:8px;
+  display:flex;justify-content:space-between;align-items:center;
+  z-index:100;pointer-events:none;flex-wrap:wrap;gap:6px}
+.toggle-group,.export-group{display:flex;gap:4px;pointer-events:auto;flex-wrap:wrap}
+.toggle-btn{padding:4px 10px;border:1px solid #30363d;border-radius:6px;
+  background:#21262d;color:#8b949e;cursor:pointer;font-size:0.75em;
+  transition:all 0.15s}
+.toggle-btn.active{background:#1f6feb;color:#fff;border-color:#1f6feb}
+.toggle-btn:hover{border-color:#58a6ff}
+.layer-icon{margin-right:4px}
+.export-btn{padding:4px 10px;border:1px solid #30363d;border-radius:6px;
+  background:#21262d;color:#c9d1d9;cursor:pointer;font-size:0.75em;
+  transition:all 0.15s}
+.export-btn:hover{background:#30363d;border-color:#58a6ff}
+
+/* ── Spike table ─────────────────────────────────────────────── */
+.spike-table,.water-table{width:100%;border-collapse:collapse;font-size:0.8em}
+.spike-table th,.water-table th{text-align:left;color:#8b949e;padding:4px 6px;
+  border-bottom:1px solid #21262d}
+.spike-table td,.water-table td{padding:4px 6px;border-bottom:1px solid #161b22}
+.spike-dot,.water-dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+  margin-right:6px;vertical-align:middle}
+
+/* ── Water badges ────────────────────────────────────────────── */
+.water-summary{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.water-badge{padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:600}
+.water-badge.happy{background:#1a3a2a;color:#3fb950}
+.water-badge.unhappy{background:#3d1a1a;color:#f85149}
+.water-badge.bulk{background:#2d2d2d;color:#8b949e}
+
+/* ── Ligand cards ────────────────────────────────────────────── */
+.ligand-card{background:#1c2128;border:1px solid #30363d;border-radius:8px;
+  padding:10px;margin-bottom:8px}
+.ligand-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.ligand-smiles{font-size:0.8em;color:#8b949e;word-break:break-all;margin-bottom:4px}
+.ligand-dg{font-size:0.9em;color:#58a6ff}
+.ligand-props{display:flex;gap:10px;font-size:0.8em;color:#8b949e;margin-top:4px}
+.badge{padding:2px 8px;border-radius:10px;font-size:0.7em;font-weight:600}
+.badge-hit{background:#1a3a2a;color:#3fb950}
+.badge-recap{background:#1a2a3a;color:#58a6ff}
+.badge-fail{background:#3d1a1a;color:#f85149}
+.badge-default{background:#2d2d2d;color:#8b949e}
+
+/* ── Surface info ────────────────────────────────────────────── */
+.surface-info{font-size:0.8em;padding:4px 0}
+
+/* ── Layer visibility ────────────────────────────────────────── */
+.viewer-layer[style*="display: none"]{display:none!important}
+
+/* ── Loader ──────────────────────────────────────────────────── */
+#loading-overlay{position:absolute;inset:0;background:rgba(13,17,23,0.9);
+  display:flex;align-items:center;justify-content:center;z-index:1000;
+  flex-direction:column;gap:16px}
+.spinner{width:40px;height:40px;border:3px solid #30363d;border-top-color:#58a6ff;
+  border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Responsive (iPad) ───────────────────────────────────────── */
+@media(max-width:900px){
+  #app{flex-direction:column}
+  .report-panel{width:100%;max-width:100%;max-height:40vh;border-left:none;
+    border-top:1px solid #30363d}
+}
+
+/* ── Print ───────────────────────────────────────────────────── */
+@media print{
+  .controls-toolbar,.export-group{display:none!important}
+  .report-panel{width:100%;max-width:100%}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 3D Viewer -->
+  <div id="viewer-container">
+    <div id="viewer-3d"></div>
+    <div id="controls-slot"></div>
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div style="color:#8b949e">Loading PRISM-4D Viewer&hellip;</div>
+    </div>
+  </div>
+  <!-- Report panel (right side) -->
+  <div id="report-slot"></div>
+</div>
+
+<!-- Embedded pipeline data -->
+<script id="payload-data" type="application/json">
+{{PAYLOAD_JSON}}
+</script>
+
+<!-- Component scripts (inlined by build_viewer.py) -->
+{{COMPONENT_SCRIPTS}}
+
+<!-- Mol* viewer library -->
+<script src="https://cdn.jsdelivr.net/npm/molstar@4.5.0/build/viewer/molstar.js" crossorigin></script>
+
+<!-- Initialisation -->
+<script>
+(function () {
+  "use strict";
+
+  // Parse embedded payload
+  var raw = document.getElementById("payload-data").textContent;
+  window.PAYLOAD = JSON.parse(raw);
+  var P = window.PAYLOAD;
+
+  // ── Build report panel ──────────────────────────────────────
+  ReportPanel.render(document.getElementById("report-slot"), P);
+
+  // ── Populate detail slots ───────────────────────────────────
+  SpikeOverlay.render(document.getElementById("spike-detail-slot"), P.spike_positions);
+  WaterMapLayer.render(document.getElementById("water-detail-slot"), P.water_map_sites);
+  LigandViewer.render(document.getElementById("ligand-detail-slot"), P.ligand_poses);
+
+  // ── Build controls toolbar ──────────────────────────────────
+  Controls.render(document.getElementById("controls-slot"));
+
+  // ── Initialise Mol* ─────────────────────────────────────────
+  async function initMolstar() {
+    var container = document.getElementById("viewer-3d");
+    try {
+      if (typeof molstar === "undefined") {
+        throw new Error("Mol* library not loaded");
+      }
+      var viewer = await molstar.Viewer.create(container, {
+        layoutIsExpanded: false,
+        layoutShowControls: false,
+        layoutShowRemoteState: false,
+        layoutShowSequence: true,
+        layoutShowLog: false,
+        viewportShowExpand: false,
+        viewportShowSelectionMode: false,
+      });
+
+      // Load PDB structure from embedded text
+      if (P.pdb_structure) {
+        var pdbBlob = new Blob([P.pdb_structure], { type: "text/plain" });
+        var pdbUrl = URL.createObjectURL(pdbBlob);
+        await viewer.loadStructureFromUrl(pdbUrl, "pdb", false);
+        URL.revokeObjectURL(pdbUrl);
+      }
+    } catch (e) {
+      console.warn("Mol* init failed (CDN may be unavailable):", e.message);
+      container.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;' +
+        'color:#8b949e;flex-direction:column;gap:8px">' +
+        '<div style="font-size:1.2em">3D Viewer</div>' +
+        '<div style="font-size:0.85em">Mol* requires network access to load from CDN.</div>' +
+        '<div style="font-size:0.85em">Structure: ' + (P.target_name || "N/A") + '</div>' +
+        "</div>";
+    }
+    // Remove loading overlay
+    var overlay = document.getElementById("loading-overlay");
+    if (overlay) overlay.style.display = "none";
+  }
+
+  // Wait for Mol* script to load, then init
+  if (typeof molstar !== "undefined") {
+    initMolstar();
+  } else {
+    // Poll for molstar availability (CDN load)
+    var attempts = 0;
+    var poll = setInterval(function () {
+      attempts++;
+      if (typeof molstar !== "undefined") {
+        clearInterval(poll);
+        initMolstar();
+      } else if (attempts > 50) {
+        clearInterval(poll);
+        initMolstar(); // will hit fallback
+      }
+    }, 200);
+  }
+})();
+</script>
+</body>
+</html>

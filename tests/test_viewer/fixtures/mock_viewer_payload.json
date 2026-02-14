@@ -1,0 +1,81 @@
+{
+  "target_name": "KRAS_G12C",
+  "pdb_structure": "HEADER    MOCK KRAS STRUCTURE\nATOM      1  N   MET A   1      10.000  12.500   8.300  1.00 20.00           N\nATOM      2  CA  MET A   1      10.500  13.000   8.800  1.00 20.00           C\nATOM      3  C   MET A   1      11.000  13.500   9.300  1.00 20.00           C\nATOM      4  O   MET A   1      11.500  14.000   9.800  1.00 20.00           O\nATOM      5  N   THR A   2      11.200  13.200   9.500  1.00 18.00           N\nATOM      6  CA  THR A   2      11.700  13.700  10.000  1.00 18.00           C\nATOM      7  C   THR A   2      12.200  14.200  10.500  1.00 18.00           C\nATOM      8  O   THR A   2      12.700  14.700  11.000  1.00 18.00           O\nATOM      9  N   GLU A   3      12.100  14.000  10.600  1.00 16.00           N\nATOM     10  CA  GLU A   3      12.600  14.500  11.100  1.00 16.00           C\nATOM     11  CA  ALA A 140      15.000  10.000   7.000  1.00 12.00           C\nATOM     12  CA  GLY A 141      15.500  10.500   7.500  1.00 12.00           C\nATOM     13  CA  TYR A 142      16.000  11.000   8.000  1.00 10.00           C\nATOM     14  CA  LYS A 145      16.500  11.500   8.500  1.00 10.00           C\nATOM     15  CA  ASP A 148      17.000  12.000   9.000  1.00 10.00           C\nEND\n",
+  "pocket_surfaces": [
+    {
+      "vertices": [
+        [10.0, 12.0, 8.0], [11.0, 13.0, 9.0], [12.0, 14.0, 10.0],
+        [10.5, 12.5, 8.5], [11.5, 13.5, 9.5], [12.5, 14.5, 10.5],
+        [10.2, 12.2, 8.2], [11.2, 13.2, 9.2], [12.2, 14.2, 10.2]
+      ],
+      "triangles": [[0,1,2], [3,4,5], [6,7,8], [0,3,6], [1,4,7], [2,5,8]],
+      "color": "rgba(0,100,255,0.4)"
+    }
+  ],
+  "spike_positions": [
+    {"position": [12.5, -3.2, 8.7], "type": "BNZ", "intensity": 0.85, "residue": "TYR142"},
+    {"position": [15.5, -1.2, 10.7], "type": "CATION", "intensity": 0.60, "residue": "LYS145"},
+    {"position": [14.0, -2.5, 9.0], "type": "HBA", "intensity": 0.72, "residue": "ASP148"}
+  ],
+  "water_map_sites": [
+    {
+      "position": [10.0, 12.5, 8.3],
+      "occupancy": 0.92,
+      "delta_g": -2.1,
+      "classification": "CONSERVED_HAPPY",
+      "color": "blue"
+    },
+    {
+      "position": [11.5, 14.0, 7.1],
+      "occupancy": 0.85,
+      "delta_g": 1.8,
+      "classification": "CONSERVED_UNHAPPY",
+      "color": "red"
+    },
+    {
+      "position": [13.0, 15.0, 6.5],
+      "occupancy": 0.45,
+      "delta_g": 0.2,
+      "classification": "BULK",
+      "color": "grey"
+    }
+  ],
+  "ligand_poses": [
+    {
+      "smiles": "c1ccc(CC(=O)O)cc1",
+      "mol_block": "\n     RDKit          3D\n\n 11 11  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\nM  END\n",
+      "dg_kcal": -8.2,
+      "dg_error": 1.4,
+      "classification": "NOVEL_HIT",
+      "qed": 0.72,
+      "sa": 3.1,
+      "tanimoto": 0.42
+    },
+    {
+      "smiles": "CC(=O)Nc1ccc(O)cc1",
+      "mol_block": "\n     RDKit          3D\n\n  9  9  0  0  0  0  0  0  0  0999 V2000\n    1.0000    1.0000    1.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\nM  END\n",
+      "dg_kcal": -6.5,
+      "dg_error": 0.9,
+      "classification": "RECAPITULATED",
+      "qed": 0.65,
+      "sa": 2.8,
+      "tanimoto": 0.88
+    },
+    {
+      "smiles": "c1ccncc1",
+      "mol_block": "mock_sdf_fail",
+      "dg_kcal": -2.1,
+      "dg_error": 1.8,
+      "classification": "FAILED_QC"
+    }
+  ],
+  "lining_residues": [140, 141, 142, 145, 148],
+  "p_open": 0.72,
+  "metadata": {
+    "qa_score": 0.92,
+    "n_displaceable_waters": 1,
+    "druggability_class": "STABLE_OPEN",
+    "pipeline_version": "0.1.0",
+    "prism_run_hash": "a1b2c3d4e5f6"
+  }
+}
