@@ -1,0 +1,51 @@
+[package]
+name = "prism-mec"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Core dependencies
+prism-core = { workspace = true }
+prism-gpu = { workspace = true }
+
+# Async & error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Math & scientific
+nalgebra = { workspace = true, features = ["serde-serialize"] }
+ndarray = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+statrs = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# Utilities
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# GPU
+cudarc = { workspace = true, optional = true }
+
+[features]
+default = []
+cuda = ["cudarc", "prism-gpu/cuda"]
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.0"

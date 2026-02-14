@@ -1,0 +1,367 @@
+//! Dendritic Reservoir for WHCR (DR-WHCR) GPU Module
+//!
+//! Live neuromorphic co-processor that evolves WITH the repair process,
+//! providing real-time adaptive guidance for conflict resolution.
+//!
+//! # Architecture
+//! - 4-compartment dendritic processing per vertex
+//! - Multi-timescale dynamics (fast → slow → long-term memory)
+//! - Pattern detection (oscillation, stubborn conflicts, cascades)
+//! - Priority modulation output for WHCR
+
+use anyhow::{Context, Result};
+use cudarc::driver::*;
+use std::sync::Arc;
+
+/// C-compatible structs (must match CUDA exactly!)
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct DendriticCompartment {
+    pub activation: f32,
+    pub calcium: f32,
+    pub threshold: f32,
+    pub refractory: f32,
+}
+
+unsafe impl cudarc::driver::ValidAsZeroBits for DendriticCompartment {}
+unsafe impl cudarc::driver::DeviceRepr for DendriticCompartment {}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VertexDendriticState {
+    pub compartments: [DendriticCompartment; 4],
+    pub soma_potential: f32,
+    pub spike_history: f32,
+    pub conflict_memory: f32,
+    pub last_repair_iteration: i32,
+}
+
+unsafe impl cudarc::driver::ValidAsZeroBits for VertexDendriticState {}
+unsafe impl cudarc::driver::DeviceRepr for VertexDendriticState {}
+
+impl Default for VertexDendriticState {
+    fn default() -> Self {
+        Self {
+            compartments: [DendriticCompartment {
+                activation: 0.0,
+                calcium: 0.0,
+                threshold: 0.5,
+                refractory: 0.0,
+            }; 4],
+            soma_potential: 0.0,
+            spike_history: 0.0,
+            conflict_memory: 0.0,
+            last_repair_iteration: -100,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ReservoirConnection {
+    pub source_vertex: i32,
+    pub target_vertex: i32,
+    pub source_compartment: i32,
+    pub target_compartment: i32,
+    pub weight: f32,
+    pub delay: f32,
+}
+
+unsafe impl cudarc::driver::ValidAsZeroBits for ReservoirConnection {}
+unsafe impl cudarc::driver::DeviceRepr for ReservoirConnection {}
+
+/// Number of dendritic compartments per vertex
+pub const NUM_COMPARTMENTS: usize = 4;
+
+/// Number of output signals
+pub const NUM_OUTPUTS: usize = 4;
+
+/// GPU-accelerated Dendritic Reservoir
+pub struct DendriticReservoirGpu {
+    device: Arc<CudaDevice>,
+
+    // Loaded kernels (init_reservoir only used once during creation)
+    process_dendritic_input: CudaFunction,
+    process_recurrent: CudaFunction,
+    compute_soma: CudaFunction,
+    compute_outputs: CudaFunction,
+    modulate_priorities: CudaFunction,
+
+    // Device memory
+    d_vertex_states: CudaSlice<VertexDendriticState>,
+    d_connections: CudaSlice<ReservoirConnection>,
+    d_connection_row_ptr: CudaSlice<i32>,
+    d_input_weights: CudaSlice<f32>,
+    d_output_weights: CudaSlice<f32>,
+    d_outputs: CudaSlice<f32>, // [num_vertices * 4 outputs]
+    d_conflict_history: CudaSlice<f32>,
+
+    // Config
+    num_vertices: usize,
+    num_connections: usize,
+    history_length: usize,
+    history_index: usize,
+    reservoir_influence: f32,
+}
+
+impl DendriticReservoirGpu {
+    /// Create new dendritic reservoir GPU instance
+    pub fn new(
+        device: Arc<CudaDevice>,
+        num_vertices: usize,
+        graph_row_ptr: &[i32],
+        graph_col_idx: &[i32],
+        initial_conflicts: &[f32],
+        reservoir_influence: f32,
+    ) -> Result<Self> {
+        log::info!(
+            "Initializing Dendritic Reservoir GPU for {} vertices",
+            num_vertices
+        );
+
+        // Load the dendritic_whcr PTX module if not already loaded
+        let ptx_paths = vec![
+            "target/ptx/dendritic_whcr.ptx",
+            "/mnt/c/Users/Predator/Desktop/PRISM/target/ptx/dendritic_whcr.ptx",
+        ];
+
+        for ptx_path in ptx_paths {
+            if let Ok(ptx_content) = std::fs::read_to_string(&ptx_path) {
+                // Try to load the module (may already be loaded by context)
+                let _ = device.load_ptx(
+                    ptx_content.into(),
+                    "dendritic_whcr",
+                    &[
+                        // Use mangled names as they appear in PTX
+                        "_Z23init_reservoir_topologyPKiS0_PKfPiP19ReservoirConnectionify",
+                        "_Z18init_vertex_statesP20VertexDendriticStatePKfiy",
+                        "_Z18init_input_weightsPfiy",
+                        "_Z23process_dendritic_inputP20VertexDendriticStatePKf18WHCRIterationStatei",
+                        "_Z29process_recurrent_connectionsP20VertexDendriticStatePKiPK19ReservoirConnectionPfii",
+                        "_Z24compute_soma_integrationP20VertexDendriticStatei",
+                        "_Z25compute_reservoir_outputsPK20VertexDendriticStatePKfS3_iiPfii",
+                        "_Z24modulate_whcr_prioritiesPKfS0_Pfif",
+                    ],
+                );
+                break;
+            }
+        }
+
+        // Get kernel functions using mangled names
+        // Note: We'll use the actual kernels, not the host launch functions
+        let init_vertex_states = device
+            .get_func(
+                "dendritic_whcr",
+                "_Z18init_vertex_statesP20VertexDendriticStatePKfiy",
+            )
+            .context("Failed to get init_vertex_states kernel")?;
+
+        let init_input_weights = device
+            .get_func("dendritic_whcr", "_Z18init_input_weightsPfiy")
+            .context("Failed to get init_input_weights kernel")?;
+
+        let process_dendritic_input = device
+            .get_func(
+                "dendritic_whcr",
+                "_Z23process_dendritic_inputP20VertexDendriticStatePKf18WHCRIterationStatei",
+            )
+            .context("Failed to get process_dendritic_input kernel")?;
+
+        let process_recurrent = device
+            .get_func("dendritic_whcr", "_Z29process_recurrent_connectionsP20VertexDendriticStatePKiPK19ReservoirConnectionPfii")
+            .context("Failed to get process_recurrent_connections kernel")?;
+
+        let compute_soma = device
+            .get_func(
+                "dendritic_whcr",
+                "_Z24compute_soma_integrationP20VertexDendriticStatei",
+            )
+            .context("Failed to get compute_soma_integration kernel")?;
+
+        let compute_outputs = device
+            .get_func(
+                "dendritic_whcr",
+                "_Z25compute_reservoir_outputsPK20VertexDendriticStatePKfS3_iiPfii",
+            )
+            .context("Failed to get compute_reservoir_outputs kernel")?;
+
+        let modulate_priorities = device
+            .get_func("dendritic_whcr", "_Z24modulate_whcr_prioritiesPKfS0_Pfif")
+            .context("Failed to get modulate_whcr_priorities kernel")?;
+
+        // Estimate number of connections (sparsity ~ 0.1)
+        let avg_degree = graph_col_idx.len() / num_vertices;
+        let num_connections = (num_vertices * avg_degree / 10).max(num_vertices);
+
+        // Allocate device memory
+        let d_vertex_states = device.alloc_zeros::<VertexDendriticState>(num_vertices)?;
+        let d_connections = device.alloc_zeros::<ReservoirConnection>(num_connections)?;
+        let d_connection_row_ptr = device.htod_sync_copy(graph_row_ptr)?;
+        let d_input_weights = device.alloc_zeros::<f32>(num_vertices * NUM_COMPARTMENTS)?;
+        let d_output_weights = device.alloc_zeros::<f32>(num_vertices * NUM_OUTPUTS)?;
+        let d_outputs = device.alloc_zeros::<f32>(num_vertices * NUM_OUTPUTS)?;
+
+        let history_length = 50;
+        let d_conflict_history = device.alloc_zeros::<f32>(history_length * num_vertices)?;
+
+        // Initialize reservoir on GPU
+        let d_graph_row_ptr = device.htod_sync_copy(graph_row_ptr)?;
+        let d_graph_col_idx = device.htod_sync_copy(graph_col_idx)?;
+        let d_initial_conflicts = device.htod_sync_copy(initial_conflicts)?;
+
+        let cfg = LaunchConfig::for_num_elems(num_vertices as u32);
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Initialize vertex states
+        unsafe {
+            init_vertex_states.clone().launch(
+                cfg,
+                (
+                    &d_vertex_states,
+                    &d_initial_conflicts,
+                    num_vertices as i32,
+                    seed,
+                ),
+            )?;
+        }
+
+        // Initialize input weights
+        unsafe {
+            init_input_weights
+                .clone()
+                .launch(cfg, (&d_input_weights, num_vertices as i32, seed))?;
+        }
+
+        device.synchronize()?;
+
+        log::info!(
+            "Dendritic Reservoir GPU initialized with {} connections",
+            num_connections
+        );
+
+        Ok(Self {
+            device,
+            process_dendritic_input,
+            process_recurrent,
+            compute_soma,
+            compute_outputs,
+            modulate_priorities,
+            d_vertex_states,
+            d_connections,
+            d_connection_row_ptr,
+            d_input_weights,
+            d_output_weights,
+            d_outputs,
+            d_conflict_history,
+            num_vertices,
+            num_connections,
+            history_length,
+            history_index: 0,
+            reservoir_influence,
+        })
+    }
+
+    /// Process one WHCR iteration through the reservoir
+    pub fn step(
+        &mut self,
+        conflict_counts: &[f32],
+        conflict_deltas: &[f32],
+        colors: &[i32],
+        moves_applied: &[i32],
+        _wavelet_details: Option<&[f32]>,
+        iteration: i32,
+    ) -> Result<()> {
+        // Upload WHCR state to GPU
+        let d_conflicts = self.device.htod_sync_copy(conflict_counts)?;
+        let d_deltas = self.device.htod_sync_copy(conflict_deltas)?;
+        let d_colors = self.device.htod_sync_copy(colors)?;
+        let d_moves = self.device.htod_sync_copy(moves_applied)?;
+
+        let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
+
+        // 1. Process dendritic input
+        unsafe {
+            self.process_dendritic_input.clone().launch(
+                cfg,
+                (
+                    &self.d_vertex_states,
+                    &self.d_input_weights,
+                    &d_conflicts,
+                    &d_deltas,
+                    &d_moves,
+                    iteration,
+                    self.num_vertices as i32,
+                ),
+            )?;
+        }
+
+        // 2. Process recurrent connections
+        unsafe {
+            self.process_recurrent.clone().launch(
+                cfg,
+                (
+                    &self.d_vertex_states,
+                    &self.d_connection_row_ptr,
+                    &self.d_connections,
+                    self.num_vertices as i32,
+                    iteration,
+                ),
+            )?;
+        }
+
+        // 3. Compute soma integration
+        unsafe {
+            self.compute_soma
+                .clone()
+                .launch(cfg, (&self.d_vertex_states, self.num_vertices as i32))?;
+        }
+
+        // 4. Compute outputs
+        unsafe {
+            self.compute_outputs.clone().launch(
+                cfg,
+                (
+                    &self.d_vertex_states,
+                    &self.d_output_weights,
+                    &self.d_conflict_history,
+                    self.history_length as i32,
+                    self.history_index as i32,
+                    &self.d_outputs,
+                    self.num_vertices as i32,
+                    iteration,
+                ),
+            )?;
+        }
+
+        self.device.synchronize()?;
+        self.history_index = (self.history_index + 1) % self.history_length;
+
+        Ok(())
+    }
+
+    /// Get reservoir-modulated priorities for WHCR
+    pub fn get_modulated_priorities(&self, wavelet_priorities: &[f32]) -> Result<Vec<f32>> {
+        let d_wavelet = self.device.htod_copy(wavelet_priorities.to_vec())?;
+        let d_final = self.device.alloc_zeros::<f32>(self.num_vertices)?;
+
+        let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
+        unsafe {
+            self.modulate_priorities.clone().launch(
+                cfg,
+                (
+                    &self.d_outputs,
+                    &d_wavelet,
+                    &d_final,
+                    self.num_vertices as i32,
+                    self.reservoir_influence,
+                ),
+            )?;
+        }
+
+        let result = self.device.dtoh_sync_copy(&d_final)?;
+        Ok(result)
+    }
+}

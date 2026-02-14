@@ -1,0 +1,133 @@
+[package]
+name = "prism-nhs"
+version = "0.1.0"
+edition = "2021"
+authors = ["PRISM-4D Engineering Team"]
+description = "Neuromorphic Holographic Stream (NHS) for real-time cryptic site detection with UV bias perturbation"
+license = "Proprietary"
+readme = "README.md"
+
+[features]
+default = ["gpu"]
+gpu = ["cudarc"]
+
+[dependencies]
+# Core
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async streaming
+tokio = { version = "1.0", features = ["sync", "macros", "rt-multi-thread"] }
+
+# GPU acceleration - CUDA 12.x for NHS compute kernels
+cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"], optional = true }
+
+# File pattern matching for trajectory discovery
+glob = "0.3"
+
+# Random number generation for UV burst patterns
+rand = "0.8"
+rand_distr = "0.4"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+env_logger = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Internal crates
+prism-io = { path = "../prism-io" }
+prism-learning = { path = "../prism-learning" }
+prism-gpu = { path = "../prism-gpu" }
+prism-optix = { path = "../prism-optix" }
+optix-sys = { path = "../optix-sys" }
+
+[[bin]]
+name = "nhs-detect"
+path = "src/bin/nhs_detect.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-cryo-probe"
+path = "src/bin/nhs_cryo_probe.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-adaptive"
+path = "src/bin/nhs_adaptive.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-batch"
+path = "src/bin/nhs_batch.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-guided-stage2"
+path = "src/bin/nhs_guided_stage2.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-diagnose"
+path = "src/bin/nhs_diagnose.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze"
+path = "src/bin/nhs_analyze.rs"
+
+[[bin]]
+name = "nhs-analyze-gpu"
+path = "src/bin/nhs_analyze_gpu.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze-ultra"
+path = "src/bin/nhs_analyze_ultra.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze-turbo"
+path = "src/bin/nhs_analyze_turbo.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs-analyze-pro"
+path = "src/bin/nhs_analyze_pro.rs"
+required-features = ["gpu"]
+
+[dev-dependencies]
+tempfile = "3.0"
+tokio-test = "0.4"
+
+[[bin]]
+name = "nhs-simd-batch-test"
+path = "src/bin/nhs_simd_batch_test.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "stage2b-process"
+path = "src/bin/stage2b_process.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "test-rt-clustering"
+path = "src/bin/test_rt_clustering.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "stress-rt-clustering"
+path = "src/bin/stress_rt_clustering.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "nhs_rt_full"
+path = "src/bin/nhs_rt_full.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "pharmacophore_gpu"
+path = "src/bin/pharmacophore_gpu.rs"
+required-features = ["gpu"]

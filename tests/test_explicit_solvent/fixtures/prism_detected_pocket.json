@@ -1,0 +1,56 @@
+{
+  "target_name": "KRAS_G12C",
+  "pdb_id": "6GJ8",
+  "pocket_id": 0,
+  "features": [
+    {
+      "feature_type": "AR",
+      "x": 12.5,
+      "y": -3.2,
+      "z": 8.7,
+      "intensity": 0.85,
+      "source_spike_type": "BNZ",
+      "source_residue_id": 142,
+      "source_residue_name": "TYR142",
+      "wavelength_nm": 258.0,
+      "water_density": 0.32
+    },
+    {
+      "feature_type": "NI",
+      "x": 15.5,
+      "y": -1.2,
+      "z": 10.7,
+      "intensity": 0.60,
+      "source_spike_type": "CATION",
+      "source_residue_id": 145,
+      "source_residue_name": "LYS145",
+      "wavelength_nm": 0.0,
+      "water_density": 0.55
+    },
+    {
+      "feature_type": "HY",
+      "x": 10.1,
+      "y": -4.5,
+      "z": 7.2,
+      "intensity": 0.72,
+      "source_spike_type": "PHE",
+      "source_residue_id": 12,
+      "source_residue_name": "CYS12",
+      "wavelength_nm": 260.0,
+      "water_density": 0.15
+    }
+  ],
+  "exclusion_spheres": [
+    {
+      "x": 14.0,
+      "y": -2.0,
+      "z": 9.0,
+      "radius": 2.0,
+      "source_atom": "CA:ALA145"
+    }
+  ],
+  "pocket_centroid": [13.0, -2.5, 8.5],
+  "pocket_lining_residues": [10, 11, 12, 30, 32, 34, 59, 60, 61, 142, 145],
+  "prism_run_hash": "abc123def456789",
+  "creation_timestamp": "2026-02-13T00:00:00+00:00"
+}

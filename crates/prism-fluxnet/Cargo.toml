@@ -1,0 +1,45 @@
+[package]
+name = "prism-fluxnet"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+rand_distr = { workspace = true }
+
+# Collections and parallelism
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# ONNX Runtime for MBRL (optional)
+ort = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+
+[features]
+default = []
+mbrl = ["ort", "ndarray"]
+
+[dev-dependencies]
+
+[[bin]]
+name = "fluxnet_train"
+path = "src/bin/train.rs"

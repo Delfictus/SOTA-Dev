@@ -1,0 +1,29 @@
+{
+  "binding_sites": 1,
+  "druggable_sites": 1,
+  "lining_residue_cutoff_angstroms": 8.0,
+  "sites": [
+    {
+      "id": 0,
+      "centroid": [59.073, 49.083, 49.577],
+      "classification": "ActiveSite",
+      "druggability": 0.577,
+      "is_druggable": true,
+      "spike_count": 30,
+      "volume": 2628.48,
+      "quality_score": 0.706,
+      "aromatic_score": 0.164,
+      "catalytic_residue_count": 0,
+      "residue_ids": [64, 63, 67, 65, 66, 60, 68],
+      "lining_residues": [
+        {"chain": "A", "resid": 64, "resname": "PHE", "n_atoms": 19, "min_distance": 1.04, "is_catalytic": false},
+        {"chain": "A", "resid": 63, "resname": "LEU", "n_atoms": 19, "min_distance": 1.71, "is_catalytic": false},
+        {"chain": "A", "resid": 67, "resname": "TYR", "n_atoms": 15, "min_distance": 2.85, "is_catalytic": false},
+        {"chain": "A", "resid": 65, "resname": "VAL", "n_atoms": 11, "min_distance": 3.28, "is_catalytic": false},
+        {"chain": "A", "resid": 66, "resname": "TRP", "n_atoms": 14, "min_distance": 3.37, "is_catalytic": false},
+        {"chain": "A", "resid": 60, "resname": "ALA", "n_atoms": 10, "min_distance": 4.24, "is_catalytic": false},
+        {"chain": "A", "resid": 68, "resname": "GLY", "n_atoms": 9, "min_distance": 4.32, "is_catalytic": false}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+use_gpu = true
+top_n = 15
+
+[graph]
+use_gpu = true
+distance_threshold = 5.5
+surface_only = false
+min_sasa = 0.0
+weighted_edges = true
+
+[geometry]
+voxel_resolution = 0.65
+probe_radius = 1.4
+use_voxel_volume = true
+use_boundary_enclosure = true
+use_neighbor_enclosure = true
+boundary_cutoff = 3.5
+use_convex_hull_volume = true
+convex_hull_epsilon = 1e-6
+use_alpha_shape_volume = true
+alpha_shape_shrink = 0.6
+alpha_shape_resolution = 0.55
+use_flood_fill_cavity = true
+cavity_resolution = 0.7
+
+[phase0]
+sasa_weight = 0.35
+hydrophobicity_weight = 0.65
+iterations = 80
+learning_rate = 0.030
+decay_rate = 0.10
+activation_threshold = 0.25
+
+[phase1]
+prior_precision = 2.5
+learning_rate = 0.15
+iterations = 160
+temperature = 1.1
+temperature_decay = 0.985
+max_pockets = 20
+hydrophobicity_evidence = 0.30
+depth_evidence = 0.55
+curvature_evidence = 0.15
+
+[phase2]
+max_iterations = 400
+temperature = 1.50
+cooling_rate = 0.990
+conflict_penalty = 1.2
+belief_weight = 1.2
+
+[phase4]
+depth_threshold = 6.5
+tunnel_length_min = 12.0
+tunnel_width_max = 4.0
+top_centrality = 12
+centrality_weight = 0.6
+
+[phase6]
+filtration_step = 0.45
+max_radius = 15.0
+persistence_threshold = 0.30
+max_features = 40
+
+[scoring]
+volume = 0.10
+hydrophobicity = 0.20
+enclosure = 0.15
+depth = 0.20
+hbond_capacity = 0.10
+flexibility = 0.05
+conservation = 0.05
+topology = 0.15
+
+[output]
+formats = ["Pdb", "Json"]
+include_pymol_script = true
+include_json = true

@@ -1,0 +1,2091 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/crates/prism-lbs/Cargo.toml
+workspace: /home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/Cargo.toml
+warning: unused doc comment
+   --> crates/prism-core/src/telemetry.rs:179:1
+    |
+179 | /// Thread-local configuration for telemetry recording
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rustdoc does not generate documentation for macro invocations
+    |
+    = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+    = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: `prism-core` (lib) generated 1 warning
+warning: unused import: `PushKernelArg`
+  --> crates/prism-gpu/src/context.rs:23:47
+   |
+23 | use cudarc::driver::{CudaContext, CudaModule, PushKernelArg, DeviceSlice};
+   |                                               ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `MegaFusedConfig` and `MegaFusedOutput`
+  --> crates/prism-gpu/src/global_context.rs:24:25
+   |
+24 | use crate::mega_fused::{MegaFusedConfig, MegaFusedGpu, MegaFusedOutput};
+   |                         ^^^^^^^^^^^^^^^                ^^^^^^^^^^^^^^^
+
+warning: unused imports: `DeviceSlice` and `PushKernelArg`
+  --> crates/prism-gpu/src/global_context.rs:26:47
+   |
+26 | use cudarc::driver::{CudaContext, CudaStream, PushKernelArg, DeviceSlice};
+   |                                               ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `DevicePtrMut`
+  --> crates/prism-gpu/src/mega_fused.rs:22:22
+   |
+22 | use cudarc::driver::{DevicePtrMut, 
+   |                      ^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration`
+   --> crates/prism-gpu/src/mega_fused.rs:109:13
+    |
+109 |         use std::time::Duration;
+    |             ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DevicePtrMut`
+  --> crates/prism-gpu/src/mega_fused_batch.rs:14:22
+   |
+14 | use cudarc::driver::{DevicePtrMut, 
+   |                      ^^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+  --> crates/prism-gpu/src/mega_fused_batch.rs:23:13
+   |
+23 | use serde::{Serialize, Deserialize};
+   |             ^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `Context`
+ --> crates/prism-gpu/src/ve_swarm/dendritic.rs:6:14
+  |
+6 | use anyhow::{Context, Result};
+  |              ^^^^^^^
+
+warning: unused import: `CudaModule`
+ --> crates/prism-gpu/src/ve_swarm/dendritic.rs:7:72
+  |
+7 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                        ^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+ --> crates/prism-gpu/src/ve_swarm/attention.rs:9:5
+  |
+9 | use anyhow::Result;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `Context`
+ --> crates/prism-gpu/src/ve_swarm/agents.rs:6:14
+  |
+6 | use anyhow::{Context, Result};
+  |              ^^^^^^^
+
+warning: unused import: `CudaModule`
+ --> crates/prism-gpu/src/ve_swarm/agents.rs:7:72
+  |
+7 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                        ^^^^^^^^^^
+
+warning: unused import: `CudaModule`
+ --> crates/prism-gpu/src/ve_swarm/temporal.rs:6:72
+  |
+6 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                        ^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+ --> crates/prism-gpu/src/ve_swarm/consensus.rs:6:5
+  |
+6 | use anyhow::Result;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> crates/prism-gpu/src/ve_swarm/metrics.rs:6:5
+  |
+6 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unexpected `cfg` condition value: `serde`
+   --> crates/prism-gpu/src/h_constraints.rs:103:11
+    |
+103 |     #[cfg(feature = "serde")]
+    |           ^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cuda`
+    = help: consider adding `serde` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unused import: `std::path::Path`
+  --> crates/prism-gpu/src/amber_simd_batch.rs:29:5
+   |
+29 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `cudarc::nvrtc::Ptx`
+  --> crates/prism-gpu/src/ensemble_warp_md.rs:15:5
+   |
+15 | use cudarc::nvrtc::Ptx;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+  --> crates/prism-gpu/src/ensemble_warp_md.rs:17:5
+   |
+17 | use std::collections::HashSet;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PushKernelArg`
+  --> crates/prism-gpu/src/stream_integration.rs:64:101
+   |
+64 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, ValidAsZeroBits, PushKernelArg, DeviceSlice};
+   |                                                                                                     ^^^^^^^^^^^^^
+
+warning: unexpected `cfg` condition value: `telemetry`
+   --> crates/prism-gpu/src/memory.rs:126:15
+    |
+126 |         #[cfg(feature = "telemetry")]
+    |               ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cuda`
+    = help: consider adding `telemetry` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/context.rs:23:62
+   |
+23 | use cudarc::driver::{CudaContext, CudaModule, PushKernelArg, DeviceSlice};
+   |                                                              ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/feature_merge.rs:10:101
+   |
+10 | use cudarc::driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice};
+   |                                                                                                     ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/dendritic_reservoir.rs:40:113
+   |
+40 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+   |                                                                                                                 ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/mega_fused.rs:24:34
+   |
+24 |     LaunchConfig, PushKernelArg, DeviceSlice};
+   |                                  ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/mega_fused_batch.rs:16:34
+   |
+16 |     LaunchConfig, PushKernelArg, DeviceSlice};
+   |                                  ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+ --> crates/prism-gpu/src/ve_swarm/dendritic.rs:7:113
+  |
+7 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                                                                 ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+ --> crates/prism-gpu/src/ve_swarm/agents.rs:7:113
+  |
+7 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                                                                 ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+ --> crates/prism-gpu/src/ve_swarm/temporal.rs:6:113
+  |
+6 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                                                                 ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/ve_swarm/mod.rs:77:113
+   |
+77 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+   |                                                                                                                 ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+ --> crates/prism-gpu/src/polycentric_immunity.rs:7:101
+  |
+7 | use cudarc::driver::{CudaContext, CudaStream, CudaFunction, CudaSlice, LaunchConfig, PushKernelArg, DeviceSlice};
+  |                                                                                                     ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/active_inference.rs:23:90
+   |
+23 | use cudarc::driver::{CudaContext, CudaFunction, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice};
+   |                                                                                          ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/prism_nova.rs:49:67
+   |
+49 |     CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice,
+   |                                                                   ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/amber_mega_fused.rs:11:67
+   |
+11 |     CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice,
+   |                                                                   ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/pme.rs:16:67
+   |
+16 |     CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+   |                                                                   ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/settle.rs:16:67
+   |
+16 |     CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+   |                                                                   ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+  --> crates/prism-gpu/src/stream_integration.rs:64:116
+   |
+64 | use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, ValidAsZeroBits, PushKernelArg, DeviceSlice};
+   |                                                                                                                    ^^^^^^^^^^^
+
+warning: unused import: `DeviceSlice`
+ --> crates/prism-gpu/src/whcr.rs:3:93
+  |
+3 |     driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice},
+  |                                                                                             ^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/prism-gpu/src/dendritic_snn.rs:396:13
+    |
+396 |         let mut output: CudaSlice<f32> = self
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/prism-gpu/src/dendritic_snn.rs:496:13
+    |
+496 |         let mut q_values_device: CudaSlice<f32> = self
+    |             ----^^^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: value assigned to `burial_dev` is never read
+    --> crates/prism-gpu/src/mega_fused.rs:1775:30
+     |
+1775 |           let mut burial_dev = self.stream.alloc_zeros::<f32>(burial.len())
+     |  ______________________________^
+1776 | |             .map_err(|e| PrismError::gpu("multipass", format!("Alloc burial failed: {:?}", e)))?;
+     | |________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `conservation_dev` is never read
+    --> crates/prism-gpu/src/mega_fused.rs:1780:36
+     |
+1780 |           let mut conservation_dev = self.stream.alloc_zeros::<f32>(conservation.len())
+     |  ____________________________________^
+1781 | |             .map_err(|e| PrismError::gpu("multipass", format!("Alloc conservation failed: {:?}", e)))?;
+     | |______________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `i`
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1027:14
+     |
+1027 |         for (i, desc) in descriptors_to_copy.iter().take(3).enumerate() {
+     |              ^ help: if this is intentional, prefix it with an underscore: `_i`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `capacity`
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1296:13
+     |
+1296 |         let capacity = self.buffer_pool.residue_capacity;
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_capacity`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1458:13
+     |
+1458 |         let mut d_consensus_scores = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |             ----^^^^^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1460:13
+     |
+1460 |         let mut d_confidence = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+     |             ----^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1462:13
+     |
+1462 |         let mut d_signal_mask = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+     |             ----^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1464:13
+     |
+1464 |         let mut d_pocket_assignment = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+     |             ----^^^^^^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1466:13
+     |
+1466 |         let mut d_centrality = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |             ----^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1471:13
+     |
+1471 |         let mut d_tp_counts = self.stream.alloc_zeros::<i32>(n_structures)
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1473:13
+     |
+1473 |         let mut d_fp_counts = self.stream.alloc_zeros::<i32>(n_structures)
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1475:13
+     |
+1475 |         let mut d_tn_counts = self.stream.alloc_zeros::<i32>(n_structures)
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1477:13
+     |
+1477 |         let mut d_fn_counts = self.stream.alloc_zeros::<i32>(n_structures)
+     |             ----^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1479:13
+     |
+1479 |         let mut d_score_sums = self.stream.alloc_zeros::<f32>(n_structures)
+     |             ----^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1481:13
+     |
+1481 |         let mut d_pocket_counts = self.stream.alloc_zeros::<i32>(n_structures)
+     |             ----^^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1485:13
+     |
+1485 |         let mut d_hist_pos = self.stream.alloc_zeros::<u64>(n_structures * N_BINS)
+     |             ----^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1487:13
+     |
+1487 |         let mut d_hist_neg = self.stream.alloc_zeros::<u64>(n_structures * N_BINS)
+     |             ----^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1491:13
+     |
+1491 |         let mut d_metrics_out = self.stream.alloc_zeros::<BatchMetricsOutput>(n_structures)
+     |             ----^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: value assigned to `d_atoms` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1437:27
+     |
+1437 |           let mut d_atoms = self.stream.alloc_zeros::<f32>(batch.base.atoms_packed.len().max(1))
+     |  ___________________________^
+1438 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc atoms: {}", e)))?;
+     | |_____________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_ca_indices` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1439:32
+     |
+1439 |           let mut d_ca_indices = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+     |  ________________________________^
+1440 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc ca_indices: {}", e)))?;
+     | |__________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_conservation` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1441:34
+     |
+1441 |           let mut d_conservation = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |  __________________________________^
+1442 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc conservation: {}", e)))?;
+     | |____________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_bfactor` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1443:29
+     |
+1443 |           let mut d_bfactor = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |  _____________________________^
+1444 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc bfactor: {}", e)))?;
+     | |_______________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_burial` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1445:28
+     |
+1445 |           let mut d_burial = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |  ____________________________^
+1446 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc burial: {}", e)))?;
+     | |______________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_gt_mask` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1447:29
+     |
+1447 |           let mut d_gt_mask = self.stream.alloc_zeros::<u8>(total_residues.max(1))
+     |  _____________________________^
+1448 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc gt_mask: {}", e)))?;
+     | |_______________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_tile_prefix` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1454:33
+     |
+1454 |           let mut d_tile_prefix = self.stream.alloc_zeros::<i32>(batch.tile_prefix_sum.len())
+     |  _________________________________^
+1455 | |             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc tile_prefix: {}", e)))?;
+     | |___________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_atoms` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1702:27
+     |
+1702 |           let mut d_atoms = self.stream.alloc_zeros::<f32>(batch.base.atoms_packed.len().max(1))
+     |  ___________________________^
+1703 | |             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc atoms: {}", e)))?;
+     | |_______________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_ca_indices` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1707:32
+     |
+1707 |           let mut d_ca_indices = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+     |  ________________________________^
+1708 | |             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc ca_indices: {}", e)))?;
+     | |____________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_conservation` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1712:34
+     |
+1712 |           let mut d_conservation = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |  __________________________________^
+1713 | |             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc conservation: {}", e)))?;
+     | |______________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_bfactor` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1717:29
+     |
+1717 |           let mut d_bfactor = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |  _____________________________^
+1718 | |             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc bfactor: {}", e)))?;
+     | |_________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `d_burial` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1722:28
+     |
+1722 |           let mut d_burial = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+     |  ____________________________^
+1723 | |             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc burial: {}", e)))?;
+     | |________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `idx`
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1869:14
+     |
+1869 |         for (idx, desc) in batch.descriptors.iter().enumerate().take(n_structures) {
+     |              ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: value assigned to `d_escape_10d` is never read
+    --> crates/prism-gpu/src/mega_fused_batch.rs:1905:32
+     |
+1905 |           let mut d_escape_10d = self.stream.alloc_zeros::<f32>(escape_10d_flat.len().max(1))
+     |  ________________________________^
+1906 | |             .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Alloc escape_10d: {}", e)))?;
+     | |_____________________________________________________________________________________________________^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `feature_names`
+   --> crates/prism-gpu/src/ve_swarm/metrics.rs:204:9
+    |
+204 |     let feature_names = [
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_feature_names`
+
+warning: unused variable: `thermostat_kernel`
+    --> crates/prism-gpu/src/amber_mega_fused.rs:1893:13
+     |
+1893 |         let thermostat_kernel = self.module
+     |             ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_thermostat_kernel`
+
+warning: variable does not need to be mutable
+   --> crates/prism-gpu/src/lcpo_sasa.rs:190:13
+    |
+190 |         let mut d_sasa: CudaSlice<f32> = self.stream.alloc_zeros(n_atoms)
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/prism-gpu/src/lcpo_sasa.rs:294:13
+    |
+294 |         let mut d_sasa: CudaSlice<f32> = self.stream.alloc_zeros(n_frames * n_atoms)
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/prism-gpu/src/lcpo_sasa.rs:297:13
+    |
+297 |         let mut d_totals: CudaSlice<f32> = self.stream.alloc_zeros(n_frames)
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: type `BufferState` is more private than the item `stream_integration::TripleBuffer::<T>::get_states`
+   --> crates/prism-gpu/src/stream_integration.rs:265:5
+    |
+265 |     pub fn get_states(&self) -> [BufferState; 3] {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `stream_integration::TripleBuffer::<T>::get_states` is reachable at visibility `pub`
+    |
+note: but type `BufferState` is only usable at visibility `pub(self)`
+   --> crates/prism-gpu/src/stream_integration.rs:77:1
+    |
+ 77 | enum BufferState {
+    | ^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: field `device` is never read
+  --> crates/prism-gpu/src/mega_fused.rs:64:5
+   |
+62 | pub struct GpuTelemetry {
+   |            ------------ field in this struct
+63 |     nvml: Option<Nvml>,
+64 |     device: Option<NvmlDevice<'static>>,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `init_weights_fp32` and `init_weights_fp16` are never read
+    --> crates/prism-gpu/src/mega_fused.rs:1039:5
+     |
+1030 | pub struct MegaFusedGpu {
+     |            ------------ fields in this struct
+...
+1039 |     init_weights_fp32: Option<CudaFunction>,
+     |     ^^^^^^^^^^^^^^^^^
+1040 |     /// Reservoir weight initialization function (FP16)
+1041 |     init_weights_fp16: Option<CudaFunction>,
+     |     ^^^^^^^^^^^^^^^^^
+
+warning: multiple fields are never read
+   --> crates/prism-gpu/src/ve_swarm/mod.rs:137:5
+    |
+135 | pub struct VeSwarmPipeline {
+    |            --------------- fields in this struct
+136 |     /// CUDA context
+137 |     ctx: Arc<CudaContext>,
+    |     ^^^
+...
+144 |     dendritic_module: Arc<CudaModule>,
+    |     ^^^^^^^^^^^^^^^^
+145 |     agents_module: Arc<CudaModule>,
+    |     ^^^^^^^^^^^^^
+146 |     temporal_module: Arc<CudaModule>,
+    |     ^^^^^^^^^^^^^^^
+...
+149 |     fn_init_reservoir: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^
+...
+158 |     fn_update_stats: CudaFunction,
+    |     ^^^^^^^^^^^^^^^
+...
+164 |     fn_velocity_correction: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+...
+169 |     pheromone: CudaSlice<f32>,    // [136] - now includes immunity features
+    |     ^^^^^^^^^
+
+warning: field `ctx` is never read
+  --> crates/prism-gpu/src/ve_swarm/dendritic.rs:37:5
+   |
+36 | pub struct DendriticReservoir {
+   |            ------------------ field in this struct
+37 |     ctx: Arc<CudaContext>,
+   |     ^^^
+
+warning: fields `fn_preprocess`, `fn_conv`, and `fn_velocity_correction` are never read
+  --> crates/prism-gpu/src/ve_swarm/temporal.rs:78:5
+   |
+72 | pub struct TemporalConv {
+   |            ------------ fields in this struct
+...
+78 |     fn_preprocess: CudaFunction,
+   |     ^^^^^^^^^^^^^
+79 |     fn_conv: CudaFunction,
+   |     ^^^^^^^
+80 |     fn_velocity_correction: CudaFunction,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `cross_reactivity`, `pk_tmax`, and `pk_thalf` are never read
+  --> crates/prism-gpu/src/polycentric_immunity.rs:49:5
+   |
+40 | pub struct PolycentricImmunityGpu {
+   |            ---------------------- fields in this struct
+...
+49 |     cross_reactivity: CudaSlice<f32>,     // [10 × 10]
+   |     ^^^^^^^^^^^^^^^^
+50 |     pk_tmax: CudaSlice<f32>,              // [75]
+   |     ^^^^^^^
+51 |     pk_thalf: CudaSlice<f32>,             // [75]
+   |     ^^^^^^^^
+
+warning: field `context` is never read
+  --> crates/prism-gpu/src/active_inference.rs:79:5
+   |
+78 | pub struct ActiveInferenceGpu {
+   |            ------------------ field in this struct
+79 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+
+warning: fields `context` and `module` are never read
+   --> crates/prism-gpu/src/prism_nova.rs:155:5
+    |
+154 | pub struct PrismNova {
+    |            --------- fields in this struct
+155 |     context: Arc<CudaContext>,
+    |     ^^^^^^^
+156 |     stream: Arc<CudaStream>,
+157 |     module: Arc<CudaModule>,
+    |     ^^^^^^
+
+warning: fields `context` and `d_forces` are never read
+   --> crates/prism-gpu/src/amber_forces.rs:146:5
+    |
+145 | pub struct AmberBondedForces {
+    |            ----------------- fields in this struct
+146 |     context: Arc<CudaContext>,
+    |     ^^^^^^^
+...
+152 |     d_forces: CudaSlice<f32>,
+    |     ^^^^^^^^
+
+warning: multiple fields are never read
+   --> crates/prism-gpu/src/amber_mega_fused.rs:346:5
+    |
+340 | pub struct AmberMegaFusedHmc {
+    |            ----------------- fields in this struct
+...
+346 |     hmc_step_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^
+347 |     zero_energies_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^
+348 |     thermostat_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^
+349 |     init_velocities_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+350 |     minimize_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^
+...
+382 |     fused_constraints_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+417 |     d_bbox_min: CudaSlice<f32>,       // [3]
+    |     ^^^^^^^^^^
+418 |     d_bbox_max: CudaSlice<f32>,       // [3]
+    |     ^^^^^^^^^^
+
+warning: method `apply_position_restraint_velocity_correction` is never used
+    --> crates/prism-gpu/src/amber_mega_fused.rs:1429:8
+     |
+ 469 | impl AmberMegaFusedHmc {
+     | ---------------------- method in this implementation
+...
+1429 |     fn apply_position_restraint_velocity_correction(&mut self, dt: f32) -> Result<()> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `context`, `module`, and `normalize_kernel` are never read
+  --> crates/prism-gpu/src/pme.rs:66:5
+   |
+65 | pub struct PME {
+   |            --- fields in this struct
+66 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+67 |     stream: Arc<CudaStream>,
+68 |     module: Arc<CudaModule>,
+   |     ^^^^^^
+...
+97 |     normalize_kernel: CudaFunction,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: fields `context`, `module`, and `inv_total_mass` are never read
+  --> crates/prism-gpu/src/settle.rs:30:5
+   |
+29 | pub struct Settle {
+   |            ------ fields in this struct
+30 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+31 |     stream: Arc<CudaStream>,
+32 |     module: Arc<CudaModule>,
+   |     ^^^^^^
+...
+49 |     inv_total_mass: f32,
+   |     ^^^^^^^^^^^^^^
+
+warning: field `context` is never read
+   --> crates/prism-gpu/src/h_constraints.rs:127:5
+    |
+126 | pub struct HConstraints {
+    |            ------------ field in this struct
+127 |     context: Arc<CudaContext>,
+    |     ^^^^^^^
+
+warning: fields `init_velocities_kernel`, `minimize_kernel`, `apply_offsets_kernel`, and `remove_offsets_kernel` are never read
+   --> crates/prism-gpu/src/amber_simd_batch.rs:260:5
+    |
+250 | pub struct AmberSimdBatch {
+    |            -------------- fields in this struct
+...
+260 |     init_velocities_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+261 |     minimize_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^
+262 |     apply_offsets_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^
+263 |     remove_offsets_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `compute_nonbonded_deterministic_kernel` is never read
+  --> crates/prism-gpu/src/verlet_list.rs:54:5
+   |
+43 | pub struct VerletList {
+   |            ---------- field in this struct
+...
+54 |     compute_nonbonded_deterministic_kernel: CudaFunction,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `context` is never read
+  --> crates/prism-gpu/src/ensemble_warp_md.rs:54:5
+   |
+53 | pub struct EnsembleWarpMd {
+   |            -------------- field in this struct
+54 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+
+warning: fields `context`, `gb_forces_kernel`, `extract_positions_kernel`, `d_gb_radii`, and `d_gb_screen` are never read
+   --> crates/prism-gpu/src/amber_replica_parallel.rs:169:5
+    |
+168 | pub struct ReplicaParallelMD {
+    |            ----------------- fields in this struct
+169 |     context: Arc<CudaContext>,
+    |     ^^^^^^^
+...
+181 |     gb_forces_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^
+...
+186 |     extract_positions_kernel: CudaFunction,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+218 |     d_gb_radii: CudaSlice<f32>,
+    |     ^^^^^^^^^^
+219 |     d_gb_screen: CudaSlice<f32>,
+    |     ^^^^^^^^^^^
+
+warning: associated function `compute_center_of_mass` is never used
+    --> crates/prism-gpu/src/amber_replica_parallel.rs:1162:8
+     |
+ 255 | impl ReplicaParallelMD {
+     | ---------------------- associated function in this implementation
+...
+1162 |     fn compute_center_of_mass(positions: &[f32], n_atoms: usize) -> [f64; 3] {
+     |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `buffer_id` is never read
+   --> crates/prism-gpu/src/stream_integration.rs:283:9
+    |
+282 |     Upload {
+    |     ------ field in this variant
+283 |         buffer_id: usize,
+    |         ^^^^^^^^^
+    |
+    = note: `PendingOp` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `buffer_id` is never read
+   --> crates/prism-gpu/src/stream_integration.rs:293:9
+    |
+292 |     Download {
+    |     -------- field in this variant
+293 |         buffer_id: usize,
+    |         ^^^^^^^^^
+    |
+    = note: `PendingOp` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `context` is never read
+  --> crates/prism-gpu/src/lcpo_sasa.rs:89:5
+   |
+88 | pub struct LcpoSasaGpu {
+   |            ----------- field in this struct
+89 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+
+warning: field `context` is never read
+  --> crates/prism-gpu/src/memory.rs:84:5
+   |
+83 | pub struct VramGuard {
+   |            --------- field in this struct
+84 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+   |
+   = note: `VramGuard` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `context` is never read
+  --> crates/prism-gpu/src/whcr.rs:39:5
+   |
+38 | pub struct WhcrGpu {
+   |            ------- field in this struct
+39 |     context: Arc<CudaContext>,
+   |     ^^^^^^^
+
+warning: field `detail_size` is never read
+  --> crates/prism-gpu/src/whcr.rs:93:5
+   |
+91 | struct WaveletLevel {
+   |        ------------ field in this struct
+92 |     approx_size: usize,
+93 |     detail_size: usize,
+   |     ^^^^^^^^^^^
+
+warning: unused borrow that must be used
+   --> crates/prism-gpu/src/polycentric_immunity.rs:135:13
+    |
+135 | /             &self.stream.launch_builder(&self.kernel_init_centers)
+136 | |                 .arg(&d_features)
+137 | |                 .arg(&d_labels)
+138 | |                 .arg(&d_counts)
+139 | |                 .arg(&n_samples_i32)
+140 | |                 .arg(&mut self.epitope_centers)
+141 | |                 .launch(config)?;
+    | |________________________________^ the borrow produces a value
+    |
+    = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+    |
+135 |             let _ = &self.stream.launch_builder(&self.kernel_init_centers)
+    |             +++++++
+
+warning: unused borrow that must be used
+   --> crates/prism-gpu/src/polycentric_immunity.rs:175:13
+    |
+175 | /             &self.stream.launch_builder(&self.kernel_main)
+176 | |                 .arg(features_packed)
+177 | |                 .arg(residue_offsets)
+178 | |                 .arg(n_residues)
+...   |
+185 | |                 .arg(&n_structures_i32)
+186 | |                 .launch(config)?;
+    | |________________________________^ the borrow produces a value
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+175 |             let _ = &self.stream.launch_builder(&self.kernel_main)
+    |             +++++++
+
+warning: structure field `d_rls_P_matrices` should have a snake case name
+   --> crates/prism-gpu/src/prism_nova.rs:198:5
+    |
+198 |     d_rls_P_matrices: CudaSlice<f32>,  // [NUM_OUTPUTS * RESERVOIR_SIZE * RESERVOIR_SIZE]
+    |     ^^^^^^^^^^^^^^^^ help: convert the identifier to snake case: `d_rls_p_matrices`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: variable `d_rls_P_matrices` should have a snake case name
+   --> crates/prism-gpu/src/prism_nova.rs:346:13
+    |
+346 |         let d_rls_P_matrices = stream
+    |             ^^^^^^^^^^^^^^^^ help: convert the identifier to snake case: `d_rls_p_matrices`
+
+warning: calls to `std::mem::drop` with a reference instead of an owned value does nothing
+    --> crates/prism-gpu/src/amber_simd_batch.rs:1367:17
+     |
+1367 |                 drop(verlet);
+     |                 ^^^^^------^
+     |                      |
+     |                      argument has type `&mut VerletList`
+     |
+     = note: `#[warn(dropping_references)]` on by default
+help: use `let _ = ...` to ignore the expression or result
+     |
+1367 -                 drop(verlet);
+1367 +                 let _ = verlet;
+     |
+
+warning: structure field `sqrt_kT` should have a snake case name
+   --> crates/prism-gpu/src/amber_replica_parallel.rs:247:5
+    |
+247 |     sqrt_kT: f32,
+    |     ^^^^^^^ help: convert the identifier to snake case: `sqrt_k_t`
+
+warning: variable `sqrt_kT` should have a snake case name
+   --> crates/prism-gpu/src/amber_replica_parallel.rs:416:13
+    |
+416 |         let sqrt_kT = (KB_KCAL_MOL_K as f32 * temperature).sqrt();
+    |             ^^^^^^^ help: convert the identifier to snake case: `sqrt_k_t`
+
+warning: variable `test_T` should have a snake case name
+   --> crates/prism-gpu/src/amber_replica_parallel.rs:630:17
+    |
+630 |             let test_T = 2.0 * test_ke / (dof * KB_KCAL_MOL_K);
+    |                 ^^^^^^ help: convert the identifier to snake case: `test_t`
+
+warning: creating a shared reference to mutable static
+   --> crates/prism-gpu/src/memory.rs:263:9
+    |
+263 |         GLOBAL_VRAM_GUARD.as_ref()
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+    = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: `prism-gpu` (lib) generated 112 warnings (run `cargo fix --lib -p prism-gpu` to apply 43 suggestions)
+warning: unused import: `std::marker::PhantomData`
+  --> crates/prism-io/src/lib.rs:51:5
+   |
+51 | use std::marker::PhantomData;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:143:20
+    |
+143 |         let mmap = unsafe { MmapOptions::new().map(&file)? };
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> crates/prism-io/src/lib.rs:49:9
+    |
+ 49 | #![warn(unsafe_code)] // Unsafe code requires explicit review and justification
+    |         ^^^^^^^^^^^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:152:33
+    |
+152 |           let header: PtbHeader = unsafe {
+    |  _________________________________^
+153 | |             std::ptr::read(header_bytes.as_ptr() as *const PtbHeader)
+154 | |         };
+    | |_________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:210:34
+    |
+210 |               let atoms: &[Atom] = unsafe {
+    |  __________________________________^
+211 | |                 std::slice::from_raw_parts(
+212 | |                     atom_bytes.as_ptr() as *const Atom,
+213 | |                     atom_bytes.len() / size_of::<Atom>()
+214 | |                 )
+215 | |             };
+    | |_____________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:220:31
+    |
+220 |             self.atoms = Some(unsafe { std::mem::transmute(atoms) });
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:238:34
+    |
+238 |               let bonds: &[Bond] = unsafe {
+    |  __________________________________^
+239 | |                 std::slice::from_raw_parts(
+240 | |                     bond_bytes.as_ptr() as *const Bond,
+241 | |                     bond_bytes.len() / size_of::<Bond>()
+242 | |                 )
+243 | |             };
+    | |_____________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:246:31
+    |
+246 |             self.bonds = Some(unsafe { std::mem::transmute(bonds) });
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:264:52
+    |
+264 |               let secondary: &[SecondaryStructure] = unsafe {
+    |  ____________________________________________________^
+265 | |                 std::slice::from_raw_parts(
+266 | |                     ss_bytes.as_ptr() as *const SecondaryStructure,
+267 | |                     ss_bytes.len() / size_of::<SecondaryStructure>()
+268 | |                 )
+269 | |             };
+    | |_____________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:272:35
+    |
+272 |             self.secondary = Some(unsafe { std::mem::transmute(secondary) });
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unnecessary qualification
+   --> crates/prism-io/src/holographic.rs:402:24
+    |
+402 |         let mut file = std::fs::File::create(path)?;
+    |                        ^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> crates/prism-io/src/lib.rs:48:9
+    |
+ 48 | #![warn(unused_qualifications)]
+    |         ^^^^^^^^^^^^^^^^^^^^^
+help: remove the unnecessary path segments
+    |
+402 -         let mut file = std::fs::File::create(path)?;
+402 +         let mut file = File::create(path)?;
+    |
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:405:28
+    |
+405 |           let header_bytes = unsafe {
+    |  ____________________________^
+406 | |             std::slice::from_raw_parts(
+407 | |                 &self.header as *const PtbHeader as *const u8,
+408 | |                 size_of::<PtbHeader>()
+409 | |             )
+410 | |         };
+    | |_________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:414:27
+    |
+414 |           let atoms_bytes = unsafe {
+    |  ___________________________^
+415 | |             std::slice::from_raw_parts(
+416 | |                 self.atoms.as_ptr() as *const u8,
+417 | |                 self.atoms.len() * size_of::<Atom>()
+418 | |             )
+419 | |         };
+    | |_________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:423:27
+    |
+423 |           let bonds_bytes = unsafe {
+    |  ___________________________^
+424 | |             std::slice::from_raw_parts(
+425 | |                 self.bonds.as_ptr() as *const u8,
+426 | |                 self.bonds.len() * size_of::<Bond>()
+427 | |             )
+428 | |         };
+    | |_________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/holographic.rs:432:31
+    |
+432 |           let secondary_bytes = unsafe {
+    |  _______________________________^
+433 | |             std::slice::from_raw_parts(
+434 | |                 self.secondary.as_ptr() as *const u8,
+435 | |                 self.secondary.len() * size_of::<SecondaryStructure>()
+436 | |             )
+437 | |         };
+    | |_________^
+
+warning: unused import: `SovereignError`
+  --> crates/prism-io/src/streaming.rs:27:40
+   |
+27 |     sovereign_types::{SovereignBuffer, SovereignError},
+   |                                        ^^^^^^^^^^^^^^
+
+warning: unnecessary qualification
+  --> crates/prism-io/src/streaming.rs:93:13
+   |
+93 |             cudarc::driver::CudaContext::new(0)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: remove the unnecessary path segments
+   |
+93 -             cudarc::driver::CudaContext::new(0)
+93 +             CudaContext::new(0)
+   |
+
+warning: unnecessary qualification
+   --> crates/prism-io/src/streaming.rs:355:55
+    |
+355 |     async fn transfer_ptb_file_data(&self, structure: crate::holographic::PtbStructure) -> Result<SovereignBuffer> {
+    |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+355 -     async fn transfer_ptb_file_data(&self, structure: crate::holographic::PtbStructure) -> Result<SovereignBuffer> {
+355 +     async fn transfer_ptb_file_data(&self, structure: PtbStructure) -> Result<SovereignBuffer> {
+    |
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:367:17
+    |
+367 | /                 unsafe {
+368 | |                     let result = cudarc::driver::sys::cuMemAllocHost_v2(&mut ptr, data_size);
+369 | |                     if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
+370 | |                         return Err(PrismIoError::CudaError(format!("Pinned host memory allocation failed: {:?}", result)));
+371 | |                     }
+372 | |                 }
+    | |_________________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:377:13
+    |
+377 | /             unsafe {
+378 | |                 std::ptr::copy_nonoverlapping(
+379 | |                     file_data.as_ptr(),
+380 | |                     host_ptr,
+381 | |                     data_size
+382 | |                 );
+383 | |             }
+    | |_____________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:388:13
+    |
+388 | /             unsafe {
+389 | |                 let magic_slice = std::slice::from_raw_parts(host_ptr, 8.min(data_size));
+390 | |                 tracing::info!("🔍 First 8 bytes in pinned memory: {:?}", magic_slice);
+391 | |                 if magic_slice.len() >= 7 {
+...   |
+395 | |             }
+    | |_____________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:401:16
+    |
+401 |               Ok(unsafe {
+    |  ________________^
+402 | |                 SovereignBuffer::new_from_dma(
+403 | |                     std::ptr::NonNull::new(host_ptr)
+404 | |                         .ok_or_else(|| PrismIoError::CudaError("Invalid host pointer".to_string()))?,
+...   |
+409 | |             })
+    | |_____________^
+
+warning: unnecessary qualification
+   --> crates/prism-io/src/streaming.rs:426:43
+    |
+426 |             let data_size = atoms.len() * std::mem::size_of::<crate::sovereign_types::Atom>();
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+426 -             let data_size = atoms.len() * std::mem::size_of::<crate::sovereign_types::Atom>();
+426 +             let data_size = atoms.len() * size_of::<crate::sovereign_types::Atom>();
+    |
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:446:17
+    |
+446 | /                 unsafe {
+447 | |                     let result = cudarc::driver::sys::cuMemAllocHost_v2(&mut ptr, data_size);
+448 | |                     if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
+449 | |                         return Err(PrismIoError::CudaError(format!("Pinned host memory allocation failed: {:?}", result)));
+450 | |                     }
+451 | |                 }
+    | |_________________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:457:13
+    |
+457 | /             unsafe {
+458 | |                 std::ptr::copy_nonoverlapping(
+459 | |                     atoms.as_ptr() as *const u8,
+460 | |                     host_ptr,
+461 | |                     data_size
+462 | |                 );
+463 | |             }
+    | |_____________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/streaming.rs:476:16
+    |
+476 |               Ok(unsafe {
+    |  ________________^
+477 | |                 SovereignBuffer::new_from_dma(
+478 | |                     std::ptr::NonNull::new(host_ptr)
+479 | |                         .ok_or_else(|| PrismIoError::CudaError("Invalid host pointer".to_string()))?,
+...   |
+484 | |             })
+    | |_____________^
+
+warning: unused import: `PrismIoError`
+  --> crates/prism-io/src/validation.rs:14:13
+   |
+14 | use crate::{PrismIoError, Result};
+   |             ^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/prism-io/src/warp_parser.rs:15:5
+   |
+15 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `PrismIoError`
+  --> crates/prism-io/src/warp_parser.rs:16:33
+   |
+16 | use crate::{sovereign_types::*, PrismIoError, Result};
+   |                                 ^^^^^^^^^^^^
+
+warning: unused import: `crate::PrismIoError`
+  --> crates/prism-io/src/sovereign_types.rs:13:5
+   |
+13 | use crate::PrismIoError;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: implementation of an `unsafe` trait
+  --> crates/prism-io/src/sovereign_types.rs:35:1
+   |
+35 | unsafe impl Send for SovereignBuffer {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: implementation of an `unsafe` trait
+  --> crates/prism-io/src/sovereign_types.rs:38:1
+   |
+38 | unsafe impl Sync for SovereignBuffer {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: implementation of an `unsafe` method
+  --> crates/prism-io/src/sovereign_types.rs:55:5
+   |
+55 | /     pub(crate) unsafe fn new_from_dma(
+56 | |         ptr: NonNull<u8>,
+57 | |         len: usize,
+58 | |         capacity: usize,
+...  |
+68 | |     }
+   | |_____^
+
+warning: implementation of an `unsafe` method
+  --> crates/prism-io/src/sovereign_types.rs:95:5
+   |
+95 | /     pub unsafe fn as_ptr(&self) -> *const u8 {
+96 | |         self.ptr.as_ptr()
+97 | |     }
+   | |_____^
+
+warning: implementation of an `unsafe` method
+   --> crates/prism-io/src/sovereign_types.rs:104:5
+    |
+104 | /     pub unsafe fn as_mut_ptr(&self) -> *mut u8 {
+105 | |         self.ptr.as_ptr()
+106 | |     }
+    | |_____^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/sovereign_types.rs:113:28
+    |
+113 |           let current_data = unsafe {
+    |  ____________________________^
+114 | |             std::slice::from_raw_parts(self.ptr.as_ptr(), self.len)
+115 | |         };
+    | |_________^
+
+warning: usage of an `unsafe` block
+   --> crates/prism-io/src/sovereign_types.rs:132:9
+    |
+132 | /         unsafe {
+133 | |             std::ptr::write_bytes(self.ptr.as_ptr(), 0, self.capacity);
+...   |
+144 | |         }
+    | |_________^
+
+warning: unnecessary qualification
+   --> crates/prism-io/src/lib.rs:110:11
+    |
+110 | impl From<validation::ValidationError> for PrismIoError {
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+110 - impl From<validation::ValidationError> for PrismIoError {
+110 + impl From<ValidationError> for PrismIoError {
+    |
+
+warning: unnecessary qualification
+   --> crates/prism-io/src/lib.rs:111:18
+    |
+111 |     fn from(err: validation::ValidationError) -> Self {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+111 -     fn from(err: validation::ValidationError) -> Self {
+111 +     fn from(err: ValidationError) -> Self {
+    |
+
+warning: variable does not need to be mutable
+   --> crates/prism-io/src/streaming.rs:163:13
+    |
+163 |         let mut structure = PtbStructure::load(path)?;
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `blocks`
+   --> crates/prism-io/src/warp_parser.rs:119:13
+    |
+119 |         let blocks = (estimated_atoms + threads_per_block - 1) / threads_per_block;
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_blocks`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/prism-io/src/streaming.rs:234:13
+    |
+234 |         let mut buffer = vec![0u8; size];
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: field `device` is never read
+  --> crates/prism-io/src/streaming.rs:37:5
+   |
+34 | pub struct AsyncPinnedStreamer {
+   |            ------------------- field in this struct
+...
+37 |     device: Arc<CudaContext>,
+   |     ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `allocate_pinned_memory` and `parse_atom_line` are never used
+   --> crates/prism-io/src/streaming.rs:232:8
+    |
+ 83 | impl AsyncPinnedStreamer {
+    | ------------------------ methods in this implementation
+...
+232 |     fn allocate_pinned_memory(&self, size: usize) -> Result<Vec<u8>> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+312 |     fn parse_atom_line(
+    |        ^^^^^^^^^^^^^^^
+
+warning: fields `cuda_device` and `parse_kernel` are never read
+  --> crates/prism-io/src/warp_parser.rs:33:5
+   |
+31 | pub struct WarpDriveParser {
+   |            --------------- fields in this struct
+32 |     /// CUDA device for GPU operations (placeholder until API is fixed)
+33 |     cuda_device: *mut std::ffi::c_void,
+   |     ^^^^^^^^^^^
+34 |     /// Compiled CUDA kernel for parallel parsing (placeholder until API is fixed)
+35 |     parse_kernel: *mut std::ffi::c_void,
+   |     ^^^^^^^^^^^^
+
+warning: constant `PTX_SOURCE` is never used
+   --> crates/prism-io/src/warp_parser.rs:279:7
+    |
+279 | const PTX_SOURCE: &str = r#"
+    |       ^^^^^^^^^^
+
+warning: field `source_signature` is never read
+   --> crates/prism-io/src/sovereign_types.rs:160:5
+    |
+150 | pub struct VerifiedProteinData {
+    |            ------------------- field in this struct
+...
+160 |     source_signature: [u8; 32],
+    |     ^^^^^^^^^^^^^^^^
+    |
+    = note: `VerifiedProteinData` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: missing documentation for a struct field
+  --> crates/prism-io/src/holographic.rs:42:5
+   |
+42 |     pub bond_count: u32,                   // 4 bytes
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/prism-io/src/lib.rs:45:9
+   |
+45 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/prism-io/src/holographic.rs:43:5
+   |
+43 |     pub secondary_count: u32,              // 4 bytes
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/prism-io/src/holographic.rs:46:5
+   |
+46 |     pub bonds_offset: u64,                 // 8 bytes
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/prism-io/src/holographic.rs:47:5
+   |
+47 |     pub secondary_offset: u64,             // 8 bytes
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/prism-io/src/holographic.rs:48:5
+   |
+48 |     pub file_size: u64,                    // 8 bytes
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/prism-io/src/holographic.rs:53:5
+   |
+53 |     pub provenance_id: u32,                // 4 bytes (clinical tracking ID)
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> crates/prism-io/src/sovereign_types.rs:295:5
+    |
+295 |     pub const M102_ANTIBODY_PDB_SHA256: &str = "1a2b3c4d5e6f789def0123456789abcdef0123456789abcdef0123456789abcdef";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+   --> crates/prism-io/src/sovereign_types.rs:296:5
+    |
+296 |     pub const HENDRA_G_UNIPROT_SHA256: &str = "9z8y7x6w5v4u3t2s1r0q9p8o7n6m5l4k3j2i1h0g9f8e7d6c5b4a3928171605";
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `prism-io` (lib) generated 54 warnings (run `cargo fix --lib -p prism-io` to apply 15 suggestions)
+warning: unused import: `cudarc::nvrtc::Ptx`
+  --> crates/prism-physics/src/molecular_dynamics.rs:18:5
+   |
+18 | use cudarc::nvrtc::Ptx;
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `AngleParam` and `BondParam`
+  --> crates/prism-physics/src/solvation.rs:14:35
+   |
+14 |     AmberAtomType, AmberTopology, BondParam, AngleParam, LJParam,
+   |                                   ^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `DVector`
+  --> crates/prism-physics/src/gnm.rs:27:25
+   |
+27 | use nalgebra::{DMatrix, DVector, SymmetricEigen};
+   |                         ^^^^^^^
+
+warning: unused import: `std::f32::consts::PI`
+  --> crates/prism-physics/src/secondary_structure.rs:18:5
+   |
+18 | use std::f32::consts::PI;
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/prism-physics/src/tertiary_analysis.rs:22:5
+   |
+22 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SecondaryStructureSummary`
+  --> crates/prism-physics/src/gnm_enhanced.rs:32:82
+   |
+32 | use crate::secondary_structure::{SecondaryStructure, SecondaryStructureAnalyzer, SecondaryStructureSummary};
+   |                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `TertiarySummary`
+  --> crates/prism-physics/src/gnm_enhanced.rs:34:50
+   |
+34 | use crate::tertiary_analysis::{TertiaryAnalyzer, TertiarySummary};
+   |                                                  ^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/prism-physics/src/dynamics_engine.rs:27:5
+   |
+27 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `EnhancedGnmResult`
+  --> crates/prism-physics/src/dynamics_engine.rs:29:59
+   |
+29 | use crate::gnm_enhanced::{EnhancedGnm, EnhancedGnmConfig, EnhancedGnmResult};
+   |                                                           ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `GpuTopology`
+  --> crates/prism-physics/src/dynamics_engine.rs:30:51
+   |
+30 | use crate::amber_ff14sb::{AmberTopology, PdbAtom, GpuTopology};
+   |                                                   ^^^^^^^^^^^
+
+warning: unused import: `AmberSimResult`
+  --> crates/prism-physics/src/dynamics_engine.rs:31:61
+   |
+31 | use crate::amber_dynamics::{AmberSimulator, AmberSimConfig, AmberSimResult};
+   |                                                             ^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+  --> crates/prism-physics/src/molecular_dynamics.rs:88:13
+   |
+88 |         let mut vel = vec![0.0; n * 4];
+   |             ----^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> crates/prism-physics/src/molecular_dynamics.rs:90:13
+   |
+90 |         let mut bias = vec![0.0; n * 4]; 
+   |             ----^^^^
+   |             |
+   |             help: remove this `mut`
+
+warning: unused variable: `tip3p`
+   --> crates/prism-physics/src/solvation.rs:162:13
+    |
+162 |         let tip3p = TIP3PWater::new();
+    |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_tip3p`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `water`
+   --> crates/prism-physics/src/solvation.rs:390:18
+    |
+390 |         for (wi, water) in self.waters.iter().enumerate() {
+    |                  ^^^^^ help: if this is intentional, prefix it with an underscore: `_water`
+
+warning: unused variable: `global_max_rmsf`
+   --> crates/prism-physics/src/pocket_metrics.rs:187:13
+    |
+187 |         let global_max_rmsf = rmsf.iter().cloned().fold(0.0, f64::max);
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_global_max_rmsf`
+
+warning: unused variable: `global_mean`
+   --> crates/prism-physics/src/pocket_metrics.rs:317:13
+    |
+317 |         let global_mean = rmsf.iter().sum::<f64>() / n as f64;
+    |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_global_mean`
+
+warning: unused variable: `i`
+   --> crates/prism-physics/src/pocket_metrics.rs:495:20
+    |
+495 |             .map(|(i, residues)| {
+    |                    ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `rmsf`
+   --> crates/prism-physics/src/pocket_metrics.rs:456:9
+    |
+456 |         rmsf: &[f64],
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_rmsf`
+
+warning: field `init_rng_kernel` is never read
+   --> crates/prism-physics/src/molecular_dynamics.rs:145:5
+    |
+140 | struct HolographicGpuState {
+    |        ------------------- field in this struct
+...
+145 |     init_rng_kernel: cuda_sys::CUfunction,
+    |     ^^^^^^^^^^^^^^^
+    |
+    = note: `HolographicGpuState` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `minimize_energy` is never used
+   --> crates/prism-physics/src/amber_dynamics.rs:314:8
+    |
+164 | impl AmberSimulator {
+    | ------------------- method in this implementation
+...
+314 |     fn minimize_energy(&mut self, max_steps: usize) {
+    |        ^^^^^^^^^^^^^^^
+
+warning: fields `cutoff` and `n_atoms` are never read
+  --> crates/prism-physics/src/gnm_gpu.rs:18:5
+   |
+17 | pub struct GpuGnm {
+   |            ------ fields in this struct
+18 |     cutoff: f64,
+   |     ^^^^^^
+19 |     n_atoms: usize,
+   |     ^^^^^^^
+
+warning: `prism-physics` (lib) generated 22 warnings (run `cargo fix --lib -p prism-physics` to apply 19 suggestions)
+warning: unused import: `ValidationType`
+  --> crates/prism-validation/src/benchmarks.rs:10:23
+   |
+10 |     targets::{Target, ValidationType},
+   |                       ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ComparisonItem`
+ --> crates/prism-validation/src/comparison.rs:6:46
+  |
+6 | use crate::{BenchmarkMetrics, Af3Comparison, ComparisonItem};
+  |                                              ^^^^^^^^^^^^^^
+
+warning: unused imports: `BenchmarkResult` and `BenchmarkSummary`
+ --> crates/prism-validation/src/reports.rs:5:32
+  |
+5 | use crate::{ValidationSummary, BenchmarkResult, BenchmarkSummary};
+  |                                ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::reports::ValidationReport`
+  --> crates/prism-validation/src/pipeline.rs:17:5
+   |
+17 | use crate::reports::ValidationReport;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PathBuf`
+  --> crates/prism-validation/src/pipeline.rs:19:23
+   |
+19 | use std::path::{Path, PathBuf};
+   |                       ^^^^^^^
+
+warning: unused import: `Context`
+  --> crates/prism-validation/src/benchmark_integration.rs:27:22
+   |
+27 | use anyhow::{Result, Context};
+   |                      ^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/prism-validation/src/benchmark_integration.rs:29:5
+   |
+29 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DMatrix` and `DVector`
+  --> crates/prism-validation/src/alphaflow_compat.rs:23:16
+   |
+23 | use nalgebra::{DMatrix, DVector};
+   |                ^^^^^^^  ^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/prism-validation/src/prism_bench.rs:34:5
+   |
+34 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow`
+  --> crates/prism-validation/src/ensemble_pocket_detector.rs:23:14
+   |
+23 | use anyhow::{anyhow, Result};
+   |              ^^^^^^
+
+warning: unused import: `anyhow`
+  --> crates/prism-validation/src/ensemble_pocket_detector_v2.rs:20:14
+   |
+20 | use anyhow::{anyhow, Result};
+   |              ^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+  --> crates/prism-validation/src/hmc_refined_ensemble.rs:37:5
+   |
+37 | use std::collections::HashSet;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AMBER_MAX_EXCLUSIONS`
+  --> crates/prism-validation/src/hmc_refined_ensemble.rs:47:60
+   |
+47 | use prism_gpu::{AmberMegaFusedHmc, build_amber_exclusions, AMBER_MAX_EXCLUSIONS};
+   |                                                            ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/prism-validation/src/prism_zro_cryptic_scorer.rs:42:5
+   |
+42 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `DEFAULT_RESERVOIR_SIZE`
+  --> crates/prism-validation/src/prism_zro_cryptic_scorer.rs:45:55
+   |
+45 | use prism_gpu::{DendriticSNNReservoir, SNN_INPUT_DIM, DEFAULT_RESERVOIR_SIZE};
+   |                                                       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+   --> crates/prism-validation/src/prism_zro_cryptic_scorer.rs:237:9
+    |
+237 |     use std::collections::HashMap;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unnecessary parentheses around closure body
+   --> crates/prism-validation/src/prism_zro_cryptic_scorer.rs:589:22
+    |
+589 |             .map(|i| ((i as f32 * 0.1).sin() * 0.01))
+    |                      ^                             ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+589 -             .map(|i| ((i as f32 * 0.1).sin() * 0.01))
+589 +             .map(|i| (i as f32 * 0.1).sin() * 0.01)
+    |
+
+warning: unused import: `std::path::Path`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:34:5
+   |
+34 | use std::path::Path;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `align_and_compute_displacement`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:40:31
+   |
+40 | use crate::kabsch_alignment::{align_and_compute_displacement, compute_rmsf, align_ensemble};
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ControlStructure` and `CrypticEscapeScore`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:42:52
+   |
+42 |     EscapeResistanceScorer, EscapeResistanceScore, CrypticEscapeScore,
+   |                                                    ^^^^^^^^^^^^^^^^^^
+43 |     control_structures::{ControlStructure, get_control_structure, CONTROL_6VXX, CONTROL_2VWD, M102_4_EPITOPE},
+   |                          ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AnmEnsembleConfigV2` and `AnmEnsembleGeneratorV2`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:45:30
+   |
+45 | use crate::anm_ensemble_v2::{AnmEnsembleGeneratorV2, AnmEnsembleConfigV2};
+   |                              ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AntibodyEpitope` and `validate_against_epitope`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:46:34
+   |
+46 | use crate::antibody_validation::{AntibodyEpitope, validate_against_epitope};
+   |                                  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `TdaGuidedEnsemble`, `TdaGuidedSamplingConfig`, and `VoidFormationScores`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:50:23
+   |
+50 |     TdaGuidedSampler, TdaGuidedSamplingConfig, TdaGuidedEnsemble,
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+51 |     VoidFormationScores, apply_void_formation_boost,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ZroCrypticConfig`, `ZroCrypticScorer`, and `ZroScoringStats`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:56:5
+   |
+56 |     ZroCrypticScorer, ZroCrypticConfig, ResidueFeatures,
+   |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+57 |     apply_zro_scoring, ZroScoringStats,
+   |                        ^^^^^^^^^^^^^^^
+
+warning: unused imports: `HmcRefinedConfig` and `HmcRefinedEnsembleGenerator`
+  --> crates/prism-validation/src/blind_validation_pipeline.rs:62:35
+   |
+62 | use crate::hmc_refined_ensemble::{HmcRefinedEnsembleGenerator, HmcRefinedConfig};
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: unused import: `Context`
+  --> crates/prism-validation/src/oligomer_topology.rs:32:22
+   |
+32 | use anyhow::{Result, Context};
+   |                      ^^^^^^^
+
+warning: unused import: `ChemistryGnmConfig`
+  --> crates/prism-validation/src/cryptic_production.rs:28:50
+   |
+28 | use prism_physics::gnm_chemistry::{ChemistryGnm, ChemistryGnmConfig};
+   |                                                  ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `anyhow::Result`
+  --> crates/prism-validation/src/cryptic_production.rs:30:5
+   |
+30 | use anyhow::Result;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/prism-validation/src/cryptic_site_pilot/pipeline.rs:20:5
+   |
+20 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `VolumeFrame`
+  --> crates/prism-validation/src/cryptic_site_pilot/pipeline.rs:27:29
+   |
+27 | use super::volume_tracker::{VolumeFrame, VolumeTimeSeries, VolumeTracker};
+   |                             ^^^^^^^^^^^
+
+warning: unused import: `VolumeTimeSeries`
+ --> crates/prism-validation/src/cryptic_site_pilot/outputs/html_report.rs:7:67
+  |
+7 | use crate::cryptic_site_pilot::volume_tracker::{VolumeStatistics, VolumeTimeSeries};
+  |                                                                   ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ReplicaDiagnostics`
+  --> crates/prism-validation/src/cryptic_site_pilot/md_cryptic_pipeline.rs:39:63
+   |
+39 |     ReplicaParallelMD, ReplicaParallelConfig, SharedTopology, ReplicaDiagnostics,
+   |                                                               ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MAX_ATOMS`
+  --> crates/prism-validation/src/sampling/paths/nova_path.rs:28:68
+   |
+28 | use prism_gpu::prism_nova::{PrismNova, NovaConfig, NovaStepResult, MAX_ATOMS};
+   |                                                                    ^^^^^^^^^
+
+warning: unused imports: `get_angle_param`, `get_bond_param`, `get_dihedral_params`, and `get_lj_param`
+  --> crates/prism-validation/src/sampling/paths/nova_path.rs:30:59
+   |
+30 | use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_angle_param, get_lj_param, get_dihedral_params};
+   |                                                           ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashSet`
+  --> crates/prism-validation/src/sampling/paths/amber_path.rs:17:5
+   |
+17 | use std::collections::HashSet;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HmcRunResult`
+  --> crates/prism-validation/src/sampling/paths/amber_path.rs:30:54
+   |
+30 | use prism_gpu::amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, build_exclusion_lists};
+   |                                                      ^^^^^^^^^^^^
+
+warning: unused imports: `get_angle_param`, `get_bond_param`, `get_dihedral_params`, and `get_lj_param`
+  --> crates/prism-validation/src/sampling/paths/amber_path.rs:32:59
+   |
+32 | use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_angle_param, get_dihedral_params, get_lj_param};
+   |                                                           ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `SolvationBox` and `SolvationConfig`
+  --> crates/prism-validation/src/sampling/paths/amber_path.rs:36:32
+   |
+36 | use prism_physics::solvation::{SolvationBox, SolvationConfig};
+   |                                ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused import: `SanitizedStructure`
+  --> crates/prism-validation/src/apo_holo_benchmark.rs:34:42
+   |
+34 | use crate::pdb_sanitizer::{sanitize_pdb, SanitizedStructure};
+   |                                          ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Context` and `bail`
+  --> crates/prism-validation/src/chemistry/protonation.rs:43:14
+   |
+43 | use anyhow::{bail, Context, Result};
+   |              ^^^^  ^^^^^^^
+
+warning: unused imports: `CalphaResidue` and `SanitizationStats`
+  --> crates/prism-validation/src/chemistry/protonation.rs:46:63
+   |
+46 | use crate::pdb_sanitizer::{SanitizedAtom, SanitizedStructure, SanitizationStats, CalphaResidue};
+   |                                                               ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/prism-validation/src/prism_bench.rs:444:9
+    |
+444 |     let mut combined: Vec<f64> = rmsf
+    |         ----^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `burial_potential`
+   --> crates/prism-validation/src/ensemble_pocket_detector.rs:320:17
+    |
+320 |             let burial_potential = {
+    |                 ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_burial_potential`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `flexibility`
+   --> crates/prism-validation/src/ensemble_pocket_detector.rs:328:17
+    |
+328 |             let flexibility = rmsf_normalized[i];
+    |                 ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_flexibility`
+
+warning: unused variable: `n`
+   --> crates/prism-validation/src/ensemble_pocket_detector.rs:673:13
+    |
+673 |         let n = ca_coords.len();
+    |             ^ help: if this is intentional, prefix it with an underscore: `_n`
+
+warning: variable does not need to be mutable
+   --> crates/prism-validation/src/ensemble_pocket_detector.rs:765:13
+    |
+765 |         let mut distances_to_centroid: Vec<f64> = ca_coords
+    |             ----^^^^^^^^^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `n_residues`
+   --> crates/prism-validation/src/hmc_refined_ensemble.rs:562:13
+    |
+562 |         let n_residues = start_coords.len();
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_n_residues`
+
+warning: unused variable: `ca_coord`
+   --> crates/prism-validation/src/prism_zro_cryptic_scorer.rs:351:9
+    |
+351 |         ca_coord: [f32; 3],
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ca_coord`
+
+warning: unused variable: `n_residues`
+   --> crates/prism-validation/src/prism_zro_cryptic_scorer.rs:361:13
+    |
+361 |         let n_residues = all_ca_coords.len();
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_n_residues`
+
+warning: unused variable: `n_seqs`
+   --> crates/prism-validation/src/escape_resistance_scorer.rs:792:9
+    |
+792 |     let n_seqs = sequences.len() as f64;
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_n_seqs`
+
+warning: unused variable: `aligned_ensemble`
+   --> crates/prism-validation/src/blind_validation_pipeline.rs:503:14
+    |
+503 |         let (aligned_ensemble, all_displacements) = align_ensemble(reference_coords, &ensemble);
+    |              ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_aligned_ensemble`
+
+warning: variable does not need to be mutable
+    --> crates/prism-validation/src/blind_validation_pipeline.rs:1109:13
+     |
+1109 |         let mut structure_results: Vec<StructureValidationResult> = Vec::new();
+     |             ----^^^^^^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `mean_hydrophobicity`
+   --> crates/prism-validation/src/cryptic_site_pilot/druggability.rs:307:13
+    |
+307 |         let mean_hydrophobicity = hydrophobicity_sum / n_residues as f64;
+    |             ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mean_hydrophobicity`
+
+warning: unused variable: `hydrophobic_set`
+   --> crates/prism-validation/src/cryptic_site_pilot/outputs/csv_outputs.rs:208:9
+    |
+208 |     let hydrophobic_set: std::collections::HashSet<&str> =
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_hydrophobic_set`
+
+warning: unused variable: `cutoff_sq`
+   --> crates/prism-validation/src/cryptic_site_pilot/utils.rs:231:13
+    |
+231 |         let cutoff_sq = cutoff * cutoff;
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cutoff_sq`
+
+warning: unused variable: `replica_idx`
+    --> crates/prism-validation/src/cryptic_site_pilot/md_cryptic_pipeline.rs:1030:14
+     |
+1030 |         for (replica_idx, tracker) in trackers.iter().enumerate() {
+     |              ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_replica_idx`
+
+warning: unused variable: `n_atoms`
+   --> crates/prism-validation/src/sampling/paths/nova_path.rs:390:9
+    |
+390 |     let n_atoms = structure.atoms.len();
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_n_atoms`
+
+warning: unused variable: `prev2_pos`
+    --> crates/prism-validation/src/chemistry/protonation.rs:1257:9
+     |
+1257 |         prev2_pos: Option<[f32; 3]>,
+     |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_prev2_pos`
+
+warning: methods `compute_rmsf_correlation` and `compute_pc_overlap` are never used
+  --> crates/prism-validation/src/benchmarks.rs:37:8
+   |
+30 | impl AtlasBenchmark {
+   | ------------------- methods in this implementation
+...
+37 |     fn compute_rmsf_correlation(&self, simulated: &[f32], experimental: &[f32]) -> f64 {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+65 |     fn compute_pc_overlap(&self, simulated: &[Vec<f32>], experimental: &[Vec<f32>]) -> f64 {
+   |        ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `detect_pockets_ca_only` is never used
+   --> crates/prism-validation/src/ensemble_pocket_detector.rs:728:8
+    |
+197 | impl EnsemblePocketDetector {
+    | --------------------------- method in this implementation
+...
+728 |     fn detect_pockets_ca_only(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `residue_volume` is never used
+  --> crates/prism-validation/src/cryptic_site_pilot/druggability.rs:88:4
+   |
+88 | fn residue_volume(residue: &str) -> f64 {
+   |    ^^^^^^^^^^^^^^
+
+warning: field `config` is never read
+  --> crates/prism-validation/src/tda_guided_sampling.rs:13:5
+   |
+12 | pub struct TdaGuidedSampler {
+   |            ---------------- field in this struct
+13 |     config: TdaGuidedSamplingConfig,
+   |     ^^^^^^
+
+warning: constant `GAMMA_EQUILIBRATION` is never used
+  --> crates/prism-validation/src/sampling/paths/amber_path.rs:66:7
+   |
+66 | const GAMMA_EQUILIBRATION: f32 = 0.01;
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: `prism-validation` (lib) generated 63 warnings (run `cargo fix --lib -p prism-validation` to apply 58 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running `/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/target/release/prism-cryptic detect --topology data/validation_benchmark/1BTL_hmr_topology.json --output-dir results/implicit_solvent_v2 --frames 50 --accelerated -v`
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         PRISM-CRYPTIC v1.0.0                                 ║
+║           Official Cryptic Binding Site Detection Module                      ║
+║                                                                              ║
+║     GPU-Accelerated Langevin MD + Jaccard Pocket Tracking                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Error: Topology file not found: data/validation_benchmark/1BTL_hmr_topology.json
+
+Hint: First run:
+  prism-prep input.pdb data/validation_benchmark/1BTL_hmr_topology.json --use-amber --mode cryptic --strict

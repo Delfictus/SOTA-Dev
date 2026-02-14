@@ -1,0 +1,44 @@
+[package]
+name = "prism-ontology"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Core dependencies
+prism-core = { workspace = true }
+prism-gpu = { workspace = true }
+
+# Async & error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Graph processing
+petgraph = { workspace = true }
+
+# Math & scientific
+nalgebra = { workspace = true }
+ndarray = { workspace = true }
+rand = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# GPU
+cudarc = { workspace = true, optional = true }
+
+[features]
+default = []
+cuda = ["cudarc", "prism-gpu/cuda"]
+
+[dev-dependencies]
+criterion = "0.5"
+tokio = { workspace = true, features = ["test-util"] }

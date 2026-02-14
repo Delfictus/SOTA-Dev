@@ -1,0 +1,13 @@
+[package]
+name = "prism-escape-extract"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "prism-escape-extract"
+path = "src/main.rs"
+
+[dependencies]
+prism-gpu = { path = "../prism-gpu" }
+cudarc = { workspace = true }
+anyhow = "1.0"

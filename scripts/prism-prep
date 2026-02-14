@@ -1,0 +1,862 @@
+#!/usr/bin/env python3
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              PRISM-PREP v1.2.0                               ║
+║            The Official PRISM4D PDB Preprocessing Pipeline                   ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  THIS IS THE ONLY TOOL YOU SHOULD USE FOR PDB PREPARATION.                   ║
+║  All other preprocessing scripts are internal components.                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Complete preprocessing pipeline for PRISM4D molecular dynamics:
+  1. Smart routing analysis (chain contacts, disulfides, H-bonds)
+  2. Glycan detection and handling
+  3. Sanitization with optional AMBER reduce for hydrogen optimization
+  4. AMBER ff14SB topology generation with GB radii
+  5. MANDATORY validation before output (production quality gate)
+
+Usage:
+    prism-prep input.pdb output_topology.json
+    prism-prep input.pdb output_topology.json --use-amber
+    prism-prep input.pdb output_topology.json --strict
+    prism-prep --batch manifest.txt --output-dir prepared/
+    prism-prep --check-deps  # Verify all dependencies
+
+Output:
+    - topology.json: Complete AMBER ff14SB topology for PRISM GPU kernels
+    - Validation report in stdout (must pass for production use)
+
+Dependencies:
+    - Python 3.8+
+    - OpenMM (conda install -c conda-forge openmm)
+    - PDBFixer (conda install -c conda-forge pdbfixer)
+    - Optional: AMBER reduce for optimized H-placement
+"""
+
+import os
+import sys
+import json
+import argparse
+import subprocess
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+from typing import Optional, List, Dict, Tuple, Any
+
+# =============================================================================
+# SELF-LOCATION AND PATH RESOLUTION
+# =============================================================================
+
+def get_script_dir() -> Path:
+    """Get the directory containing this script, resolving symlinks."""
+    script_path = Path(__file__).resolve()
+    return script_path.parent
+
+
+def get_prism_root() -> Path:
+    """Get the PRISM4D root directory (parent of scripts/)."""
+    return get_script_dir().parent
+
+
+# Resolve paths at module load time
+SCRIPT_DIR = get_script_dir()
+PRISM_ROOT = get_prism_root()
+VERSION = "1.3.0"  # Added aromatic target detection for UV pump
+
+# Required helper scripts (relative to SCRIPT_DIR)
+REQUIRED_SCRIPTS = [
+    "multichain_preprocessor.py",
+    "stage1_sanitize.py",
+    "stage1_sanitize_hybrid.py",
+    "stage2_topology.py",
+    "verify_topology.py",
+    "glycan_preprocessor.py",
+    "combine_chain_topologies.py",
+]
+
+# Known conda environments with scientific Python packages
+CONDA_ENV_NAMES = ['ambertools', 'amber', 'mdtools', 'openmm', 'base']
+
+# =============================================================================
+# DEPENDENCY MANAGEMENT
+# =============================================================================
+
+class DependencyError(Exception):
+    """Raised when a required dependency is missing."""
+    pass
+
+
+def find_conda_python() -> Optional[Path]:
+    """
+    Find a Python interpreter with OpenMM installed.
+
+    Search order:
+    1. Current Python (if OpenMM is importable)
+    2. CONDA_PREFIX environment
+    3. Base conda environment
+    4. Named conda environments
+    """
+    # Check current Python first
+    try:
+        import openmm
+        return Path(sys.executable)
+    except ImportError:
+        pass
+
+    # Check CONDA_PREFIX
+    conda_prefix = os.environ.get('CONDA_PREFIX')
+    if conda_prefix:
+        python_path = Path(conda_prefix) / 'bin' / 'python'
+        if python_path.exists() and _check_openmm(python_path):
+            return python_path
+
+    # Search common conda locations
+    home = Path.home()
+    conda_bases = [
+        home / 'miniconda3',
+        home / 'anaconda3',
+        home / 'mambaforge',
+        Path('/opt/conda'),
+        Path('/usr/local/conda'),
+    ]
+
+    for conda_base in conda_bases:
+        if not conda_base.exists():
+            continue
+
+        # Check base environment
+        base_python = conda_base / 'bin' / 'python'
+        if base_python.exists() and _check_openmm(base_python):
+            return base_python
+
+        # Check named environments
+        envs_dir = conda_base / 'envs'
+        if envs_dir.exists():
+            for env_name in CONDA_ENV_NAMES:
+                python_path = envs_dir / env_name / 'bin' / 'python'
+                if python_path.exists() and _check_openmm(python_path):
+                    return python_path
+
+    return None
+
+
+def _check_openmm(python_path: Path) -> bool:
+    """Check if a Python interpreter has OpenMM installed."""
+    try:
+        result = subprocess.run(
+            [str(python_path), '-c', 'import openmm; print("ok")'],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0 and 'ok' in result.stdout
+    except:
+        return False
+
+
+def find_amber_reduce() -> Optional[Path]:
+    """Find the AMBER reduce executable for hydrogen optimization."""
+    # Check PATH
+    try:
+        result = subprocess.run(['which', 'reduce'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+    except:
+        pass
+
+    # Check conda environments
+    home = Path.home()
+    for conda_base in [home / 'miniconda3', home / 'anaconda3', Path('/opt/conda')]:
+        if not conda_base.exists():
+            continue
+
+        # Check base
+        reduce_path = conda_base / 'bin' / 'reduce'
+        if reduce_path.exists():
+            return reduce_path
+
+        # Check envs
+        envs_dir = conda_base / 'envs'
+        if envs_dir.exists():
+            for env_name in ['ambertools', 'amber']:
+                reduce_path = envs_dir / env_name / 'bin' / 'reduce'
+                if reduce_path.exists():
+                    return reduce_path
+
+    return None
+
+
+def check_all_dependencies(verbose: bool = False) -> Dict[str, Any]:
+    """
+    Check all required dependencies and return status.
+
+    Returns dict with:
+        - 'ready': bool - True if all required deps are available
+        - 'python': Path or None - Python with OpenMM
+        - 'openmm': str - version or 'not found'
+        - 'pdbfixer': bool
+        - 'reduce': Path or None
+        - 'scripts': List[str] - missing scripts
+        - 'errors': List[str] - error messages
+    """
+    status = {
+        'ready': True,
+        'python': None,
+        'openmm': 'not found',
+        'pdbfixer': False,
+        'reduce': None,
+        'scripts': [],
+        'errors': [],
+    }
+
+    # Find Python with OpenMM
+    python_path = find_conda_python()
+    if python_path:
+        status['python'] = python_path
+        # Get OpenMM version
+        try:
+            result = subprocess.run(
+                [str(python_path), '-c', 'import openmm; print(openmm.version.version)'],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                status['openmm'] = result.stdout.strip()
+        except:
+            pass
+
+        # Check PDBFixer
+        try:
+            result = subprocess.run(
+                [str(python_path), '-c', 'from pdbfixer import PDBFixer; print("ok")'],
+                capture_output=True, text=True, timeout=10
+            )
+            status['pdbfixer'] = result.returncode == 0
+        except:
+            pass
+    else:
+        status['ready'] = False
+        status['errors'].append("OpenMM not found. Install with: conda install -c conda-forge openmm pdbfixer")
+
+    if not status['pdbfixer']:
+        status['ready'] = False
+        status['errors'].append("PDBFixer not found. Install with: conda install -c conda-forge pdbfixer")
+
+    # Check AMBER reduce (optional)
+    status['reduce'] = find_amber_reduce()
+
+    # Check helper scripts
+    for script_name in REQUIRED_SCRIPTS:
+        script_path = SCRIPT_DIR / script_name
+        if not script_path.exists():
+            status['scripts'].append(script_name)
+            status['ready'] = False
+            status['errors'].append(f"Missing script: {script_path}")
+
+    if verbose:
+        print("\n=== PRISM-PREP Dependency Check ===")
+        print(f"  Script directory: {SCRIPT_DIR}")
+        print(f"  PRISM root: {PRISM_ROOT}")
+        print(f"  Python (OpenMM): {status['python'] or 'NOT FOUND'}")
+        print(f"  OpenMM version: {status['openmm']}")
+        print(f"  PDBFixer: {'✓' if status['pdbfixer'] else '✗ NOT FOUND'}")
+        print(f"  AMBER reduce: {status['reduce'] or 'not found (optional)'}")
+        if status['scripts']:
+            print(f"  Missing scripts: {', '.join(status['scripts'])}")
+        print(f"  Status: {'✓ READY' if status['ready'] else '✗ NOT READY'}")
+        if status['errors']:
+            print("\nErrors:")
+            for err in status['errors']:
+                print(f"  - {err}")
+        print()
+
+    return status
+
+
+# Cache the dependency check
+_DEPS_CACHE: Optional[Dict] = None
+
+
+def get_deps() -> Dict:
+    """Get cached dependency status."""
+    global _DEPS_CACHE
+    if _DEPS_CACHE is None:
+        _DEPS_CACHE = check_all_dependencies(verbose=False)
+    return _DEPS_CACHE
+
+
+def require_deps():
+    """Raise error if dependencies are not met."""
+    deps = get_deps()
+    if not deps['ready']:
+        raise DependencyError("\n".join(deps['errors']))
+
+
+# =============================================================================
+# SCRIPT EXECUTION
+# =============================================================================
+
+def run_script(
+    script_name: str,
+    args: List[str],
+    verbose: bool = False,
+    description: str = "",
+    timeout: int = 600,
+) -> Tuple[bool, str, str]:
+    """
+    Run a helper script with the correct Python interpreter.
+
+    Args:
+        script_name: Name of script in SCRIPT_DIR
+        args: Command line arguments
+        verbose: Print progress
+        description: Human-readable description
+        timeout: Timeout in seconds
+
+    Returns: (success, stdout, stderr)
+    """
+    script_path = SCRIPT_DIR / script_name
+
+    if not script_path.exists():
+        return False, "", f"Script not found: {script_path}"
+
+    # Use the OpenMM Python interpreter
+    deps = get_deps()
+    python_exe = str(deps['python']) if deps['python'] else sys.executable
+
+    cmd = [python_exe, str(script_path)] + args
+
+    if verbose:
+        print(f"  Running: {description or script_name}...", end=" ", flush=True)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(SCRIPT_DIR),  # Run from script directory
+        )
+
+        if result.returncode == 0:
+            if verbose:
+                print("OK")
+            return True, result.stdout, result.stderr
+        else:
+            if verbose:
+                print("FAILED")
+            return False, result.stdout, result.stderr
+
+    except subprocess.TimeoutExpired:
+        if verbose:
+            print("TIMEOUT")
+        return False, "", f"Script timed out after {timeout} seconds"
+    except Exception as e:
+        if verbose:
+            print(f"ERROR: {e}")
+        return False, "", str(e)
+
+
+# =============================================================================
+# VALIDATION (MANDATORY FINAL STEP)
+# =============================================================================
+
+def validate_topology(
+    topology_path: Path,
+    strict: bool = False,
+    verbose: bool = False,
+) -> Tuple[bool, Dict[str, Any]]:
+    """
+    Validate a topology file for production readiness.
+
+    This is the MANDATORY final step before output is accepted.
+
+    Returns: (passed, details_dict)
+    """
+    if not topology_path.exists():
+        return False, {'error': f"Topology file not found: {topology_path}"}
+
+    # Run verify_topology.py
+    verify_args = [str(topology_path)]
+    if not verbose:
+        verify_args.append("-q")
+
+    success, stdout, stderr = run_script(
+        "verify_topology.py",
+        verify_args,
+        verbose=verbose,
+        description="Production validation"
+    )
+
+    # Parse results
+    details = {
+        'passed': False,
+        'checks': {},
+        'warnings': [],
+        'errors': [],
+    }
+
+    # Parse verification output
+    for line in stdout.split('\n'):
+        if 'PRODUCTION READY' in line and '✅' in line:
+            details['passed'] = True
+        elif 'NEEDS ATTENTION' in line:
+            details['passed'] = False
+        elif '✅' in line and ':' not in line[:3]:
+            # Passed check
+            check_name = line.strip().replace('✅', '').strip()
+            details['checks'][check_name] = True
+        elif '❌' in line:
+            # Failed check
+            check_name = line.strip().replace('❌', '').strip()
+            details['checks'][check_name] = False
+            details['errors'].append(check_name)
+        elif 'Atoms:' in line and ':' in line:
+            try:
+                details['n_atoms'] = int(line.split(':')[1].strip().replace(',', ''))
+            except:
+                pass
+        elif 'GB radii' in line and '✅' in line:
+            details['has_gb_radii'] = True
+        elif 'GB radii' in line and '❌' in line:
+            details['has_gb_radii'] = False
+            details['errors'].append("Missing GB radii (required for implicit solvent)")
+
+    # In strict mode, any warning is a failure
+    if strict and details['errors']:
+        details['passed'] = False
+
+    return details['passed'], details
+
+
+# =============================================================================
+# MAIN PROCESSING PIPELINE
+# =============================================================================
+
+def process_single(
+    input_pdb: Path,
+    output_topology: Path,
+    mode: str = "cryptic",
+    use_amber: bool = False,
+    strict: bool = False,
+    verbose: bool = False,
+    keep_work: bool = False,
+    hmr: bool = False,
+) -> Dict[str, Any]:
+    """
+    Process a single PDB file through the complete pipeline.
+
+    Pipeline stages:
+    1. Smart routing (multichain_preprocessor.py)
+    2. Sanitization (PDBFixer + optional reduce)
+    3. Topology generation (AMBER ff14SB)
+    4. MANDATORY validation (must pass for success)
+
+    Returns a result dict with status and details.
+    """
+    result = {
+        'input': str(input_pdb),
+        'output': str(output_topology),
+        'success': False,
+        'validation_passed': False,
+        'routing': None,
+        'stages_completed': [],
+        'warnings': [],
+        'errors': [],
+        'stats': {},
+        'elapsed_seconds': 0,
+    }
+
+    start_time = datetime.now()
+
+    # Validate input
+    if not input_pdb.exists():
+        result['errors'].append(f"Input file not found: {input_pdb}")
+        return result
+
+    # Ensure output directory exists
+    output_topology.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create work directory
+    work_dir = tempfile.mkdtemp(prefix=f"prism_prep_{input_pdb.stem}_")
+
+    try:
+        if verbose:
+            print(f"\nProcessing: {input_pdb}")
+            print(f"  Work directory: {work_dir}")
+
+        # =====================================================================
+        # STAGE 1: Smart routing + preprocessing
+        # =====================================================================
+        multichain_args = [
+            str(input_pdb.resolve()),  # Use absolute path
+            str(output_topology.resolve()),
+            "--mode", mode,
+            "--work-dir", work_dir,
+        ]
+
+        if use_amber:
+            multichain_args.append("--use-amber")
+
+        if hmr:
+            multichain_args.append("--hmr")
+
+        if not verbose:
+            multichain_args.append("-q")
+
+        success, stdout, stderr = run_script(
+            "multichain_preprocessor.py",
+            multichain_args,
+            verbose=verbose,
+            description="Smart routing + preprocessing",
+            timeout=600,
+        )
+
+        if not success:
+            result['errors'].append(f"Preprocessing failed: {stderr.strip()}")
+            return result
+
+        result['stages_completed'].append('preprocessing')
+
+        # Parse routing info
+        for line in stdout.split('\n'):
+            if 'Routing:' in line:
+                parts = line.split('Routing:')
+                if len(parts) > 1:
+                    result['routing'] = parts[1].strip().split()[0]
+
+        # =====================================================================
+        # STAGE 2: MANDATORY VALIDATION
+        # =====================================================================
+        if not output_topology.exists():
+            result['errors'].append(f"Topology not created: {output_topology}")
+            return result
+
+        validation_passed, validation_details = validate_topology(
+            output_topology,
+            strict=strict,
+            verbose=verbose,
+        )
+
+        result['validation_passed'] = validation_passed
+        result['validation_details'] = validation_details
+        result['stages_completed'].append('validation')
+
+        if not validation_passed:
+            if strict:
+                result['errors'].append("Validation failed (strict mode)")
+                result['errors'].extend(validation_details.get('errors', []))
+                # In strict mode, delete the output
+                if output_topology.exists():
+                    output_topology.unlink()
+                return result
+            else:
+                result['warnings'].append("Validation warnings (see details)")
+                result['warnings'].extend(validation_details.get('errors', []))
+
+        # =====================================================================
+        # SUCCESS: Extract final stats
+        # =====================================================================
+        result['success'] = True
+
+        try:
+            with open(output_topology) as f:
+                topo = json.load(f)
+            result['stats'] = {
+                'n_atoms': topo.get('n_atoms', 0),
+                'n_residues': topo.get('n_residues', 0),
+                'n_chains': topo.get('n_chains', 0),
+                'n_bonds': len(topo.get('bonds', [])),
+                'n_angles': len(topo.get('angles', [])),
+                'n_dihedrals': len(topo.get('dihedrals', [])),
+                'has_gb_radii': len(topo.get('gb_radii', [])) > 0,
+            }
+
+            # Calculate net charge
+            charges = topo.get('charges', [])
+            if charges:
+                result['stats']['net_charge'] = round(sum(charges))
+        except Exception as e:
+            result['warnings'].append(f"Could not read topology stats: {e}")
+
+    finally:
+        # Cleanup
+        if not keep_work and os.path.exists(work_dir):
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+        result['elapsed_seconds'] = (datetime.now() - start_time).total_seconds()
+
+    return result
+
+
+def process_batch(
+    manifest_file: Path,
+    output_dir: Path,
+    mode: str = "cryptic",
+    use_amber: bool = False,
+    strict: bool = False,
+    verbose: bool = False,
+    keep_work: bool = False,
+    hmr: bool = False,
+) -> Dict[str, Any]:
+    """
+    Process multiple PDB files from a manifest.
+
+    Manifest format (one per line):
+        input.pdb [output_name]
+
+    Returns batch results.
+    """
+    results = {
+        'total': 0,
+        'success': 0,
+        'failed': 0,
+        'validation_passed': 0,
+        'items': [],
+    }
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Parse manifest
+    with open(manifest_file) as f:
+        lines = [l.strip() for l in f if l.strip() and not l.startswith('#')]
+
+    results['total'] = len(lines)
+
+    for i, line in enumerate(lines, 1):
+        parts = line.split()
+        input_pdb = Path(parts[0])
+
+        if len(parts) > 1:
+            output_name = parts[1]
+        else:
+            output_name = f"{input_pdb.stem}_topology.json"
+
+        output_topology = output_dir / output_name
+
+        if verbose:
+            print(f"\n[{i}/{results['total']}] {input_pdb.name}")
+
+        result = process_single(
+            input_pdb,
+            output_topology,
+            mode=mode,
+            use_amber=use_amber,
+            strict=strict,
+            verbose=verbose,
+            keep_work=keep_work,
+            hmr=hmr,
+        )
+
+        results['items'].append(result)
+
+        if result['success']:
+            results['success'] += 1
+            if result['validation_passed']:
+                results['validation_passed'] += 1
+        else:
+            results['failed'] += 1
+
+    return results
+
+
+# =============================================================================
+# OUTPUT FORMATTING
+# =============================================================================
+
+def print_banner():
+    """Print the PRISM-PREP banner."""
+    print(f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              PRISM-PREP v{VERSION}                                 ║
+║            The Official PRISM4D PDB Preprocessing Pipeline                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+""")
+
+
+def print_result(result: Dict[str, Any], verbose: bool = False):
+    """Print processing result."""
+    if result['success']:
+        print(f"\n{'='*60}")
+        if result['validation_passed']:
+            print(f"✓ Success: {result['output']}")
+        else:
+            print(f"⚠ Success with warnings: {result['output']}")
+        print(f"{'='*60}")
+
+        stats = result.get('stats', {})
+        if stats:
+            print(f"  Atoms: {stats.get('n_atoms', 'N/A'):,}")
+            print(f"  Residues: {stats.get('n_residues', 'N/A'):,}")
+            print(f"  Bonds: {stats.get('n_bonds', 'N/A'):,}")
+            print(f"  Angles: {stats.get('n_angles', 'N/A'):,}")
+            print(f"  Dihedrals: {stats.get('n_dihedrals', 'N/A'):,}")
+            if 'net_charge' in stats:
+                print(f"  Net charge: {stats['net_charge']:+d} e")
+            print(f"  GB radii: {'✓' if stats.get('has_gb_radii') else '✗ MISSING'}")
+
+        if result['validation_passed']:
+            print(f"  Validation: ✅ PRODUCTION READY")
+        else:
+            print(f"  Validation: ⚠️ WARNINGS (review recommended)")
+
+        print(f"  Elapsed: {result['elapsed_seconds']:.1f}s")
+
+        if result.get('warnings'):
+            print(f"\n  Warnings:")
+            for w in result['warnings'][:5]:
+                print(f"    - {w}")
+    else:
+        print(f"\n{'='*60}")
+        print(f"✗ Failed: {result['input']}")
+        print(f"{'='*60}")
+        for e in result.get('errors', ['Unknown error']):
+            print(f"  Error: {e}")
+
+
+def print_batch_summary(results: Dict[str, Any]):
+    """Print batch processing summary."""
+    print(f"\n{'='*60}")
+    print("BATCH SUMMARY")
+    print(f"{'='*60}")
+    print(f"  Total: {results['total']}")
+    print(f"  Success: {results['success']}")
+    print(f"  Validation passed: {results['validation_passed']}")
+    print(f"  Failed: {results['failed']}")
+
+    if results['failed'] > 0:
+        print(f"\nFailed items:")
+        for item in results['items']:
+            if not item['success']:
+                print(f"  - {item['input']}")
+                for e in item.get('errors', [])[:2]:
+                    print(f"      {e}")
+
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="PRISM-PREP: Official PRISM4D PDB Preprocessing Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    prism-prep input.pdb output.json              # Basic processing
+    prism-prep input.pdb output.json --use-amber  # High-quality H-placement
+    prism-prep input.pdb output.json --strict     # Strict validation
+    prism-prep --batch manifest.txt -o prepared/  # Batch processing
+    prism-prep --check-deps                       # Check dependencies
+
+Output includes mandatory validation. Topologies must pass all checks
+for production use with PRISM4D GPU kernels.
+        """
+    )
+
+    # Input/output
+    parser.add_argument('input', nargs='?', help='Input PDB file')
+    parser.add_argument('output', nargs='?', help='Output topology JSON file')
+
+    # Batch mode
+    parser.add_argument('--batch', '-b', metavar='FILE',
+                        help='Process multiple PDBs from manifest file')
+    parser.add_argument('--output-dir', '-o', metavar='DIR',
+                        help='Output directory for batch mode')
+
+    # Processing options
+    parser.add_argument('--mode', '-m', choices=['cryptic', 'escape', 'auto'],
+                        default='cryptic', help='Processing mode (default: cryptic)')
+    parser.add_argument('--use-amber', '-a', action='store_true',
+                        help='Use AMBER reduce for optimized H-placement')
+    parser.add_argument('--strict', '-s', action='store_true',
+                        help='Strict validation (fail on any warning)')
+    parser.add_argument('--hmr', action='store_true',
+                        help='Apply Hydrogen Mass Repartitioning for 4 fs timestep (2x speedup)')
+
+    # Output control
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Verbose output')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Minimal output')
+    parser.add_argument('--keep-work', '-k', action='store_true',
+                        help='Keep work directory for debugging')
+
+    # Utility
+    parser.add_argument('--check-deps', action='store_true',
+                        help='Check dependencies and exit')
+    parser.add_argument('--version', action='version', version=f'prism-prep {VERSION}')
+
+    args = parser.parse_args()
+
+    # Verbose by default unless quiet
+    verbose = args.verbose or (not args.quiet)
+
+    # Check dependencies mode
+    if args.check_deps:
+        check_all_dependencies(verbose=True)
+        deps = get_deps()
+        return 0 if deps['ready'] else 1
+
+    # Print banner
+    if verbose:
+        print_banner()
+
+    # Check dependencies
+    try:
+        require_deps()
+    except DependencyError as e:
+        print(f"\n✗ Dependency error:\n{e}", file=sys.stderr)
+        print("\nRun 'prism-prep --check-deps' for details.", file=sys.stderr)
+        return 1
+
+    # Batch mode
+    if args.batch:
+        manifest = Path(args.batch)
+        if not manifest.exists():
+            print(f"✗ Manifest not found: {manifest}", file=sys.stderr)
+            return 1
+
+        output_dir = Path(args.output_dir) if args.output_dir else Path('prepared')
+
+        results = process_batch(
+            manifest,
+            output_dir,
+            mode=args.mode,
+            use_amber=args.use_amber,
+            strict=args.strict,
+            verbose=verbose,
+            keep_work=args.keep_work,
+            hmr=args.hmr,
+        )
+
+        print_batch_summary(results)
+        return 0 if results['failed'] == 0 else 1
+
+    # Single file mode
+    if not args.input or not args.output:
+        parser.print_help()
+        return 1
+
+    input_pdb = Path(args.input)
+    output_topology = Path(args.output)
+
+    result = process_single(
+        input_pdb,
+        output_topology,
+        mode=args.mode,
+        use_amber=args.use_amber,
+        strict=args.strict,
+        verbose=verbose,
+        keep_work=args.keep_work,
+        hmr=args.hmr,
+    )
+
+    print_result(result, verbose=verbose)
+
+    if result['success']:
+        return 0
+    else:
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

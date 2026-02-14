@@ -1,0 +1,227 @@
+[package]
+name = "prism-validation"
+version = "0.1.0"
+edition = "2021"
+description = "PRISM-4D validation framework for dynamics and cryptic pocket benchmarks"
+authors = ["PRISM Team"]
+
+[dependencies]
+# GPU dependencies - optional for curation-only builds
+prism-gpu = { path = "../prism-gpu", optional = true }
+prism-core = { path = "../prism-core", optional = true }
+prism-physics = { path = "../prism-physics", optional = true }
+# prism-lbs removed due to broken prism-whcr dependency chain
+# Using self-contained Shrake-Rupley SASA implementation instead
+cudarc = { version = "0.18.2", optional = true }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+
+# Async and error handling
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+
+# Numerics
+nalgebra = "0.32"
+ndarray = "0.15"
+statrs = "0.16"
+
+# Random number generation (for ANM ensemble sampling)
+rand = "0.8"
+rand_distr = "0.4"
+
+# Parallel processing
+rayon = "1.8"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Cryptographic hashing
+blake3 = "1.5"
+
+# HTTP client for PDB downloads
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+
+# File handling
+glob = "0.3"
+walkdir = "2.4"
+
+# Progress bars
+indicatif = "0.17"
+
+[features]
+default = []
+cuda = ["prism-gpu/cuda", "prism-gpu", "prism-physics/cuda", "cudarc"]
+full = ["prism-gpu", "prism-core", "prism-physics", "cudarc"]
+simulation = ["prism-gpu", "prism-physics", "prism-physics/cuda", "cudarc"]
+# Production-quality cryptic site detection using prism-physics CA-GNM
+# Self-contained implementation (no prism-lbs dependency to avoid broken whcr chain)
+cryptic = ["prism-physics"]
+# GPU-accelerated cryptic detection (requires CUDA)
+# Includes cryptic feature for HMC refinement + GPU for ZrO scoring
+# NOTE: Includes 'cuda' feature to enable GPU mega-fused HMC kernel
+cryptic-gpu = ["cryptic", "cuda", "prism-physics/cuda", "prism-gpu/cuda", "prism-gpu", "cudarc"]
+
+[[bin]]
+name = "prism-validate"
+path = "src/bin/validate.rs"
+
+[[bin]]
+name = "prism-curate"
+path = "src/bin/curate.rs"
+
+[[bin]]
+name = "prism-run-validation"
+path = "src/bin/run_validation.rs"
+
+[[bin]]
+name = "prism-validate-physics"
+path = "src/bin/validate_with_physics.rs"
+required-features = ["simulation"]
+
+[[bin]]
+name = "prism-atlas"
+path = "src/bin/run_atlas.rs"
+
+[[bin]]
+name = "prism-bench"
+path = "src/bin/run_prism_bench.rs"
+
+[[bin]]
+name = "prism-bench-real"
+path = "src/bin/run_prism_bench_real.rs"
+required-features = ["simulation"]
+
+[[bin]]
+name = "run-dynamics-bench"
+path = "src/bin/run_dynamics_bench.rs"
+required-features = ["prism-physics"]
+
+[[bin]]
+name = "acquire-data"
+path = "src/bin/acquire_data.rs"
+
+[[bin]]
+name = "run-heterogeneous-bench"
+path = "src/bin/run_heterogeneous_bench.rs"
+required-features = ["prism-physics"]
+
+[[bin]]
+name = "gnm-ablation"
+path = "src/bin/gnm_ablation.rs"
+required-features = ["prism-physics"]
+
+[[bin]]
+name = "gnm-breakthrough"
+path = "src/bin/gnm_breakthrough.rs"
+
+[[bin]]
+name = "detect-cryptic-sites"
+path = "src/bin/detect_cryptic_sites.rs"
+
+[[bin]]
+name = "cryptic-bench"
+path = "src/bin/cryptic_bench.rs"
+
+[[bin]]
+name = "cryptic-production"
+path = "src/bin/cryptic_production.rs"
+required-features = ["cryptic"]
+
+[[bin]]
+name = "gnm-chemistry-bench"
+path = "src/bin/gnm_chemistry_bench.rs"
+required-features = ["prism-physics"]
+
+[[bin]]
+name = "run-amber-bench"
+path = "src/bin/run_amber_bench.rs"
+required-features = ["prism-physics"]
+
+[[bin]]
+name = "cryptic-benchmark"
+path = "src/bin/cryptic_benchmark.rs"
+required-features = ["cryptic"]
+
+[[bin]]
+name = "download-pocketminer"
+path = "src/bin/download_pocketminer.rs"
+
+[[bin]]
+name = "cryptic-benchmark-ensemble"
+path = "src/bin/cryptic_benchmark_ensemble.rs"
+
+[[bin]]
+name = "cryptic-benchmark-v2"
+path = "src/bin/cryptic_benchmark_v2.rs"
+required-features = ["cryptic-gpu"]
+
+[[bin]]
+name = "run-blind-validation"
+path = "src/bin/run_blind_validation.rs"
+
+[[bin]]
+name = "generate-ensemble"
+path = "src/bin/generate_ensemble.rs"
+
+[[bin]]
+name = "generate_ensemble_batch"
+path = "src/bin/generate_ensemble_batch.rs"
+
+[[bin]]
+name = "generate-ensemble-simd"
+path = "src/bin/generate_ensemble_simd.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "analyze_ensemble"
+path = "src/bin/analyze_ensemble.rs"
+
+[[bin]]
+name = "analyze_ensemble_batch"
+path = "src/bin/analyze_ensemble_batch.rs"
+
+[[bin]]
+name = "ensemble_warp_benchmark"
+path = "src/bin/ensemble_warp_benchmark.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "test_1l2y_md"
+path = "src/bin/test_1l2y_md.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "batch_md_test"
+path = "src/bin/batch_md_test.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "md_diagnostic"
+path = "src/bin/md_diagnostic.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "md_comprehensive"
+path = "src/bin/md_comprehensive.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "md-cryptic-pilot"
+path = "src/bin/md_cryptic_pilot.rs"
+required-features = ["cryptic-gpu"]
+
+[[bin]]
+name = "prism-cryptic"
+path = "src/bin/prism_cryptic.rs"
+required-features = ["cryptic-gpu"]

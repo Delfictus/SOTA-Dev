@@ -1,0 +1,107 @@
+# PRISM-4D Pipeline Configuration
+# Usage: python scripts/pipeline/prism_fep_pipeline.py --config pipeline_config.yaml
+
+# ── Project ───────────────────────────────────────────────────────────────
+project_name: "PRISM-4D Campaign"
+target_name: "UNKNOWN"
+pdb_id: "UNKNOWN"
+
+# ── Paths ─────────────────────────────────────────────────────────────────
+# receptor_pdb and output_dir are typically set via CLI --pdb / --output-dir
+receptor_pdb: ""
+output_dir: "results/campaign"
+
+# ── Conda Environments ───────────────────────────────────────────────────
+# Each stage runs in its own conda env via subprocess.
+conda_envs:
+  preprocessing: "prism4d-preprocessing"
+  explicit_solvent: "prism4d-explicit-solvent"
+  genphore_phoregen: "phoregen"
+  genphore_pgmg: "pgmg"
+  filters: "prism4d-preprocessing"       # shares rdkit env
+  ensemble: "prism4d-ensemble"
+  fep: "prism4d-fep"
+
+# ── Stage Toggles ────────────────────────────────────────────────────────
+stages:
+  target_classification: true
+  protein_fixing: true
+  membrane_building: true               # auto-skipped if soluble
+  prism_detection: true
+  pocket_refinement: true                # QC GATE: COLLAPSED → STOP
+  water_map: true
+  pocket_popen: true
+  pharmacophore: true
+  generation: true
+  tautomer_enumeration: true
+  filtering: true
+  docking: true
+  ensemble_scoring: true
+  fep: true                              # set false or use --skip-fep
+  reporting: true
+  audit: true
+
+# ── Preprocessing (WT-5) ────────────────────────────────────────────────
+preprocessing:
+  target_ph: 7.4
+  remove_heterogens: false
+  keep_water: true
+  membrane_force: false                  # force membrane even if classified soluble
+  offline: false                         # skip remote lookups (OPM/UniProt)
+
+# ── Explicit Solvent (WT-6) ──────────────────────────────────────────────
+explicit_solvent:
+  time_ns: 10.0                          # 10 ns MVP, 50 ns publication
+  water_model: "TIP3P"                   # TIP3P | OPC | TIP4P-Ew
+  force_field: "ff14SB"                  # ff14SB | ff19SB | CHARMM36m
+  platform: "CUDA"                       # CUDA | OpenCL | CPU
+
+# ── Generation (WT-1) ───────────────────────────────────────────────────
+generation:
+  n_phoregen: 1000
+  n_pgmg: 10000
+  skip_phoregen: false
+  skip_pgmg: false
+
+# ── Filtering (WT-3) ────────────────────────────────────────────────────
+filtering:
+  top_n: 5
+  qed_min: 0.3
+  sa_max: 6.0
+  tanimoto_max: 0.85
+  min_pharmacophore_matches: 3
+  distance_tolerance: 1.5                # Angstrom
+  diversity_cutoff: 0.4
+
+# ── Docking ──────────────────────────────────────────────────────────────
+docking:
+  engine: "unidock+gnina"
+  exhaustiveness: 32
+  num_modes: 20
+  box_padding: 4.0
+  cnn_scoring: "rescore"
+
+# ── Ensemble Scoring (WT-7) ─────────────────────────────────────────────
+ensemble:
+  snapshot_interval_ps: 100.0
+  block_size: 5                          # block-averaging window
+
+# ── FEP (WT-2) ──────────────────────────────────────────────────────────
+fep:
+  method: "ABFE"
+  n_repeats: 3
+  complex_windows: 42
+  solvent_windows: 31
+  time_ns_per_window: 5.0
+  backend: "dry_run"                     # dry_run | local_gpu | slurm
+  gpu_id: 0
+
+# ── Reporting ────────────────────────────────────────────────────────────
+reporting:
+  generate_per_compound: true
+  generate_campaign_summary: true
+
+# ── Global ───────────────────────────────────────────────────────────────
+random_seed: 42
+verbose: false
+dry_run: false                           # global dry-run for all stages
