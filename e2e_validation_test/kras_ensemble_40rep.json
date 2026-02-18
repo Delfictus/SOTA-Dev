@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-02-11T11:19:54.526300",
+  "gpu_memory_mb": 24000,
+  "replicas": 40,
+  "total_structures": 1,
+  "total_batches": 1,
+  "batches": [
+    {
+      "batch_id": 0,
+      "structures": [
+        {
+          "name": "6epm_kras_sos1",
+          "topology_path": "e2e_validation_test/prep/6epm_complex.topology.json",
+          "atoms": 10403,
+          "residues": 631,
+          "chains": [
+            "K",
+            "S"
+          ],
+          "memory_tier": "large",
+          "estimated_gpu_mb": 200
+        }
+      ],
+      "concurrency": 40,
+      "memory_tier": "large",
+      "estimated_total_gpu_mb": 8000,
+      "replicas_per_structure": 40
+    }
+  ],
+  "execution_order": [
+    "6epm_kras_sos1"
+  ]
+}

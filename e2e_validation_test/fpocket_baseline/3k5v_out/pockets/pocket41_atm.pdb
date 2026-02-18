@@ -1,0 +1,62 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    41:
+HEADER 0  - Pocket Score                      : -0.3522
+HEADER 1  - Drug Score                        : 0.0058
+HEADER 2  - Number of alpha spheres           :    69
+HEADER 3  - Mean alpha-sphere radius          : 4.2595
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4424
+HEADER 5  - Mean B-factor of pocket residues  : 0.3141
+HEADER 6  - Hydrophobicity Score              : 27.3333
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.3333
+HEADER 9  - Pocket volume (Monte Carlo)       : 752.6918
+HEADER 10 - Pocket volume (convex hull)       : 96.4155
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 32.7647
+HEADER 13 - Number of apolar alpha sphere     :    34
+HEADER 14 - Proportion of apolar alpha sphere : 0.4928
+ATOM   3541  NE2 HIS B 394      33.682  29.660  37.673  0.67  1.09           N 0
+ATOM   3218  OE2 GLU B 353      35.725  27.008  40.449  0.00  0.00           O 0
+ATOM   3217  OE1 GLU B 353      35.101  25.031  39.738  0.38  8.57           O 0
+ATOM   3216   CD GLU B 353      35.654  26.138  39.550  0.00  0.00           C 0
+ATOM   3276  CE2 TYR B 361      27.688  33.754  36.907  0.00  0.00           C 0
+ATOM    962   OH TYR A 361      25.478  29.419  43.721  0.00  0.00           O 0
+ATOM    961   CZ TYR A 361      25.003  30.599  44.247  0.00  0.00           C 0
+ATOM    959  CE1 TYR A 361      23.884  31.200  43.668  0.00  0.00           C 0
+ATOM   3250  CG2 VAL B 358      30.796  27.419  36.072  0.00  0.00           C 0
+ATOM   3213    O GLU B 353      33.589  25.441  36.419  0.35  2.14           O 0
+ATOM   3539  CD2 HIS B 394      32.541  30.425  37.637  0.00  0.00           C 0
+ATOM   1223  ND2 ASN A 393      33.074  27.707  45.147  0.00  0.00           N 0
+ATOM   3527    O ASN B 393      31.028  34.103  38.685  0.41  1.07           O 0
+ATOM   1220   CB ASN A 393      31.269  29.046  46.060  0.00  0.00           C 0
+ATOM   3273  CD1 TYR B 361      25.311  32.983  35.702  0.00  0.00           C 0
+ATOM   3274  CD2 TYR B 361      27.647  32.625  36.073  0.00  0.00           C 0
+ATOM   3277   CZ TYR B 361      26.526  34.488  37.117  0.00  0.00           C 0
+ATOM   3275  CE1 TYR B 361      25.342  34.110  36.520  0.00  0.00           C 0
+ATOM   1221   CG ASN A 393      32.740  28.836  45.758  0.00  0.00           C 0
+ATOM   3272   CG TYR B 361      26.461  32.233  35.457  0.00  0.00           C 0
+ATOM   3278   OH TYR B 361      26.546  35.603  37.937  0.00  0.00           O 0
+ATOM    957  CD1 TYR A 361      23.410  32.407  44.178  0.00  0.00           C 0
+ATOM    956   CG TYR A 361      24.004  33.015  45.278  0.00  0.00           C 0
+ATOM    958  CD2 TYR A 361      25.132  32.392  45.855  0.00  0.00           C 0
+ATOM   3530  OD1 ASN B 393      33.734  34.461  42.876  0.54  8.57           O 0
+ATOM   1222  OD1 ASN A 393      33.561  29.666  46.109  0.00  0.00           O 0
+ATOM   3525   CA ASN B 393      33.033  34.419  40.017  0.00  0.00           C 0
+ATOM    960  CE2 TYR A 361      25.632  31.192  45.332  0.00  0.00           C 0
+ATOM   1230  ND1 HIS A 394      29.339  33.374  48.503  0.77  7.66           N 0
+ATOM   1232  CE1 HIS A 394      30.341  34.018  49.080  0.00  0.00           C 0
+ATOM   3531  ND2 ASN B 393      32.663  36.439  42.991  0.00  0.00           N 0
+ATOM   1219    O ASN A 393      28.871  30.086  46.698  0.20  3.21           O 0
+ATOM   1217   CA ASN A 393      31.034  29.472  47.520  0.00  0.00           C 0
+ATOM    934  CG2 VAL A 358      27.829  36.993  49.059  0.00  0.00           C 0
+ATOM    926  CG1 VAL A 357      25.785  39.577  44.749  0.00  0.00           C 0
+ATOM    955   CB TYR A 361      23.497  34.335  45.820  0.00  0.00           C 0
+ATOM   3529   CG ASN B 393      32.907  35.257  42.422  0.00  0.00           C 0
+ATOM   3528   CB ASN B 393      32.123  34.929  41.146  0.00  0.00           C 0
+ATOM    929   CA VAL A 358      25.365  36.860  48.667  0.00  0.00           C 0
+ATOM    924    O VAL A 357      23.854  37.843  46.603  0.46  2.14           O 0
+TER
+END

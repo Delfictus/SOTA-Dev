@@ -1,0 +1,42 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     4:
+HEADER 0  - Pocket Score                      : 0.0973
+HEADER 1  - Drug Score                        : 0.0012
+HEADER 2  - Number of alpha spheres           :    31
+HEADER 3  - Mean alpha-sphere radius          : 3.6768
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4224
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 21.2000
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.3000
+HEADER 9  - Pocket volume (Monte Carlo)       : 137.7845
+HEADER 10 - Pocket volume (convex hull)       : 4.8984
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.2903
+ATOM   3401    N GLN B 506      27.629  68.077 129.585  0.00  0.00           N 0
+ATOM   3400   CB ALA B 505      24.658  69.248 130.021  0.00  0.00           C 0
+ATOM   1348  OG1 THR A 483      22.590  69.868 127.144  0.00  0.00           O 0
+ATOM   3432  CD1 LEU B 509      24.376  64.378 127.887  0.00  0.00           C 0
+ATOM   1324  OD1 ASP A 480      26.911  70.289 124.371  0.50  3.21           O 0
+ATOM   3402   CA GLN B 506      28.566  67.094 129.051  0.00  0.00           C 0
+ATOM   3406   CG GLN B 506      29.324  68.944 127.440  0.00  0.00           C 0
+ATOM   3404    O GLN B 506      29.273  65.098 130.031  0.42  1.07           O 0
+ATOM   3430   CB LEU B 509      25.771  63.111 129.500  0.00  0.00           C 0
+ATOM   1288  ND1 HIS A 476      29.029  64.204 122.990  0.62  3.28           N 0
+ATOM   1316  CD1 LEU A 479      24.794  63.777 123.708  0.00  0.00           C 0
+ATOM   3409  NE2 GLN B 506      29.672  69.881 125.241  0.00  0.00           N 0
+ATOM   2846   NE ARG B 434      31.929  63.746 125.929  0.42  1.09           N 0
+ATOM   1290  CE1 HIS A 476      29.711  63.127 123.367  0.00  0.00           C 0
+ATOM   3405   CB GLN B 506      29.642  67.637 128.122  0.00  0.00           C 0
+ATOM   1314   CB LEU A 479      24.122  66.152 123.331  0.00  0.00           C 0
+ATOM   1313    O LEU A 479      22.541  68.874 124.302  0.00  0.00           O 0
+ATOM   1172   OH TYR A 459      29.680  60.685 127.003  0.30  3.21           O 0
+ATOM   1285    O HIS A 476      26.382  67.893 121.618  0.00  0.00           O 0
+ATOM   1143  ND2 ASN A 455      25.991  60.781 126.797  0.41  2.19           N 0
+TER
+END

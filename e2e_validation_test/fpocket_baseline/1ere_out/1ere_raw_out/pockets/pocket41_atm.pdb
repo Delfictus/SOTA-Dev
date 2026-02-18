@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    41:
+HEADER 0  - Pocket Score                      : -0.0450
+HEADER 1  - Drug Score                        : 0.0005
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.8775
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6058
+HEADER 5  - Mean B-factor of pocket residues  : 0.2582
+HEADER 6  - Hydrophobicity Score              : 14.7000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.7000
+HEADER 9  - Pocket volume (Monte Carlo)       : 231.0623
+HEADER 10 - Pocket volume (convex hull)       : 7.6284
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2500
+ATOM   4174   CG PRO C 365       3.903  42.813 101.550  0.00  0.00           C 0
+ATOM   3767   CB LEU C 306       1.643  40.449 107.031  0.00  0.00           C 0
+ATOM   4173   CB PRO C 365       4.552  41.591 102.187  0.00  0.00           C 0
+ATOM   4170   CA PRO C 365       5.681  42.339 102.907  0.00  0.00           C 0
+ATOM   4154    O ARG C 363       5.238  46.502 102.129  0.68  3.21           O 0
+ATOM   4195   CB VAL C 368       8.839  45.093 108.697  0.00  0.00           C 0
+ATOM   4176    N GLY C 366       7.125  41.223 104.524  0.46  2.19           N 0
+ATOM   4196  CG1 VAL C 368       8.130  44.630 109.922  0.00  0.00           C 0
+ATOM   3763    N LEU C 306       2.873  38.521 108.031  0.34  3.28           N 0
+ATOM   3768    N ALA C 307       3.428  38.710 105.287  0.00  0.00           N 0
+ATOM   4145    O LYS C 362       7.705  47.864 105.734  0.37  8.57           O 0
+ATOM   4165    O VAL C 364       7.960  43.818 103.056  0.00  0.00           O 0
+ATOM   4204  OD1 ASP C 369       7.536  40.253 109.942  0.69  4.29           O 0
+ATOM   4153    C ARG C 363       6.288  47.007 102.539  0.00  0.00           C 0
+ATOM   4152   CA ARG C 363       6.186  48.226 103.427  0.00  0.00           C 0
+ATOM   4205  OD2 ASP C 369       7.883  39.050 108.107  0.86  1.07           O 0
+ATOM   3762   OG SER C 305       6.028  37.662 107.253  0.59  1.07           O 0
+TER
+END

@@ -1,0 +1,49 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    35:
+HEADER 0  - Pocket Score                      : -0.0030
+HEADER 1  - Drug Score                        : 0.0042
+HEADER 2  - Number of alpha spheres           :    35
+HEADER 3  - Mean alpha-sphere radius          : 3.8745
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5217
+HEADER 5  - Mean B-factor of pocket residues  : 0.1703
+HEADER 6  - Hydrophobicity Score              : -14.2727
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 3.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 313.6171
+HEADER 10 - Pocket volume (convex hull)       : 27.5489
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.2000
+ATOM    132    O GLY A  15       0.611  18.828  29.615  0.53  5.36           O 0
+ATOM    130   CA GLY A  15      -0.576  17.853  31.438  0.00  0.00           C 0
+ATOM   3184   CEALYS A 331       3.204  18.183  37.058  0.00  0.00           C 0
+ATOM    169   CB LYS A  18       3.288  22.896  29.510  0.00  0.00           C 0
+ATOM   3186   NZALYS A 331       4.003  19.301  37.605  0.18  6.56           N 0
+ATOM   3991   CD PRO A 417       7.314  23.517  35.790  0.00  0.00           C 0
+ATOM   3985    N PRO A 417       7.311  23.389  34.322  0.00  0.00           N 0
+ATOM   3989   CB PRO A 417       5.760  25.022  34.949  0.00  0.00           C 0
+ATOM   3986   CA PRO A 417       6.372  24.331  33.726  0.00  0.00           C 0
+ATOM   3968   OG SER A 414       6.666  19.382  30.778  0.75  5.36           O 0
+ATOM    160    N GLY A  17      -1.604  20.988  28.818  0.00  0.00           N 0
+ATOM    161   CA GLY A  17      -1.520  22.438  28.760  0.00  0.00           C 0
+ATOM    412  CG2 THR A  42      -4.166  25.336  33.899  0.00  0.00           C 0
+ATOM   3983    O GLY A 416       7.708  22.175  32.463  0.00  0.00           O 0
+ATOM    171   CD LYS A  18       5.795  22.906  29.901  0.00  0.00           C 0
+ATOM   3980    N GLY A 416       9.315  20.446  33.585  0.50  1.09           N 0
+ATOM   3981   CA GLY A 416       8.862  21.518  34.439  0.00  0.00           C 0
+ATOM   3211  OD1 ASP A 333       8.334  16.589  37.160  0.28  2.14           O 0
+ATOM   3182   CDALYS A 331       4.102  16.973  36.815  0.00  0.00           C 0
+ATOM   3170    NALYS A 331       5.527  15.015  34.271  0.00  0.00           N 0
+ATOM   3966    O SER A 414       8.426  17.095  32.142  0.66  1.07           O 0
+ATOM   3165   CB THR A 330       3.779  15.406  31.785  0.00  0.00           C 0
+ATOM   3180   CGALYS A 331       3.358  15.814  36.180  0.00  0.00           C 0
+ATOM   3167  CG2 THR A 330       3.505  15.913  30.360  0.00  0.00           C 0
+ATOM   3982    C GLY A 416       7.924  22.401  33.657  0.00  0.00           C 0
+ATOM    165    N LYS A  18       0.881  22.772  28.978  0.00  0.00           N 0
+ATOM    122    O GLU A  14       0.372  15.292  31.858  0.76  1.07           O 0
+TER
+END

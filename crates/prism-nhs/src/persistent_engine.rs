@@ -2242,6 +2242,8 @@ impl BatchProcessor {
                 uv_burst_duration: 50,
                 scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
                 wavelength_dwell_steps: 500,
+                ramp_down_steps: 0,
+                cold_return_steps: 0,
             };
             self.engine.set_cryo_uv_protocol(cryo_uv_protocol)?;
 

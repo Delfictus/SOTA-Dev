@@ -1,0 +1,60 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    66:
+HEADER 0  - Pocket Score                      : -0.0533
+HEADER 1  - Drug Score                        : 0.5346
+HEADER 2  - Number of alpha spheres           :    54
+HEADER 3  - Mean alpha-sphere radius          : 3.8865
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4279
+HEADER 5  - Mean B-factor of pocket residues  : 0.3000
+HEADER 6  - Hydrophobicity Score              : 8.8462
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.0769
+HEADER 9  - Pocket volume (Monte Carlo)       : 714.9866
+HEADER 10 - Pocket volume (convex hull)       : 147.0178
+HEADER 11 - Charge Score                      :    -3
+HEADER 12 - Local hydrophobic density Score   : 22.8276
+HEADER 13 - Number of apolar alpha sphere     :    29
+HEADER 14 - Proportion of apolar alpha sphere : 0.5370
+ATOM   4222  CD2 LEU B 248       4.267 -11.319  -3.403  0.00  0.00           C 0
+ATOM   4221  CD1 LEU B 248       2.086 -12.467  -2.886  0.00  0.00           C 0
+ATOM   4479  OD2 ASP B 278       3.280 -14.227  -8.914  0.00  8.57           O 0
+ATOM   4478  OD1 ASP B 278       3.005 -16.376  -8.655  0.00  0.00           O 0
+ATOM   4477   CG ASP B 278       2.532 -15.229  -8.804  0.00  0.00           C 0
+ATOM   4819  CG2 THR B 318       1.355 -18.410  -4.912  0.00  0.00           C 0
+ATOM   4476   CB ASP B 278       0.994 -15.038  -8.858  0.00  0.00           C 0
+ATOM   4227    O GLY B 249      -0.086  -7.710  -9.192  0.00  0.00           O 0
+ATOM   4218    O LEU B 248       0.978  -7.916  -5.797  0.00  0.00           O 0
+ATOM   4213  CD2 LEU B 247      -0.075  -5.156  -2.904  0.00  0.00           C 0
+ATOM   5101    O ASP B 346      -6.748  -6.955  -8.775  0.62  3.21           O 0
+ATOM   4230   CA GLY B 250      -0.920 -10.290  -8.710  0.00  0.00           C 0
+ATOM   4219   CB LEU B 248       2.140 -10.475  -4.382  0.00  0.00           C 0
+ATOM   4493   CB SER B 280      -5.281 -15.236  -4.131  0.00  0.00           C 0
+ATOM   4229    N GLY B 250       0.394  -9.760  -8.399  0.00  0.00           N 0
+ATOM   4475    O ASP B 278      -1.753 -15.057  -8.364  0.69  3.21           O 0
+ATOM   4240   CD PRO B 251      -3.193 -11.676 -10.144  0.00  0.00           C 0
+ATOM   4490   CA SER B 280      -4.545 -16.488  -4.614  0.00  0.00           C 0
+ATOM   4473   CA ASP B 278       0.216 -16.373  -8.789  0.00  0.00           C 0
+ATOM   4489    N SER B 280      -4.338 -16.441  -6.058  0.58  3.28           N 0
+ATOM   4483    C VAL B 279      -3.595 -17.351  -6.678  0.00  0.00           C 0
+ATOM   5105  OD2 ASP B 346      -7.687 -11.124  -5.532  0.74  2.14           O 0
+ATOM   4482   CA VAL B 279      -3.443 -17.206  -8.176  0.00  0.00           C 0
+ATOM   4239   CG PRO B 251      -3.768 -12.352 -11.379  0.00  0.00           C 0
+ATOM   4238   CB PRO B 251      -2.993 -13.593 -11.450  0.00  0.00           C 0
+ATOM   5079   CG ASN B 344      -8.618 -12.060 -10.193  0.00  0.00           C 0
+ATOM   5081  ND2 ASN B 344      -7.692 -11.511 -10.958  0.00  0.00           N 0
+ATOM   4546  CG1 VAL B 286      -8.383 -16.357 -11.575  0.00  0.00           C 0
+ATOM   4486  CG1 VAL B 279      -5.712 -18.094  -8.592  0.00  0.00           C 0
+ATOM   4212  CD1 LEU B 247       0.413  -7.223  -1.527  0.00  0.00           C 0
+ATOM   5103   CG ASP B 346      -7.943  -9.918  -5.746  0.00  0.00           C 0
+ATOM   5104  OD1 ASP B 346      -8.672  -9.233  -4.994  0.00  0.00           O 0
+ATOM   4484    O VAL B 279      -3.065 -18.297  -6.094  0.00  0.00           O 0
+ATOM   4474    C ASP B 278      -1.278 -16.172  -8.520  0.00  0.00           C 0
+ATOM   5080  OD1 ASN B 344      -8.636 -11.925  -8.972  0.66  1.07           O 0
+ATOM   4520   CB ASP B 283      -9.601 -15.221  -5.440  0.00  0.00           C 0
+ATOM   4519    O ASP B 283      -8.699 -17.103  -7.214  0.00  0.00           O 0
+ATOM   5102   CB ASP B 346      -7.350  -9.259  -6.983  0.00  0.00           C 0
+TER
+END

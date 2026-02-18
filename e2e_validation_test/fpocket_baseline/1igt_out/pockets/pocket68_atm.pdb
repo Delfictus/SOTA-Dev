@@ -1,0 +1,43 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    68:
+HEADER 0  - Pocket Score                      : -0.0659
+HEADER 1  - Drug Score                        : 0.0030
+HEADER 2  - Number of alpha spheres           :    24
+HEADER 3  - Mean alpha-sphere radius          : 4.0141
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5443
+HEADER 5  - Mean B-factor of pocket residues  : 0.2663
+HEADER 6  - Hydrophobicity Score              : 42.7500
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.3750
+HEADER 9  - Pocket volume (Monte Carlo)       : 339.5116
+HEADER 10 - Pocket volume (convex hull)       : 24.1228
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.3333
+ATOM  10646  CG1 ILE D 266      48.633 -16.256 -18.825  0.00  0.00           C 0
+ATOM  11186   CB HIS D 329      44.181 -13.676 -14.289  0.00  0.00           C 0
+ATOM  11200   CG GLN D 330      46.135 -16.775 -10.350  0.00  0.00           C 0
+ATOM  10647  CG2 ILE D 266      49.474 -13.969 -18.291  0.00  0.00           C 0
+ATOM  11203  NE2 GLN D 330      45.156 -18.795 -11.315  0.51  7.66           N 0
+ATOM  10642   CA ILE D 266      47.116 -14.264 -19.085  0.00  0.00           C 0
+ATOM  11187   CG HIS D 329      44.316 -12.873 -15.544  0.00  0.00           C 0
+ATOM  11195    N GLN D 330      44.066 -14.416 -11.450  0.00  0.00           N 0
+ATOM  11177  OE1 GLN D 328      46.122 -10.853 -11.984  0.38  6.43           O 0
+ATOM  11199   CB GLN D 330      45.376 -15.595  -9.730  0.00  0.00           C 0
+ATOM  11189  CD2 HIS D 329      44.130 -13.216 -16.840  0.00  0.00           C 0
+ATOM  10641    N ILE D 266      46.208 -15.180 -19.752  0.55  1.09           N 0
+ATOM  10626    O LEU D 264      43.876 -18.254 -19.224  0.38  4.29           O 0
+ATOM  12440  NE2 HIS D 466      43.469 -21.211 -16.455  0.61  8.75           N 0
+ATOM  12438  CD2 HIS D 466      43.577 -20.767 -17.751  0.00  0.00           C 0
+ATOM  10618    O VAL D 263      42.476 -15.472 -17.071  0.60  4.29           O 0
+ATOM  11237   CG MET D 333      41.141 -17.965 -12.405  0.00  0.00           C 0
+ATOM  11188  ND1 HIS D 329      44.736 -11.560 -15.553  0.60  1.09           N 0
+ATOM  11178  NE2 GLN D 328      47.528  -9.097 -11.880  0.00  0.00           N 0
+ATOM  10644    O ILE D 266      46.715 -11.895 -19.112  0.00  0.00           O 0
+ATOM  11190  CE1 HIS D 329      44.807 -11.131 -16.800  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    17:
+HEADER 0  - Pocket Score                      : -0.0438
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 3.9536
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5310
+HEADER 5  - Mean B-factor of pocket residues  : 0.1870
+HEADER 6  - Hydrophobicity Score              : 9.5714
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 2.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 286.3434
+HEADER 10 - Pocket volume (convex hull)       : 14.8631
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1000
+ATOM    753  CG2 THR A  94      69.916  73.247  -1.593  0.00  0.00           C 0
+ATOM    681  CD1 LEU A  84      70.996  76.212   1.545  0.00  0.00           C 0
+ATOM    679   CB LEU A  84      71.175  73.704   1.918  0.00  0.00           C 0
+ATOM    185   OG SER A  22      74.665  76.337   2.054  0.00  0.00           O 0
+ATOM    752  OG1 THR A  94      70.371  73.136  -3.873  0.00  0.00           O 0
+ATOM    179    O GLY A  21      75.940  73.122   1.518  0.35  5.36           O 0
+ATOM    167  OG1 THR A  19      75.221  68.895  -2.237  0.60  3.21           O 0
+ATOM    678    O LEU A  84      72.441  70.944   2.269  0.87  4.29           O 0
+ATOM    197   CB PRO A  24      78.186  71.552  -1.659  0.00  0.00           C 0
+ATOM    198   CG PRO A  24      78.289  72.865  -2.433  0.00  0.00           C 0
+ATOM    199   CD PRO A  24      78.858  73.913  -1.530  0.00  0.00           C 0
+ATOM    694   CB SER A  86      72.166  69.485  -3.624  0.00  0.00           C 0
+ATOM    690    N SER A  86      71.457  68.598  -1.467  0.00  0.00           N 0
+ATOM    695   OG SER A  86      71.731  69.655  -4.957  0.34  5.36           O 0
+ATOM    168  CG2 THR A  19      77.223  67.780  -2.761  0.00  0.00           C 0
+TER
+END

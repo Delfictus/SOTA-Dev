@@ -1,0 +1,42 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    25:
+HEADER 0  - Pocket Score                      : -0.0692
+HEADER 1  - Drug Score                        : 0.0016
+HEADER 2  - Number of alpha spheres           :    25
+HEADER 3  - Mean alpha-sphere radius          : 4.1230
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6016
+HEADER 5  - Mean B-factor of pocket residues  : 0.2104
+HEADER 6  - Hydrophobicity Score              : 32.4444
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.8889
+HEADER 9  - Pocket volume (Monte Carlo)       : 344.4627
+HEADER 10 - Pocket volume (convex hull)       : 12.3753
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.2800
+ATOM    747   CB LYS A 105      75.226  70.530 178.319  0.00  0.00           C 0
+ATOM    749   CD LYS A 105      76.287  69.558 176.258  0.00  0.00           C 0
+ATOM    734    O TYR A 104      72.373  69.406 179.091  0.00  0.00           O 0
+ATOM   1843  OE2 GLU A 246      68.504  72.216 172.216  0.00  0.00           O 0
+ATOM    746    O LYS A 105      73.440  72.260 179.387  0.67  5.36           O 0
+ATOM   1828   CB PHE A 245      66.977  70.535 178.737  0.00  0.00           C 0
+ATOM   1840   CG GLU A 246      67.275  73.252 173.971  0.00  0.00           C 0
+ATOM    798  NE1 TRP A 111      67.639  74.173 181.632  0.59  6.56           N 0
+ATOM    788   CB CYS A 110      69.354  78.169 183.398  0.00  0.00           C 0
+ATOM    760    N ASP A 107      73.115  74.855 182.675  0.69  1.09           N 0
+ATOM    764   CB ASP A 107      73.435  77.291 182.778  0.00  0.00           C 0
+ATOM   1816   OG SER A 243      68.162  68.343 176.144  0.75  6.43           O 0
+ATOM   1827    O PHE A 245      65.222  73.076 178.359  0.41  4.29           O 0
+ATOM   1836   CA GLU A 246      65.373  73.591 175.658  0.00  0.00           C 0
+ATOM    759  CD2 LEU A 106      70.068  71.196 181.000  0.00  0.00           C 0
+ATOM   1826    C PHE A 245      65.424  72.134 177.599  0.00  0.00           C 0
+ATOM   1835    N GLU A 246      65.491  72.277 176.281  0.00  0.00           N 0
+ATOM    796  CD1 TRP A 111      68.572  74.249 182.641  0.00  0.00           C 0
+ATOM    753   CA LEU A 106      72.719  72.551 182.044  0.00  0.00           C 0
+ATOM   1815   CB SER A 243      68.301  68.320 174.737  0.00  0.00           C 0
+TER
+END

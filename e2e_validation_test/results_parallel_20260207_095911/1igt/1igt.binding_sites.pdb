@@ -1,0 +1,18 @@
+REMARK   PRISM4D Binding Site Detection Results
+REMARK   Pseudo-atoms at binding site centroids
+REMARK   B-factor = quality score * 100
+REMARK   Occupancy = druggability score
+REMARK
+HETATM    1  BS  ACT A   1      10.396 -51.455  31.623  0.75 94.02
+HETATM    2  BS  ACT A   2      -8.087 -35.515  28.461  0.74 93.65
+HETATM    3  BS  ACT A   3      23.189 -42.993 -33.696  0.69 91.65
+HETATM    4  BS  ACT A   4     -19.137  -3.227   8.145  0.85 89.00
+HETATM    5  BS  ACT A   5      33.433  -4.233  -6.122  0.77 88.86
+HETATM    6  BS  ACT A   6      24.902 -27.529 -31.041  0.62 88.47
+HETATM    7  BS  ACT A   7     -11.025 -42.569  30.042  0.81 88.21
+HETATM    8  BS  ACT A   8      -4.917 -20.120 -29.143  0.70 87.19
+HETATM    9  BS  ACT A   9      33.768 -20.442 -37.057  0.88 86.14
+HETATM   10  BS  ACT A  10       2.691 -23.449  -6.979  0.87 83.77
+HETATM   11  BS  ACT A  11       1.765 -16.482 -17.530  0.81 77.49
+HETATM   12  BS  ACT A  12      22.338  -4.537 -12.568  0.75 76.63
+END

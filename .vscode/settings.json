@@ -1,0 +1,4 @@
+{
+    "chat.commandCenter.enabled": false,
+    "chat.customAgentInSubagent.enabled": true
+}

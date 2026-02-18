@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    50:
+HEADER 0  - Pocket Score                      : -0.0663
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9433
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5955
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : -11.1429
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 3.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 212.2150
+HEADER 10 - Pocket volume (convex hull)       : 6.6075
+HEADER 11 - Charge Score                      :    -1
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     1
+HEADER 14 - Proportion of apolar alpha sphere : 0.0667
+ATOM    466  OG1 THR A 371      25.991  55.295 110.475  0.57  2.14           O 0
+ATOM    482  ND1 HIS A 373      24.700  49.707 108.383  0.42  6.56           N 0
+ATOM    480   CB HIS A 373      24.830  50.649 110.770  0.00  0.00           C 0
+ATOM    465   CB THR A 371      25.644  55.614 109.113  0.00  0.00           C 0
+ATOM   1214   NZ LYS A 467      29.774  55.614 106.152  0.00  0.00           N 0
+ATOM    467  CG2 THR A 371      26.725  56.466 108.523  0.00  0.00           C 0
+ATOM   4300  OE2 GLU C 380      25.142  50.297 105.113  0.38  7.50           O 0
+ATOM   5577    O GLU C 542      26.961  54.046 102.029  0.00  0.00           O 0
+ATOM   5579   CG GLU C 542      25.010  55.532 104.650  0.00  0.00           C 0
+ATOM   5607    N ALA C 546      28.827  51.628 101.525  0.00  0.00           N 0
+ATOM   5608   CA ALA C 546      28.511  50.253 101.878  0.00  0.00           C 0
+ATOM   5602    O ASP C 545      31.051  51.236 101.382  0.63  5.36           O 0
+ATOM   1212   CD LYS A 467      30.310  57.054 108.135  0.00  0.00           C 0
+ATOM   5601    C ASP C 545      30.082  51.990 101.298  0.00  0.00           C 0
+ATOM   5603   CB ASP C 545      30.688  54.156 102.167  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    29:
+HEADER 0  - Pocket Score                      : 0.0668
+HEADER 1  - Drug Score                        : 0.0020
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 4.1207
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6911
+HEADER 5  - Mean B-factor of pocket residues  : 0.1519
+HEADER 6  - Hydrophobicity Score              : -4.0000
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 2.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 275.1477
+HEADER 10 - Pocket volume (convex hull)       : 4.1754
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.4000
+ATOM    107   CA GLY A  88     -10.041  37.994  18.787  0.00  0.00           C 0
+ATOM   2915   CA GLY A 449      -6.408  38.932  21.636  0.00  0.00           C 0
+ATOM   2916    C GLY A 449      -7.614  39.845  21.836  0.00  0.00           C 0
+ATOM    102   CG GLN A  87     -11.915  33.528  20.118  0.00  0.00           C 0
+ATOM   2923   OG SER A 450      -9.019  39.783  25.358  0.76  9.64           O 0
+ATOM    106    N GLY A  88     -10.712  36.765  18.439  0.00  0.00           N 0
+ATOM    108    C GLY A  88     -11.060  39.102  18.744  0.00  0.00           C 0
+ATOM    115   OG SER A  89     -11.899  41.235  21.683  0.00  0.00           O 0
+ATOM   2917    O GLY A 449      -8.355  40.168  20.900  0.00  0.00           O 0
+ATOM   2922   CB SER A 450      -9.867  40.347  24.386  0.00  0.00           C 0
+ATOM   2918    N SER A 450      -7.854  40.263  23.078  0.00  0.00           N 0
+ATOM    100    O GLN A  87      -8.846  35.605  18.140  0.71  7.50           O 0
+ATOM    101   CB GLN A  87     -10.829  33.413  19.068  0.00  0.00           C 0
+ATOM     99    C GLN A  87     -10.063  35.661  18.155  0.00  0.00           C 0
+ATOM    109    O GLY A  88     -12.098  38.887  18.149  0.00  0.00           O 0
+ATOM    114   CB SER A  89     -12.707  41.316  20.514  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    61:
+HEADER 0  - Pocket Score                      : -0.0881
+HEADER 1  - Drug Score                        : 0.0043
+HEADER 2  - Number of alpha spheres           :    27
+HEADER 3  - Mean alpha-sphere radius          : 3.6478
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3926
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 35.2222
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 179.4862
+HEADER 10 - Pocket volume (convex hull)       : 11.3781
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 16.0000
+HEADER 13 - Number of apolar alpha sphere     :    17
+HEADER 14 - Proportion of apolar alpha sphere : 0.6296
+ATOM   4757   CE MET C 437      13.497  42.566  72.961  0.00  0.00           C 0
+ATOM   6862  CD2 LEU D 469      16.020  44.461  67.810  0.00  0.00           C 0
+ATOM   4756   SD MET C 437      12.348  43.010  71.647  0.00  0.00           S 0
+ATOM   4716   OG SER C 433      14.471  47.977  73.129  0.54  9.64           O 0
+ATOM   6887   CD LYS D 472      18.827  42.323  71.380  0.00  0.00           C 0
+ATOM   4721   CB ARG C 434      14.457  43.666  77.163  0.00  0.00           C 0
+ATOM   4696    O ALA C 430      16.751  46.465  76.666  0.70  4.29           O 0
+ATOM   4715   CB SER C 433      14.950  48.089  74.459  0.00  0.00           C 0
+ATOM   4717    N ARG C 434      13.863  45.867  76.147  0.00  0.00           N 0
+ATOM   4723   CD ARG C 434      14.802  41.123  77.122  0.00  0.00           C 0
+ATOM   6888   CE LYS D 472      19.691  43.522  71.019  0.00  0.00           C 0
+ATOM   4694   CA ALA C 430      18.544  47.963  76.137  0.00  0.00           C 0
+ATOM   6889   NZ LYS D 472      20.894  43.754  71.896  0.00  0.00           N 0
+ATOM   4697   CB ALA C 430      19.866  47.211  76.195  0.00  0.00           C 0
+ATOM   6925  NE2 HIS D 476      16.146  38.983  74.461  0.92  1.09           N 0
+ATOM   6804  CE2 TYR D 459      18.177  42.130  78.049  0.00  0.00           C 0
+ATOM   6802  CD2 TYR D 459      19.147  43.003  77.594  0.00  0.00           C 0
+ATOM   6794  CG2 VAL D 458      20.585  38.594  74.081  0.00  0.00           C 0
+TER
+END

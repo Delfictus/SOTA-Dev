@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    15:
+HEADER 0  - Pocket Score                      : -0.0353
+HEADER 1  - Drug Score                        : 0.0002
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.6589
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3615
+HEADER 5  - Mean B-factor of pocket residues  : 0.2877
+HEADER 6  - Hydrophobicity Score              : 32.6667
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 5.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 138.5516
+HEADER 10 - Pocket volume (convex hull)       : 3.4156
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     1
+HEADER 14 - Proportion of apolar alpha sphere : 0.0556
+ATOM    682    O VAL A  45     -20.126 -23.436  32.521  0.66  6.43           O 0
+ATOM   4975  NE2 GLN B 150     -14.183 -22.524  29.120  0.73  7.66           N 0
+ATOM   2494  NH2 ARG A 161     -15.777 -27.625  30.662  0.58  3.28           N 0
+ATOM   4864  OE1 GLU B 143     -17.779 -26.072  27.185  0.35  7.50           O 0
+ATOM   4471    O CYS B 118     -19.418 -19.548  27.620  0.16  9.64           O 0
+ATOM   4974  OE1 GLN B 150     -14.536 -20.309  29.215  0.86  4.29           O 0
+ATOM   2421  CD2 TYR A 157     -14.045 -21.642  32.796  0.00  0.00           C 0
+ATOM   4545  NH2 ARG B 123     -21.404 -24.224  26.346  0.32  3.28           N 0
+ATOM    700  CG1 ILE A  46     -17.765 -24.713  34.671  0.00  0.00           C 0
+ATOM    668  CG1 VAL A  44     -18.580 -20.361  34.277  0.00  0.00           C 0
+ATOM   2418   CB TYR A 157     -13.303 -23.904  33.721  0.00  0.00           C 0
+ATOM   2423  CE2 TYR A 157     -14.557 -20.345  32.967  0.00  0.00           C 0
+ATOM   4472   CB CYS B 118     -17.822 -21.252  25.732  0.00  0.00           C 0
+ATOM   4473   SG CYS B 118     -16.123 -20.889  26.269  0.00  0.00           S 0
+TER
+END

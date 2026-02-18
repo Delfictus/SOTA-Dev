@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    12:
+HEADER 0  - Pocket Score                      : -0.0209
+HEADER 1  - Drug Score                        : 0.0010
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.7767
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5774
+HEADER 5  - Mean B-factor of pocket residues  : 0.1260
+HEADER 6  - Hydrophobicity Score              : 10.0000
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 4.4000
+HEADER 9  - Pocket volume (Monte Carlo)       : 168.0675
+HEADER 10 - Pocket volume (convex hull)       : 2.7008
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 7.0000
+HEADER 13 - Number of apolar alpha sphere     :     8
+HEADER 14 - Proportion of apolar alpha sphere : 0.4706
+ATOM   3299   CB ALA A 613      91.554  81.229  82.292  0.00  0.00           C 0
+ATOM   3269   CG GLU A 609      96.480  80.225  84.587  0.00  0.00           C 0
+ATOM   3270   CD GLU A 609      97.177  81.283  85.451  0.00  0.00           C 0
+ATOM   3272  OE2 GLU A 609      96.607  81.644  86.504  0.63  7.50           O 0
+ATOM   3271  OE1 GLU A 609      98.270  81.777  85.087  0.72  9.64           O 0
+ATOM   3280   NE ARG A 610      95.894  85.843  79.892  0.62  5.47           N 0
+ATOM   3274   CA ARG A 610      95.091  81.724  80.016  0.00  0.00           C 0
+ATOM   3267    O GLU A 609      94.253  79.722  81.881  0.00  0.00           O 0
+ATOM   3279   CD ARG A 610      94.849  84.870  79.567  0.00  0.00           C 0
+ATOM   3244    O PRO A 606      98.842  81.592  80.613  0.66  2.14           O 0
+ATOM    689   CZ PHE A 272     100.511  85.388  79.904  0.00  0.00           C 0
+ATOM   3245   CB PRO A 606     101.811  82.430  81.800  0.00  0.00           C 0
+ATOM   3273    N ARG A 610      95.915  80.770  80.750  0.77  1.09           N 0
+ATOM   3266    C GLU A 609      95.449  79.894  81.640  0.00  0.00           C 0
+ATOM   3277   CB ARG A 610      95.998  82.654  79.193  0.00  0.00           C 0
+TER
+END

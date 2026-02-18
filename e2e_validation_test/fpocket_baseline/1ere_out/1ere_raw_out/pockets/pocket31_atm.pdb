@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    31:
+HEADER 0  - Pocket Score                      : -0.0198
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.7969
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5366
+HEADER 5  - Mean B-factor of pocket residues  : 0.3899
+HEADER 6  - Hydrophobicity Score              : 3.8333
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 157.0789
+HEADER 10 - Pocket volume (convex hull)       : 2.6912
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1333
+ATOM  10247   CD GLU F 419      23.670  41.169  34.709  0.00  0.00           C 0
+ATOM  11100   OG SER F 527      26.754  42.118  41.103  0.75  7.50           O 0
+ATOM  10244    O GLU F 419      27.258  37.846  36.153  0.66  1.07           O 0
+ATOM  10249  OE2 GLU F 419      23.980  42.334  34.320  0.00  0.00           O 0
+ATOM  10248  OE1 GLU F 419      22.879  40.963  35.681  0.68  4.29           O 0
+ATOM  11099   CB SER F 527      25.730  42.961  41.586  0.00  0.00           C 0
+ATOM  11072  CD2 HIS F 524      28.998  38.321  39.068  0.00  0.00           C 0
+ATOM  11108   CE MET F 528      24.914  38.951  39.306  0.00  0.00           C 0
+ATOM  10245   CB GLU F 419      24.595  38.828  34.919  0.00  0.00           C 0
+ATOM  11131   CD LYS F 531      21.392  42.952  40.500  0.00  0.00           C 0
+ATOM  10243    C GLU F 419      26.960  38.096  34.988  0.00  0.00           C 0
+ATOM  10250    N GLY F 420      27.891  38.587  34.199  0.25  5.47           N 0
+ATOM  10251   CA GLY F 420      29.231  38.899  34.651  0.00  0.00           C 0
+TER
+END

@@ -12,3 +12,7 @@ PRISM4D-COMPLETE-WITH-CUDA/
 *.ensemble_trajectory.pdb
 __pycache__/
 CLAUDE.local.md
+snapshots/
+venv/
+myc_max_cosolvent_results/
+e2e_validation_test/results_*/

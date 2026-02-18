@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    48:
+HEADER 0  - Pocket Score                      : -0.0165
+HEADER 1  - Drug Score                        : 0.0012
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 3.6925
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4952
+HEADER 5  - Mean B-factor of pocket residues  : 0.2522
+HEADER 6  - Hydrophobicity Score              : -8.8571
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 198.3914
+HEADER 10 - Pocket volume (convex hull)       : 5.9596
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.3000
+ATOM   7008    O GLU C  81     -40.228  21.682   3.327  0.80  1.07           O 0
+ATOM   6634   CD LYS C  39     -36.454  22.863   2.286  0.00  0.00           C 0
+ATOM   7006   CA GLU C  81     -40.847  19.391   3.559  0.00  0.00           C 0
+ATOM   6636   NZ LYS C  39     -38.301  22.041   0.748  0.46  4.37           N 0
+ATOM   7009   CB GLU C  81     -41.532  19.294   2.185  0.00  0.00           C 0
+ATOM   7010   CG GLU C  81     -41.698  17.884   1.625  0.00  0.00           C 0
+ATOM   7833   OG SER C 168     -37.083  16.251   4.721  0.00  0.00           O 0
+ATOM   7001    O PRO C  80     -40.275  19.244   6.275  0.48  1.07           O 0
+ATOM   7027    O ILE C  83     -37.374  22.938   6.714  0.68  3.21           O 0
+ATOM   7832   CB SER C 168     -36.092  16.607   5.675  0.00  0.00           C 0
+ATOM   6632   CB LYS C  39     -34.689  23.821   3.862  0.00  0.00           C 0
+ATOM   6646   CG PRO C  40     -32.629  22.452   7.850  0.00  0.00           C 0
+ATOM   6644    O PRO C  40     -30.586  22.661   5.182  0.00  0.00           O 0
+ATOM   7810    O GLN C 166     -34.893  18.899  10.456  0.64  2.14           O 0
+ATOM   6647   CD PRO C  40     -33.519  23.525   7.307  0.00  0.00           C 0
+ATOM   7028   CB ILE C  83     -38.269  21.076   8.748  0.00  0.00           C 0
+ATOM   7828    N SER C 168     -35.449  16.433   8.037  0.47  2.19           N 0
+ATOM   7829   CA SER C 168     -36.586  16.451   7.121  0.00  0.00           C 0
+TER
+END

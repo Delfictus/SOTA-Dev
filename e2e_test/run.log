@@ -1,0 +1,54 @@
+[2026-02-04T18:30:51Z INFO  nhs_batch] ╔══════════════════════════════════════════════════════════════╗
+[2026-02-04T18:30:51Z INFO  nhs_batch] ║       NHS PERSISTENT BATCH PROCESSOR                         ║
+[2026-02-04T18:30:51Z INFO  nhs_batch] ╠══════════════════════════════════════════════════════════════╣
+[2026-02-04T18:30:51Z INFO  nhs_batch] ║  Structures:    1                                            ║
+[2026-02-04T18:30:51Z INFO  nhs_batch] ║  Stage: 1 (1ns quick scan)                          ║
+[2026-02-04T18:30:51Z INFO  nhs_batch] ║  Output: e2e_test                               ║
+[2026-02-04T18:30:51Z INFO  nhs_batch] ╚══════════════════════════════════════════════════════════════╝
+[2026-02-04T18:30:51Z INFO  nhs_batch] 🚀 CONCURRENT MODE (DEFAULT): AmberSimdBatch enabled for 10-50x speedup
+[2026-02-04T18:30:51Z INFO  nhs_batch] 
+    ╔══════════════════════════════════════════════════════════════╗
+[2026-02-04T18:30:51Z INFO  nhs_batch] ║  🚀 CONCURRENT BATCH MODE - AmberSimdBatch                   ║
+[2026-02-04T18:30:51Z INFO  nhs_batch] ║  Expected: 10-50x speedup vs sequential processing          ║
+[2026-02-04T18:30:51Z INFO  nhs_batch] ╚══════════════════════════════════════════════════════════════╝
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] 📦 Loading 1 topologies...
+[2026-02-04T18:30:51Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: production_test/targets/16_GBA_apo.topology.json
+[2026-02-04T18:30:51Z INFO  prism_nhs::input] Loaded topology: 31096 atoms, 1988 residues, 4 chains
+[2026-02-04T18:30:51Z INFO  nhs_batch] ✅ All topologies loaded
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] 🔄 Converting to AmberSimdBatch format...
+[2026-02-04T18:30:51Z INFO  nhs_batch] ✅ Converted 1 structures
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] 🚀 Creating AmberSimdBatch with MAXIMUM optimizations:
+[2026-02-04T18:30:51Z INFO  nhs_batch]    • Verlet neighbor lists (2-3x speedup)
+[2026-02-04T18:30:51Z INFO  nhs_batch]    • Tensor Cores (2-4x speedup)
+[2026-02-04T18:30:51Z INFO  nhs_batch]    • FP16 params (1.3-1.5x speedup)
+[2026-02-04T18:30:51Z INFO  nhs_batch]    • Async pipeline (1.1-1.3x speedup)
+[2026-02-04T18:30:51Z INFO  nhs_batch]    • Batched forces (true parallel processing)
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] Max atoms across structures: 31096
+[2026-02-04T18:30:51Z INFO  nhs_batch] ⚠️  Using LEGACY config (no Verlet lists) to avoid livelock
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch] AmberSimdBatch initialized: max 1 structures × 31096 atoms
+[2026-02-04T18:30:51Z INFO  nhs_batch] ✅ AmberSimdBatch engine created
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] 📥 Adding structures to batch...
+[2026-02-04T18:30:51Z INFO  nhs_batch]   [1] Added (ID: 0)
+[2026-02-04T18:30:51Z INFO  nhs_batch] ✅ All structures added to batch
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] ⚡ Finalizing batch (uploading to GPU)...
+[2026-02-04T18:30:51Z INFO  prism_gpu::h_constraints] 🔗 HConstraints: 10076 clusters (6024 single, 2804 CH2/NH2, 1248 CH3/NH3)
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch] H-constraints: 10076 clusters (15376 total constraints, DOF adjusted)
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch] SOTA optimizations enabled:
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch]   - Verlet list: NO
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch]   - Tensor Cores: NO
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch]   - FP16 params: NO
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch]   - Async pipeline: NO
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch]   - Batched forces: NO
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch] Batch finalized: 1 structures, 31096 atoms
+[2026-02-04T18:30:51Z INFO  nhs_batch] ✅ Batch finalized
+    
+[2026-02-04T18:30:51Z INFO  nhs_batch] 🔥 Running 1000000 steps on 1 structures CONCURRENTLY...
+    
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 1 structures, 31096 atoms, 1000000 steps
+[2026-02-04T18:30:51Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)

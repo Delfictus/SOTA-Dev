@@ -1,0 +1,10 @@
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+error[E0063]: missing fields `burial` and `residue_types` in initializer of `StructureInput`
+error[E0282]: type annotations needed
+error[E0308]: mismatched types
+error[E0422]: cannot find struct, variant or union type `MDParams` in crate `prism_gpu`
+error[E0425]: cannot find type `MDResults` in crate `prism_gpu`
+error[E0432]: unresolved import `prism_gpu::FitnessParams`
+error[E0433]: failed to resolve: could not find `MolecularDynamicsGpu` in `prism_gpu`
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `cudarc`
+error[E0599]: no method named `process_batch_detection` found for struct `MegaFusedBatchGpu` in the current scope

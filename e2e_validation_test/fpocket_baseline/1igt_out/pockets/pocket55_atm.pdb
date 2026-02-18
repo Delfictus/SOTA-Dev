@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    55:
+HEADER 0  - Pocket Score                      : -0.0319
+HEADER 1  - Drug Score                        : 0.0458
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.9092
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5983
+HEADER 5  - Mean B-factor of pocket residues  : 0.1674
+HEADER 6  - Hydrophobicity Score              : 10.1429
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 246.5657
+HEADER 10 - Pocket volume (convex hull)       : 11.9112
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 13.4667
+HEADER 13 - Number of apolar alpha sphere     :    15
+HEADER 14 - Proportion of apolar alpha sphere : 0.8333
+ATOM   6181   CB HIS B 467       8.096 -36.136 -42.520  0.00  0.00           C 0
+ATOM   6156    O ASN B 465       5.380 -34.278 -44.211  0.67  7.50           O 0
+ATOM   4371   SD MET B 265       3.362 -35.887 -38.973  0.00  0.00           S 0
+ATOM   4372   CE MET B 265       4.554 -34.783 -39.734  0.00  0.00           C 0
+ATOM   6184  CD2 HIS B 467       8.502 -38.695 -42.352  0.00  0.00           C 0
+ATOM   6157   CB ASN B 465       5.405 -35.258 -46.944  0.00  0.00           C 0
+ATOM   6180    O HIS B 467       9.908 -36.537 -44.655  0.36  6.43           O 0
+ATOM   6183  ND1 HIS B 467       9.671 -37.417 -41.021  0.00  0.00           N 0
+ATOM   6186  NE2 HIS B 467       9.329 -39.460 -41.565  0.00  0.00           N 0
+ATOM   6185  CE1 HIS B 467      10.023 -38.665 -40.770  0.00  0.00           C 0
+ATOM   6182   CG HIS B 467       8.712 -37.401 -42.011  0.00  0.00           C 0
+ATOM   6101  CG2 VAL B 459       8.995 -34.585 -38.200  0.00  0.00           C 0
+ATOM   4333   CE LYS B 261       6.656 -36.353 -33.621  0.00  0.00           C 0
+ATOM   5603  OE2 GLU B 405      10.466 -39.252 -34.528  0.00  0.00           O 0
+ATOM   6084   OG SER B 457      11.966 -38.477 -37.889  0.27  3.21           O 0
+ATOM   4370   CG MET B 265       3.181 -35.177 -37.332  0.00  0.00           C 0
+TER
+END

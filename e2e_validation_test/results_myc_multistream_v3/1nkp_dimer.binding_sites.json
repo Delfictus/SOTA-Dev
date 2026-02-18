@@ -1,0 +1,371 @@
+{
+  "binding_sites": 1,
+  "consensus_threshold": 14,
+  "druggable_sites": 1,
+  "lining_residue_cutoff_angstroms": 8.0,
+  "mode": "multi_stream",
+  "n_streams": 20,
+  "per_stream_stats": [
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 0
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 1
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 2
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 3
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 4
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 5
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 6
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 7
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 8
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 9
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70001,
+      "sites_found": 1,
+      "stream_id": 10
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 11
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 12
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 13
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 14
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 15
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 16
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 17
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 18
+    },
+    {
+      "druggable_sites": 0,
+      "raw_spikes": 70000,
+      "sites_found": 1,
+      "stream_id": 19
+    }
+  ],
+  "simulation_time_sec": 462.084387581,
+  "sites": [
+    {
+      "aromatic_score": 0.6777046322822571,
+      "catalytic_residue_count": 4,
+      "centroid": [
+        66.0740966796875,
+        62.78030014038086,
+        41.8166389465332
+      ],
+      "classification": "ActiveSite",
+      "druggability": 0.5173851251602173,
+      "id": 0,
+      "is_druggable": true,
+      "lining_residues": [
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 1.6856650114059448,
+          "n_atoms": 16,
+          "resid": 57,
+          "resname": "VAL"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 1.760899305343628,
+          "n_atoms": 19,
+          "resid": 137,
+          "resname": "ILE"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 3.3717572689056396,
+          "n_atoms": 17,
+          "resid": 140,
+          "resname": "MET"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 3.5231809616088867,
+          "n_atoms": 19,
+          "resid": 54,
+          "resname": "ILE"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 3.5870397090911865,
+          "n_atoms": 21,
+          "resid": 53,
+          "resname": "TYR"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 4.190871715545654,
+          "n_atoms": 21,
+          "resid": 136,
+          "resname": "TYR"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 4.36132287979126,
+          "n_atoms": 23,
+          "resid": 141,
+          "resname": "ARG"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 5.422945499420166,
+          "n_atoms": 8,
+          "resid": 138,
+          "resname": "GLN"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 5.66802978515625,
+          "n_atoms": 5,
+          "resid": 133,
+          "resname": "ALA"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 5.753143310546875,
+          "n_atoms": 9,
+          "resid": 60,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 5.809929370880127,
+          "n_atoms": 13,
+          "resid": 58,
+          "resname": "GLN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 5.946764945983887,
+          "n_atoms": 8,
+          "resid": 32,
+          "resname": "ILE"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 6.0415778160095215,
+          "n_atoms": 6,
+          "resid": 144,
+          "resname": "ASN"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 6.166656970977783,
+          "n_atoms": 7,
+          "resid": 31,
+          "resname": "GLN"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 6.249467849731445,
+          "n_atoms": 5,
+          "resid": 116,
+          "resname": "VAL"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 6.437026500701904,
+          "n_atoms": 7,
+          "resid": 56,
+          "resname": "SER"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 6.508938789367676,
+          "n_atoms": 5,
+          "resid": 134,
+          "resname": "THR"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 6.53618860244751,
+          "n_atoms": 7,
+          "resid": 139,
+          "resname": "TYR"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 6.648148536682129,
+          "n_atoms": 4,
+          "resid": 50,
+          "resname": "ALA"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 6.6636247634887695,
+          "n_atoms": 5,
+          "resid": 55,
+          "resname": "LEU"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": false,
+          "min_distance": 7.277857780456543,
+          "n_atoms": 2,
+          "resid": 142,
+          "resname": "ARG"
+        },
+        {
+          "chain": "B",
+          "is_catalytic": true,
+          "min_distance": 7.474338054656982,
+          "n_atoms": 2,
+          "resid": 135,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": true,
+          "min_distance": 7.475010395050049,
+          "n_atoms": 2,
+          "resid": 61,
+          "resname": "GLU"
+        },
+        {
+          "chain": "A",
+          "is_catalytic": false,
+          "min_distance": 7.694586753845215,
+          "n_atoms": 1,
+          "resid": 28,
+          "resname": "LEU"
+        }
+      ],
+      "quality_score": 0.7851064205169678,
+      "residue_ids": [
+        57,
+        137,
+        140,
+        54,
+        53,
+        136,
+        141,
+        138,
+        133,
+        60,
+        58,
+        32,
+        144,
+        31,
+        116,
+        56,
+        134,
+        139,
+        50,
+        55,
+        142,
+        135,
+        61,
+        28
+      ],
+      "spike_count": 68961,
+      "volume": 5000.0
+    }
+  ],
+  "structure": "1nkp_dimer.topology",
+  "total_steps_per_stream": 35000
+}

@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    14:
+HEADER 0  - Pocket Score                      : 0.0071
+HEADER 1  - Drug Score                        : 0.0005
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.8844
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5317
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 6.5714
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.1429
+HEADER 9  - Pocket volume (Monte Carlo)       : 241.4989
+HEADER 10 - Pocket volume (convex hull)       : 4.2883
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.4667
+ATOM   2009   CB SER B  30      55.929  68.753  42.673  0.00  0.00           C 0
+ATOM   2231   CE LYS B  44      58.980  73.936  43.990  0.00  0.00           C 0
+ATOM   2008    O SER B  30      54.669  70.010  40.248  0.59  7.50           O 0
+ATOM   2234   NZ LYS B  44      58.434  73.934  45.382  0.00  0.00           N 0
+ATOM   2012   OG SER B  30      55.254  68.432  43.868  0.56  8.57           O 0
+ATOM   2100   CB ALA B  36      58.335  74.903  36.741  0.00  0.00           C 0
+ATOM   2161   CD GLN B  40      59.026  78.281  39.455  0.00  0.00           C 0
+ATOM   2162  OE1 GLN B  40      58.601  78.170  38.303  0.48  1.07           O 0
+ATOM   2163  NE2 GLN B  40      58.265  78.700  40.462  0.00  0.00           N 0
+ATOM   2029  CD2 LEU B  31      58.010  71.878  38.845  0.00  0.00           C 0
+ATOM   2070  OE1 GLU B  34      51.797  73.311  38.908  0.12  8.57           O 0
+ATOM   2228   CD LYS B  44      59.810  72.682  43.729  0.00  0.00           C 0
+ATOM   2077    O LYS B  35      55.210  76.067  36.541  0.60  4.29           O 0
+ATOM   2155   CB GLN B  40      60.822  76.506  39.436  0.00  0.00           C 0
+ATOM   2225   CG LYS B  44      60.322  72.634  42.300  0.00  0.00           C 0
+TER
+END

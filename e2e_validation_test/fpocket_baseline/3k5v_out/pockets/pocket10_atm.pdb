@@ -1,0 +1,42 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    10:
+HEADER 0  - Pocket Score                      : 0.0083
+HEADER 1  - Drug Score                        : 0.0007
+HEADER 2  - Number of alpha spheres           :    24
+HEADER 3  - Mean alpha-sphere radius          : 4.2411
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.7065
+HEADER 5  - Mean B-factor of pocket residues  : 0.5563
+HEADER 6  - Hydrophobicity Score              : 30.2857
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 3.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 298.4565
+HEADER 10 - Pocket volume (convex hull)       : 6.1233
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 9.0000
+HEADER 13 - Number of apolar alpha sphere     :    10
+HEADER 14 - Proportion of apolar alpha sphere : 0.4167
+ATOM   4304    N LEU B 490      18.183  26.841  20.025  0.00  0.00           N 0
+ATOM   4270    O LYS B 486      18.043  25.059  22.552  0.00  0.00           O 0
+ATOM   4302  OE1 GLU B 489      14.340  23.283  21.021  0.62  5.36           O 0
+ATOM   4299   CB GLU B 489      16.440  24.325  19.584  0.00  0.00           C 0
+ATOM   4298    O GLU B 489      17.173  27.036  18.007  0.00  0.00           O 0
+ATOM   4297    C GLU B 489      17.664  26.341  18.904  0.00  0.00           C 0
+ATOM   4273   CD LYS B 486      14.784  23.104  25.774  0.00  0.00           C 0
+ATOM   4523   CE MET B 515      17.538  27.233  25.763  0.00  0.00           C 0
+ATOM   4275   NZ LYS B 486      13.507  22.547  27.800  0.21  2.19           N 0
+ATOM   4512    O THR B 514      12.851  25.835  30.848  0.45  5.36           O 0
+ATOM   4514  OG1 THR B 514      12.058  29.305  30.186  0.63  8.57           O 0
+ATOM   4517   CA MET B 515      15.330  25.689  29.526  0.00  0.00           C 0
+ATOM   4335   CB ALA B 493      15.756  30.217  17.164  0.00  0.00           C 0
+ATOM   4305   CA LEU B 490      18.287  28.282  20.241  0.00  0.00           C 0
+ATOM   4310  CD1 LEU B 490      17.361  30.782  21.621  0.00  0.00           C 0
+ATOM   4308   CB LEU B 490      18.678  28.607  21.691  0.00  0.00           C 0
+ATOM   4488   CB ALA B 511      14.952  30.547  25.760  0.00  0.00           C 0
+ATOM   4487    O ALA B 511      15.641  28.786  28.425  0.00  0.00           O 0
+ATOM   4521   CG MET B 515      17.043  25.268  27.647  0.00  0.00           C 0
+ATOM   4485   CA ALA B 511      14.630  30.605  27.250  0.00  0.00           C 0
+TER
+END

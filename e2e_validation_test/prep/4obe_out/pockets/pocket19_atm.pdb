@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    19:
+HEADER 0  - Pocket Score                      : -0.0885
+HEADER 1  - Drug Score                        : 0.0007
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.2409
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6427
+HEADER 5  - Mean B-factor of pocket residues  : 0.2683
+HEADER 6  - Hydrophobicity Score              : -27.4000
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 5.4000
+HEADER 9  - Pocket volume (Monte Carlo)       : 274.4640
+HEADER 10 - Pocket volume (convex hull)       : 4.3982
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.3889
+ATOM   5198  NH1 ARG B 164       4.384 -30.924  19.240  0.71  2.19           N 0
+ATOM   3372  OD2 ASP B  47       2.603 -31.909  22.658  0.00  0.00           O 0
+ATOM   5282  OE2 GLU B 168       4.761 -37.061  16.395  0.00  0.00           O 0
+ATOM   3369   CB ASP B  47       4.860 -31.201  22.898  0.00  0.00           C 0
+ATOM   5135   CB ARG B 161      -1.252 -32.501  19.748  0.00  0.00           C 0
+ATOM   5218   CG LYS B 165      -1.259 -37.826  17.952  0.00  0.00           C 0
+ATOM   5137   CD ARG B 161      -0.831 -31.784  22.134  0.00  0.00           C 0
+ATOM   5219   CD LYS B 165      -2.550 -37.685  18.756  0.00  0.00           C 0
+ATOM   5136   CG ARG B 161      -0.407 -31.649  20.684  0.00  0.00           C 0
+ATOM   5195   CD ARG B 164       3.527 -32.470  17.050  0.00  0.00           C 0
+ATOM   5281  OE1 GLU B 168       3.490 -38.727  17.041  0.64  8.57           O 0
+ATOM   5132   CA ARG B 161      -0.833 -32.404  18.280  0.00  0.00           C 0
+ATOM   5193   CB ARG B 164       2.324 -34.280  15.855  0.00  0.00           C 0
+ATOM   5134    O ARG B 161      -1.022 -34.527  17.196  0.66  1.07           O 0
+TER
+END

@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    30:
+HEADER 0  - Pocket Score                      : -0.0248
+HEADER 1  - Drug Score                        : 0.0031
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.9126
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4995
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 62.2857
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 5.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 205.5023
+HEADER 10 - Pocket volume (convex hull)       : 3.6948
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.7778
+ATOM   7983    O LEU E 372      50.957  48.200  23.398  0.70  2.14           O 0
+ATOM   8010   CB GLN E 375      53.267  48.293  25.992  0.00  0.00           C 0
+ATOM   8013  OE1 GLN E 375      55.540  49.358  24.681  0.84  2.14           O 0
+ATOM   8021  CG2 VAL E 376      48.960  50.549  24.615  0.00  0.00           C 0
+ATOM   7987  CD2 LEU E 372      54.427  49.746  20.512  0.00  0.00           C 0
+ATOM   7984   CB LEU E 372      52.234  48.576  20.295  0.00  0.00           C 0
+ATOM   7909   NZ LYS E 362      56.986  51.784  23.287  0.74  5.47           N 0
+ATOM   7908   CE LYS E 362      56.994  52.840  24.368  0.00  0.00           C 0
+ATOM   8046  CD1 LEU E 379      51.962  52.356  29.641  0.00  0.00           C 0
+ATOM   7907   CD LYS E 362      57.545  52.350  25.706  0.00  0.00           C 0
+ATOM   7948  CE2 PHE E 367      55.650  49.347  28.314  0.00  0.00           C 0
+ATOM   7906   CG LYS E 362      57.815  53.499  26.670  0.00  0.00           C 0
+ATOM   7872  CG2 ILE E 358      53.525  56.159  28.096  0.00  0.00           C 0
+ATOM   7869    O ILE E 358      56.154  54.908  29.485  0.59  1.07           O 0
+ATOM   8015    N VAL E 376      50.261  48.767  26.442  0.00  0.00           N 0
+TER
+END

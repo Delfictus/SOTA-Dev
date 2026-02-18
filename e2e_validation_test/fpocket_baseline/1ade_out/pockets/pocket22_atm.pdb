@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    22:
+HEADER 0  - Pocket Score                      : 0.0391
+HEADER 1  - Drug Score                        : 0.0004
+HEADER 2  - Number of alpha spheres           :    19
+HEADER 3  - Mean alpha-sphere radius          : 3.8103
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5063
+HEADER 5  - Mean B-factor of pocket residues  : 0.2405
+HEADER 6  - Hydrophobicity Score              : 26.1111
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 5.2222
+HEADER 9  - Pocket volume (Monte Carlo)       : 254.5974
+HEADER 10 - Pocket volume (convex hull)       : 15.8673
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 2.0000
+HEADER 13 - Number of apolar alpha sphere     :     3
+HEADER 14 - Proportion of apolar alpha sphere : 0.1579
+ATOM   7392  OE2 GLU B 340     -25.527  19.595 -25.597  0.00  0.00           O 0
+ATOM   7410   NZ LYS B 342     -26.547  21.169 -22.436  0.00  0.00           N 0
+ATOM   6862  OG1 THR B 286     -31.264  15.590 -22.345  0.51  6.43           O 0
+ATOM   7409   CE LYS B 342     -25.618  20.003 -22.292  0.00  0.00           C 0
+ATOM   7096  NE1 TRP B 309     -26.991  17.699 -18.765  0.77  1.09           N 0
+ATOM   6845  OD2 ASP B 284     -32.759  18.593 -20.699  0.00  0.00           O 0
+ATOM   6863  CG2 THR B 286     -29.766  14.041 -21.296  0.00  0.00           C 0
+ATOM   7387    O GLU B 340     -24.480  14.504 -24.278  0.00  0.00           O 0
+ATOM   7369  CD2 LEU B 338     -28.549  11.089 -24.152  0.00  0.00           C 0
+ATOM   7371    N LYS B 339     -25.864  12.426 -27.781  0.00  0.00           N 0
+ATOM   7389   CG GLU B 340     -24.612  17.405 -25.860  0.00  0.00           C 0
+ATOM   7384    N GLU B 340     -24.204  14.462 -26.946  0.00  0.00           N 0
+ATOM   7375   CB LYS B 339     -25.886  13.900 -29.753  0.00  0.00           C 0
+ATOM   7390   CD GLU B 340     -24.859  18.836 -26.332  0.00  0.00           C 0
+ATOM   7391  OE1 GLU B 340     -24.417  19.208 -27.437  0.71  6.43           O 0
+ATOM   7099  CZ2 TRP B 309     -26.857  15.863 -20.480  0.00  0.00           C 0
+ATOM   7101  CH2 TRP B 309     -26.348  14.618 -20.691  0.00  0.00           C 0
+ATOM   6824  CD2 LEU B 282     -30.453  18.168 -17.478  0.00  0.00           C 0
+ATOM   7691  CE2 TYR B 372     -25.956  21.874 -16.734  0.00  0.00           C 0
+TER
+END

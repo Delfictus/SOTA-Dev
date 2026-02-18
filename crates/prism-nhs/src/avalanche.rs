@@ -59,6 +59,17 @@ pub struct CrypticSiteEvent {
 
     /// Was this causally validated by UV bias?
     pub uv_validated: bool,
+
+    // === CCNS (Conformational Crackling Noise Spectroscopy) fields ===
+
+    /// Per-spike amplitudes (volume delta or intensity at each spike event)
+    pub spike_amplitudes: Vec<f32>,
+
+    /// Frame index of each spike event
+    pub spike_frames: Vec<usize>,
+
+    /// Inter-spike intervals (waiting times between successive spikes, in frames)
+    pub inter_spike_intervals: Vec<f32>,
 }
 
 // =============================================================================
@@ -88,6 +99,13 @@ struct SpikeCluster {
 
     /// Number of frames with activity
     frame_count: usize,
+
+    // CCNS tracking fields
+    /// Per-spike amplitudes accumulated across frames
+    spike_amplitudes: Vec<f32>,
+
+    /// Frame index for each spike event
+    spike_frames: Vec<usize>,
 }
 
 // =============================================================================
@@ -253,7 +271,6 @@ impl AvalancheDetector {
             if cluster_positions.len() >= min_pts {
                 let centroid = compute_centroid(&cluster_positions);
                 let volume = estimate_volume(&cluster_positions, self.config.grid_spacing);
-
                 clusters.push(SpikeCluster {
                     spike_indices: cluster_indices,
                     positions: cluster_positions,
@@ -262,6 +279,8 @@ impl AvalancheDetector {
                     volume,
                     frame_first_seen: self.current_frame,
                     frame_count: 1,
+                    spike_amplitudes: vec![volume; 1], // first frame: volume as amplitude proxy
+                    spike_frames: vec![self.current_frame],
                 });
             }
         }
@@ -318,6 +337,9 @@ impl AvalancheDetector {
                 existing.positions = new_cluster.positions;
                 existing.spike_indices = new_cluster.spike_indices;
                 existing.voxels = new_cluster.voxels;
+                // Track per-frame amplitude (volume as proxy) and frame index
+                existing.spike_amplitudes.push(new_cluster.volume);
+                existing.spike_frames.push(self.current_frame);
                 existing.volume = (existing.volume + new_cluster.volume) / 2.0; // Running average
                 existing.frame_count += 1;
             } else {
@@ -387,6 +409,15 @@ impl AvalancheDetector {
         // Check UV validation
         let uv_validated = false; // Will be updated by pipeline
 
+        // Compute inter-spike intervals from frame indices
+        let inter_spike_intervals = if cluster.spike_frames.len() >= 2 {
+            cluster.spike_frames.windows(2)
+                .map(|w| (w[1] as f32) - (w[0] as f32))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         CrypticSiteEvent {
             site_id,
             first_frame: cluster.frame_first_seen,
@@ -400,6 +431,9 @@ impl AvalancheDetector {
             is_druggable,
             open_frequency,
             uv_validated,
+            spike_amplitudes: cluster.spike_amplitudes,
+            spike_frames: cluster.spike_frames,
+            inter_spike_intervals,
         }
     }
 

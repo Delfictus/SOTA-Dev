@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    57:
+HEADER 0  - Pocket Score                      : -0.0713
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9824
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5873
+HEADER 5  - Mean B-factor of pocket residues  : 0.2654
+HEADER 6  - Hydrophobicity Score              : 14.7000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 3.7000
+HEADER 9  - Pocket volume (Monte Carlo)       : 235.0695
+HEADER 10 - Pocket volume (convex hull)       : 6.5069
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 4.0000
+HEADER 13 - Number of apolar alpha sphere     :     5
+HEADER 14 - Proportion of apolar alpha sphere : 0.3333
+ATOM   7523   CB LEU E 306      68.412  44.719  26.769  0.00  0.00           C 0
+ATOM   7932    N GLY E 366      62.811  44.736  29.191  0.39  4.37           N 0
+ATOM   7952  CG1 VAL E 368      61.431  47.684  23.666  0.00  0.00           C 0
+ATOM   7960  OD1 ASP E 369      62.632  43.529  23.837  0.67  8.57           O 0
+ATOM   7519    N LEU E 306      67.515  42.577  25.872  0.41  3.28           N 0
+ATOM   7961  OD2 ASP E 369      62.486  42.232  25.664  0.00  0.00           O 0
+ATOM   7926   CA PRO E 365      64.060  46.117  30.774  0.00  0.00           C 0
+ATOM   7951   CB VAL E 368      60.621  48.100  24.855  0.00  0.00           C 0
+ATOM   7518   OG SER E 305      64.518  41.250  26.629  0.57  1.07           O 0
+ATOM   7930   CG PRO E 365      65.708  46.873  32.187  0.00  0.00           C 0
+ATOM   7929   CB PRO E 365      65.247  45.558  31.568  0.00  0.00           C 0
+ATOM   7910    O ARG E 363      63.861  50.333  31.387  0.71  4.29           O 0
+ATOM   7901    O LYS E 362      61.285  51.122  27.659  0.35  8.57           O 0
+ATOM   7921    O VAL E 364      61.613  47.311  30.477  0.57  2.14           O 0
+ATOM   7909    C ARG E 363      62.748  50.655  30.942  0.00  0.00           C 0
+ATOM   7524    N ALA E 307      66.897  42.808  28.562  0.00  0.00           N 0
+TER
+END

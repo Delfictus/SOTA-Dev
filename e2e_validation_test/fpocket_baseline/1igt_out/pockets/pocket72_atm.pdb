@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    72:
+HEADER 0  - Pocket Score                      : -0.0773
+HEADER 1  - Drug Score                        : 0.0000
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.0960
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6792
+HEADER 5  - Mean B-factor of pocket residues  : 0.1588
+HEADER 6  - Hydrophobicity Score              : 5.8333
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.0000
+HEADER 9  - Pocket volume (Monte Carlo)       : 202.9351
+HEADER 10 - Pocket volume (convex hull)       : 3.0618
+HEADER 11 - Charge Score                      :    -3
+HEADER 12 - Local hydrophobic density Score   : 0.0000
+HEADER 13 - Number of apolar alpha sphere     :     0
+HEADER 14 - Proportion of apolar alpha sphere : 0.0000
+ATOM  11819  OE1 GLU D 398      25.664 -23.139 -17.799  0.00  0.00           O 0
+ATOM  11816   CB GLU D 398      28.224 -24.655 -18.580  0.00  0.00           C 0
+ATOM  11815    O GLU D 398      30.415 -23.755 -20.713  0.00  0.00           O 0
+ATOM  11817   CG GLU D 398      27.962 -23.731 -17.385  0.00  0.00           C 0
+ATOM  11828  OD1 ASP D 399      30.626 -19.170 -17.808  0.48  7.50           O 0
+ATOM  11814    C GLU D 398      30.416 -23.830 -19.490  0.00  0.00           C 0
+ATOM  11822    N ASP D 399      31.019 -22.930 -18.707  0.00  0.00           N 0
+ATOM  11823   CA ASP D 399      31.733 -21.769 -19.247  0.00  0.00           C 0
+ATOM  11834    O ILE D 400      33.071 -20.193 -23.490  0.00  0.00           O 0
+ATOM  10591  CD1 ILE D 260      32.687 -17.555 -20.453  0.00  0.00           C 0
+ATOM  11831    N ILE D 400      32.837 -21.801 -21.405  0.00  0.00           N 0
+ATOM  12038   CG PRO D 424      27.560 -23.578 -23.625  0.00  0.00           C 0
+ATOM  12031  OE2 GLU D 423      25.248 -19.240 -26.028  0.00  0.00           O 0
+ATOM  12039   CD PRO D 424      26.314 -23.067 -24.235  0.00  0.00           C 0
+ATOM  12030  OE1 GLU D 423      24.082 -20.017 -24.332  0.00  0.00           O 0
+TER
+END

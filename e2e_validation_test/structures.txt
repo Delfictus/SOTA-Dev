@@ -1,0 +1,10 @@
+tier1_cryptosite/apo/1ade.pdb
+tier1_cryptosite/apo/1bj4.pdb
+tier2_dewetting/apo/1btl.pdb
+tier2_dewetting/apo/1hhp.pdb
+tier3_positive_controls/1a4q.pdb
+tier3_positive_controls/1ere.pdb
+tier4_allosteric/apo/1g1f.pdb
+tier4_allosteric/apo/1qmf.pdb
+tier5_negative_controls/1crn.pdb
+tier5_negative_controls/1igt.pdb

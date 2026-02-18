@@ -1,0 +1,12 @@
+.helix/
+target/
+*.log
+test/
+/thoughts/
+.claude/
+hack/
+.DS_Store
+/tmp
+/data
+claude.md
+.cargo/

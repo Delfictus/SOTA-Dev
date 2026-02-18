@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     9:
+HEADER 0  - Pocket Score                      : -0.0006
+HEADER 1  - Drug Score                        : 0.0026
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 3.8323
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6428
+HEADER 5  - Mean B-factor of pocket residues  : 0.2325
+HEADER 6  - Hydrophobicity Score              : 38.8333
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 5.1667
+HEADER 9  - Pocket volume (Monte Carlo)       : 217.5779
+HEADER 10 - Pocket volume (convex hull)       : 2.9719
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.5294
+ATOM   1718    N LYS A 406     109.573  44.132  70.147  0.00  0.00           N 0
+ATOM   1711    C GLN A 405     110.431  43.834  69.161  0.00  0.00           C 0
+ATOM   1723   CG LYS A 406     108.621  43.248  73.090  0.00  0.00           C 0
+ATOM   1712    O GLN A 405     110.339  42.820  68.460  0.40  6.43           O 0
+ATOM   1719   CA LYS A 406     108.456  43.261  70.534  0.00  0.00           C 0
+ATOM   1362   CB PHE A 359     113.479  46.326  80.414  0.00  0.00           C 0
+ATOM   1592   CZ PHE A 388     110.380  46.191  77.808  0.00  0.00           C 0
+ATOM   1690  CD1 LEU A 402     114.531  46.346  76.668  0.00  0.00           C 0
+ATOM   1350  OE2 GLU A 357     109.264  42.298  78.859  0.00  0.00           O 0
+ATOM   1725   CE LYS A 406     108.783  43.234  75.599  0.00  0.00           C 0
+ATOM   1726   NZ LYS A 406     108.925  41.757  75.792  0.42  9.84           N 0
+ATOM   1687    O LEU A 402     110.864  45.686  72.498  0.00  0.00           O 0
+ATOM   1713   CB GLN A 405     112.863  44.534  69.453  0.00  0.00           C 0
+ATOM   1691  CD2 LEU A 402     114.985  45.191  74.501  0.00  0.00           C 0
+ATOM   1688   CB LEU A 402     113.002  46.692  74.740  0.00  0.00           C 0
+TER
+END

@@ -1,0 +1,37 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    16:
+HEADER 0  - Pocket Score                      : 0.0017
+HEADER 1  - Drug Score                        : 0.0007
+HEADER 2  - Number of alpha spheres           :    19
+HEADER 3  - Mean alpha-sphere radius          : 3.5659
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3371
+HEADER 5  - Mean B-factor of pocket residues  : 0.0495
+HEADER 6  - Hydrophobicity Score              : 10.8571
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 3.4286
+HEADER 9  - Pocket volume (Monte Carlo)       : 105.4787
+HEADER 10 - Pocket volume (convex hull)       : 1.5303
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2105
+ATOM   1114    N MET A 154      42.414  56.112 183.106  0.69  1.09           N 0
+ATOM   1109  CD1 PHE A 153      44.344  54.106 180.979  0.00  0.00           C 0
+ATOM   1117    O MET A 154      40.343  55.606 181.462  0.00  0.00           O 0
+ATOM   1031  OD1 ASP A 142      44.666  56.759 176.699  0.38  8.57           O 0
+ATOM   1254   CG PRO A 171      43.334  60.184 177.132  0.00  0.00           C 0
+ATOM   1255   CD PRO A 171      42.855  61.061 178.285  0.00  0.00           C 0
+ATOM   1249    N PRO A 171      43.782  62.206 178.222  0.00  0.00           N 0
+ATOM   1240   OG SER A 169      44.256  61.215 183.928  0.80  1.07           O 0
+ATOM   1102    O GLY A 152      46.907  57.655 181.788  0.70  5.36           O 0
+ATOM   1119   CG MET A 154      40.446  58.375 183.383  0.00  0.00           C 0
+ATOM   1092    O HIS A 151      48.668  61.097 182.193  0.44  4.29           O 0
+ATOM   1253   CB PRO A 171      44.805  60.439 177.135  0.00  0.00           C 0
+ATOM   1103    N PHE A 153      45.566  57.426 183.575  0.00  0.00           N 0
+ATOM   1101    C GLY A 152      46.527  58.036 182.893  0.00  0.00           C 0
+ATOM   1104   CA PHE A 153      44.814  56.313 183.011  0.00  0.00           C 0
+TER
+END

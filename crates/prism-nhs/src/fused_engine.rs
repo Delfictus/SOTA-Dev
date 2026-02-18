@@ -20,6 +20,7 @@
 //! - UV burst energy dissipation (prevents geometry explosion in frozen systems)
 
 use anyhow::{bail, Context, Result};
+use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 use std::net::TcpStream;
 use std::io::Write;
@@ -280,6 +281,21 @@ impl Default for GpuSpikeEvent {
 /// - **LIF detection**: Neuromorphic spike detection at dewetting sites
 ///
 /// The UV-LIF coupling is ALWAYS ACTIVE during cryo-UV runs. This is not optional.
+/// Phase label for CCNS hysteresis tracking
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CryoPhase {
+    /// Initial cold hold
+    ColdHold,
+    /// Temperature ramp up (heating)
+    RampUp,
+    /// Hold at warm temperature
+    WarmHold,
+    /// Temperature ramp down (cooling) — hysteresis mode only
+    RampDown,
+    /// Final cold hold — hysteresis mode only
+    ColdReturn,
+}
+
 #[derive(Debug, Clone)]
 pub struct CryoUvProtocol {
     // Temperature protocol
@@ -307,6 +323,12 @@ pub struct CryoUvProtocol {
     pub scan_wavelengths: Vec<f32>,
     /// Dwell steps per wavelength
     pub wavelength_dwell_steps: i32,
+
+    // === CCNS Hysteresis extension ===
+    /// Steps to ramp temperature back down (0 = no hysteresis)
+    pub ramp_down_steps: i32,
+    /// Steps to hold at cold after ramp-down (0 = no cold return hold)
+    pub cold_return_steps: i32,
 }
 
 impl CryoUvProtocol {
@@ -336,6 +358,8 @@ impl CryoUvProtocol {
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 500,
+            ramp_down_steps: 0,
+            cold_return_steps: 0,
         }
     }
 
@@ -393,24 +417,64 @@ impl CryoUvProtocol {
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 300, // Proportionally reduced (was 400)
+            ramp_down_steps: 0,
+            cold_return_steps: 0,
         }
     }
 
-    /// Get current temperature
+    /// Get current temperature (supports 5-phase hysteresis protocol)
     pub fn current_temperature(&self) -> f32 {
-        let step_in_phase = self.current_step;
+        let s = self.current_step;
+        let p1_end = self.cold_hold_steps;
+        let p2_end = p1_end + self.ramp_steps;
+        let p3_end = p2_end + self.warm_hold_steps;
+        let p4_end = p3_end + self.ramp_down_steps;
+        // p5_end = p4_end + self.cold_return_steps (final)
 
-        if step_in_phase < self.cold_hold_steps {
-            // Cold hold phase
+        if s < p1_end {
+            // Phase 1: Cold hold
             self.start_temp
-        } else if step_in_phase < self.cold_hold_steps + self.ramp_steps {
-            // Ramp phase
-            let ramp_progress = (step_in_phase - self.cold_hold_steps) as f32 / self.ramp_steps as f32;
-            self.start_temp + ramp_progress * (self.end_temp - self.start_temp)
-        } else {
-            // Warm hold phase
+        } else if s < p2_end {
+            // Phase 2: Ramp up (heating)
+            let progress = (s - p1_end) as f32 / self.ramp_steps as f32;
+            self.start_temp + progress * (self.end_temp - self.start_temp)
+        } else if s < p3_end {
+            // Phase 3: Warm hold
             self.end_temp
+        } else if s < p4_end {
+            // Phase 4: Ramp down (cooling) — hysteresis
+            let progress = (s - p3_end) as f32 / self.ramp_down_steps.max(1) as f32;
+            self.end_temp - progress * (self.end_temp - self.start_temp)
+        } else {
+            // Phase 5: Cold return hold — hysteresis
+            self.start_temp
         }
+    }
+
+    /// Get current phase label for CCNS spike tagging
+    pub fn current_phase(&self) -> CryoPhase {
+        let s = self.current_step;
+        let p1_end = self.cold_hold_steps;
+        let p2_end = p1_end + self.ramp_steps;
+        let p3_end = p2_end + self.warm_hold_steps;
+        let p4_end = p3_end + self.ramp_down_steps;
+
+        if s < p1_end {
+            CryoPhase::ColdHold
+        } else if s < p2_end {
+            CryoPhase::RampUp
+        } else if s < p3_end {
+            CryoPhase::WarmHold
+        } else if s < p4_end {
+            CryoPhase::RampDown
+        } else {
+            CryoPhase::ColdReturn
+        }
+    }
+
+    /// Whether this protocol has hysteresis (cooling) phases enabled
+    pub fn is_hysteresis(&self) -> bool {
+        self.ramp_down_steps > 0
     }
 
     /// Check if UV burst should fire at current timestep
@@ -435,9 +499,20 @@ impl CryoUvProtocol {
         self.current_step >= self.total_steps()
     }
 
-    /// Total steps in protocol
+    /// Total steps in protocol (includes cooling phases if hysteresis enabled)
     pub fn total_steps(&self) -> i32 {
         self.cold_hold_steps + self.ramp_steps + self.warm_hold_steps
+            + self.ramp_down_steps + self.cold_return_steps
+    }
+
+    /// Create a hysteresis version of this protocol (full thermal cycle)
+    ///
+    /// Adds a cooling ramp and cold return hold mirroring the heating phases.
+    /// The full cycle is: cold_hold → ramp_up → warm_hold → ramp_down → cold_return
+    pub fn with_hysteresis(mut self) -> Self {
+        self.ramp_down_steps = self.ramp_steps;          // Mirror the heating ramp
+        self.cold_return_steps = self.cold_hold_steps;   // Mirror the cold hold
+        self
     }
 }
 
@@ -3477,6 +3552,8 @@ impl NhsAmberFusedEngine {
     ///     scan_wavelengths: vec![280.0, 274.0, 258.0],
     ///     wavelength_dwell_steps: 500,
     ///     current_step: 0,
+    ///     ramp_down_steps: 0,
+    ///     cold_return_steps: 0,
     /// };
     /// engine.set_cryo_uv_protocol(protocol)?;
     /// ```

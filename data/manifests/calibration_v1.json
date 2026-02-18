@@ -1,0 +1,100 @@
+{
+  "dataset_name": "Cryptic_Calibration_Set_A",
+  "version": "1.0.0",
+  "description": "Diverse benchmarks for tuning physics parameters - classic cryptic pocket cases",
+  "author": "PRISM4D-bio",
+  "created": "2026-01-07",
+  "target_families": ["cytokine", "gtpase", "phosphatase", "viral_glycoprotein"],
+  "targets": [
+    {
+      "name": "IL-2",
+      "family": "cytokine",
+      "description": "Interleukin-2 cryptic groove present only in bound form",
+      "apo_pdb": "data/calibration/non_spike/1M47.pdb",
+      "holo_pdb": "data/calibration/non_spike/1M48.pdb",
+      "target_residues": [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+      "reference_chain": "A",
+      "difficulty": "medium",
+      "validation_metrics": {
+        "expected_sasa_gain": 125.0,
+        "stability_threshold": 2.5,
+        "core_residues": [15, 16, 17, 18, 19, 20, 85, 86, 87, 88, 89, 90]
+      }
+    },
+    {
+      "name": "PTP1B",
+      "family": "phosphatase",
+      "description": "Protein tyrosine phosphatase 1B allosteric site / conformational control",
+      "apo_pdb": "data/calibration/non_spike/2HNP.pdb",
+      "holo_pdb": "data/calibration/non_spike/1T49.pdb",
+      "target_residues": [280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
+      "reference_chain": "A",
+      "difficulty": "hard",
+      "validation_metrics": {
+        "expected_sasa_gain": 180.0,
+        "stability_threshold": 2.0,
+        "core_residues": [45, 46, 47, 48, 49, 50, 215, 216, 217, 218, 219, 220]
+      }
+    },
+    {
+      "name": "KRAS",
+      "family": "gtpase",
+      "description": "KRAS switch-pocket / allosteric small-molecule pockets",
+      "apo_pdb": "data/calibration/non_spike/4LPK.pdb",
+      "holo_pdb": "data/calibration/non_spike/5V71.pdb",
+      "target_residues": [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70],
+      "reference_chain": "A",
+      "difficulty": "medium",
+      "validation_metrics": {
+        "expected_sasa_gain": 95.0,
+        "stability_threshold": 2.8,
+        "core_residues": [10, 11, 12, 13, 14, 15, 117, 118, 119, 120, 121, 122]
+      }
+    },
+    {
+      "name": "SARS-CoV-2-RBD",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 spike RBD conformational epitope (optional spike calibration)",
+      "apo_pdb": "data/calibration/spike/6VXX.pdb",
+      "holo_pdb": "data/calibration/spike/6VYB.pdb",
+      "target_residues": [369, 370, 371, 372, 373, 374, 375, 376, 377],
+      "reference_chain": "A",
+      "difficulty": "easy",
+      "validation_metrics": {
+        "expected_sasa_gain": 85.0,
+        "stability_threshold": 3.0,
+        "core_residues": [330, 331, 332, 333, 334, 335, 520, 521, 522, 523, 524, 525]
+      }
+    }
+  ],
+  "training_parameters": {
+    "max_episodes": 1000,
+    "episode_steps": 1000000,
+    "reward_weighting": {
+      "sasa_gain": 1.0,
+      "stability_penalty": 10.0,
+      "efficiency_bonus": 0.1
+    },
+    "early_stopping": {
+      "patience": 50,
+      "min_improvement": 0.01
+    }
+  },
+  "physics_parameter_ranges": {
+    "temperature": {
+      "min": 0.1,
+      "max": 5.0,
+      "default": 1.0
+    },
+    "friction": {
+      "min": 0.01,
+      "max": 1.0,
+      "default": 0.1
+    },
+    "spring_k": {
+      "min": 0.1,
+      "max": 10.0,
+      "default": 1.0
+    }
+  }
+}

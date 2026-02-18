@@ -1,0 +1,40 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    56:
+HEADER 0  - Pocket Score                      : -0.0665
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    21
+HEADER 3  - Mean alpha-sphere radius          : 4.0012
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6919
+HEADER 5  - Mean B-factor of pocket residues  : 0.2505
+HEADER 6  - Hydrophobicity Score              : 10.6000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8000
+HEADER 9  - Pocket volume (Monte Carlo)       : 191.1503
+HEADER 10 - Pocket volume (convex hull)       : 4.6880
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 5.0000
+HEADER 13 - Number of apolar alpha sphere     :     6
+HEADER 14 - Proportion of apolar alpha sphere : 0.2857
+ATOM   1429  CD2 LEU A 495      12.019  77.824 137.802  0.00  0.00           C 0
+ATOM   1460   CD GLN A 499      15.243  79.327 141.580  0.00  0.00           C 0
+ATOM   1461  OE1 GLN A 499      14.412  79.790 140.778  0.97  2.14           O 0
+ATOM   1462  NE2 GLN A 499      15.057  78.987 142.847  0.00  0.00           N 0
+ATOM   1457    O GLN A 499      17.894  75.401 138.585  0.76  2.14           O 0
+ATOM   1494  OE1 GLN A 502      20.005  74.934 143.581  0.00  0.00           O 0
+ATOM   1458   CB GLN A 499      16.637  77.886 140.146  0.00  0.00           C 0
+ATOM   1531  NE2AGLN A 506      17.983  70.309 142.704  0.37  2.19           N 0
+ATOM   1455   CA GLN A 499      18.063  77.396 139.923  0.00  0.00           C 0
+ATOM   1428  CD1 LEU A 495      13.911  76.265 137.307  0.00  0.00           C 0
+ATOM   1500   CB ARG A 503      16.434  72.514 137.261  0.00  0.00           C 0
+ATOM   1502   CD ARG A 503      13.958  72.465 136.865  0.00  0.00           C 0
+ATOM   1501   CG ARG A 503      15.201  71.634 137.089  0.00  0.00           C 0
+ATOM   1529  OE1AGLN A 506      16.190  69.674 141.507  0.59  6.43           O 0
+ATOM   1491   CB GLN A 502      20.207  73.722 141.030  0.00  0.00           C 0
+ATOM   1505  NH1 ARG A 503      12.076  70.988 138.438  0.50  4.37           N 0
+ATOM   1496    N ARG A 503      18.556  72.607 138.574  0.00  0.00           N 0
+ATOM   1497   CA ARG A 503      17.570  71.742 137.948  0.00  0.00           C 0
+TER
+END

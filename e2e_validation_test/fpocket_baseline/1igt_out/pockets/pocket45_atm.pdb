@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    45:
+HEADER 0  - Pocket Score                      : -0.0103
+HEADER 1  - Drug Score                        : 0.0003
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.7256
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4590
+HEADER 5  - Mean B-factor of pocket residues  : 0.5919
+HEADER 6  - Hydrophobicity Score              : 12.6250
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 3.8750
+HEADER 9  - Pocket volume (Monte Carlo)       : 189.3508
+HEADER 10 - Pocket volume (convex hull)       : 2.7391
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1333
+ATOM  12336   OG SER D 455      44.033 -25.765 -36.879  0.62  6.43           O 0
+ATOM  12492   CB SER D 471      45.054 -29.280 -36.441  0.00  0.00           C 0
+ATOM  12313   CB SER D 453      46.426 -24.153 -41.227  0.00  0.00           C 0
+ATOM  12314   OG SER D 453      47.577 -24.648 -41.898  0.00  0.00           O 0
+ATOM  12511    O SER D 473      45.160 -32.881 -43.943  0.82  2.14           O 0
+ATOM  12301    O ASN D 452      43.932 -26.683 -43.418  0.55  5.36           O 0
+ATOM  12499    O PHE D 472      44.999 -32.190 -39.559  0.46  6.43           O 0
+ATOM  12290  NH1 ARG D 451      47.835 -27.276 -44.666  0.00  0.00           N 0
+ATOM  12498    C PHE D 472      43.847 -32.205 -40.001  0.00  0.00           C 0
+ATOM  12286   CG ARG D 451      46.324 -29.628 -46.456  0.00  0.00           C 0
+ATOM  12310   CA SER D 453      45.165 -24.865 -41.721  0.00  0.00           C 0
+ATOM  12320    O TYR D 454      41.807 -26.782 -39.019  0.42  1.07           O 0
+ATOM  12496    N PHE D 472      43.204 -30.448 -38.338  0.61  1.09           N 0
+ATOM  12500   CB PHE D 472      41.979 -30.629 -40.444  0.00  0.00           C 0
+TER
+END

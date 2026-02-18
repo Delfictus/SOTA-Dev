@@ -1,0 +1,7 @@
+error: unexpected argument '--output-dir' found
+
+  tip: a similar argument exists: '--output'
+
+Usage: nhs_rt_full --topology <TOPOLOGY> --output <OUTPUT>
+
+For more information, try '--help'.

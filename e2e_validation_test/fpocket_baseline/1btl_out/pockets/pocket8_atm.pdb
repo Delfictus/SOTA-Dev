@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     8:
+HEADER 0  - Pocket Score                      : -0.0147
+HEADER 1  - Drug Score                        : 0.0046
+HEADER 2  - Number of alpha spheres           :    19
+HEADER 3  - Mean alpha-sphere radius          : 4.2590
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5372
+HEADER 5  - Mean B-factor of pocket residues  : 0.3495
+HEADER 6  - Hydrophobicity Score              : 31.6667
+HEADER 7  - Polarity Score                    :     3
+HEADER 8  - Amino Acid based volume Score     : 4.3333
+HEADER 9  - Pocket volume (Monte Carlo)       : 178.1869
+HEADER 10 - Pocket volume (convex hull)       : 1.2440
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 8.0000
+HEADER 13 - Number of apolar alpha sphere     :     9
+HEADER 14 - Proportion of apolar alpha sphere : 0.4737
+ATOM    425   CB ALA A  79       1.623  -6.845  42.205  0.00  0.00           C 0
+ATOM    969   CB PHE A 151       3.674 -10.870  40.710  0.00  0.00           C 0
+ATOM    454   CD ARG A  83      -0.306  -8.284  47.737  0.00  0.00           C 0
+ATOM    971  CD1 PHE A 151       1.138 -10.816  40.526  0.00  0.00           C 0
+ATOM    453   CG ARG A  83      -1.428  -8.970  46.947  0.00  0.00           C 0
+ATOM    424    O ALA A  79      -1.115  -7.228  43.840  0.53  1.07           O 0
+ATOM    455   NE ARG A  83       0.035  -8.996  48.960  0.00  0.00           N 0
+ATOM    943  OE1 GLU A 147       6.262 -13.250  46.567  0.00  0.00           O 0
+ATOM    907    O ILE A 142       5.298  -8.914  48.486  0.52  9.64           O 0
+ATOM    446   OGASER A  82      -2.234  -9.551  42.648  0.79  2.14           O 0
+ATOM    939    O GLU A 147       6.426 -10.779  43.080  0.24  2.14           O 0
+ATOM    940   CB GLU A 147       7.247 -10.419  46.084  0.00  0.00           C 0
+ATOM    908   CB ILE A 142       3.849  -6.700  47.265  0.00  0.00           C 0
+ATOM    911  CD1 ILE A 142       5.033  -6.373  45.016  0.00  0.00           C 0
+TER
+END

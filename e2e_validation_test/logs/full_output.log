@@ -1,0 +1,80 @@
+╔══════════════════════════════════════════════════════════════════╗
+║     PRISM4D E2E Validation Pipeline - 20260204_231722        ║
+║     10 structures × 3 replicas = 30 simulations                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+=== STAGE 1: PRISM-PREP (Topology Generation) ===
+Started: Wed Feb  4 11:17:22 PM PST 2026
+  [PREP] 1ade...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 4.4s
+    → Created:  atoms
+  [PREP] 1bj4...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 3.7s
+    → Created:  atoms
+  [PREP] 1btl...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 2.5s
+    → Created:  atoms
+  [PREP] 1hhp...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 2.0s
+    → Created:  atoms
+  [PREP] 1a4q...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 4.0s
+    → Created:  atoms
+  [PREP] 1ere...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 15.8s
+    → Created:  atoms
+  [PREP] 1g1f...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 3.3s
+    → Created:  atoms
+  [PREP] 1qmf...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 3.8s
+    → Created:  atoms
+  [PREP] 1crn...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 1.6s
+    → Created:  atoms
+  [PREP] 1igt...
+  GB radii: ✓
+  Validation: ✅ PRODUCTION READY
+  Elapsed: 9.0s
+    → Created:  atoms
+
+=== STAGE 1B: Composition Analysis ===
+Started: Wed Feb  4 11:18:19 PM PST 2026
+  1a4q:  atoms,  residues
+  1ade:  atoms,  residues
+  1bj4:  atoms,  residues
+  1btl:  atoms,  residues
+  1crn:  atoms,  residues
+  1ere:  atoms,  residues
+  1g1f:  atoms,  residues
+  1hhp:  atoms,  residues
+  1igt:  atoms,  residues
+  1qmf:  atoms,  residues
+
+=== STAGE 2: NHS-RT-FULL Pipeline ===
+Config: --fast --rt-clustering --parallel --replicas 3 --adaptive-epsilon --multi-scale --ultimate-mode
+Started: Wed Feb  4 11:18:21 PM PST 2026
+  [RUN] 1a4q (3 replicas, RT+BVH+Cryo-UV)...
+[2026-02-05T08:45:49Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 35778 atoms, 500 steps
+[2026-02-05T08:45:49Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)
+[2026-02-05T08:47:13Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD complete: 500 steps
+[2026-02-05T08:47:13Z INFO  prism_gpu::amber_simd_batch] SIMD batch MD: 3 structures, 35778 atoms, 500 steps
+[2026-02-05T08:47:13Z INFO  prism_gpu::amber_simd_batch] Using legacy path (SOTA disabled for debugging)

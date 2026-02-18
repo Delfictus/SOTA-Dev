@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    46:
+HEADER 0  - Pocket Score                      : -0.0555
+HEADER 1  - Drug Score                        : 0.0076
+HEADER 2  - Number of alpha spheres           :    15
+HEADER 3  - Mean alpha-sphere radius          : 3.9212
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5485
+HEADER 5  - Mean B-factor of pocket residues  : 0.0368
+HEADER 6  - Hydrophobicity Score              : 68.7143
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 4.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 210.1253
+HEADER 10 - Pocket volume (convex hull)       : 0.9986
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.7333
+ATOM   3500    C TYR B 134      34.479  39.710 -12.677  0.00  0.00           C 0
+ATOM   3329  CD2 LEU B 112      29.641  39.522 -10.965  0.00  0.00           C 0
+ATOM   3501    O TYR B 134      35.503  39.864 -12.048  0.65  7.50           O 0
+ATOM   3759  CG2 VAL B 166      29.767  40.838  -7.434  0.00  0.00           C 0
+ATOM   3510    N ALA B 135      33.606  40.705 -12.843  0.00  0.00           N 0
+ATOM   3504  CD1 TYR B 134      35.186  36.662 -10.813  0.00  0.00           C 0
+ATOM   3758  CG1 VAL B 166      30.107  39.100  -5.676  0.00  0.00           C 0
+ATOM   3512    C ALA B 135      32.450  42.661 -12.088  0.00  0.00           C 0
+ATOM   3801   CZ PHE B 171      30.707  35.312 -10.268  0.00  0.00           C 0
+ATOM   3506  CE1 TYR B 134      35.124  35.709  -9.791  0.00  0.00           C 0
+ATOM   3511   CA ALA B 135      33.826  42.080 -12.395  0.00  0.00           C 0
+ATOM   3515    N ALA B 136      32.339  43.611 -11.158  0.63  4.37           N 0
+ATOM   3551  CD2 TYR B 141      38.508  43.780 -10.475  0.00  0.00           C 0
+TER
+END

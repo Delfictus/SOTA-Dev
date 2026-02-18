@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    51:
+HEADER 0  - Pocket Score                      : -0.0634
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 4.1135
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6950
+HEADER 5  - Mean B-factor of pocket residues  : 0.2406
+HEADER 6  - Hydrophobicity Score              : 10.6000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8000
+HEADER 9  - Pocket volume (Monte Carlo)       : 204.0268
+HEADER 10 - Pocket volume (convex hull)       : 3.2937
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2222
+ATOM   9041  OE1AGLN E 506      60.598  40.565  56.354  0.56  8.57           O 0
+ATOM   9014   CD ARG E 503      65.074  42.045  52.865  0.00  0.00           C 0
+ATOM   9017  NH1 ARG E 503      64.267  44.119  54.575  0.54  7.66           N 0
+ATOM   8940  CD1 LEU E 495      68.315  40.317  53.923  0.00  0.00           C 0
+ATOM   9012   CB ARG E 503      64.039  39.753  52.713  0.00  0.00           C 0
+ATOM   8969    O GLN E 499      65.695  37.009  54.029  0.77  2.14           O 0
+ATOM   9008    N ARG E 503      62.974  37.649  53.412  0.00  0.00           N 0
+ATOM   8970   CB GLN E 499      68.041  36.777  56.179  0.00  0.00           C 0
+ATOM   8972   CD GLN E 499      69.473  37.193  58.141  0.00  0.00           C 0
+ATOM   8973  OE1 GLN E 499      70.351  37.923  57.683  0.00  0.00           O 0
+ATOM   9043  NE2AGLN E 506      60.166  38.512  57.142  0.65  2.19           N 0
+ATOM   9003   CB GLN E 502      62.717  35.357  55.551  0.00  0.00           C 0
+ATOM   9006  OE1 GLN E 502      63.315  34.510  58.275  0.50  9.64           O 0
+ATOM   8967   CA GLN E 499      67.043  35.784  55.611  0.00  0.00           C 0
+ATOM   9013   CG ARG E 503      63.784  41.259  52.699  0.00  0.00           C 0
+ATOM   8974  NE2 GLN E 499      69.002  37.284  59.376  0.62  9.84           N 0
+ATOM   8941  CD2 LEU E 495      70.332  41.245  55.061  0.00  0.00           C 0
+TER
+END

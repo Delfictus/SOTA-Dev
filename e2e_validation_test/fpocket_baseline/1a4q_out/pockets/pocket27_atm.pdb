@@ -1,0 +1,34 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    27:
+HEADER 0  - Pocket Score                      : 0.0786
+HEADER 1  - Drug Score                        : 0.0009
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 3.5414
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.4663
+HEADER 5  - Mean B-factor of pocket residues  : 0.0768
+HEADER 6  - Hydrophobicity Score              : 22.2000
+HEADER 7  - Polarity Score                    :     7
+HEADER 8  - Amino Acid based volume Score     : 4.6000
+HEADER 9  - Pocket volume (Monte Carlo)       : 54.0540
+HEADER 10 - Pocket volume (convex hull)       : 0.0846
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 6.0000
+HEADER 13 - Number of apolar alpha sphere     :     7
+HEADER 14 - Proportion of apolar alpha sphere : 0.4375
+ATOM   2111  CG2 ILE A 347      -7.667  57.704   1.355  0.00  0.00           C 0
+ATOM   2262   CA ARG A 366      -8.779  56.084   7.360  0.00  0.00           C 0
+ATOM   2258    O SER A 365      -9.552  53.622   6.382  0.00  0.00           O 0
+ATOM   2612   OG SER A 409      -5.804  52.250   4.559  0.82  1.07           O 0
+ATOM   1753  NH2 ARG A 299     -10.201  55.515   1.649  0.00  0.00           N 0
+ATOM   2348   CE MET A 376      -3.882  55.564   6.357  0.00  0.00           C 0
+ATOM   2272    N THR A 367      -7.266  57.994   7.259  0.55  1.09           N 0
+ATOM   2112  CD1 ILE A 347      -4.733  57.973   1.895  0.00  0.00           C 0
+ATOM   2584    O TRP A 407      -3.017  55.516   3.088  0.00  0.00           O 0
+ATOM   2347   SD MET A 376      -5.195  54.945   7.395  0.00  0.00           S 0
+ATOM   2123   CA GLY A 349      -8.500  52.454   2.072  0.00  0.00           C 0
+ATOM   2116    O LYS A 348      -6.281  53.747   0.913  0.33  1.07           O 0
+TER
+END

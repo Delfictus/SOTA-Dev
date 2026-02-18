@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket     6:
+HEADER 0  - Pocket Score                      : 0.1370
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    20
+HEADER 3  - Mean alpha-sphere radius          : 4.0406
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5436
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : -8.7143
+HEADER 7  - Polarity Score                    :     6
+HEADER 8  - Amino Acid based volume Score     : 4.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 233.8560
+HEADER 10 - Pocket volume (convex hull)       : 3.7876
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 1.0000
+HEADER 13 - Number of apolar alpha sphere     :     2
+HEADER 14 - Proportion of apolar alpha sphere : 0.1000
+ATOM   2591  OD1 ASP B  65      62.072  46.290  63.834  0.48  8.57           O 0
+ATOM   2590   CG ASP B  65      61.334  46.218  62.826  0.00  0.00           C 0
+ATOM   2548  OD1 ASP B  62      59.661  51.447  58.995  0.00  0.00           O 0
+ATOM   2535  NE2 GLN B  61      63.683  54.165  61.021  0.00  0.00           N 0
+ATOM   2530   CG GLN B  61      64.436  52.194  59.832  0.00  0.00           C 0
+ATOM   2544   CB ASP B  62      59.706  49.717  57.357  0.00  0.00           C 0
+ATOM   2592  OD2 ASP B  65      60.124  45.919  62.888  0.00  0.00           O 0
+ATOM   1228  NH2 ARG A  72      54.770  47.627  57.996  0.00  0.00           N 0
+ATOM   2602   CG LEU B  66      58.484  44.038  58.237  0.00  0.00           C 0
+ATOM   2608  CD2 LEU B  66      57.408  43.338  59.057  0.00  0.00           C 0
+ATOM   2672  NE2 GLN B  69      58.571  43.803  62.974  0.00  0.00           N 0
+ATOM   2587   CB ASP B  65      61.941  46.488  61.466  0.00  0.00           C 0
+ATOM   2526    O GLN B  61      63.463  49.018  59.186  0.61  2.14           O 0
+ATOM   2543    O ASP B  62      60.706  46.765  58.137  0.59  3.21           O 0
+ATOM   2540   CA ASP B  62      60.985  49.141  57.974  0.00  0.00           C 0
+ATOM   1295  NH1 ARG A  75      55.166  43.187  61.769  0.38  9.84           N 0
+TER
+END

@@ -1,0 +1,57 @@
+{
+  "dataset_name": "Holdout_Validation_Set",
+  "version": "1.0.0",
+  "description": "Strict holdout targets for final validation - NEVER used in training",
+  "validation_date": "2026-01-07",
+  "quarantine_enforced": true,
+  "targets": [
+    {
+      "name": "6W41",
+      "pdb_id": "6W41",
+      "family": "viral_glycoprotein",
+      "description": "SARS-CoV-2 spike RBD cryptic epitope - PRIMARY HOLDOUT",
+      "pdb_path": "data/holdout/6W41.pdb",
+      "true_cryptic_residues": [369, 370, 371, 372, 373, 374, 375, 376, 377, 378],
+      "core_residues": [330, 331, 332, 333, 334, 335, 520, 521, 522, 523, 524, 525],
+      "expected_enrichment": 3.5,
+      "difficulty": "hard",
+      "reference_publication": "DOI:10.1038/s41586-020-2180-5"
+    },
+    {
+      "name": "MDM2_cryptic",
+      "pdb_id": "1YCR",
+      "family": "oncogene",
+      "description": "MDM2 p53-binding domain cryptic pocket",
+      "pdb_path": "data/holdout/1YCR.pdb",
+      "true_cryptic_residues": [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+      "core_residues": [50, 51, 52, 53, 54, 55, 90, 91, 92, 93, 94, 95],
+      "expected_enrichment": 2.8,
+      "difficulty": "medium",
+      "reference_publication": "DOI:10.1016/j.chembiol.2013.02.019"
+    },
+    {
+      "name": "BCL2_BH3",
+      "pdb_id": "2W3L",
+      "family": "apoptosis",
+      "description": "BCL-2 cryptic BH3-binding groove",
+      "pdb_path": "data/holdout/2W3L.pdb",
+      "true_cryptic_residues": [104, 105, 106, 107, 108, 109, 110, 111, 112, 113],
+      "core_residues": [85, 86, 87, 88, 89, 90, 140, 141, 142, 143, 144, 145],
+      "expected_enrichment": 4.2,
+      "difficulty": "easy",
+      "reference_publication": "DOI:10.1021/ja205463k"
+    }
+  ],
+  "validation_criteria": {
+    "minimum_enrichment_factor": 2.0,
+    "maximum_core_rmsd": 3.0,
+    "minimum_target_sasa_gain": 50.0,
+    "required_success_rate": 0.67
+  },
+  "quarantine_notes": [
+    "These structures must NEVER appear in training datasets",
+    "Validation enforces cryptographic checksums to prevent contamination",
+    "Any overlap detection results in immediate validation failure",
+    "Final validation results are binding for publication/deployment"
+  ]
+}

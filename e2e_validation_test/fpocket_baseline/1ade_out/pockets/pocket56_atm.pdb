@@ -1,0 +1,35 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    56:
+HEADER 0  - Pocket Score                      : -0.1337
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    16
+HEADER 3  - Mean alpha-sphere radius          : 4.0061
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6260
+HEADER 5  - Mean B-factor of pocket residues  : 0.2503
+HEADER 6  - Hydrophobicity Score              : 27.2857
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8571
+HEADER 9  - Pocket volume (Monte Carlo)       : 195.6996
+HEADER 10 - Pocket volume (convex hull)       : 3.5265
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 3.0000
+HEADER 13 - Number of apolar alpha sphere     :     4
+HEADER 14 - Proportion of apolar alpha sphere : 0.2500
+ATOM   4088  CD2 LEU A 425      15.478  13.860  23.857  0.00  0.00           C 0
+ATOM   3698    O LYS A 386      17.969  19.666  28.083  0.00  0.00           O 0
+ATOM   3714  OD1 ASP A 387      21.657  17.076  26.891  0.00  0.00           O 0
+ATOM   4075    O ILE A 424      14.495  17.351  21.168  0.00  0.00           O 0
+ATOM   4068   CG MET A 423      15.393  17.419  27.688  0.00  0.00           C 0
+ATOM   4064   CA MET A 423      13.613  18.135  26.012  0.00  0.00           C 0
+ATOM   3709   CA ASP A 387      19.529  17.549  28.904  0.00  0.00           C 0
+ATOM   3717    N ARG A 388      19.886  15.151  28.547  0.61  1.09           N 0
+ATOM   3721   CB ARG A 388      20.359  12.877  27.723  0.00  0.00           C 0
+ATOM   4069   SD MET A 423      16.074  15.997  28.567  0.00  0.00           S 0
+ATOM   4072    N ILE A 424      13.163  18.223  23.657  0.48  2.19           N 0
+ATOM   4057    O THR A 422      13.721  20.665  27.038  0.36  8.57           O 0
+ATOM   4067   CB MET A 423      14.277  16.983  26.761  0.00  0.00           C 0
+TER
+END

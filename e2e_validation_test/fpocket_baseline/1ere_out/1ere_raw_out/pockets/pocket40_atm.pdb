@@ -1,0 +1,38 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    40:
+HEADER 0  - Pocket Score                      : -0.0429
+HEADER 1  - Drug Score                        : 0.0035
+HEADER 2  - Number of alpha spheres           :    22
+HEADER 3  - Mean alpha-sphere radius          : 3.9289
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5457
+HEADER 5  - Mean B-factor of pocket residues  : 0.7061
+HEADER 6  - Hydrophobicity Score              : 13.7143
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 3.7143
+HEADER 9  - Pocket volume (Monte Carlo)       : 305.9169
+HEADER 10 - Pocket volume (convex hull)       : 10.2062
+HEADER 11 - Charge Score                      :     0
+HEADER 12 - Local hydrophobic density Score   : 13.0000
+HEADER 13 - Number of apolar alpha sphere     :    14
+HEADER 14 - Proportion of apolar alpha sphere : 0.6364
+ATOM   6892  OD1 ASP D 473      14.079  39.069  68.518  0.79  4.29           O 0
+ATOM   4758   SD MET C 437      12.348  43.010  71.647  0.00  0.00           S 0
+ATOM   6857    O LEU D 469      16.507  39.969  66.976  0.47  1.07           O 0
+ATOM   6855   CA LEU D 469      17.527  42.083  66.486  0.00  0.00           C 0
+ATOM   4718   OG SER C 433      14.471  47.977  73.129  0.61  7.50           O 0
+ATOM   6883   CD LYS D 472      18.827  42.323  71.380  0.00  0.00           C 0
+ATOM   6884   CE LYS D 472      19.691  43.522  71.019  0.00  0.00           C 0
+ATOM   6858   CB LEU D 469      16.606  43.082  65.801  0.00  0.00           C 0
+ATOM   4759   CE MET C 437      13.497  42.566  72.961  0.00  0.00           C 0
+ATOM   6830    O THR D 465      19.950  44.353  64.675  0.55  1.07           O 0
+ATOM   6854    N LEU D 469      18.903  42.320  66.067  0.67  1.09           N 0
+ATOM   6852   CB SER D 468      21.709  43.362  66.797  0.00  0.00           C 0
+ATOM   6832  OG1 THR D 465      19.424  47.705  64.272  0.00  0.00           O 0
+ATOM   6831   CB THR D 465      20.851  47.661  64.084  0.00  0.00           C 0
+ATOM   6828   CA THR D 465      21.376  46.227  64.267  0.00  0.00           C 0
+ATOM   6881   CB LYS D 472      18.168  40.104  70.395  0.00  0.00           C 0
+TER
+END

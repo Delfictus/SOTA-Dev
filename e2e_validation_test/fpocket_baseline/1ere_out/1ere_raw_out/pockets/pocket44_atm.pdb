@@ -1,0 +1,39 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    44:
+HEADER 0  - Pocket Score                      : -0.0501
+HEADER 1  - Drug Score                        : 0.0001
+HEADER 2  - Number of alpha spheres           :    17
+HEADER 3  - Mean alpha-sphere radius          : 4.0929
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.6642
+HEADER 5  - Mean B-factor of pocket residues  : 0.2497
+HEADER 6  - Hydrophobicity Score              : 10.6000
+HEADER 7  - Polarity Score                    :     4
+HEADER 8  - Amino Acid based volume Score     : 4.8000
+HEADER 9  - Pocket volume (Monte Carlo)       : 215.6175
+HEADER 10 - Pocket volume (convex hull)       : 4.2227
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 2.0000
+HEADER 13 - Number of apolar alpha sphere     :     3
+HEADER 14 - Proportion of apolar alpha sphere : 0.1765
+ATOM  10921  NE2AGLN F 506      59.485  31.109  37.578  0.55  2.19           N 0
+ATOM  10884  OE1 GLN F 502      64.732  31.086  37.771  0.53  8.57           O 0
+ATOM  10848   CB GLN F 499      65.319  26.328  40.569  0.00  0.00           C 0
+ATOM  10852  NE2 GLN F 499      66.161  24.911  37.692  0.58  7.66           N 0
+ATOM  10850   CD GLN F 499      66.310  24.694  38.995  0.00  0.00           C 0
+ATOM  10818  CD1 LEU F 495      62.251  24.043  42.412  0.00  0.00           C 0
+ATOM  10851  OE1 GLN F 499      66.251  23.602  39.570  0.00  0.00           O 0
+ATOM  10819  CD2 LEU F 495      63.021  21.786  41.757  0.00  0.00           C 0
+ATOM  10895  NH1 ARG F 503      57.071  24.773  40.380  0.00  0.00           N 0
+ATOM  10892   CD ARG F 503      58.727  25.650  42.393  0.00  0.00           C 0
+ATOM  10919  OE1AGLN F 506      58.054  29.525  38.268  0.61  9.64           O 0
+ATOM  10891   CG ARG F 503      58.495  27.133  42.397  0.00  0.00           C 0
+ATOM  10890   CB ARG F 503      59.831  27.858  42.594  0.00  0.00           C 0
+ATOM  10845   CA GLN F 499      65.380  27.771  41.038  0.00  0.00           C 0
+ATOM  10847    O GLN F 499      63.232  28.169  42.074  0.70  2.14           O 0
+ATOM  10881   CB GLN F 502      63.113  31.420  40.109  0.00  0.00           C 0
+ATOM  10886    N ARG F 503      60.984  29.933  41.957  0.64  1.09           N 0
+TER
+END

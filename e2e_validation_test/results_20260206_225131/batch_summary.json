@@ -1,0 +1,121 @@
+{
+  "manifest_path": "e2e_validation_test/batch_manifest_all14.json",
+  "total_structures": 14,
+  "successful": 14,
+  "failed": 0,
+  "total_elapsed_seconds": 116.843862814,
+  "results": [
+    {
+      "name": "1l2y_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 2.242323919,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1crn_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 2.2422797450000003,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1hhp_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 2.2422777380000003,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1maz_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 6.491384973,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1btl_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 6.491337763,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1g1f_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 6.491334289999999,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1w50_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 6.491333678999999,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1bj4_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002226676428572,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1qmf_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002189179428571,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "3k5v_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002183821428572,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1a4q_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002181681428572,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1ade_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002181433428571,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1igt_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002182153428572,
+      "sites_found": 0,
+      "druggable_sites": 0
+    },
+    {
+      "name": "1ere_sanitized",
+      "success": true,
+      "error": null,
+      "elapsed_seconds": 12.002180960428571,
+      "sites_found": 0,
+      "druggable_sites": 0
+    }
+  ]
+}

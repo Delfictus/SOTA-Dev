@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    58:
+HEADER 0  - Pocket Score                      : -0.0807
+HEADER 1  - Drug Score                        : 0.0049
+HEADER 2  - Number of alpha spheres           :    27
+HEADER 3  - Mean alpha-sphere radius          : 3.6933
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3993
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : 35.2222
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.6667
+HEADER 9  - Pocket volume (Monte Carlo)       : 200.5307
+HEADER 10 - Pocket volume (convex hull)       : 13.3136
+HEADER 11 - Charge Score                      :     3
+HEADER 12 - Local hydrophobic density Score   : 16.0000
+HEADER 13 - Number of apolar alpha sphere     :    17
+HEADER 14 - Proportion of apolar alpha sphere : 0.6296
+ATOM   2819   CB ALA B 430      35.110  54.930 125.035  0.00  0.00           C 0
+ATOM   2816   CA ALA B 430      36.449  55.586 125.310  0.00  0.00           C 0
+ATOM   1255   NZ LYS A 472      32.614  56.637 119.848  0.78  7.66           N 0
+ATOM   1254   CE LYS A 472      33.355  57.803 119.260  0.00  0.00           C 0
+ATOM   2818    O ALA B 430      36.128  57.878 125.983  0.66  1.07           O 0
+ATOM   2838   OG SER B 433      39.347  59.183 123.261  0.46  8.57           O 0
+ATOM   1253   CD LYS A 472      32.719  59.148 119.613  0.00  0.00           C 0
+ATOM   1168  CD2 TYR A 459      31.737  57.903 125.681  0.00  0.00           C 0
+ATOM   1291  NE2 HIS A 476      30.746  62.952 122.558  0.89  2.19           N 0
+ATOM   1160  CG2 VAL A 458      28.178  59.499 121.170  0.00  0.00           C 0
+ATOM   1157    O VAL A 458      29.697  56.796 121.100  0.00  0.00           O 0
+ATOM   2837   CB SER B 433      38.933  58.601 124.478  0.00  0.00           C 0
+ATOM   2843   CB ARG B 434      34.897  61.260 126.323  0.00  0.00           C 0
+ATOM   2845   CD ARG B 434      32.656  62.443 125.853  0.00  0.00           C 0
+ATOM   1170  CE2 TYR A 459      31.444  59.165 126.177  0.00  0.00           C 0
+ATOM   1228  CD2 LEU A 469      36.929  60.610 117.032  0.00  0.00           C 0
+ATOM   2879   CE MET B 437      35.559  63.149 122.345  0.00  0.00           C 0
+ATOM   2878   SD MET B 437      36.917  63.928 121.465  0.00  0.00           S 0
+ATOM   2839    N ARG B 434      37.257  60.564 125.992  0.00  0.00           N 0
+TER
+END

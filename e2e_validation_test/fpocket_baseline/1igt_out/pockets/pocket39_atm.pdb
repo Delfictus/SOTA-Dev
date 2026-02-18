@@ -1,0 +1,36 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    39:
+HEADER 0  - Pocket Score                      : -0.0014
+HEADER 1  - Drug Score                        : 0.0035
+HEADER 2  - Number of alpha spheres           :    18
+HEADER 3  - Mean alpha-sphere radius          : 3.8443
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.5766
+HEADER 5  - Mean B-factor of pocket residues  : 0.6734
+HEADER 6  - Hydrophobicity Score              : 0.2000
+HEADER 7  - Polarity Score                    :     2
+HEADER 8  - Amino Acid based volume Score     : 3.6000
+HEADER 9  - Pocket volume (Monte Carlo)       : 238.4444
+HEADER 10 - Pocket volume (convex hull)       : 9.6549
+HEADER 11 - Charge Score                      :     1
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.6111
+ATOM  10448   CD PRO D 243      15.815  -2.548  10.137  0.00  0.00           C 0
+ATOM  10418    O CYS D 240      12.900  -6.699  12.916  0.40  5.36           O 0
+ATOM   4153   SG CYS B 240      13.548 -10.062  12.027  0.00  0.00           S 0
+ATOM  10425    O LYS D 241      14.944  -3.915  13.118  0.56  6.43           O 0
+ATOM   4151    O CYS B 240      13.277 -10.075   9.021  0.00  0.00           O 0
+ATOM  10440   SG CYS D 242      12.785  -3.519   8.245  0.00  0.00           S 0
+ATOM   4172   CB CYS B 242      11.930  -6.138   6.895  0.00  0.00           C 0
+ATOM  10469  ND2 ASN D 246      16.839  -3.839   3.412  0.58  4.37           N 0
+ATOM  10468  OD1 ASN D 246      15.086  -2.497   3.807  0.60  1.07           O 0
+ATOM  10467   CG ASN D 246      16.299  -2.656   3.670  0.00  0.00           C 0
+ATOM  10447   CG PRO D 243      16.802  -1.641   9.441  0.00  0.00           C 0
+ATOM  10439   CB CYS D 242      12.152  -3.678   9.958  0.00  0.00           C 0
+ATOM  10436   CA CYS D 242      13.244  -3.444  11.014  0.00  0.00           C 0
+ATOM  10466   CB ASN D 246      17.256  -1.482   3.775  0.00  0.00           C 0
+TER
+END

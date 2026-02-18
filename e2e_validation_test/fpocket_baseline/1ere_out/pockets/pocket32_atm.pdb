@@ -1,0 +1,41 @@
+HEADER
+HEADER This is a pdb format file writen by the programm fpocket.                 
+HEADER It represents the atoms contacted by the voronoi vertices of the pocket.  
+HEADER                                                                           
+HEADER Information about the pocket    32:
+HEADER 0  - Pocket Score                      : -0.0271
+HEADER 1  - Drug Score                        : 0.0083
+HEADER 2  - Number of alpha spheres           :    28
+HEADER 3  - Mean alpha-sphere radius          : 3.6245
+HEADER 4  - Mean alpha-sphere Solvent Acc.    : 0.3581
+HEADER 5  - Mean B-factor of pocket residues  : 0.0000
+HEADER 6  - Hydrophobicity Score              : -2.3333
+HEADER 7  - Polarity Score                    :     5
+HEADER 8  - Amino Acid based volume Score     : 4.8333
+HEADER 9  - Pocket volume (Monte Carlo)       : 177.0489
+HEADER 10 - Pocket volume (convex hull)       : 9.8299
+HEADER 11 - Charge Score                      :     2
+HEADER 12 - Local hydrophobic density Score   : 10.0000
+HEADER 13 - Number of apolar alpha sphere     :    11
+HEADER 14 - Proportion of apolar alpha sphere : 0.3929
+ATOM   7281   NZ LYS D 520      32.165  45.060  94.170  0.23  9.84           N 0
+ATOM   7280   CE LYS D 520      31.685  43.833  93.425  0.00  0.00           C 0
+ATOM   5424  OE2 GLU C 523      34.775  48.861  91.321  0.57  2.14           O 0
+ATOM   7299   CG GLU D 523      36.040  45.451  89.644  0.00  0.00           C 0
+ATOM   5390    O ASN C 519      29.549  48.667  89.315  0.57  2.14           O 0
+ATOM   5631  NH1 ARG C 548      32.046  50.556  93.960  0.72  2.19           N 0
+ATOM   5413   CG MET C 522      28.178  50.220  93.195  0.00  0.00           C 0
+ATOM   5421   CG GLU C 523      33.327  49.441  89.503  0.00  0.00           C 0
+ATOM   5391   CB ASN C 519      28.448  45.555  89.206  0.00  0.00           C 0
+ATOM   5402   CE LYS C 520      31.038  46.337  84.914  0.00  0.00           C 0
+ATOM   5393  OD1 ASN C 519      27.926  45.010  91.435  0.53  4.29           O 0
+ATOM   5618  ND1 HIS C 547      27.619  47.765  96.300  0.75  5.47           N 0
+ATOM   7269   CB ASN D 519      30.773  42.212  88.704  0.00  0.00           C 0
+ATOM   7268    O ASN D 519      34.106  42.224  89.227  0.71  1.07           O 0
+ATOM   5403   NZ LYS C 520      32.449  46.457  84.423  0.56  9.84           N 0
+ATOM   7509  NH1 ARG D 548      37.364  44.508  85.174  0.55  3.28           N 0
+ATOM   7291   CG MET D 522      35.743  40.908  85.172  0.00  0.00           C 0
+ATOM   7271  OD1 ASN D 519      30.433  42.232  86.335  0.45  3.21           O 0
+ATOM   7302  OE2 GLU D 523      36.213  47.184  88.057  0.56  3.21           O 0
+TER
+END
