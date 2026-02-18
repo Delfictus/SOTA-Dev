@@ -56,7 +56,7 @@ struct Args {
     temperature: f32,
 
     /// Cryo temperature (K)
-    #[arg(long, default_value = "100.0")]
+    #[arg(long, default_value = "50.0")]
     cryo_temp: f32,
 
     /// Enable RT clustering
@@ -109,6 +109,11 @@ struct Args {
     /// Automatically determines optimal clustering scales per structure
     #[arg(long, default_value = "true")]
     adaptive_epsilon: bool,
+
+    /// Enable CCNS hysteresis protocol: full thermal cycle (cold→hot→cold)
+    /// Runs 5-phase protocol for Conformational Crackling Noise Spectroscopy
+    #[arg(long, default_value = "false")]
+    hysteresis: bool,
 
     /// Verbose output
     #[arg(short, long)]
@@ -497,7 +502,17 @@ fn run_full_pipeline_internal(
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,
+            ramp_down_steps: 0,
+            cold_return_steps: 0,
         }
+    };
+    // Apply hysteresis if requested (adds cooling ramp + cold return)
+    let protocol = if args.hysteresis {
+        log::info!("  CCNS Hysteresis: ENABLED (full thermal cycle {}K → {}K → {}K)",
+            protocol.start_temp, protocol.end_temp, protocol.start_temp);
+        protocol.with_hysteresis()
+    } else {
+        protocol
     };
     let target_end_temp = protocol.end_temp;
     engine.set_cryo_uv_protocol(protocol.clone())?;
@@ -516,10 +531,9 @@ fn run_full_pipeline_internal(
     // Run simulation with replicas for improved sampling
     let n_replicas = n_replicas.max(1);
 
-    // --fast overrides step count to use optimized 35K protocol
+    // --fast uses full protocol length (respects hysteresis), otherwise user --steps
     let steps_per_replica = if args.fast {
-        // fast_35k protocol: 14K cold + 6K ramp + 15K warm = 35K total
-        35_000
+        protocol.total_steps()
     } else {
         args.steps
     };
@@ -990,6 +1004,91 @@ fn run_full_pipeline_internal(
             })
         };
 
+        // Compute per-site CCNS time-series data from spike events
+        let site_radius = args.lining_cutoff + 2.0;
+        let frame_window = 1000i32;
+        let mut all_pockets_json = Vec::new();
+        let mut cryptic_sites_json = Vec::new();
+
+        for site in clustered_sites.iter().take(100) {
+            let cx = site.centroid[0];
+            let cy = site.centroid[1];
+            let cz = site.centroid[2];
+
+            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = accumulated_spikes.iter()
+                .filter(|s| {
+                    let dx = s.position[0] - cx;
+                    let dy = s.position[1] - cy;
+                    let dz = s.position[2] - cz;
+                    (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
+                })
+                .collect();
+
+            let max_ts = site_spikes.iter().map(|s| s.timestep).max().unwrap_or(0);
+            let n_frames = (max_ts / frame_window + 1) as usize;
+            let mut frame_spike_counts = vec![0usize; n_frames];
+            let mut frame_intensity_sums = vec![0.0f32; n_frames];
+
+            for s in &site_spikes {
+                let frame = (s.timestep / frame_window) as usize;
+                if frame < n_frames {
+                    frame_spike_counts[frame] += 1;
+                    frame_intensity_sums[frame] += s.intensity;
+                }
+            }
+
+            let voxel_vol = 27.0f32;
+            let volumes: Vec<f64> = frame_spike_counts.iter()
+                .map(|&c| (c as f32 * voxel_vol) as f64)
+                .collect();
+            let mean_volume: f64 = if !volumes.is_empty() {
+                volumes.iter().sum::<f64>() / volumes.len() as f64
+            } else { 0.0 };
+            let cv_volume = if mean_volume > 0.0 {
+                let variance = volumes.iter().map(|v| (v - mean_volume).powi(2)).sum::<f64>()
+                    / volumes.len() as f64;
+                variance.sqrt() / mean_volume
+            } else { 0.0 };
+
+            all_pockets_json.push(serde_json::json!({
+                "site_id": site.cluster_id,
+                "centroid": site.centroid,
+                "mean_volume": mean_volume,
+                "cv_volume": cv_volume,
+                "n_frames": n_frames,
+                "volumes": volumes,
+            }));
+
+            let spike_frames: Vec<usize> = frame_spike_counts.iter().enumerate()
+                .filter(|(_, &c)| c > 0)
+                .map(|(i, _)| i)
+                .collect();
+            let spike_amplitudes: Vec<f32> = spike_frames.iter()
+                .map(|&f| {
+                    if frame_spike_counts[f] > 0 {
+                        frame_intensity_sums[f] / frame_spike_counts[f] as f32
+                    } else { 0.0 }
+                })
+                .collect();
+            let inter_spike_intervals: Vec<f32> = if spike_frames.len() >= 2 {
+                spike_frames.windows(2).map(|w| (w[1] - w[0]) as f32).collect()
+            } else {
+                Vec::new()
+            };
+
+            cryptic_sites_json.push(serde_json::json!({
+                "site_id": site.cluster_id,
+                "centroid": site.centroid,
+                "spike_count": site_spikes.len(),
+                "spike_frames": spike_frames,
+                "spike_amplitudes": spike_amplitudes,
+                "inter_spike_intervals": inter_spike_intervals,
+                "volume": site.estimated_volume,
+                "druggability": site.druggability.overall,
+                "classification": format!("{:?}", site.classification),
+            }));
+        }
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "total_steps": steps_per_replica,
@@ -1028,6 +1127,8 @@ fn run_full_pipeline_internal(
                     "residue_ids": s.lining_residue_ids(),
                 })
             }).collect::<Vec<_>>(),
+            "all_pockets": all_pockets_json,
+            "cryptic_sites": cryptic_sites_json,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON summary: {}", json_path.display());
@@ -1142,10 +1243,7 @@ fn run_batch_gpu_concurrent(
     log::info!("      ✓ Batch ready: {} total entries ({} structures × {} replicas) on GPU",
         total_entries, n_structures, replicas);
 
-    // Determine steps
-    let steps_per_structure = if args.fast { 35_000 } else { args.steps as usize };
-
-    // Configure protocol
+    // Configure protocol (steps determined after hysteresis decision)
     let protocol = if args.fast {
         CryoUvProtocol::fast_35k()
     } else {
@@ -1161,14 +1259,25 @@ fn run_batch_gpu_concurrent(
             uv_burst_duration: 50,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,
+            ramp_down_steps: 0,
+            cold_return_steps: 0,
         }
+    };
+    let protocol = if args.hysteresis {
+        protocol.with_hysteresis()
+    } else {
+        protocol
+    };
+
+    // Determine steps: --fast uses full protocol length (respects hysteresis)
+    let steps_per_structure = if args.fast {
+        protocol.total_steps() as usize
+    } else {
+        args.steps as usize
     };
 
     // Compute simulation phases
-    let cold_hold = protocol.cold_hold_steps as usize;
-    let ramp = protocol.ramp_steps as usize;
-    let warm_hold = protocol.warm_hold_steps as usize;
-    let total_protocol_steps = cold_hold + ramp + warm_hold;
+    let total_protocol_steps = protocol.total_steps() as usize;
 
     let scale = if steps_per_structure < total_protocol_steps {
         steps_per_structure as f64 / total_protocol_steps as f64
@@ -1176,8 +1285,8 @@ fn run_batch_gpu_concurrent(
         1.0
     };
 
-    let cold_steps = ((cold_hold as f64 * scale) as usize).max(100);
-    let ramp_steps = ((ramp as f64 * scale) as usize).max(100);
+    let cold_steps = ((protocol.cold_hold_steps as f64 * scale) as usize).max(100);
+    let ramp_steps = ((protocol.ramp_steps as f64 * scale) as usize).max(100);
     let warm_steps = steps_per_structure.saturating_sub(cold_steps + ramp_steps);
 
     log::info!("    Running {} steps per replica (batch executes in lockstep)...", steps_per_structure);
@@ -1944,8 +2053,6 @@ fn run_multi_stream_pipeline(
         ..Default::default()
     };
 
-    let steps_per_stream = if args.fast { 35_000i32 } else { args.steps };
-
     let protocol = if args.fast {
         CryoUvProtocol::fast_35k()
     } else {
@@ -1961,9 +2068,24 @@ fn run_multi_stream_pipeline(
             uv_burst_duration: 50,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 254.0, 211.0],
             wavelength_dwell_steps: 500,
+            ramp_down_steps: 0,
+            cold_return_steps: 0,
         }
     };
+    let protocol = if args.hysteresis {
+        protocol.with_hysteresis()
+    } else {
+        protocol
+    };
     let _target_end_temp = protocol.end_temp;
+
+    // Steps per stream: use full protocol length for --fast (respects hysteresis),
+    // otherwise use user-specified --steps
+    let steps_per_stream = if args.fast {
+        protocol.total_steps()
+    } else {
+        args.steps
+    };
 
     // ── Run N engines on N threads (scoped for safe borrowing) ──
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
@@ -2155,6 +2277,104 @@ fn run_multi_stream_pipeline(
     if !clustered_sites.is_empty() {
         write_binding_site_visualizations(&clustered_sites, &output_base, &structure_name)?;
 
+        // Compute per-site CCNS time-series data from spike events
+        let lining_cutoff = args.lining_cutoff;
+        let site_radius = lining_cutoff + 2.0;
+        let frame_window = 1000; // timesteps per frame for binning
+
+        // Build all_pockets (per-frame volumes) and cryptic_sites (spike time-series)
+        let mut all_pockets_json = Vec::new();
+        let mut cryptic_sites_json = Vec::new();
+
+        for site in clustered_sites.iter().take(100) {
+            let cx = site.centroid[0];
+            let cy = site.centroid[1];
+            let cz = site.centroid[2];
+
+            // Collect spikes for this site
+            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = all_stream_spikes.iter()
+                .filter(|s| {
+                    let dx = s.position[0] - cx;
+                    let dy = s.position[1] - cy;
+                    let dz = s.position[2] - cz;
+                    (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
+                })
+                .collect();
+
+            // Bin spikes by frame to compute per-frame volumes and activity
+            let max_ts = site_spikes.iter().map(|s| s.timestep).max().unwrap_or(0);
+            let n_frames = (max_ts / frame_window + 1) as usize;
+            let mut frame_spike_counts = vec![0usize; n_frames];
+            let mut frame_intensity_sums = vec![0.0f32; n_frames];
+
+            for s in &site_spikes {
+                let frame = (s.timestep / frame_window) as usize;
+                if frame < n_frames {
+                    frame_spike_counts[frame] += 1;
+                    frame_intensity_sums[frame] += s.intensity;
+                }
+            }
+
+            // Per-frame volume proxy: spike_count * voxel_volume (27 Å³ for 3Å voxel)
+            let voxel_vol = 27.0f32;
+            let volumes: Vec<f64> = frame_spike_counts.iter()
+                .map(|&c| (c as f32 * voxel_vol) as f64)
+                .collect();
+            let mean_volume: f64 = if !volumes.is_empty() {
+                volumes.iter().sum::<f64>() / volumes.len() as f64
+            } else { 0.0 };
+            let cv_volume = if mean_volume > 0.0 {
+                let variance = volumes.iter().map(|v| (v - mean_volume).powi(2)).sum::<f64>()
+                    / volumes.len() as f64;
+                variance.sqrt() / mean_volume
+            } else { 0.0 };
+
+            all_pockets_json.push(serde_json::json!({
+                "site_id": site.cluster_id,
+                "centroid": site.centroid,
+                "mean_volume": mean_volume,
+                "cv_volume": cv_volume,
+                "n_frames": n_frames,
+                "volumes": volumes,
+            }));
+
+            // spike_frames: frames where this site had spikes
+            let spike_frames: Vec<usize> = frame_spike_counts.iter().enumerate()
+                .filter(|(_, &c)| c > 0)
+                .map(|(i, _)| i)
+                .collect();
+
+            // spike_amplitudes: mean intensity per active frame
+            let spike_amplitudes: Vec<f32> = spike_frames.iter()
+                .map(|&f| {
+                    if frame_spike_counts[f] > 0 {
+                        frame_intensity_sums[f] / frame_spike_counts[f] as f32
+                    } else { 0.0 }
+                })
+                .collect();
+
+            // inter_spike_intervals: gaps between active frames
+            let inter_spike_intervals: Vec<f32> = if spike_frames.len() >= 2 {
+                spike_frames.windows(2)
+                    .map(|w| (w[1] - w[0]) as f32)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            cryptic_sites_json.push(serde_json::json!({
+                "site_id": site.cluster_id,
+                "centroid": site.centroid,
+                "spike_count": site_spikes.len(),
+                "spike_frames": spike_frames,
+                "spike_amplitudes": spike_amplitudes,
+                "inter_spike_intervals": inter_spike_intervals,
+                "volume": site.estimated_volume,
+                "druggability": site.druggability.overall,
+                "classification": format!("{:?}", site.classification),
+            }));
+        }
+
         let json_path = output_base.with_extension("binding_sites.json");
         let json_output = serde_json::json!({
             "structure": structure_name,
@@ -2191,6 +2411,8 @@ fn run_multi_stream_pipeline(
                     "residue_ids": s.lining_residue_ids(),
                 })
             }).collect::<Vec<_>>(),
+            "all_pockets": all_pockets_json,
+            "cryptic_sites": cryptic_sites_json,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
@@ -2202,19 +2424,42 @@ fn run_multi_stream_pipeline(
         let arom_type_name = |t: i32| -> &str {
             match t { 0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "SS", 4 => "BNZ", 5 => "CATION", 6 => "ANION", _ => "UNK" }
         };
+        // Closure to determine CCNS phase from timestep using protocol parameters
+        let phase_label = |ts: i32| -> &str {
+            let p1 = protocol.cold_hold_steps;
+            let p2 = p1 + protocol.ramp_steps;
+            let p3 = p2 + protocol.warm_hold_steps;
+            let p4 = p3 + protocol.ramp_down_steps;
+            if ts < p1 { "cold_hold" }
+            else if ts < p2 { "heating" }
+            else if ts < p3 { "warm_hold" }
+            else if ts < p4 { "cooling" }
+            else { "cold_return" }
+        };
         let lining_cutoff = args.lining_cutoff;
         for site in &clustered_sites {
             let site_radius = lining_cutoff + 2.0;
             let cx = site.centroid[0];
             let cy = site.centroid[1];
             let cz = site.centroid[2];
-            let site_spikes: Vec<serde_json::Value> = all_stream_spikes.iter()
+            // Collect raw spikes for this site
+            let raw_site_spikes: Vec<_> = all_stream_spikes.iter()
                 .filter(|s| {
                     let dx = s.position[0] - cx;
                     let dy = s.position[1] - cy;
                     let dz = s.position[2] - cz;
                     (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
                 })
+                .collect();
+            // Compute open_frequency: fraction of simulation frames with spike activity
+            // Use frame_index (timestep / 1000) from actual spike data
+            let unique_frames: std::collections::HashSet<i32> = raw_site_spikes.iter()
+                .map(|s| s.timestep / 1000)
+                .collect();
+            let max_frame = raw_site_spikes.iter().map(|s| s.timestep / 1000).max().unwrap_or(0);
+            let total_frames = (max_frame + 1).max(1) as f32;
+            let open_frequency = unique_frames.len() as f32 / total_frames;
+            let site_spikes: Vec<serde_json::Value> = raw_site_spikes.iter()
                 .map(|s| {
                     let pos = s.position;
                     let intensity = s.intensity;
@@ -2240,6 +2485,7 @@ fn run_multi_stream_pipeline(
                         "n_nearby_excited": nne,
                         "timestep": ts,
                         "frame_index": ts / 1000,
+                        "ccns_phase": phase_label(ts),
                     })
                 })
                 .collect();
@@ -2248,13 +2494,14 @@ fn run_multi_stream_pipeline(
                 "centroid": site.centroid,
                 "n_spikes": site_spikes.len(),
                 "lining_cutoff": args.lining_cutoff,
+                "open_frequency": open_frequency,
                 "spikes": site_spikes,
             });
             let spike_path = output_base.with_extension(
                 format!("site{}.spike_events.json", site.cluster_id)
             );
             std::fs::write(&spike_path, serde_json::to_string_pretty(&spike_json)?)?;
-            log::info!("  Spike events: {} ({} spikes)", spike_path.display(), site_spikes.len());
+            log::info!("  Spike events: {} ({} spikes, f_open={:.3})", spike_path.display(), site_spikes.len(), open_frequency);
         }
     }
 

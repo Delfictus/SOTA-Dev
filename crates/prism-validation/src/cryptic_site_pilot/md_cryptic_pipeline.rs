@@ -1140,6 +1140,39 @@ impl MdCrypticPipeline {
                 merged_pocket.open_frequency = mean_freq;
                 merged_pocket.std_volume = cv_std; // Store cross-replica std here
 
+                // Merge per-frame volumes: average across replicas at each frame index
+                let n_frames = self.config.n_frames;
+                for frame_idx in 0..n_frames {
+                    let mut sum = 0.0f64;
+                    let mut count = 0usize;
+                    for rp in replica_pockets {
+                        if frame_idx < rp.volumes.len() && rp.volumes[frame_idx] > 0.0 {
+                            sum += rp.volumes[frame_idx];
+                            count += 1;
+                        }
+                    }
+                    if count > 0 {
+                        merged_pocket.volumes[frame_idx] = sum / count as f64;
+                        if !merged_pocket.frames_observed.contains(&frame_idx) {
+                            merged_pocket.frames_observed.push(frame_idx);
+                        }
+                    }
+                }
+                // Also merge per-frame SASA
+                for frame_idx in 0..n_frames {
+                    let mut sum = 0.0f64;
+                    let mut count = 0usize;
+                    for rp in replica_pockets {
+                        if frame_idx < rp.sasa_values.len() && rp.sasa_values[frame_idx] > 0.0 {
+                            sum += rp.sasa_values[frame_idx];
+                            count += 1;
+                        }
+                    }
+                    if count > 0 {
+                        merged_pocket.sasa_values[frame_idx] = sum / count as f64;
+                    }
+                }
+
                 merged_pockets.push(merged_pocket);
             }
         }

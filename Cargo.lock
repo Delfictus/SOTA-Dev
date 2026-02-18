@@ -3986,6 +3986,7 @@ dependencies = [
  "rand_distr",
  "serde",
  "serde_json",
+ "statrs",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
