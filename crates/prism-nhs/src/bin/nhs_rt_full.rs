@@ -115,6 +115,12 @@ struct Args {
     #[arg(long, default_value = "false")]
     hysteresis: bool,
 
+    /// Spike intensity percentile filter (0-100). Only keep spikes above this
+    /// percentile of intensity. Higher = stricter = fewer spikes.
+    /// Default 70 = keep top 30%. Use 90+ to suppress thermal noise.
+    #[arg(long, default_value = "70")]
+    spike_percentile: u32,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -634,21 +640,21 @@ fn run_full_pipeline_internal(
     log::info!("  Snapshots: {}", total_snapshots);
     log::info!("  Final temperature: {:.1}K", final_temperature);
 
-    // Intensity pre-filtering: keep only top 2% by intensity to reduce noise
+    // Intensity pre-filtering: keep only spikes above --spike-percentile
+    let pct = (args.spike_percentile.min(99) as f32) / 100.0;
     let accumulated_spikes = if all_spikes.len() > 1000 {
-        // Compute intensity threshold (98th percentile)
         let mut intensities: Vec<f32> = all_spikes.iter()
             .map(|s| s.intensity)
             .collect();
         intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let threshold_idx = (intensities.len() as f32 * 0.98) as usize;
+        let threshold_idx = (intensities.len() as f32 * pct) as usize;
         let intensity_threshold = intensities.get(threshold_idx).copied().unwrap_or(0.0);
 
         let filtered: Vec<_> = all_spikes.into_iter()
             .filter(|s| s.intensity >= intensity_threshold)
             .collect();
-        log::info!("  Intensity filter: kept {} spikes (top 2%, threshold={:.2})",
-            filtered.len(), intensity_threshold);
+        log::info!("  Intensity filter: kept {} spikes (top {}%, threshold={:.2})",
+            filtered.len(), 100 - args.spike_percentile, intensity_threshold);
         filtered
     } else {
         all_spikes
@@ -1194,6 +1200,7 @@ fn run_batch_gpu_concurrent(
     // Load each structure topology and extract aromatic positions
     // We track (structure_idx, replica_idx) for each batch entry
     let mut entry_mapping = Vec::new(); // Vec<(structure_idx, replica_idx)>
+    let mut max_atoms_seen: usize = 0;
     let mut structure_ids = Vec::new();
     let mut topologies = Vec::new();
     let mut aromatic_positions_per_structure = Vec::new();
@@ -1205,6 +1212,7 @@ fn run_batch_gpu_concurrent(
             .with_context(|| format!("Failed to load: {}", topology_path.display()))?;
 
         // Extract aromatic positions for UV burst targeting
+        max_atoms_seen = max_atoms_seen.max(topology.n_atoms);
         let aromatic_positions = extract_aromatic_positions(&topology);
 
         // Extract aromatic atom indices for spike detection
@@ -1245,7 +1253,12 @@ fn run_batch_gpu_concurrent(
 
     // Configure protocol (steps determined after hysteresis decision)
     let protocol = if args.fast {
-        CryoUvProtocol::fast_35k()
+        let base = CryoUvProtocol::fast_35k();
+        let extra_warm = ((max_atoms_seen.saturating_sub(5000) / 1000) * 2000) as i32;
+        let protocol_sized = CryoUvProtocol { warm_hold_steps: base.warm_hold_steps + extra_warm, ..base };
+        log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
+            protocol_sized.warm_hold_steps, max_atoms_seen, extra_warm);
+        protocol_sized
     } else {
         CryoUvProtocol {
             start_temp: args.cryo_temp,
@@ -2054,7 +2067,12 @@ fn run_multi_stream_pipeline(
     };
 
     let protocol = if args.fast {
-        CryoUvProtocol::fast_35k()
+        let base = CryoUvProtocol::fast_35k();
+        let extra_warm = ((topology.n_atoms.saturating_sub(5000) / 1000) * 2000) as i32;
+        let protocol_sized = CryoUvProtocol { warm_hold_steps: base.warm_hold_steps + extra_warm, ..base };
+        log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
+            protocol_sized.warm_hold_steps, topology.n_atoms, extra_warm);
+        protocol_sized
     } else {
         CryoUvProtocol {
             start_temp: args.cryo_temp,
@@ -2165,10 +2183,11 @@ fn run_multi_stream_pipeline(
             }
         };
 
+        let pct_f = (args.spike_percentile.min(99) as f32) / 100.0;
         let filtered = if raw_spikes.len() > 1000 {
             let mut intensities: Vec<f32> = raw_spikes.iter().map(|s| s.intensity).collect();
             intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let idx = (intensities.len() as f32 * 0.70) as usize;
+            let idx = (intensities.len() as f32 * pct_f) as usize;
             let threshold = intensities.get(idx).copied().unwrap_or(0.0);
             raw_spikes.into_iter().filter(|s| s.intensity >= threshold).collect::<Vec<_>>()
         } else {
@@ -2243,6 +2262,13 @@ fn run_multi_stream_pipeline(
         build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0)
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
+
+    // Recalculate volumes using buriedness-aware enclosure method
+    // This replaces the naive spike-cloud volume with true pocket enclosure volume
+    if !clustered_sites.is_empty() {
+        log::info!("  Recalculating volumes with enclosure analysis...");
+        recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions);
+    }
 
     if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
         enhance_sites_with_aromatics(&mut clustered_sites, &aromatic_positions);
@@ -2873,6 +2899,250 @@ fn build_consensus_sites(
 
     consensus_sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
     consensus_sites
+}
+
+/// Recalculate site volumes using LIGSITE-style grid scanline method.
+///
+/// Scans the ENTIRE protein to find enclosed void regions, then intersects
+/// with spike activity. Grid covers the full protein bounding box + margin.
+///
+///   1. Build 3D boolean grid `is_protein` over entire protein (SES surface)
+///   2. Build 3D boolean grid `is_active` from ALL spikes
+///   3. For each non-protein, active voxel:
+///      - Ray-cast ±X, ±Y, ±Z through `is_protein` grid
+///      - Blocked = ray hits protein before grid boundary
+///   4. Voxel is pocket void if blocked in ≥ 5 of 6 directions
+///   5. Assign enclosed voxels to nearest site; sum per site
+///
+/// Surface noise: spikes exist, void exists, but rays escape → volume ≈ 0
+/// Real pocket: spikes exist, void exists, rays hit walls → volume > 0
+#[cfg(feature = "gpu")]
+fn recalculate_enclosure_volume(
+    sites: &mut [ClusteredBindingSite],
+    all_spikes: &[prism_nhs::fused_engine::GpuSpikeEvent],
+    atom_positions: &[f32],
+) {
+    use prism_nhs::{DruggabilityScore, SiteClassification};
+
+    let n_atoms = atom_positions.len() / 3;
+    let grid_step = 1.0f32;
+    let exclusion_radius = 3.0f32;  // Standard SES probe radius
+    let spike_reach = 5.0f32;       // active zone around spike positions
+    let scan_margin = 10.0f32;      // margin for rays to escape past protein surface
+    let min_blocked = 4u32;         // Trench/groove mode: 4 of 6 directions blocked catches shallow binding grooves
+
+    if n_atoms == 0 || sites.is_empty() {
+        return;
+    }
+
+    // ---- Build GLOBAL grid over entire protein ----
+    let mut prot_min = [f32::MAX; 3];
+    let mut prot_max = [f32::MIN; 3];
+    for i in 0..n_atoms {
+        for d in 0..3 {
+            let v = atom_positions[i*3 + d];
+            prot_min[d] = prot_min[d].min(v);
+            prot_max[d] = prot_max[d].max(v);
+        }
+    }
+    let gmin = [prot_min[0] - scan_margin, prot_min[1] - scan_margin, prot_min[2] - scan_margin];
+    let nx = ((prot_max[0] - prot_min[0] + 2.0 * scan_margin) / grid_step).ceil() as usize + 1;
+    let ny = ((prot_max[1] - prot_min[1] + 2.0 * scan_margin) / grid_step).ceil() as usize + 1;
+    let nz = ((prot_max[2] - prot_min[2] + 2.0 * scan_margin) / grid_step).ceil() as usize + 1;
+    let grid_size = nx * ny * nz;
+
+    log::info!("  LIGSITE grid: {}×{}×{} = {} voxels (margin={:.0}Å)",
+        nx, ny, nz, grid_size, scan_margin);
+
+    let mut is_protein = vec![false; grid_size];
+    let mut is_active = vec![false; grid_size];
+
+    let to_idx = |ix: usize, iy: usize, iz: usize| -> usize {
+        ix * ny * nz + iy * nz + iz
+    };
+    let to_world = |ix: usize, iy: usize, iz: usize| -> [f32; 3] {
+        [gmin[0] + ix as f32 * grid_step,
+         gmin[1] + iy as f32 * grid_step,
+         gmin[2] + iz as f32 * grid_step]
+    };
+
+    // ---- Stage 1: Mark protein (SES) voxels ----
+    let excl_sq = exclusion_radius * exclusion_radius;
+    let excl_cells = (exclusion_radius / grid_step).ceil() as i32 + 1;
+    for i in 0..n_atoms {
+        let ax = atom_positions[i*3];
+        let ay = atom_positions[i*3 + 1];
+        let az = atom_positions[i*3 + 2];
+        let aix = ((ax - gmin[0]) / grid_step).round() as i32;
+        let aiy = ((ay - gmin[1]) / grid_step).round() as i32;
+        let aiz = ((az - gmin[2]) / grid_step).round() as i32;
+        for dx in -excl_cells..=excl_cells {
+            for dy in -excl_cells..=excl_cells {
+                for dz in -excl_cells..=excl_cells {
+                    let ix = aix + dx;
+                    let iy = aiy + dy;
+                    let iz = aiz + dz;
+                    if ix < 0 || iy < 0 || iz < 0 { continue; }
+                    let ix = ix as usize;
+                    let iy = iy as usize;
+                    let iz = iz as usize;
+                    if ix >= nx || iy >= ny || iz >= nz { continue; }
+                    let w = to_world(ix, iy, iz);
+                    let d2 = (w[0]-ax).powi(2) + (w[1]-ay).powi(2) + (w[2]-az).powi(2);
+                    if d2 <= excl_sq {
+                        is_protein[to_idx(ix, iy, iz)] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Stage 2: Mark active voxels (near ANY spike, whole protein) ----
+    let spike_reach_sq = spike_reach * spike_reach;
+    let spike_cells = (spike_reach / grid_step).ceil() as i32 + 1;
+    for spike in all_spikes {
+        let sp = spike.position;
+        // Quick reject: spike outside grid
+        let six = ((sp[0] - gmin[0]) / grid_step).round() as i32;
+        let siy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
+        let siz = ((sp[2] - gmin[2]) / grid_step).round() as i32;
+        if six < -spike_cells || siy < -spike_cells || siz < -spike_cells { continue; }
+        if six > nx as i32 + spike_cells || siy > ny as i32 + spike_cells || siz > nz as i32 + spike_cells { continue; }
+        for dx in -spike_cells..=spike_cells {
+            for dy in -spike_cells..=spike_cells {
+                for dz in -spike_cells..=spike_cells {
+                    let ix = six + dx;
+                    let iy = siy + dy;
+                    let iz = siz + dz;
+                    if ix < 0 || iy < 0 || iz < 0 { continue; }
+                    let ix = ix as usize;
+                    let iy = iy as usize;
+                    let iz = iz as usize;
+                    if ix >= nx || iy >= ny || iz >= nz { continue; }
+                    let idx = to_idx(ix, iy, iz);
+                    if !is_active[idx] {
+                        let w = to_world(ix, iy, iz);
+                        let d2 = (w[0]-sp[0]).powi(2) + (w[1]-sp[1]).powi(2) + (w[2]-sp[2]).powi(2);
+                        if d2 <= spike_reach_sq {
+                            is_active[idx] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Stage 3: Find enclosed active void voxels, assign to nearest site ----
+    let mut per_site_enclosed: Vec<u32> = vec![0; sites.len()];
+    let mut total_active_void = 0u32;
+    let mut total_enclosed = 0u32;
+    let mut total_protein = 0u32;
+
+    for ix in 0..nx {
+        for iy in 0..ny {
+            for iz in 0..nz {
+                let idx = to_idx(ix, iy, iz);
+                if is_protein[idx] { total_protein += 1; continue; }
+                if !is_active[idx] { continue; }
+                total_active_void += 1;
+
+                // Ray-cast in 6 axial directions with a 10Å HORIZON
+                // This prevents tangent rays from hitting distant protein parts on convex surfaces
+                let mut blocked = 0u32;
+                let max_ray_dist = 10.0f32;
+                let max_ray_steps = (max_ray_dist / grid_step).ceil() as usize;
+
+                // +X
+                let mut hit = false;
+                for step in 1..=usize::min(nx - 1 - ix, max_ray_steps) {
+                    if is_protein[to_idx(ix + step, iy, iz)] { hit = true; break; }
+                }
+                if hit { blocked += 1; }
+
+                // -X
+                hit = false;
+                for step in 1..=usize::min(ix, max_ray_steps) {
+                    if is_protein[to_idx(ix - step, iy, iz)] { hit = true; break; }
+                }
+                if hit { blocked += 1; }
+
+                // +Y
+                hit = false;
+                for step in 1..=usize::min(ny - 1 - iy, max_ray_steps) {
+                    if is_protein[to_idx(ix, iy + step, iz)] { hit = true; break; }
+                }
+                if hit { blocked += 1; }
+
+                // -Y
+                hit = false;
+                for step in 1..=usize::min(iy, max_ray_steps) {
+                    if is_protein[to_idx(ix, iy - step, iz)] { hit = true; break; }
+                }
+                if hit { blocked += 1; }
+
+                // +Z
+                hit = false;
+                for step in 1..=usize::min(nz - 1 - iz, max_ray_steps) {
+                    if is_protein[to_idx(ix, iy, iz + step)] { hit = true; break; }
+                }
+                if hit { blocked += 1; }
+
+                // -Z
+                hit = false;
+                for step in 1..=usize::min(iz, max_ray_steps) {
+                    if is_protein[to_idx(ix, iy, iz - step)] { hit = true; break; }
+                }
+                if hit { blocked += 1; }
+
+                if blocked >= min_blocked {
+                    total_enclosed += 1;
+
+                    // Assign to nearest site, BUT ONLY if within the 12Å local pocket leash.
+                    // This prevents "Global Vacuum" where distant surface roughness is summed into a site.
+                    let w = to_world(ix, iy, iz);
+                    let mut best_site = None;
+                    let mut best_d2 = f32::MAX;
+                    let max_assignment_dist = 20.0f32; // Expanded to capture long trenches/grooves
+                    let max_site_d2 = max_assignment_dist * max_assignment_dist;
+
+                    for (si, site) in sites.iter().enumerate() {
+                        let d2 = (w[0]-site.centroid[0]).powi(2) +
+                                 (w[1]-site.centroid[1]).powi(2) +
+                                 (w[2]-site.centroid[2]).powi(2);
+
+                        // Strict assignment: must be within 12Å of site centroid
+                        if d2 < best_d2 && d2 <= max_site_d2 {
+                            best_d2 = d2;
+                            best_site = Some(si);
+                        }
+                    }
+
+                    if let Some(si) = best_site {
+                        per_site_enclosed[si] += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    log::info!("  LIGSITE totals: protein={}, active_void={}, enclosed(≥{}/6)={}",
+        total_protein, total_active_void, min_blocked, total_enclosed);
+
+    // Update each site's volume
+    for (si, site) in sites.iter_mut().enumerate() {
+        let new_volume = per_site_enclosed[si] as f32 * grid_step.powi(3);
+        log::info!("  Site {}: LIGSITE volume = {:.1} Å³ (old={:.1}, {} enclosed voxels)",
+            site.cluster_id, new_volume, site.estimated_volume, per_site_enclosed[si]);
+
+        site.estimated_volume = new_volume;
+        site.druggability = DruggabilityScore::from_site(new_volume, site.avg_intensity, &site.bounding_box);
+        site.classification = SiteClassification::from_properties(site.spike_count, new_volume, site.avg_intensity);
+        site.quality_score = {
+            let spike_quality = (site.spike_count as f32 / 100.0).clamp(0.0, 1.0);
+            let intensity_quality = (site.avg_intensity / 10.0).clamp(0.0, 1.0);
+            0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * site.druggability.overall
+        };
+    }
 }
 
 /// Write ensemble trajectory as multi-MODEL PDB file
