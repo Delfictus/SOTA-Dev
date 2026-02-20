@@ -2312,7 +2312,7 @@ fn run_multi_stream_pipeline(
         let mut all_pockets_json = Vec::new();
         let mut cryptic_sites_json = Vec::new();
 
-        for site in clustered_sites.iter().take(100) {
+        for site in clustered_sites.iter_mut().take(100) {
             let cx = site.centroid[0];
             let cy = site.centroid[1];
             let cz = site.centroid[2];
@@ -2363,6 +2363,24 @@ fn run_multi_stream_pipeline(
                 "n_frames": n_frames,
                 "volumes": volumes,
             }));
+
+            // ---- CV druggability penalty ----
+            // Rigid buried cores: CV ~ 0 (no volume fluctuation). Penalize.
+            // Real pockets breathe: CV > 0.3 expected.
+            if cv_volume < 0.3 {
+                let penalty = (cv_volume / 0.3) as f32;
+                let old_drug = site.druggability.overall;
+                site.druggability.overall *= penalty;
+                site.druggability.is_druggable = site.druggability.overall >= 0.45;
+                site.quality_score = {
+                    let sq = (site.spike_count as f32 / 100.0).clamp(0.0, 1.0);
+                    let iq = (site.avg_intensity / 10.0).clamp(0.0, 1.0);
+                    0.3 * sq + 0.3 * iq + 0.4 * site.druggability.overall
+                };
+                log::info!("  Site {}: CV penalty cv={:.4} factor={:.3} drug {:.3}->{:.3}{}",
+                    site.cluster_id, cv_volume, penalty, old_drug, site.druggability.overall,
+                    if site.druggability.is_druggable { "" } else { " NOT_DRUGGABLE" });
+            }
 
             // spike_frames: frames where this site had spikes
             let spike_frames: Vec<usize> = frame_spike_counts.iter().enumerate()
@@ -2926,8 +2944,8 @@ fn recalculate_enclosure_volume(
 
     let n_atoms = atom_positions.len() / 3;
     let grid_step = 1.0f32;
-    let exclusion_radius = 3.0f32;  // Standard SES probe radius
-    let spike_reach = 5.0f32;       // active zone around spike positions
+    let exclusion_radius = 4.0f32;  // v6: Aggressive smoothing
+    let spike_reach = 6.0f32;       // v6: Long reach
     let scan_margin = 10.0f32;      // margin for rays to escape past protein surface
     let min_blocked = 4u32;         // Trench/groove mode: 4 of 6 directions blocked catches shallow binding grooves
 
@@ -3032,6 +3050,56 @@ fn recalculate_enclosure_volume(
         }
     }
 
+    // ---- Stage 2.5: Flood-fill solvent accessibility from grid boundary ----
+    // Buried hydrophobic cores are NOT reachable from exterior -> filtered out.
+    let mut is_solvent = vec![false; grid_size];
+    {
+        let mut queue: std::collections::VecDeque<(usize, usize, usize)> =
+            std::collections::VecDeque::new();
+
+        // Seed: all non-protein boundary voxels
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let on_boundary = ix == 0 || ix == nx - 1
+                                   || iy == 0 || iy == ny - 1
+                                   || iz == 0 || iz == nz - 1;
+                    if on_boundary {
+                        let idx = to_idx(ix, iy, iz);
+                        if !is_protein[idx] && !is_solvent[idx] {
+                            is_solvent[idx] = true;
+                            queue.push_back((ix, iy, iz));
+                        }
+                    }
+                }
+            }
+        }
+
+        // BFS through non-protein voxels (6-connected)
+        while let Some((cx, cy, cz)) = queue.pop_front() {
+            for &(dx, dy, dz) in &[
+                (1i32,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)
+            ] {
+                let nix = cx as i32 + dx;
+                let niy = cy as i32 + dy;
+                let niz = cz as i32 + dz;
+                if nix < 0 || niy < 0 || niz < 0 { continue; }
+                let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
+                if nix >= nx || niy >= ny || niz >= nz { continue; }
+                let nidx = to_idx(nix, niy, niz);
+                if !is_protein[nidx] && !is_solvent[nidx] {
+                    is_solvent[nidx] = true;
+                    queue.push_back((nix, niy, niz));
+                }
+            }
+        }
+
+        let solvent_count = is_solvent.iter().filter(|&&v| v).count();
+        let buried_count = (0..grid_size).filter(|&i| !is_protein[i] && !is_solvent[i]).count();
+        log::info!("  Solvent gate: {} exterior-reachable, {} buried void voxels",
+            solvent_count, buried_count);
+    }
+
     // ---- Stage 3: Find enclosed active void voxels, assign to nearest site ----
     let mut per_site_enclosed: Vec<u32> = vec![0; sites.len()];
     let mut total_active_void = 0u32;
@@ -3094,15 +3162,15 @@ fn recalculate_enclosure_volume(
                 }
                 if hit { blocked += 1; }
 
-                if blocked >= min_blocked {
+                if blocked >= min_blocked && is_solvent[idx] {
                     total_enclosed += 1;
 
-                    // Assign to nearest site, BUT ONLY if within the 12Å local pocket leash.
-                    // This prevents "Global Vacuum" where distant surface roughness is summed into a site.
+                    // Assign to nearest site within 20Å leash.
+                    // Long leash required for elongated grooves like MDM2.
                     let w = to_world(ix, iy, iz);
                     let mut best_site = None;
                     let mut best_d2 = f32::MAX;
-                    let max_assignment_dist = 20.0f32; // Expanded to capture long trenches/grooves
+                    let max_assignment_dist = 20.0f32; // v6: Long leash
                     let max_site_d2 = max_assignment_dist * max_assignment_dist;
 
                     for (si, site) in sites.iter().enumerate() {
