@@ -1260,6 +1260,9 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         // - Temporal derivative amplification for UV-specific signals
 
         float uv_signal = 0.0f;
+        int n_nearby_excited = 0;
+        float min_distance_to_excited = 1000.0f;
+        int closest_excited_idx = -1;
         if (n_aromatics > 0) {
             // ================================================================
             // SIMPLE DIRECT UV SIGNAL: Count nearby excited aromatics
@@ -1273,10 +1276,10 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             const float UV_DETECTION_RADIUS = 4.0f;   // Å - very tight
             const float UV_DIRECT_STRENGTH = 0.8f;    // Strong signal for close voxels
 
-            int n_nearby_excited = 0;
+            n_nearby_excited = 0;
             float total_vib_energy = 0.0f;
-            float min_distance_to_excited = 1000.0f;  // Track closest excited aromatic
-            int closest_excited_idx = -1;  // Index of closest excited aromatic
+            min_distance_to_excited = 1000.0f;  // Track closest excited aromatic
+            closest_excited_idx = -1;  // Index of closest excited aromatic
 
             for (int a = 0; a < n_aromatics; a++) {
                 if (!d_is_excited[a]) continue;
@@ -1399,8 +1402,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             if (n_nearby_excited > 0 &&
                 uv_signal > DIRECT_UV_SPIKE_THRESHOLD &&
                 voxel_n_atoms > 0 &&
-                min_distance_to_excited < MAX_SPIKE_DISTANCE &&
-                voxel_has_aromatic_atom) {
+                min_distance_to_excited < MAX_SPIKE_DISTANCE) {
                 spike_grid[v] = REFRACTORY_STEPS;
                 spike_intensity = uv_signal;  // Use UV signal as intensity
 
@@ -1468,6 +1470,23 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 // Capture spike event with proper intensity
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
+                    // If voxel had UV contribution, carry aromatic metadata
+                    int lif_atype = -1;
+                    int lif_ares = -1;
+                    float lif_wl = 0.0f;
+                    float lif_vibe = 0.0f;
+                    if (n_nearby_excited > 0 && closest_excited_idx >= 0) {
+                        lif_atype = d_aromatic_type[closest_excited_idx];
+                        lif_wl = uv_wavelength_nm;
+                        lif_vibe = d_vibrational_energy[closest_excited_idx];
+                        // Find residue ID for closest aromatic
+                        for (int wi = 0; wi < warp_matrix[v].n_atoms && lif_ares < 0; wi++) {
+                            int ai = warp_matrix[v].atom_indices[wi];
+                            if (ai >= 0 && ai < n_atoms && d_atom_to_aromatic[ai] == closest_excited_idx) {
+                                lif_ares = residue_ids[ai];
+                            }
+                        }
+                    }
                     capture_spike_event(
                         spike_events[spike_idx],
                         timestep,
@@ -1476,13 +1495,13 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         spike_intensity,
                         warp_matrix[v],
                         residue_ids,
-                        2,                  // spike_source = LIF
-                        0.0f,               // no wavelength
-                        -1,                 // no aromatic type
-                        -1,                 // no aromatic residue
-                        water_density[v],   // water_density
-                        0.0f,               // no vibrational energy
-                        0                   // no nearby excited
+                        (n_nearby_excited > 0) ? 1 : 2,  // UV-enriched or pure LIF
+                        lif_wl,
+                        lif_atype,
+                        lif_ares,
+                        water_density[v],
+                        lif_vibe,
+                        n_nearby_excited
                     );
                 }
             }
