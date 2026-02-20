@@ -2263,12 +2263,10 @@ fn run_multi_stream_pipeline(
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
-    // Recalculate volumes using buriedness-aware enclosure method
-    // This replaces the naive spike-cloud volume with true pocket enclosure volume
-    if !clustered_sites.is_empty() {
-        log::info!("  Recalculating volumes with enclosure analysis...");
-        recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions);
-    }
+    // Dynamic LIGSITE: Geometry proposes pockets, physics scores them.
+    // Runs unconditionally — geometry finds pockets independent of spike-cluster sites.
+    log::info!("  Running Dynamic LIGSITE pocket detection...");
+    recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions);
 
     if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
         enhance_sites_with_aromatics(&mut clustered_sites, &aromatic_positions);
@@ -2919,37 +2917,40 @@ fn build_consensus_sites(
     consensus_sites
 }
 
-/// Recalculate site volumes using LIGSITE-style grid scanline method.
+/// "Dynamic LIGSITE" — Geometry-first pocket detection with spike scoring.
 ///
-/// Scans the ENTIRE protein to find enclosed void regions, then intersects
-/// with spike activity. Grid covers the full protein bounding box + margin.
+/// Pipeline inversion: Geometry Proposes, Physics Disposes.
 ///
 ///   1. Build 3D boolean grid `is_protein` over entire protein (SES surface)
-///   2. Build 3D boolean grid `is_active` from ALL spikes
-///   3. For each non-protein, active voxel:
-///      - Ray-cast ±X, ±Y, ±Z through `is_protein` grid
-///      - Blocked = ray hits protein before grid boundary
-///   4. Voxel is pocket void if blocked in ≥ 5 of 6 directions
-///   5. Assign enclosed voxels to nearest site; sum per site
+///   2. Flood-fill solvent accessibility from grid boundary
+///   3. DAH depth field (distance transform from solvent surface)
+///   4. Ray-cast ±X,±Y,±Z → `is_enclosed` boolean (≥ min_blocked directions blocked)
+///   5. BFS connected components on enclosed voxels → PocketCandidates
+///   6. O(N) spike overlay: map each spike to nearest pocket via component_id grid
+///   7. Score pockets (spike density + depth penalty), rebuild sites vector
 ///
-/// Surface noise: spikes exist, void exists, but rays escape → volume ≈ 0
-/// Real pocket: spikes exist, void exists, rays hit walls → volume > 0
+/// Negative controls (convex rocks): zero enclosed components → zero sites
+/// Positive controls (pockets/grooves): enclosed voids with high spike density
 #[cfg(feature = "gpu")]
 fn recalculate_enclosure_volume(
-    sites: &mut [ClusteredBindingSite],
+    sites: &mut Vec<ClusteredBindingSite>,
     all_spikes: &[prism_nhs::fused_engine::GpuSpikeEvent],
     atom_positions: &[f32],
 ) {
     use prism_nhs::{DruggabilityScore, SiteClassification};
+    use std::collections::VecDeque;
 
     let n_atoms = atom_positions.len() / 3;
     let grid_step = 1.0f32;
-    let exclusion_radius = 4.0f32;  // v6: Aggressive smoothing
-    let spike_reach = 6.0f32;       // v6: Long reach
+    let exclusion_radius = 3.0f32;  // Standard SES probe radius
     let scan_margin = 10.0f32;      // margin for rays to escape past protein surface
-    let min_blocked = 4u32;         // Trench/groove mode: 4 of 6 directions blocked catches shallow binding grooves
+    let min_blocked = 4u32;         // Trench mode: grooves/trenches pass, convex surfaces fail
+    let min_pocket_voxels = 50u32;  // 50 Å³ minimum viable pocket
+    let spike_intensity_min = 5.0f32; // Silver bullet: only trapped spikes count
+    let spike_search_r = 3i32;     // Bridge SES gap for spike→pocket mapping
 
-    if n_atoms == 0 || sites.is_empty() {
+    if n_atoms == 0 {
+        sites.clear();
         return;
     }
 
@@ -2973,7 +2974,6 @@ fn recalculate_enclosure_volume(
         nx, ny, nz, grid_size, scan_margin);
 
     let mut is_protein = vec![false; grid_size];
-    let mut is_active = vec![false; grid_size];
 
     let to_idx = |ix: usize, iy: usize, iz: usize| -> usize {
         ix * ny * nz + iy * nz + iz
@@ -3015,40 +3015,7 @@ fn recalculate_enclosure_volume(
         }
     }
 
-    // ---- Stage 2: Mark active voxels (near ANY spike, whole protein) ----
-    let spike_reach_sq = spike_reach * spike_reach;
-    let spike_cells = (spike_reach / grid_step).ceil() as i32 + 1;
-    for spike in all_spikes {
-        let sp = spike.position;
-        // Quick reject: spike outside grid
-        let six = ((sp[0] - gmin[0]) / grid_step).round() as i32;
-        let siy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
-        let siz = ((sp[2] - gmin[2]) / grid_step).round() as i32;
-        if six < -spike_cells || siy < -spike_cells || siz < -spike_cells { continue; }
-        if six > nx as i32 + spike_cells || siy > ny as i32 + spike_cells || siz > nz as i32 + spike_cells { continue; }
-        for dx in -spike_cells..=spike_cells {
-            for dy in -spike_cells..=spike_cells {
-                for dz in -spike_cells..=spike_cells {
-                    let ix = six + dx;
-                    let iy = siy + dy;
-                    let iz = siz + dz;
-                    if ix < 0 || iy < 0 || iz < 0 { continue; }
-                    let ix = ix as usize;
-                    let iy = iy as usize;
-                    let iz = iz as usize;
-                    if ix >= nx || iy >= ny || iz >= nz { continue; }
-                    let idx = to_idx(ix, iy, iz);
-                    if !is_active[idx] {
-                        let w = to_world(ix, iy, iz);
-                        let d2 = (w[0]-sp[0]).powi(2) + (w[1]-sp[1]).powi(2) + (w[2]-sp[2]).powi(2);
-                        if d2 <= spike_reach_sq {
-                            is_active[idx] = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // ---- Stage 2: (DELETED — geometry proposes pockets; spikes score in Stage 6) ----
 
     // ---- Stage 2.5: Flood-fill solvent accessibility from grid boundary ----
     // Buried hydrophobic cores are NOT reachable from exterior -> filtered out.
@@ -3100,25 +3067,24 @@ fn recalculate_enclosure_volume(
             solvent_count, buried_count);
     }
 
-    // ---- Stage 3: Find enclosed active void voxels, assign to nearest site ----
-    let mut per_site_enclosed: Vec<u32> = vec![0; sites.len()];
-    let mut total_active_void = 0u32;
+    // ---- Stage 2.75: MOVED to Stage 3.5 (depends on is_enclosed) ----
+
+    // ---- Stage 3: Ray-cast → is_enclosed boolean ----
+    // Geometry proposes: find all solvent-accessible void voxels enclosed on ≥4 sides
+    let mut is_enclosed = vec![false; grid_size];
     let mut total_enclosed = 0u32;
     let mut total_protein = 0u32;
+    let max_ray_steps = (10.0f32 / grid_step).ceil() as usize; // 10Å horizon
 
     for ix in 0..nx {
         for iy in 0..ny {
             for iz in 0..nz {
                 let idx = to_idx(ix, iy, iz);
                 if is_protein[idx] { total_protein += 1; continue; }
-                if !is_active[idx] { continue; }
-                total_active_void += 1;
+                if !is_solvent[idx] { continue; } // Must be reachable from exterior
 
-                // Ray-cast in 6 axial directions with a 10Å HORIZON
-                // This prevents tangent rays from hitting distant protein parts on convex surfaces
+                // Ray-cast in 6 axial directions with 10Å horizon
                 let mut blocked = 0u32;
-                let max_ray_dist = 10.0f32;
-                let max_ray_steps = (max_ray_dist / grid_step).ceil() as usize;
 
                 // +X
                 let mut hit = false;
@@ -3162,55 +3128,354 @@ fn recalculate_enclosure_volume(
                 }
                 if hit { blocked += 1; }
 
-                if blocked >= min_blocked && is_solvent[idx] {
+                if blocked >= min_blocked {
+                    is_enclosed[idx] = true;
                     total_enclosed += 1;
-
-                    // Assign to nearest site within 20Å leash.
-                    // Long leash required for elongated grooves like MDM2.
-                    let w = to_world(ix, iy, iz);
-                    let mut best_site = None;
-                    let mut best_d2 = f32::MAX;
-                    let max_assignment_dist = 20.0f32; // v6: Long leash
-                    let max_site_d2 = max_assignment_dist * max_assignment_dist;
-
-                    for (si, site) in sites.iter().enumerate() {
-                        let d2 = (w[0]-site.centroid[0]).powi(2) +
-                                 (w[1]-site.centroid[1]).powi(2) +
-                                 (w[2]-site.centroid[2]).powi(2);
-
-                        // Strict assignment: must be within 12Å of site centroid
-                        if d2 < best_d2 && d2 <= max_site_d2 {
-                            best_d2 = d2;
-                            best_site = Some(si);
-                        }
-                    }
-
-                    if let Some(si) = best_site {
-                        per_site_enclosed[si] += 1;
-                    }
                 }
             }
         }
     }
 
-    log::info!("  LIGSITE totals: protein={}, active_void={}, enclosed(≥{}/6)={}",
-        total_protein, total_active_void, min_blocked, total_enclosed);
+    log::info!("  LIGSITE ray-cast: protein={}, enclosed(≥{}/6)={}",
+        total_protein, min_blocked, total_enclosed);
 
-    // Update each site's volume
-    for (si, site) in sites.iter_mut().enumerate() {
-        let new_volume = per_site_enclosed[si] as f32 * grid_step.powi(3);
-        log::info!("  Site {}: LIGSITE volume = {:.1} Å³ (old={:.1}, {} enclosed voxels)",
-            site.cluster_id, new_volume, site.estimated_volume, per_site_enclosed[si]);
-
-        site.estimated_volume = new_volume;
-        site.druggability = DruggabilityScore::from_site(new_volume, site.avg_intensity, &site.bounding_box);
-        site.classification = SiteClassification::from_properties(site.spike_count, new_volume, site.avg_intensity);
-        site.quality_score = {
-            let spike_quality = (site.spike_count as f32 / 100.0).clamp(0.0, 1.0);
-            let intensity_quality = (site.avg_intensity / 10.0).clamp(0.0, 1.0);
-            0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * site.druggability.overall
-        };
+    if total_enclosed == 0 {
+        sites.clear();
+        log::info!("  No enclosed voxels — zero geometric pockets (negative control behavior)");
+        return;
     }
+
+    // ---- Stage 3.5: DAH "Lid-Seeding" Distance Transform ----
+    // Measure distance from the pocket mouth (bulk ocean) into the enclosed void.
+    // Seed depth=0 from non-enclosed solvent (the "lid"), propagate ONLY into enclosed voxels.
+    // This correctly measures how deep into the protein a pocket extends.
+    // Init to 99.0 (not f32::MAX) so disconnected buried cores get exp(-97/5) ≈ 0 penalty.
+    let depth_grid = {
+        let mut depth = vec![99.0f32; grid_size];
+        let mut depth_queue = VecDeque::new();
+
+        // 1. Seed the "Lid": bulk solvent that is NOT enclosed
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let idx = to_idx(ix, iy, iz);
+                    if is_solvent[idx] && !is_enclosed[idx] {
+                        depth[idx] = 0.0;
+                        depth_queue.push_back((ix, iy, iz));
+                    }
+                }
+            }
+        }
+
+        // 2. Propagate BFS inward strictly INTO enclosed pocket void
+        while let Some((cx, cy, cz)) = depth_queue.pop_front() {
+            let curr_depth = depth[to_idx(cx, cy, cz)];
+
+            for &(ddx, ddy, ddz) in &[
+                (1i32,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)
+            ] {
+                let nix = cx as i32 + ddx;
+                let niy = cy as i32 + ddy;
+                let niz = cz as i32 + ddz;
+                if nix < 0 || niy < 0 || niz < 0 { continue; }
+                let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
+                if nix >= nx || niy >= ny || niz >= nz { continue; }
+                let nidx = to_idx(nix, niy, niz);
+
+                // Only propagate into enclosed pocket voxels
+                if is_enclosed[nidx] {
+                    let new_depth = curr_depth + grid_step;
+                    if new_depth < depth[nidx] {
+                        depth[nidx] = new_depth;
+                        depth_queue.push_back((nix, niy, niz));
+                    }
+                }
+            }
+        }
+
+        // DAH Lid-Depth Summary
+        let pocket_depths: Vec<f32> = (0..grid_size)
+            .filter(|&i| is_enclosed[i] && depth[i] < 99.0)
+            .map(|i| depth[i])
+            .collect();
+        let max_pocket_depth = pocket_depths.iter().cloned().fold(0.0f32, f32::max);
+        let avg_pocket_depth = if !pocket_depths.is_empty() {
+            pocket_depths.iter().sum::<f32>() / pocket_depths.len() as f32
+        } else { 0.0 };
+        let unreachable = (0..grid_size)
+            .filter(|&i| is_enclosed[i] && depth[i] >= 99.0)
+            .count();
+        log::info!("  DAH lid-depth: {} pocket voxels measured, {} unreachable, max={:.1}Å, avg={:.1}Å",
+            pocket_depths.len(), unreachable, max_pocket_depth, avg_pocket_depth);
+
+        depth
+    };
+
+    // ---- Stage 4: BFS connected components on is_enclosed ----
+    let mut component_id: Vec<i32> = vec![-1; grid_size];
+    let mut num_components = 0i32;
+
+    // Per-component accumulators (built during BFS)
+    struct PocketAccum {
+        voxel_count: u32,
+        coord_sum: [f64; 3],
+        bbox_min: [f32; 3],
+        bbox_max: [f32; 3],
+        depth_sum: f64,
+    }
+    let mut accums: Vec<PocketAccum> = Vec::new();
+
+    for start_idx in 0..grid_size {
+        if !is_enclosed[start_idx] || component_id[start_idx] != -1 { continue; }
+
+        let cid = num_components;
+        num_components += 1;
+
+        let mut acc = PocketAccum {
+            voxel_count: 0,
+            coord_sum: [0.0; 3],
+            bbox_min: [f32::MAX; 3],
+            bbox_max: [f32::MIN; 3],
+            depth_sum: 0.0,
+        };
+
+        let mut queue = VecDeque::new();
+        component_id[start_idx] = cid;
+        queue.push_back(start_idx);
+
+        while let Some(cidx) = queue.pop_front() {
+            let ciz = cidx % nz;
+            let ciy = (cidx / nz) % ny;
+            let cix = cidx / (ny * nz);
+            let w = to_world(cix, ciy, ciz);
+
+            acc.voxel_count += 1;
+            acc.coord_sum[0] += w[0] as f64;
+            acc.coord_sum[1] += w[1] as f64;
+            acc.coord_sum[2] += w[2] as f64;
+            for d in 0..3 {
+                acc.bbox_min[d] = acc.bbox_min[d].min(w[d]);
+                acc.bbox_max[d] = acc.bbox_max[d].max(w[d]);
+            }
+            let depth_val = depth_grid[cidx];
+            if depth_val < f32::MAX {
+                acc.depth_sum += depth_val as f64;
+            }
+
+            // 6-connected BFS
+            for &(ddx, ddy, ddz) in &[
+                (1i32,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)
+            ] {
+                let nix = cix as i32 + ddx;
+                let niy = ciy as i32 + ddy;
+                let niz = ciz as i32 + ddz;
+                if nix < 0 || niy < 0 || niz < 0 { continue; }
+                let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
+                if nix >= nx || niy >= ny || niz >= nz { continue; }
+                let nidx = to_idx(nix, niy, niz);
+                if is_enclosed[nidx] && component_id[nidx] == -1 {
+                    component_id[nidx] = cid;
+                    queue.push_back(nidx);
+                }
+            }
+        }
+
+        accums.push(acc);
+    }
+
+    // Filter by minimum pocket size
+    let surviving: Vec<(usize, &PocketAccum)> = accums.iter().enumerate()
+        .filter(|(_, a)| a.voxel_count >= min_pocket_voxels)
+        .collect();
+
+    log::info!("  Connected components: {} total, {} above {} voxel threshold",
+        num_components, surviving.len(), min_pocket_voxels);
+
+    if surviving.is_empty() {
+        sites.clear();
+        log::info!("  No pockets above size threshold — clearing all sites");
+        return;
+    }
+
+    // ---- Stage 5: Build pocket metadata from surviving components ----
+    // Map from raw component_id → surviving pocket index (-1 = below threshold)
+    let mut cid_to_pocket: Vec<i32> = vec![-1; num_components as usize];
+
+    struct PocketInfo {
+        centroid: [f32; 3],
+        volume: f32,
+        bbox: [[f32; 3]; 2],
+        mean_depth: f32,
+        voxel_count: u32,
+    }
+    let mut pockets: Vec<PocketInfo> = Vec::new();
+
+    for (pocket_idx, &(cid, ref acc)) in surviving.iter().enumerate() {
+        cid_to_pocket[cid] = pocket_idx as i32;
+
+        let n = acc.voxel_count as f64;
+        let centroid = [
+            (acc.coord_sum[0] / n) as f32,
+            (acc.coord_sum[1] / n) as f32,
+            (acc.coord_sum[2] / n) as f32,
+        ];
+        let volume = acc.voxel_count as f32 * grid_step.powi(3);
+        let mean_depth = (acc.depth_sum / n) as f32;
+
+        log::info!("  Pocket {}: {} voxels, {:.0} Å³, centroid=({:.1},{:.1},{:.1}), depth={:.1}Å",
+            pocket_idx, acc.voxel_count, volume,
+            centroid[0], centroid[1], centroid[2], mean_depth);
+
+        pockets.push(PocketInfo {
+            centroid,
+            volume,
+            bbox: [acc.bbox_min, acc.bbox_max],
+            mean_depth,
+            voxel_count: acc.voxel_count,
+        });
+    }
+
+    // ---- Stage 6: O(N) spike overlay via component_id grid lookup ----
+    // Single pass through all spikes. For each spike, find its grid voxel,
+    // search a small radius to bridge the SES gap, and credit the nearest pocket.
+    struct PocketStats {
+        spike_count: u32,
+        intensity_sum: f32,
+        spike_indices: Vec<usize>,
+    }
+    let mut stats: Vec<PocketStats> = (0..pockets.len())
+        .map(|_| PocketStats { spike_count: 0, intensity_sum: 0.0, spike_indices: Vec::new() })
+        .collect();
+
+    let sr = spike_search_r;
+    let sr_sq = sr * sr;
+    let mut spikes_mapped = 0u32;
+    let mut spikes_filtered = 0u32;
+
+    for (spike_idx, spike) in all_spikes.iter().enumerate() {
+        // Silver bullet: only count high-intensity trapped spikes
+        if spike.intensity < spike_intensity_min {
+            spikes_filtered += 1;
+            continue;
+        }
+
+        let sp = spike.position;
+        let six = ((sp[0] - gmin[0]) / grid_step).round() as i32;
+        let siy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
+        let siz = ((sp[2] - gmin[2]) / grid_step).round() as i32;
+
+        // Search within spike_search_r voxels to bridge SES gap
+        let mut best_pocket: i32 = -1;
+        let mut best_d2 = i32::MAX;
+
+        for ddx in -sr..=sr {
+            for ddy in -sr..=sr {
+                for ddz in -sr..=sr {
+                    let d2 = ddx*ddx + ddy*ddy + ddz*ddz;
+                    if d2 > sr_sq { continue; }
+
+                    let nix = six + ddx;
+                    let niy = siy + ddy;
+                    let niz = siz + ddz;
+                    if nix < 0 || niy < 0 || niz < 0 { continue; }
+                    let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
+                    if nix >= nx || niy >= ny || niz >= nz { continue; }
+
+                    let cid = component_id[to_idx(nix, niy, niz)];
+                    if cid >= 0 {
+                        let pid = cid_to_pocket[cid as usize];
+                        if pid >= 0 && d2 < best_d2 {
+                            best_pocket = pid;
+                            best_d2 = d2;
+                        }
+                    }
+                }
+            }
+        }
+
+        if best_pocket >= 0 {
+            let s = &mut stats[best_pocket as usize];
+            s.spike_count += 1;
+            s.intensity_sum += spike.intensity;
+            s.spike_indices.push(spike_idx);
+            spikes_mapped += 1;
+        }
+    }
+
+    log::info!("  Spike overlay: {} mapped to pockets, {} filtered (intensity<{:.0}), {} unmapped",
+        spikes_mapped, spikes_filtered,
+        spike_intensity_min,
+        all_spikes.len() as u32 - spikes_mapped - spikes_filtered);
+
+    // ---- Stage 7: Score pockets and rebuild sites vector ----
+    sites.clear();
+
+    for (pi, pocket) in pockets.iter().enumerate() {
+        let stat = &mut stats[pi];
+
+        // NaN guards
+        let avg_intensity = if stat.spike_count > 0 {
+            stat.intensity_sum / stat.spike_count as f32
+        } else {
+            0.0
+        };
+        let spike_density = if pocket.volume > 0.0 {
+            stat.spike_count as f32 / pocket.volume
+        } else {
+            0.0
+        };
+
+        // Burial penalty: surface-proximal pockets get full score
+        // depth=2Å -> factor=1.0, depth=5Å -> 0.55, depth=8Å -> 0.30
+        let surface_factor = (-(pocket.mean_depth - 2.0).max(0.0) / 5.0).exp();
+
+        let bbox_extents = [
+            pocket.bbox[1][0] - pocket.bbox[0][0],
+            pocket.bbox[1][1] - pocket.bbox[0][1],
+            pocket.bbox[1][2] - pocket.bbox[0][2],
+        ];
+        let mut druggability = DruggabilityScore::from_site(
+            pocket.volume, avg_intensity, &bbox_extents);
+        druggability.overall *= surface_factor;
+        druggability.is_druggable = druggability.overall >= 0.40
+            && pocket.volume >= 50.0
+            && pocket.volume <= 3000.0;
+
+        let classification = SiteClassification::from_properties(
+            stat.spike_count as usize, pocket.volume, avg_intensity);
+
+        let quality_score = {
+            let spike_q = (stat.spike_count as f32 / 100.0).clamp(0.0, 1.0);
+            let intensity_q = (avg_intensity / 10.0).clamp(0.0, 1.0);
+            0.3 * spike_q + 0.3 * intensity_q + 0.4 * druggability.overall
+        };
+
+        log::info!("  Site {}: vol={:.0}Å³ spikes={} density={:.2} intensity={:.1} depth={:.1}Å \
+            surface_factor={:.3} drug={:.3} quality={:.3} class={:?}",
+            pi, pocket.volume, stat.spike_count, spike_density, avg_intensity,
+            pocket.mean_depth, surface_factor, druggability.overall, quality_score,
+            classification);
+
+        sites.push(ClusteredBindingSite {
+            cluster_id: pi as i32,
+            centroid: pocket.centroid,
+            spike_count: stat.spike_count as usize,
+            spike_indices: std::mem::take(&mut stat.spike_indices),
+            avg_intensity,
+            estimated_volume: pocket.volume,
+            bounding_box: bbox_extents,
+            quality_score,
+            druggability,
+            classification,
+            aromatic_proximity: None,
+            lining_residues: Vec::new(),
+        });
+    }
+
+    // Sort by quality descending (NaN-safe)
+    sites.sort_by(|a, b| b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+
+    log::info!("  Dynamic LIGSITE complete: {} geometric pockets", sites.len());
 }
 
 /// Write ensemble trajectory as multi-MODEL PDB file

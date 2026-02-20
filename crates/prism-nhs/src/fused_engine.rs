@@ -1361,7 +1361,7 @@ const MAX_SPIKES_PER_STEP: usize = 100000;
 const MAX_H_CLUSTERS: usize = 10000;
 
 /// Maximum UV targets
-const MAX_UV_TARGETS: usize = 1024;
+const MAX_UV_TARGETS: usize = 4096;
 
 /// Maximum number of parallel streams for concurrent replica execution
 const MAX_PARALLEL_STREAMS: usize = 8;
@@ -2355,6 +2355,7 @@ impl NhsAmberFusedEngine {
         aromatic_types: &[i32],
     ) -> Result<()> {
         // Positions (flatten [x,y,z] format)
+        log::info!("  upload: positions src={} dst={}", topology.positions.len(), self.d_positions.len());
         self.stream.memcpy_htod(&topology.positions, &mut self.d_positions)?;
 
         // Initialize velocities from Maxwell-Boltzmann at starting temperature
@@ -2363,57 +2364,71 @@ impl NhsAmberFusedEngine {
         self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
 
         // Masses
+        log::info!("  upload: masses src={} dst={}", topology.masses.len(), self.d_masses.len());
         self.stream.memcpy_htod(&topology.masses, &mut self.d_masses)?;
 
         // Charges
+        log::info!("  upload: charges src={} dst={}", topology.charges.len(), self.d_charges.len());
         self.stream.memcpy_htod(&topology.charges, &mut self.d_charges)?;
 
         // Atom types
+        log::info!("  upload: atom_types building...");
         let atom_types: Vec<i32> = topology.classify_atoms()
             .iter()
             .map(|t| t.as_i32())
             .collect();
+        log::info!("  upload: atom_types src={} dst={}", atom_types.len(), self.d_atom_types.len());
         self.stream.memcpy_htod(&atom_types, &mut self.d_atom_types)?;
 
+        log::info!("  upload: residue_ids building...");
         // Residue IDs
         let residue_ids: Vec<i32> = topology.residue_ids.iter()
             .map(|&r| r as i32)
             .collect();
+        log::info!("  upload: residue_ids src={} dst={}", residue_ids.len(), self.d_residue_ids.len());
         self.stream.memcpy_htod(&residue_ids, &mut self.d_residue_ids)?;
 
         // AMBER parameters - convert structs to bytes for GPU upload
         if !bonds.is_empty() {
             let bonds_bytes = Self::structs_to_bytes(bonds);
+            log::info!("  upload: bonds src_bytes={} dst_bytes={}", bonds_bytes.len(), self.d_bonds.len());
             self.stream.memcpy_htod(&bonds_bytes, &mut self.d_bonds)?;
         }
         if !angles.is_empty() {
             let angles_bytes = Self::structs_to_bytes(angles);
+            log::info!("  upload: angles src_bytes={} dst_bytes={}", angles_bytes.len(), self.d_angles.len());
             self.stream.memcpy_htod(&angles_bytes, &mut self.d_angles)?;
         }
         if !dihedrals.is_empty() {
             let dihedrals_bytes = Self::structs_to_bytes(dihedrals);
+            log::info!("  upload: dihedrals src_bytes={} dst_bytes={}", dihedrals_bytes.len(), self.d_dihedrals.len());
             self.stream.memcpy_htod(&dihedrals_bytes, &mut self.d_dihedrals)?;
         }
         if !lj_params.is_empty() {
             let lj_bytes = Self::structs_to_bytes(lj_params);
+            log::info!("  upload: lj src_bytes={} dst_bytes={}", lj_bytes.len(), self.d_lj_params.len());
             self.stream.memcpy_htod(&lj_bytes, &mut self.d_lj_params)?;
         }
 
         // Exclusion list (CSR format)
         if !exclusion_list.is_empty() {
+            log::info!("  upload: exclusion_list src={} dst={}", exclusion_list.len(), self.d_exclusion_list.len());
             self.stream.memcpy_htod(exclusion_list, &mut self.d_exclusion_list)?;
         }
+        log::info!("  upload: exclusion_offsets src={} dst={}", exclusion_offsets.len(), self.d_exclusion_offsets.len());
         self.stream.memcpy_htod(exclusion_offsets, &mut self.d_exclusion_offsets)?;
 
         // SHAKE H-clusters
         if !h_clusters.is_empty() {
             let h_clusters_bytes = Self::structs_to_bytes(h_clusters);
+            log::info!("  upload: h_clusters src_bytes={} dst_bytes={}", h_clusters_bytes.len(), self.d_h_clusters.len());
             self.stream.memcpy_htod(&h_clusters_bytes, &mut self.d_h_clusters)?;
         }
 
         // UV targets
         if !uv_targets.is_empty() {
             let uv_targets_bytes = Self::structs_to_bytes(uv_targets);
+            log::info!("  upload: uv_targets src_bytes={} dst_bytes={}", uv_targets_bytes.len(), self.d_uv_targets.len());
             self.stream.memcpy_htod(&uv_targets_bytes, &mut self.d_uv_targets)?;
         }
 
@@ -2422,9 +2437,11 @@ impl NhsAmberFusedEngine {
         // ====================================================================
 
         // Ground state charges (copy of original charges for reference)
+        log::info!("  upload: ground_state_charges src={} dst={}", topology.charges.len(), self.d_ground_state_charges.len());
         self.stream.memcpy_htod(&topology.charges, &mut self.d_ground_state_charges)?;
 
         // Atom to aromatic mapping
+        log::info!("  upload: atom_to_aromatic src={} dst={}", atom_to_aromatic.len(), self.d_atom_to_aromatic.len());
         self.stream.memcpy_htod(atom_to_aromatic, &mut self.d_atom_to_aromatic)?;
 
         // Aromatic types
