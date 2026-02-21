@@ -3342,9 +3342,12 @@ fn recalculate_enclosure_volume(
         spike_count: u32,
         intensity_sum: f32,
         spike_indices: Vec<usize>,
+        // Intensity-weighted centroid accumulators
+        weighted_pos: [f64; 3],
+        weight_sum: f64,
     }
     let mut stats: Vec<PocketStats> = (0..pockets.len())
-        .map(|_| PocketStats { spike_count: 0, intensity_sum: 0.0, spike_indices: Vec::new() })
+        .map(|_| PocketStats { spike_count: 0, intensity_sum: 0.0, spike_indices: Vec::new(), weighted_pos: [0.0; 3], weight_sum: 0.0 })
         .collect();
 
     let sr = spike_search_r;
@@ -3398,6 +3401,12 @@ fn recalculate_enclosure_volume(
             s.spike_count += 1;
             s.intensity_sum += spike.intensity;
             s.spike_indices.push(spike_idx);
+            // Intensity² weighted centroid (pulls toward thermodynamic hotspot)
+            let w = (spike.intensity as f64).powi(2);
+            s.weighted_pos[0] += sp[0] as f64 * w;
+            s.weighted_pos[1] += sp[1] as f64 * w;
+            s.weighted_pos[2] += sp[2] as f64 * w;
+            s.weight_sum += w;
             spikes_mapped += 1;
         }
     }
@@ -3455,10 +3464,18 @@ fn recalculate_enclosure_volume(
             pi, pocket.volume, stat.spike_count, spike_density, avg_intensity,
             pocket.mean_depth, surface_factor, druggability.overall, quality_score,
             classification);
-
+        let final_centroid = if stat.weight_sum > 1e-12 {
+            [
+                (stat.weighted_pos[0] / stat.weight_sum) as f32,
+                (stat.weighted_pos[1] / stat.weight_sum) as f32,
+                (stat.weighted_pos[2] / stat.weight_sum) as f32,
+            ]
+        } else {
+            pocket.centroid
+        };
         sites.push(ClusteredBindingSite {
             cluster_id: pi as i32,
-            centroid: pocket.centroid,
+            centroid: final_centroid,
             spike_count: stat.spike_count as usize,
             spike_indices: std::mem::take(&mut stat.spike_indices),
             avg_intensity,
