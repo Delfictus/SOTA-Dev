@@ -2263,6 +2263,108 @@ fn run_multi_stream_pipeline(
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
+
+    // ========== SNDC: Spike-Native Density Clustering (PRIMARY) ==========
+    if !all_stream_spikes.is_empty() && args.rt_clustering {
+        log::info!("  Running Spike-Native Density Clustering...");
+
+        use prism_nhs::spike_density::SpikeDensityGrid;
+        use prism_nhs::hierarchical_clustering::{HierarchicalRtClustering, HierarchicalConfig};
+        use prism_nhs::rt_clustering::RtClusteringConfig;
+
+        // Stage 2: Build density grid on GPU
+        match SpikeDensityGrid::from_spikes(
+            &all_stream_spikes,
+            &topology.positions,
+            1.0,  // 1Å spacing
+            2.0,  // 2Å Gaussian sigma
+            context.clone(),
+        ) {
+            Ok(mut density_grid) => {
+                let n_peaks = density_grid.count_peaks().unwrap_or(0);
+                log::info!("    Density grid: {}x{}x{}, {} peaks",
+                    density_grid.dims[0], density_grid.dims[1], density_grid.dims[2], n_peaks);
+
+                // Stage 3: Hierarchical RT-core clustering
+                let rt_config = RtClusteringConfig {
+                    epsilon: 5.0,
+                    min_points: 3,
+                    min_cluster_size: 50,
+                    rays_per_event: 64,
+                };
+                let hier_config = HierarchicalConfig::default();
+
+                match HierarchicalRtClustering::new(hier_config, rt_config, context.clone()) {
+                    Ok(mut hrt) => {
+                        let optixir_candidates = [
+                            "crates/prism-gpu/src/kernels/rt_clustering.optixir",
+                            "../prism-gpu/src/kernels/rt_clustering.optixir",
+                        ];
+                        let optixir_loaded = optixir_candidates.iter()
+                            .find(|p| std::path::Path::new(p).exists())
+                            .and_then(|p| hrt.load_pipeline(p).ok());
+
+                        if optixir_loaded.is_some() {
+                            match hrt.cluster_spikes(&all_stream_spikes, &mut density_grid) {
+                                Ok(result) => {
+                                    log::info!("  SNDC complete: {} persistent clusters ({} levels, {:.1}ms GPU)",
+                                        result.clusters.len(), result.n_levels, result.total_gpu_time_ms);
+
+                                    for (i, c) in result.clusters.iter().enumerate().take(20) {
+                                        log::info!("    SNDC Site {}: centroid=({:.1},{:.1},{:.1}) spikes={} density={:.1} persist={} probes={} radius={:.1}A",
+                                            i, c.centroid[0], c.centroid[1], c.centroid[2],
+                                            c.spike_count, c.peak_density, c.persistence,
+                                            c.probe_diversity, c.cluster_radius);
+                                    }
+
+                                    // Write SNDC JSON
+                                    let sndc_path = args.output.join(format!("{}.sndc_sites.json", structure_name));
+                                    let sndc_json = serde_json::json!({
+                                        "method": "SNDC",
+                                        "version": "1.0",
+                                        "structure": structure_name,
+                                        "n_spikes": all_stream_spikes.len(),
+                                        "n_levels": result.n_levels,
+                                        "gpu_time_ms": result.total_gpu_time_ms,
+                                        "density_grid": {
+                                            "dims": density_grid.dims,
+                                            "spacing": density_grid.spacing,
+                                            "sigma": density_grid.sigma(),
+                                            "n_peaks": n_peaks,
+                                        },
+                                        "sites": result.clusters.iter().map(|c| {
+                                            serde_json::json!({
+                                                "id": c.id,
+                                                "centroid": c.centroid,
+                                                "peak_density": c.peak_density,
+                                                "spike_count": c.spike_count,
+                                                "mean_intensity": c.mean_intensity,
+                                                "intensity_cv": c.intensity_cv,
+                                                "persistence": c.persistence,
+                                                "probe_diversity": c.probe_diversity,
+                                                "mean_water_density": c.mean_water_density,
+                                                "cluster_radius": c.cluster_radius,
+                                            })
+                                        }).collect::<Vec<_>>(),
+                                    });
+                                    if let Ok(json_str) = serde_json::to_string_pretty(&sndc_json) {
+                                        let _ = std::fs::write(&sndc_path, json_str);
+                                        log::info!("  JSON: {}", sndc_path.display());
+                                    }
+                                }
+                                Err(e) => log::warn!("  SNDC clustering failed: {}", e),
+                            }
+                        } else {
+                            log::warn!("  SNDC skipped: rt_clustering.optixir not found");
+                        }
+                    }
+                    Err(e) => log::warn!("  SNDC engine init failed: {}", e),
+                }
+            }
+            Err(e) => log::warn!("  SNDC density grid failed: {}", e),
+        }
+    }
+
     // Dynamic LIGSITE: Geometry proposes pockets, physics scores them.
     // Runs unconditionally — geometry finds pockets independent of spike-cluster sites.
     log::info!("  Running Dynamic LIGSITE pocket detection...");

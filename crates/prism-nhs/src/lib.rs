@@ -113,6 +113,10 @@ pub mod ultimate_engine;
 #[cfg(feature = "gpu")]
 pub mod rt_clustering;
 #[cfg(feature = "gpu")]
+pub mod spike_density;
+#[cfg(feature = "gpu")]
+pub mod hierarchical_clustering;
+#[cfg(feature = "gpu")]
 pub mod rt_utils;
 #[cfg(feature = "gpu")]
 pub mod parallel_replica;
@@ -207,6 +211,10 @@ pub use rt_clustering::{
 };
 #[cfg(feature = "gpu")]
 pub use rt_utils::{has_rt_cores, is_optix_available, get_architecture_name};
+#[cfg(feature = "gpu")]
+pub use hierarchical_clustering::{
+    HierarchicalRtClustering, HierarchicalConfig, HierarchicalResult, PersistentCluster,
+};
 #[cfg(feature = "gpu")]
 pub use parallel_replica::{
     ParallelReplicaEngine, ParallelReplicaResult, ParallelSpikeEvent,

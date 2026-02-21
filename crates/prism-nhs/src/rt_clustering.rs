@@ -405,9 +405,16 @@ impl RtClusteringEngine {
         Ok(())
     }
 
-    /// Cluster positions using RT cores
+    /// Cluster positions using RT cores (uses config epsilon)
     /// positions: [x0, y0, z0, x1, y1, z1, ...] flattened float3 array
     pub fn cluster(&self, positions: &[f32]) -> Result<RtClusteringResult> {
+        self.cluster_at_epsilon(positions, self.config.epsilon)
+    }
+
+    /// Cluster positions using RT cores at a specific epsilon
+    /// positions: [x0, y0, z0, x1, y1, z1, ...] flattened float3 array
+    /// epsilon: neighborhood radius in Å
+    pub fn cluster_at_epsilon(&self, positions: &[f32], epsilon: f32) -> Result<RtClusteringResult> {
         let num_events = positions.len() / 3;
         if num_events == 0 {
             return Ok(RtClusteringResult {
@@ -427,7 +434,7 @@ impl RtClusteringEngine {
         let d_positions: CudaSlice<f32> = self.stream.clone_htod(&positions.to_vec())?;
 
         // Create radii buffer (all epsilon/2 for neighbor overlap detection)
-        let radii: Vec<f32> = vec![self.config.epsilon / 2.0; num_events];
+        let radii: Vec<f32> = vec![epsilon / 2.0; num_events];
         let d_radii: CudaSlice<f32> = self.stream.clone_htod(&radii)?;
 
         // Get device pointers for BVH build
@@ -477,7 +484,7 @@ impl RtClusteringEngine {
             traversable: bvh.handle(),
             event_positions: positions_ptr2,
             num_events: num_events as u32,
-            epsilon: self.config.epsilon,
+            epsilon,
             min_points: self.config.min_points,
             rays_per_event: self.config.rays_per_event,
             neighbor_counts: neighbor_counts_ptr,
