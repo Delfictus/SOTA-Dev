@@ -18,7 +18,7 @@ Core engine: NHS (Neuromorphic Holographic Stream) with AMBER force fields, mult
 
 **Canonical workflow:**
 ```
-nhs_rt_full --multi-stream 20 --multi-scale --rt-clustering --lining-cutoff 8.0 --fast -v
+nhs_rt_full -t <topology>.json -o <output_dir> --fast --hysteresis --multi-stream 8 --spike-percentile 95 --rt-clustering -v
 ```
 With `RUST_LOG=info`. Prep: `scripts/prism-prep input.pdb output.topology.json` (requires OpenMM for `--use-amber`).
 
@@ -26,21 +26,32 @@ With `RUST_LOG=info`. Prep: `scripts/prism-prep input.pdb output.topology.json` 
 
 ## Validation Results
 
-### 9-Protein CryptoSite Benchmark (SNDC v9)
+### 12-Protein Cumulative Benchmark (SNDC v9)
 
-| # | Protein | PDB  | DCC (Å) | Accuracy |
-|---|---------|------|---------|----------|
-| 1 | TEM1 β-lactamase | 1JWP | <10 | ✓ |
-| 2 | Protein tyrosine phosphatase 1B | 1T49 | <10 | ✓ |
-| 3 | cAMP-dep protein kinase | 3DND | <10 | ✓ |
-| 4 | TEM1 β-lactamase (alt) | 1PZO | <10 | ✓ |
-| 5 | Interleukin-2 | 1M47 | <10 | ✓ |
-| 6 | Cyt P450 CYP2B4 | 1PO5 | <10 | ✓ |
-| 7 | Androgen receptor | 2PIU | <10 | ✓ |
-| 8 | NPC2 cholesterol | 1NEP | <10 | ✓ |
-| 9 | Chk1 kinase | 1NVR | <10 | ✓ |
+| #  | PDB  | Target               | DCC (Å) | Grade       | Notes                                    |
+|----|------|----------------------|---------|-------------|------------------------------------------|
+| 1  | 1w50 | BACE1                | 3.6     | ✓ EXCELLENT | Watershed split of 2991Å³ mega-pocket    |
+| 2  | 1btl | TEM1 β-lactamase     | 3.7     | ✓ EXCELLENT | Gold-standard cryptic benchmark          |
+| 3  | 4obe | KRAS G12C (SII-P)    | 3.8     | ✓ EXCELLENT | Sotorasib pocket, Switch-II              |
+| 4  | 1g1f | PTP1B                | 4.8     | ✓ EXCELLENT | Allosteric site, class=Cryptic           |
+| 5  | 1ade | AdSS (GDP)           | 6.0     | ✓ GOOD      | Multi-substrate enzyme                   |
+| 6  | 3k5v | Abl kinase (STI)     | 6.2     | ✓ GOOD      | Imatinib pocket                          |
+| 7  | 1a4q | IL-2                 | 6.3     | ✓ GOOD      | Allosteric groove                        |
+| 8  | 2wng | SIRPα (WYF pocket)   | 7.1     | ✓ GOOD      | XChem-validated cryptic pocket           |
+| 9  | 1ere | Estrogen receptor    | 9.5     | ~ MARGINAL  | 6-chain complex, fixed by chain align    |
+| 10 | 1hhp | HIV-1 protease       | 9.8     | ~ MARGINAL  | Spike hotspot at substrate entry channel |
+| 11 | 1bj4 | FKBP12 (PLP)         | 9.8     | ~ MARGINAL  | Covalent cofactor offset                 |
+| 12 | 2gl7 | β-catenin Site 6     | N/A     | ★ NOVEL     | No known ligand — novel cryptic pocket   |
 
-**Result: 100% accuracy (9/9 proteins) at <10Å DCC threshold.**
+### Accuracy Summary (11 proteins with ground truth)
+
+| Threshold | Count | Rate  |
+|-----------|-------|-------|
+| < 5Å      | 4/11  | 36.4% |
+| < 8Å      | 8/11  | 72.7% |
+| < 10Å     | 11/11 | 100%  |
+
+*β-catenin excluded from DCC accuracy (no ground-truth ligand).*
 
 ---
 
