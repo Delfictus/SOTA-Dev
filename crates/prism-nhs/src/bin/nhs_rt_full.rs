@@ -3437,6 +3437,516 @@ fn recalculate_enclosure_volume(
         });
     }
 
+    // ---- Stage 5b: Watershed sub-pocket decomposition ----
+    // If any pocket has multiple density peaks inside it, split it.
+    // This eliminates the mega-pocket failure mode (1ERE 18K Å³).
+    // Algorithm: multi-source BFS from intensity² peaks, bounded by
+    // the LIGSITE enclosed mask. Protein walls are impenetrable.
+    let watershed_threshold = 1500u32; // Only split pockets > 1500 voxels (~1500 Å³)
+    let mut next_cid = num_components;
+    let mut new_pockets: Vec<(usize, Vec<(i32, [f32; 3])>)> = Vec::new(); // (orig_pocket_idx, seeds)
+
+    for (pocket_idx, pocket) in pockets.iter().enumerate() {
+        if pocket.voxel_count < watershed_threshold { continue; }
+
+        // Find the original cid for this pocket
+        let orig_cid = surviving[pocket_idx].0 as i32;
+
+        // Collect spikes inside this pocket's bounding box with intensity filtering
+        let bmin = pocket.bbox[0];
+        let bmax = pocket.bbox[1];
+        let margin = 2.0f32;
+
+        // Build a coarse spike density grid (3Å spacing) over this pocket
+        let ws = 3.0f32; // watershed grid spacing
+        let wdx = ((bmax[0] - bmin[0] + 2.0 * margin) / ws).ceil() as usize + 1;
+        let wdy = ((bmax[1] - bmin[1] + 2.0 * margin) / ws).ceil() as usize + 1;
+        let wdz = ((bmax[2] - bmin[2] + 2.0 * margin) / ws).ceil() as usize + 1;
+        let worigin = [bmin[0] - margin, bmin[1] - margin, bmin[2] - margin];
+        let wsize = wdx * wdy * wdz;
+        if wsize > 500_000 { continue; } // safety: skip absurdly large pockets
+
+        let mut wgrid = vec![0.0f64; wsize];
+        let w_idx = |x: usize, y: usize, z: usize| -> usize { x * wdy * wdz + y * wdz + z };
+
+        let mut pocket_spike_count = 0u32;
+        for spike in all_spikes.iter() {
+            if spike.intensity < spike_intensity_min { continue; }
+            let sp = spike.position;
+            if sp[0] < bmin[0] - margin || sp[0] > bmax[0] + margin { continue; }
+            if sp[1] < bmin[1] - margin || sp[1] > bmax[1] + margin { continue; }
+            if sp[2] < bmin[2] - margin || sp[2] > bmax[2] + margin { continue; }
+            let wx = ((sp[0] - worigin[0]) / ws) as usize;
+            let wy = ((sp[1] - worigin[1]) / ws) as usize;
+            let wz = ((sp[2] - worigin[2]) / ws) as usize;
+            if wx < wdx && wy < wdy && wz < wdz {
+                let isq = (spike.intensity as f64).powi(2);
+                wgrid[w_idx(wx, wy, wz)] += isq;
+                pocket_spike_count += 1;
+            }
+        }
+        if pocket_spike_count < 20 { continue; }
+
+        // NMS: find local maxima in the coarse grid (3x3x3 neighborhood)
+        let mut peaks: Vec<(i32, [f32; 3])> = Vec::new(); // (new_cid, position)
+        for wx in 1..wdx.saturating_sub(1) {
+            for wy in 1..wdy.saturating_sub(1) {
+                for wz in 1..wdz.saturating_sub(1) {
+                    let val = wgrid[w_idx(wx, wy, wz)];
+                    if val < 1.0 { continue; }
+                    let mut is_max = true;
+                    'nms: for dx in -1i32..=1 {
+                        for dy in -1i32..=1 {
+                            for dz in -1i32..=1 {
+                                if dx == 0 && dy == 0 && dz == 0 { continue; }
+                                let nx2 = (wx as i32 + dx) as usize;
+                                let ny2 = (wy as i32 + dy) as usize;
+                                let nz2 = (wz as i32 + dz) as usize;
+                                if nx2 < wdx && ny2 < wdy && nz2 < wdz {
+                                    if wgrid[w_idx(nx2, ny2, nz2)] > val {
+                                        is_max = false;
+                                        break 'nms;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !is_max { continue; }
+
+                    // Convert coarse grid position back to Cartesian
+                    let peak_pos = [
+                        worigin[0] + (wx as f32 + 0.5) * ws,
+                        worigin[1] + (wy as f32 + 0.5) * ws,
+                        worigin[2] + (wz as f32 + 0.5) * ws,
+                    ];
+                    // Check: is this peak inside an enclosed voxel of THIS pocket?
+                    let gx = ((peak_pos[0] - gmin[0]) / grid_step).round() as i32;
+                    let gy = ((peak_pos[1] - gmin[1]) / grid_step).round() as i32;
+                    let gz = ((peak_pos[2] - gmin[2]) / grid_step).round() as i32;
+                    if gx >= 0 && gy >= 0 && gz >= 0 {
+                        let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
+                        if gx < nx && gy < ny && gz < nz {
+                            let gidx = to_idx(gx, gy, gz);
+                            if component_id[gidx] == orig_cid {
+                                peaks.push((next_cid, peak_pos));
+                                next_cid += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if peaks.len() >= 2 {
+            log::info!("  Watershed: Pocket {} ({} voxels, {:.0} Å³) has {} density peaks → splitting",
+                pocket_idx, pocket.voxel_count, pocket.volume, peaks.len());
+            new_pockets.push((pocket_idx, peaks));
+        }
+    }
+
+    // Execute watershed BFS for each pocket that needs splitting
+    for (pocket_idx, seeds) in &new_pockets {
+        let orig_cid = surviving[*pocket_idx].0 as i32;
+
+        // Initialize Eikonal priority queue — expansion cost weighted by
+        // inverse spike density. Boundaries form along low-density ridges
+        // (physical energy barriers) rather than geometric midpoints.
+        // This is the Fast Marching Method applied to the spike density field.
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+
+        // Build a spike density lookup on the LIGSITE grid for this pocket
+        // (reuse wgrid data mapped onto the 1Å grid)
+        let mut voxel_density = vec![0.0f64; grid_size];
+        for spike in all_spikes.iter() {
+            if spike.intensity < spike_intensity_min { continue; }
+            let sp = spike.position;
+            let gx = ((sp[0] - gmin[0]) / grid_step).round() as i32;
+            let gy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
+            let gz = ((sp[2] - gmin[2]) / grid_step).round() as i32;
+            if gx >= 0 && gy >= 0 && gz >= 0 {
+                let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
+                if gx < nx && gy < ny && gz < nz {
+                    let idx = to_idx(gx, gy, gz);
+                    if component_id[idx] == orig_cid {
+                        voxel_density[idx] += (spike.intensity as f64).powi(2);
+                    }
+                }
+            }
+        }
+
+        // Priority queue: (cost_fixed_point, voxel_idx, seed_cid)
+        // Use integer costs for BinaryHeap (f64 doesn't impl Ord)
+        let mut pq: BinaryHeap<Reverse<(u64, usize, i32)>> = BinaryHeap::new();
+
+        for (seed_cid, seed_pos) in seeds {
+            let gx = ((seed_pos[0] - gmin[0]) / grid_step).round() as usize;
+            let gy = ((seed_pos[1] - gmin[1]) / grid_step).round() as usize;
+            let gz = ((seed_pos[2] - gmin[2]) / grid_step).round() as usize;
+            if gx < nx && gy < ny && gz < nz {
+                let idx = to_idx(gx, gy, gz);
+                if component_id[idx] == orig_cid {
+                    component_id[idx] = *seed_cid;
+                    pq.push(Reverse((0u64, idx, *seed_cid)));
+                }
+            }
+        }
+
+        // Eikonal expansion: lowest-cost voxel pops first.
+        // Cost to enter voxel = 1.0 / (1.0 + density) — high density = easy,
+        // low density = hard. Boundaries form at density minima (saddle points).
+        while let Some(Reverse((cost, idx, seed_cid))) = pq.pop() {
+            // Skip if already claimed by a different seed (first arrival wins)
+            if component_id[idx] != orig_cid && component_id[idx] != seed_cid {
+                continue;
+            }
+
+            let iz = idx % nz;
+            let iy = (idx / nz) % ny;
+            let ix = idx / (ny * nz);
+            let neighbors = [
+                if ix > 0      { Some(to_idx(ix-1, iy, iz)) } else { None },
+                if ix < nx - 1 { Some(to_idx(ix+1, iy, iz)) } else { None },
+                if iy > 0      { Some(to_idx(ix, iy-1, iz)) } else { None },
+                if iy < ny - 1 { Some(to_idx(ix, iy+1, iz)) } else { None },
+                if iz > 0      { Some(to_idx(ix, iy, iz-1)) } else { None },
+                if iz < nz - 1 { Some(to_idx(ix, iy, iz+1)) } else { None },
+            ];
+            for n in neighbors.iter().flatten() {
+                if component_id[*n] == orig_cid {
+                    component_id[*n] = seed_cid;
+                    // Eikonal cost: traverse low-density voxels = expensive
+                    let edge_cost = (1.0e6 / (1.0 + voxel_density[*n])) as u64;
+                    pq.push(Reverse((cost + edge_cost, *n, seed_cid)));
+                }
+            }
+        }
+    }
+
+    // If any splits happened, rebuild pockets and cid_to_pocket
+    if !new_pockets.is_empty() {
+        let total_seeds: usize = new_pockets.iter().map(|(_, s)| s.len()).sum();
+        log::info!("  Watershed split {} mega-pockets into {} sub-pockets", new_pockets.len(), total_seeds);
+
+        // Rebuild: recount all components (including new sub-pocket cids)
+        pockets.clear();
+        cid_to_pocket = vec![-1; next_cid as usize];
+
+        // Re-accumulate from component_id grid
+        struct WsAccum { coord_sum: [f64; 3], voxel_count: u32, bbox_min: [f32; 3], bbox_max: [f32; 3], depth_sum: f64 }
+        let mut ws_accum: std::collections::HashMap<i32, WsAccum> = std::collections::HashMap::new();
+
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let idx = to_idx(ix, iy, iz);
+                    let cid = component_id[idx];
+                    if cid < 0 { continue; }
+                    let pos = [
+                        gmin[0] + ix as f32 * grid_step,
+                        gmin[1] + iy as f32 * grid_step,
+                        gmin[2] + iz as f32 * grid_step,
+                    ];
+                    let d = depth_grid[idx] as f64;
+                    let acc = ws_accum.entry(cid).or_insert(WsAccum {
+                        coord_sum: [0.0; 3], voxel_count: 0,
+                        bbox_min: [f32::MAX; 3], bbox_max: [f32::MIN; 3], depth_sum: 0.0,
+                    });
+                    acc.coord_sum[0] += pos[0] as f64;
+                    acc.coord_sum[1] += pos[1] as f64;
+                    acc.coord_sum[2] += pos[2] as f64;
+                    acc.voxel_count += 1;
+                    acc.depth_sum += d;
+                    for d2 in 0..3 {
+                        if pos[d2] < acc.bbox_min[d2] { acc.bbox_min[d2] = pos[d2]; }
+                        if pos[d2] > acc.bbox_max[d2] { acc.bbox_max[d2] = pos[d2]; }
+                    }
+                }
+            }
+        }
+
+        // Rebuild pocket list from accumulator, filtering by min size
+        let mut sorted_cids: Vec<(i32, &WsAccum)> = ws_accum.iter()
+            .filter(|(_, a)| a.voxel_count >= min_pocket_voxels)
+            .map(|(&cid, a)| (cid, a))
+            .collect();
+        sorted_cids.sort_by(|a, b| b.1.voxel_count.cmp(&a.1.voxel_count));
+
+        for (pocket_idx, (cid, acc)) in sorted_cids.iter().enumerate() {
+            cid_to_pocket[*cid as usize] = pocket_idx as i32;
+            let n = acc.voxel_count as f64;
+            let centroid = [
+                (acc.coord_sum[0] / n) as f32,
+                (acc.coord_sum[1] / n) as f32,
+                (acc.coord_sum[2] / n) as f32,
+            ];
+            let volume = acc.voxel_count as f32 * grid_step.powi(3);
+            let mean_depth = (acc.depth_sum / n) as f32;
+            pockets.push(PocketInfo {
+                centroid, volume,
+                bbox: [acc.bbox_min, acc.bbox_max],
+                mean_depth,
+                voxel_count: acc.voxel_count,
+            });
+        }
+        log::info!("  Post-watershed: {} pockets (was {})", pockets.len(), surviving.len());
+    }
+
+    // ---- Stage 5b: Watershed sub-pocket decomposition ----
+    // If any pocket has multiple density peaks inside it, split it.
+    // This eliminates the mega-pocket failure mode (1ERE 18K Å³).
+    // Algorithm: multi-source BFS from intensity² peaks, bounded by
+    // the LIGSITE enclosed mask. Protein walls are impenetrable.
+    let watershed_threshold = 1500u32; // Only split pockets > 1500 voxels (~1500 Å³)
+    let mut next_cid = num_components;
+    let mut new_pockets: Vec<(usize, Vec<(i32, [f32; 3])>)> = Vec::new(); // (orig_pocket_idx, seeds)
+
+    for (pocket_idx, pocket) in pockets.iter().enumerate() {
+        if pocket.voxel_count < watershed_threshold { continue; }
+
+        // Find the original cid for this pocket
+        let orig_cid = surviving[pocket_idx].0 as i32;
+
+        // Collect spikes inside this pocket's bounding box with intensity filtering
+        let bmin = pocket.bbox[0];
+        let bmax = pocket.bbox[1];
+        let margin = 2.0f32;
+
+        // Build a coarse spike density grid (3Å spacing) over this pocket
+        let ws = 3.0f32; // watershed grid spacing
+        let wdx = ((bmax[0] - bmin[0] + 2.0 * margin) / ws).ceil() as usize + 1;
+        let wdy = ((bmax[1] - bmin[1] + 2.0 * margin) / ws).ceil() as usize + 1;
+        let wdz = ((bmax[2] - bmin[2] + 2.0 * margin) / ws).ceil() as usize + 1;
+        let worigin = [bmin[0] - margin, bmin[1] - margin, bmin[2] - margin];
+        let wsize = wdx * wdy * wdz;
+        if wsize > 500_000 { continue; } // safety: skip absurdly large pockets
+
+        let mut wgrid = vec![0.0f64; wsize];
+        let w_idx = |x: usize, y: usize, z: usize| -> usize { x * wdy * wdz + y * wdz + z };
+
+        let mut pocket_spike_count = 0u32;
+        for spike in all_spikes.iter() {
+            if spike.intensity < spike_intensity_min { continue; }
+            let sp = spike.position;
+            if sp[0] < bmin[0] - margin || sp[0] > bmax[0] + margin { continue; }
+            if sp[1] < bmin[1] - margin || sp[1] > bmax[1] + margin { continue; }
+            if sp[2] < bmin[2] - margin || sp[2] > bmax[2] + margin { continue; }
+            let wx = ((sp[0] - worigin[0]) / ws) as usize;
+            let wy = ((sp[1] - worigin[1]) / ws) as usize;
+            let wz = ((sp[2] - worigin[2]) / ws) as usize;
+            if wx < wdx && wy < wdy && wz < wdz {
+                let isq = (spike.intensity as f64).powi(2);
+                wgrid[w_idx(wx, wy, wz)] += isq;
+                pocket_spike_count += 1;
+            }
+        }
+        if pocket_spike_count < 20 { continue; }
+
+        // NMS: find local maxima in the coarse grid (3x3x3 neighborhood)
+        let mut peaks: Vec<(i32, [f32; 3])> = Vec::new(); // (new_cid, position)
+        for wx in 1..wdx.saturating_sub(1) {
+            for wy in 1..wdy.saturating_sub(1) {
+                for wz in 1..wdz.saturating_sub(1) {
+                    let val = wgrid[w_idx(wx, wy, wz)];
+                    if val < 1.0 { continue; }
+                    let mut is_max = true;
+                    'nms: for dx in -1i32..=1 {
+                        for dy in -1i32..=1 {
+                            for dz in -1i32..=1 {
+                                if dx == 0 && dy == 0 && dz == 0 { continue; }
+                                let nx2 = (wx as i32 + dx) as usize;
+                                let ny2 = (wy as i32 + dy) as usize;
+                                let nz2 = (wz as i32 + dz) as usize;
+                                if nx2 < wdx && ny2 < wdy && nz2 < wdz {
+                                    if wgrid[w_idx(nx2, ny2, nz2)] > val {
+                                        is_max = false;
+                                        break 'nms;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !is_max { continue; }
+
+                    // Convert coarse grid position back to Cartesian
+                    let peak_pos = [
+                        worigin[0] + (wx as f32 + 0.5) * ws,
+                        worigin[1] + (wy as f32 + 0.5) * ws,
+                        worigin[2] + (wz as f32 + 0.5) * ws,
+                    ];
+                    // Check: is this peak inside an enclosed voxel of THIS pocket?
+                    let gx = ((peak_pos[0] - gmin[0]) / grid_step).round() as i32;
+                    let gy = ((peak_pos[1] - gmin[1]) / grid_step).round() as i32;
+                    let gz = ((peak_pos[2] - gmin[2]) / grid_step).round() as i32;
+                    if gx >= 0 && gy >= 0 && gz >= 0 {
+                        let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
+                        if gx < nx && gy < ny && gz < nz {
+                            let gidx = to_idx(gx, gy, gz);
+                            if component_id[gidx] == orig_cid {
+                                peaks.push((next_cid, peak_pos));
+                                next_cid += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if peaks.len() >= 2 {
+            log::info!("  Watershed: Pocket {} ({} voxels, {:.0} Å³) has {} density peaks → splitting",
+                pocket_idx, pocket.voxel_count, pocket.volume, peaks.len());
+            new_pockets.push((pocket_idx, peaks));
+        }
+    }
+
+    // Execute watershed BFS for each pocket that needs splitting
+    for (pocket_idx, seeds) in &new_pockets {
+        let orig_cid = surviving[*pocket_idx].0 as i32;
+
+        // Initialize Eikonal priority queue — expansion cost weighted by
+        // inverse spike density. Boundaries form along low-density ridges
+        // (physical energy barriers) rather than geometric midpoints.
+        // This is the Fast Marching Method applied to the spike density field.
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+
+        // Build a spike density lookup on the LIGSITE grid for this pocket
+        // (reuse wgrid data mapped onto the 1Å grid)
+        let mut voxel_density = vec![0.0f64; grid_size];
+        for spike in all_spikes.iter() {
+            if spike.intensity < spike_intensity_min { continue; }
+            let sp = spike.position;
+            let gx = ((sp[0] - gmin[0]) / grid_step).round() as i32;
+            let gy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
+            let gz = ((sp[2] - gmin[2]) / grid_step).round() as i32;
+            if gx >= 0 && gy >= 0 && gz >= 0 {
+                let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
+                if gx < nx && gy < ny && gz < nz {
+                    let idx = to_idx(gx, gy, gz);
+                    if component_id[idx] == orig_cid {
+                        voxel_density[idx] += (spike.intensity as f64).powi(2);
+                    }
+                }
+            }
+        }
+
+        // Priority queue: (cost_fixed_point, voxel_idx, seed_cid)
+        // Use integer costs for BinaryHeap (f64 doesn't impl Ord)
+        let mut pq: BinaryHeap<Reverse<(u64, usize, i32)>> = BinaryHeap::new();
+
+        for (seed_cid, seed_pos) in seeds {
+            let gx = ((seed_pos[0] - gmin[0]) / grid_step).round() as usize;
+            let gy = ((seed_pos[1] - gmin[1]) / grid_step).round() as usize;
+            let gz = ((seed_pos[2] - gmin[2]) / grid_step).round() as usize;
+            if gx < nx && gy < ny && gz < nz {
+                let idx = to_idx(gx, gy, gz);
+                if component_id[idx] == orig_cid {
+                    component_id[idx] = *seed_cid;
+                    pq.push(Reverse((0u64, idx, *seed_cid)));
+                }
+            }
+        }
+
+        // Eikonal expansion: lowest-cost voxel pops first.
+        // Cost to enter voxel = 1.0 / (1.0 + density) — high density = easy,
+        // low density = hard. Boundaries form at density minima (saddle points).
+        while let Some(Reverse((cost, idx, seed_cid))) = pq.pop() {
+            // Skip if already claimed by a different seed (first arrival wins)
+            if component_id[idx] != orig_cid && component_id[idx] != seed_cid {
+                continue;
+            }
+
+            let iz = idx % nz;
+            let iy = (idx / nz) % ny;
+            let ix = idx / (ny * nz);
+            let neighbors = [
+                if ix > 0      { Some(to_idx(ix-1, iy, iz)) } else { None },
+                if ix < nx - 1 { Some(to_idx(ix+1, iy, iz)) } else { None },
+                if iy > 0      { Some(to_idx(ix, iy-1, iz)) } else { None },
+                if iy < ny - 1 { Some(to_idx(ix, iy+1, iz)) } else { None },
+                if iz > 0      { Some(to_idx(ix, iy, iz-1)) } else { None },
+                if iz < nz - 1 { Some(to_idx(ix, iy, iz+1)) } else { None },
+            ];
+            for n in neighbors.iter().flatten() {
+                if component_id[*n] == orig_cid {
+                    component_id[*n] = seed_cid;
+                    // Eikonal cost: traverse low-density voxels = expensive
+                    let edge_cost = (1.0e6 / (1.0 + voxel_density[*n])) as u64;
+                    pq.push(Reverse((cost + edge_cost, *n, seed_cid)));
+                }
+            }
+        }
+    }
+
+    // If any splits happened, rebuild pockets and cid_to_pocket
+    if !new_pockets.is_empty() {
+        let total_seeds: usize = new_pockets.iter().map(|(_, s)| s.len()).sum();
+        log::info!("  Watershed split {} mega-pockets into {} sub-pockets", new_pockets.len(), total_seeds);
+
+        // Rebuild: recount all components (including new sub-pocket cids)
+        pockets.clear();
+        cid_to_pocket = vec![-1; next_cid as usize];
+
+        // Re-accumulate from component_id grid
+        struct WsAccum { coord_sum: [f64; 3], voxel_count: u32, bbox_min: [f32; 3], bbox_max: [f32; 3], depth_sum: f64 }
+        let mut ws_accum: std::collections::HashMap<i32, WsAccum> = std::collections::HashMap::new();
+
+        for ix in 0..nx {
+            for iy in 0..ny {
+                for iz in 0..nz {
+                    let idx = to_idx(ix, iy, iz);
+                    let cid = component_id[idx];
+                    if cid < 0 { continue; }
+                    let pos = [
+                        gmin[0] + ix as f32 * grid_step,
+                        gmin[1] + iy as f32 * grid_step,
+                        gmin[2] + iz as f32 * grid_step,
+                    ];
+                    let d = depth_grid[idx] as f64;
+                    let acc = ws_accum.entry(cid).or_insert(WsAccum {
+                        coord_sum: [0.0; 3], voxel_count: 0,
+                        bbox_min: [f32::MAX; 3], bbox_max: [f32::MIN; 3], depth_sum: 0.0,
+                    });
+                    acc.coord_sum[0] += pos[0] as f64;
+                    acc.coord_sum[1] += pos[1] as f64;
+                    acc.coord_sum[2] += pos[2] as f64;
+                    acc.voxel_count += 1;
+                    acc.depth_sum += d;
+                    for d2 in 0..3 {
+                        if pos[d2] < acc.bbox_min[d2] { acc.bbox_min[d2] = pos[d2]; }
+                        if pos[d2] > acc.bbox_max[d2] { acc.bbox_max[d2] = pos[d2]; }
+                    }
+                }
+            }
+        }
+
+        // Rebuild pocket list from accumulator, filtering by min size
+        let mut sorted_cids: Vec<(i32, &WsAccum)> = ws_accum.iter()
+            .filter(|(_, a)| a.voxel_count >= min_pocket_voxels)
+            .map(|(&cid, a)| (cid, a))
+            .collect();
+        sorted_cids.sort_by(|a, b| b.1.voxel_count.cmp(&a.1.voxel_count));
+
+        for (pocket_idx, (cid, acc)) in sorted_cids.iter().enumerate() {
+            cid_to_pocket[*cid as usize] = pocket_idx as i32;
+            let n = acc.voxel_count as f64;
+            let centroid = [
+                (acc.coord_sum[0] / n) as f32,
+                (acc.coord_sum[1] / n) as f32,
+                (acc.coord_sum[2] / n) as f32,
+            ];
+            let volume = acc.voxel_count as f32 * grid_step.powi(3);
+            let mean_depth = (acc.depth_sum / n) as f32;
+            pockets.push(PocketInfo {
+                centroid, volume,
+                bbox: [acc.bbox_min, acc.bbox_max],
+                mean_depth,
+                voxel_count: acc.voxel_count,
+            });
+        }
+        log::info!("  Post-watershed: {} pockets (was {})", pockets.len(), surviving.len());
+    }
+
     // ---- Stage 6: O(N) spike overlay via component_id grid lookup ----
     // Single pass through all spikes. For each spike, find its grid voxel,
     // search a small radius to bridge the SES gap, and credit the nearest pocket.
@@ -3447,9 +3957,12 @@ fn recalculate_enclosure_volume(
         // Intensity-weighted centroid accumulators
         weighted_pos: [f64; 3],
         weight_sum: f64,
+        // Peak tracking: top-K highest-intensity spikes for peak centroid
+        top_spikes: Vec<(f32, [f32; 3])>,
     }
+    const PEAK_TOP_K: usize = 10;
     let mut stats: Vec<PocketStats> = (0..pockets.len())
-        .map(|_| PocketStats { spike_count: 0, intensity_sum: 0.0, spike_indices: Vec::new(), weighted_pos: [0.0; 3], weight_sum: 0.0 })
+        .map(|_| PocketStats { spike_count: 0, intensity_sum: 0.0, spike_indices: Vec::new(), weighted_pos: [0.0; 3], weight_sum: 0.0, top_spikes: Vec::with_capacity(PEAK_TOP_K + 1) })
         .collect();
 
     let sr = spike_search_r;
@@ -3509,6 +4022,12 @@ fn recalculate_enclosure_volume(
             s.weighted_pos[1] += sp[1] as f64 * w;
             s.weighted_pos[2] += sp[2] as f64 * w;
             s.weight_sum += w;
+            // Track top-K highest-intensity spikes for peak centroid
+            s.top_spikes.push((spike.intensity, sp));
+            if s.top_spikes.len() > PEAK_TOP_K {
+                s.top_spikes.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                s.top_spikes.truncate(PEAK_TOP_K);
+            }
             spikes_mapped += 1;
         }
     }
@@ -3575,6 +4094,39 @@ fn recalculate_enclosure_volume(
         } else {
             pocket.centroid
         };
+        // Peak centroid: intensity^2-weighted centroid of top-K hottest spikes.
+        // For large pockets (>500 A^3), this is often closer to the actual
+        // ligand than the global weighted centroid because it tracks the
+        // thermodynamic maximum, not the center-of-mass of diffuse spike cloud.
+        let peak_centroid = if !stat.top_spikes.is_empty() {
+            let mut pw = [0.0f64; 3];
+            let mut pws = 0.0f64;
+            for &(intensity, pos) in &stat.top_spikes {
+                let w2 = (intensity as f64).powi(2);
+                pw[0] += pos[0] as f64 * w2;
+                pw[1] += pos[1] as f64 * w2;
+                pw[2] += pos[2] as f64 * w2;
+                pws += w2;
+            }
+            if pws > 1e-12 {
+                let pc = [
+                    (pw[0] / pws) as f32,
+                    (pw[1] / pws) as f32,
+                    (pw[2] / pws) as f32,
+                ];
+                let dist = ((pc[0] - final_centroid[0]).powi(2)
+                    + (pc[1] - final_centroid[1]).powi(2)
+                    + (pc[2] - final_centroid[2]).powi(2)).sqrt();
+                log::info!("    Peak centroid: ({:.1},{:.1},{:.1}) -- {:.1}A from weighted centroid (top {} spikes, max_I={:.1})",
+                    pc[0], pc[1], pc[2], dist, stat.top_spikes.len(),
+                    stat.top_spikes[0].0);
+                Some(pc)
+            } else { None }
+        } else { None };
+        // Peak centroid logged above but NOT auto-switched.
+        // Weighted centroid is always primary — peak centroid regresses
+        // on large pockets where hottest spikes cluster far from ligand.
+        let _peak_centroid = peak_centroid;
         sites.push(ClusteredBindingSite {
             cluster_id: pi as i32,
             centroid: final_centroid,
