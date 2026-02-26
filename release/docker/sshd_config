@@ -1,0 +1,47 @@
+# PRISM4D Demo — Hardened SSH Configuration
+# Only the 'demo' user can connect. No tunneling, no agent forwarding.
+
+Port 22
+Protocol 2
+AddressFamily any
+ListenAddress 0.0.0.0
+
+# Authentication
+PermitRootLogin no
+PasswordAuthentication yes
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+MaxAuthTries 3
+LoginGraceTime 30
+
+# Only allow the demo user
+AllowUsers demo
+
+# Disable dangerous features
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+GatewayPorts no
+X11Forwarding no
+AllowAgentForwarding no
+PermitTunnel no
+PermitUserEnvironment no
+
+# Session limits
+MaxSessions 3
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
+
+# Banner
+Banner /etc/motd
+
+# Subsystem for SFTP (allow file transfers for results)
+Subsystem sftp /usr/lib/openssh/sftp-server -R
+
+# Host keys
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key

@@ -1,0 +1,25 @@
+
+ ============================================================================
+    ____  ____  ___ ____  __  __  _  _  ____
+   |  _ \|  _ \|_ _/ ___||  \/  || || ||  _ \
+   | |_) | |_) || |\___ \| |\/| || || || | | |
+   |  __/|  _ < | | ___) | |  | ||__   | |_| |
+   |_|   |_| \_|___|____/|_|  |_|   |_||____/
+
+   Cryptic Pocket Detection & Drug Discovery Platform
+ ============================================================================
+
+   PRIVATE DEMONSTRATION — CONFIDENTIAL
+
+   Quick Start:
+     prism4d help                        # Show available commands
+     prism4d detect sample.topology.json ~/results/sample   # Run detection
+     cat ~/README.md                     # Full quick-start guide
+
+   Sample structures are in:  ~/samples/
+   Your results go to:        ~/results/
+
+   GPU: RTX 5080 (Blackwell) | Engine: NHS RT-Full | Kernels: 82 PTX
+
+ ============================================================================
+
