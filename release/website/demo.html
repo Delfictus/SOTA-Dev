@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRISM-4D | Delfictus IO — Cryptic Pocket Detection Platform Demo</title>
+<meta name="description" content="PRISM-4D: Real-Time Neuromorphic Discovery of Cryptic Drug Binding Sites. Request access to the live GPU-accelerated demo platform.">
+<meta property="og:title" content="PRISM-4D Platform Demo — Delfictus IO">
+<meta property="og:description" content="GPU-accelerated cryptic pocket detection. Sub-5-minute discovery on consumer hardware. Request live demo access.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://delfictus.com/demo">
+
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* =========================================
+   CORE STYLES — DELFICTUS IO DESIGN SYSTEM
+   ========================================= */
+:root{--bg-primary:#06060a;--bg-secondary:#0c0c14;--bg-tertiary:#12121e;--bg-card:#0f0f1a;--bg-card-hover:#161625;--cyan:#00e5ff;--cyan-dim:#00a5b8;--cyan-glow:rgba(0,229,255,0.15);--cyan-glow-strong:rgba(0,229,255,0.35);--green:#00ff88;--amber:#ffaa00;--red:#ff3366;--purple:#aa44ff;--orange:#ff8844;--text-primary:#e8ecf0;--text-secondary:#8892a0;--text-dim:#556070;--border:rgba(0,229,255,0.12);--border-active:rgba(0,229,255,0.4);--font-display:'Space Grotesk',sans-serif;--font-mono:'JetBrains Mono',monospace;--font-body:'IBM Plex Sans',sans-serif;--radius:6px;--transition:0.3s cubic-bezier(0.4,0,0.2,1)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--cyan-dim) var(--bg-primary)}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg-primary)}::-webkit-scrollbar-thumb{background:var(--cyan-dim);border-radius:3px}
+body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+/* ═══ CLASSIFICATION BANNER ═══ */
+.classification-banner{background:var(--cyan);color:var(--bg-primary);text-align:center;padding:3px 0;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:4px;text-transform:uppercase;position:fixed;top:0;left:0;right:0;z-index:10000}
+
+/* ═══ NAVIGATION ═══ */
+nav{position:fixed;top:22px;left:0;right:0;z-index:9999;padding:12px 32px;display:flex;align-items:center;justify-content:space-between;background:rgba(6,6,10,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);transition:var(--transition)}
+.nav-brand{display:flex;align-items:center;gap:14px;text-decoration:none}
+.nav-logo{width:32px;height:32px;position:relative}.nav-logo svg{width:100%;height:100%}
+.nav-title{font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--text-primary);letter-spacing:2px}.nav-title span{color:var(--cyan)}
+.nav-links{display:flex;gap:8px;align-items:center}
+.nav-link{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius);transition:var(--transition);text-decoration:none}
+.nav-link:hover{border-color:var(--border-active);color:var(--text-secondary)}
+.nav-link.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,0.08)}
+.nav-creds{display:flex;gap:16px;align-items:center}
+.nav-cred{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius);transition:var(--transition)}
+.nav-cred:hover{border-color:var(--border-active);color:var(--text-secondary)}
+
+/* ═══ HERO ═══ */
+.hero{padding:160px 32px 80px;position:relative;overflow:hidden;min-height:90vh;display:flex;flex-direction:column;justify-content:center}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse 800px 600px at 20% 30%,var(--cyan-glow),transparent),radial-gradient(ellipse 600px 400px at 80% 60%,rgba(170,68,255,0.08),transparent);pointer-events:none}
+.hero-grid{position:absolute;top:0;left:0;right:0;bottom:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:60px 60px;opacity:0.4;animation:gridPulse 8s ease-in-out infinite}
+@keyframes gridPulse{0%,100%{opacity:0.3}50%{opacity:0.5}}
+.hero-content{position:relative;z-index:2;max-width:1200px;margin:0 auto;width:100%;animation:fadeUp 1s ease-out}
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.hero-eyebrow{font-family:var(--font-mono);font-size:12px;color:var(--cyan);letter-spacing:4px;text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:12px}
+.hero-eyebrow::before{content:'';width:40px;height:1px;background:var(--cyan)}
+.hero-title{font-family:var(--font-display);font-size:clamp(48px,7vw,96px);font-weight:700;line-height:1.0;margin-bottom:24px;letter-spacing:-2px}
+.hero-title .accent{color:var(--cyan)}
+.hero-subtitle{font-family:var(--font-body);font-size:20px;color:var(--text-secondary);max-width:700px;margin-bottom:16px;line-height:1.5}
+.hero-badges{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:40px}
+.hero-badge{font-family:var(--font-mono);font-size:12px;padding:8px 16px;border-radius:var(--radius);letter-spacing:1px;display:flex;align-items:center;gap:8px}
+.hero-badge-cyan{background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.3);color:var(--cyan)}
+.hero-badge-green{background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);color:var(--green)}
+.hero-badge-purple{background:rgba(170,68,255,0.08);border:1px solid rgba(170,68,255,0.3);color:var(--purple)}
+.hero-cta{display:flex;gap:16px;flex-wrap:wrap}
+.btn{font-family:var(--font-mono);font-size:13px;letter-spacing:1px;text-transform:uppercase;padding:14px 28px;border-radius:var(--radius);cursor:pointer;transition:var(--transition);text-decoration:none;display:inline-flex;align-items:center;gap:10px;border:none}
+.btn-primary{background:var(--cyan);color:var(--bg-primary);font-weight:700}
+.btn-primary:hover{box-shadow:0 0 30px var(--cyan-glow-strong);transform:translateY(-2px)}
+.btn-secondary{background:transparent;color:var(--cyan);border:1px solid var(--cyan);font-weight:500}
+.btn-secondary:hover{background:rgba(0,229,255,0.08);transform:translateY(-2px)}
+
+/* ═══ PIPELINE BAR ═══ */
+.pipeline-bar{background:var(--bg-secondary);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:20px 32px;overflow-x:auto}
+.pipeline-bar-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap}
+.pipeline-step{font-family:var(--font-mono);font-size:12px;letter-spacing:1px;padding:8px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-secondary);white-space:nowrap;transition:var(--transition)}
+.pipeline-step:hover{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 20px var(--cyan-glow)}
+.pipeline-arrow{color:var(--cyan-dim);font-size:18px;opacity:0.5}
+
+/* ═══ STATS SECTION ═══ */
+.stats-section{padding:60px 32px;background:var(--bg-primary)}
+.stats-grid{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center;transition:var(--transition);position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0;transition:var(--transition)}
+.stat-card:hover{border-color:var(--border-active);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,229,255,0.08)}
+.stat-card:hover::before{opacity:1}
+.stat-value{font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--cyan);line-height:1.2;margin-bottom:6px}
+.stat-label{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase}
+
+/* ═══ SECTIONS ═══ */
+.section{padding:80px 32px}
+.section-inner{max-width:1200px;margin:0 auto}
+.section-header{margin-bottom:40px}
+.section-header h2{font-family:var(--font-display);font-size:32px;font-weight:700;margin-bottom:8px}
+.section-header p{color:var(--text-secondary);font-size:16px;max-width:600px}
+.section-alt{background:var(--bg-secondary)}
+
+/* ═══ DATA CARDS ═══ */
+.data-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-bottom:40px}
+.data-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:var(--transition)}
+.data-card:hover{border-color:var(--border-active);box-shadow:0 4px 24px rgba(0,229,255,0.06)}
+.data-card h3{font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:16px;color:var(--cyan)}
+.data-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:14px}
+.data-row:last-child{border-bottom:none}
+.data-key{color:var(--text-secondary)}.data-val{color:var(--text-primary);font-family:var(--font-mono);font-size:13px}
+
+/* ═══ FEATURE CARDS ═══ */
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px}
+.feature-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:32px;transition:var(--transition);position:relative;overflow:hidden}
+.feature-card:hover{border-color:var(--border-active);box-shadow:0 8px 32px rgba(0,229,255,0.08);transform:translateY(-2px)}
+.feature-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0;transition:var(--transition)}
+.feature-card:hover::after{opacity:1}
+.feature-icon{font-size:32px;margin-bottom:16px;display:block}
+.feature-card h3{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:12px}
+.feature-card p{color:var(--text-secondary);font-size:14px;line-height:1.7}
+.feature-tag{font-family:var(--font-mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:4px 10px;border-radius:20px;display:inline-block;margin-top:12px}
+.tag-gpu{background:rgba(0,229,255,0.1);color:var(--cyan);border:1px solid rgba(0,229,255,0.3)}
+.tag-neuro{background:rgba(170,68,255,0.1);color:var(--purple);border:1px solid rgba(170,68,255,0.3)}
+.tag-chem{background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.3)}
+.tag-ai{background:rgba(255,170,0,0.1);color:var(--amber);border:1px solid rgba(255,170,0,0.3)}
+
+/* ═══ BENCHMARK TABLE ═══ */
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table th{font-family:var(--font-mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);padding:12px 16px;text-align:left;border-bottom:1px solid var(--border)}
+.data-table td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.03);color:var(--text-secondary);font-family:var(--font-mono);font-size:12px}
+.data-table tr:hover td{background:rgba(0,229,255,0.03);color:var(--text-primary)}
+.pass{color:var(--green)}.fail{color:var(--red)}.high{color:var(--amber)}
+
+/* ═══ TERMINAL BLOCK ═══ */
+.terminal{background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius);padding:24px;font-family:var(--font-mono);font-size:13px;line-height:2;overflow-x:auto;margin-top:16px}
+.terminal .prompt{color:var(--green)}.terminal .cmd{color:var(--text-primary)}.terminal .flag{color:var(--cyan)}.terminal .comment{color:var(--text-dim)}.terminal .output{color:var(--text-secondary)}
+
+/* ═══ BENCHMARK SECTION ═══ */
+.benchmark-highlight{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-bottom:32px;display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}
+.benchmark-chart{position:relative;width:200px;height:200px;margin:0 auto}
+.benchmark-ring{transform:rotate(-90deg)}
+.benchmark-ring-bg{fill:none;stroke:var(--border);stroke-width:8}
+.benchmark-ring-fill{fill:none;stroke:var(--cyan);stroke-width:8;stroke-linecap:round;stroke-dasharray:var(--dash);stroke-dashoffset:0;transition:stroke-dasharray 2s ease-out}
+.benchmark-ring-fill-green{stroke:var(--green)}
+.benchmark-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.benchmark-pct{font-family:var(--font-mono);font-size:36px;font-weight:700;color:var(--cyan);line-height:1}
+.benchmark-label{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-top:4px}
+.benchmark-meta h3{font-family:var(--font-display);font-size:22px;font-weight:600;color:var(--text-primary);margin-bottom:16px}
+.benchmark-meta p{color:var(--text-secondary);font-size:14px;line-height:1.7;margin-bottom:12px}
+
+/* ═══ ACCESS / DEMO SECTION ═══ */
+.access-card{background:var(--bg-card);border:1px solid var(--cyan);border-radius:var(--radius);padding:40px;position:relative;overflow:hidden}
+.access-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),var(--green),var(--cyan),transparent)}
+.access-card h3{font-family:var(--font-display);font-size:24px;font-weight:700;color:var(--text-primary);margin-bottom:16px}
+.access-card p{color:var(--text-secondary);font-size:15px;line-height:1.7;margin-bottom:24px;max-width:600px}
+.access-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
+.access-step{background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius);padding:20px;text-align:center;transition:var(--transition)}
+.access-step:hover{border-color:var(--border-active)}
+.access-step-num{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--cyan);margin-bottom:8px}
+.access-step-label{font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);letter-spacing:1px;text-transform:uppercase}
+.access-terminal{background:#000;border:1px solid var(--border);border-radius:var(--radius);padding:20px;font-family:var(--font-mono);font-size:14px;line-height:2;margin-top:16px;position:relative}
+.access-terminal::before{content:'TERMINAL';position:absolute;top:8px;right:12px;font-family:var(--font-mono);font-size:9px;color:var(--text-dim);letter-spacing:2px}
+.access-terminal .prompt{color:var(--green)}
+.access-terminal .cmd{color:var(--text-primary)}
+.access-terminal .comment{color:var(--text-dim)}
+
+/* ═══ ARCHITECTURE DIAGRAM ═══ */
+.arch-flow{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:20px 0}
+.arch-stage{flex:1;min-width:140px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 16px;text-align:center;transition:var(--transition);position:relative}
+.arch-stage:hover{border-color:var(--cyan);box-shadow:0 0 20px var(--cyan-glow)}
+.arch-stage-title{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--cyan);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.arch-stage-desc{font-size:12px;color:var(--text-secondary);line-height:1.5}
+.arch-arrow{display:flex;align-items:center;color:var(--cyan-dim);font-size:20px;padding:0 4px;flex-shrink:0}
+
+/* ═══ COMPARISON TABLE ═══ */
+.comparison-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:32px}
+.comparison-card h3{font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--cyan);padding:20px 24px;border-bottom:1px solid var(--border)}
+
+/* ═══ CONTACT SECTION ═══ */
+.contact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+.contact-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:32px;text-align:center;transition:var(--transition)}
+.contact-card:hover{border-color:var(--border-active)}
+.contact-card h4{font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:8px}
+.contact-card p{color:var(--text-secondary);font-size:14px;margin-bottom:16px}
+.contact-link{font-family:var(--font-mono);font-size:13px;color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(0,229,255,0.3);padding-bottom:2px;transition:var(--transition)}
+.contact-link:hover{border-bottom-color:var(--cyan)}
+
+/* ═══ FOOTER ═══ */
+footer{background:var(--bg-secondary);border-top:1px solid var(--border);padding:40px 32px;text-align:center}
+.footer-brand{font-family:var(--font-display);font-size:20px;font-weight:700;margin-bottom:12px;letter-spacing:2px}.footer-brand span{color:var(--cyan)}
+.footer-creds{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;display:flex;justify-content:center;gap:24px;flex-wrap:wrap}
+.footer-legal{font-size:12px;color:var(--text-dim)}
+.footer-legal a{color:var(--cyan-dim);text-decoration:none}
+.footer-legal a:hover{color:var(--cyan)}
+
+/* ═══ ANIMATIONS ═══ */
+@keyframes countUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.animate-in{animation:fadeUp 0.6s ease-out forwards;opacity:0}
+.delay-1{animation-delay:0.1s}.delay-2{animation-delay:0.2s}.delay-3{animation-delay:0.3s}.delay-4{animation-delay:0.4s}
+
+/* ═══ MOBILE ═══ */
+@media(max-width:768px){
+  .hero{padding:120px 20px 40px;min-height:70vh}
+  .hero-title{font-size:42px;line-height:1.1;letter-spacing:-1px}
+  .stats-grid{grid-template-columns:repeat(3,1fr)}
+  nav{padding:10px 16px}
+  .nav-creds{display:none}
+  .nav-links{gap:4px}
+  .nav-link{padding:3px 8px;font-size:9px}
+  .section{padding:40px 20px}
+  .feature-grid{grid-template-columns:1fr}
+  .benchmark-highlight{grid-template-columns:1fr}
+  .arch-flow{flex-direction:column}
+  .arch-arrow{transform:rotate(90deg);justify-content:center;padding:4px 0}
+  .access-steps{grid-template-columns:1fr}
+  .data-grid{grid-template-columns:1fr}
+  .contact-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ CLASSIFICATION BANNER ═══ -->
+<div class="classification-banner">DELFICTUS IO — PRISM-4D COMPUTATIONAL ANALYSIS PLATFORM</div>
+
+<!-- ═══ NAVIGATION ═══ -->
+<nav>
+  <a class="nav-brand" href="/index.html">
+    <div class="nav-logo"><svg viewBox="0 0 32 32" fill="none"><path d="M16 2L30 9v14l-14 7L2 23V9l14-7z" stroke="currentColor" stroke-width="1.5" fill="none" style="color:var(--cyan)"/><path d="M16 8l8 4v8l-8 4-8-4v-8l8-4z" fill="var(--cyan)" opacity="0.2"/><circle cx="16" cy="16" r="3" fill="var(--cyan)"/></svg></div>
+    <div class="nav-title">DELFICTUS <span>IO</span></div>
+  </a>
+  <div class="nav-links">
+    <a href="/index.html" class="nav-link">Reports</a>
+    <a href="/demo.html" class="nav-link active">Platform Demo</a>
+  </div>
+  <div class="nav-creds"><div class="nav-cred">SAM.gov Registered</div><div class="nav-cred">DoD Contractor</div><div class="nav-cred">Small Business</div></div>
+</nav>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">Platform Demonstration</div>
+    <h1 class="hero-title"><span class="accent">PRISM-4D</span><br>Cryptic Pocket<br>Detection Engine</h1>
+    <p class="hero-subtitle">GPU-accelerated neuromorphic spike detection discovers druggable cryptic binding sites in under 5 minutes. From PDB to pharmacophore-ready pockets on consumer hardware.</p>
+    <div class="hero-badges">
+      <span class="hero-badge hero-badge-cyan">CUDA 12.6 / OptiX 9.1</span>
+      <span class="hero-badge hero-badge-green">53.1% Top-1 DCA &lt; 4A</span>
+      <span class="hero-badge hero-badge-purple">26 Rust Crates + 87 CUDA Kernels</span>
+    </div>
+    <div class="hero-cta">
+      <a href="#access" class="btn btn-primary">Request Demo Access</a>
+      <a href="#benchmark" class="btn btn-secondary">View Benchmarks</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PIPELINE BAR ═══ -->
+<div class="pipeline-bar"><div class="pipeline-bar-inner">
+  <div class="pipeline-step">PDB Prep</div><div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step">Topology Build</div><div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step">GPU MD Simulation</div><div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step">Neuromorphic Spike Detection</div><div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step">RT Clustering</div><div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step">Site Scoring</div><div class="pipeline-arrow">&rarr;</div>
+  <div class="pipeline-step">Pharmacophore Output</div>
+</div></div>
+
+<!-- ═══ KEY METRICS ═══ -->
+<section class="stats-section"><div class="stats-grid">
+  <div class="stat-card"><div class="stat-value" id="sv-1">53.1%</div><div class="stat-label">Top-1 DCA &lt; 4A</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-2">75.0%</div><div class="stat-label">Top-3 DCA &lt; 4A</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-3">87</div><div class="stat-label">CUDA Kernels</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-4">~57K</div><div class="stat-label">Lines of CUDA</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-5">&lt; 5 min</div><div class="stat-label">Per Target</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-6">26</div><div class="stat-label">Rust Crates</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-7">RTX</div><div class="stat-label">Consumer GPU</div></div>
+  <div class="stat-card"><div class="stat-value" id="sv-8">E2E</div><div class="stat-label">PDB &rarr; Pocket</div></div>
+</div></section>
+
+<!-- ═══ PLATFORM OVERVIEW ═══ -->
+<section class="section" id="platform">
+  <div class="section-inner">
+    <div class="section-header">
+      <h2>Platform Architecture</h2>
+      <p>End-to-end GPU-native pipeline from raw PDB to pharmacophore-annotated binding sites</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="feature-icon">&#9889;</span>
+        <h3>Neuromorphic Spike Detection</h3>
+        <p>Multi-modal UV pump-probe (258/274nm), laser-induced fluorescence (LIF), and electrostatic field perturbation (EFP) channels detect transient pocket-opening events across molecular dynamics trajectories in real time.</p>
+        <span class="feature-tag tag-neuro">Neuromorphic</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#9881;</span>
+        <h3>GPU-Accelerated MD Engine</h3>
+        <p>Custom AMBER ff14SB integrator with 87 hand-tuned CUDA kernels. Multi-stream execution runs 10 independent trajectories simultaneously on a single GPU. OptiX 9.1 ray-traced solvent boundary.</p>
+        <span class="feature-tag tag-gpu">CUDA 12.6</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#127793;</span>
+        <h3>Cryptic Pocket Specialization</h3>
+        <p>Purpose-built for cryptic (hidden) binding sites that only appear during conformational fluctuations. Validated against the CryptoBench 222-target benchmark suite of experimentally confirmed cryptic pockets.</p>
+        <span class="feature-tag tag-chem">CryptoBench</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#128300;</span>
+        <h3>Pharmacophore Generation</h3>
+        <p>Spike-derived 3D pharmacophore maps with typed features (HBA, HBD, hydrophobic, aromatic, ionic). Ready for fragment placement, virtual screening, and de novo drug design campaigns.</p>
+        <span class="feature-tag tag-ai">Drug Design</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#128295;</span>
+        <h3>Rust + CUDA Systems Engineering</h3>
+        <p>26 Rust crates totaling 40,000+ lines of safe systems code. Zero-copy GPU interop, compile-time kernel verification, and memory-safe orchestration of the full detection pipeline.</p>
+        <span class="feature-tag tag-gpu">Systems</span>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#128202;</span>
+        <h3>Automated Preprocessing</h3>
+        <p>prism-prep pipeline handles PDB sanitization, protonation, topology generation, glycan patching, and multi-chain validation. From raw PDB ID to simulation-ready topology in one command.</p>
+        <span class="feature-tag tag-chem">Automation</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ ARCHITECTURE FLOW ═══ -->
+<section class="section section-alt" id="architecture">
+  <div class="section-inner">
+    <div class="section-header">
+      <h2>Pipeline Stages</h2>
+      <p>Six-stage execution from raw coordinates to scored binding sites</p>
+    </div>
+    <div class="arch-flow">
+      <div class="arch-stage">
+        <div class="arch-stage-title">1. Prep</div>
+        <div class="arch-stage-desc">PDB sanitize, protonate, topology build, glycan patch</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-stage">
+        <div class="arch-stage-title">2. GPU Init</div>
+        <div class="arch-stage-desc">CUDA context, PTX load, multi-stream allocation</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-stage">
+        <div class="arch-stage-title">3. MD Simulate</div>
+        <div class="arch-stage-desc">10x parallel AMBER trajectories, OptiX solvent</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-stage">
+        <div class="arch-stage-title">4. Spike Detect</div>
+        <div class="arch-stage-desc">UV/LIF/EFP neuromorphic event detection</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-stage">
+        <div class="arch-stage-title">5. Cluster</div>
+        <div class="arch-stage-desc">RT spatial clustering, pocket boundary extraction</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-stage">
+        <div class="arch-stage-title">6. Score</div>
+        <div class="arch-stage-desc">Druggability, volume, pharmacophore typing, JSON output</div>
+      </div>
+    </div>
+
+    <div class="data-grid" style="margin-top:32px">
+      <div class="data-card">
+        <h3>Compute Stack</h3>
+        <div class="data-row"><span class="data-key">Language</span><span class="data-val">Rust + CUDA C</span></div>
+        <div class="data-row"><span class="data-key">GPU Kernels</span><span class="data-val">87 (.cu) &rarr; 92 PTX</span></div>
+        <div class="data-row"><span class="data-key">CUDA Toolkit</span><span class="data-val">12.6 / sm_120</span></div>
+        <div class="data-row"><span class="data-key">Ray Tracing</span><span class="data-val">OptiX 9.1.0</span></div>
+        <div class="data-row"><span class="data-key">Force Field</span><span class="data-val">AMBER ff14SB</span></div>
+        <div class="data-row"><span class="data-key">Preprocessing</span><span class="data-val">Python 3.11 / Conda</span></div>
+      </div>
+      <div class="data-card">
+        <h3>Hardware Requirements</h3>
+        <div class="data-row"><span class="data-key">GPU</span><span class="data-val">NVIDIA RTX 3080+ (16GB VRAM)</span></div>
+        <div class="data-row"><span class="data-key">Tested On</span><span class="data-val">RTX 5080 (Blackwell)</span></div>
+        <div class="data-row"><span class="data-key">CPU</span><span class="data-val">8+ cores recommended</span></div>
+        <div class="data-row"><span class="data-key">RAM</span><span class="data-val">32 GB minimum</span></div>
+        <div class="data-row"><span class="data-key">Storage</span><span class="data-val">~500 MB per target</span></div>
+        <div class="data-row"><span class="data-key">OS</span><span class="data-val">Linux (Ubuntu 22.04+)</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ BENCHMARK RESULTS ═══ -->
+<section class="section" id="benchmark">
+  <div class="section-inner">
+    <div class="section-header">
+      <h2>CryptoBench Validation</h2>
+      <p>Performance against the 222-target benchmark suite of experimentally confirmed cryptic binding sites</p>
+    </div>
+
+    <div class="benchmark-highlight">
+      <div>
+        <div class="benchmark-chart">
+          <svg class="benchmark-ring" width="200" height="200" viewBox="0 0 200 200">
+            <circle class="benchmark-ring-bg" cx="100" cy="100" r="85"/>
+            <circle class="benchmark-ring-fill" cx="100" cy="100" r="85" style="--dash:283 534"/>
+          </svg>
+          <div class="benchmark-center">
+            <div class="benchmark-pct">53.1%</div>
+            <div class="benchmark-label">Top-1 DCA &lt; 4A</div>
+          </div>
+        </div>
+      </div>
+      <div class="benchmark-meta">
+        <h3>Cryptic Pocket Detection Accuracy</h3>
+        <p>Evaluated on 32 CryptoBench targets (ongoing — full 222-target evaluation in progress). The closest predicted pocket centroid falls within 4 Angstroms of the experimentally determined cryptic site in <strong style="color:var(--cyan)">53.1%</strong> of cases at Top-1 rank.</p>
+        <p>At Top-3 rank, accuracy rises to <strong style="color:var(--green)">75.0%</strong>, demonstrating strong recall of the true cryptic pocket within the top-ranked predictions.</p>
+        <p style="color:var(--text-dim);font-size:12px;font-family:var(--font-mono)">Dataset: CryptoBench (Meller et al. 2023) &middot; Metric: Distance to Closest Atom (DCA)</p>
+      </div>
+    </div>
+
+    <div class="benchmark-highlight">
+      <div class="benchmark-meta">
+        <h3>What Makes This Different</h3>
+        <p>Traditional pocket detectors (fpocket, SiteMap, P2Rank) operate on static crystal structures and cannot detect cryptic pockets by definition — the pocket doesn't exist in the apo conformation.</p>
+        <p>PRISM-4D runs GPU-accelerated molecular dynamics to sample conformational fluctuations, then applies neuromorphic spike detection to identify transient pocket-opening events that would be invisible to static methods.</p>
+      </div>
+      <div>
+        <div class="benchmark-chart">
+          <svg class="benchmark-ring" width="200" height="200" viewBox="0 0 200 200">
+            <circle class="benchmark-ring-bg" cx="100" cy="100" r="85"/>
+            <circle class="benchmark-ring-fill benchmark-ring-fill-green" cx="100" cy="100" r="85" style="--dash:401 534"/>
+          </svg>
+          <div class="benchmark-center">
+            <div class="benchmark-pct" style="color:var(--green)">75.0%</div>
+            <div class="benchmark-label">Top-3 DCA &lt; 4A</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="comparison-card">
+      <h3>Benchmark Batches Evaluated</h3>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>Batch</th><th>Targets</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Batch 01</td><td>1bk2, 2qbv, 4r0x, 4aem, 1e6k, 3flg, 3pbf, 5sc2, 4zm7, 3a0x</td><td class="high">Pending</td><td>Queued for re-execution</td></tr>
+            <tr><td>Batch 02</td><td style="color:var(--text-secondary)">10 targets</td><td class="pass">Complete</td><td>Included in current metrics</td></tr>
+            <tr><td>Batch 03</td><td style="color:var(--text-secondary)">10 targets</td><td class="pass">Complete</td><td>Included in current metrics</td></tr>
+            <tr><td>Batch 04</td><td style="color:var(--text-secondary)">10 targets</td><td class="pass">Complete</td><td>Included in current metrics</td></tr>
+            <tr><td>Remaining</td><td style="color:var(--text-secondary)">~182 targets</td><td style="color:var(--text-dim)">Queued</td><td>Full CryptoBench evaluation in progress</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ DEMO ACCESS ═══ -->
+<section class="section section-alt" id="access">
+  <div class="section-inner">
+    <div class="section-header">
+      <h2>Live Demo Access</h2>
+      <p>Hands-on evaluation of the PRISM-4D platform in a sandboxed GPU environment</p>
+    </div>
+
+    <div class="access-card">
+      <h3>Interactive SSH Demo</h3>
+      <p>Connect to a live, GPU-accelerated PRISM-4D instance. Run the full detection pipeline on sample protein structures. Inspect binding site predictions, pharmacophore maps, and scoring outputs — all from your terminal.</p>
+
+      <div class="access-steps">
+        <div class="access-step">
+          <div class="access-step-num">01</div>
+          <div class="access-step-label">Request credentials</div>
+        </div>
+        <div class="access-step">
+          <div class="access-step-num">02</div>
+          <div class="access-step-label">SSH into sandbox</div>
+        </div>
+        <div class="access-step">
+          <div class="access-step-num">03</div>
+          <div class="access-step-label">Run pipeline on samples</div>
+        </div>
+        <div class="access-step">
+          <div class="access-step-num">04</div>
+          <div class="access-step-label">Inspect results</div>
+        </div>
+      </div>
+
+      <div class="access-terminal">
+        <span class="comment"># 1. Install cloudflared (one-time, any OS)</span><br>
+        <span class="prompt">$</span> <span class="cmd">brew install cloudflared</span>  <span class="comment"># macOS (or: apt/choco/scoop)</span><br>
+        <br>
+        <span class="comment"># 2. Connect via Cloudflare Tunnel — no VPN, no port forwarding</span><br>
+        <span class="prompt">$</span> <span class="cmd">ssh -o ProxyCommand='cloudflared access ssh --hostname demo.delfictus.com' demo@demo.delfictus.com</span><br>
+        <span class="comment"># Password: provided upon demo request</span><br>
+        <br>
+        <span class="comment"># 3. Run cryptic pocket detection on a sample structure</span><br>
+        <span class="prompt">demo@prism4d:~$</span> <span class="cmd">prism4d detect --pdb samples/2fhz.topology.json</span><br>
+        <br>
+        <span class="comment"># 4. View binding site predictions</span><br>
+        <span class="prompt">demo@prism4d:~$</span> <span class="cmd">cat results/2fhz/2fhz.binding_sites.json | jq .</span><br>
+        <br>
+        <span class="comment"># 5. Explore available sample structures</span><br>
+        <span class="prompt">demo@prism4d:~$</span> <span class="cmd">ls samples/</span>
+      </div>
+
+      <div class="data-grid" style="margin-top:24px">
+        <div class="data-card">
+          <h3>Environment</h3>
+          <div class="data-row"><span class="data-key">GPU</span><span class="data-val">NVIDIA RTX (dedicated)</span></div>
+          <div class="data-row"><span class="data-key">Sandbox</span><span class="data-val">Docker container, no host access</span></div>
+          <div class="data-row"><span class="data-key">Access</span><span class="data-val">Cloudflare Tunnel (zero-trust)</span></div>
+          <div class="data-row"><span class="data-key">Tools</span><span class="data-val">prism4d CLI, jq, Python, vim</span></div>
+          <div class="data-row"><span class="data-key">Samples</span><span class="data-val">8 CryptoBench targets</span></div>
+          <div class="data-row"><span class="data-key">Session</span><span class="data-val">60 min max, 3 concurrent</span></div>
+        </div>
+        <div class="data-card">
+          <h3>Security</h3>
+          <div class="data-row"><span class="data-key">Transport</span><span class="data-val">Cloudflare encrypted tunnel</span></div>
+          <div class="data-row"><span class="data-key">Isolation</span><span class="data-val">Containerized, cap-dropped</span></div>
+          <div class="data-row"><span class="data-key">Privileges</span><span class="data-val">No sudo, no installs</span></div>
+          <div class="data-row"><span class="data-key">Network</span><span class="data-val">No tunneling/forwarding</span></div>
+          <div class="data-row"><span class="data-key">Memory</span><span class="data-val">16 GB limit</span></div>
+          <div class="data-row"><span class="data-key">Monitoring</span><span class="data-val">Full activity audit</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+        <h3 style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:12px">Browser Access (Zero Install)</h3>
+        <p style="color:var(--text-secondary);font-size:14px;margin-bottom:16px">Once granted access, open the link below in any browser — desktop, tablet, or phone. No software install required.</p>
+        <div class="access-terminal" style="margin-bottom:24px">
+          <span class="comment"># Open in any browser (Chrome, Safari, Firefox)</span><br>
+          <span class="cmd">https://demo.delfictus.com</span><br>
+          <span class="comment"># Login: demo / (password provided upon request)</span>
+        </div>
+      </div>
+      <div style="margin-top:24px;text-align:center">
+        <a href="mailto:contact@delfictus.com?subject=PRISM-4D%20Demo%20Access%20Request&body=I%20would%20like%20to%20request%20access%20to%20the%20PRISM-4D%20live%20demo.%0A%0AOrganization%3A%20%0AUse%20Case%3A%20" class="btn btn-primary">Request Demo Access</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ USE CASES ═══ -->
+<section class="section" id="applications">
+  <div class="section-inner">
+    <div class="section-header">
+      <h2>Target Applications</h2>
+      <p>Cryptic pocket detection for previously undruggable targets</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="feature-icon">&#127981;</span>
+        <h3>Undruggable Oncoproteins</h3>
+        <p>Discover cryptic pockets on high-value targets like MYC, RAS, and p53 that lack traditional binding sites in crystal structures. Enable small-molecule intervention where none existed before.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#129516;</span>
+        <h3>Protein-Protein Interfaces</h3>
+        <p>Detect transient pockets at PPI interfaces during conformational breathing. Identify druggable hotspots on flat, featureless surfaces that appear only during dynamic fluctuations.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">&#128170;</span>
+        <h3>Allosteric Site Discovery</h3>
+        <p>Map allosteric cryptic sites distal to the active site. Enable mechanism-of-action diversity through non-competitive binding site identification.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CONTACT ═══ -->
+<section class="section section-alt" id="contact">
+  <div class="section-inner">
+    <div class="section-header">
+      <h2>Get In Touch</h2>
+      <p>Discuss PRISM-4D for your drug discovery pipeline</p>
+    </div>
+    <div class="contact-grid">
+      <div class="contact-card">
+        <h4>Technical Evaluation</h4>
+        <p>Request hands-on demo access with GPU-accelerated sandbox environment</p>
+        <a href="mailto:contact@delfictus.com?subject=PRISM-4D%20Technical%20Evaluation" class="contact-link">contact@delfictus.com</a>
+      </div>
+      <div class="contact-card">
+        <h4>Partnership &amp; Licensing</h4>
+        <p>Discuss integration, licensing, and custom deployment options</p>
+        <a href="mailto:contact@delfictus.com?subject=PRISM-4D%20Partnership%20Inquiry" class="contact-link">contact@delfictus.com</a>
+      </div>
+      <div class="contact-card">
+        <h4>Government &amp; Defense</h4>
+        <p>SAM.gov registered, Active UEI/CAGE, DoD contractor eligible</p>
+        <a href="mailto:contact@delfictus.com?subject=PRISM-4D%20Government%20Inquiry" class="contact-link">contact@delfictus.com</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+  <div class="footer-brand">DELFICTUS <span>IO</span></div>
+  <div class="footer-creds"><span>SAM.gov Registered</span><span>Active UEI</span><span>Active CAGE</span><span>DoD Contractor</span></div>
+  <div class="footer-legal">&copy; 2026 Delfictus IO LLC. All rights reserved. &nbsp;|&nbsp; Advanced Computing &amp; Biotechnology &nbsp;|&nbsp; <a href="mailto:contact@delfictus.com">contact@delfictus.com</a></div>
+</footer>
+
+<script>
+// ═══ SMOOTH SCROLL FOR ANCHOR LINKS ═══
+document.querySelectorAll('a[href^="#"]').forEach(function(a){
+  a.addEventListener('click', function(e){
+    var target = document.querySelector(this.getAttribute('href'));
+    if(target){
+      e.preventDefault();
+      target.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+  });
+});
+
+// ═══ INTERSECTION OBSERVER FOR FADE-IN ═══
+(function(){
+  var observer = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(entry.isIntersecting){
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, {threshold:0.1});
+
+  document.querySelectorAll('.feature-card, .data-card, .stat-card, .access-step, .contact-card, .arch-stage').forEach(function(el){
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(20px)';
+    el.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+    observer.observe(el);
+  });
+})();
+
+// ═══ NAV SCROLL EFFECT ═══
+(function(){
+  var nav = document.querySelector('nav');
+  window.addEventListener('scroll', function(){
+    if(window.scrollY > 100){
+      nav.style.background = 'rgba(6,6,10,0.95)';
+      nav.style.borderBottomColor = 'rgba(0,229,255,0.2)';
+    } else {
+      nav.style.background = 'rgba(6,6,10,0.85)';
+      nav.style.borderBottomColor = '';
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

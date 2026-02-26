@@ -1322,7 +1322,7 @@ INPUT: PDB file
       |
       v
 PRISM-4D Detection (BLIND) -- 2 min [EXISTING]
-  nhs_rt_full --multi-stream 20 --multi-scale
+  nhs_rt_full --multi-stream 8 --multi-scale
   Output: Spike JSON + lining residues + pocket coords
       |
       v

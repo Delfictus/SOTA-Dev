@@ -1826,7 +1826,7 @@ remove_water = true
 [detect]
 steps = 500000
 replicas = 3
-multi_stream = 2
+multi_stream = 8
 
 [dock]
 engine = "auto"                # "unidock", "vina", "auto"

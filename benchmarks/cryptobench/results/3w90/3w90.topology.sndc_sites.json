@@ -1,0 +1,36 @@
+{
+  "density_grid": {
+    "dims": [
+      56,
+      68,
+      59
+    ],
+    "n_peaks": 30,
+    "sigma": 2.0,
+    "spacing": 1.0
+  },
+  "gpu_time_ms": 450660.28409699997,
+  "method": "SNDC",
+  "n_levels": 13,
+  "n_spikes": 604047,
+  "sites": [
+    {
+      "centroid": [
+        13.97200075399437,
+        11.62399375724064,
+        12.1834952020542
+      ],
+      "cluster_radius": 18.92961261889563,
+      "id": 0,
+      "intensity_cv": 2.4432570274456022,
+      "mean_intensity": 2.755196701200554,
+      "mean_water_density": 0.02997975021779759,
+      "peak_density": 8.205821638285767e-40,
+      "persistence": 13,
+      "probe_diversity": 3,
+      "spike_count": 604047
+    }
+  ],
+  "structure": "3w90.topology",
+  "version": "1.0"
+}

@@ -60,7 +60,7 @@ json.dump(data, open(os.environ['RESULTS_JSON'], 'w'), indent=2)
 
     if RUST_LOG=info "$NHS_BIN" \
         -t "$TOPOLOGY" -o "$OUT_DIR" \
-        --fast --multi-stream 16 --lining-cutoff 8.0 \
+        --fast --multi-stream 8 --lining-cutoff 8.0 \
         --hysteresis --rt-clustering \
         2>&1 | tee -a "$OUT_DIR/nhs.log" "$LOG_FILE"; then
         echo "  [$PDB] NHS: OK — $(date +%H:%M:%S)" | tee -a "$LOG_FILE"

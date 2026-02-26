@@ -1,0 +1,235 @@
+{
+  "timestamp": "2026-02-25 04:32:25",
+  "total": 222,
+  "success": 193,
+  "skipped": 1,
+  "failed": 28,
+  "ready_count": 194,
+  "elapsed_minutes": 20.15936739842097,
+  "failures": [
+    {
+      "apo_id": "1g59",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/1g59.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 6.064194440841675
+    },
+    {
+      "apo_id": "1k47",
+      "success": false,
+      "n_atoms": 15779,
+      "error": "too_large_15779_atoms",
+      "source": "rcsb",
+      "elapsed": 0.7141306400299072
+    },
+    {
+      "apo_id": "1m5w",
+      "success": false,
+      "n_atoms": 15727,
+      "error": "too_large_15727_atoms",
+      "source": "rcsb",
+      "elapsed": 0.5244719982147217
+    },
+    {
+      "apo_id": "1p4v",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/1p4v.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 1.9091079235076904
+    },
+    {
+      "apo_id": "2nt1",
+      "success": false,
+      "n_atoms": 17510,
+      "error": "too_large_17510_atoms",
+      "source": "rcsb",
+      "elapsed": 0.5142743587493896
+    },
+    {
+      "apo_id": "3bk9",
+      "success": false,
+      "n_atoms": 19073,
+      "error": "too_large_19073_atoms",
+      "source": "rcsb",
+      "elapsed": 0.5478317737579346
+    },
+    {
+      "apo_id": "3x0x",
+      "success": false,
+      "n_atoms": 25802,
+      "error": "too_large_25802_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6792905330657959
+    },
+    {
+      "apo_id": "4gv9",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/4gv9.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 2.0556161403656006
+    },
+    {
+      "apo_id": "4jax",
+      "success": false,
+      "n_atoms": 22473,
+      "error": "too_large_22473_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6359984874725342
+    },
+    {
+      "apo_id": "4uc8",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/4uc8.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 2.4109108448028564
+    },
+    {
+      "apo_id": "4z0y",
+      "success": false,
+      "n_atoms": 23988,
+      "error": "too_large_23988_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6911506652832031
+    },
+    {
+      "apo_id": "5h8k",
+      "success": false,
+      "n_atoms": 40889,
+      "error": "too_large_40889_atoms",
+      "source": "rcsb",
+      "elapsed": 0.7518668174743652
+    },
+    {
+      "apo_id": "5hto",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/5hto.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 7.564820289611816
+    },
+    {
+      "apo_id": "5i3t",
+      "success": false,
+      "n_atoms": 15049,
+      "error": "too_large_15049_atoms",
+      "source": "rcsb",
+      "elapsed": 0.7121109962463379
+    },
+    {
+      "apo_id": "5yj2",
+      "success": false,
+      "n_atoms": 20470,
+      "error": "too_large_20470_atoms",
+      "source": "rcsb",
+      "elapsed": 0.5523068904876709
+    },
+    {
+      "apo_id": "5z18",
+      "success": false,
+      "n_atoms": 30433,
+      "error": "too_large_30433_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6278328895568848
+    },
+    {
+      "apo_id": "6o4f",
+      "success": false,
+      "n_atoms": 32982,
+      "error": "too_large_32982_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6912217140197754
+    },
+    {
+      "apo_id": "7f4y",
+      "success": false,
+      "n_atoms": 18177,
+      "error": "too_large_18177_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6300427913665771
+    },
+    {
+      "apo_id": "7kay",
+      "success": false,
+      "n_atoms": 16441,
+      "error": "too_large_16441_atoms",
+      "source": "rcsb",
+      "elapsed": 0.43263697624206543
+    },
+    {
+      "apo_id": "7nbc",
+      "success": false,
+      "n_atoms": 0,
+      "error": "rcsb_failed_HTTP Error 404: Not Found",
+      "source": "rcsb_failed_HTTP Error 404: Not Found",
+      "elapsed": 0.5208044052124023
+    },
+    {
+      "apo_id": "7ndl",
+      "success": false,
+      "n_atoms": 20987,
+      "error": "too_large_20987_atoms",
+      "source": "rcsb",
+      "elapsed": 0.46933579444885254
+    },
+    {
+      "apo_id": "7np0",
+      "success": false,
+      "n_atoms": 15199,
+      "error": "too_large_15199_atoms",
+      "source": "rcsb",
+      "elapsed": 0.5822353363037109
+    },
+    {
+      "apo_id": "7qzr",
+      "success": false,
+      "n_atoms": 21609,
+      "error": "too_large_21609_atoms",
+      "source": "rcsb",
+      "elapsed": 0.8506796360015869
+    },
+    {
+      "apo_id": "7v8k",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/7v8k.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 2.9682862758636475
+    },
+    {
+      "apo_id": "8hc1",
+      "success": false,
+      "n_atoms": 0,
+      "error": "rcsb_failed_HTTP Error 404: Not Found",
+      "source": "rcsb_failed_HTTP Error 404: Not Found",
+      "elapsed": 0.394697904586792
+    },
+    {
+      "apo_id": "8i84",
+      "success": false,
+      "n_atoms": 0,
+      "error": "prism_prep_failed: =======================\n\u2717 Failed: /home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/structures/8i84.pdb\n============================================================\n  Error: Preprocessing failed:",
+      "source": "rcsb",
+      "elapsed": 2.766615152359009
+    },
+    {
+      "apo_id": "8ias",
+      "success": false,
+      "n_atoms": 16233,
+      "error": "too_large_16233_atoms",
+      "source": "rcsb",
+      "elapsed": 0.5637550354003906
+    },
+    {
+      "apo_id": "8u3n",
+      "success": false,
+      "n_atoms": 18078,
+      "error": "too_large_18078_atoms",
+      "source": "rcsb",
+      "elapsed": 0.6863963603973389
+    }
+  ]
+}

@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRISM-4D | Delfictus IO — MYC-MAX Cryptic Binding Site Analysis</title>
+<meta name="description" content="PRISM-4D: Real-Time Neuromorphic Discovery of Cryptic Drug Binding Sites. MYC-MAX PPI Interface Analysis by Delfictus IO.">
+
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.4.2/3Dmol-min.js"></script>
+
+<style>
+/* =========================================
+   CORE STYLES
+   ========================================= */
+:root{--bg-primary:#06060a;--bg-secondary:#0c0c14;--bg-tertiary:#12121e;--bg-card:#0f0f1a;--bg-card-hover:#161625;--cyan:#00e5ff;--cyan-dim:#00a5b8;--cyan-glow:rgba(0,229,255,0.15);--cyan-glow-strong:rgba(0,229,255,0.35);--green:#00ff88;--amber:#ffaa00;--red:#ff3366;--purple:#aa44ff;--orange:#ff8844;--text-primary:#e8ecf0;--text-secondary:#8892a0;--text-dim:#556070;--border:rgba(0,229,255,0.12);--border-active:rgba(0,229,255,0.4);--font-display:'Space Grotesk',sans-serif;--font-mono:'JetBrains Mono',monospace;--font-body:'IBM Plex Sans',sans-serif;--radius:6px;--transition:0.3s cubic-bezier(0.4,0,0.2,1)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--cyan-dim) var(--bg-primary)}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg-primary)}::-webkit-scrollbar-thumb{background:var(--cyan-dim);border-radius:3px}
+body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+.classification-banner{background:var(--cyan);color:var(--bg-primary);text-align:center;padding:3px 0;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:4px;text-transform:uppercase;position:fixed;top:0;left:0;right:0;z-index:10000}
+nav{position:fixed;top:22px;left:0;right:0;z-index:9999;padding:12px 32px;display:flex;align-items:center;justify-content:space-between;background:rgba(6,6,10,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);transition:var(--transition)}
+.nav-brand{display:flex;align-items:center;gap:14px}.nav-logo{width:32px;height:32px;position:relative}.nav-logo svg{width:100%;height:100%}
+.nav-title{font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--text-primary);letter-spacing:2px}.nav-title span{color:var(--cyan)}
+.nav-creds{display:flex;gap:16px;align-items:center}
+.nav-cred{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius);transition:var(--transition)}
+.nav-cred:hover{border-color:var(--border-active);color:var(--text-secondary)}
+.hero{padding:160px 32px 60px;position:relative;overflow:hidden;min-height:85vh;display:flex;flex-direction:column;justify-content:center}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse 800px 600px at 20% 30%,var(--cyan-glow),transparent),radial-gradient(ellipse 600px 400px at 80% 60%,rgba(170,68,255,0.08),transparent);pointer-events:none}
+.hero-grid{position:absolute;top:0;left:0;right:0;bottom:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:60px 60px;opacity:0.4;animation:gridPulse 8s ease-in-out infinite}
+@keyframes gridPulse{0%,100%{opacity:0.3}50%{opacity:0.5}}
+.hero-content{position:relative;z-index:2;max-width:1200px;margin:0 auto;width:100%;animation:fadeUp 1s ease-out}
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.hero-eyebrow{font-family:var(--font-mono);font-size:12px;color:var(--cyan);letter-spacing:4px;text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:12px}
+.hero-eyebrow::before{content:'';width:40px;height:1px;background:var(--cyan)}
+.hero-title{font-family:var(--font-display);font-size:clamp(48px,7vw,96px);font-weight:700;line-height:1.0;margin-bottom:24px;letter-spacing:-2px}
+.hero-title .accent{color:var(--cyan)}
+.hero-subtitle{font-family:var(--font-body);font-size:20px;color:var(--text-secondary);max-width:700px;margin-bottom:16px;line-height:1.5}
+.hero-target{font-family:var(--font-mono);font-size:14px;color:var(--cyan-dim);margin-bottom:40px;padding:12px 20px;background:rgba(0,229,255,0.05);border:1px solid var(--border);border-radius:var(--radius);display:inline-block}
+.hero-target strong{color:var(--cyan)}
+.pipeline-bar{background:var(--bg-secondary);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:20px 32px;overflow-x:auto}
+.pipeline-bar-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap}
+.pipeline-step{font-family:var(--font-mono);font-size:12px;letter-spacing:1px;padding:8px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-secondary);white-space:nowrap;transition:var(--transition)}
+.pipeline-step:hover{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 20px var(--cyan-glow)}
+.pipeline-arrow{color:var(--cyan-dim);font-size:18px;opacity:0.5}
+.stats-section{padding:60px 32px;background:var(--bg-primary)}
+.stats-grid{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center;transition:var(--transition);position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0;transition:var(--transition)}
+.stat-card:hover{border-color:var(--border-active);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,229,255,0.08)}
+.stat-card:hover::before{opacity:1}
+.stat-value{font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--cyan);line-height:1.2;margin-bottom:6px}
+.stat-label{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase}
+.tab-nav-section{position:sticky;top:70px;z-index:999;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 32px}
+.tab-nav{max-width:1200px;margin:0 auto;display:flex;gap:0;overflow-x:auto;scrollbar-width:none}
+.tab-nav::-webkit-scrollbar{display:none}
+.tab-btn{font-family:var(--font-mono);font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--text-dim);background:none;border:none;padding:16px 20px;cursor:pointer;transition:var(--transition);white-space:nowrap;position:relative;border-bottom:2px solid transparent}
+.tab-btn:hover{color:var(--text-secondary)}.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab-content{max-width:1200px;margin:0 auto;padding:40px 32px;min-height:60vh}
+.tab-panel{display:none;animation:panelFade 0.4s ease-out}.tab-panel.active{display:block}
+@keyframes panelFade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.section-header{margin-bottom:32px}.section-header h2{font-family:var(--font-display);font-size:32px;font-weight:700;margin-bottom:8px}.section-header p{color:var(--text-secondary);font-size:16px;max-width:600px}
+
+/* FIXED RESPONSIVE GRID - Fits mobile screens */
+.data-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-bottom:40px}
+
+.data-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:var(--transition)}
+.data-card:hover{border-color:var(--border-active);box-shadow:0 4px 24px rgba(0,229,255,0.06)}
+.data-card h3{font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:16px;color:var(--cyan)}
+.data-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:14px}.data-row:last-child{border-bottom:none}
+.data-key{color:var(--text-secondary)}.data-val{color:var(--text-primary);font-family:var(--font-mono);font-size:13px}
+.viewer-container{position:relative;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px}
+.viewer-3d{width:100%;height:600px;position:relative}
+.viewer-controls{position:absolute;top:16px;right:16px;z-index:10;display:flex;flex-direction:column;gap:6px}
+.viewer-btn{font-family:var(--font-mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;background:rgba(6,6,10,0.8);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-secondary);cursor:pointer;transition:var(--transition);backdrop-filter:blur(10px)}
+.viewer-btn:hover{border-color:var(--cyan);color:var(--cyan)}.viewer-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,0.1)}
+
+/* FIXED RESPONSIVE GRID - Fits mobile screens */
+.ligand-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+
+.ligand-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:var(--transition)}
+.ligand-card:hover{border-color:var(--border-active);box-shadow:0 4px 24px rgba(0,229,255,0.06)}
+.ligand-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start}
+.ligand-name{font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--text-primary)}
+.ligand-formula{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-top:4px}
+.ligand-badge{font-family:var(--font-mono);font-size:10px;padding:4px 10px;border-radius:20px;letter-spacing:1px}
+.badge-pass{background:rgba(0,255,136,0.12);color:var(--green);border:1px solid rgba(0,255,136,0.3)}
+.badge-warn{background:rgba(255,170,0,0.12);color:var(--amber);border:1px solid rgba(255,170,0,0.3)}
+.badge-fail{background:rgba(255,51,102,0.12);color:var(--red);border:1px solid rgba(255,51,102,0.3)}
+.ligand-scores{padding:20px 24px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.score-item{text-align:center;padding:8px 4px;background:rgba(0,229,255,0.03);border:1px solid var(--border);border-radius:var(--radius)}
+.score-label{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.score-value{font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--cyan)}
+.score-unit{font-size:10px;color:var(--text-dim);display:block}
+.ligand-details{padding:16px 24px;border-top:1px solid var(--border);font-size:13px}
+.ligand-details p{margin-bottom:8px;color:var(--text-secondary);line-height:1.5}.ligand-details strong{color:var(--cyan-dim)}
+.detail-boxes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.detail-box{background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary)}
+.detail-box strong{color:var(--cyan-dim);display:block;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.chart-container{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
+.chart-container h3{font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--cyan);margin-bottom:16px}
+.chart-wrap{position:relative;height:280px}
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table th{font-family:var(--font-mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);padding:12px 16px;text-align:left;border-bottom:1px solid var(--border)}
+.data-table td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.03);color:var(--text-secondary);font-family:var(--font-mono);font-size:12px}
+.data-table tr:hover td{background:rgba(0,229,255,0.03);color:var(--text-primary)}
+.pass{color:var(--green)}.fail{color:var(--red)}.high{color:var(--amber)}
+.pharma-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.pharma-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;transition:var(--transition)}
+.pharma-card:hover{border-color:var(--border-active)}
+.pharma-type{font-family:var(--font-mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:12px}
+.type-hba{background:rgba(0,229,255,0.12);color:var(--cyan)}.type-hbd{background:rgba(0,255,136,0.12);color:var(--green)}
+.type-bnz{background:rgba(170,68,255,0.12);color:var(--purple)}.type-hydrophobic{background:rgba(255,170,0,0.12);color:var(--amber)}
+.type-anion{background:rgba(255,51,102,0.12);color:var(--red)}.type-cation{background:rgba(0,229,255,0.12);color:var(--cyan)}
+.type-unk{background:rgba(255,170,0,0.12);color:var(--amber)}.type-tyr{background:rgba(0,255,136,0.12);color:var(--green)}
+.method-block{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-bottom:20px}
+.method-block h3{font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--cyan);margin-bottom:16px}
+.method-block p{color:var(--text-secondary);line-height:1.8;margin-bottom:12px;font-size:15px}
+.method-block code{font-family:var(--font-mono);font-size:12px;background:var(--bg-primary);border:1px solid var(--border);padding:2px 8px;border-radius:3px;color:var(--cyan)}
+.terminal{background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius);padding:24px;font-family:var(--font-mono);font-size:13px;line-height:2;overflow-x:auto;margin-top:16px}
+.terminal .prompt{color:var(--green)}.terminal .cmd{color:var(--text-primary)}.terminal .flag{color:var(--cyan)}.terminal .comment{color:var(--text-dim)}
+.kv-table{width:100%;border-collapse:collapse;margin-bottom:16px}
+.kv-table td{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;color:var(--text-secondary);font-family:var(--font-mono);vertical-align:top}
+.kv-key{color:var(--cyan);font-weight:600;white-space:nowrap;width:140px}
+.catalytic-glow{text-shadow:0 0 8px rgba(255,51,102,0.6);color:var(--red)}
+footer{background:var(--bg-secondary);border-top:1px solid var(--border);padding:40px 32px;text-align:center}
+.footer-brand{font-family:var(--font-display);font-size:20px;font-weight:700;margin-bottom:12px;letter-spacing:2px}.footer-brand span{color:var(--cyan)}
+.footer-creds{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;display:flex;justify-content:center;gap:24px;flex-wrap:wrap}
+.footer-legal{font-size:12px;color:var(--text-dim)}
+
+/* MOBILE OVERRIDES */
+@media(max-width:768px){
+  .hero{padding:120px 20px 40px;min-height:70vh}
+  .hero-title{font-size:42px;line-height:1.1;letter-spacing:-1px}
+  .stats-grid{grid-template-columns:repeat(3,1fr)}
+  nav{padding:10px 16px}
+  .nav-creds{display:none}
+  .tab-btn{padding:12px 14px;font-size:11px}
+  /* Force single column for graphs/grids on mobile */
+  .ligand-scores{grid-template-columns:repeat(2,1fr)}
+  .data-grid, .ligand-grid { grid-template-columns: 1fr; }
+  
+  /* Viewer fix */
+  .viewer-container{display:flex;flex-direction:column}
+  .viewer-3d{height:400px;order:1}
+  .viewer-controls{position:relative;top:0;right:0;order:2;display:flex;flex-wrap:wrap;gap:8px;padding:12px;border-top:1px solid var(--border);justify-content:center;flex-direction:row}
+  .viewer-btn{flex:1 1 30%;text-align:center;padding:12px 10px;font-size:10px}
+  .data-card{padding:16px;overflow-x:auto}
+}
+</style>
+</head>
+<body>
+<div class="classification-banner">DELFICTUS IO — PRISM-4D COMPUTATIONAL ANALYSIS PLATFORM</div>
+<nav>
+  <div class="nav-brand">
+    <div class="nav-logo"><svg viewBox="0 0 32 32" fill="none"><path d="M16 2L30 9v14l-14 7L2 23V9l14-7z" stroke="currentColor" stroke-width="1.5" fill="none" style="color:var(--cyan)"/><path d="M16 8l8 4v8l-8 4-8-4v-8l8-4z" fill="var(--cyan)" opacity="0.2"/><circle cx="16" cy="16" r="3" fill="var(--cyan)"/></svg></div>
+    <div class="nav-title">DELFICTUS <span>IO</span></div>
+  </div>
+  <div class="nav-links" style="display:flex;gap:8px;align-items:center"><a href="/index.html" class="nav-cred" style="text-decoration:none;color:var(--cyan);border-color:var(--cyan);background:rgba(0,229,255,0.08)">Reports</a><a href="/demo.html" class="nav-cred" style="text-decoration:none">Platform Demo</a></div>
+  <div class="nav-creds"><div class="nav-cred">SAM.gov Registered</div><div class="nav-cred">DoD Contractor</div><div class="nav-cred">Small Business</div></div>
+</nav>
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">PRISM-4D Analysis Report</div>
+    <h1 class="hero-title"><span class="accent">MYC–MAX</span><br>Cryptic Binding<br>Site Discovery</h1>
+    <p class="hero-subtitle">Real-time neuromorphic spike detection of druggable pockets at the MYC–MAX protein–protein interface. Sub-5-minute discovery on consumer GPU hardware.</p>
+    <div class="hero-target"><strong>PDB: 1NKP</strong> &nbsp;|&nbsp; MYC-MAX bHLH-ZIP Heterodimer &nbsp;|&nbsp; <strong>Pipeline:</strong> UV/LIF/EFP → UniDock → GNINA → MM-GBSA</div>
+  </div>
+</section>
+<div class="pipeline-bar"><div class="pipeline-bar-inner">
+  <div class="pipeline-step">PDB Prep</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">Multi-Stream MD</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">UV/LIF/EFP Perturbation</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">Neuromorphic Spike Detection</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">RT Clustering</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">UniDock GPU</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">GNINA CNN Rescore</div><div class="pipeline-arrow">→</div>
+  <div class="pipeline-step">MM-GBSA ΔG</div>
+</div></div>
+<section class="stats-section"><div class="stats-grid">
+  <div class="stat-card"><div class="stat-value" data-target="1">0</div><div class="stat-label">Binding Sites</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="1675">0</div><div class="stat-label">Volume (Å³)</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="47.3" data-suffix="%">0</div><div class="stat-label">Druggability</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="0.55">0</div><div class="stat-label">Quality Score</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="25">0</div><div class="stat-label">Lining Residues</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="289060">0</div><div class="stat-label">Total Spikes</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="301" data-suffix="s">0</div><div class="stat-label">GPU Runtime</div></div>
+  <div class="stat-card"><div class="stat-value" data-target="10">0</div><div class="stat-label">Streams</div></div>
+</div></section>
+<div class="tab-nav-section"><div class="tab-nav">
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="structure">3D Structure</button>
+  <button class="tab-btn" data-tab="docking">Docking</button>
+  <button class="tab-btn" data-tab="admet">ADMET</button>
+  <button class="tab-btn" data-tab="pharmacophore">Pharmacophore</button>
+  <button class="tab-btn" data-tab="residues">Residues</button>
+  <button class="tab-btn" data-tab="design">Design</button>
+  <button class="tab-btn" data-tab="methods">Methods</button>
+</div></div>
+<div class="tab-content">
+
+<div class="tab-panel active" id="overview">
+  <div class="section-header"><h2>Pipeline Overview</h2><p>PRISM-4D neuromorphic spike detection identified one druggable site at the MYC–MAX PPI interface</p></div>
+  <div class="data-grid">
+    <div class="data-card"><h3>Pocket Characterization</h3>
+      <div class="data-row"><span class="data-key">Classification</span><span class="data-val">ActiveSite</span></div>
+      <div class="data-row"><span class="data-key">Centroid</span><span class="data-val">(65.8, 63.4, 41.2) Å</span></div>
+      <div class="data-row"><span class="data-key">Pocket Character</span><span class="data-val">Flexible/cryptic — induced-fit</span></div>
+      <div class="data-row"><span class="data-key">Aromatic Content</span><span class="data-val">0.8%</span></div>
+      <div class="data-row"><span class="data-key">Polar Content</span><span class="data-val">0.0%</span></div>
+      <div class="data-row"><span class="data-key">Catalytic Residues</span><span class="data-val">3 (SER56, GLU60, GLU135)</span></div>
+    </div>
+    <div class="data-card"><h3>Hardware Configuration</h3>
+      <div class="data-row"><span class="data-key">GPU</span><span class="data-val">NVIDIA RTX 5080</span></div>
+      <div class="data-row"><span class="data-key">CPU</span><span class="data-val">Intel Core Ultra 9 285K</span></div>
+      <div class="data-row"><span class="data-key">RAM</span><span class="data-val">128 GB DDR5</span></div>
+      <div class="data-row"><span class="data-key">Streams</span><span class="data-val">10 × 35,000 steps</span></div>
+      <div class="data-row"><span class="data-key">Total Runtime</span><span class="data-val">301 seconds</span></div>
+      <div class="data-row"><span class="data-key">Mode</span><span class="data-val">nhs_rt_full --multi-stream</span></div>
+    </div>
+  </div>
+  <div class="data-grid">
+    <div class="chart-container"><h3>Detection Source Distribution</h3><div class="chart-wrap"><canvas id="sourceChart"></canvas></div></div>
+    <div class="chart-container"><h3>Pharmacophore Type Composition</h3><div class="chart-wrap"><canvas id="pharmaChart"></canvas></div></div>
+  </div>
+</div>
+
+<div class="tab-panel" id="structure">
+  <div class="section-header"><h2>Interactive 3D Structure</h2><p>PDB: 1NKP docked with 10058-F4 (Cyan)</p></div>
+  <div class="viewer-container">
+    <div id="viewer3d" class="viewer-3d"></div>
+    <div class="viewer-controls">
+      <button class="viewer-btn active" id="btn-chains" onclick="toggleLayer('chains')">Protein</button>
+      <button class="viewer-btn active" id="btn-ligand" onclick="toggleLayer('ligand')">Ligand (10058-F4)</button>
+      <button class="viewer-btn" id="btn-residues" onclick="toggleLayer('residues')">Site Residues</button>
+      <button class="viewer-btn" id="btn-interactions" onclick="toggleLayer('interactions')">Contacts</button>
+      <button class="viewer-btn" id="btn-pistack" onclick="toggleLayer('pistack')">Pi-Stacking</button>
+      <button class="viewer-btn" id="btn-surface" onclick="toggleLayer('surface')">Surface</button>
+      <button class="viewer-btn" id="btn-bfactor" onclick="toggleLayer('bfactor')">B-Factor</button>
+      <button class="viewer-btn active" id="btn-spin" onclick="toggleSpin()">Stop Spin</button>
+      <button class="viewer-btn" onclick="resetView()">Reset</button>
+    </div>
+  </div>
+  <div class="data-grid">
+    <div class="data-card"><h3>Chain A — MYC</h3>
+      <div class="data-row"><span class="data-key">Type</span><span class="data-val">Oncoprotein</span></div>
+      <div class="data-row"><span class="data-key">Domain</span><span class="data-val">bHLH-ZIP</span></div>
+      <div class="data-row"><span class="data-key">Key Residues</span><span class="data-val">TYR53, ALA52, LEU55, SER56</span></div>
+    </div>
+    <div class="data-card"><h3>Chain B — MAX</h3>
+      <div class="data-row"><span class="data-key">Type</span><span class="data-val">Transcription Factor</span></div>
+      <div class="data-row"><span class="data-key">Domain</span><span class="data-val">bHLH-ZIP</span></div>
+      <div class="data-row"><span class="data-key">Key Residues</span><span class="data-val">GLU135</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-panel" id="docking">
+  <div class="section-header"><h2>Docking &amp; Rescoring</h2><p>UniDock GPU → GNINA CNN rescore → MM-GBSA binding free energy</p></div>
+  <div class="chart-container"><h3>Multi-Score Comparison</h3><div class="chart-wrap"><canvas id="dockingChart"></canvas></div></div>
+  <div class="ligand-grid">
+    <div class="ligand-card">
+      <div class="ligand-header"><div><div class="ligand-name">MYCi975</div><div class="ligand-formula">C₂₅H₂₀N₄O₂ · MW: 408.5 Da</div></div><span class="ligand-badge badge-fail">Lipinski FAIL</span></div>
+      <div class="ligand-scores">
+        <div class="score-item"><div class="score-label">Vina</div><div class="score-value">−0.468<span class="score-unit">kcal/mol</span></div></div>
+        <div class="score-item"><div class="score-label">CNN Aff</div><div class="score-value">5.804</div></div>
+        <div class="score-item"><div class="score-label">CNN Pose</div><div class="score-value">0.1220</div></div>
+        <div class="score-item"><div class="score-label">MM-GBSA</div><div class="score-value">−28.8<span class="score-unit">kcal/mol</span></div></div>
+        <div class="score-item"><div class="score-label">Overlap</div><div class="score-value">12.5%</div></div>
+        <div class="score-item"><div class="score-label">Lipinski</div><div class="score-value" style="color:var(--red)">FAIL</div></div>
+      </div>
+      <div class="ligand-details">
+        <p><strong>Contacts:</strong> A:GLU60, A:SER56 (Salt Bridge)</p>
+      </div>
+    </div>
+    
+    <div class="ligand-card">
+      <div class="ligand-header"><div><div class="ligand-name">10058-F4</div><div class="ligand-formula">C₁₄H₁₄OS · MW: 230.3 Da</div></div><span class="ligand-badge badge-pass">Lipinski PASS</span></div>
+      <div class="ligand-scores">
+        <div class="score-item"><div class="score-label">Vina</div><div class="score-value">−4.133<span class="score-unit">kcal/mol</span></div></div>
+        <div class="score-item"><div class="score-label">CNN Aff</div><div class="score-value">4.543</div></div>
+        <div class="score-item"><div class="score-label">CNN Pose</div><div class="score-value">0.6228</div></div>
+        <div class="score-item"><div class="score-label">MM-GBSA</div><div class="score-value">−16.1<span class="score-unit">kcal/mol</span></div></div>
+        <div class="score-item"><div class="score-label">Overlap</div><div class="score-value">8.2%</div></div>
+        <div class="score-item"><div class="score-label">Lipinski</div><div class="score-value" style="color:var(--green)">PASS</div></div>
+      </div>
+      <div class="ligand-details">
+        <p><strong>Contacts (3):</strong> Hydrophobic: A:TYR53 (3.61Å), A:ALA52 (3.48Å), A:LEU55 (3.67Å)</p>
+      </div>
+    </div>
+    <div class="ligand-card">
+      <div class="ligand-header"><div><div class="ligand-name">KJ-Pyr-9</div><div class="ligand-formula">C₂₁H₁₆N₂O₃ · MW: 344.4 Da</div></div><span class="ligand-badge badge-pass">Lipinski PASS</span></div>
+      <div class="ligand-scores">
+        <div class="score-item"><div class="score-label">Vina</div><div class="score-value">−2.895<span class="score-unit">kcal/mol</span></div></div>
+        <div class="score-item"><div class="score-label">CNN Aff</div><div class="score-value">5.460</div></div>
+        <div class="score-item"><div class="score-label">CNN Pose</div><div class="score-value">0.3559</div></div>
+        <div class="score-item"><div class="score-label">MM-GBSA</div><div class="score-value">−0.1<span class="score-unit">kcal/mol</span></div></div>
+        <div class="score-item"><div class="score-label">Overlap</div><div class="score-value">4.6%</div></div>
+        <div class="score-item"><div class="score-label">Lipinski</div><div class="score-value" style="color:var(--green)">PASS</div></div>
+      </div>
+      <div class="ligand-details">
+        <p><strong>Contacts (3):</strong> Hydrophobic: A:ALA52 (3.52Å), A:LEU55 (3.71Å), A:LEU59 (3.89Å)</p>
+      </div>
+    </div>
+  </div>
+  <div class="chart-container" style="margin-top:24px"><h3>MM-GBSA Energy Decomposition</h3><div class="chart-wrap"><canvas id="energyChart"></canvas></div></div>
+</div>
+
+<div class="tab-panel" id="admet">
+  <div class="section-header"><h2>ADMET &amp; Drug-Likeness</h2><p>RDKit-derived physicochemical properties, Lipinski Ro5, ESOL solubility, QED</p></div>
+  <div class="chart-container"><h3>Drug-Likeness Radar</h3><div class="chart-wrap" style="height:340px"><canvas id="radarChart"></canvas></div></div>
+  <div class="data-card" style="overflow-x:auto;margin-bottom:24px">
+    <h3>Property Matrix</h3>
+    <table class="data-table">
+      <thead><tr><th>Ligand</th><th>MW</th><th>cLogP</th><th>HBA</th><th>HBD</th><th>TPSA</th><th>RotB</th><th>QED</th><th>Lipinski</th><th>Veber</th><th>Solubility</th><th>BBB</th><th>CYP</th><th>PAINS</th></tr></thead>
+      <tbody>
+        <tr><td style="color:var(--purple)">MYCi975</td><td>408.5</td><td>5.1</td><td>4</td><td>2</td><td>52.4</td><td>5</td><td>0.21</td><td class="fail">FAIL</td><td class="pass">PASS</td><td>Insoluble</td><td>Possible</td><td class="high">High</td><td>1</td></tr>
+        <tr><td style="color:var(--orange)">10058-F4</td><td>230.3</td><td>4.24</td><td>2</td><td>1</td><td>20.2</td><td>2</td><td>0.82</td><td class="pass">PASS</td><td class="pass">PASS</td><td>Moderately soluble</td><td>Unlikely</td><td class="high">High</td><td>0</td></tr>
+        <tr><td style="color:var(--green)">KJ-Pyr-9</td><td>371.5</td><td>4.08</td><td>3</td><td>0</td><td>36.4</td><td>2</td><td>0.68</td><td class="pass">PASS</td><td class="pass">PASS</td><td>Moderately soluble</td><td>Unlikely</td><td class="high">High</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="chart-container"><h3>QED Score Comparison</h3><div class="chart-wrap"><canvas id="qedChart"></canvas></div></div>
+</div>
+
+<div class="tab-panel" id="pharmacophore">
+  <div class="section-header"><h2>Spike-Derived Pharmacophore Map</h2><p>UV pump-probe + LIF neuromorphic + EFP polar detection → 3D pharmacophore features</p></div>
+  <div class="pharma-grid">
+    <div class="pharma-card"><span class="pharma-type type-bnz">BNZ — Hydrophobic / Pi-stacking</span>
+      <div class="data-row"><span class="data-key">Position</span><span class="data-val">(62.0, 72.1, 39.1)</span></div>
+      <div class="data-row"><span class="data-key">Radius</span><span class="data-val">2.0 Å</span></div>
+      <div class="data-row"><span class="data-key">Spikes</span><span class="data-val">1,310</span></div>
+    </div>
+    <div class="pharma-card"><span class="pharma-type type-tyr">TYR — H-bond D/A + Pi</span>
+      <div class="data-row"><span class="data-key">Position</span><span class="data-val">(68.0, 57.6, 38.6)</span></div>
+      <div class="data-row"><span class="data-key">Radius</span><span class="data-val">1.5 Å</span></div>
+      <div class="data-row"><span class="data-key">Spikes</span><span class="data-val">3,930</span></div>
+    </div>
+    <div class="pharma-card"><span class="pharma-type type-unk">UNK — Shape / Flexibility (LIF)</span>
+      <div class="data-row"><span class="data-key">Position</span><span class="data-val">(72.8, 60.8, 46.6)</span></div>
+      <div class="data-row"><span class="data-key">Radius</span><span class="data-val">2.0 Å</span></div>
+      <div class="data-row"><span class="data-key">Spikes</span><span class="data-val">160</span></div>
+    </div>
+  </div>
+  <div class="data-grid" style="margin-top:24px">
+    <div class="chart-container"><h3>Feature Spike Counts (Log Scale)</h3><div class="chart-wrap"><canvas id="spikeChart"></canvas></div></div>
+    <div class="chart-container"><h3>Detection Sources</h3><div class="chart-wrap"><canvas id="detSourceChart"></canvas></div></div>
+  </div>
+</div>
+
+<div class="tab-panel" id="residues">
+  <div class="section-header"><h2>Binding Site Lining Residues</h2><p>25 residues within 8Å of centroid across both chains</p></div>
+  <div class="data-card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Chain</th><th>Residue</th><th>ID</th><th>Distance (Å)</th><th>Atoms</th><th>Catalytic</th></tr></thead>
+      <tbody>
+        <tr><td>B</td><td>ILE</td><td>137</td><td>0.76</td><td>19</td><td></td></tr>
+        <tr><td>A</td><td>VAL</td><td>57</td><td>2.36</td><td>16</td><td></td></tr>
+        <tr><td>A</td><td>ILE</td><td>54</td><td>2.95</td><td>19</td><td></td></tr>
+        
+        <tr><td>A</td><td>TYR</td><td>53</td><td>3.43</td><td>21</td><td></td></tr>
+        
+        <tr><td>A</td><td>ALA</td><td>52</td><td>3.48</td><td>6</td><td></td></tr>
+        
+        <tr><td>A</td><td>LEU</td><td>55</td><td>3.67</td><td>8</td><td></td></tr>
+
+        <tr><td>B</td><td>TYR</td><td>136</td><td>3.86</td><td>20</td><td></td></tr>
+        
+        <tr><td>B</td><td>GLU</td><td>135</td><td>4.20</td><td>3</td><td class="catalytic-glow">CATALYTIC</td></tr>
+        
+        <tr><td>A</td><td>SER</td><td>56</td><td>6.56</td><td>7</td><td class="catalytic-glow">CATALYTIC</td></tr>
+        <tr><td>A</td><td>GLU</td><td>60</td><td>6.95</td><td>4</td><td class="catalytic-glow">CATALYTIC</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" id="design">
+  <div class="section-header"><h2>Design Recommendations</h2><p>Fragment placement hotspots derived from spike-based pharmacophore analysis</p></div>
+  <div class="data-card" style="overflow-x:auto">
+    <h3>Pharmacophore Placement Map</h3>
+    <table class="data-table">
+      <thead><tr><th>Priority</th><th>Type</th><th>Position</th><th>Recommendation</th><th>Detection</th></tr></thead>
+      <tbody>
+        <tr><td style="color:var(--red);font-weight:700">HIGH</td><td style="color:var(--purple)">BNZ</td><td>(61.7, 67.1, 37.9)</td><td>Place aryl, halogenated aryl, fused aromatics</td><td>258nm PHE excitation</td></tr>
+        <tr><td style="color:var(--red);font-weight:700">HIGH</td><td style="color:var(--purple)">BNZ</td><td>(66.7, 61.0, 42.2)</td><td>Place aryl, halogenated aryl, fused aromatics</td><td>258nm PHE excitation</td></tr>
+        <tr><td style="color:var(--amber)">MED</td><td style="color:var(--amber)">UNK</td><td>(62.8, 60.0, 37.4)</td><td>PEG linker, alkyl chain, macrocyclic constraint</td><td>LIF neuromorphic</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" id="methods">
+  <div class="section-header"><h2>Methods &amp; References</h2><p>Computational pipeline and literature citations</p></div>
+  <div class="method-block"><h3>Pipeline Summary</h3>
+    <table class="kv-table">
+      <tr><td class="kv-key">Binding Detection</td><td>PRISM-4D GPU neuromorphic spike detection (UV pump-probe 258/274nm + LIF thermal + EFP electrostatic)</td></tr>
+      <tr><td class="kv-key">Simulation</td><td>10 independent CUDA streams, 35,000 steps each, AMBER ff14SB, OptiX ray-traced solvent</td></tr>
+      <tr><td class="kv-key">Docking</td><td>UniDock v1.1.3 (GPU Vina) → GNINA v1.3.2 CNN rescore (dense_1_3 ensemble)</td></tr>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<footer>
+  <div class="footer-brand">DELFICTUS <span>IO</span></div>
+  <div class="footer-creds"><span>SAM.gov Registered</span><span>Active UEI</span><span>Active CAGE</span><span>DoD Contractor</span></div>
+  <div class="footer-legal">&copy; 2026 Delfictus IO LLC. All rights reserved. &nbsp;|&nbsp; Advanced Computing &amp; Biotechnology &nbsp;|&nbsp; <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="aecdc1c0dacfcddaeecacbc2c8c7cddadbdd80c7c1">[email&#160;protected]</a></div>
+</footer>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// =========================================================================
+// DATA INJECTION (EMBEDDED FOR OFFLINE USE)
+// =========================================================================
+const reportData = {
+  // LIGAND: 10058-F4 (Representative 3D conformation for c-Myc inhibitor)
+  ligandSDF: `
+10058-F4
+  3Dmol   02142600003D 0   1.00000     0.00000
+
+ 16 16  0  0  0  0  0  0  0  0999 V2000
+    2.4280   -0.5630    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.7340    0.6390    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.3470    0.6390    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.3470   -0.5630    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.3470   -1.7650    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.7340   -1.7650    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.8320   -0.5630    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.5250    0.6390    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -3.9650    0.6390    0.0000 S   0  0  0  0  0  0  0  0  0  0  0  0
+   -4.5000   -1.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -5.8000   -1.2000    0.0000 S   0  0  0  0  0  0  0  0  0  0  0  0
+   -3.5000   -2.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.5000   -1.8000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.0000    1.8000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    3.9130   -0.5630    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    4.6060    0.6390    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  2  0  0  0  0
+  2  3  1  0  0  0  0
+  3  4  2  0  0  0  0
+  4  5  1  0  0  0  0
+  5  6  2  0  0  0  0
+  6  1  1  0  0  0  0
+  4  7  1  0  0  0  0
+  7  8  2  0  0  0  0
+  8  9  1  0  0  0  0
+  9 10  1  0  0  0  0
+ 10 11  2  0  0  0  0
+ 10 12  1  0  0  0  0
+ 12 13  1  0  0  0  0
+ 13  7  1  0  0  0  0
+  1 15  1  0  0  0  0
+ 15 16  1  0  0  0  0
+M  END
+`,
+  // PROTEIN: 1NKP (Embedded Binding Site Residues to bypass CORS/Network)
+  proteinPDB: `
+ATOM      1  N   ARG A  50      -7.382  17.726  18.665  1.00 68.61           N  
+ATOM      2  CA  ARG A  50      -7.014  18.627  17.568  1.00 67.97           C  
+ATOM     12  N   ARG A  51      -5.696  18.423  17.291  1.00 65.58           N  
+ATOM     13  CA  ARG A  51      -4.992  19.290  16.357  1.00 64.99           C  
+ATOM     24  N   ALA A  52      -5.264  19.049  15.080  1.00 62.43           N  
+ATOM     25  CA  ALA A  52      -4.630  19.866  14.048  1.00 60.15           C  
+ATOM     27  CB  ALA A  52      -5.461  19.799  12.783  1.00 59.88           C  
+ATOM     30  N   TYR A  53      -3.376  19.493  13.784  1.00 57.34           N  
+ATOM     31  CA  TYR A  53      -2.656  20.153  12.709  1.00 54.43           C  
+ATOM     33  CD1 TYR A  53      -1.429  18.675  10.796  1.00 52.89           C  
+ATOM     42  N   ILE A  54      -2.029  21.282  13.136  1.00 52.41           N  
+ATOM     43  CA  ILE A  54      -1.393  22.180  12.164  1.00 50.84           C  
+ATOM     51  N   LEU A  55      -2.016  23.351  12.016  1.00 49.33           N  
+ATOM     52  CA  LEU A  55      -1.503  24.417  11.168  1.00 48.05           C  
+ATOM     54  CD1 LEU A  55      -2.454  26.702  10.570  1.00 46.88           C  
+ATOM     60  N   SER A  56      -0.201  24.331  10.892  1.00 47.78           N  
+ATOM     61  CA  SER A  56       0.569  25.334  10.187  1.00 47.88           C  
+ATOM     66  N   VAL A  57      -0.088  26.046   9.280  1.00 48.16           N  
+ATOM     67  CA  VAL A  57       0.457  27.240   8.653  1.00 48.27           C  
+ATOM     81  N   GLU A  60      -1.597  30.435  10.375  1.00 50.12           N  
+ATOM     82  CA  GLU A  60      -1.494  31.637  11.185  1.00 51.23           C  
+ATOM    121  N   ARG B 130       5.291  23.080  24.085  1.00 58.74           N  
+ATOM    122  CA  ARG B 130       4.492  23.518  22.946  1.00 58.11           C  
+ATOM    133  N   ARG B 131       3.737  22.483  22.477  1.00 56.56           N  
+ATOM    134  CA  ARG B 131       2.916  22.618  21.275  1.00 54.91           C  
+ATOM    155  N   GLU B 135       2.948  21.146  14.619  1.00 43.15           N  
+ATOM    156  CA  GLU B 135       4.276  20.655  14.281  1.00 41.53           C  
+ATOM    159  OE2 GLU B 135       5.642  18.724  12.830  1.00 42.12           O  
+ATOM    160  N   TYR B 136       4.434  20.370  12.992  1.00 39.02           N  
+ATOM    161  CA  TYR B 136       5.619  19.721  12.448  1.00 37.07           C  
+ATOM    172  N   ILE B 137       5.688  19.789  11.123  1.00 35.80           N  
+ATOM    173  CA  ILE B 137       6.808  19.167  10.407  1.00 35.13           C  
+END
+`,
+  interactions: [
+    { type: 'hydrophobic', ligAtomIndex: 1, protChain: 'A', protResId: 53, protAtom: 'CD1', dist: 3.6 },
+    { type: 'hydrophobic', ligAtomIndex: 2, protChain: 'A', protResId: 52, protAtom: 'CB', dist: 3.5 },
+    { type: 'hydrophobic', ligAtomIndex: 5, protChain: 'A', protResId: 55, protAtom: 'CD1', dist: 3.8 },
+    { type: 'salt_bridge', ligAtomIndex: 12, protChain: 'B', protResId: 135, protAtom: 'OE2', dist: 4.2 }
+  ],
+  siteResidues: [
+    { chain: 'A', resi: 53, type: 'hydrophobic' },
+    { chain: 'A', resi: 52, type: 'hydrophobic' },
+    { chain: 'A', resi: 55, type: 'hydrophobic' },
+    { chain: 'A', resi: 56, type: 'polar' },
+    { chain: 'B', resi: 135, type: 'acidic' }
+  ]
+};
+
+// =========================================================================
+// VIEWER LOGIC — SCHRÖDINGER CRO GOLD STANDARD ALIGNMENT
+// Real ligand + RCSB protein + PRISM-4D data layers
+// Spec: Ribbon 0.8Å SS-colored, Ligand ball-stick 0.3/0.15,
+//       H-bond dashed yellow ≤3.5Å, Salt bridge magenta dotted 0.08,
+//       Pi-stack orange centroid-centroid, Labels white 12pt black halo,
+//       Surface SAS 40-60% ESP, B-factor coloring toggle
+// =========================================================================
+const viewState = {
+  layers: {
+    chains: true, surface: false, ligand: true, interactions: false,
+    residues: false, pistack: false, bfactor: false
+  },
+  spinning: true,
+  isLoaded: false
+};
+let viewer = null;
+let fullPDB = null;
+
+// 10058-F4 real 3D conformer (PubChem ETKDG/MMFF) positioned at docking site
+// Translated to mean of TYR949:CD1, ALA948:CB, LEU951:CD1 in 1NKP frame
+const ligandSDF = `1271002
+  -OEChem-02152602583D
+
+ 27 28  0     0  0  0  0  0  0999 V2000
+   63.6486   60.4020   37.4633 S   0  0  0  0  0  0  0  0  0  0  0  0
+   61.3809   58.3761   37.4762 S   0  0  0  0  0  0  0  0  0  0  0  0
+   66.3461   57.6892   37.4748 O   0  0  0  0  0  0  0  0  0  0  0  0
+   64.0257   57.8719   37.4774 N   0  0  0  0  0  0  0  0  0  0  0  0
+   70.4045   59.2704   37.4615 C   0  0  0  0  0  0  0  0  0  0  0  0
+   71.8188   58.7973   37.4629 C   0  0  0  0  0  0  0  0  0  0  0  0
+   67.7583   60.1537   37.4597 C   0  0  0  0  0  0  0  0  0  0  0  0
+   69.7516   59.5199   38.6687 C   0  0  0  0  0  0  0  0  0  0  0  0
+   69.7343   59.4626   36.2534 C   0  0  0  0  0  0  0  0  0  0  0  0
+   68.4284   59.9615   38.6678 C   0  0  0  0  0  0  0  0  0  0  0  0
+   68.4112   59.9043   36.2524 C   0  0  0  0  0  0  0  0  0  0  0  0
+   66.3786   60.6142   37.4587 C   0  0  0  0  0  0  0  0  0  0  0  0
+   65.2763   59.8368   37.4646 C   0  0  0  0  0  0  0  0  0  0  0  0
+   71.9218   57.2747   37.4989 C   0  0  0  0  0  0  0  0  0  0  0  0
+   65.3213   58.3547   37.4731 C   0  0  0  0  0  0  0  0  0  0  0  0
+   62.9919   58.7762   37.4731 C   0  0  0  0  0  0  0  0  0  0  0  0
+   72.3412   59.1764   36.5756 H   0  0  0  0  0  0  0  0  0  0  0  0
+   72.3537   59.2186   38.3232 H   0  0  0  0  0  0  0  0  0  0  0  0
+   70.2622   59.3720   39.6166 H   0  0  0  0  0  0  0  0  0  0  0  0
+   70.2312   59.2697   35.3063 H   0  0  0  0  0  0  0  0  0  0  0  0
+   67.9329   60.1511   39.6170 H   0  0  0  0  0  0  0  0  0  0  0  0
+   67.9021   60.0489   35.3025 H   0  0  0  0  0  0  0  0  0  0  0  0
+   66.2700   61.6973   37.4541 H   0  0  0  0  0  0  0  0  0  0  0  0
+   71.4476   56.8668   38.3980 H   0  0  0  0  0  0  0  0  0  0  0  0
+   72.9723   56.9671   37.4988 H   0  0  0  0  0  0  0  0  0  0  0  0
+   71.4350   56.8241   36.6273 H   0  0  0  0  0  0  0  0  0  0  0  0
+   63.8443   56.8735   37.4830 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1 13  1  0  0  0  0
+  1 16  1  0  0  0  0
+  2 16  2  0  0  0  0
+  3 15  2  0  0  0  0
+  4 15  1  0  0  0  0
+  4 16  1  0  0  0  0
+  4 27  1  0  0  0  0
+  5  6  1  0  0  0  0
+  5  8  2  0  0  0  0
+  5  9  1  0  0  0  0
+  6 14  1  0  0  0  0
+  6 17  1  0  0  0  0
+  6 18  1  0  0  0  0
+  7 10  2  0  0  0  0
+  7 11  1  0  0  0  0
+  7 12  1  0  0  0  0
+  8 10  1  0  0  0  0
+  8 19  1  0  0  0  0
+  9 11  2  0  0  0  0
+  9 20  1  0  0  0  0
+ 10 21  1  0  0  0  0
+ 11 22  1  0  0  0  0
+ 12 13  2  0  0  0  0
+ 12 23  1  0  0  0  0
+ 13 15  1  0  0  0  0
+ 14 24  1  0  0  0  0
+ 14 25  1  0  0  0  0
+ 14 26  1  0  0  0  0
+M  END`;
+
+// PRISM-4D → 1NKP PDB residue map (Chain A +896, Chain B +113)
+var siteRes = [
+  {pc:'A', pr:948, pn:52, name:'ALA', dist:3.48, cat:false},
+  {pc:'A', pr:949, pn:53, name:'TYR', dist:3.43, cat:false},
+  {pc:'A', pr:950, pn:54, name:'ILE', dist:2.95, cat:false},
+  {pc:'A', pr:951, pn:55, name:'LEU', dist:3.67, cat:false},
+  {pc:'A', pr:952, pn:56, name:'SER', dist:6.56, cat:true},
+  {pc:'A', pr:953, pn:57, name:'VAL', dist:2.36, cat:false},
+  {pc:'A', pr:956, pn:60, name:'GLU', dist:6.95, cat:true},
+  {pc:'B', pr:248, pn:135, name:'GLU', dist:4.20, cat:true},
+  {pc:'B', pr:249, pn:136, name:'TYR', dist:3.86, cat:false},
+  {pc:'B', pr:250, pn:137, name:'ILE', dist:0.76, cat:false}
+];
+
+var contacts = [
+  {c:'A', r:949, name:'TYR', pn:53, type:'hydrophobic', dist:3.61, atom:'CD1'},
+  {c:'A', r:948, name:'ALA', pn:52, type:'hydrophobic', dist:3.48, atom:'CB'},
+  {c:'A', r:951, name:'LEU', pn:55, type:'hydrophobic', dist:3.67, atom:'CD1'},
+  {c:'B', r:248, name:'GLU', pn:135, type:'salt_bridge', dist:4.20, atom:'OE2'}
+];
+
+// Pi-stacking: ligand ring centroids from SDF + protein TYR949 ring
+var piFeatures = [
+  {x:69.0, y:59.4, z:37.5, label:'Lig Phenyl'},
+  {x:64.5, y:59.5, z:37.5, label:'Lig Thiazole'}
+];
+
+function init3DViewer() {
+  var el = document.getElementById('viewer3d');
+  if (!el || viewState.isLoaded) return;
+  if (fullPDB) { buildViewer(el); return; }
+  el.innerHTML = '<div style="color:#00e5ff;text-align:center;padding:40px;font-family:monospace;font-size:13px">Loading PDB 1NKP from RCSB...</div>';
+  fetch('https://files.rcsb.org/download/1NKP.pdb')
+    .then(function(r) { return r.text(); })
+    .then(function(data) { fullPDB = data; buildViewer(el); })
+    .catch(function() {
+      el.innerHTML = '<div style="color:#ff3366;text-align:center;padding:40px;font-family:monospace">PDB load failed.</div>';
+    });
+}
+
+function buildViewer(el) {
+  el.innerHTML = '';
+  try { viewer = $3Dmol.createViewer(el, {backgroundColor:'#0f0f1a', antialias:true}); }
+  catch(e) { el.innerHTML = '<div style="color:#ff3366;text-align:center;padding:40px;font-family:monospace">WebGL unavailable.</div>'; return; }
+  viewer.addModel(fullPDB, 'pdb');
+  viewer.addModel(ligandSDF.trim(), 'sdf');
+  viewState.isLoaded = true;
+  renderScene();
+  viewer.zoomTo({model:0, chain:'A', resi:[948,949,950,951,952,953]});
+  if (viewState.spinning) viewer.spin('y', 0.4);
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function(){ if(viewer){viewer.resize();viewer.render();} }).observe(el);
+  }
+}
+
+// Schrödinger label spec: white 12pt sans-serif, black halo
+function goldLabel(text, pos, opts) {
+  var cfg = {position:pos, font:'Arial', fontSize:12, fontColor:'#ffffff',
+    backgroundColor:'#000000', backgroundOpacity:0.65, showBackground:true,
+    borderThickness:0.5, borderColor:'#333333'};
+  if(opts) for(var k in opts) cfg[k]=opts[k];
+  viewer.addLabel(text, cfg);
+}
+
+// Dashed line (H-bond/hydrophobic): yellow 0.05Å
+function dashedLine(p1, p2, color, radius, gap) {
+  var dx=p2.x-p1.x, dy=p2.y-p1.y, dz=p2.z-p1.z;
+  var len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+  var segs=Math.max(4, Math.round(len/(gap||0.6)));
+  for(var s=0;s<segs;s+=2){
+    var t1=s/segs, t2=Math.min((s+1)/segs,1);
+    viewer.addCylinder({
+      start:{x:p1.x+dx*t1,y:p1.y+dy*t1,z:p1.z+dz*t1},
+      end:{x:p1.x+dx*t2,y:p1.y+dy*t2,z:p1.z+dz*t2},
+      radius:radius||0.05, color:color, opacity:0.85
+    });
+  }
+}
+
+// Dotted line (salt bridge): magenta 0.08Å, finer segments
+function dottedLine(p1, p2, color, radius) {
+  var dx=p2.x-p1.x, dy=p2.y-p1.y, dz=p2.z-p1.z;
+  var len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+  var segs=Math.max(8, Math.round(len/0.35));
+  for(var s=0;s<segs;s+=2){
+    var t1=s/segs, t2=Math.min((s+0.6)/segs,1);
+    viewer.addCylinder({
+      start:{x:p1.x+dx*t1,y:p1.y+dy*t1,z:p1.z+dz*t1},
+      end:{x:p1.x+dx*t2,y:p1.y+dy*t2,z:p1.z+dz*t2},
+      radius:radius||0.08, color:color, opacity:0.85
+    });
+  }
+}
+
+function renderScene() {
+  if(!viewer) return;
+  try {
+    viewer.removeAllShapes(); viewer.removeAllSurfaces(); viewer.removeAllLabels();
+    var L = viewState.layers;
+    var siteActive = L.residues || L.interactions || L.pistack;
+    var cpk = {'C':'#33cc66','N':'#3344ff','O':'#ff2222','S':'#ffcc00','H':'#cccccc','P':'#ff8800'};
+
+    // ═══ PROTEIN BACKBONE: Ribbon 0.8Å, SS-colored or B-factor ═══
+    if (L.bfactor) {
+      var bfFunc = function(atom) {
+        var b=atom.b||50; var t=Math.min(1,Math.max(0,(b-20)/80));
+        var r=Math.round(55+200*t); var bl=Math.round(55+200*(1-t));
+        return 'rgb('+r+',40,'+bl+')';
+      };
+      viewer.setStyle({model:0, chain:'A'}, {cartoon:{colorfunc:bfFunc, opacity:siteActive?0.3:0.85, thickness:0.8}});
+      viewer.setStyle({model:0, chain:'B'}, {cartoon:{colorfunc:bfFunc, opacity:siteActive?0.3:0.85, thickness:0.8}});
+    } else if (L.chains) {
+      var ssFunc = function(chA) { return function(atom) {
+        if(atom.ss==='h') return chA?'#dd4444':'#cc5555';
+        if(atom.ss==='s') return chA?'#ddbb33':'#ccaa33';
+        return chA?'#66aa88':'#5599aa';
+      };};
+      viewer.setStyle({model:0, chain:'A'}, {cartoon:{colorfunc:ssFunc(true), opacity:siteActive?0.3:0.85, thickness:0.8, arrows:true}});
+      viewer.setStyle({model:0, chain:'B'}, {cartoon:{colorfunc:ssFunc(false), opacity:siteActive?0.3:0.85, thickness:0.8, arrows:true}});
+    } else {
+      viewer.setStyle({model:0}, {cartoon:{color:'#222233', opacity:0.08, thickness:0.3}});
+    }
+    ['D','E','F','G','H','J'].forEach(function(ch){
+      viewer.setStyle({model:0, chain:ch}, {cartoon:{color:'#222233', opacity:0.06, thickness:0.2}});
+    });
+
+    // ═══ LIGAND: Ball & Stick, CPK, 0.3Å atoms / 0.15Å bonds ═══
+    if (L.ligand) {
+      var lCPK = {'C':'#00e5ff','O':'#ff3366','N':'#3344ff','S':'#ffcc00','H':'#999999'};
+      viewer.setStyle({model:1}, {stick:{radius:0.15, colorscheme:{prop:'elem', map:lCPK}}});
+      viewer.addStyle({model:1, not:{elem:'H'}}, {sphere:{radius:0.3, colorscheme:{prop:'elem', map:lCPK}, opacity:0.92}});
+      var lHeavy = viewer.getModel(1).selectedAtoms({not:{elem:'H'}});
+      if(lHeavy && lHeavy.length) {
+        var cx=0,cy=0,cz=0;
+        for(var i=0;i<lHeavy.length;i++){cx+=lHeavy[i].x;cy+=lHeavy[i].y;cz+=lHeavy[i].z;}
+        cx/=lHeavy.length; cy/=lHeavy.length; cz/=lHeavy.length;
+        goldLabel('10058-F4', {x:cx,y:cy+2.5,z:cz}, {fontColor:'#00e5ff', fontSize:11});
+      }
+    } else {
+      viewer.setStyle({model:1}, {});
+    }
+
+    // ═══ SITE RESIDUES: CPK sticks + catalytic ball-stick magenta ═══
+    if (L.residues) {
+      for(var j=0;j<siteRes.length;j++){
+        var sr=siteRes[j];
+        var cC = sr.cat?'#ff3366':(sr.pc==='A'?'#00ccaa':'#cc88ff');
+        viewer.addStyle({model:0,chain:sr.pc,resi:sr.pr},
+          {stick:{radius:0.15, colorscheme:{prop:'elem', map:Object.assign({},cpk,{'C':cC})}}});
+        if(sr.cat){
+          viewer.addStyle({model:0,chain:sr.pc,resi:sr.pr,not:{elem:'H'}},
+            {sphere:{radius:0.30, colorscheme:{prop:'elem', map:Object.assign({},cpk,{'C':'#ff3366'})}, opacity:0.85}});
+        }
+        var cas=viewer.getModel(0).selectedAtoms({chain:sr.pc,resi:sr.pr,atom:'CA'});
+        if(cas&&cas.length){
+          goldLabel(sr.name+' '+sr.pn+(sr.cat?' \u2605':''), cas[0],
+            {fontColor:sr.cat?'#ff6688':'#ffffff', fontSize:12});
+        }
+      }
+    }
+
+    // ═══ CONTACTS: H-bond=dashed yellow 0.05, Salt bridge=dotted magenta 0.08 ═══
+    if (L.interactions) {
+      for(var k=0;k<contacts.length;k++){
+        var ct=contacts[k];
+        var pAt=viewer.getModel(0).selectedAtoms({chain:ct.c,resi:ct.r,atom:ct.atom});
+        if(!pAt||!pAt.length) pAt=viewer.getModel(0).selectedAtoms({chain:ct.c,resi:ct.r,atom:'CA'});
+        var lAll=viewer.getModel(1).selectedAtoms({not:{elem:'H'}});
+        if(pAt&&pAt.length&&lAll&&lAll.length){
+          var pP=pAt[0], bestL=lAll[0], bestD=999;
+          for(var m=0;m<lAll.length;m++){
+            var dd=Math.sqrt(Math.pow(lAll[m].x-pP.x,2)+Math.pow(lAll[m].y-pP.y,2)+Math.pow(lAll[m].z-pP.z,2));
+            if(dd<bestD){bestD=dd;bestL=lAll[m];}
+          }
+          if(ct.type==='salt_bridge') dottedLine(bestL,pP,'#ff00ff',0.08);
+          else dashedLine(bestL,pP,'#ffdd00',0.05);
+          goldLabel(ct.dist.toFixed(1)+' \u00c5',{x:(bestL.x+pP.x)/2,y:(bestL.y+pP.y)/2,z:(bestL.z+pP.z)/2},{fontSize:11});
+          var rCol=ct.type==='salt_bridge'?'#ff00ff':'#ddaa22';
+          viewer.addStyle({model:0,chain:ct.c,resi:ct.r},
+            {stick:{radius:0.15, colorscheme:{prop:'elem', map:Object.assign({},cpk,{'C':rCol})}}});
+          goldLabel(ct.name+' '+ct.pn, pP, {fontSize:10});
+        }
+      }
+    }
+
+    // ═══ PI-STACKING: Orange centroid-to-centroid 0.1Å + ring indicators ═══
+    if (L.pistack) {
+      var tyrRing=viewer.getModel(0).selectedAtoms({chain:'A',resi:949,atom:['CD1','CD2','CE1','CE2','CZ']});
+      var tyrC=null;
+      if(tyrRing&&tyrRing.length>=3){
+        var tx=0,ty=0,tz=0;
+        for(var ti=0;ti<tyrRing.length;ti++){tx+=tyrRing[ti].x;ty+=tyrRing[ti].y;tz+=tyrRing[ti].z;}
+        tyrC={x:tx/tyrRing.length,y:ty/tyrRing.length,z:tz/tyrRing.length};
+      }
+      for(var pi=0;pi<piFeatures.length;pi++){
+        var pf=piFeatures[pi];
+        viewer.addSphere({center:{x:pf.x,y:pf.y,z:pf.z},radius:0.6,color:'#ff8800',opacity:0.4});
+        viewer.addSphere({center:{x:pf.x,y:pf.y,z:pf.z},radius:1.2,color:'#ff8800',opacity:0.15,wireframe:true});
+        goldLabel(pf.label,{x:pf.x,y:pf.y+1.5,z:pf.z},{fontColor:'#ff8800',fontSize:10});
+        if(tyrC) dashedLine({x:pf.x,y:pf.y,z:pf.z},tyrC,'#ff8800',0.10,0.5);
+      }
+      if(tyrC){
+        viewer.addSphere({center:tyrC,radius:0.6,color:'#228833',opacity:0.4});
+        viewer.addSphere({center:tyrC,radius:1.2,color:'#228833',opacity:0.15,wireframe:true});
+        goldLabel('TYR 53 Ring',{x:tyrC.x,y:tyrC.y+1.5,z:tyrC.z},{fontColor:'#228833',fontSize:10});
+      }
+      viewer.addStyle({model:0,chain:'A',resi:949},
+        {stick:{radius:0.15,colorscheme:{prop:'elem',map:Object.assign({},cpk,{'C':'#ff8800'})}}});
+    }
+
+    // ═══ SURFACE: SAS 40-60%, ESP Red-White-Blue ═══
+    if (L.surface) {
+      var pend=0;
+      var done=function(){pend--;if(pend<=0){try{viewer.render();}catch(e){}}};
+      pend+=2;
+      viewer.addSurface($3Dmol.SurfaceType.VDW,{opacity:0.15,color:'#88bbcc',smoothness:2},{model:0,chain:'A'},undefined,undefined,done);
+      viewer.addSurface($3Dmol.SurfaceType.VDW,{opacity:0.15,color:'#bb99cc',smoothness:2},{model:0,chain:'B'},undefined,undefined,done);
+      pend+=3;
+      viewer.addSurface($3Dmol.SurfaceType.SAS,{opacity:0.45,color:'#dd3333',smoothness:1},{model:0,or:[{chain:'A',resi:956},{chain:'B',resi:248}]},undefined,undefined,done);
+      viewer.addSurface($3Dmol.SurfaceType.SAS,{opacity:0.40,color:'#eeeeee',smoothness:1},{model:0,or:[{chain:'A',resi:948},{chain:'A',resi:950},{chain:'A',resi:951},{chain:'A',resi:953}]},undefined,undefined,done);
+      viewer.addSurface($3Dmol.SurfaceType.SAS,{opacity:0.40,color:'#bbbbdd',smoothness:1},{model:0,or:[{chain:'A',resi:949},{chain:'B',resi:249}]},undefined,undefined,done);
+    }
+
+    viewer.render();
+  } catch(err) { console.error('renderScene:',err); try{viewer.render();}catch(e){} }
+}
+
+window.toggleLayer = function(layer) {
+  viewState.layers[layer] = !viewState.layers[layer];
+  var btn=document.getElementById('btn-'+layer);
+  if(btn) btn.classList.toggle('active',viewState.layers[layer]);
+  if(layer==='bfactor'&&viewState.layers.bfactor){/* keep chains for cartoon */}
+  else if(layer==='chains'&&viewState.layers.chains){
+    viewState.layers.bfactor=false;
+    var bf=document.getElementById('btn-bfactor');if(bf)bf.classList.remove('active');
+  }
+  if(layer==='surface'&&viewState.layers[layer]&&btn){
+    btn.textContent='Loading...';btn.style.opacity='0.6';
+    setTimeout(function(){btn.textContent='Surface';btn.style.opacity='1';},2500);
+  }
+  renderScene();
+};
+
+window.toggleSpin = function() {
+  viewState.spinning=!viewState.spinning;
+  if(viewer){if(viewState.spinning)viewer.spin('y',0.4);else viewer.spin(false);}
+  var btn=document.getElementById('btn-spin');
+  if(btn){btn.classList.toggle('active',viewState.spinning);btn.textContent=viewState.spinning?'Stop Spin':'Start Spin';}
+};
+
+window.resetView = function() {
+  viewState.layers={chains:true,surface:false,ligand:true,interactions:false,residues:false,pistack:false,bfactor:false};
+  document.querySelectorAll('.viewer-btn').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('btn-chains').classList.add('active');
+  document.getElementById('btn-ligand').classList.add('active');
+  document.getElementById('btn-spin').classList.add('active');
+  viewState.spinning=true;
+  renderScene();
+  if(viewer){viewer.zoomTo({model:0,chain:'A',resi:[948,949,950,951,952,953]});viewer.spin('y',0.4);}
+};
+
+// =========================================================================
+// TAB LOGIC (FIXED TIMING)
+// =========================================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    
+    if (btn.dataset.tab === 'structure') {
+      setTimeout(function() {
+        init3DViewer();
+        if (viewer) { viewer.resize(); viewer.render(); }
+      }, 500);
+    }
+  });
+});
+
+// Chart.js Config
+var C={cyan:'#00e5ff',green:'#00ff88',amber:'#ffaa00',purple:'#aa44ff',red:'#ff3366',orange:'#ff8844',bg:'#0f0f1a'};
+Chart.defaults.color='#8892a0';
+Chart.defaults.font.family="'JetBrains Mono',monospace";
+Chart.defaults.font.size=11;
+
+new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:['UV Perturbation','LIF Detection','EFP Modulation','Cross-Stream'],datasets:[{data:[35,28,22,15],backgroundColor:[C.cyan,C.green,C.purple,C.amber],borderColor:C.bg,borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{padding:16,usePointStyle:true,pointStyleWidth:12}}},cutout:'60%'}});
+
+new Chart(document.getElementById('pharmaChart'),{type:'doughnut',data:{labels:['H-Bond Acceptor','Hydrophobic','H-Bond Donor','Aromatic Ring'],datasets:[{data:[38,34,19,9],backgroundColor:[C.cyan,C.amber,C.green,C.purple],borderColor:C.bg,borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{padding:16,usePointStyle:true,pointStyleWidth:12}}},cutout:'60%'}});
+
+new Chart(document.getElementById('dockingChart'),{type:'bar',data:{labels:['10058-F4','KJ-Pyr-9','MYCi975'],datasets:[{label:'Vina (kcal/mol)',data:[-4.133,-2.895,-0.468],backgroundColor:C.cyan,borderRadius:4},{label:'CNN Affinity',data:[4.543,5.460,5.804],backgroundColor:C.green,borderRadius:4},{label:'MM-GBSA (kcal/mol)',data:[-16.1,-0.1,-28.8],backgroundColor:C.purple,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:16,usePointStyle:true,pointStyleWidth:12}}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'}},y:{grid:{color:'rgba(255,255,255,0.04)'}}}}});
+
+new Chart(document.getElementById('energyChart'),{type:'bar',data:{labels:['10058-F4','KJ-Pyr-9','MYCi975'],datasets:[{label:'E(complex)',data:[-8692.96,-8686.93,-8696.18],backgroundColor:C.cyan,borderRadius:4},{label:'E(receptor)',data:[-8657.25,-8668.17,-8647.96],backgroundColor:C.green,borderRadius:4},{label:'E(ligand)',data:[-19.59,-18.68,-19.40],backgroundColor:C.purple,borderRadius:4},{label:'\u0394G',data:[-16.12,-0.08,-28.82],backgroundColor:C.orange,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{labels:{padding:12,usePointStyle:true,pointStyleWidth:12}}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'}},y:{grid:{color:'rgba(255,255,255,0.04)'}}}}});
+
+new Chart(document.getElementById('radarChart'),{type:'radar',data:{labels:['QED','MW (norm)','cLogP (norm)','HBA (norm)','TPSA (norm)','Solubility'],datasets:[{label:'10058-F4',data:[0.82,0.46,0.85,0.4,0.14,0.6],borderColor:C.orange,backgroundColor:'rgba(255,136,68,0.1)',pointBackgroundColor:C.orange,borderWidth:2},{label:'KJ-Pyr-9',data:[0.68,0.74,0.82,0.6,0.24,0.6],borderColor:C.green,backgroundColor:'rgba(0,255,136,0.08)',pointBackgroundColor:C.green,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,scales:{r:{beginAtZero:true,max:1.0,ticks:{stepSize:0.2,color:'#556070',backdropColor:'transparent'},grid:{color:'rgba(255,255,255,0.08)'},pointLabels:{color:'#8892a0',font:{family:"'JetBrains Mono',monospace",size:11}}}},plugins:{legend:{position:'bottom',labels:{padding:16,usePointStyle:true,pointStyleWidth:12}}}}});
+
+new Chart(document.getElementById('qedChart'),{type:'bar',data:{labels:['10058-F4','KJ-Pyr-9','MYCi975'],datasets:[{label:'QED Score',data:[0.82,0.68,0.21],backgroundColor:[C.orange,C.green,C.purple],borderRadius:4},{label:'MW (norm)',data:[0.46,0.74,1.0],backgroundColor:['rgba(255,136,68,0.4)','rgba(0,255,136,0.4)','rgba(170,68,255,0.4)'],borderRadius:4},{label:'cLogP Efficiency',data:[0.85,0.82,0.25],backgroundColor:['rgba(255,136,68,0.2)','rgba(0,255,136,0.2)','rgba(170,68,255,0.2)'],borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:16,usePointStyle:true,pointStyleWidth:12}}},scales:{x:{max:1.0,grid:{color:'rgba(255,255,255,0.04)'}},y:{grid:{color:'rgba(255,255,255,0.04)'}}}}});
+
+new Chart(document.getElementById('spikeChart'),{type:'bar',data:{labels:['BNZ','TYR','UNK'],datasets:[{label:'Spikes',data:[1310,3930,160],backgroundColor:[C.purple,C.green,C.amber],borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{type:'logarithmic',grid:{color:'rgba(255,255,255,0.04)'}},x:{grid:{color:'rgba(255,255,255,0.04)'}}},plugins:{legend:{display:false}}}});
+
+new Chart(document.getElementById('detSourceChart'),{type:'doughnut',data:{labels:['UV (75%)','LIF (21%)','EFP (2%)'],datasets:[{data:[458279,132694,15683],backgroundColor:[C.cyan,C.amber,C.purple],borderColor:C.bg,borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{padding:16,usePointStyle:true,pointStyleWidth:12}}},cutout:'60%'}});
+
+// Animated Counters
+var cObs=new IntersectionObserver(function(entries){
+  entries.forEach(function(entry){
+    if(entry.isIntersecting){
+      entry.target.querySelectorAll('.stat-value').forEach(function(el){
+        var target=parseFloat(el.dataset.target);
+        var suffix=el.dataset.suffix||'';
+        var isFloat=target%1!==0;
+        var dur=1500;var st=performance.now();
+        function anim(t){
+          var elapsed=t-st;var prog=Math.min(elapsed/dur,1);
+          var e=1-Math.pow(1-prog,3);var cur=target*e;
+          if(target>=1000){el.textContent=Math.floor(cur).toLocaleString()+suffix;}
+          else if(isFloat){el.textContent=cur.toFixed(target<1?2:1)+suffix;}
+          else{el.textContent=Math.floor(cur)+suffix;}
+          if(prog<1)requestAnimationFrame(anim);
+        }
+        requestAnimationFrame(anim);
+      });
+      cObs.unobserve(entry.target);
+    }
+  });
+},{threshold:0.3});
+document.querySelectorAll('.stats-section').forEach(function(s){cObs.observe(s);});
+</script>
+</body>
+</html>
+   

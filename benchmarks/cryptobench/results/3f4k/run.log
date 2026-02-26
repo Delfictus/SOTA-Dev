@@ -1,0 +1,847 @@
+[2026-02-26T00:18:19Z INFO  nhs_rt_full] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:19Z INFO  nhs_rt_full] ║  TRUE MULTI-STREAM PIPELINE (8 concurrent streams)           ║
+[2026-02-26T00:18:19Z INFO  nhs_rt_full] ║  Full cryo-UV-BNZ-RT on each independent CUDA stream          ║
+[2026-02-26T00:18:19Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]   ✓ 8 CUDA streams created on shared context
+[2026-02-26T00:18:19Z INFO  prism_nhs::input] Loading PRISM-PREP topology from: benchmarks/cryptobench/topologies/3f4k.topology.json
+[2026-02-26T00:18:19Z INFO  prism_nhs::input] Loaded topology: 4001 atoms, 254 residues, 1 chains
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]   Structure: 3f4k.topology (4001 atoms, 38 aromatics)
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]   Adaptive warm_hold: 15000 steps (4001 atoms, +0 extra)
+[2026-02-26T00:18:19Z INFO  nhs_rt_full] 
+      🚀 Launching 8 independent trajectories...
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 0] Starting (seed: 42)...
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 1] Starting (seed: 12387)...
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 2] Starting (seed: 24732)...
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 3] Starting (seed: 37077)...
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 4] Starting (seed: 49422)...
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 5] Starting (seed: 61767)...
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 6] Starting (seed: 74112)...
+[2026-02-26T00:18:19Z INFO  nhs_rt_full]     [stream 7] Starting (seed: 86457)...
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] Persistent NHS Engine on dedicated stream (max_atoms: 15000)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:18:19Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 726ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 741ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 741ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 742ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 749ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 752ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 753ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine]   Topology loaded: 753ms
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Temperature: 50K → 300K
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Phases: cold_hold=14000, ramp=6000, warm_hold=15000
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   UV bursts: 42kcal/mol every 250 steps (50 step duration)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   Wavelengths: [280.0, 274.0, 258.0, 211.0] nm
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine]   ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Spike accumulation: ENABLED
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Enabling hyperoptimized ultimate kernel mode...
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Creating Ultimate Hyperoptimized Engine: 4001 atoms
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::ultimate_engine] Loaded ultimate_md.ptx from: crates/prism-gpu/src/kernels/ultimate_md.ptx
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 0] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 7] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 2] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 6] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 4] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 1] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 5] UltimateEngine: ✓
+[2026-02-26T00:18:20Z INFO  prism_nhs::fused_engine] Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active
+[2026-02-26T00:18:20Z INFO  prism_nhs::persistent_engine] ✓ UltimateEngine enabled (2-4x faster MD)
+[2026-02-26T00:18:20Z INFO  nhs_rt_full]     [stream 3] UltimateEngine: ✓
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.509
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 56, 37, 193, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.109
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 202, 235, 141, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.200
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 46, 105, 134, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.064
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 123, 47, 136, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.196
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 17, 32, 153, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.516
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 178, 7, 194, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.096
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 237, 83, 140, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.261
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 249, 93, 136, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.065
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 0, 79, 136, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.209
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 156, 196, 154, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.513
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 166, 177, 193, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.111
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 215, 45, 142, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.184
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 55, 227, 133, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.050
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 170, 91, 134, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.178
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 40, 204, 150, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.510
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 20, 79, 193, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.106
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 42, 135, 141, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.229
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 69, 80, 135, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.064
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 64, 44, 136, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.193
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 91, 181, 152, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.517
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 183, 34, 194, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.102
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 167, 27, 141, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.178
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 18, 178, 133, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.057
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 124, 84, 135, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.194
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 118, 216, 152, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.516
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 146, 20, 194, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.106
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 158, 160, 141, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.262
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 119, 96, 136, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.063
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 43, 2, 136, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.208
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 203, 164, 154, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.508
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 27, 249, 192, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.102
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 28, 8, 141, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.234
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 230, 120, 135, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.065
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 156, 85, 136, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.199
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 234, 127, 153, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #0: pos=[2.85, 17.52, 19.46] voxel=127122 src=3 wl=0 arom_type=6 intensity=1.517
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 146, 240, 1, 0, 96, 162, 54, 64, 100, 34, 140, 65, 20, 164, 155, 65, 2, 44, 194, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #1: pos=[-0.15, 17.52, 20.96] voxel=131216 src=3 wl=0 arom_type=5 intensity=1.114
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 0, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 167, 65, 170, 166, 142, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #2: pos=[1.35, 17.52, 20.96] voxel=131217 src=3 wl=0 arom_type=6 intensity=4.205
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 0, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 167, 65, 226, 144, 134, 64]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #3: pos=[-0.15, 17.52, 22.46] voxel=135312 src=3 wl=0 arom_type=6 intensity=1.042
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 144, 16, 2, 0, 0, 218, 21, 190, 100, 34, 140, 65, 20, 164, 179, 65, 118, 83, 133, 63]
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine] SPIKE DEBUG #4: pos=[1.35, 17.52, 22.46] voxel=135313 src=3 wl=0 arom_type=6 intensity=1.172
+[2026-02-26T00:18:35Z INFO  prism_nhs::fused_engine]   raw bytes[0..24]: [0, 0, 0, 0, 145, 16, 2, 0, 192, 68, 173, 63, 100, 34, 140, 65, 20, 164, 179, 65, 24, 0, 150, 63]
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.52)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=30527
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.51)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=31256
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.51)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=30934
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.51)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=30922
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.51)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.51)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.51)
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=29789
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=30587
+[2026-02-26T00:21:05Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=31154
+[2026-02-26T00:21:06Z INFO  prism_nhs::fused_engine] Captured 10 ensemble snapshots (avg quality: 0.52)
+[2026-02-26T00:21:06Z INFO  prism_nhs::fused_engine] Step 10000: T=50.0K, spikes=30652
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.60)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.61)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28449
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28443
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.61)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.60)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28450
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28443
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.60)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28442
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.60)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.61)
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28450
+[2026-02-26T00:23:38Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28442
+[2026-02-26T00:23:39Z INFO  prism_nhs::fused_engine] Captured 20 ensemble snapshots (avg quality: 0.61)
+[2026-02-26T00:23:39Z INFO  prism_nhs::fused_engine] Step 20000: T=300.0K, spikes=28453
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.65)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28459
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.66)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28470
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.66)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.66)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28465
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28455
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.66)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.66)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28448
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28464
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.65)
+[2026-02-26T00:26:09Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28464
+[2026-02-26T00:26:10Z INFO  prism_nhs::fused_engine] Captured 30 ensemble snapshots (avg quality: 0.66)
+[2026-02-26T00:26:10Z INFO  prism_nhs::fused_engine] Step 30000: T=300.0K, spikes=28457
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28312
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28286
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28284
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28282
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28318
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28297
+[2026-02-26T00:28:40Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28254
+[2026-02-26T00:28:41Z INFO  prism_nhs::fused_engine] Captured 40 ensemble snapshots (avg quality: 0.68)
+[2026-02-26T00:28:41Z INFO  prism_nhs::fused_engine] Step 40000: T=300.0K, spikes=28316
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28413
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28419
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28425
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:11Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28423
+[2026-02-26T00:31:12Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.71)
+[2026-02-26T00:31:12Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28422
+[2026-02-26T00:31:12Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:12Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28422
+[2026-02-26T00:31:12Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:12Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28419
+[2026-02-26T00:31:13Z INFO  prism_nhs::fused_engine] Captured 50 ensemble snapshots (avg quality: 0.70)
+[2026-02-26T00:31:13Z INFO  prism_nhs::fused_engine] Step 50000: T=300.0K, spikes=28423
+[2026-02-26T00:32:26Z INFO  nhs_rt_full]     [stream 4] Complete: 1879927 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:26Z INFO  nhs_rt_full]     [stream 2] Complete: 1878328 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:27Z INFO  nhs_rt_full]     [stream 3] Complete: 1882209 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:27Z INFO  nhs_rt_full]     [stream 6] Complete: 1881636 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:27Z INFO  nhs_rt_full]     [stream 0] Complete: 1881926 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:27Z INFO  nhs_rt_full]     [stream 5] Complete: 1883761 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:27Z INFO  nhs_rt_full]     [stream 7] Complete: 1880491 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:28Z INFO  nhs_rt_full]     [stream 1] Complete: 1881449 spikes, 55 snapshots, T=300.0K
+[2026-02-26T00:32:28Z INFO  nhs_rt_full]   ✓ All 8 streams complete in 848.8s
+[2026-02-26T00:32:28Z INFO  nhs_rt_full] 
+      Aggregating results across 8 streams...
+[2026-02-26T00:32:28Z INFO  prism_nhs::persistent_engine] 🚀 Initializing Persistent NHS Engine (max_atoms: 15000)
+[2026-02-26T00:32:28Z INFO  prism_nhs::persistent_engine]   CUDA context: 0ms
+[2026-02-26T00:32:28Z INFO  prism_nhs::persistent_engine]   PTX module: 3ms
+[2026-02-26T00:32:28Z INFO  prism_nhs::persistent_engine] ✅ Persistent engine ready (total init: 3ms)
+[2026-02-26T00:32:28Z INFO  prism_nhs::persistent_engine] 📦 Loading topology: 3f4k_sanitized (4001 atoms)
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Creating NHS-AMBER Fused Engine: 4001 atoms, grid 64³
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Loaded fused kernel PTX from: crates/prism-gpu/src/kernels/nhs_amber_fused.ptx
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] 🧪 Benzene cosolvent: injected 160 virtual probes on LEU/ILE/VAL/TRP residues
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Cell grid: 7x7x8 = 392 cells (cell size 10 Å)
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Neighbor list mode: ENABLED (O(N)) (n_atoms=4001)
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: positions src=12003 dst=12003
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: masses src=4001 dst=4001
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: charges src=4001 dst=4001
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: atom_types building...
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: atom_types src=4001 dst=4001
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: residue_ids building...
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: residue_ids src=4001 dst=4001
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: bonds src_bytes=64912 dst_bytes=64912
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: angles src_bytes=145740 dst_bytes=145740
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: dihedrals src_bytes=385644 dst_bytes=385644
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: lj src_bytes=32008 dst_bytes=32008
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: exclusion_list src=43700 dst=43700
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: exclusion_offsets src=4002 dst=4002
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: h_clusters src_bytes=51760 dst_bytes=51760
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: uv_targets src_bytes=15840 dst_bytes=15840
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: ground_state_charges src=4001 dst=4001
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine]   upload: atom_to_aromatic src=4001 dst=4001
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Uploaded aromatic topology: 198 aromatics with ring atom indices
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Uploaded topology: 4057 bonds, 7287 angles, 13773 dihedrals
+[2026-02-26T00:32:28Z INFO  prism_nhs::fused_engine] Excited state: 198 aromatics mapped
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine] Built warp matrix: 262144 voxels (31738 with atoms, avg 1.6 atoms/voxel, max 16)
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine] Built aromatic neighbor lists for 198 aromatics (cutoff 5.0A)
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine] Computed ring normals for 198 aromatics
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine] Computed and uploaded aromatic centroids for 198 aromatics
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine] NHS-AMBER Fused Engine created successfully
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine]   Bonds: 4057, Angles: 7287, Dihedrals: 13773
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine]   H-Clusters (SHAKE): 1294
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine]   UV Targets: 198
+[2026-02-26T00:32:29Z INFO  prism_nhs::fused_engine]   Cryogenic physics: ENABLED
+[2026-02-26T00:32:29Z INFO  prism_nhs::persistent_engine]   Topology loaded: 666ms
+[2026-02-26T00:32:29Z INFO  prism_nhs::persistent_engine] 🔷 Initializing OptiX RT pipeline for clustering...
+[2026-02-26T00:32:29Z INFO  prism_nhs::persistent_engine]   Adaptive epsilon: 1.50Å (n_atoms=4001)
+[2026-02-26T00:32:29Z INFO  prism_optix::loader] OptiX: Our function table size: 480 bytes
+[2026-02-26T00:32:29Z INFO  prism_optix::loader] OptiX: ABI version 118 accepted our table size (480 bytes)
+[2026-02-26T00:32:29Z INFO  prism_optix::loader] OptiX function table loaded successfully (ABI version 118, table_size=480 bytes)
+[2026-02-26T00:32:29Z INFO  prism_optix::context_impl] OptiX API initialized (version 90100)
+[2026-02-26T00:32:29Z INFO  prism_optix::context_impl] Created OptiX context (validation: false)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering engine created
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Loading RT clustering pipeline from: crates/prism-gpu/src/kernels/rt_clustering.optixir
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering params struct size: 88 bytes
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 (build neighbors) pipeline created
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Loading CUDA kernels from: crates/prism-gpu/src/kernels/rt_clustering_cuda.ptx
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] CUDA union-find kernels loaded
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering pipeline loaded successfully
+[2026-02-26T00:32:29Z INFO  prism_nhs::persistent_engine]   RT pipeline initialized: 67ms
+[2026-02-26T00:32:29Z INFO  prism_nhs::persistent_engine]   GPU Architecture: Blackwell
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94724 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94724 spheres, handle=0x79ed1440000c, size=8207104 bytes (7.83 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1139715 raw neighbor hits from 94724 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1139715 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94724 events, 1139715 neighbors, 9527 clusters, 26.34ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 0: 94724 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94748 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94748 spheres, handle=0x79ed1440000c, size=8208128 bytes (7.83 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1140566 raw neighbor hits from 94748 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1140566 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94748 events, 1140566 neighbors, 9303 clusters, 28.14ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 1: 94748 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94583 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94583 spheres, handle=0x79ed1440000c, size=8196736 bytes (7.82 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1134041 raw neighbor hits from 94583 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1134041 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94583 events, 1134041 neighbors, 9077 clusters, 27.91ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 2: 94583 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94744 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94744 spheres, handle=0x79ed1440000c, size=8207872 bytes (7.83 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1139454 raw neighbor hits from 94744 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1139454 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94744 events, 1139454 neighbors, 9654 clusters, 30.81ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 3: 94744 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94686 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94686 spheres, handle=0x79ed1440000c, size=8205312 bytes (7.83 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1139716 raw neighbor hits from 94686 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1139716 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94686 events, 1139716 neighbors, 9604 clusters, 27.95ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 4: 94686 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94685 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94685 spheres, handle=0x79ed1440000c, size=8205312 bytes (7.83 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1135823 raw neighbor hits from 94685 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1135823 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94685 events, 1135823 neighbors, 9494 clusters, 32.68ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 5: 94685 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94479 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94479 spheres, handle=0x79ed1440000c, size=8188160 bytes (7.81 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1129448 raw neighbor hits from 94479 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1129448 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94479 events, 1129448 neighbors, 8233 clusters, 28.09ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 6: 94479 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 94584 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 94584 spheres, handle=0x79ed1440000c, size=8196736 bytes (7.82 MB)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 1140133 raw neighbor hits from 94584 events
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 1140133 total neighbor pairs
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 3 complete: neighbor list built
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 7 complete: cluster IDs assigned
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering: 94584 events, 1140133 neighbors, 7657 clusters, 24.45ms
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 7: 94584 filtered spikes → 1 sites
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]   Consensus threshold: 4/8 streams
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 0 site 0: centroid=[-0.2, 43.3, 10.3], spikes=85055, intensity=3.450
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 1 site 0: centroid=[-0.2, 43.3, 10.2], spikes=85329, intensity=3.393
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 2 site 0: centroid=[-0.1, 43.3, 10.2], spikes=85364, intensity=3.425
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 3 site 0: centroid=[-0.2, 43.4, 10.2], spikes=84935, intensity=3.411
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 4 site 0: centroid=[-0.1, 43.2, 10.4], spikes=84969, intensity=3.429
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 5 site 0: centroid=[-0.3, 43.3, 10.3], spikes=84996, intensity=3.425
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 6 site 0: centroid=[-0.2, 43.4, 10.3], spikes=86091, intensity=3.423
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Stream 7 site 0: centroid=[-0.1, 43.3, 10.2], spikes=86815, intensity=3.426
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]   Consensus binding sites: 1
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]   Running Spike-Native Density Clustering...
+[2026-02-26T00:32:29Z INFO  prism_nhs::spike_density]   SpikeDensityGrid: 60x63x71 = 268380 voxels (spacing=1.0Å, σ=2.0Å, 757233 spikes)
+[2026-02-26T00:32:29Z INFO  nhs_rt_full]     Density grid: 60x63x71, 20 peaks
+[2026-02-26T00:32:29Z INFO  prism_optix::context_impl] OptiX API initialized (version 90100)
+[2026-02-26T00:32:29Z INFO  prism_optix::context_impl] Created OptiX context (validation: false)
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering engine created
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Loading RT clustering pipeline from: crates/prism-gpu/src/kernels/rt_clustering.optixir
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering params struct size: 88 bytes
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Phase 2 (build neighbors) pipeline created
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] Loading CUDA kernels from: crates/prism-gpu/src/kernels/rt_clustering_cuda.ptx
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] CUDA union-find kernels loaded
+[2026-02-26T00:32:29Z INFO  prism_nhs::rt_clustering] RT clustering pipeline loaded successfully
+[2026-02-26T00:32:29Z INFO  prism_nhs::hierarchical_clustering] Hierarchical clustering: 757233 spikes, 13 epsilon levels [2.0..8.0]
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] Building BVH for 757233 atoms using OptiX built-in spheres (allow_update=true, prefer_fast_trace=false)
+[2026-02-26T00:32:29Z INFO  prism_optix::accel] ✅ BVH build complete: 757233 spheres, handle=0x79ecd000000c, size=65577216 bytes (62.54 MB)
+[2026-02-26T00:32:31Z INFO  prism_nhs::rt_clustering] Phase 1 complete: 42265979 raw neighbor hits from 757233 events
+[2026-02-26T00:32:31Z INFO  prism_nhs::rt_clustering] Phase 2 complete: 42265979 total neighbor pairs
+[2026-02-26T00:32:31Z WARN  nhs_rt_full]   SNDC clustering failed: RT clustering failed at epsilon=2.0
+[2026-02-26T00:32:31Z ERROR prism_optix::context_impl] [OptiX] [PIPELINE] Error synching on OptixPipeline event (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+[2026-02-26T00:32:31Z ERROR prism_optix::context_impl] [OptiX] [PIPELINE] Error synching on OptixPipeline event (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+[2026-02-26T00:32:31Z ERROR prism_optix::context_impl] [OptiX] [DEVICECTX] Error destroying resource event. (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Failed to destroy launch resources (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Error destroying resource event. (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Failed to destroy launch resources (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Error destroying resource event. (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Failed to destroy launch resources (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+[2026-02-26T00:32:31Z ERROR prism_optix::error] OptiX error: OPTIX_ERROR_CUDA_ERROR - OptiX context destruction (7900)
+[2026-02-26T00:32:31Z ERROR prism_optix::context_impl] Failed to destroy OptiX context: CUDA error: OptiX context destruction
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Running Dynamic LIGSITE pocket detection...
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   LIGSITE grid: 66×69×77 = 350658 voxels (margin=10Å)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Solvent gate: 298534 exterior-reachable, 26 buried void voxels
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   LIGSITE ray-cast: protein=52098, enclosed(≥4/6)=3304
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   DAH lid-depth: 3304 pocket voxels measured, 0 unreachable, max=21.0Å, avg=2.1Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Connected components: 224 total, 6 above 50 voxel threshold
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Pocket 0: 794 voxels, 794 Å³, centroid=(-13.9,44.9,3.4), depth=4.1Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Pocket 1: 82 voxels, 82 Å³, centroid=(-7.2,22.2,15.8), depth=1.5Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Pocket 2: 629 voxels, 629 Å³, centroid=(11.6,49.5,-5.6), depth=1.7Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Pocket 3: 428 voxels, 428 Å³, centroid=(9.6,27.0,22.5), depth=1.7Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Pocket 4: 65 voxels, 65 Å³, centroid=(7.4,40.7,-14.1), depth=1.9Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Pocket 5: 223 voxels, 223 Å³, centroid=(17.9,40.5,16.8), depth=1.6Å
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Spike overlay: 20006 mapped to pockets, 637697 filtered (intensity<5), 99530 unmapped
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 0: vol=794Å³ spikes=9252 density=11.65 intensity=9.4 depth=4.1Å surface_factor=0.663 drug=0.519 quality=0.790 class=ActiveSite
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]     Peak centroid: (-16.6,53.8,13.5) -- 10.9A from weighted centroid (top 10 spikes, max_I=50.4)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 1: vol=82Å³ spikes=559 density=6.82 intensity=8.9 depth=1.5Å surface_factor=1.000 drug=0.510 quality=0.771 class=Unknown
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]     Peak centroid: (-3.1,25.0,16.5) -- 0.9A from weighted centroid (top 10 spikes, max_I=33.2)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 2: vol=629Å³ spikes=3391 density=5.39 intensity=8.2 depth=1.7Å surface_factor=1.000 drug=0.745 quality=0.844 class=ActiveSite
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]     Peak centroid: (14.9,41.5,7.5) -- 11.1A from weighted centroid (top 10 spikes, max_I=44.1)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 3: vol=428Å³ spikes=2453 density=5.73 intensity=8.0 depth=1.7Å surface_factor=1.000 drug=0.753 quality=0.842 class=ActiveSite
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]     Peak centroid: (2.9,25.0,18.0) -- 3.9A from weighted centroid (top 10 spikes, max_I=30.1)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 4: vol=65Å³ spikes=692 density=10.65 intensity=9.6 depth=1.9Å surface_factor=1.000 drug=0.609 quality=0.832 class=Unknown
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]     Peak centroid: (6.1,43.3,-10.5) -- 1.0A from weighted centroid (top 10 spikes, max_I=22.8)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 5: vol=223Å³ spikes=3659 density=16.41 intensity=11.9 depth=1.6Å surface_factor=1.000 drug=0.800 quality=0.920 class=Cryptic
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]     Peak centroid: (8.9,44.3,24.0) -- 7.5A from weighted centroid (top 10 spikes, max_I=68.0)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Dynamic LIGSITE complete: 6 geometric pockets
+[2026-02-26T00:32:31Z INFO  prism_nhs::persistent_engine] Wrote binding sites PDB: benchmarks/cryptobench/results/3f4k/3f4k.binding_sites.pdb
+[2026-02-26T00:32:31Z INFO  prism_nhs::persistent_engine] Wrote PyMOL script: benchmarks/cryptobench/results/3f4k/3f4k.binding_sites.pml
+[2026-02-26T00:32:31Z INFO  prism_nhs::persistent_engine] Wrote ChimeraX script: benchmarks/cryptobench/results/3f4k/3f4k.binding_sites.cxc
+[2026-02-26T00:32:31Z INFO  prism_nhs::persistent_engine] Wrote Markdown report: benchmarks/cryptobench/results/3f4k/3f4k.binding_sites.md
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 5: quality rerank 0.960->0.864 [logSp=0.74 dens=1.00 occ=0.84 reg=0.71 vol=1.00 int=1.00 drug=0.83]
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 0: quality rerank 0.941->0.894 [logSp=0.82 dens=1.00 occ=0.93 reg=0.80 vol=1.00 int=0.94 drug=0.81]
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 1: quality rerank 0.832->0.661 [logSp=0.57 dens=0.68 occ=0.57 reg=0.63 vol=0.82 int=0.89 drug=0.61]
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 4: quality rerank 0.774->0.696 [logSp=0.59 dens=1.00 occ=0.57 reg=0.63 vol=0.65 int=0.96 drug=0.58]
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 3: quality rerank 0.749->0.742 [logSp=0.70 dens=0.57 occ=0.80 reg=0.69 vol=1.00 int=0.80 drug=0.71]
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   Site 2: quality rerank 0.712->0.744 [logSp=0.73 dens=0.54 occ=0.84 reg=0.71 vol=1.00 int=0.82 drug=0.67]
+[2026-02-26T00:32:31Z INFO  nhs_rt_full] Quality reranking applied. New top-3: site0(q=0.894), site5(q=0.864), site2(q=0.744)
+[2026-02-26T00:32:31Z INFO  nhs_rt_full]   ✓ JSON: benchmarks/cryptobench/results/3f4k/3f4k.binding_sites.json
+[2026-02-26T00:32:32Z INFO  nhs_rt_full]   Spike events: benchmarks/cryptobench/results/3f4k/3f4k.site5.spike_events.json (135528 spikes, f_open=1.000)
+[2026-02-26T00:32:32Z INFO  nhs_rt_full]   Spike events: benchmarks/cryptobench/results/3f4k/3f4k.site0.spike_events.json (68873 spikes, f_open=1.000)
+[2026-02-26T00:32:32Z INFO  nhs_rt_full]   Spike events: benchmarks/cryptobench/results/3f4k/3f4k.site1.spike_events.json (105699 spikes, f_open=1.000)
+[2026-02-26T00:32:33Z INFO  nhs_rt_full]   Spike events: benchmarks/cryptobench/results/3f4k/3f4k.site4.spike_events.json (63746 spikes, f_open=1.000)
+[2026-02-26T00:32:33Z INFO  nhs_rt_full]   Spike events: benchmarks/cryptobench/results/3f4k/3f4k.site3.spike_events.json (145526 spikes, f_open=1.000)
+[2026-02-26T00:32:34Z INFO  nhs_rt_full]   Spike events: benchmarks/cryptobench/results/3f4k/3f4k.site2.spike_events.json (71703 spikes, f_open=1.000)
+[2026-02-26T00:32:35Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream00.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:35Z INFO  nhs_rt_full]   ✓ Trajectory stream 0: 55 frames
+[2026-02-26T00:32:37Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream01.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:37Z INFO  nhs_rt_full]   ✓ Trajectory stream 1: 55 frames
+[2026-02-26T00:32:39Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream02.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:39Z INFO  nhs_rt_full]   ✓ Trajectory stream 2: 55 frames
+[2026-02-26T00:32:40Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream03.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:40Z INFO  nhs_rt_full]   ✓ Trajectory stream 3: 55 frames
+[2026-02-26T00:32:42Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream04.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:42Z INFO  nhs_rt_full]   ✓ Trajectory stream 4: 55 frames
+[2026-02-26T00:32:44Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream05.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:44Z INFO  nhs_rt_full]   ✓ Trajectory stream 5: 55 frames
+[2026-02-26T00:32:45Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream06.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:45Z INFO  nhs_rt_full]   ✓ Trajectory stream 6: 55 frames
+[2026-02-26T00:32:47Z INFO  nhs_rt_full]   ✓ Ensemble trajectory: benchmarks/cryptobench/results/3f4k/3f4k_stream07.ensemble_trajectory.pdb (55 models, 4001 atoms each, 17.5 MB)
+[2026-02-26T00:32:47Z INFO  nhs_rt_full]   ✓ Trajectory stream 7: 55 frames
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] 
+    ╔═══════════════════════════════════════════════════════════════╗
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  MULTI-STREAM PIPELINE COMPLETE                               ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ╠═══════════════════════════════════════════════════════════════╣
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Structure: 3f4k.topology                                    ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  CUDA streams: 8                                            ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Steps/stream: 55000                                        ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Simulation time: 848.8                                   s ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Total time: 868.0                                         s ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Consensus sites: 6                                         ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Druggable sites: 6                                         ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ║  Consensus: 4/8                                         ║
+[2026-02-26T00:32:47Z INFO  nhs_rt_full] ╚═══════════════════════════════════════════════════════════════╝
+[2026-02-26T00:32:47Z ERROR prism_optix::context_impl] [OptiX] [PIPELINE] Error synching on OptixPipeline event (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+[2026-02-26T00:32:47Z ERROR prism_optix::context_impl] [OptiX] [PIPELINE] Error synching on OptixPipeline event (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+[2026-02-26T00:32:47Z ERROR prism_optix::context_impl] [OptiX] [DEVICECTX] Error destroying resource event. (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Failed to destroy launch resources (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Error destroying resource event. (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Failed to destroy launch resources (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Error destroying resource event. (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+    Failed to destroy launch resources (CUDA error string: an illegal memory access was encountered, CUDA error code: 700)
+[2026-02-26T00:32:47Z ERROR prism_optix::error] OptiX error: OPTIX_ERROR_CUDA_ERROR - OptiX context destruction (7900)
+[2026-02-26T00:32:47Z ERROR prism_optix::context_impl] Failed to destroy OptiX context: CUDA error: OptiX context destruction

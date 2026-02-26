@@ -341,7 +341,7 @@ class PrismFepPipeline:
                 str(prism_bin),
                 "--input", self._fixed_pdb,
                 "--output-dir", str(spike_dir),
-                "--multi-stream", "20",
+                "--multi-stream", "8",
                 "--multi-scale",
             ]
             try:

@@ -1,0 +1,52 @@
+{
+  "density_grid": {
+    "dims": [
+      42,
+      56,
+      64
+    ],
+    "n_peaks": 9,
+    "sigma": 2.0,
+    "spacing": 1.0
+  },
+  "gpu_time_ms": 590567.458902,
+  "method": "SNDC",
+  "n_levels": 13,
+  "n_spikes": 455352,
+  "sites": [
+    {
+      "centroid": [
+        40.33031380278666,
+        33.0740719969292,
+        20.016032115372756
+      ],
+      "cluster_radius": 10.774038440613822,
+      "id": 0,
+      "intensity_cv": 1.9889295210509736,
+      "mean_intensity": 2.0987026088377023,
+      "mean_water_density": 0.0322793090287743,
+      "peak_density": 209111.90625,
+      "persistence": 13,
+      "probe_diversity": 1,
+      "spike_count": 454516
+    },
+    {
+      "centroid": [
+        22.869065026929963,
+        49.65624212490999,
+        36.92086233964035
+      ],
+      "cluster_radius": 4.153535930691078,
+      "id": 1,
+      "intensity_cv": 0.08418529317051075,
+      "mean_intensity": 1.0921203331513838,
+      "mean_water_density": 0.017140847925805825,
+      "peak_density": 66.14586639404297,
+      "persistence": 3,
+      "probe_diversity": 0,
+      "spike_count": 22
+    }
+  ],
+  "structure": "2qbv.topology",
+  "version": "1.0"
+}

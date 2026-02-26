@@ -1,0 +1,27 @@
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# Redirect /demo to demo.html
+[[redirects]]
+  from = "/demo"
+  to = "/demo.html"
+  status = 200
+
+# Redirect /request-demo to demo page with anchor
+[[redirects]]
+  from = "/request-demo"
+  to = "/demo.html#access"
+  status = 302
