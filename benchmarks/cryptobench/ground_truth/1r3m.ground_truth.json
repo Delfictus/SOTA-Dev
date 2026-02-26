@@ -1,0 +1,140 @@
+{
+  "apo_id": "1r3m",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 14,
+      "label": "A_14"
+    },
+    {
+      "chain": "A",
+      "resid": 24,
+      "label": "A_24"
+    },
+    {
+      "chain": "A",
+      "resid": 27,
+      "label": "A_27"
+    },
+    {
+      "chain": "A",
+      "resid": 28,
+      "label": "A_28"
+    },
+    {
+      "chain": "A",
+      "resid": 31,
+      "label": "A_31"
+    },
+    {
+      "chain": "A",
+      "resid": 94,
+      "label": "A_94"
+    },
+    {
+      "chain": "A",
+      "resid": 95,
+      "label": "A_95"
+    },
+    {
+      "chain": "B",
+      "resid": 29,
+      "label": "B_29"
+    },
+    {
+      "chain": "B",
+      "resid": 32,
+      "label": "B_32"
+    },
+    {
+      "chain": "B",
+      "resid": 33,
+      "label": "B_33"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_14",
+    "A_24",
+    "A_27",
+    "A_28",
+    "A_31",
+    "A_94",
+    "A_95",
+    "B_29",
+    "B_32",
+    "B_33"
+  ],
+  "n_binding_residues": 10,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "11bg",
+    "holo_chain": "A-B",
+    "apo_chain": "A-B",
+    "ligand": "U2G",
+    "ligand_index": "131",
+    "ligand_chain": "A",
+    "pRMSD": 6.06,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_14",
+      "A_24",
+      "A_27",
+      "A_28",
+      "A_31",
+      "A_94",
+      "A_95",
+      "B_29",
+      "B_32",
+      "B_33"
+    ],
+    "holo_pocket_selection": [
+      "A_14",
+      "A_24",
+      "A_27",
+      "A_28",
+      "A_31",
+      "A_94",
+      "A_95",
+      "B_29",
+      "B_32",
+      "B_33"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "11bg",
+      "holo_chain": "A-B",
+      "apo_chain": "A-B",
+      "ligand": "U2G",
+      "ligand_index": "131",
+      "ligand_chain": "A",
+      "pRMSD": 6.06,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_14",
+        "A_24",
+        "A_27",
+        "A_28",
+        "A_31",
+        "A_94",
+        "A_95",
+        "B_29",
+        "B_32",
+        "B_33"
+      ],
+      "holo_pocket_selection": [
+        "A_14",
+        "A_24",
+        "A_27",
+        "A_28",
+        "A_31",
+        "A_94",
+        "A_95",
+        "B_29",
+        "B_32",
+        "B_33"
+      ]
+    }
+  ],
+  "max_pRMSD": 6.06
+}

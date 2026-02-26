@@ -1,0 +1,260 @@
+{
+  "apo_id": "6g6y",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 104,
+      "label": "A_104"
+    },
+    {
+      "chain": "A",
+      "resid": 266,
+      "label": "A_266"
+    },
+    {
+      "chain": "A",
+      "resid": 268,
+      "label": "A_268"
+    },
+    {
+      "chain": "A",
+      "resid": 269,
+      "label": "A_269"
+    },
+    {
+      "chain": "A",
+      "resid": 270,
+      "label": "A_270"
+    },
+    {
+      "chain": "A",
+      "resid": 271,
+      "label": "A_271"
+    },
+    {
+      "chain": "A",
+      "resid": 287,
+      "label": "A_287"
+    },
+    {
+      "chain": "A",
+      "resid": 288,
+      "label": "A_288"
+    },
+    {
+      "chain": "A",
+      "resid": 289,
+      "label": "A_289"
+    },
+    {
+      "chain": "A",
+      "resid": 292,
+      "label": "A_292"
+    },
+    {
+      "chain": "A",
+      "resid": 293,
+      "label": "A_293"
+    },
+    {
+      "chain": "A",
+      "resid": 295,
+      "label": "A_295"
+    },
+    {
+      "chain": "A",
+      "resid": 296,
+      "label": "A_296"
+    },
+    {
+      "chain": "A",
+      "resid": 297,
+      "label": "A_297"
+    },
+    {
+      "chain": "A",
+      "resid": 299,
+      "label": "A_299"
+    },
+    {
+      "chain": "A",
+      "resid": 300,
+      "label": "A_300"
+    },
+    {
+      "chain": "A",
+      "resid": 332,
+      "label": "A_332"
+    },
+    {
+      "chain": "A",
+      "resid": 349,
+      "label": "A_349"
+    },
+    {
+      "chain": "A",
+      "resid": 352,
+      "label": "A_352"
+    },
+    {
+      "chain": "A",
+      "resid": 353,
+      "label": "A_353"
+    },
+    {
+      "chain": "A",
+      "resid": 355,
+      "label": "A_355"
+    },
+    {
+      "chain": "A",
+      "resid": 356,
+      "label": "A_356"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_104",
+    "A_266",
+    "A_268",
+    "A_269",
+    "A_270",
+    "A_271",
+    "A_287",
+    "A_288",
+    "A_289",
+    "A_292",
+    "A_293",
+    "A_295",
+    "A_296",
+    "A_297",
+    "A_299",
+    "A_300",
+    "A_332",
+    "A_349",
+    "A_352",
+    "A_353",
+    "A_355",
+    "A_356"
+  ],
+  "n_binding_residues": 22,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "3zcw",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "4A2",
+    "ligand_index": "1366",
+    "ligand_chain": "A",
+    "pRMSD": 3.31,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_104",
+      "A_266",
+      "A_268",
+      "A_269",
+      "A_270",
+      "A_271",
+      "A_287",
+      "A_288",
+      "A_289",
+      "A_292",
+      "A_293",
+      "A_295",
+      "A_296",
+      "A_297",
+      "A_299",
+      "A_300",
+      "A_332",
+      "A_349",
+      "A_352",
+      "A_353",
+      "A_355",
+      "A_356"
+    ],
+    "holo_pocket_selection": [
+      "A_104",
+      "A_266",
+      "A_268",
+      "A_269",
+      "A_270",
+      "A_271",
+      "A_287",
+      "A_288",
+      "A_289",
+      "A_292",
+      "A_293",
+      "A_295",
+      "A_296",
+      "A_297",
+      "A_299",
+      "A_300",
+      "A_332",
+      "A_349",
+      "A_352",
+      "A_353",
+      "A_355",
+      "A_356"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "3zcw",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "4A2",
+      "ligand_index": "1366",
+      "ligand_chain": "A",
+      "pRMSD": 3.31,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_104",
+        "A_266",
+        "A_268",
+        "A_269",
+        "A_270",
+        "A_271",
+        "A_287",
+        "A_288",
+        "A_289",
+        "A_292",
+        "A_293",
+        "A_295",
+        "A_296",
+        "A_297",
+        "A_299",
+        "A_300",
+        "A_332",
+        "A_349",
+        "A_352",
+        "A_353",
+        "A_355",
+        "A_356"
+      ],
+      "holo_pocket_selection": [
+        "A_104",
+        "A_266",
+        "A_268",
+        "A_269",
+        "A_270",
+        "A_271",
+        "A_287",
+        "A_288",
+        "A_289",
+        "A_292",
+        "A_293",
+        "A_295",
+        "A_296",
+        "A_297",
+        "A_299",
+        "A_300",
+        "A_332",
+        "A_349",
+        "A_352",
+        "A_353",
+        "A_355",
+        "A_356"
+      ]
+    }
+  ],
+  "max_pRMSD": 3.31
+}

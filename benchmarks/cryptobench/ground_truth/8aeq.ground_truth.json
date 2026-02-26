@@ -1,0 +1,120 @@
+{
+  "apo_id": "8aeq",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 719,
+      "label": "A_719"
+    },
+    {
+      "chain": "A",
+      "resid": 721,
+      "label": "A_721"
+    },
+    {
+      "chain": "A",
+      "resid": 731,
+      "label": "A_731"
+    },
+    {
+      "chain": "A",
+      "resid": 734,
+      "label": "A_734"
+    },
+    {
+      "chain": "A",
+      "resid": 737,
+      "label": "A_737"
+    },
+    {
+      "chain": "A",
+      "resid": 773,
+      "label": "A_773"
+    },
+    {
+      "chain": "A",
+      "resid": 774,
+      "label": "A_774"
+    },
+    {
+      "chain": "A",
+      "resid": 783,
+      "label": "A_783"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_719",
+    "A_721",
+    "A_731",
+    "A_734",
+    "A_737",
+    "A_773",
+    "A_774",
+    "A_783"
+  ],
+  "n_binding_residues": 8,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "8a8t",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "MLI",
+    "ligand_index": "1302",
+    "ligand_chain": "A",
+    "pRMSD": 3.62,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_719",
+      "A_721",
+      "A_731",
+      "A_734",
+      "A_737",
+      "A_773",
+      "A_774",
+      "A_783"
+    ],
+    "holo_pocket_selection": [
+      "A_719",
+      "A_721",
+      "A_731",
+      "A_734",
+      "A_737",
+      "A_773",
+      "A_774",
+      "A_783"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "8a8t",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "MLI",
+      "ligand_index": "1302",
+      "ligand_chain": "A",
+      "pRMSD": 3.62,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_719",
+        "A_721",
+        "A_731",
+        "A_734",
+        "A_737",
+        "A_773",
+        "A_774",
+        "A_783"
+      ],
+      "holo_pocket_selection": [
+        "A_719",
+        "A_721",
+        "A_731",
+        "A_734",
+        "A_737",
+        "A_773",
+        "A_774",
+        "A_783"
+      ]
+    }
+  ],
+  "max_pRMSD": 3.62
+}

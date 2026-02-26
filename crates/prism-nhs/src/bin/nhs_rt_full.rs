@@ -1011,6 +1011,8 @@ fn run_full_pipeline_internal(
         };
 
         // Compute per-site CCNS time-series data from spike events
+        // FRAME ALIGNMENT FIX: Use cluster-assigned spikes from spike_indices,
+        // not radius queries. Single-replica path always has spike_indices populated.
         let site_radius = args.lining_cutoff + 2.0;
         let frame_window = 1000i32;
         let mut all_pockets_json = Vec::new();
@@ -1021,14 +1023,22 @@ fn run_full_pipeline_internal(
             let cy = site.centroid[1];
             let cz = site.centroid[2];
 
-            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = accumulated_spikes.iter()
-                .filter(|s| {
-                    let dx = s.position[0] - cx;
-                    let dy = s.position[1] - cy;
-                    let dz = s.position[2] - cz;
-                    (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
-                })
-                .collect();
+            // Use cluster-assigned spikes (frame-aligned with sites[].spike_count)
+            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = if !site.spike_indices.is_empty() {
+                site.spike_indices.iter()
+                    .filter_map(|&idx| accumulated_spikes.get(idx))
+                    .collect()
+            } else {
+                // Fallback: assign to nearest centroid (shouldn't happen in single-replica)
+                accumulated_spikes.iter()
+                    .filter(|s| {
+                        let dx = s.position[0] - cx;
+                        let dy = s.position[1] - cy;
+                        let dz = s.position[2] - cz;
+                        (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
+                    })
+                    .collect()
+            };
 
             let max_ts = site_spikes.iter().map(|s| s.timestep).max().unwrap_or(0);
             let n_frames = (max_ts / frame_window + 1) as usize;
@@ -1086,6 +1096,8 @@ fn run_full_pipeline_internal(
                 "site_id": site.cluster_id,
                 "centroid": site.centroid,
                 "spike_count": site_spikes.len(),
+                "consensus_spike_count": site.spike_count,
+                "spike_source": if !site.spike_indices.is_empty() { "cluster_assigned" } else { "radius_fallback" },
                 "spike_frames": spike_frames,
                 "spike_amplitudes": spike_amplitudes,
                 "inter_spike_intervals": inter_spike_intervals,
@@ -1509,7 +1521,10 @@ fn run_batch_gpu_concurrent(
         log::info!("      Consensus analysis: site must appear in {}/{} replicas", consensus_threshold, replicas);
 
         // Build consensus sites by finding spatially overlapping sites across replicas
-        let clustered_sites = build_consensus_sites(&per_replica_sites, consensus_threshold, 5.0);
+        // Note: batch/manifest mode doesn't have global spike offsets; consensus
+        // spike_indices will be empty and the nearest-centroid fallback is used.
+        let empty_offsets: Vec<usize> = Vec::new();
+        let clustered_sites = build_consensus_sites(&per_replica_sites, consensus_threshold, 5.0, &empty_offsets);
         log::info!("      Consensus sites: {}", clustered_sites.len());
 
         // Prepare per-replica stats BEFORE moving per_replica_sites
@@ -2168,6 +2183,7 @@ fn run_multi_stream_pipeline(
     let mut per_stream_stats: Vec<serde_json::Value> = Vec::new();
     let mut all_stream_snapshots: Vec<Vec<prism_nhs::fused_engine::EnsembleSnapshot>> = Vec::new();
     let mut all_stream_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
+    let mut stream_spike_offsets: Vec<usize> = Vec::new(); // offset into all_stream_spikes for each stream
 
     for (i, result) in stream_results.into_iter().enumerate() {
         let (raw_spikes, stream_snapshots) = match result {
@@ -2179,6 +2195,7 @@ fn run_multi_stream_pipeline(
                 }));
                 per_stream_sites.push(Vec::new());
                 all_stream_snapshots.push(Vec::new());
+                stream_spike_offsets.push(all_stream_spikes.len());
                 continue;
             }
         };
@@ -2194,6 +2211,8 @@ fn run_multi_stream_pipeline(
             raw_spikes
         };
 
+        // Track offset so per-stream spike_indices can be remapped to all_stream_spikes
+        stream_spike_offsets.push(all_stream_spikes.len());
         all_stream_spikes.extend(filtered.iter().cloned());
         let sites = if !filtered.is_empty() && args.rt_clustering {
             let positions: Vec<f32> = filtered.iter()
@@ -2259,7 +2278,7 @@ fn run_multi_stream_pipeline(
     let mut clustered_sites = if n_streams == 1 && !per_stream_sites.is_empty() {
         per_stream_sites.into_iter().next().unwrap_or_default()
     } else {
-        build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0)
+        build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0, &stream_spike_offsets)
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
@@ -2409,23 +2428,86 @@ fn run_multi_stream_pipeline(
         let frame_window = 1000; // timesteps per frame for binning
 
         // Build all_pockets (per-frame volumes) and cryptic_sites (spike time-series)
+        // FRAME ALIGNMENT FIX: Use cluster-assigned spikes, not radius queries.
+        // Previously, cryptic_sites/all_pockets used all spikes within a 10Å radius
+        // (site_radius = lining_cutoff + 2.0), which included spikes from neighboring
+        // clusters and noise — producing spike counts 5-13x larger than the consensus
+        // cluster assignment in sites[]. This caused frame alignment mismatches in
+        // downstream analysis (STI, pharmacophore, dG calculations).
+        //
+        // Fix: For sites with spike_indices (per-stream path), use those directly.
+        // For consensus sites (spike_indices empty), assign each spike to its nearest
+        // consensus centroid within the cluster's bounding radius.
+
+        // Pre-assign spikes to consensus sites if spike_indices are empty
+        let mut site_spike_assignments: Vec<Vec<usize>> = vec![Vec::new(); clustered_sites.len().min(100)];
+        {
+            let n_sites = clustered_sites.len().min(100);
+            let any_have_indices = clustered_sites.iter().take(n_sites)
+                .any(|s| !s.spike_indices.is_empty());
+
+            if any_have_indices {
+                // Per-stream or single-stream path: spike_indices are valid indices into
+                // the spike array used for clustering. Use them directly.
+                for (si, site) in clustered_sites.iter().take(n_sites).enumerate() {
+                    let total: Vec<usize> = site.spike_indices.iter()
+                        .copied()
+                        .collect();
+                    let (valid, invalid): (Vec<usize>, Vec<usize>) = total.into_iter()
+                        .partition(|&idx| idx < all_stream_spikes.len());
+                    if !invalid.is_empty() {
+                        log::warn!("Site {} has {} OOB spike indices (max={})",
+                            site.cluster_id, invalid.len(), all_stream_spikes.len());
+                    }
+                    site_spike_assignments[si] = valid;
+                }
+            } else {
+                log::info!("Using nearest-centroid fallback for {} consensus sites ({} total spikes)", n_sites, all_stream_spikes.len());
+                // Consensus path: spike_indices are empty. Assign each spike to its
+                // nearest consensus centroid within the cluster's bounding radius.
+                // Use max(bounding_box_half_diagonal, site_radius) as assignment radius
+                // to capture all cluster-relevant spikes without over-counting.
+                let mut site_radii: Vec<f32> = Vec::with_capacity(n_sites);
+                for site in clustered_sites.iter().take(n_sites) {
+                    let bb = site.bounding_box;
+                    let half_diag = (bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]).sqrt() / 2.0;
+                    // Use bounding box half-diagonal + 2Å margin, clamped to [3, site_radius]
+                    site_radii.push((half_diag + 2.0).clamp(3.0, site_radius));
+                }
+
+                for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
+                    let mut best_site: Option<usize> = None;
+                    let mut best_dist = f32::MAX;
+                    for (si, site) in clustered_sites.iter().take(n_sites).enumerate() {
+                        let dx = spike.position[0] - site.centroid[0];
+                        let dy = spike.position[1] - site.centroid[1];
+                        let dz = spike.position[2] - site.centroid[2];
+                        let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+                        if dist <= site_radii[si] && dist < best_dist {
+                            best_dist = dist;
+                            best_site = Some(si);
+                        }
+                    }
+                    if let Some(si) = best_site {
+                        site_spike_assignments[si].push(spike_idx);
+                    }
+                }
+            }
+        }
+
         let mut all_pockets_json = Vec::new();
         let mut cryptic_sites_json = Vec::new();
 
-        for site in clustered_sites.iter_mut().take(100) {
+        for (site_idx, site) in clustered_sites.iter_mut().take(100).enumerate() {
             let cx = site.centroid[0];
             let cy = site.centroid[1];
             let cz = site.centroid[2];
 
-            // Collect spikes for this site
-            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = all_stream_spikes.iter()
-                .filter(|s| {
-                    let dx = s.position[0] - cx;
-                    let dy = s.position[1] - cy;
-                    let dz = s.position[2] - cz;
-                    (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
-                })
-                .collect();
+            // Collect cluster-assigned spikes for this site (frame-aligned)
+            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> =
+                site_spike_assignments[site_idx].iter()
+                    .filter_map(|&idx| all_stream_spikes.get(idx))
+                    .collect();
 
             // Bin spikes by frame to compute per-frame volumes and activity
             let max_ts = site_spikes.iter().map(|s| s.timestep).max().unwrap_or(0);
@@ -2472,14 +2554,85 @@ fn run_multi_stream_pipeline(
                 let old_drug = site.druggability.overall;
                 site.druggability.overall *= penalty;
                 site.druggability.is_druggable = site.druggability.overall >= 0.45;
-                site.quality_score = {
-                    let sq = (site.spike_count as f32 / 100.0).clamp(0.0, 1.0);
-                    let iq = (site.avg_intensity / 10.0).clamp(0.0, 1.0);
-                    0.3 * sq + 0.3 * iq + 0.4 * site.druggability.overall
-                };
                 log::info!("  Site {}: CV penalty cv={:.4} factor={:.3} drug {:.3}->{:.3}{}",
                     site.cluster_id, cv_volume, penalty, old_drug, site.druggability.overall,
                     if site.druggability.is_druggable { "" } else { " NOT_DRUGGABLE" });
+            }
+
+            // ---- Physics-informed quality reranking ----
+            // Recompute quality_score using the full signal set now available
+            // from multi-stream frame analysis. This replaces the initial
+            // spike_count/intensity/druggability formula which saturates and
+            // can't differentiate real pockets from noisy surface grooves.
+            {
+                // 1. Log-scale spike count: differentiates 100 vs 10000 spikes
+                let log_spike_q = if site_spikes.len() > 0 {
+                    (site_spikes.len() as f32).log2() / 16.0 // log2(65536)=16
+                } else { 0.0 }.clamp(0.0, 1.0);
+
+                // 2. Spike density: spikes per Å³ (penalizes diffuse clouds)
+                let spike_density = if site.estimated_volume > 10.0 {
+                    site_spikes.len() as f32 / site.estimated_volume
+                } else { 0.0 };
+                let density_q = (spike_density / 10.0).clamp(0.0, 1.0);
+
+                // 3. Frame occupancy: fraction of frames with active spikes
+                let active_frames = frame_spike_counts.iter().filter(|&&c| c > 0).count();
+                let frame_occupancy = if n_frames > 0 {
+                    active_frames as f32 / n_frames as f32
+                } else { 0.0 };
+
+                // 4. Temporal regularity: inverse CV of inter-spike intervals
+                //    Real pockets fire steadily; noise fires in bursts
+                let temporal_regularity = if active_frames >= 3 {
+                    let active_frame_indices: Vec<usize> = frame_spike_counts.iter()
+                        .enumerate()
+                        .filter(|(_, &c)| c > 0)
+                        .map(|(i, _)| i)
+                        .collect();
+                    let intervals: Vec<f32> = active_frame_indices.windows(2)
+                        .map(|w| (w[1] - w[0]) as f32)
+                        .collect();
+                    let mean_isi = intervals.iter().sum::<f32>() / intervals.len() as f32;
+                    if mean_isi > 0.0 {
+                        let var_isi = intervals.iter()
+                            .map(|x| (x - mean_isi).powi(2))
+                            .sum::<f32>() / intervals.len() as f32;
+                        let cv_isi = var_isi.sqrt() / mean_isi;
+                        // cv_isi=0 → perfectly regular (1.0), cv_isi≥2 → bursty (0.0)
+                        (1.0 - cv_isi / 2.0).clamp(0.0, 1.0)
+                    } else { 0.0 }
+                } else { 0.0 };
+
+                // 5. Volume quality: pocket-like volume range [100-800 Å³] scores best
+                let vol_q = if site.estimated_volume >= 100.0 && site.estimated_volume <= 800.0 {
+                    1.0
+                } else if site.estimated_volume > 800.0 {
+                    // Penalty for mega-cavities (likely protein core)
+                    (800.0 / site.estimated_volume).sqrt()
+                } else {
+                    // Small sites: partial credit
+                    (site.estimated_volume / 100.0).clamp(0.1, 1.0)
+                };
+
+                // 6. Intensity quality (unchanged baseline signal)
+                let intensity_q = (site.avg_intensity / 10.0).clamp(0.0, 1.0);
+
+                // Composite: emphasizes temporal and density signals over raw count
+                let old_q = site.quality_score;
+                site.quality_score =
+                    0.10 * log_spike_q +           // raw spike abundance (log-scaled)
+                    0.15 * density_q +             // spikes concentrated in pocket volume
+                    0.20 * frame_occupancy +       // temporal persistence across frames
+                    0.15 * temporal_regularity +   // steady firing vs burst noise
+                    0.10 * vol_q +                 // pocket-like volume geometry
+                    0.10 * intensity_q +           // spike amplitude
+                    0.20 * site.druggability.overall; // druggability (includes CV penalty)
+
+                log::info!("  Site {}: quality rerank {:.3}->{:.3} [logSp={:.2} dens={:.2} occ={:.2} reg={:.2} vol={:.2} int={:.2} drug={:.2}]",
+                    site.cluster_id, old_q, site.quality_score,
+                    log_spike_q, density_q, frame_occupancy, temporal_regularity,
+                    vol_q, intensity_q, site.druggability.overall);
             }
 
             // spike_frames: frames where this site had spikes
@@ -2510,6 +2663,8 @@ fn run_multi_stream_pipeline(
                 "site_id": site.cluster_id,
                 "centroid": site.centroid,
                 "spike_count": site_spikes.len(),
+                "consensus_spike_count": site.spike_count,
+                "spike_source": if !site.spike_indices.is_empty() { "cluster_assigned" } else { "radius_fallback" },
                 "spike_frames": spike_frames,
                 "spike_amplitudes": spike_amplitudes,
                 "inter_spike_intervals": inter_spike_intervals,
@@ -2518,6 +2673,25 @@ fn run_multi_stream_pipeline(
                 "classification": format!("{:?}", site.classification),
             }));
         }
+
+        // ---- Re-sort by updated quality_score ----
+        // Build permutation indices so we can reorder the JSON vectors too
+        let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(100)).collect();
+        ranked_indices.sort_by(|&a, &b|
+            clustered_sites[b].quality_score
+                .partial_cmp(&clustered_sites[a].quality_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        );
+
+        // Reorder all three parallel vectors + sites
+        let reordered_sites: Vec<_> = ranked_indices.iter().map(|&i| &clustered_sites[i]).collect();
+        let reordered_pockets: Vec<_> = ranked_indices.iter().map(|&i| all_pockets_json[i].clone()).collect();
+        let reordered_cryptic: Vec<_> = ranked_indices.iter().map(|&i| cryptic_sites_json[i].clone()).collect();
+
+        log::info!("Quality reranking applied. New top-3: {}",
+            ranked_indices.iter().take(3)
+                .map(|&i| format!("site{}(q={:.3})", clustered_sites[i].cluster_id, clustered_sites[i].quality_score))
+                .collect::<Vec<_>>().join(", "));
 
         let json_path = output_base.with_extension("binding_sites.json");
         let json_output = serde_json::json!({
@@ -2531,7 +2705,7 @@ fn run_multi_stream_pipeline(
             "binding_sites": clustered_sites.len(),
             "druggable_sites": clustered_sites.iter().filter(|s| s.druggability.is_druggable).count(),
             "lining_residue_cutoff_angstroms": args.lining_cutoff,
-            "sites": clustered_sites.iter().take(100).map(|s| {
+            "sites": reordered_sites.iter().map(|s| {
                 let cat_count = s.lining_residues.iter()
                     .filter(|r| catalytic_residues.contains(&r.resname.as_str())).count();
                 serde_json::json!({
@@ -2555,8 +2729,8 @@ fn run_multi_stream_pipeline(
                     "residue_ids": s.lining_residue_ids(),
                 })
             }).collect::<Vec<_>>(),
-            "all_pockets": all_pockets_json,
-            "cryptic_sites": cryptic_sites_json,
+            "all_pockets": reordered_pockets,
+            "cryptic_sites": reordered_cryptic,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
@@ -2888,11 +3062,15 @@ fn build_sites_from_clustering(
 
 /// Build consensus sites from per-replica clustering results
 /// Sites must appear in at least `threshold` replicas within `spatial_tolerance` Angstroms
+///
+/// `stream_spike_offsets`: offset into the concatenated all_stream_spikes for each stream,
+/// used to remap per-stream spike_indices to global indices for frame-aligned analysis.
 #[cfg(feature = "gpu")]
 fn build_consensus_sites(
     per_replica_sites: &[Vec<ClusteredBindingSite>],
     threshold: usize,
     spatial_tolerance: f32,
+    stream_spike_offsets: &[usize],
 ) -> Vec<ClusteredBindingSite> {
     use prism_nhs::{DruggabilityScore, SiteClassification};
 
@@ -2999,11 +3177,30 @@ fn build_consensus_sites(
         let druggability = DruggabilityScore::from_site(avg_volume, avg_intensity, &bounding_box);
         let classification = SiteClassification::from_properties(avg_spike_count, avg_volume, avg_intensity);
 
+        // Merge spike_indices from all contributing per-stream sites,
+        // remapping local per-stream indices to global all_stream_spikes indices.
+        // Only merge if we have valid offsets (stream_spike_offsets is non-empty).
+        let merged_indices = if !stream_spike_offsets.is_empty() {
+            let mut indices = Vec::new();
+            for (replica_idx, site) in cluster {
+                if let Some(&offset) = stream_spike_offsets.get(*replica_idx) {
+                    for &local_idx in &site.spike_indices {
+                        indices.push(offset + local_idx);
+                    }
+                }
+            }
+            indices.sort_unstable();
+            indices.dedup();
+            indices
+        } else {
+            Vec::new() // No offsets available; downstream uses nearest-centroid fallback
+        };
+
         consensus_sites.push(ClusteredBindingSite {
             cluster_id: cluster_id as i32,
             centroid,
             spike_count: avg_spike_count,
-            spike_indices: Vec::new(), // Not meaningful for consensus
+            spike_indices: merged_indices,
             avg_intensity,
             estimated_volume: avg_volume,
             bounding_box,

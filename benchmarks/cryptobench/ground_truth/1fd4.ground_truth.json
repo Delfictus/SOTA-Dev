@@ -1,0 +1,160 @@
+{
+  "apo_id": "1fd4",
+  "binding_residues": [
+    {
+      "chain": "G",
+      "resid": 10,
+      "label": "G_10"
+    },
+    {
+      "chain": "G",
+      "resid": 11,
+      "label": "G_11"
+    },
+    {
+      "chain": "G",
+      "resid": 12,
+      "label": "G_12"
+    },
+    {
+      "chain": "G",
+      "resid": 32,
+      "label": "G_32"
+    },
+    {
+      "chain": "G",
+      "resid": 5,
+      "label": "G_5"
+    },
+    {
+      "chain": "G",
+      "resid": 6,
+      "label": "G_6"
+    },
+    {
+      "chain": "G",
+      "resid": 9,
+      "label": "G_9"
+    },
+    {
+      "chain": "H",
+      "resid": 16,
+      "label": "H_16"
+    },
+    {
+      "chain": "H",
+      "resid": 17,
+      "label": "H_17"
+    },
+    {
+      "chain": "H",
+      "resid": 18,
+      "label": "H_18"
+    },
+    {
+      "chain": "H",
+      "resid": 19,
+      "label": "H_19"
+    },
+    {
+      "chain": "H",
+      "resid": 22,
+      "label": "H_22"
+    }
+  ],
+  "binding_residue_labels": [
+    "G_10",
+    "G_11",
+    "G_12",
+    "G_32",
+    "G_5",
+    "G_6",
+    "G_9",
+    "H_16",
+    "H_17",
+    "H_18",
+    "H_19",
+    "H_22"
+  ],
+  "n_binding_residues": 12,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "6cs9",
+    "holo_chain": "A-B",
+    "apo_chain": "G-H",
+    "ligand": "PIO",
+    "ligand_index": "101",
+    "ligand_chain": "A",
+    "pRMSD": 7.13,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "G_5",
+      "G_6",
+      "G_9",
+      "G_10",
+      "G_11",
+      "G_12",
+      "G_32",
+      "H_16",
+      "H_17",
+      "H_18",
+      "H_19",
+      "H_22"
+    ],
+    "holo_pocket_selection": [
+      "A_5",
+      "A_6",
+      "A_9",
+      "A_10",
+      "A_11",
+      "A_12",
+      "A_32",
+      "B_16",
+      "B_17",
+      "B_18",
+      "B_19",
+      "B_22"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "6cs9",
+      "holo_chain": "A-B",
+      "apo_chain": "G-H",
+      "ligand": "PIO",
+      "ligand_index": "101",
+      "ligand_chain": "A",
+      "pRMSD": 7.13,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "G_5",
+        "G_6",
+        "G_9",
+        "G_10",
+        "G_11",
+        "G_12",
+        "G_32",
+        "H_16",
+        "H_17",
+        "H_18",
+        "H_19",
+        "H_22"
+      ],
+      "holo_pocket_selection": [
+        "A_5",
+        "A_6",
+        "A_9",
+        "A_10",
+        "A_11",
+        "A_12",
+        "A_32",
+        "B_16",
+        "B_17",
+        "B_18",
+        "B_19",
+        "B_22"
+      ]
+    }
+  ],
+  "max_pRMSD": 7.13
+}

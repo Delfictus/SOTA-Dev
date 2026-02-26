@@ -1,0 +1,80 @@
+{
+  "apo_id": "1nd7",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 718,
+      "label": "A_718"
+    },
+    {
+      "chain": "A",
+      "resid": 719,
+      "label": "A_719"
+    },
+    {
+      "chain": "A",
+      "resid": 720,
+      "label": "A_720"
+    },
+    {
+      "chain": "A",
+      "resid": 721,
+      "label": "A_721"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_718",
+    "A_719",
+    "A_720",
+    "A_721"
+  ],
+  "n_binding_residues": 4,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "8ei4",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "WHL",
+    "ligand_index": "101",
+    "ligand_chain": "B",
+    "pRMSD": 2.95,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_718",
+      "A_719",
+      "A_720",
+      "A_721"
+    ],
+    "holo_pocket_selection": [
+      "A_718",
+      "A_719",
+      "A_720",
+      "A_721"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "8ei4",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "WHL",
+      "ligand_index": "101",
+      "ligand_chain": "B",
+      "pRMSD": 2.95,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_718",
+        "A_719",
+        "A_720",
+        "A_721"
+      ],
+      "holo_pocket_selection": [
+        "A_718",
+        "A_719",
+        "A_720",
+        "A_721"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.95
+}

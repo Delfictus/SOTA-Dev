@@ -1,0 +1,260 @@
+{
+  "apo_id": "8onn",
+  "binding_residues": [
+    {
+      "chain": "E",
+      "resid": 136,
+      "label": "E_136"
+    },
+    {
+      "chain": "E",
+      "resid": 142,
+      "label": "E_142"
+    },
+    {
+      "chain": "E",
+      "resid": 146,
+      "label": "E_146"
+    },
+    {
+      "chain": "E",
+      "resid": 172,
+      "label": "E_172"
+    },
+    {
+      "chain": "E",
+      "resid": 173,
+      "label": "E_173"
+    },
+    {
+      "chain": "E",
+      "resid": 174,
+      "label": "E_174"
+    },
+    {
+      "chain": "E",
+      "resid": 175,
+      "label": "E_175"
+    },
+    {
+      "chain": "E",
+      "resid": 176,
+      "label": "E_176"
+    },
+    {
+      "chain": "E",
+      "resid": 177,
+      "label": "E_177"
+    },
+    {
+      "chain": "E",
+      "resid": 195,
+      "label": "E_195"
+    },
+    {
+      "chain": "E",
+      "resid": 197,
+      "label": "E_197"
+    },
+    {
+      "chain": "E",
+      "resid": 198,
+      "label": "E_198"
+    },
+    {
+      "chain": "E",
+      "resid": 199,
+      "label": "E_199"
+    },
+    {
+      "chain": "E",
+      "resid": 200,
+      "label": "E_200"
+    },
+    {
+      "chain": "E",
+      "resid": 233,
+      "label": "E_233"
+    },
+    {
+      "chain": "E",
+      "resid": 234,
+      "label": "E_234"
+    },
+    {
+      "chain": "E",
+      "resid": 235,
+      "label": "E_235"
+    },
+    {
+      "chain": "E",
+      "resid": 236,
+      "label": "E_236"
+    },
+    {
+      "chain": "E",
+      "resid": 237,
+      "label": "E_237"
+    },
+    {
+      "chain": "E",
+      "resid": 34,
+      "label": "E_34"
+    },
+    {
+      "chain": "E",
+      "resid": 48,
+      "label": "E_48"
+    },
+    {
+      "chain": "E",
+      "resid": 51,
+      "label": "E_51"
+    }
+  ],
+  "binding_residue_labels": [
+    "E_136",
+    "E_142",
+    "E_146",
+    "E_172",
+    "E_173",
+    "E_174",
+    "E_175",
+    "E_176",
+    "E_177",
+    "E_195",
+    "E_197",
+    "E_198",
+    "E_199",
+    "E_200",
+    "E_233",
+    "E_234",
+    "E_235",
+    "E_236",
+    "E_237",
+    "E_34",
+    "E_48",
+    "E_51"
+  ],
+  "n_binding_residues": 22,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "8aie",
+    "holo_chain": "A",
+    "apo_chain": "E",
+    "ligand": "LCS",
+    "ligand_index": "301",
+    "ligand_chain": "A",
+    "pRMSD": 3.93,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "E_34",
+      "E_48",
+      "E_51",
+      "E_136",
+      "E_142",
+      "E_146",
+      "E_172",
+      "E_173",
+      "E_174",
+      "E_175",
+      "E_176",
+      "E_177",
+      "E_195",
+      "E_197",
+      "E_198",
+      "E_199",
+      "E_200",
+      "E_233",
+      "E_234",
+      "E_235",
+      "E_236",
+      "E_237"
+    ],
+    "holo_pocket_selection": [
+      "A_34",
+      "A_48",
+      "A_51",
+      "A_136",
+      "A_142",
+      "A_146",
+      "A_172",
+      "A_173",
+      "A_174",
+      "A_175",
+      "A_176",
+      "A_177",
+      "A_195",
+      "A_197",
+      "A_198",
+      "A_199",
+      "A_200",
+      "A_233",
+      "A_234",
+      "A_235",
+      "A_236",
+      "A_237"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "8aie",
+      "holo_chain": "A",
+      "apo_chain": "E",
+      "ligand": "LCS",
+      "ligand_index": "301",
+      "ligand_chain": "A",
+      "pRMSD": 3.93,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "E_34",
+        "E_48",
+        "E_51",
+        "E_136",
+        "E_142",
+        "E_146",
+        "E_172",
+        "E_173",
+        "E_174",
+        "E_175",
+        "E_176",
+        "E_177",
+        "E_195",
+        "E_197",
+        "E_198",
+        "E_199",
+        "E_200",
+        "E_233",
+        "E_234",
+        "E_235",
+        "E_236",
+        "E_237"
+      ],
+      "holo_pocket_selection": [
+        "A_34",
+        "A_48",
+        "A_51",
+        "A_136",
+        "A_142",
+        "A_146",
+        "A_172",
+        "A_173",
+        "A_174",
+        "A_175",
+        "A_176",
+        "A_177",
+        "A_195",
+        "A_197",
+        "A_198",
+        "A_199",
+        "A_200",
+        "A_233",
+        "A_234",
+        "A_235",
+        "A_236",
+        "A_237"
+      ]
+    }
+  ],
+  "max_pRMSD": 3.93
+}

@@ -1,0 +1,614 @@
+{
+  "apo_id": "5m7r",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 172,
+      "label": "A_172"
+    },
+    {
+      "chain": "A",
+      "resid": 174,
+      "label": "A_174"
+    },
+    {
+      "chain": "A",
+      "resid": 175,
+      "label": "A_175"
+    },
+    {
+      "chain": "A",
+      "resid": 215,
+      "label": "A_215"
+    },
+    {
+      "chain": "A",
+      "resid": 219,
+      "label": "A_219"
+    },
+    {
+      "chain": "A",
+      "resid": 223,
+      "label": "A_223"
+    },
+    {
+      "chain": "A",
+      "resid": 250,
+      "label": "A_250"
+    },
+    {
+      "chain": "A",
+      "resid": 254,
+      "label": "A_254"
+    },
+    {
+      "chain": "A",
+      "resid": 255,
+      "label": "A_255"
+    },
+    {
+      "chain": "A",
+      "resid": 278,
+      "label": "A_278"
+    },
+    {
+      "chain": "A",
+      "resid": 280,
+      "label": "A_280"
+    },
+    {
+      "chain": "A",
+      "resid": 283,
+      "label": "A_283"
+    },
+    {
+      "chain": "A",
+      "resid": 285,
+      "label": "A_285"
+    },
+    {
+      "chain": "A",
+      "resid": 286,
+      "label": "A_286"
+    },
+    {
+      "chain": "A",
+      "resid": 313,
+      "label": "A_313"
+    },
+    {
+      "chain": "A",
+      "resid": 645,
+      "label": "A_645"
+    },
+    {
+      "chain": "A",
+      "resid": 648,
+      "label": "A_648"
+    },
+    {
+      "chain": "A",
+      "resid": 649,
+      "label": "A_649"
+    },
+    {
+      "chain": "A",
+      "resid": 67,
+      "label": "A_67"
+    },
+    {
+      "chain": "A",
+      "resid": 679,
+      "label": "A_679"
+    },
+    {
+      "chain": "A",
+      "resid": 68,
+      "label": "A_68"
+    },
+    {
+      "chain": "A",
+      "resid": 682,
+      "label": "A_682"
+    },
+    {
+      "chain": "A",
+      "resid": 69,
+      "label": "A_69"
+    },
+    {
+      "chain": "A",
+      "resid": 98,
+      "label": "A_98"
+    },
+    {
+      "chain": "B",
+      "resid": 174,
+      "label": "B_174"
+    },
+    {
+      "chain": "B",
+      "resid": 175,
+      "label": "B_175"
+    },
+    {
+      "chain": "B",
+      "resid": 215,
+      "label": "B_215"
+    },
+    {
+      "chain": "B",
+      "resid": 219,
+      "label": "B_219"
+    },
+    {
+      "chain": "B",
+      "resid": 250,
+      "label": "B_250"
+    },
+    {
+      "chain": "B",
+      "resid": 254,
+      "label": "B_254"
+    },
+    {
+      "chain": "B",
+      "resid": 278,
+      "label": "B_278"
+    },
+    {
+      "chain": "B",
+      "resid": 280,
+      "label": "B_280"
+    },
+    {
+      "chain": "B",
+      "resid": 283,
+      "label": "B_283"
+    },
+    {
+      "chain": "B",
+      "resid": 285,
+      "label": "B_285"
+    },
+    {
+      "chain": "B",
+      "resid": 286,
+      "label": "B_286"
+    },
+    {
+      "chain": "B",
+      "resid": 313,
+      "label": "B_313"
+    },
+    {
+      "chain": "B",
+      "resid": 645,
+      "label": "B_645"
+    },
+    {
+      "chain": "B",
+      "resid": 648,
+      "label": "B_648"
+    },
+    {
+      "chain": "B",
+      "resid": 649,
+      "label": "B_649"
+    },
+    {
+      "chain": "B",
+      "resid": 67,
+      "label": "B_67"
+    },
+    {
+      "chain": "B",
+      "resid": 678,
+      "label": "B_678"
+    },
+    {
+      "chain": "B",
+      "resid": 679,
+      "label": "B_679"
+    },
+    {
+      "chain": "B",
+      "resid": 68,
+      "label": "B_68"
+    },
+    {
+      "chain": "B",
+      "resid": 69,
+      "label": "B_69"
+    },
+    {
+      "chain": "B",
+      "resid": 98,
+      "label": "B_98"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_172",
+    "A_174",
+    "A_175",
+    "A_215",
+    "A_219",
+    "A_223",
+    "A_250",
+    "A_254",
+    "A_255",
+    "A_278",
+    "A_280",
+    "A_283",
+    "A_285",
+    "A_286",
+    "A_313",
+    "A_645",
+    "A_648",
+    "A_649",
+    "A_67",
+    "A_679",
+    "A_68",
+    "A_682",
+    "A_69",
+    "A_98",
+    "B_174",
+    "B_175",
+    "B_215",
+    "B_219",
+    "B_250",
+    "B_254",
+    "B_278",
+    "B_280",
+    "B_283",
+    "B_285",
+    "B_286",
+    "B_313",
+    "B_645",
+    "B_648",
+    "B_649",
+    "B_67",
+    "B_678",
+    "B_679",
+    "B_68",
+    "B_69",
+    "B_98"
+  ],
+  "n_binding_residues": 45,
+  "n_holo_structures": 5,
+  "main_holo": {
+    "holo_pdb_id": "5m7u",
+    "holo_chain": "A-B",
+    "apo_chain": "A-B",
+    "ligand": "XHA",
+    "ligand_index": "1001",
+    "ligand_chain": "A",
+    "pRMSD": 2.53,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_67",
+      "A_68",
+      "A_69",
+      "A_98",
+      "A_174",
+      "A_175",
+      "A_215",
+      "A_219",
+      "A_250",
+      "A_254",
+      "A_278",
+      "A_280",
+      "A_283",
+      "A_285",
+      "A_286",
+      "A_313",
+      "B_645",
+      "B_648",
+      "B_649",
+      "B_679"
+    ],
+    "holo_pocket_selection": [
+      "A_67",
+      "A_68",
+      "A_69",
+      "A_98",
+      "A_174",
+      "A_175",
+      "A_215",
+      "A_219",
+      "A_250",
+      "A_254",
+      "A_278",
+      "A_280",
+      "A_283",
+      "A_285",
+      "A_286",
+      "A_313",
+      "B_645",
+      "B_648",
+      "B_649",
+      "B_679"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "5m7u",
+      "holo_chain": "A-B",
+      "apo_chain": "A-B",
+      "ligand": "XHA",
+      "ligand_index": "1001",
+      "ligand_chain": "A",
+      "pRMSD": 2.53,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_67",
+        "A_68",
+        "A_69",
+        "A_98",
+        "A_174",
+        "A_175",
+        "A_215",
+        "A_219",
+        "A_250",
+        "A_254",
+        "A_278",
+        "A_280",
+        "A_283",
+        "A_285",
+        "A_286",
+        "A_313",
+        "B_645",
+        "B_648",
+        "B_649",
+        "B_679"
+      ],
+      "holo_pocket_selection": [
+        "A_67",
+        "A_68",
+        "A_69",
+        "A_98",
+        "A_174",
+        "A_175",
+        "A_215",
+        "A_219",
+        "A_250",
+        "A_254",
+        "A_278",
+        "A_280",
+        "A_283",
+        "A_285",
+        "A_286",
+        "A_313",
+        "B_645",
+        "B_648",
+        "B_649",
+        "B_679"
+      ]
+    },
+    {
+      "holo_pdb_id": "5m7u",
+      "holo_chain": "A-B",
+      "apo_chain": "A-B",
+      "ligand": "XHA",
+      "ligand_index": "1001",
+      "ligand_chain": "B",
+      "pRMSD": 2.07,
+      "is_main": false,
+      "apo_pocket_selection": [
+        "A_645",
+        "A_648",
+        "A_649",
+        "A_679",
+        "A_682",
+        "B_67",
+        "B_68",
+        "B_69",
+        "B_98",
+        "B_174",
+        "B_175",
+        "B_215",
+        "B_219",
+        "B_250",
+        "B_254",
+        "B_278",
+        "B_280",
+        "B_283",
+        "B_285",
+        "B_286",
+        "B_313"
+      ],
+      "holo_pocket_selection": [
+        "A_645",
+        "A_648",
+        "A_649",
+        "A_679",
+        "A_682",
+        "B_67",
+        "B_68",
+        "B_69",
+        "B_98",
+        "B_174",
+        "B_175",
+        "B_215",
+        "B_219",
+        "B_250",
+        "B_254",
+        "B_278",
+        "B_280",
+        "B_283",
+        "B_285",
+        "B_286",
+        "B_313"
+      ]
+    },
+    {
+      "holo_pdb_id": "5m7u",
+      "holo_chain": "A-B",
+      "apo_chain": "A-B",
+      "ligand": "XHA",
+      "ligand_index": "1001",
+      "ligand_chain": "A",
+      "pRMSD": 2.53,
+      "is_main": false,
+      "apo_pocket_selection": [
+        "A_67",
+        "A_68",
+        "A_69",
+        "A_98",
+        "A_174",
+        "A_175",
+        "A_215",
+        "A_219",
+        "A_250",
+        "A_254",
+        "A_278",
+        "A_280",
+        "A_283",
+        "A_285",
+        "A_286",
+        "A_313",
+        "B_645",
+        "B_648",
+        "B_649",
+        "B_679"
+      ],
+      "holo_pocket_selection": [
+        "A_67",
+        "A_68",
+        "A_69",
+        "A_98",
+        "A_174",
+        "A_175",
+        "A_215",
+        "A_219",
+        "A_250",
+        "A_254",
+        "A_278",
+        "A_280",
+        "A_283",
+        "A_285",
+        "A_286",
+        "A_313",
+        "B_645",
+        "B_648",
+        "B_649",
+        "B_679"
+      ]
+    },
+    {
+      "holo_pdb_id": "5m7u",
+      "holo_chain": "A-B",
+      "apo_chain": "A-B",
+      "ligand": "XHA",
+      "ligand_index": "1001",
+      "ligand_chain": "B",
+      "pRMSD": 2.07,
+      "is_main": false,
+      "apo_pocket_selection": [
+        "A_645",
+        "A_648",
+        "A_649",
+        "A_679",
+        "A_682",
+        "B_67",
+        "B_68",
+        "B_69",
+        "B_98",
+        "B_174",
+        "B_175",
+        "B_215",
+        "B_219",
+        "B_250",
+        "B_254",
+        "B_278",
+        "B_280",
+        "B_283",
+        "B_285",
+        "B_286",
+        "B_313"
+      ],
+      "holo_pocket_selection": [
+        "A_645",
+        "A_648",
+        "A_649",
+        "A_679",
+        "A_682",
+        "B_67",
+        "B_68",
+        "B_69",
+        "B_98",
+        "B_174",
+        "B_175",
+        "B_215",
+        "B_219",
+        "B_250",
+        "B_254",
+        "B_278",
+        "B_280",
+        "B_283",
+        "B_285",
+        "B_286",
+        "B_313"
+      ]
+    },
+    {
+      "holo_pdb_id": "7ou6",
+      "holo_chain": "AAA-BBB",
+      "apo_chain": "A-B",
+      "ligand": "1XI",
+      "ligand_index": "1001",
+      "ligand_chain": "AAA",
+      "pRMSD": 2.31,
+      "is_main": false,
+      "apo_pocket_selection": [
+        "A_67",
+        "A_68",
+        "A_69",
+        "A_98",
+        "A_172",
+        "A_174",
+        "A_175",
+        "A_215",
+        "A_219",
+        "A_223",
+        "A_250",
+        "A_254",
+        "A_255",
+        "A_278",
+        "A_280",
+        "A_283",
+        "A_285",
+        "A_286",
+        "A_313",
+        "B_645",
+        "B_678",
+        "B_679"
+      ],
+      "holo_pocket_selection": [
+        "AAA_67",
+        "AAA_68",
+        "AAA_69",
+        "AAA_98",
+        "AAA_172",
+        "AAA_174",
+        "AAA_175",
+        "AAA_215",
+        "AAA_219",
+        "AAA_223",
+        "AAA_250",
+        "AAA_254",
+        "AAA_255",
+        "AAA_278",
+        "AAA_280",
+        "AAA_283",
+        "AAA_285",
+        "AAA_286",
+        "AAA_313",
+        "BBB_645",
+        "BBB_678",
+        "BBB_679"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.53
+}

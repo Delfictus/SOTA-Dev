@@ -1,0 +1,240 @@
+{
+  "apo_id": "3b1o",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 36,
+      "label": "A_36"
+    },
+    {
+      "chain": "A",
+      "resid": 38,
+      "label": "A_38"
+    },
+    {
+      "chain": "B",
+      "resid": 10,
+      "label": "B_10"
+    },
+    {
+      "chain": "B",
+      "resid": 103,
+      "label": "B_103"
+    },
+    {
+      "chain": "B",
+      "resid": 115,
+      "label": "B_115"
+    },
+    {
+      "chain": "B",
+      "resid": 117,
+      "label": "B_117"
+    },
+    {
+      "chain": "B",
+      "resid": 12,
+      "label": "B_12"
+    },
+    {
+      "chain": "B",
+      "resid": 122,
+      "label": "B_122"
+    },
+    {
+      "chain": "B",
+      "resid": 143,
+      "label": "B_143"
+    },
+    {
+      "chain": "B",
+      "resid": 144,
+      "label": "B_144"
+    },
+    {
+      "chain": "B",
+      "resid": 169,
+      "label": "B_169"
+    },
+    {
+      "chain": "B",
+      "resid": 249,
+      "label": "B_249"
+    },
+    {
+      "chain": "B",
+      "resid": 250,
+      "label": "B_250"
+    },
+    {
+      "chain": "B",
+      "resid": 253,
+      "label": "B_253"
+    },
+    {
+      "chain": "B",
+      "resid": 289,
+      "label": "B_289"
+    },
+    {
+      "chain": "B",
+      "resid": 47,
+      "label": "B_47"
+    },
+    {
+      "chain": "B",
+      "resid": 48,
+      "label": "B_48"
+    },
+    {
+      "chain": "B",
+      "resid": 49,
+      "label": "B_49"
+    },
+    {
+      "chain": "B",
+      "resid": 52,
+      "label": "B_52"
+    },
+    {
+      "chain": "B",
+      "resid": 8,
+      "label": "B_8"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_36",
+    "A_38",
+    "B_10",
+    "B_103",
+    "B_115",
+    "B_117",
+    "B_12",
+    "B_122",
+    "B_143",
+    "B_144",
+    "B_169",
+    "B_249",
+    "B_250",
+    "B_253",
+    "B_289",
+    "B_47",
+    "B_48",
+    "B_49",
+    "B_52",
+    "B_8"
+  ],
+  "n_binding_residues": 20,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "3b1q",
+    "holo_chain": "B-D",
+    "apo_chain": "A-B",
+    "ligand": "NOS",
+    "ligand_index": "401",
+    "ligand_chain": "D",
+    "pRMSD": 2.37,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_36",
+      "A_38",
+      "B_8",
+      "B_10",
+      "B_12",
+      "B_47",
+      "B_48",
+      "B_49",
+      "B_52",
+      "B_103",
+      "B_115",
+      "B_117",
+      "B_122",
+      "B_143",
+      "B_144",
+      "B_169",
+      "B_249",
+      "B_250",
+      "B_253",
+      "B_289"
+    ],
+    "holo_pocket_selection": [
+      "B_36",
+      "B_38",
+      "D_8",
+      "D_10",
+      "D_12",
+      "D_47",
+      "D_48",
+      "D_49",
+      "D_52",
+      "D_103",
+      "D_115",
+      "D_117",
+      "D_122",
+      "D_143",
+      "D_144",
+      "D_169",
+      "D_249",
+      "D_250",
+      "D_253",
+      "D_289"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "3b1q",
+      "holo_chain": "B-D",
+      "apo_chain": "A-B",
+      "ligand": "NOS",
+      "ligand_index": "401",
+      "ligand_chain": "D",
+      "pRMSD": 2.37,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_36",
+        "A_38",
+        "B_8",
+        "B_10",
+        "B_12",
+        "B_47",
+        "B_48",
+        "B_49",
+        "B_52",
+        "B_103",
+        "B_115",
+        "B_117",
+        "B_122",
+        "B_143",
+        "B_144",
+        "B_169",
+        "B_249",
+        "B_250",
+        "B_253",
+        "B_289"
+      ],
+      "holo_pocket_selection": [
+        "B_36",
+        "B_38",
+        "D_8",
+        "D_10",
+        "D_12",
+        "D_47",
+        "D_48",
+        "D_49",
+        "D_52",
+        "D_103",
+        "D_115",
+        "D_117",
+        "D_122",
+        "D_143",
+        "D_144",
+        "D_169",
+        "D_249",
+        "D_250",
+        "D_253",
+        "D_289"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.37
+}

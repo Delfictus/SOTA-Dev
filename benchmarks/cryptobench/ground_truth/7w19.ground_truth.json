@@ -1,0 +1,270 @@
+{
+  "apo_id": "7w19",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 194,
+      "label": "A_194"
+    },
+    {
+      "chain": "A",
+      "resid": 198,
+      "label": "A_198"
+    },
+    {
+      "chain": "A",
+      "resid": 199,
+      "label": "A_199"
+    },
+    {
+      "chain": "A",
+      "resid": 201,
+      "label": "A_201"
+    },
+    {
+      "chain": "A",
+      "resid": 212,
+      "label": "A_212"
+    },
+    {
+      "chain": "A",
+      "resid": 213,
+      "label": "A_213"
+    },
+    {
+      "chain": "A",
+      "resid": 24,
+      "label": "A_24"
+    },
+    {
+      "chain": "A",
+      "resid": 26,
+      "label": "A_26"
+    },
+    {
+      "chain": "A",
+      "resid": 27,
+      "label": "A_27"
+    },
+    {
+      "chain": "A",
+      "resid": 28,
+      "label": "A_28"
+    },
+    {
+      "chain": "A",
+      "resid": 29,
+      "label": "A_29"
+    },
+    {
+      "chain": "A",
+      "resid": 30,
+      "label": "A_30"
+    },
+    {
+      "chain": "A",
+      "resid": 32,
+      "label": "A_32"
+    },
+    {
+      "chain": "A",
+      "resid": 34,
+      "label": "A_34"
+    },
+    {
+      "chain": "A",
+      "resid": 44,
+      "label": "A_44"
+    },
+    {
+      "chain": "A",
+      "resid": 46,
+      "label": "A_46"
+    },
+    {
+      "chain": "A",
+      "resid": 88,
+      "label": "A_88"
+    },
+    {
+      "chain": "A",
+      "resid": 90,
+      "label": "A_90"
+    },
+    {
+      "chain": "A",
+      "resid": 91,
+      "label": "A_91"
+    },
+    {
+      "chain": "A",
+      "resid": 93,
+      "label": "A_93"
+    },
+    {
+      "chain": "A",
+      "resid": 94,
+      "label": "A_94"
+    },
+    {
+      "chain": "A",
+      "resid": 95,
+      "label": "A_95"
+    },
+    {
+      "chain": "A",
+      "resid": 98,
+      "label": "A_98"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_194",
+    "A_198",
+    "A_199",
+    "A_201",
+    "A_212",
+    "A_213",
+    "A_24",
+    "A_26",
+    "A_27",
+    "A_28",
+    "A_29",
+    "A_30",
+    "A_32",
+    "A_34",
+    "A_44",
+    "A_46",
+    "A_88",
+    "A_90",
+    "A_91",
+    "A_93",
+    "A_94",
+    "A_95",
+    "A_98"
+  ],
+  "n_binding_residues": 23,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "7w15",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "GTP",
+    "ligand_index": "402",
+    "ligand_chain": "A",
+    "pRMSD": 2.01,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_24",
+      "A_26",
+      "A_27",
+      "A_28",
+      "A_29",
+      "A_30",
+      "A_32",
+      "A_34",
+      "A_44",
+      "A_46",
+      "A_88",
+      "A_90",
+      "A_91",
+      "A_93",
+      "A_94",
+      "A_95",
+      "A_98",
+      "A_194",
+      "A_198",
+      "A_199",
+      "A_201",
+      "A_212",
+      "A_213"
+    ],
+    "holo_pocket_selection": [
+      "A_24",
+      "A_26",
+      "A_27",
+      "A_28",
+      "A_29",
+      "A_30",
+      "A_32",
+      "A_34",
+      "A_44",
+      "A_46",
+      "A_88",
+      "A_90",
+      "A_91",
+      "A_93",
+      "A_94",
+      "A_95",
+      "A_98",
+      "A_194",
+      "A_198",
+      "A_199",
+      "A_201",
+      "A_212",
+      "A_213"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "7w15",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "GTP",
+      "ligand_index": "402",
+      "ligand_chain": "A",
+      "pRMSD": 2.01,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_24",
+        "A_26",
+        "A_27",
+        "A_28",
+        "A_29",
+        "A_30",
+        "A_32",
+        "A_34",
+        "A_44",
+        "A_46",
+        "A_88",
+        "A_90",
+        "A_91",
+        "A_93",
+        "A_94",
+        "A_95",
+        "A_98",
+        "A_194",
+        "A_198",
+        "A_199",
+        "A_201",
+        "A_212",
+        "A_213"
+      ],
+      "holo_pocket_selection": [
+        "A_24",
+        "A_26",
+        "A_27",
+        "A_28",
+        "A_29",
+        "A_30",
+        "A_32",
+        "A_34",
+        "A_44",
+        "A_46",
+        "A_88",
+        "A_90",
+        "A_91",
+        "A_93",
+        "A_94",
+        "A_95",
+        "A_98",
+        "A_194",
+        "A_198",
+        "A_199",
+        "A_201",
+        "A_212",
+        "A_213"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.01
+}

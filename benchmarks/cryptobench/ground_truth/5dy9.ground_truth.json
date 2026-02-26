@@ -1,0 +1,120 @@
+{
+  "apo_id": "5dy9",
+  "binding_residues": [
+    {
+      "chain": "H",
+      "resid": 18,
+      "label": "H_18"
+    },
+    {
+      "chain": "H",
+      "resid": 47,
+      "label": "H_47"
+    },
+    {
+      "chain": "H",
+      "resid": 48,
+      "label": "H_48"
+    },
+    {
+      "chain": "H",
+      "resid": 63,
+      "label": "H_63"
+    },
+    {
+      "chain": "H",
+      "resid": 64,
+      "label": "H_64"
+    },
+    {
+      "chain": "I",
+      "resid": 48,
+      "label": "I_48"
+    },
+    {
+      "chain": "I",
+      "resid": 62,
+      "label": "I_62"
+    },
+    {
+      "chain": "I",
+      "resid": 64,
+      "label": "I_64"
+    }
+  ],
+  "binding_residue_labels": [
+    "H_18",
+    "H_47",
+    "H_48",
+    "H_63",
+    "H_64",
+    "I_48",
+    "I_62",
+    "I_64"
+  ],
+  "n_binding_residues": 8,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "4x9d",
+    "holo_chain": "A-F",
+    "apo_chain": "H-I",
+    "ligand": "U5P",
+    "ligand_index": "104",
+    "ligand_chain": "A",
+    "pRMSD": 6.46,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "H_18",
+      "H_47",
+      "H_48",
+      "H_63",
+      "H_64",
+      "I_48",
+      "I_62",
+      "I_64"
+    ],
+    "holo_pocket_selection": [
+      "A_18",
+      "A_47",
+      "A_48",
+      "A_63",
+      "A_64",
+      "F_48",
+      "F_62",
+      "F_64"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "4x9d",
+      "holo_chain": "A-F",
+      "apo_chain": "H-I",
+      "ligand": "U5P",
+      "ligand_index": "104",
+      "ligand_chain": "A",
+      "pRMSD": 6.46,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "H_18",
+        "H_47",
+        "H_48",
+        "H_63",
+        "H_64",
+        "I_48",
+        "I_62",
+        "I_64"
+      ],
+      "holo_pocket_selection": [
+        "A_18",
+        "A_47",
+        "A_48",
+        "A_63",
+        "A_64",
+        "F_48",
+        "F_62",
+        "F_64"
+      ]
+    }
+  ],
+  "max_pRMSD": 6.46
+}

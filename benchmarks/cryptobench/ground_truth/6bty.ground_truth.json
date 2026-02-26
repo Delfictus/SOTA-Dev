@@ -1,0 +1,130 @@
+{
+  "apo_id": "6bty",
+  "binding_residues": [
+    {
+      "chain": "B",
+      "resid": 1595,
+      "label": "B_1595"
+    },
+    {
+      "chain": "B",
+      "resid": 1597,
+      "label": "B_1597"
+    },
+    {
+      "chain": "B",
+      "resid": 1599,
+      "label": "B_1599"
+    },
+    {
+      "chain": "B",
+      "resid": 1606,
+      "label": "B_1606"
+    },
+    {
+      "chain": "B",
+      "resid": 1609,
+      "label": "B_1609"
+    },
+    {
+      "chain": "B",
+      "resid": 1611,
+      "label": "B_1611"
+    },
+    {
+      "chain": "B",
+      "resid": 1653,
+      "label": "B_1653"
+    },
+    {
+      "chain": "B",
+      "resid": 1654,
+      "label": "B_1654"
+    },
+    {
+      "chain": "B",
+      "resid": 1655,
+      "label": "B_1655"
+    }
+  ],
+  "binding_residue_labels": [
+    "B_1595",
+    "B_1597",
+    "B_1599",
+    "B_1606",
+    "B_1609",
+    "B_1611",
+    "B_1653",
+    "B_1654",
+    "B_1655"
+  ],
+  "n_binding_residues": 9,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "6bu0",
+    "holo_chain": "C",
+    "apo_chain": "B",
+    "ligand": "IHP",
+    "ligand_index": "1701",
+    "ligand_chain": "C",
+    "pRMSD": 3.41,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "B_1595",
+      "B_1597",
+      "B_1599",
+      "B_1606",
+      "B_1609",
+      "B_1611",
+      "B_1653",
+      "B_1654",
+      "B_1655"
+    ],
+    "holo_pocket_selection": [
+      "C_1595",
+      "C_1597",
+      "C_1599",
+      "C_1606",
+      "C_1609",
+      "C_1611",
+      "C_1653",
+      "C_1654",
+      "C_1655"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "6bu0",
+      "holo_chain": "C",
+      "apo_chain": "B",
+      "ligand": "IHP",
+      "ligand_index": "1701",
+      "ligand_chain": "C",
+      "pRMSD": 3.41,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "B_1595",
+        "B_1597",
+        "B_1599",
+        "B_1606",
+        "B_1609",
+        "B_1611",
+        "B_1653",
+        "B_1654",
+        "B_1655"
+      ],
+      "holo_pocket_selection": [
+        "C_1595",
+        "C_1597",
+        "C_1599",
+        "C_1606",
+        "C_1609",
+        "C_1611",
+        "C_1653",
+        "C_1654",
+        "C_1655"
+      ]
+    }
+  ],
+  "max_pRMSD": 3.41
+}

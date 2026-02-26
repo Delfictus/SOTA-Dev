@@ -1,0 +1,140 @@
+{
+  "apo_id": "2vl2",
+  "binding_residues": [
+    {
+      "chain": "C",
+      "resid": 116,
+      "label": "C_116"
+    },
+    {
+      "chain": "C",
+      "resid": 119,
+      "label": "C_119"
+    },
+    {
+      "chain": "C",
+      "resid": 120,
+      "label": "C_120"
+    },
+    {
+      "chain": "C",
+      "resid": 127,
+      "label": "C_127"
+    },
+    {
+      "chain": "C",
+      "resid": 147,
+      "label": "C_147"
+    },
+    {
+      "chain": "C",
+      "resid": 40,
+      "label": "C_40"
+    },
+    {
+      "chain": "C",
+      "resid": 44,
+      "label": "C_44"
+    },
+    {
+      "chain": "C",
+      "resid": 45,
+      "label": "C_45"
+    },
+    {
+      "chain": "C",
+      "resid": 46,
+      "label": "C_46"
+    },
+    {
+      "chain": "C",
+      "resid": 47,
+      "label": "C_47"
+    }
+  ],
+  "binding_residue_labels": [
+    "C_116",
+    "C_119",
+    "C_120",
+    "C_127",
+    "C_147",
+    "C_40",
+    "C_44",
+    "C_45",
+    "C_46",
+    "C_47"
+  ],
+  "n_binding_residues": 10,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "4k7n",
+    "holo_chain": "C",
+    "apo_chain": "C",
+    "ligand": "MCT",
+    "ligand_index": "201",
+    "ligand_chain": "C",
+    "pRMSD": 3.03,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "C_40",
+      "C_44",
+      "C_45",
+      "C_46",
+      "C_47",
+      "C_116",
+      "C_119",
+      "C_120",
+      "C_127",
+      "C_147"
+    ],
+    "holo_pocket_selection": [
+      "C_40",
+      "C_44",
+      "C_45",
+      "C_46",
+      "C_47",
+      "C_116",
+      "C_119",
+      "C_120",
+      "C_127",
+      "C_147"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "4k7n",
+      "holo_chain": "C",
+      "apo_chain": "C",
+      "ligand": "MCT",
+      "ligand_index": "201",
+      "ligand_chain": "C",
+      "pRMSD": 3.03,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "C_40",
+        "C_44",
+        "C_45",
+        "C_46",
+        "C_47",
+        "C_116",
+        "C_119",
+        "C_120",
+        "C_127",
+        "C_147"
+      ],
+      "holo_pocket_selection": [
+        "C_40",
+        "C_44",
+        "C_45",
+        "C_46",
+        "C_47",
+        "C_116",
+        "C_119",
+        "C_120",
+        "C_127",
+        "C_147"
+      ]
+    }
+  ],
+  "max_pRMSD": 3.03
+}

@@ -1,0 +1,150 @@
+{
+  "apo_id": "7nc8",
+  "binding_residues": [
+    {
+      "chain": "D",
+      "resid": 127,
+      "label": "D_127"
+    },
+    {
+      "chain": "D",
+      "resid": 18,
+      "label": "D_18"
+    },
+    {
+      "chain": "D",
+      "resid": 24,
+      "label": "D_24"
+    },
+    {
+      "chain": "D",
+      "resid": 27,
+      "label": "D_27"
+    },
+    {
+      "chain": "D",
+      "resid": 50,
+      "label": "D_50"
+    },
+    {
+      "chain": "D",
+      "resid": 62,
+      "label": "D_62"
+    },
+    {
+      "chain": "D",
+      "resid": 63,
+      "label": "D_63"
+    },
+    {
+      "chain": "D",
+      "resid": 64,
+      "label": "D_64"
+    },
+    {
+      "chain": "D",
+      "resid": 65,
+      "label": "D_65"
+    },
+    {
+      "chain": "D",
+      "resid": 82,
+      "label": "D_82"
+    },
+    {
+      "chain": "D",
+      "resid": 83,
+      "label": "D_83"
+    }
+  ],
+  "binding_residue_labels": [
+    "D_127",
+    "D_18",
+    "D_24",
+    "D_27",
+    "D_50",
+    "D_62",
+    "D_63",
+    "D_64",
+    "D_65",
+    "D_82",
+    "D_83"
+  ],
+  "n_binding_residues": 11,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "7nc5",
+    "holo_chain": "D",
+    "apo_chain": "D",
+    "ligand": "GSH",
+    "ligand_index": "301",
+    "ligand_chain": "D",
+    "pRMSD": 2.21,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "D_18",
+      "D_24",
+      "D_27",
+      "D_50",
+      "D_62",
+      "D_63",
+      "D_64",
+      "D_65",
+      "D_82",
+      "D_83",
+      "D_127"
+    ],
+    "holo_pocket_selection": [
+      "D_18",
+      "D_24",
+      "D_27",
+      "D_50",
+      "D_62",
+      "D_63",
+      "D_64",
+      "D_65",
+      "D_82",
+      "D_83",
+      "D_127"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "7nc5",
+      "holo_chain": "D",
+      "apo_chain": "D",
+      "ligand": "GSH",
+      "ligand_index": "301",
+      "ligand_chain": "D",
+      "pRMSD": 2.21,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "D_18",
+        "D_24",
+        "D_27",
+        "D_50",
+        "D_62",
+        "D_63",
+        "D_64",
+        "D_65",
+        "D_82",
+        "D_83",
+        "D_127"
+      ],
+      "holo_pocket_selection": [
+        "D_18",
+        "D_24",
+        "D_27",
+        "D_50",
+        "D_62",
+        "D_63",
+        "D_64",
+        "D_65",
+        "D_82",
+        "D_83",
+        "D_127"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.21
+}

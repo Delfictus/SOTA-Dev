@@ -1,0 +1,200 @@
+{
+  "apo_id": "3i8s",
+  "binding_residues": [
+    {
+      "chain": "B",
+      "resid": 11,
+      "label": "B_11"
+    },
+    {
+      "chain": "B",
+      "resid": 12,
+      "label": "B_12"
+    },
+    {
+      "chain": "B",
+      "resid": 120,
+      "label": "B_120"
+    },
+    {
+      "chain": "B",
+      "resid": 121,
+      "label": "B_121"
+    },
+    {
+      "chain": "B",
+      "resid": 123,
+      "label": "B_123"
+    },
+    {
+      "chain": "B",
+      "resid": 124,
+      "label": "B_124"
+    },
+    {
+      "chain": "B",
+      "resid": 13,
+      "label": "B_13"
+    },
+    {
+      "chain": "B",
+      "resid": 14,
+      "label": "B_14"
+    },
+    {
+      "chain": "B",
+      "resid": 148,
+      "label": "B_148"
+    },
+    {
+      "chain": "B",
+      "resid": 149,
+      "label": "B_149"
+    },
+    {
+      "chain": "B",
+      "resid": 15,
+      "label": "B_15"
+    },
+    {
+      "chain": "B",
+      "resid": 150,
+      "label": "B_150"
+    },
+    {
+      "chain": "B",
+      "resid": 151,
+      "label": "B_151"
+    },
+    {
+      "chain": "B",
+      "resid": 16,
+      "label": "B_16"
+    },
+    {
+      "chain": "B",
+      "resid": 17,
+      "label": "B_17"
+    },
+    {
+      "chain": "B",
+      "resid": 18,
+      "label": "B_18"
+    }
+  ],
+  "binding_residue_labels": [
+    "B_11",
+    "B_12",
+    "B_120",
+    "B_121",
+    "B_123",
+    "B_124",
+    "B_13",
+    "B_14",
+    "B_148",
+    "B_149",
+    "B_15",
+    "B_150",
+    "B_151",
+    "B_16",
+    "B_17",
+    "B_18"
+  ],
+  "n_binding_residues": 16,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "3i8x",
+    "holo_chain": "A",
+    "apo_chain": "B",
+    "ligand": "GDP",
+    "ligand_index": "275",
+    "ligand_chain": "A",
+    "pRMSD": 3.14,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "B_11",
+      "B_12",
+      "B_13",
+      "B_14",
+      "B_15",
+      "B_16",
+      "B_17",
+      "B_18",
+      "B_120",
+      "B_121",
+      "B_123",
+      "B_124",
+      "B_148",
+      "B_149",
+      "B_150",
+      "B_151"
+    ],
+    "holo_pocket_selection": [
+      "A_11",
+      "A_12",
+      "A_13",
+      "A_14",
+      "A_15",
+      "A_16",
+      "A_17",
+      "A_18",
+      "A_120",
+      "A_121",
+      "A_123",
+      "A_124",
+      "A_148",
+      "A_149",
+      "A_150",
+      "A_151"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "3i8x",
+      "holo_chain": "A",
+      "apo_chain": "B",
+      "ligand": "GDP",
+      "ligand_index": "275",
+      "ligand_chain": "A",
+      "pRMSD": 3.14,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "B_11",
+        "B_12",
+        "B_13",
+        "B_14",
+        "B_15",
+        "B_16",
+        "B_17",
+        "B_18",
+        "B_120",
+        "B_121",
+        "B_123",
+        "B_124",
+        "B_148",
+        "B_149",
+        "B_150",
+        "B_151"
+      ],
+      "holo_pocket_selection": [
+        "A_11",
+        "A_12",
+        "A_13",
+        "A_14",
+        "A_15",
+        "A_16",
+        "A_17",
+        "A_18",
+        "A_120",
+        "A_121",
+        "A_123",
+        "A_124",
+        "A_148",
+        "A_149",
+        "A_150",
+        "A_151"
+      ]
+    }
+  ],
+  "max_pRMSD": 3.14
+}

@@ -1,0 +1,90 @@
+{
+  "apo_id": "1vsn",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 102,
+      "label": "A_102"
+    },
+    {
+      "chain": "A",
+      "resid": 106,
+      "label": "A_106"
+    },
+    {
+      "chain": "A",
+      "resid": 1078,
+      "label": "A_1078"
+    },
+    {
+      "chain": "A",
+      "resid": 77,
+      "label": "A_77"
+    },
+    {
+      "chain": "A",
+      "resid": 78,
+      "label": "A_78"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_102",
+    "A_106",
+    "A_1078",
+    "A_77",
+    "A_78"
+  ],
+  "n_binding_residues": 5,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "6pxf",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "J0V",
+    "ligand_index": "303",
+    "ligand_chain": "A",
+    "pRMSD": 5.15,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_77",
+      "A_78",
+      "A_1078",
+      "A_102",
+      "A_106"
+    ],
+    "holo_pocket_selection": [
+      "A_77",
+      "A_78",
+      "A_79",
+      "A_103",
+      "A_106"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "6pxf",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "J0V",
+      "ligand_index": "303",
+      "ligand_chain": "A",
+      "pRMSD": 5.15,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_77",
+        "A_78",
+        "A_1078",
+        "A_102",
+        "A_106"
+      ],
+      "holo_pocket_selection": [
+        "A_77",
+        "A_78",
+        "A_79",
+        "A_103",
+        "A_106"
+      ]
+    }
+  ],
+  "max_pRMSD": 5.15
+}

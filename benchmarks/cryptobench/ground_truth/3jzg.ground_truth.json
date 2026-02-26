@@ -1,0 +1,160 @@
+{
+  "apo_id": "3jzg",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 146,
+      "label": "A_146"
+    },
+    {
+      "chain": "A",
+      "resid": 148,
+      "label": "A_148"
+    },
+    {
+      "chain": "A",
+      "resid": 194,
+      "label": "A_194"
+    },
+    {
+      "chain": "A",
+      "resid": 211,
+      "label": "A_211"
+    },
+    {
+      "chain": "A",
+      "resid": 240,
+      "label": "A_240"
+    },
+    {
+      "chain": "A",
+      "resid": 310,
+      "label": "A_310"
+    },
+    {
+      "chain": "A",
+      "resid": 364,
+      "label": "A_364"
+    },
+    {
+      "chain": "A",
+      "resid": 365,
+      "label": "A_365"
+    },
+    {
+      "chain": "A",
+      "resid": 366,
+      "label": "A_366"
+    },
+    {
+      "chain": "A",
+      "resid": 367,
+      "label": "A_367"
+    },
+    {
+      "chain": "A",
+      "resid": 414,
+      "label": "A_414"
+    },
+    {
+      "chain": "A",
+      "resid": 97,
+      "label": "A_97"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_146",
+    "A_148",
+    "A_194",
+    "A_211",
+    "A_240",
+    "A_310",
+    "A_364",
+    "A_365",
+    "A_366",
+    "A_367",
+    "A_414",
+    "A_97"
+  ],
+  "n_binding_residues": 12,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "7qk4",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "EJR",
+    "ligand_index": "504",
+    "ligand_chain": "A",
+    "pRMSD": 2.14,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_97",
+      "A_146",
+      "A_148",
+      "A_194",
+      "A_211",
+      "A_240",
+      "A_310",
+      "A_364",
+      "A_365",
+      "A_366",
+      "A_367",
+      "A_414"
+    ],
+    "holo_pocket_selection": [
+      "A_97",
+      "A_146",
+      "A_148",
+      "A_194",
+      "A_211",
+      "A_240",
+      "A_310",
+      "A_364",
+      "A_365",
+      "A_366",
+      "A_367",
+      "A_414"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "7qk4",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "EJR",
+      "ligand_index": "504",
+      "ligand_chain": "A",
+      "pRMSD": 2.14,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_97",
+        "A_146",
+        "A_148",
+        "A_194",
+        "A_211",
+        "A_240",
+        "A_310",
+        "A_364",
+        "A_365",
+        "A_366",
+        "A_367",
+        "A_414"
+      ],
+      "holo_pocket_selection": [
+        "A_97",
+        "A_146",
+        "A_148",
+        "A_194",
+        "A_211",
+        "A_240",
+        "A_310",
+        "A_364",
+        "A_365",
+        "A_366",
+        "A_367",
+        "A_414"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.14
+}

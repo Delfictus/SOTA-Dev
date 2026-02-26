@@ -1,0 +1,150 @@
+{
+  "apo_id": "2w8n",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 159,
+      "label": "A_159"
+    },
+    {
+      "chain": "A",
+      "resid": 206,
+      "label": "A_206"
+    },
+    {
+      "chain": "A",
+      "resid": 210,
+      "label": "A_210"
+    },
+    {
+      "chain": "A",
+      "resid": 213,
+      "label": "A_213"
+    },
+    {
+      "chain": "A",
+      "resid": 306,
+      "label": "A_306"
+    },
+    {
+      "chain": "A",
+      "resid": 334,
+      "label": "A_334"
+    },
+    {
+      "chain": "A",
+      "resid": 339,
+      "label": "A_339"
+    },
+    {
+      "chain": "A",
+      "resid": 340,
+      "label": "A_340"
+    },
+    {
+      "chain": "A",
+      "resid": 341,
+      "label": "A_341"
+    },
+    {
+      "chain": "A",
+      "resid": 498,
+      "label": "A_498"
+    },
+    {
+      "chain": "A",
+      "resid": 504,
+      "label": "A_504"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_159",
+    "A_206",
+    "A_210",
+    "A_213",
+    "A_306",
+    "A_334",
+    "A_339",
+    "A_340",
+    "A_341",
+    "A_498",
+    "A_504"
+  ],
+  "n_binding_residues": 11,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "2w8q",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "SIN",
+    "ligand_index": "3001",
+    "ligand_chain": "A",
+    "pRMSD": 4.27,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_159",
+      "A_206",
+      "A_210",
+      "A_213",
+      "A_306",
+      "A_334",
+      "A_339",
+      "A_340",
+      "A_341",
+      "A_498",
+      "A_504"
+    ],
+    "holo_pocket_selection": [
+      "A_159",
+      "A_206",
+      "A_210",
+      "A_213",
+      "A_306",
+      "A_334",
+      "A_339",
+      "A_340",
+      "A_341",
+      "A_498",
+      "A_504"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "2w8q",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "SIN",
+      "ligand_index": "3001",
+      "ligand_chain": "A",
+      "pRMSD": 4.27,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_159",
+        "A_206",
+        "A_210",
+        "A_213",
+        "A_306",
+        "A_334",
+        "A_339",
+        "A_340",
+        "A_341",
+        "A_498",
+        "A_504"
+      ],
+      "holo_pocket_selection": [
+        "A_159",
+        "A_206",
+        "A_210",
+        "A_213",
+        "A_306",
+        "A_334",
+        "A_339",
+        "A_340",
+        "A_341",
+        "A_498",
+        "A_504"
+      ]
+    }
+  ],
+  "max_pRMSD": 4.27
+}

@@ -1,0 +1,150 @@
+{
+  "apo_id": "1a8d",
+  "binding_residues": [
+    {
+      "chain": "A",
+      "resid": 261,
+      "label": "A_261"
+    },
+    {
+      "chain": "A",
+      "resid": 316,
+      "label": "A_316"
+    },
+    {
+      "chain": "A",
+      "resid": 317,
+      "label": "A_317"
+    },
+    {
+      "chain": "A",
+      "resid": 318,
+      "label": "A_318"
+    },
+    {
+      "chain": "A",
+      "resid": 319,
+      "label": "A_319"
+    },
+    {
+      "chain": "A",
+      "resid": 322,
+      "label": "A_322"
+    },
+    {
+      "chain": "A",
+      "resid": 323,
+      "label": "A_323"
+    },
+    {
+      "chain": "A",
+      "resid": 324,
+      "label": "A_324"
+    },
+    {
+      "chain": "A",
+      "resid": 328,
+      "label": "A_328"
+    },
+    {
+      "chain": "A",
+      "resid": 331,
+      "label": "A_331"
+    },
+    {
+      "chain": "A",
+      "resid": 332,
+      "label": "A_332"
+    }
+  ],
+  "binding_residue_labels": [
+    "A_261",
+    "A_316",
+    "A_317",
+    "A_318",
+    "A_319",
+    "A_322",
+    "A_323",
+    "A_324",
+    "A_328",
+    "A_331",
+    "A_332"
+  ],
+  "n_binding_residues": 11,
+  "n_holo_structures": 1,
+  "main_holo": {
+    "holo_pdb_id": "1diw",
+    "holo_chain": "A",
+    "apo_chain": "A",
+    "ligand": "GAL",
+    "ligand_index": "1400",
+    "ligand_chain": "A",
+    "pRMSD": 2.9,
+    "is_main": true,
+    "apo_pocket_selection": [
+      "A_261",
+      "A_316",
+      "A_317",
+      "A_318",
+      "A_319",
+      "A_322",
+      "A_323",
+      "A_324",
+      "A_328",
+      "A_331",
+      "A_332"
+    ],
+    "holo_pocket_selection": [
+      "A_1124",
+      "A_1179",
+      "A_1180",
+      "A_1181",
+      "A_1182",
+      "A_1185",
+      "A_1186",
+      "A_1187",
+      "A_1191",
+      "A_1194",
+      "A_1195"
+    ]
+  },
+  "holo_entries": [
+    {
+      "holo_pdb_id": "1diw",
+      "holo_chain": "A",
+      "apo_chain": "A",
+      "ligand": "GAL",
+      "ligand_index": "1400",
+      "ligand_chain": "A",
+      "pRMSD": 2.9,
+      "is_main": true,
+      "apo_pocket_selection": [
+        "A_261",
+        "A_316",
+        "A_317",
+        "A_318",
+        "A_319",
+        "A_322",
+        "A_323",
+        "A_324",
+        "A_328",
+        "A_331",
+        "A_332"
+      ],
+      "holo_pocket_selection": [
+        "A_1124",
+        "A_1179",
+        "A_1180",
+        "A_1181",
+        "A_1182",
+        "A_1185",
+        "A_1186",
+        "A_1187",
+        "A_1191",
+        "A_1194",
+        "A_1195"
+      ]
+    }
+  ],
+  "max_pRMSD": 2.9
+}
