@@ -581,7 +581,7 @@ fn extract_aromatic_positions''',
         print("  target/release/nhs_rt_full \\")
         print("    -t e2e_validation_test/prep/1nkp_dimer.topology.json \\")
         print("    -o e2e_validation_test/results_myc_multistream \\")
-        print("    --multi-stream 4 --multi-scale --rt-clustering \\")
+        print("    --multi-stream 8 --multi-scale --rt-clustering \\")
         print("    --lining-cutoff 8.0 --fast --ultimate-mode -v")
     else:
         print("═══ SOME PATCHES FAILED — check output above ═══")

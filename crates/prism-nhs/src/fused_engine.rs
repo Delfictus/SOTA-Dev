@@ -358,8 +358,8 @@ impl CryoUvProtocol {
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 500,
-            ramp_down_steps: 0,
-            cold_return_steps: 0,
+            ramp_down_steps: 6000,       // Symmetric cooldown 300K→50K (hysteresis)
+            cold_return_steps: 4000,     // Cold return hold (detect re-closure)
         }
     }
 
@@ -417,8 +417,8 @@ impl CryoUvProtocol {
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 300, // Proportionally reduced (was 400)
-            ramp_down_steps: 0,
-            cold_return_steps: 0,
+            ramp_down_steps: 6000,       // Symmetric cooldown 300K→50K (hysteresis)
+            cold_return_steps: 4000,     // Cold return hold (detect re-closure)
         }
     }
 
@@ -1406,6 +1406,7 @@ pub struct NhsAmberFusedEngine {
 
     // Kernel functions
     fused_step_kernel: CudaFunction,
+    voxel_step_kernel: CudaFunction,
     init_rng_kernel: CudaFunction,
     init_lif_kernel: CudaFunction,
     init_warp_matrix_kernel: CudaFunction,
@@ -1710,7 +1711,9 @@ impl NhsAmberFusedEngine {
 
         log::info!("Loaded fused kernel PTX from: {}", loaded_path);
 
-        // Get kernel functions
+        let fused_step_kernel = fused_module.load_function("nhs_amber_fused_step")?;
+        let voxel_step_kernel = fused_module.load_function("nhs_voxel_step")
+            .unwrap_or_else(|_| fused_step_kernel.clone());
         let fused_step_kernel = fused_module.load_function("nhs_amber_fused_step")?;
         let init_rng_kernel = fused_module.load_function("init_rng_states")?;
         let init_lif_kernel = fused_module.load_function("init_lif_state")?;
@@ -2067,6 +2070,7 @@ impl NhsAmberFusedEngine {
             context,
             stream,
             _fused_module: fused_module,
+            voxel_step_kernel,
             fused_step_kernel,
             init_rng_kernel,
             init_lif_kernel,
@@ -3843,6 +3847,65 @@ impl NhsAmberFusedEngine {
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
+
+        // ====================================================================
+        // LAUNCH 2: VOXEL-PARALLEL KERNEL (8192 blocks vs 16 before)
+        // ====================================================================
+        let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
+        let voxel_blocks = total_voxels.div_ceil(BLOCK_SIZE_1D as u32);
+        let voxel_cfg = LaunchConfig {
+            grid_dim: (voxel_blocks, 1, 1),
+            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        log::trace!("Voxel kernel: {} blocks x {} threads = {} threads for {} voxels",
+            voxel_blocks, BLOCK_SIZE_1D, voxel_blocks as u64 * BLOCK_SIZE_1D as u64, total_voxels);
+
+        unsafe {
+            self.stream
+                .launch_builder(&self.voxel_step_kernel)
+                .arg(&self.d_positions)
+                .arg(&n_atoms_i32)
+                .arg(&grid_dim_i32)
+                .arg(&self.grid_spacing)
+                .arg(&self.grid_origin[0])
+                .arg(&self.grid_origin[1])
+                .arg(&self.grid_origin[2])
+                .arg(&mut self.d_exclusion_field)
+                .arg(&mut self.d_water_density)
+                .arg(&mut self.d_water_density_prev)
+                .arg(&mut self.d_lif_potential)
+                .arg(&mut self.d_spike_grid)
+                .arg(&mut self.d_warp_matrix)
+                .arg(&self.d_atom_types)
+                .arg(&self.d_charges)
+                .arg(&self.d_residue_ids)
+                .arg(&self.d_aromatic_centroids)
+                .arg(&self.d_ring_normals)
+                .arg(&self.d_is_excited)
+                .arg(&self.d_electronic_population)
+                .arg(&self.d_vibrational_energy)
+                .arg(&self.d_time_since_excitation)
+                .arg(&self.d_aromatic_type)
+                .arg(&self.d_atom_to_aromatic)
+                .arg(&(self.n_aromatics as i32))
+                .arg(&uv_wavelength_nm)
+                .arg(&uv_burst_active_i32)
+                .arg(&mut self.d_uv_signal_prev)
+                .arg(&mut self.d_spike_events)
+                .arg(&mut self.d_spike_count)
+                .arg(&max_spikes_i32)
+                .arg(&current_temp)
+                .arg(&self.dt)
+                .arg(&self.timestep)
+                .arg(&self.d_efp_potential)
+                .arg(&self.d_efp_potential_prev)
+                .arg(&self.d_efp_lif_potential)
+                .arg(&self.d_aromatic_neighbors)
+                .arg(&self.d_franck_condon_progress)
+                .launch(voxel_cfg)
+        }
+        .context("Failed to launch nhs_voxel_step kernel")?;
 
         // Advance protocols (CPU-side, no sync needed)
         self.temp_protocol.advance();

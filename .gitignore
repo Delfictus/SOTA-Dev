@@ -16,3 +16,24 @@ snapshots/
 venv/
 myc_max_cosolvent_results/
 e2e_validation_test/results_*/
+
+# Loose test structures (use e2e_validation_test/prep/ instead)
+*.pdb
+*.cif
+!e2e_validation_test/**/*.pdb
+!benchmarks/**/*.pdb
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Backup files
+*.bak
+
+# Build artifacts
+*.zip
+release/dist/
+
+# Local test results
+results_*/
+rt_full_output/

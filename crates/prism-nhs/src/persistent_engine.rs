@@ -69,8 +69,8 @@ impl Default for PersistentBatchConfig {
     fn default() -> Self {
         Self {
             max_atoms: 20000,  // Handle large structures (1DLO ~16K atoms)
-            grid_dim: 64,
-            grid_spacing: 1.5,
+            grid_dim: 128,
+            grid_spacing: 0.75,
             survey_steps: 500000,    // 1ns
             convergence_steps: 1000000, // 2ns
             precision_steps: 1000000,   // 2ns
@@ -1510,7 +1510,7 @@ impl PersistentNhsEngine {
                 log::info!("Using default epsilon values (small dataset): [5.0, 7.0, 10.0, 14.0]");
                 (vec![5.0, 7.0, 10.0, 14.0], false, None)
             };
-        let merge_distance = 8.0f32; // Clusters within 8Å are considered the same site
+        let merge_distance = 12.0f32; // Clusters within 8Å are considered the same site
 
         log::info!("Running multi-scale clustering on {} spikes at {} scales",
             num_spikes, epsilon_scales.len());
@@ -1524,7 +1524,7 @@ impl PersistentNhsEngine {
             let rt_config = crate::rt_clustering::RtClusteringConfig {
                 epsilon,
                 min_points: 4,
-                min_cluster_size: 15, // Lower threshold for multi-scale
+                min_cluster_size: 30, // Scaled for 128³ grid
                 rays_per_event: 32,
             };
 

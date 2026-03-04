@@ -479,6 +479,7 @@ fn run_full_pipeline_internal(
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
+        grid_dim: 128,
         ..Default::default()
     };
 
@@ -1410,6 +1411,7 @@ fn run_batch_gpu_concurrent(
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
+        grid_dim: 128,
         ..Default::default()
     };
     let mut engine = PersistentNhsEngine::new(&config)?;
@@ -2078,6 +2080,7 @@ fn run_multi_stream_pipeline(
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
+        grid_dim: 128,
         ..Default::default()
     };
 
