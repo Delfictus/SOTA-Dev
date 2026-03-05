@@ -207,10 +207,11 @@ impl SdstBridge {
         let p5 = p4 + protocol.cold_return_steps.max(0) as u32;
         cfg.phase_boundaries = [p0, p1, p2, p3, p4, p5];
 
-        // Event buffer: 1.5× capped spike count (MAX_SDST_SPIKES = 500K) with 1M floor.
-        // Never allocate for more than 2M events to keep GPU memory bounded (~72MB).
-        let capped = expected_spike_count.min(500_000);
-        cfg.max_spike_events = ((capped * 3 / 2) as u32).max(1_000_000).min(2_000_000);
+        // Event buffer: scale to actual spike count. At 36 bytes/event,
+        // 28M events = 1GB -- safe ceiling for 16GB VRAM.
+        cfg.max_spike_events = (expected_spike_count as u32)
+            .max(1_000_000)
+            .min(28_000_000);
 
         cfg
     }
@@ -282,7 +283,7 @@ impl SdstBridge {
     ///
     /// **Spike cap:** SDST's `kernel_detect_parents` is O(N × neighborhood),
     /// so feeding >500K spikes causes multi-minute GPU stalls. We cap at
-    /// `MAX_SDST_SPIKES` by keeping the highest-intensity events (they carry
+    /// Takes all spikes (up to 1GB VRAM cap) to preserve temporal distribution.
     /// the most thermodynamic signal). The full multi-stream pool can exceed
     /// 10M spikes; we subsample before SDST insertion.
     ///
@@ -292,31 +293,29 @@ impl SdstBridge {
             return self.sdst.event_count()
                 .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e));
         }
+        // VRAM safety cap: 1GB / 36 bytes = ~27.7M events.
+        // Below that, take EVERY spike to preserve temporal phase distribution.
+        // The old 500K intensity-based cap destroyed hysteresis signal.
+        const MAX_SDST_MEMORY_BYTES: usize = 1_024 * 1_024 * 1_024;
+        const BYTES_PER_EVENT: usize = 36;
+        const ABSOLUTE_MAX_EVENTS: usize = MAX_SDST_MEMORY_BYTES / BYTES_PER_EVENT;
 
-        // Cap at 500K spikes — SDST parent-detection scales O(N × 1331 neighbors × 32 probes).
-        // Beyond 500K the kernel takes minutes; 500K gives full statistical coverage.
-        const MAX_SDST_SPIKES: usize = 500_000;
-
-        let working: Vec<&GpuSpikeEvent> = if spikes.len() > MAX_SDST_SPIKES {
-            // Take top-N by intensity (highest signal spikes have most thermodynamic content)
-            let mut indexed: Vec<(usize, f32)> = spikes.iter()
-                .enumerate()
-                .map(|(i, s)| (i, s.intensity))
+        let working: Vec<&GpuSpikeEvent> = if spikes.len() > ABSOLUTE_MAX_EVENTS {
+            let stride = spikes.len() / ABSOLUTE_MAX_EVENTS;
+            log::warn!("  PRISM-Therm: {} spikes exceeds 1GB cap, stride-sampling to {}",
+                        spikes.len(), ABSOLUTE_MAX_EVENTS);
+            let mut sampled: Vec<&GpuSpikeEvent> = spikes.iter()
+                .step_by(stride)
+                .take(ABSOLUTE_MAX_EVENTS)
                 .collect();
-            indexed.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            indexed.truncate(MAX_SDST_SPIKES);
-            let mut top: Vec<&GpuSpikeEvent> = indexed.iter().map(|(i, _)| &spikes[*i]).collect();
-            // Re-sort by timestep for correct causal ordering
-            top.sort_unstable_by_key(|s| s.timestep);
-            log::info!("  PRISM-Therm: capped {} → {} spikes (top by intensity) for SDST",
-                spikes.len(), MAX_SDST_SPIKES);
-            top
+            sampled.sort_unstable_by_key(|s| s.timestep);
+            sampled
         } else {
             let mut sorted: Vec<&GpuSpikeEvent> = spikes.iter().collect();
             sorted.sort_unstable_by_key(|s| s.timestep);
+            log::info!("  PRISM-Therm: ingesting all {} spikes into SDST", spikes.len());
             sorted
         };
-
         let inputs: Vec<sdst::SpikeInput> = working.iter()
             .map(|s| self.convert_spike(s))
             .collect();
