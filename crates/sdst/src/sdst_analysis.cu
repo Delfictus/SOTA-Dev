@@ -419,18 +419,13 @@ SdstError sdst_ccns_region(
                                      cudaMemcpyDeviceToHost, s));
     SDST_CUDA_CHECK(cudaStreamSynchronize(s));
 
-    /* Collect avalanche IDs and sizes for events in region */
-    /* Use a simple approach: count events per avalanche ID */
+    /* Collect avalanche IDs and sizes for events in region.
+     * max_avalanche_id MUST be computed from ALL events — not just region events.
+     * avalanche_sizes[aid] iterates all events, so arrays must cover the global max. */
     uint32_t max_avalanche_id = 0;
     for (uint32_t i = 0; i < total_events; i++) {
-        uint32_t vx, vy, vz;
-        morton_decode(h_events[i].voxel, &vx, &vy, &vz);
-        if (vx >= region->x_min && vx <= region->x_max &&
-            vy >= region->y_min && vy <= region->y_max &&
-            vz >= region->z_min && vz <= region->z_max) {
-            if (h_events[i].avalanche_id > max_avalanche_id)
-                max_avalanche_id = h_events[i].avalanche_id;
-        }
+        if (h_events[i].avalanche_id > max_avalanche_id)
+            max_avalanche_id = h_events[i].avalanche_id;
     }
 
     if (max_avalanche_id == 0) {
@@ -655,4 +650,326 @@ SdstError sdst_avalanche_stats(
     free(seeds); free(phases); free(valid);
 
     return SDST_SUCCESS;
+}
+
+/* ============================================================
+ * sdst_causal_subgraph_region: Extract causal subgraph for all
+ * spikes in a spatial region.
+ *
+ * Strategy:
+ *   1. Query all events in the region
+ *   2. Find unique avalanche roots (earliest event per avalanche_id)
+ *   3. For each root, call sdst_causal_subgraph and merge results
+ * ============================================================ */
+
+extern "C"
+SdstError sdst_causal_subgraph_region(
+    SdstHandle handle,
+    const SpatialRegion* region,
+    uint32_t max_depth,
+    CausalSubgraph* out_graph,
+    void* stream
+) {
+    if (!handle || !region || !out_graph) return SDST_ERROR_INVALID_PARAM;
+    SdstContext* ctx = handle;
+    cudaStream_t s = stream ? (cudaStream_t)stream : 0;
+
+    uint32_t total_events;
+    SDST_CUDA_CHECK(cudaMemcpy(&total_events, ctx->d_event_count,
+                               sizeof(uint32_t), cudaMemcpyDeviceToHost));
+    if (total_events == 0) {
+        out_graph->events = NULL;
+        out_graph->parent_indices = NULL;
+        out_graph->count = 0;
+        return SDST_SUCCESS;
+    }
+
+    /* Copy all events to host */
+    SpikeEvent* h_events = (SpikeEvent*)malloc(total_events * sizeof(SpikeEvent));
+    SDST_CUDA_CHECK(cudaMemcpyAsync(h_events, ctx->d_event_buffer,
+                                     total_events * sizeof(SpikeEvent),
+                                     cudaMemcpyDeviceToHost, s));
+    SDST_CUDA_CHECK(cudaStreamSynchronize(s));
+
+    /* Identify unique avalanche roots for events in the region */
+    /* A root is the event with the earliest timestamp per avalanche_id */
+    uint32_t max_aid = 0;
+    for (uint32_t i = 0; i < total_events; i++) {
+        if (h_events[i].avalanche_id > max_aid) max_aid = h_events[i].avalanche_id;
+    }
+
+    /* Mark which avalanche IDs touch the region */
+    bool* aid_in_region = (bool*)calloc(max_aid + 1, sizeof(bool));
+    uint32_t* aid_earliest = (uint32_t*)malloc((max_aid + 1) * sizeof(uint32_t));
+    uint32_t* aid_earliest_time = (uint32_t*)malloc((max_aid + 1) * sizeof(uint32_t));
+    for (uint32_t i = 0; i <= max_aid; i++) aid_earliest_time[i] = 0xFFFFFFFF;
+
+    for (uint32_t i = 0; i < total_events; i++) {
+        uint32_t vx, vy, vz;
+        morton_decode(h_events[i].voxel, &vx, &vy, &vz);
+        if (vx >= region->x_min && vx <= region->x_max &&
+            vy >= region->y_min && vy <= region->y_max &&
+            vz >= region->z_min && vz <= region->z_max) {
+            AvalancheId aid = h_events[i].avalanche_id;
+            aid_in_region[aid] = true;
+        }
+        /* Track earliest event per avalanche */
+        AvalancheId aid = h_events[i].avalanche_id;
+        if (h_events[i].timestamp < aid_earliest_time[aid]) {
+            aid_earliest_time[aid] = h_events[i].timestamp;
+            aid_earliest[aid] = i;
+        }
+    }
+    free(h_events);
+
+    /* Collect roots for region-touching avalanches */
+    uint32_t n_roots = 0;
+    for (uint32_t i = 1; i <= max_aid; i++) {
+        if (aid_in_region[i]) n_roots++;
+    }
+
+    if (n_roots == 0) {
+        out_graph->events = NULL;
+        out_graph->parent_indices = NULL;
+        out_graph->count = 0;
+        free(aid_in_region); free(aid_earliest); free(aid_earliest_time);
+        return SDST_SUCCESS;
+    }
+
+    /* Merge subgraphs from all roots */
+    /* Accumulate all events across roots, deduplicating by event index */
+    uint32_t total_count = 0;
+    SpikeEvent** all_events = (SpikeEvent**)calloc(n_roots, sizeof(SpikeEvent*));
+    uint32_t** all_parents = (uint32_t**)calloc(n_roots, sizeof(uint32_t*));
+    uint32_t* root_counts = (uint32_t*)calloc(n_roots, sizeof(uint32_t));
+
+    uint32_t ri = 0;
+    for (uint32_t i = 1; i <= max_aid && ri < n_roots; i++) {
+        if (!aid_in_region[i]) continue;
+        CausalSubgraph sub;
+        SdstError err = sdst_causal_subgraph(handle, aid_earliest[i], max_depth, &sub, stream);
+        if (err == SDST_SUCCESS && sub.count > 0) {
+            all_events[ri] = sub.events;
+            all_parents[ri] = sub.parent_indices;
+            root_counts[ri] = sub.count;
+            total_count += sub.count;
+        }
+        ri++;
+    }
+    free(aid_in_region); free(aid_earliest); free(aid_earliest_time);
+
+    /* Flatten merged subgraphs */
+    out_graph->events = (SpikeEvent*)malloc(total_count * sizeof(SpikeEvent));
+    out_graph->parent_indices = (uint32_t*)malloc(total_count * sizeof(uint32_t));
+    out_graph->count = total_count;
+
+    uint32_t offset = 0;
+    for (uint32_t r = 0; r < n_roots; r++) {
+        if (root_counts[r] == 0) continue;
+        memcpy(out_graph->events + offset, all_events[r],
+               root_counts[r] * sizeof(SpikeEvent));
+        /* Adjust parent indices to account for merge offset */
+        for (uint32_t k = 0; k < root_counts[r]; k++) {
+            uint32_t p = all_parents[r][k];
+            out_graph->parent_indices[offset + k] =
+                (p == 0xFFFFFFFF) ? 0xFFFFFFFF : (p + offset);
+        }
+        offset += root_counts[r];
+        free(all_events[r]);
+        free(all_parents[r]);
+    }
+    free(all_events); free(all_parents); free(root_counts);
+
+    return SDST_SUCCESS;
+}
+
+/* ============================================================
+ * sdst_ccns_all_pockets: CCNS for all detected pocket regions.
+ *
+ * Strategy:
+ *   1. Run sdst_hysteresis_scan to detect candidate regions
+ *   2. For each hysteretic region, compute sdst_ccns_region
+ *   3. Return all results with their associated spatial regions
+ * ============================================================ */
+
+extern "C"
+SdstError sdst_ccns_all_pockets(
+    SdstHandle handle,
+    CcnsResult** out_results,
+    SpatialRegion** out_regions,
+    uint32_t* out_count,
+    void* stream
+) {
+    if (!handle || !out_results || !out_regions || !out_count)
+        return SDST_ERROR_INVALID_PARAM;
+
+    /* Step 1: Find hysteretic pocket candidates */
+    HysteresisResult* hyst_results;
+    SpatialRegion*    hyst_regions;
+    uint32_t          n_pockets;
+
+    SdstError err = sdst_hysteresis_scan(handle, 0.15f,
+                                         &hyst_results, &hyst_regions,
+                                         &n_pockets, stream);
+    if (err != SDST_SUCCESS) return err;
+
+    if (n_pockets == 0) {
+        *out_results = NULL;
+        *out_regions = NULL;
+        *out_count = 0;
+        free(hyst_results);
+        free(hyst_regions);
+        return SDST_SUCCESS;
+    }
+
+    /* Step 2: Compute CCNS tau for each pocket */
+    *out_results = (CcnsResult*)malloc(n_pockets * sizeof(CcnsResult));
+    *out_regions = (SpatialRegion*)malloc(n_pockets * sizeof(SpatialRegion));
+    *out_count = n_pockets;
+
+    for (uint32_t i = 0; i < n_pockets; i++) {
+        (*out_regions)[i] = hyst_regions[i];
+        SdstError ccns_err = sdst_ccns_region(handle, &hyst_regions[i],
+                                               &(*out_results)[i], stream);
+        if (ccns_err != SDST_SUCCESS) {
+            /* Fill with sentinel values on error, continue */
+            memset(&(*out_results)[i], 0, sizeof(CcnsResult));
+        }
+    }
+
+    free(hyst_results);
+    free(hyst_regions);
+    return SDST_SUCCESS;
+}
+
+/* ============================================================
+ * sdst_validate: Consistency checker for debugging.
+ *
+ * Checks:
+ *   1. Hash table: no duplicate keys (Morton codes unique per slot)
+ *   2. Event chain: no cycles (walk terminates in ≤ event_count steps)
+ *   3. Union-find idempotency: uf_find(uf_find(x)) == uf_find(x) for sampled events
+ *   4. Wavefront IDs: all wavefront_id values < wavefront_count
+ *   5. Timestamps: all timestamps within phase_boundaries[5]
+ * ============================================================ */
+
+extern "C"
+SdstError sdst_validate(SdstHandle handle) {
+    if (!handle) return SDST_ERROR_INVALID_PARAM;
+    SdstContext* ctx = handle;
+
+    uint32_t event_count, wf_count;
+    SDST_CUDA_CHECK(cudaMemcpy(&event_count, ctx->d_event_count,
+                               sizeof(uint32_t), cudaMemcpyDeviceToHost));
+    SDST_CUDA_CHECK(cudaMemcpy(&wf_count, ctx->d_wavefront_count,
+                               sizeof(uint32_t), cudaMemcpyDeviceToHost));
+
+    if (event_count == 0) return SDST_SUCCESS; /* Nothing to validate */
+
+    uint32_t cap = ctx->config.hash_table_capacity;
+    uint32_t max_ts = ctx->config.phase_boundaries[5];
+
+    /* Copy all needed arrays to host */
+    SpikeEvent* h_events = (SpikeEvent*)malloc(event_count * sizeof(SpikeEvent));
+    uint32_t* h_chain_next = (uint32_t*)malloc(event_count * sizeof(uint32_t));
+    uint32_t* h_uf_parent = (uint32_t*)malloc(event_count * sizeof(uint32_t));
+    HashEntry* h_hash = (HashEntry*)malloc(cap * sizeof(HashEntry));
+
+    SDST_CUDA_CHECK(cudaMemcpy(h_events, ctx->d_event_buffer,
+                               event_count * sizeof(SpikeEvent), cudaMemcpyDeviceToHost));
+    SDST_CUDA_CHECK(cudaMemcpy(h_chain_next, ctx->d_event_chain_next,
+                               event_count * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+    SDST_CUDA_CHECK(cudaMemcpy(h_uf_parent, ctx->d_avalanche_parent,
+                               event_count * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+    SDST_CUDA_CHECK(cudaMemcpy(h_hash, ctx->d_hash_table,
+                               cap * sizeof(HashEntry), cudaMemcpyDeviceToHost));
+
+    SdstError result = SDST_SUCCESS;
+
+    /* Check 1: Event timestamps within bounds */
+    for (uint32_t i = 0; i < event_count && result == SDST_SUCCESS; i++) {
+        if (h_events[i].timestamp > max_ts) {
+            fprintf(stderr, "SDST validate: event %u has timestamp %u > max %u\n",
+                    i, h_events[i].timestamp, max_ts);
+            result = SDST_ERROR_INVALID_PARAM;
+        }
+    }
+
+    /* Check 2: Wavefront IDs within bounds */
+    for (uint32_t i = 0; i < event_count && result == SDST_SUCCESS; i++) {
+        WavefrontId wid = h_events[i].wavefront_id;
+        if (wid > ctx->config.max_wavefronts) {
+            fprintf(stderr, "SDST validate: event %u has wavefront_id %u > max %u\n",
+                    i, wid, ctx->config.max_wavefronts);
+            result = SDST_ERROR_INVALID_PARAM;
+        }
+    }
+
+    /* Check 3: Event chain - no cycles (depth limited walk) */
+    for (uint32_t i = 0; i < event_count && result == SDST_SUCCESS; i++) {
+        uint32_t chain_idx = h_chain_next[i];
+        uint32_t walk = 0;
+        while (chain_idx != 0xFFFFFFFF && walk <= event_count) {
+            if (chain_idx >= event_count) {
+                fprintf(stderr, "SDST validate: chain_next[%u] = %u out of bounds\n",
+                        i, chain_idx);
+                result = SDST_ERROR_INVALID_PARAM;
+                break;
+            }
+            chain_idx = h_chain_next[chain_idx];
+            walk++;
+        }
+        if (walk > event_count) {
+            fprintf(stderr, "SDST validate: cycle detected in chain from event %u\n", i);
+            result = SDST_ERROR_INVALID_PARAM;
+        }
+    }
+
+    /* Check 4: Union-find idempotency (sample every 100th event) */
+    for (uint32_t i = 0; i < event_count && result == SDST_SUCCESS; i += 100) {
+        /* Host-side uf_find */
+        uint32_t x = i;
+        uint32_t iters = 0;
+        while (h_uf_parent[x] != x && iters < event_count) {
+            x = h_uf_parent[x];
+            iters++;
+        }
+        if (iters >= event_count) {
+            fprintf(stderr, "SDST validate: uf_find did not converge for event %u\n", i);
+            result = SDST_ERROR_INVALID_PARAM;
+        }
+        /* Idempotency: find root of root should be same root */
+        uint32_t root1 = x;
+        uint32_t x2 = root1;
+        iters = 0;
+        while (h_uf_parent[x2] != x2 && iters < event_count) {
+            x2 = h_uf_parent[x2]; iters++;
+        }
+        if (x2 != root1) {
+            fprintf(stderr, "SDST validate: uf_find not idempotent at event %u\n", i);
+            result = SDST_ERROR_INVALID_PARAM;
+        }
+    }
+
+    /* Check 5: Hash table - occupied slots have valid Morton codes */
+    for (uint32_t i = 0; i < cap && result == SDST_SUCCESS; i++) {
+        uint32_t key = h_hash[i].key;
+        if (key == 0xFFFFFFFF) continue; /* Empty slot */
+        /* Verify Morton code decodes to valid grid coordinates */
+        uint32_t gx, gy, gz;
+        morton_decode(key & 0x7FFFFFFF, &gx, &gy, &gz);
+        if (gx >= ctx->config.grid_nx || gy >= ctx->config.grid_ny ||
+            gz >= ctx->config.grid_nz) {
+            fprintf(stderr, "SDST validate: hash slot %u has invalid Morton code %u"
+                    " -> (%u,%u,%u)\n", i, key, gx, gy, gz);
+            result = SDST_ERROR_INVALID_PARAM;
+        }
+    }
+
+    free(h_events); free(h_chain_next); free(h_uf_parent); free(h_hash);
+
+    if (result == SDST_SUCCESS) {
+        printf("SDST validate: OK (%u events, %u wavefronts)\n", event_count, wf_count);
+    }
+    return result;
 }

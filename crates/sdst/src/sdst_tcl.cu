@@ -79,6 +79,42 @@ void kernel_compute_tcl_flags(
 }
 
 /* ============================================================
+ * Host: Launch TCL flag computation for a batch of new events
+ *
+ * Called from sdst_insert_spikes after temporal index update.
+ * Uses the device-side phase_boundaries array stored in SdstContext.
+ * ============================================================ */
+
+extern "C"
+SdstError sdst_compute_tcl_flags(
+    SdstHandle handle,
+    uint32_t base_idx,
+    uint32_t n_events,
+    void* stream
+) {
+    if (!handle) return SDST_ERROR_INVALID_PARAM;
+    SdstContext* ctx = handle;
+    cudaStream_t s = stream ? (cudaStream_t)stream : 0;
+
+    /* gradient_threshold: flag spikes with |∇E| > 0.5 (f16 ~= moderate energy barrier) */
+    float gradient_threshold = 0.5f;
+
+    dim3 grid(SDST_GRID_SIZE(n_events));
+    dim3 block(SDST_BLOCK_SIZE);
+
+    kernel_compute_tcl_flags<<<grid, block, 0, s>>>(
+        ctx->d_event_buffer,
+        base_idx,
+        n_events,
+        ctx->d_phase_boundaries,
+        gradient_threshold
+    );
+    SDST_CUDA_CHECK_KERNEL();
+
+    return SDST_SUCCESS;
+}
+
+/* ============================================================
  * Kernel: Hysteresis asymmetry detection for a spatial region
  *
  * Compares heating phase activity (phases 0,1) vs cooling (3,4).

@@ -30,6 +30,9 @@
 
 use std::os::raw::{c_char, c_float, c_int, c_void};
 
+// Used to free host-side arrays allocated by SDST C functions (malloc'd in libsdst)
+extern "C" { fn free(ptr: *mut c_void); }
+
 pub type MortonCode = u32;
 pub type SpikeId = u32;
 pub type WavefrontId = u32;
@@ -57,22 +60,25 @@ impl SdstError {
     }
 }
 
-#[repr(C, align(32))]
-#[derive(Debug, Clone, Copy)]
+/// Repacked to match C layout (GATE 0 verified): u32s first (offsets 0-19),
+/// u16s (20-31), u8s (32-33), 2 implicit trailing pad → sizeof = 36.
+#[repr(C, align(4))]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SpikeEvent {
-    pub voxel: MortonCode,
-    pub timestamp: u32,
-    pub amplitude: u16,
-    pub parent_spike: SpikeId,
-    pub avalanche_id: AvalancheId,
-    pub local_temp: u16,
-    pub energy_gradient: u16,
-    pub solvent_exposure: u16,
-    pub phase_id: PhaseId,
-    pub tcl_flags: u8,
-    pub wavefront_id: WavefrontId,
-    pub wavefront_velocity: u16,
-    pub wavefront_coherence: u16,
+    pub voxel: MortonCode,          // u32 @ 0
+    pub timestamp: u32,             // u32 @ 4
+    pub parent_spike: SpikeId,      // u32 @ 8
+    pub avalanche_id: AvalancheId,  // u32 @ 12
+    pub wavefront_id: WavefrontId,  // u32 @ 16
+    pub amplitude: u16,             // u16 @ 20
+    pub local_temp: u16,            // u16 @ 22
+    pub energy_gradient: u16,       // u16 @ 24
+    pub solvent_exposure: u16,      // u16 @ 26
+    pub wavefront_velocity: u16,    // u16 @ 28
+    pub wavefront_coherence: u16,   // u16 @ 30
+    pub phase_id: PhaseId,          // u8  @ 32
+    pub tcl_flags: u8,              // u8  @ 33
+    // 2 bytes implicit trailing padding → sizeof = 36
 }
 
 #[repr(C)]
@@ -318,6 +324,64 @@ extern "C" {
 
     // Debug
     pub fn sdst_print_stats(handle: SdstHandle) -> SdstError;
+
+    // --- 7 previously missing declarations ---
+
+    /// Return human-readable error string (static lifetime, never free).
+    pub fn sdst_error_string(err: SdstError) -> *const c_char;
+
+    /// Avalanche statistics, optionally filtered by phase (-1 = all).
+    /// Caller must free *out_stats with libc free().
+    pub fn sdst_avalanche_stats(
+        handle: SdstHandle,
+        phase_filter: c_int,
+        out_stats: *mut *mut AvalancheStats,
+        out_count: *mut u32,
+        stream: *mut c_void,
+    ) -> SdstError;
+
+    /// Causal subgraph for all spikes in a spatial region.
+    pub fn sdst_causal_subgraph_region(
+        handle: SdstHandle,
+        region: *const SpatialRegion,
+        max_depth: u32,
+        out_graph: *mut CausalSubgraph,
+        stream: *mut c_void,
+    ) -> SdstError;
+
+    /// CCNS for all automatically detected pockets.
+    /// Caller must free *out_results and *out_regions with libc free().
+    pub fn sdst_ccns_all_pockets(
+        handle: SdstHandle,
+        out_results: *mut *mut CcnsResult,
+        out_regions: *mut *mut SpatialRegion,
+        out_count: *mut u32,
+        stream: *mut c_void,
+    ) -> SdstError;
+
+    /// Combined spatial + temporal query.
+    pub fn sdst_query_region_timerange(
+        handle: SdstHandle,
+        region: *const SpatialRegion,
+        t_start: u32,
+        t_end: u32,
+        out_events: *mut *mut SpikeEvent,
+        out_count: *mut u32,
+        stream: *mut c_void,
+    ) -> SdstError;
+
+    /// Validate internal consistency. Returns SDST_SUCCESS if all checks pass.
+    pub fn sdst_validate(handle: SdstHandle) -> SdstError;
+
+    /// Find wavefronts that passed through a specific region.
+    /// Caller must free *out_stats with libc free().
+    pub fn sdst_wavefronts_through_region(
+        handle: SdstHandle,
+        region: *const SpatialRegion,
+        out_stats: *mut *mut WavefrontStats,
+        out_count: *mut u32,
+        stream: *mut c_void,
+    ) -> SdstError;
 }
 
 // ============================================================
@@ -404,6 +468,61 @@ impl Sdst {
     pub fn reset(&self) -> Result<(), SdstError> {
         unsafe { sdst_reset(self.handle).check() }
     }
+
+    /// Validate internal consistency (all checks must pass before analyzing results).
+    pub fn validate(&self) -> Result<(), SdstError> {
+        unsafe { sdst_validate(self.handle).check() }
+    }
+
+    /// Avalanche statistics, optionally filtered by phase (-1 = all phases).
+    /// Returns owned Vec; caller is responsible for memory.
+    pub fn avalanche_stats(&self, phase_filter: i32) -> Result<Vec<AvalancheStats>, SdstError> {
+        let mut ptr: *mut AvalancheStats = std::ptr::null_mut();
+        let mut count = 0u32;
+        unsafe {
+            sdst_avalanche_stats(
+                self.handle,
+                phase_filter as c_int,
+                &mut ptr,
+                &mut count,
+                std::ptr::null_mut(),
+            ).check()?;
+            if count == 0 || ptr.is_null() {
+                return Ok(Vec::new());
+            }
+            let v = std::slice::from_raw_parts(ptr, count as usize).to_vec();
+            free(ptr as *mut c_void);
+            Ok(v)
+        }
+    }
+
+    /// CCNS for all automatically detected pockets.
+    /// Returns (ccns_results, regions) pairs.
+    pub fn ccns_all_pockets(&self) -> Result<Vec<(CcnsResult, SpatialRegion)>, SdstError> {
+        let mut results_ptr: *mut CcnsResult = std::ptr::null_mut();
+        let mut regions_ptr: *mut SpatialRegion = std::ptr::null_mut();
+        let mut count = 0u32;
+        unsafe {
+            sdst_ccns_all_pockets(
+                self.handle,
+                &mut results_ptr,
+                &mut regions_ptr,
+                &mut count,
+                std::ptr::null_mut(),
+            ).check()?;
+            if count == 0 || results_ptr.is_null() {
+                return Ok(Vec::new());
+            }
+            let results = std::slice::from_raw_parts(results_ptr, count as usize);
+            let regions = std::slice::from_raw_parts(regions_ptr, count as usize);
+            let v: Vec<(CcnsResult, SpatialRegion)> = results.iter().copied()
+                .zip(regions.iter().copied())
+                .collect();
+            free(results_ptr as *mut c_void);
+            free(regions_ptr as *mut c_void);
+            Ok(v)
+        }
+    }
 }
 
 impl Drop for Sdst {
@@ -415,3 +534,51 @@ impl Drop for Sdst {
 // Safety: SDST handles are thread-safe (CUDA streams provide synchronization)
 unsafe impl Send for Sdst {}
 unsafe impl Sync for Sdst {}
+
+// ============================================================
+// Layout verification tests (run with: cargo test)
+// ============================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_spike_event_size() {
+        // Must match C: sizeof(SpikeEvent) = 36 (GATE 0 verified)
+        assert_eq!(std::mem::size_of::<SpikeEvent>(), 36,
+            "SpikeEvent size mismatch: C=36, Rust={}",
+            std::mem::size_of::<SpikeEvent>());
+    }
+
+    #[test]
+    fn test_spike_event_field_offsets() {
+        use std::mem::offset_of;
+        assert_eq!(offset_of!(SpikeEvent, voxel),              0);
+        assert_eq!(offset_of!(SpikeEvent, timestamp),          4);
+        assert_eq!(offset_of!(SpikeEvent, parent_spike),       8);
+        assert_eq!(offset_of!(SpikeEvent, avalanche_id),      12);
+        assert_eq!(offset_of!(SpikeEvent, wavefront_id),      16);
+        assert_eq!(offset_of!(SpikeEvent, amplitude),         20);
+        assert_eq!(offset_of!(SpikeEvent, local_temp),        22);
+        assert_eq!(offset_of!(SpikeEvent, energy_gradient),   24);
+        assert_eq!(offset_of!(SpikeEvent, solvent_exposure),  26);
+        assert_eq!(offset_of!(SpikeEvent, wavefront_velocity),28);
+        assert_eq!(offset_of!(SpikeEvent, wavefront_coherence),30);
+        assert_eq!(offset_of!(SpikeEvent, phase_id),          32);
+        assert_eq!(offset_of!(SpikeEvent, tcl_flags),         33);
+    }
+
+    #[test]
+    fn test_other_struct_sizes() {
+        // Sanity checks — these don't need to match specific values,
+        // just verify they're non-zero and reasonable
+        assert!(std::mem::size_of::<SpikeInput>() > 0);
+        assert!(std::mem::size_of::<SdstConfig>() > 0);
+        assert!(std::mem::size_of::<HysteresisResult>() > 0);
+        assert!(std::mem::size_of::<CcnsResult>() > 0);
+        assert!(std::mem::size_of::<AvalancheStats>() > 0);
+        assert!(std::mem::size_of::<WavefrontStats>() > 0);
+        assert!(std::mem::size_of::<TideDecomposition>() > 0);
+    }
+}

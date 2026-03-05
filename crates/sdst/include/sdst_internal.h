@@ -9,6 +9,8 @@
 #include "sdst_api.h"
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
+#include <stdio.h>   /* fprintf, stderr, printf */
+#include <stdlib.h>  /* malloc, free, calloc */
 
 /* ============================================================
  * CUDA error checking
@@ -37,24 +39,44 @@
  * Uses 7 bits per axis, 21 bits total, fits in u32
  * ============================================================ */
 
-/** Spread bits for 3D Morton encoding: insert 2 zero bits between each bit */
+/**
+ * Spread bits for 3D Morton encoding: insert 2 zero bits between each bit.
+ * Input: 7-bit value (0-127), representing one grid axis.
+ * Output: 21-bit value with each input bit at position 3*i.
+ *
+ * NOTE: The original magic-number approach (0x070007 etc.) was WRONG for
+ * values >= 8 — it dropped bits at positions 3-6. This loop-based
+ * implementation is verified correct for all 7-bit inputs (GATE 0 / Issue A).
+ * The compiler unrolls the 7-iteration loop to branchless code on SM120.
+ */
 __device__ __host__ __forceinline__
 uint32_t morton_spread(uint32_t v) {
     v &= 0x7F; /* 7 bits */
-    v = (v | (v << 8))  & 0x070007;
-    v = (v | (v << 4))  & 0x430843;
-    v = (v | (v << 2))  & 0x249249;
-    return v;
+    uint32_t result = 0;
+#ifdef __CUDA_ARCH__
+    #pragma unroll
+#endif
+    for (uint32_t i = 0; i < 7; i++) {
+        result |= ((v >> i) & 1u) << (3u * i);
+    }
+    return result;
 }
 
-/** Compact bits for 3D Morton decoding: remove 2 bits between each bit */
+/**
+ * Compact bits for 3D Morton decoding: extract every 3rd bit.
+ * Inverse of morton_spread.
+ */
 __device__ __host__ __forceinline__
 uint32_t morton_compact(uint32_t v) {
-    v &= 0x249249;
-    v = (v | (v >> 2))  & 0x430843;
-    v = (v | (v >> 4))  & 0x070007;
-    v = (v | (v >> 8))  & 0x7F;
-    return v;
+    v &= 0x249249; /* keep only bits at positions 0,3,6,9,12,15,18 */
+    uint32_t result = 0;
+#ifdef __CUDA_ARCH__
+    #pragma unroll
+#endif
+    for (uint32_t i = 0; i < 7; i++) {
+        result |= ((v >> (3u * i)) & 1u) << i;
+    }
+    return result;
 }
 
 /** Encode (x,y,z) -> Morton code */
@@ -119,7 +141,7 @@ float f16_bits_to_float(uint16_t bits) {
 #define SDST_KEY_MASK       0x7FFFFFFF
 
 /** Open-addressing hash function (Murmur3 finalizer) */
-__device__ __forceinline__
+__device__ __host__ __forceinline__
 uint32_t sdst_hash(uint32_t key, uint32_t capacity) {
     key ^= key >> 16;
     key *= 0x85ebca6b;
@@ -162,6 +184,13 @@ void uf_union(uint32_t* parent, uint32_t a, uint32_t b) {
 }
 
 /* ============================================================
+ * Forward declarations for internal functions used across .cu files
+ * Must use extern "C" to match the definitions in sdst_wct.cu / sdst_tcl.cu
+ * ============================================================ */
+extern "C" SdstError sdst_process_wavefronts(SdstHandle handle, uint32_t base_idx, uint32_t n_events, void* stream);
+extern "C" SdstError sdst_compute_tcl_flags(SdstHandle handle, uint32_t base_idx, uint32_t n_events, void* stream);
+
+/* ============================================================
  * Internal context structure
  * ============================================================ */
 
@@ -175,6 +204,7 @@ struct SdstContext {
     uint32_t*       d_avalanche_parent; /* Union-find parent array */
     uint32_t*       d_avalanche_size;   /* Per-root avalanche sizes */
     uint32_t*       d_wavefront_count;  /* Atomic counter for wavefronts */
+    uint32_t*       d_phase_boundaries; /* Device copy of phase_boundaries[6] */
 
     /* Per-voxel chain heads: maps Morton code to most recent event index */
     uint32_t*       d_voxel_chain;      /* [hash_table_capacity] */

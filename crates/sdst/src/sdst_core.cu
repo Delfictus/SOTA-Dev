@@ -126,6 +126,11 @@ SdstError sdst_create(const SdstConfig* config, SdstHandle* out_handle) {
     SDST_CUDA_CHECK(cudaMalloc(&ctx->d_voxel_last_time, cap * sizeof(uint32_t)));
     SDST_CUDA_CHECK(cudaMemset(ctx->d_voxel_last_time, 0, cap * sizeof(uint32_t)));
 
+    /* Phase boundaries (device copy for kernel access) */
+    SDST_CUDA_CHECK(cudaMalloc(&ctx->d_phase_boundaries, 6 * sizeof(uint32_t)));
+    SDST_CUDA_CHECK(cudaMemcpy(ctx->d_phase_boundaries, config->phase_boundaries,
+                               6 * sizeof(uint32_t), cudaMemcpyHostToDevice));
+
     /* Temporal index */
     SDST_CUDA_CHECK(cudaMalloc(&ctx->d_time_index_start, max_ts * sizeof(uint32_t)));
     SDST_CUDA_CHECK(cudaMalloc(&ctx->d_time_index_count, max_ts * sizeof(uint32_t)));
@@ -172,6 +177,7 @@ SdstError sdst_destroy(SdstHandle handle) {
     cudaFree(ctx->d_wavefront_stats);
     cudaFree(ctx->d_voxel_last_wavefront);
     cudaFree(ctx->d_voxel_last_time);
+    cudaFree(ctx->d_phase_boundaries);
     cudaFree(ctx->d_time_index_start);
     cudaFree(ctx->d_time_index_count);
     cudaFree(ctx->d_query_counts);
@@ -552,6 +558,14 @@ SdstError sdst_insert_spikes(
         d_events, count, base_idx
     );
     SDST_CUDA_CHECK_KERNEL();
+
+    /* 5. Compute TCL (thermodynamic context layer) flags */
+    SdstError tcl_err = sdst_compute_tcl_flags(handle, base_idx, count, stream);
+    if (tcl_err != SDST_SUCCESS) return tcl_err;
+
+    /* 6. Wavefront coherence tracking */
+    SdstError wf_err = sdst_process_wavefronts(handle, base_idx, count, stream);
+    if (wf_err != SDST_SUCCESS) return wf_err;
 
     ctx->h_event_count = new_count;
 

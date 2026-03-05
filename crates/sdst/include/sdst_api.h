@@ -68,28 +68,34 @@ typedef uint8_t PhaseId;
  * Complete spike event - the fundamental unit of PRISM-Therm data.
  * 32 bytes, cache-line aligned for coalesced GPU access.
  */
-typedef struct __attribute__((aligned(32))) {
-    /* --- SDST Core (16 bytes) --- */
+/* Repacked layout: u32s first, then u16s, then u8s.
+ * Eliminates internal padding. sizeof = 36 bytes (34 fields + 2 trailing).
+ * aligned(4) lets aligned(32) be applied at the allocation site (cudaMalloc
+ * returns 256-byte aligned memory, so arrays are automatically cache-line safe).
+ * GATE 0 verified: aligned(32) inflates sizeof to 64; aligned(4) gives 36. */
+typedef struct __attribute__((aligned(4))) {
+    /* --- u32 group (20 bytes, offsets 0-19) --- */
     MortonCode  voxel;              /** Morton-encoded (x,y,z) */
     uint32_t    timestamp;          /** Simulation step */
-    uint16_t    amplitude;          /** Spike amplitude (f16 stored as u16) */
     SpikeId     parent_spike;       /** Causal parent (0 = spontaneous) */
     AvalancheId avalanche_id;       /** Avalanche membership */
+    WavefrontId wavefront_id;       /** Coherent wavefront membership */
 
-    /* --- Thermodynamic Context Layer (8 bytes) --- */
+    /* --- u16 group (12 bytes, offsets 20-31) --- */
+    uint16_t    amplitude;          /** Spike amplitude (f16 stored as u16) */
     uint16_t    local_temp;         /** Local effective temperature (f16) */
     uint16_t    energy_gradient;    /** |∇E| at this voxel (f16) */
     uint16_t    solvent_exposure;   /** SASA proxy from NHS density (f16) */
-    PhaseId     phase_id;           /** Hysteresis phase 0-4 */
-    uint8_t     tcl_flags;          /** Bit flags: is_transition, is_boundary, etc */
-
-    /* --- Wavefront Coherence Tracker (8 bytes) --- */
-    WavefrontId wavefront_id;       /** Coherent wavefront membership */
     uint16_t    wavefront_velocity; /** Local propagation speed (f16) */
     uint16_t    wavefront_coherence;/** Spatial correlation with neighbors (f16) */
+
+    /* --- u8 group (2 bytes, offsets 32-33) + 2 implicit trailing pad → 36 --- */
+    PhaseId     phase_id;           /** Hysteresis phase 0-4 */
+    uint8_t     tcl_flags;          /** Bit flags: is_transition, is_boundary, etc */
 } SpikeEvent;
 
-_Static_assert(sizeof(SpikeEvent) == 32, "SpikeEvent must be 32 bytes");
+/* C++17 static_assert — _Static_assert is C11 only, doesn't compile under -std=c++17 */
+static_assert(sizeof(SpikeEvent) == 36, "SpikeEvent must be 36 bytes (verified by GATE 0)");
 
 /** Hash table entry: Morton key + index into event buffer */
 typedef struct {

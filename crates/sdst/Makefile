@@ -16,7 +16,6 @@ NVCC        := nvcc
 AR          := ar
 NVCC_FLAGS  := -std=c++17 -O3 --use_fast_math
 NVCC_FLAGS  += -gencode arch=compute_120,code=sm_120  # RTX 5080
-NVCC_FLAGS  += -gencode arch=compute_89,code=sm_89    # RTX 4090 (fallback)
 NVCC_FLAGS  += --compiler-options '-fPIC -Wall'
 NVCC_FLAGS  += -I./include
 
