@@ -203,31 +203,38 @@ extern "C"
 SdstError sdst_tide_decomposition(
     SdstHandle handle,
     const SpatialRegion* pocket_region,
-    const uint32_t* d_residue_map,
+    const uint32_t* h_residue_map,   /* Host pointer, linear-voxel-indexed.
+                                      * Size = grid_nx × grid_ny × grid_nz.
+                                      * Index = x + y*grid_nx + z*grid_nx*grid_ny.
+                                      * UINT32_MAX for empty (no-residue) voxels. */
     uint32_t n_residues,
     TideDecomposition** out_decomp,
     uint32_t* out_count,
     void* stream
 ) {
-    if (!handle || !pocket_region || !d_residue_map || !out_decomp || !out_count)
+    if (!handle || !pocket_region || !h_residue_map || !out_decomp || !out_count)
         return SDST_ERROR_INVALID_PARAM;
     SdstContext* ctx = handle;
     cudaStream_t s = stream ? (cudaStream_t)stream : 0;
+
+    uint32_t grid_nx = ctx->config.grid_nx;
+    uint32_t grid_ny = ctx->config.grid_ny;
+    uint32_t grid_nz = ctx->config.grid_nz;
 
     uint32_t total_events;
     SDST_CUDA_CHECK(cudaMemcpy(&total_events, ctx->d_event_count,
                                sizeof(uint32_t), cudaMemcpyDeviceToHost));
 
-    /* Copy events and residue map to host */
+    if (total_events == 0) {
+        *out_decomp = NULL;
+        *out_count = 0;
+        return SDST_SUCCESS;
+    }
+
+    /* Copy events to host */
     SpikeEvent* h_events = (SpikeEvent*)malloc(total_events * sizeof(SpikeEvent));
     SDST_CUDA_CHECK(cudaMemcpyAsync(h_events, ctx->d_event_buffer,
                                      total_events * sizeof(SpikeEvent),
-                                     cudaMemcpyDeviceToHost, s));
-
-    uint32_t cap = ctx->config.hash_table_capacity;
-    uint32_t* h_resmap = (uint32_t*)malloc(cap * sizeof(uint32_t));
-    SDST_CUDA_CHECK(cudaMemcpyAsync(h_resmap, d_residue_map,
-                                     cap * sizeof(uint32_t),
                                      cudaMemcpyDeviceToHost, s));
     SDST_CUDA_CHECK(cudaStreamSynchronize(s));
 
@@ -263,54 +270,50 @@ SdstError sdst_tide_decomposition(
         }
     }
 
-    /* Build per-residue spike trains */
+    /* Build per-residue spike trains and accumulate energy in a single O(N) pass.
+     * Previous implementation did hash-table probe per event (O(N×32)) plus
+     * a second O(n_residues × N × 32) pass for energy — replaced with
+     * dense linear-voxel-indexed lookup: Morton→(x,y,z)→linear→residue_id. */
     uint8_t** residue_trains = (uint8_t**)calloc(n_residues, sizeof(uint8_t*));
     uint32_t* residue_spike_counts = (uint32_t*)calloc(n_residues, sizeof(uint32_t));
     uint32_t* residue_causal_counts = (uint32_t*)calloc(n_residues, sizeof(uint32_t));
+    float*    residue_energy_sum = (float*)calloc(n_residues, sizeof(float));
 
     for (uint32_t r = 0; r < n_residues; r++) {
         residue_trains[r] = (uint8_t*)calloc(n_bins, sizeof(uint8_t));
     }
 
-    /* Map each spike event to its residue via the Morton→residue map */
-    HashEntry* h_hash = (HashEntry*)malloc(cap * sizeof(HashEntry));
-    SDST_CUDA_CHECK(cudaMemcpy(h_hash, ctx->d_hash_table,
-                               cap * sizeof(HashEntry), cudaMemcpyDeviceToHost));
-
+    /* Single-pass: map events → residues via dense linear-voxel-indexed map */
     for (uint32_t i = 0; i < total_events; i++) {
         MortonCode mc = h_events[i].voxel;
-        uint32_t slot = sdst_hash(mc, cap);
+        uint32_t vx, vy, vz;
+        morton_decode(mc, &vx, &vy, &vz);
 
-        for (uint32_t probe = 0; probe < 32; probe++) {
-            uint32_t idx = (slot + probe) & (cap - 1);
-            if (h_hash[idx].key == mc) {
-                uint32_t res_id = h_resmap[idx];
-                if (res_id < n_residues) {
-                    uint32_t bin = h_events[i].timestamp / TE_BIN_WIDTH;
-                    if (bin < n_bins) {
-                        residue_trains[res_id][bin] = 1;
-                        residue_spike_counts[res_id]++;
-                    }
+        if (vx >= grid_nx || vy >= grid_ny || vz >= grid_nz) continue;
 
-                    /* Check if this spike is causally connected to pocket
-                     * (shares avalanche ID with any pocket spike) */
-                    /* Simplified: count spikes from this residue that are
-                     * in pocket-touching avalanches */
-                    uint32_t vx, vy, vz;
-                    morton_decode(mc, &vx, &vy, &vz);
-                    if (vx >= pocket_region->x_min && vx <= pocket_region->x_max &&
-                        vy >= pocket_region->y_min && vy <= pocket_region->y_max &&
-                        vz >= pocket_region->z_min && vz <= pocket_region->z_max) {
-                        residue_causal_counts[res_id]++;
-                    }
-                }
-                break;
-            }
-            if (h_hash[idx].key == SDST_EMPTY_KEY) break;
+        uint32_t linear = vx + vy * grid_nx + vz * grid_nx * grid_ny;
+        uint32_t res_id = h_residue_map[linear];
+
+        if (res_id == UINT32_MAX || res_id >= n_residues) continue;
+
+        uint32_t bin = h_events[i].timestamp / TE_BIN_WIDTH;
+        if (bin < n_bins) {
+            residue_trains[res_id][bin] = 1;
+            residue_spike_counts[res_id]++;
+        }
+
+        /* Accumulate energy gradient for mean computation (replaces O(N²) loop) */
+        residue_energy_sum[res_id] += f16_bits_to_float(h_events[i].energy_gradient);
+
+        /* Check pocket membership for causal count */
+        if (vx >= pocket_region->x_min && vx <= pocket_region->x_max &&
+            vy >= pocket_region->y_min && vy <= pocket_region->y_max &&
+            vz >= pocket_region->z_min && vz <= pocket_region->z_max) {
+            residue_causal_counts[res_id]++;
         }
     }
 
-    /* Compute TIDE metrics for each residue */
+    /* Compute TIDE metrics for each active residue */
     *out_decomp = (TideDecomposition*)malloc(n_residues * sizeof(TideDecomposition));
     uint32_t active_count = 0;
 
@@ -336,26 +339,9 @@ SdstError sdst_tide_decomposition(
             residue_trains[r], phase_per_bin, n_bins
         );
 
-        /* Causal ΔG: TE-weighted energy contribution
-         * Higher TE = more causal influence on pocket = larger ΔG contribution
-         * Sign: negative TE-weighted contribution = stabilizing */
-        float mean_energy = 0;
-        uint32_t energy_count = 0;
-        for (uint32_t i = 0; i < total_events; i++) {
-            MortonCode mc = h_events[i].voxel;
-            uint32_t slot2 = sdst_hash(mc, cap);
-            for (uint32_t p = 0; p < 32; p++) {
-                uint32_t idx = (slot2 + p) & (cap - 1);
-                if (h_hash[idx].key == mc && h_resmap[idx] == r) {
-                    mean_energy += f16_bits_to_float(h_events[i].energy_gradient);
-                    energy_count++;
-                    break;
-                }
-                if (h_hash[idx].key == SDST_EMPTY_KEY) break;
-            }
-        }
-        if (energy_count > 0) mean_energy /= energy_count;
-
+        /* Causal ΔG: TE-weighted energy contribution.
+         * mean_energy from single-pass accumulation (no second O(N) scan). */
+        float mean_energy = residue_energy_sum[r] / (float)residue_spike_counts[r];
         td->causal_dG = -td->transfer_entropy * mean_energy;
 
         active_count++;
@@ -368,11 +354,10 @@ SdstError sdst_tide_decomposition(
     free(residue_trains);
     free(residue_spike_counts);
     free(residue_causal_counts);
+    free(residue_energy_sum);
     free(pocket_train);
     free(phase_per_bin);
     free(h_events);
-    free(h_resmap);
-    free(h_hash);
 
     return SDST_SUCCESS;
 }

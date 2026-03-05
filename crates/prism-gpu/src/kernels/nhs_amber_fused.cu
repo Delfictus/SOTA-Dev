@@ -206,7 +206,7 @@ struct SpikeEvent {
     float water_density;        // local water density at spike voxel
     float vibrational_energy;   // energy deposited by UV excitation (0 for LIF)
     int n_nearby_excited;       // number of excited aromatics in range (pi-stacking)
-    int _padding;               // pad to 96 bytes (16-byte aligned)
+    float wd_change;            // |water_density - water_density_prev| = |∂WD/∂t| for SDST energy_gradient
 };
 
 // Warp matrix entry - maps voxel to atoms
@@ -686,7 +686,8 @@ __device__ void capture_spike_event(
     int aromatic_residue_id,     // closest excited aromatic residue (-1 for LIF)
     float water_density,         // local water density
     float vibrational_energy,    // UV energy deposited (0 for LIF)
-    int n_nearby_excited         // excited aromatics in range
+    int n_nearby_excited,        // excited aromatics in range
+    float wd_change              // |water_density - water_density_prev| for SDST energy_gradient
 ) {
     event.timestep = timestep;
     event.voxel_idx = voxel_idx;
@@ -699,7 +700,7 @@ __device__ void capture_spike_event(
     event.water_density = water_density;
     event.vibrational_energy = vibrational_energy;
     event.n_nearby_excited = n_nearby_excited;
-    event._padding = 0;
+    event.wd_change = wd_change;
     event.n_residues = 0;
 
     // Map to nearby residues via warp matrix
@@ -1435,7 +1436,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         _arom_res,              // aromatic_residue_id
                         water_density[v],       // water_density
                         _vib_e,                 // vibrational_energy
-                        n_nearby_excited        // n_nearby_excited
+                        n_nearby_excited,       // n_nearby_excited
+                        fabsf(water_density[v] - water_density_prev[v])  // wd_change
                     );
                 }
 
@@ -1501,7 +1503,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         lif_ares,
                         water_density[v],
                         lif_vibe,
-                        n_nearby_excited
+                        n_nearby_excited,
+                        fabsf(water_density[v] - water_density_prev[v])  // wd_change
                     );
                 }
             }
@@ -1576,7 +1579,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         spike_events[si], timestep, efp_v, efp_center,
                         polar_intensity, warp_matrix[efp_v], residue_ids,
                         3, 0.0f, polar_type, -1,
-                        water_density[efp_v], flux, n_charged_nearby
+                        water_density[efp_v], flux, n_charged_nearby,
+                        wd_change  // already computed above
                     );
                 }
             }
@@ -2537,7 +2541,8 @@ extern "C" __global__ void nhs_voxel_step(
                         spike_events[spike_idx], timestep, v, voxel_center,
                         spike_intensity, warp_matrix[v], residue_ids,
                         1, uv_wavelength_nm, _arom_type, _arom_res,
-                        water_density[v], _vib_e, n_nearby_excited
+                        water_density[v], _vib_e, n_nearby_excited,
+                        fabsf(water_density[v] - water_density_prev[v])
                     );
                 }
                 lif_potential[v] = LIF_RESET;
@@ -2573,7 +2578,8 @@ extern "C" __global__ void nhs_voxel_step(
                         spike_intensity, warp_matrix[v], residue_ids,
                         (n_nearby_excited > 0) ? 1 : 2, lif_wl,
                         lif_atype, lif_ares, water_density[v],
-                        lif_vibe, n_nearby_excited
+                        lif_vibe, n_nearby_excited,
+                        fabsf(water_density[v] - water_density_prev[v])
                     );
                 }
             }
@@ -2635,7 +2641,8 @@ efp_phase:
                         spike_events[si], timestep, v, voxel_center,
                         polar_intensity, warp_matrix[v], residue_ids,
                         3, 0.0f, polar_type, -1,
-                        water_density[v], flux, n_charged_nearby
+                        water_density[v], flux, n_charged_nearby,
+                        wd_change  // already computed above
                     );
                 }
             }

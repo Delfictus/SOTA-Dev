@@ -1,0 +1,19 @@
+services:
+  prism4d-demo:
+    build:
+      context: .
+      args:
+        DEMO_PASSWORD: prism4d-demo
+    container_name: prism4d-demo
+    ports:
+      - "2222:2222"
+    restart: unless-stopped
+    # Resource limits to protect host
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 2G

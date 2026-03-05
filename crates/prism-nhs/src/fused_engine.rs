@@ -237,7 +237,7 @@ pub struct GpuSpikeEvent {
     pub water_density: f32,          // local water density
     pub vibrational_energy: f32,     // UV energy deposited (0 for LIF)
     pub n_nearby_excited: i32,       // excited aromatics in range (pi-stacking)
-    pub _padding: i32,               // pad to 96 bytes
+    pub wd_change: f32,              // |water_density - water_density_prev| for SDST energy_gradient
 }
 
 #[cfg(feature = "gpu")]
@@ -254,7 +254,7 @@ impl Default for GpuSpikeEvent {
             water_density: 0.0,
             vibrational_energy: 0.0,
             n_nearby_excited: 0,
-            _padding: 0,
+            wd_change: 0.0,
             intensity: 0.0,
             nearby_residues: [0; 8],
             n_residues: 0,
@@ -4033,9 +4033,13 @@ impl NhsAmberFusedEngine {
                         full_buffer[offset + 84], full_buffer[offset + 85],
                         full_buffer[offset + 86], full_buffer[offset + 87],
                     ]);
+                    let wd_change = f32::from_le_bytes([
+                        full_buffer[offset + 88], full_buffer[offset + 89],
+                        full_buffer[offset + 90], full_buffer[offset + 91],
+                    ]);
                     if self.accumulated_spikes.len() < 5 {
-                        log::info!("SPIKE DEBUG #{}: pos=[{:.2}, {:.2}, {:.2}] voxel={} src={} wl={:.0} arom_type={} intensity={:.3}",
-                            self.accumulated_spikes.len(), pos_x, pos_y, pos_z, voxel_idx, spike_source, wavelength_nm, aromatic_type, intensity);
+                        log::info!("SPIKE DEBUG #{}: pos=[{:.2}, {:.2}, {:.2}] voxel={} src={} wl={:.0} arom_type={} intensity={:.3} wd_change={:.4}",
+                            self.accumulated_spikes.len(), pos_x, pos_y, pos_z, voxel_idx, spike_source, wavelength_nm, aromatic_type, intensity, wd_change);
                         log::info!("  raw bytes[0..24]: {:?}", &full_buffer[offset..offset+24]);
                     }
                     self.accumulated_spikes.push(GpuSpikeEvent {
@@ -4052,7 +4056,7 @@ impl NhsAmberFusedEngine {
                         water_density,
                         vibrational_energy,
                         n_nearby_excited,
-                        _padding: 0,
+                        wd_change,
                     });
                 }
             }
@@ -4622,7 +4626,7 @@ impl NhsAmberFusedEngine {
                 water_density: 0.0,
                 vibrational_energy: 0.0,
                 n_nearby_excited: 0,
-                _padding: 0,
+                wd_change: 0.0,
             });
         }
 

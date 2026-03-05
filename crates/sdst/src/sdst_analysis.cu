@@ -58,7 +58,9 @@ SdstError sdst_query_region(
                                sizeof(uint32_t), cudaMemcpyDeviceToHost));
 
     /* Use stream 0's query buffer */
-    uint32_t stream_idx = 0; /* TODO: map stream to index */
+    /* Map CUDA stream pointer to a query buffer index via modular hash.
+     * Collisions are safe — query results are synchronous per call. */
+    uint32_t stream_idx = ((uint64_t)(uintptr_t)s / 8) % ctx->num_streams;
     SDST_CUDA_CHECK(cudaMemsetAsync(ctx->d_query_counts + stream_idx,
                                      0, sizeof(uint32_t), s));
 
@@ -477,10 +479,16 @@ SdstError sdst_ccns_region(
 
     /* Composite druggability score:
      * SOC sites get highest score (most responsive to perturbation)
-     * Score = (2.0 - tau) * confidence_factor */
-    float confidence = 1.0f - tau_se / tau;
-    if (confidence < 0) confidence = 0;
-    out_result->druggability = (2.0f - tau) * confidence;
+     * Score = (2.0 - tau) * confidence_factor
+     * Guard: tau=0 means insufficient avalanche data → druggability=0 */
+    float confidence;
+    if (tau < 1e-6f || tau_se >= tau) {
+        confidence = 0.0f;
+    } else {
+        confidence = 1.0f - tau_se / tau;
+        if (confidence < 0) confidence = 0;
+    }
+    out_result->druggability = (tau < 1e-6f) ? 0.0f : (2.0f - tau) * confidence;
     if (out_result->druggability < 0) out_result->druggability = 0;
 
     free(h_events); free(avalanche_sizes); free(in_region); free(region_sizes);
@@ -589,15 +597,27 @@ SdstError sdst_avalanche_stats(
         return SDST_SUCCESS;
     }
 
-    /* Per-avalanche accumulators */
+    /* Per-avalanche accumulators (including bbox for spatial_extent) */
     uint32_t* sizes = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
     uint32_t* t_min = (uint32_t*)malloc((max_aid + 1) * sizeof(uint32_t));
     uint32_t* t_max = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
     MortonCode* seeds = (MortonCode*)calloc(max_aid + 1, sizeof(MortonCode));
     PhaseId* phases = (PhaseId*)calloc(max_aid + 1, sizeof(PhaseId));
     bool* valid = (bool*)calloc(max_aid + 1, sizeof(bool));
+    /* Bounding box per avalanche for spatial_extent */
+    uint32_t* bbox_xmin = (uint32_t*)malloc((max_aid + 1) * sizeof(uint32_t));
+    uint32_t* bbox_xmax = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
+    uint32_t* bbox_ymin = (uint32_t*)malloc((max_aid + 1) * sizeof(uint32_t));
+    uint32_t* bbox_ymax = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
+    uint32_t* bbox_zmin = (uint32_t*)malloc((max_aid + 1) * sizeof(uint32_t));
+    uint32_t* bbox_zmax = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
 
-    for (uint32_t i = 0; i <= max_aid; i++) t_min[i] = 0xFFFFFFFF;
+    for (uint32_t i = 0; i <= max_aid; i++) {
+        t_min[i] = 0xFFFFFFFF;
+        bbox_xmin[i] = 0xFFFFFFFF;
+        bbox_ymin[i] = 0xFFFFFFFF;
+        bbox_zmin[i] = 0xFFFFFFFF;
+    }
 
     for (uint32_t i = 0; i < total_events; i++) {
         AvalancheId aid = h_events[i].avalanche_id;
@@ -611,6 +631,16 @@ SdstError sdst_avalanche_stats(
             t_max[aid] = h_events[i].timestamp;
         }
         valid[aid] = true;
+
+        /* Track bounding box */
+        uint32_t vx, vy, vz;
+        morton_decode(h_events[i].voxel, &vx, &vy, &vz);
+        if (vx < bbox_xmin[aid]) bbox_xmin[aid] = vx;
+        if (vx > bbox_xmax[aid]) bbox_xmax[aid] = vx;
+        if (vy < bbox_ymin[aid]) bbox_ymin[aid] = vy;
+        if (vy > bbox_ymax[aid]) bbox_ymax[aid] = vy;
+        if (vz < bbox_zmin[aid]) bbox_zmin[aid] = vz;
+        if (vz > bbox_zmax[aid]) bbox_zmax[aid] = vz;
     }
 
     /* Count valid avalanches (optionally filtered by phase) */
@@ -638,7 +668,13 @@ SdstError sdst_avalanche_stats(
         as->duration = t_max[i] - t_min[i];
         as->seed_voxel = seeds[i];
         as->phase = phases[i];
-        as->spatial_extent = 0.0f; /* TODO: compute from event positions */
+        /* Spatial extent = bounding box diagonal in Angstroms */
+        {
+            float dx = (float)(bbox_xmax[i] - bbox_xmin[i]);
+            float dy = (float)(bbox_ymax[i] - bbox_ymin[i]);
+            float dz = (float)(bbox_zmax[i] - bbox_zmin[i]);
+            as->spatial_extent = sqrtf(dx*dx + dy*dy + dz*dz) * spacing;
+        }
 
         /* Local tau from this avalanche's sub-avalanches is not meaningful;
          * set to 0. Use sdst_ccns_region for regional tau. */
@@ -648,6 +684,9 @@ SdstError sdst_avalanche_stats(
 
     free(h_events); free(sizes); free(t_min); free(t_max);
     free(seeds); free(phases); free(valid);
+    free(bbox_xmin); free(bbox_xmax);
+    free(bbox_ymin); free(bbox_ymax);
+    free(bbox_zmin); free(bbox_zmax);
 
     return SDST_SUCCESS;
 }

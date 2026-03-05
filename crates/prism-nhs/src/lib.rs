@@ -100,6 +100,13 @@ pub mod exclusion;
 pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod fused_engine;
+/// PRISM-Therm: SDST thermodynamic analysis bridge.
+/// Requires the `gpu` feature (SDST is CUDA-only).
+#[cfg(feature = "gpu")]
+pub mod sdst_bridge;
+/// PRISM-Therm: output pipeline (JSON reports, druggability PDB, ranked table).
+#[cfg(feature = "gpu")]
+pub mod sdst_report;
 #[cfg(feature = "gpu")]
 pub mod rt_probe;
 #[cfg(feature = "gpu")]

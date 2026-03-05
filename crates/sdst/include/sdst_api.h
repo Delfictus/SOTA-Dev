@@ -492,13 +492,16 @@ SdstError sdst_hysteresis_scan(
  * computes the transfer entropy, Fisher information, and KL divergence.
  *
  * @param pocket_region     The target binding site region
- * @param residue_map       Device pointer: voxel Morton code → residue ID mapping
+ * @param h_residue_map     Host pointer: dense linear-voxel-indexed → residue ID.
+ *                          Size = grid_nx × grid_ny × grid_nz.
+ *                          Index = x + y * grid_nx + z * grid_nx * grid_ny.
+ *                          Use UINT32_MAX for empty (no-residue) voxels.
  * @param n_residues        Total number of residues
  */
 SdstError sdst_tide_decomposition(
     SdstHandle handle,
     const SpatialRegion* pocket_region,
-    const uint32_t* d_residue_map,
+    const uint32_t* h_residue_map,  /* host pointer, linear-voxel-indexed */
     uint32_t n_residues,
     TideDecomposition** out_decomp,  /* host pointer, caller frees */
     uint32_t* out_count,

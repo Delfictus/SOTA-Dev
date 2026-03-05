@@ -12,6 +12,9 @@ default = ["gpu"]
 gpu = ["cudarc"]
 
 [dependencies]
+# PRISM-Therm: SDST thermodynamic analysis pipeline
+sdst = { path = "../sdst" }
+
 # Core
 anyhow = "1.0"
 thiserror = "1.0"

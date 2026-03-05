@@ -29,6 +29,8 @@ use prism_nhs::{
     write_binding_site_visualizations,
     PrismPrepTopology,
     ParallelReplicaEngine,
+    sdst_bridge::{SdstBridge, PrismThermAnalysis},
+    sdst_report,
 };
 
 #[derive(Parser, Clone)]
@@ -120,6 +122,16 @@ struct Args {
     /// Default 70 = keep top 30%. Use 90+ to suppress thermal noise.
     #[arg(long, default_value = "70")]
     spike_percentile: u32,
+
+    /// Enable PRISM-Therm: feed spike events into SDST and run hysteresis + CCNS
+    /// thermodynamic analysis after the simulation completes.
+    /// Produces a "prism_therm" section in the output JSON with per-site
+    /// asymmetry scores (heating vs cooling), CCNS tau exponents, and
+    /// independently-detected hysteretic pockets.
+    /// Best used with --hysteresis (5-phase thermal cycle required for meaningful
+    /// asymmetry data, though the flag works without it).
+    #[arg(long, default_value = "false")]
+    prism_therm: bool,
 
     /// Verbose output
     #[arg(short, long)]
@@ -584,7 +596,7 @@ fn run_full_pipeline_internal(
                 water_density: 0.0,
                 vibrational_energy: 0.0,
                 n_nearby_excited: 0,
-                _padding: 0,
+                wd_change: 0.0,
             });
         }
 
@@ -1108,6 +1120,43 @@ fn run_full_pipeline_internal(
             }));
         }
 
+        // ── PRISM-Therm: SDST hysteresis + CCNS analysis ──
+        let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
+            log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis...");
+            match SdstBridge::new(&topology, &protocol, accumulated_spikes.len()) {
+                Err(e) => {
+                    log::warn!("  PRISM-Therm: SDST init failed ({}), skipping", e);
+                    None
+                }
+                Ok(bridge) => {
+                    match bridge.ingest_all_spikes(&accumulated_spikes) {
+                        Err(e) => {
+                            log::warn!("  PRISM-Therm: spike ingestion failed ({}), skipping", e);
+                            None
+                        }
+                        Ok(event_count) => {
+                            log::info!("  PRISM-Therm: {} events ingested into SDST", event_count);
+                            match bridge.analyze(&clustered_sites) {
+                                Err(e) => {
+                                    log::warn!("  PRISM-Therm: analysis failed ({})", e);
+                                    None
+                                }
+                                Ok(analysis) => {
+                                    log::info!("  PRISM-Therm: {} hysteretic / {} NHS sites | {} SDST global pockets",
+                                        analysis.hysteretic_site_count,
+                                        clustered_sites.len(),
+                                        analysis.global_pockets.len());
+                                    Some(analysis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "total_steps": steps_per_replica,
@@ -1148,9 +1197,25 @@ fn run_full_pipeline_internal(
             }).collect::<Vec<_>>(),
             "all_pockets": all_pockets_json,
             "cryptic_sites": cryptic_sites_json,
+            "prism_therm": prism_therm_result,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON summary: {}", json_path.display());
+
+        // ── PRISM-Therm standalone report ──
+        if let Some(ref analysis) = prism_therm_result {
+            let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
+                .map(|s| (s.centroid, s.cluster_id))
+                .collect();
+            let report = sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
+            sdst_report::print_summary_table(&report);
+            if let Err(e) = sdst_report::write_json(&report, output_dir, &structure_name) {
+                log::warn!("  PRISM-Therm JSON write failed: {}", e);
+            }
+            if let Err(e) = sdst_report::write_druggability_pdb(&report, &topology, output_dir, &structure_name) {
+                log::warn!("  PRISM-Therm druggability PDB failed: {}", e);
+            }
+        }
 
         // Write ensemble trajectory PDB
         write_ensemble_trajectory(&all_snapshots, &topology, &output_base)?;
@@ -2005,7 +2070,7 @@ fn detect_spikes_from_positions(
                     water_density: 0.0,
                     vibrational_energy: 0.0,
                     n_nearby_excited: 0,
-                    _padding: 0,
+                    wd_change: 0.0,
                 });
             }
         }
@@ -2696,6 +2761,34 @@ fn run_multi_stream_pipeline(
                 .map(|&i| format!("site{}(q={:.3})", clustered_sites[i].cluster_id, clustered_sites[i].quality_score))
                 .collect::<Vec<_>>().join(", "));
 
+        // ── PRISM-Therm (multi-stream path) ──
+        let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
+            log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)...");
+            match SdstBridge::new(&topology, &protocol, all_stream_spikes.len()) {
+                Err(e) => { log::warn!("  PRISM-Therm: SDST init failed ({})", e); None }
+                Ok(bridge) => {
+                    match bridge.ingest_all_spikes(&all_stream_spikes) {
+                        Err(e) => { log::warn!("  PRISM-Therm: ingest failed ({})", e); None }
+                        Ok(event_count) => {
+                            log::info!("  PRISM-Therm: {} events ingested", event_count);
+                            match bridge.analyze(&clustered_sites) {
+                                Err(e) => { log::warn!("  PRISM-Therm: analysis failed ({})", e); None }
+                                Ok(analysis) => {
+                                    log::info!("  PRISM-Therm: {}/{} hysteretic | {} SDST pockets",
+                                        analysis.hysteretic_site_count,
+                                        clustered_sites.len(),
+                                        analysis.global_pockets.len());
+                                    Some(analysis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
         let json_path = output_base.with_extension("binding_sites.json");
         let json_output = serde_json::json!({
             "structure": structure_name,
@@ -2734,11 +2827,26 @@ fn run_multi_stream_pipeline(
             }).collect::<Vec<_>>(),
             "all_pockets": reordered_pockets,
             "cryptic_sites": reordered_cryptic,
+            "prism_therm": prism_therm_result,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
-    }
 
+        // ── PRISM-Therm standalone report (multi-stream) ──
+        if let Some(ref analysis) = prism_therm_result {
+            let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
+                .map(|s| (s.centroid, s.cluster_id))
+                .collect();
+            let report = sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
+            sdst_report::print_summary_table(&report);
+            if let Err(e) = sdst_report::write_json(&report, &args.output, &structure_name) {
+                log::warn!("  PRISM-Therm JSON write failed: {}", e);
+            }
+            if let Err(e) = sdst_report::write_druggability_pdb(&report, &topology, &args.output, &structure_name) {
+                log::warn!("  PRISM-Therm druggability PDB failed: {}", e);
+            }
+        }
+    }
 
     // Export spike events with enhanced metadata for pharmacophore mapping
     if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {

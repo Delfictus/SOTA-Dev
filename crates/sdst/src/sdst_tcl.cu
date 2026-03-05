@@ -236,8 +236,86 @@ SdstError sdst_hysteresis_region(
         out_result->asymmetry_score = 0;
     }
 
-    out_result->avalanche_size_ratio = 1.0f; /* TODO: from histograms */
-    out_result->wavefront_coherence_ratio = 1.0f; /* TODO: from WCT */
+    /* Compute avalanche_size_ratio and wavefront_coherence_ratio from events */
+    {
+        SpikeEvent* h_events = (SpikeEvent*)malloc(total_events * sizeof(SpikeEvent));
+        SDST_CUDA_CHECK(cudaMemcpy(h_events, ctx->d_event_buffer,
+                                   total_events * sizeof(SpikeEvent),
+                                   cudaMemcpyDeviceToHost));
+
+        /* Find max avalanche_id among region events */
+        uint32_t max_aid = 0;
+        for (uint32_t i = 0; i < total_events; i++) {
+            uint32_t vx, vy, vz;
+            morton_decode(h_events[i].voxel, &vx, &vy, &vz);
+            if (vx < region->x_min || vx > region->x_max) continue;
+            if (vy < region->y_min || vy > region->y_max) continue;
+            if (vz < region->z_min || vz > region->z_max) continue;
+            if (h_events[i].avalanche_id > max_aid) max_aid = h_events[i].avalanche_id;
+        }
+
+        if (max_aid > 0) {
+            /* Per-avalanche: size, phase, wavefront coherence sum */
+            uint32_t* a_sizes = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
+            PhaseId*  a_phase = (PhaseId*)calloc(max_aid + 1, sizeof(PhaseId));
+            bool*     a_seen  = (bool*)calloc(max_aid + 1, sizeof(bool));
+            float*    a_wf_sum = (float*)calloc(max_aid + 1, sizeof(float));
+
+            for (uint32_t i = 0; i < total_events; i++) {
+                uint32_t vx, vy, vz;
+                morton_decode(h_events[i].voxel, &vx, &vy, &vz);
+                if (vx < region->x_min || vx > region->x_max) continue;
+                if (vy < region->y_min || vy > region->y_max) continue;
+                if (vz < region->z_min || vz > region->z_max) continue;
+
+                AvalancheId aid = h_events[i].avalanche_id;
+                if (aid == 0) continue;
+                a_sizes[aid]++;
+                if (!a_seen[aid]) {
+                    a_phase[aid] = h_events[i].phase_id;
+                    a_seen[aid] = true;
+                }
+                a_wf_sum[aid] += f16_bits_to_float(h_events[i].amplitude);
+            }
+
+            /* Accumulate mean sizes and coherence for heating vs cooling */
+            float heat_size_sum = 0, cool_size_sum = 0;
+            float heat_wf_sum = 0, cool_wf_sum = 0;
+            uint32_t n_heat_av = 0, n_cool_av = 0;
+
+            for (uint32_t i = 1; i <= max_aid; i++) {
+                if (!a_seen[i] || a_sizes[i] <= 1) continue;
+                PhaseId ph = a_phase[i];
+                float mean_amp = a_wf_sum[i] / (float)a_sizes[i];
+                if (ph == 0 || ph == 1) {
+                    heat_size_sum += (float)a_sizes[i];
+                    heat_wf_sum += mean_amp;
+                    n_heat_av++;
+                } else if (ph == 3 || ph == 4) {
+                    cool_size_sum += (float)a_sizes[i];
+                    cool_wf_sum += mean_amp;
+                    n_cool_av++;
+                }
+            }
+
+            float mean_heat_size = (n_heat_av > 0) ? heat_size_sum / n_heat_av : 0;
+            float mean_cool_size = (n_cool_av > 0) ? cool_size_sum / n_cool_av : 0;
+            float mean_heat_wf   = (n_heat_av > 0) ? heat_wf_sum / n_heat_av : 0;
+            float mean_cool_wf   = (n_cool_av > 0) ? cool_wf_sum / n_cool_av : 0;
+
+            out_result->avalanche_size_ratio =
+                (mean_cool_size > 0) ? mean_heat_size / mean_cool_size : 1.0f;
+            out_result->wavefront_coherence_ratio =
+                (mean_cool_wf > 0) ? mean_heat_wf / mean_cool_wf : 1.0f;
+
+            free(a_sizes); free(a_phase); free(a_seen); free(a_wf_sum);
+        } else {
+            out_result->avalanche_size_ratio = 1.0f;
+            out_result->wavefront_coherence_ratio = 1.0f;
+        }
+        free(h_events);
+    }
+
     out_result->is_hysteretic = (out_result->asymmetry_score > asymmetry_threshold);
 
     cudaFreeAsync(d_hcount, s);
@@ -389,6 +467,90 @@ SdstError sdst_hysteresis_scan(
         if (h_asym[i] > asymmetry_threshold) hit_count++;
     }
 
+    /* Build per-hit-tile avalanche size & coherence ratios from event data */
+    /* Map hit tiles to compact indices for accumulation */
+    int32_t* tile_to_hit = (int32_t*)malloc(n_tiles * sizeof(int32_t));
+    for (uint32_t i = 0; i < n_tiles; i++) tile_to_hit[i] = -1;
+    {
+        uint32_t idx = 0;
+        for (uint32_t i = 0; i < n_tiles; i++) {
+            if (h_asym[i] > asymmetry_threshold) tile_to_hit[i] = idx++;
+        }
+    }
+
+    /* Per-hit-tile avalanche accumulators */
+    float* hit_heat_size_sum  = (float*)calloc(hit_count, sizeof(float));
+    float* hit_cool_size_sum  = (float*)calloc(hit_count, sizeof(float));
+    float* hit_heat_amp_sum   = (float*)calloc(hit_count, sizeof(float));
+    float* hit_cool_amp_sum   = (float*)calloc(hit_count, sizeof(float));
+    uint32_t* hit_n_heat_av   = (uint32_t*)calloc(hit_count, sizeof(uint32_t));
+    uint32_t* hit_n_cool_av   = (uint32_t*)calloc(hit_count, sizeof(uint32_t));
+
+    if (hit_count > 0 && total_events > 0) {
+        /* Copy events to host for avalanche analysis */
+        SpikeEvent* h_events = (SpikeEvent*)malloc(total_events * sizeof(SpikeEvent));
+        SDST_CUDA_CHECK(cudaMemcpy(h_events, ctx->d_event_buffer,
+                                   total_events * sizeof(SpikeEvent),
+                                   cudaMemcpyDeviceToHost));
+
+        /* Find max avalanche_id */
+        uint32_t max_aid = 0;
+        for (uint32_t i = 0; i < total_events; i++) {
+            if (h_events[i].avalanche_id > max_aid)
+                max_aid = h_events[i].avalanche_id;
+        }
+
+        if (max_aid > 0) {
+            /* Per-avalanche: size, phase, tile, amplitude sum */
+            uint32_t* a_sizes  = (uint32_t*)calloc(max_aid + 1, sizeof(uint32_t));
+            PhaseId*  a_phase  = (PhaseId*)calloc(max_aid + 1, sizeof(PhaseId));
+            int32_t*  a_tile   = (int32_t*)malloc((max_aid + 1) * sizeof(int32_t));
+            float*    a_amp    = (float*)calloc(max_aid + 1, sizeof(float));
+            bool*     a_seen   = (bool*)calloc(max_aid + 1, sizeof(bool));
+            for (uint32_t i = 0; i <= max_aid; i++) a_tile[i] = -1;
+
+            for (uint32_t i = 0; i < total_events; i++) {
+                AvalancheId aid = h_events[i].avalanche_id;
+                if (aid == 0) continue;
+                uint32_t vx, vy, vz;
+                morton_decode(h_events[i].voxel, &vx, &vy, &vz);
+                uint32_t txi = vx / ts, tyi = vy / ts, tzi = vz / ts;
+                if (txi >= tiles_x || tyi >= tiles_y || tzi >= tiles_z) continue;
+                uint32_t tidx = txi + tyi * tiles_x + tzi * tiles_x * tiles_y;
+
+                a_sizes[aid]++;
+                a_amp[aid] += f16_bits_to_float(h_events[i].amplitude);
+                if (!a_seen[aid]) {
+                    a_phase[aid] = h_events[i].phase_id;
+                    a_tile[aid] = (int32_t)tidx;
+                    a_seen[aid] = true;
+                }
+            }
+
+            /* Distribute avalanche stats to hit tiles */
+            for (uint32_t i = 1; i <= max_aid; i++) {
+                if (!a_seen[i] || a_sizes[i] <= 1 || a_tile[i] < 0) continue;
+                int32_t hit_idx = tile_to_hit[(uint32_t)a_tile[i]];
+                if (hit_idx < 0) continue;
+
+                float mean_amp = a_amp[i] / (float)a_sizes[i];
+                PhaseId ph = a_phase[i];
+                if (ph == 0 || ph == 1) {
+                    hit_heat_size_sum[hit_idx] += (float)a_sizes[i];
+                    hit_heat_amp_sum[hit_idx]  += mean_amp;
+                    hit_n_heat_av[hit_idx]++;
+                } else if (ph == 3 || ph == 4) {
+                    hit_cool_size_sum[hit_idx] += (float)a_sizes[i];
+                    hit_cool_amp_sum[hit_idx]  += mean_amp;
+                    hit_n_cool_av[hit_idx]++;
+                }
+            }
+
+            free(a_sizes); free(a_phase); free(a_tile); free(a_amp); free(a_seen);
+        }
+        free(h_events);
+    }
+
     /* Build result arrays */
     *out_results = (HysteresisResult*)malloc(hit_count * sizeof(HysteresisResult));
     *out_regions = (SpatialRegion*)malloc(hit_count * sizeof(SpatialRegion));
@@ -421,13 +583,28 @@ SdstError sdst_hysteresis_scan(
         res->heating_spike_rate = (heating_steps > 0) ? (float)h_heat[i] / heating_steps : 0;
         res->cooling_spike_rate = (cooling_steps > 0) ? (float)h_cool[i] / cooling_steps : 0;
         res->asymmetry_score = h_asym[i];
-        res->avalanche_size_ratio = 1.0f;
-        res->wavefront_coherence_ratio = 1.0f;
+
+        /* Compute ratios from accumulated avalanche data */
+        float mhs = (hit_n_heat_av[out_idx] > 0) ?
+                    hit_heat_size_sum[out_idx] / hit_n_heat_av[out_idx] : 0;
+        float mcs = (hit_n_cool_av[out_idx] > 0) ?
+                    hit_cool_size_sum[out_idx] / hit_n_cool_av[out_idx] : 0;
+        float mha = (hit_n_heat_av[out_idx] > 0) ?
+                    hit_heat_amp_sum[out_idx] / hit_n_heat_av[out_idx] : 0;
+        float mca = (hit_n_cool_av[out_idx] > 0) ?
+                    hit_cool_amp_sum[out_idx] / hit_n_cool_av[out_idx] : 0;
+
+        res->avalanche_size_ratio = (mcs > 0) ? mhs / mcs : 1.0f;
+        res->wavefront_coherence_ratio = (mca > 0) ? mha / mca : 1.0f;
         res->is_hysteretic = true;
 
         out_idx++;
     }
 
+    free(tile_to_hit);
+    free(hit_heat_size_sum); free(hit_cool_size_sum);
+    free(hit_heat_amp_sum);  free(hit_cool_amp_sum);
+    free(hit_n_heat_av);     free(hit_n_cool_av);
     free(h_asym); free(h_heat); free(h_cool);
     cudaFreeAsync(d_asym, s);
     cudaFreeAsync(d_theat, s);

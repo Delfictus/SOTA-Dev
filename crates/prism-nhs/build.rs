@@ -9,6 +9,16 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=src/cuda/spike_density.cu");
 
+    // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
+    // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
+    // final binary, so we set it here in the binary crate's build.rs.
+    let workspace = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+        .parent().unwrap()  // crates/
+        .parent().unwrap()  // workspace root
+        .to_path_buf();
+    let sdst_lib = workspace.join("crates/sdst/lib");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", sdst_lib.display());
+
     let gpu_enabled = env::var("CARGO_FEATURE_GPU").is_ok();
     if !gpu_enabled {
         return;

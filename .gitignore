@@ -37,3 +37,16 @@ release/dist/
 # Local test results
 results_*/
 rt_full_output/
+
+# CryptoBench heavy data (spike events, trajectories, raw data — 55GB+)
+benchmarks/cryptobench/results/
+benchmarks/cryptobench/aggregated/
+benchmarks/cryptobench/data/
+benchmarks/cryptobench/topologies/
+benchmarks/cryptobench/structures/
+
+# Loose topology JSON files in project root
+/*.topology.json
+
+# SQLite profiling databases
+*.sqlite

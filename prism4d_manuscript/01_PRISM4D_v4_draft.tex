@@ -1,0 +1,558 @@
+% ============================================================================
+%  PRISM-4D Preprint v4.0 -- Reframed for Peer Review
+%  Based on: PRISM4D_Preprint_v3-3.pdf (Serfaty, 2026)
+%  Target: Bioinformatics / JCTC / Nature Methods
+%  Changes from v3.3: Tone reframing, equation numbering, expanded methods,
+%                       expanded references, structural corrections
+% ============================================================================
+
+\documentclass[11pt,twocolumn]{article}
+
+% ---- Packages ----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[margin=1in]{geometry}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{siunitx}
+\usepackage{multirow}
+\usepackage{caption}
+
+% ---- Metadata ----
+\title{PRISM-4D: Spike-Event-Driven Detection of Cryptic Binding Sites via Physics Simulation}
+
+\author{Ididia Serfaty \\
+  Delfictus IO LLC \\
+  \texttt{is@delfictus.com}}
+
+\date{February 2026}
+
+\begin{document}
+\maketitle
+
+% ============================================================================
+%  ABSTRACT
+% ============================================================================
+\begin{abstract}
+
+\textbf{Background:}
+Cryptic binding sites---transient pockets absent in static crystal structures---represent
+high-value drug targets inaccessible to conventional computational screening. Existing
+methods rely on surface geometry (fpocket, SiteMap) or machine learning trained on
+crystallographic features (P2Rank, DeepSite), limiting their capacity to detect
+conformationally gated pockets.
+
+\textbf{Methods:}
+We introduce PRISM-4D (Physics-driven Recognition of Intrinsic Sites through Molecular 4D
+dynamics), a molecular dynamics platform that detects cryptic binding sites through explicit
+physics simulation. PRISM-4D couples AMBER ff14SB force field molecular dynamics with a
+5-phase cryo-thermal hysteresis protocol (50--300--50\,K, 55{,}000 steps/stream),
+multi-wavelength UV excitation spectroscopy simulation (280/274/258/254/211\,nm), and a
+leaky integrate-and-fire (LIF) neuromorphic network to identify cooperative dewetting events
+indicative of druggable pocket formation. Detected spike events are clustered via a 4-stage
+GPU pipeline: RT-DBSCAN via OptiX BVH traversal, watershed segmentation, Eikonal BFS, and
+intensity$^2$-weighted centroid tracking (Spike-Native Density Clustering, SNDC).
+
+\textbf{Results:}
+On a 12-protein benchmark spanning orthosteric, allosteric, and cryptic binding sites,
+PRISM-4D detects all 11 ground-truth targets within 10\,\AA{} Distance from Centroid to
+Centroid (DCC), with 4/11 (36.4\%) at $<$5\,\AA{} and 8/11 (72.7\%) at $<$8\,\AA{}.
+On the SIRP$\alpha$ immune checkpoint protein, PRISM-4D detects the experimentally
+validated WYF cryptic pocket (7.1\,\AA{} DCC) as its top-ranked site from the closed apo
+structure. On $\beta$-catenin, PRISM-4D identifies a computationally predicted cryptic
+pocket (Site~6) featuring a dual-cysteine pair (CYS240/CYS278) with quality 0.965 and
+centroid displacement $<$0.06\,\AA{} across 5 stochastic seeds.
+
+\textbf{Conclusions:}
+These results demonstrate that spike-event-driven physics simulation can access drug targets
+fundamentally invisible to static-structure methods. The platform runs on a single
+consumer-grade GPU with no external software dependencies.
+\end{abstract}
+
+\textbf{Keywords:} cryptic binding sites, molecular dynamics, drug discovery, spike detection,
+pocket detection, cryo-thermal protocol, UV perturbation spectroscopy, AMBER force field,
+RT-core acceleration, consumer GPU
+
+% ============================================================================
+%  1. INTRODUCTION
+% ============================================================================
+\section{Introduction}
+
+The identification of druggable binding sites on protein surfaces is a fundamental step in
+structure-based drug design. While orthosteric binding pockets are readily detectable from
+static crystal structures, a growing body of evidence demonstrates that many therapeutically
+relevant binding sites are cryptic: they exist only transiently, requiring conformational
+rearrangement to become accessible to small molecules
+\citep{cimermancic2016,vajda2018}. Cryptic pockets represent an enormous untapped
+reservoir of drug targets, particularly for proteins historically classified as
+``undruggable.''
+
+Current computational approaches fall into two categories. Geometric methods (fpocket
+\citep{leguilloux2009}, LIGSITE \citep{hendlich1997}, SiteMap \citep{halgren2009}) analyze the
+static molecular surface using Voronoi tessellation or grid-based algorithms. Machine learning
+methods (P2Rank \citep{krivak2018}, DeepSite \citep{jimenez2017}, PocketMiner
+\citep{meller2023}) train on crystallographic features from databases such as sc-PDB. Both
+share a fundamental limitation: they operate on a single static conformation and cannot detect
+pockets requiring protein dynamics to open. FTMap \citep{kozakov2015} and mixed-solvent MD
+\citep{ghanakota2016} partially address this through probe binding sampling, but remain
+limited by short simulation timescales and lack explicit physics-driven detection criteria.
+
+We present PRISM-4D (Physics-driven Recognition of Intrinsic Sites through Molecular 4D
+dynamics), which replaces geometric inference and statistical learning with direct physics
+simulation while running entirely on a single consumer-grade NVIDIA GPU with no external
+software dependencies.
+
+% ============================================================================
+%  2. METHODS
+% ============================================================================
+\section{Methods}
+
+\subsection{System Architecture}
+
+PRISM-4D integrates four computational stages into a unified GPU-accelerated pipeline
+implemented in Rust with CUDA kernels for performance-critical operations (Figure~1). The
+compiled binary requires only the NVIDIA CUDA runtime and operates fully air-gapped with no
+internet connectivity post-installation.
+
+% ---- 2.1 Force Field and Integration ----
+\subsection{Force Field and Integration}
+
+Molecular dynamics simulations employ the AMBER ff14SB force field \citep{maier2015} with
+the following protocol:
+\begin{itemize}
+  \item Integration: velocity Verlet with Langevin thermostat \citep{izaguirre2001}
+  \item Timestep: 1\,fs (TODO: verify from code)
+  \item Nonbonded cutoff: (TODO: extract from code)
+  \item 1-4 scaling: LJ 0.5, electrostatic 5/6 (standard AMBER)
+  \item Bond constraints: SHAKE \citep{ryckaert1977} on all X--H bonds
+  \item Water model: implicit via hydrophobic exclusion inference (Section~\ref{sec:water})
+\end{itemize}
+
+% ---- 2.2 Cryo-Thermal Hysteresis Protocol ----
+\subsection{Cryo-Thermal Hysteresis Protocol}
+\label{sec:cryo}
+
+The simulation executes a 5-phase thermal hysteresis cycle (Figure~2) selected by the
+\texttt{--fast --hysteresis} flags:
+
+\begin{enumerate}
+  \item \textbf{Cold hold} (14{,}000 steps, 50\,K): Frozen baseline for clean UV spike detection
+  \item \textbf{Ramp up} (6{,}000 steps, 50$\to$300\,K): Forward conformational transitions
+  \item \textbf{Warm hold} (15{,}000 steps, 300\,K): Equilibrium sampling
+  \item \textbf{Ramp down} (6{,}000 steps, 300$\to$50\,K): Reverse transitions; hysteresis measurement
+  \item \textbf{Cold return} (14{,}000 steps, 50\,K): Final frozen state verification
+\end{enumerate}
+
+Total: 55{,}000 steps per stream. UV bursts fire every 250 steps, cycling through
+wavelengths [280, 274, 258, 211]\,nm with 300-step dwell per wavelength (full cycle: 1{,}200
+steps), at 42\,kcal/mol per burst.
+
+% ---- 2.3 UV Pump-Probe Spectroscopy ----
+\subsection{In Silico UV Pump-Probe Spectroscopy}
+
+UV ``pulses'' deposit energy into aromatic residues according to experimentally measured
+molar extinction coefficients. The energy deposition per chromophore is:
+\begin{equation}
+  E_{\text{dep}} = E_{\text{photon}} \times \sigma(\lambda) \times F \times \eta
+  \label{eq:energy_dep}
+\end{equation}
+where the absorption cross-section $\sigma(\lambda)$ is converted from molar extinction
+coefficient $\varepsilon$ via:
+\begin{equation}
+  \sigma = \varepsilon \times 3.823 \times 10^{-5} \; \text{\AA}^2
+  \label{eq:sigma_conversion}
+\end{equation}
+$F$ is the fluence (0.024 photons/\AA$^2$), and $\eta$ is the quantum yield for thermal
+dissipation. Chromophore parameters are summarized in Table~\ref{tab:chromophores}.
+
+\begin{table}[h]
+\centering
+\caption{UV chromophore photophysical parameters.}
+\label{tab:chromophores}
+\begin{tabular}{lcccc}
+\toprule
+Chromophore & $\lambda_{\max}$ (nm) & $\varepsilon$ (M$^{-1}$cm$^{-1}$) & $\eta$ \\
+\midrule
+Trp & 280 & 5{,}600 & 0.83 \\
+Tyr & 274 & 1{,}490 & 0.86 \\
+Phe & 258 & 197 & 0.94 \\
+S--S & 211 & 300 & 0.95 \\
+Benzene (virtual) & 254 & 204 & 0.71 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---- 2.4 Three-Channel Spike Detection ----
+\subsection{Three-Channel Spike Detection Network}
+
+Each voxel is monitored by three independent neuromorphic channels:
+
+\textbf{Channel 1 (UV, source=1):} Active during UV bursts; detects aromatic excitation
+within 4.0\,\AA{} with cooperative enhancement. Records wavelength, aromatic type, and
+vibrational energy.
+
+\textbf{Channel 2 (LIF, source=2):} Active when UV bursts are off; a leaky integrate-and-fire
+neuron ($\tau_{\text{eff}}$\,=\,0.15\,ps, threshold\,=\,0.5, refractory\,=\,250 steps)
+integrating bidirectional water density change and exclusion field signals. Detects
+cooperative dewetting events.
+
+\textbf{Channel 3 (EFP, source=3):} Electrostatic flux probe, always active when $\geq$2
+charged atoms are nearby. Computes Coulomb potential with Warshel distance-dependent
+dielectric:
+\begin{equation}
+  \varepsilon_r = \max(4r, 4)
+  \label{eq:warshel}
+\end{equation}
+Emits typed CATION ($\varphi > 0$) or ANION ($\varphi < 0$) spikes.
+
+Each spike event carries 96 bytes of metadata: position, intensity, source channel,
+wavelength, aromatic type, water density, vibrational energy, and 8 nearby residue IDs.
+
+% ---- 2.5 SNDC Clustering ----
+\subsection{Spike-Native Density Clustering (SNDC v9)}
+
+\subsubsection{RT-DBSCAN (Stage 3a)}
+Spike positions are encoded as spheres in a bounding volume hierarchy (BVH) constructed by
+NVIDIA OptiX RT cores. Epsilon-neighborhood queries become ray-sphere intersection tests,
+reducing neighbor search from $O(N^2)$ to $O(N)$. The epsilon parameter is adaptively
+computed:
+\begin{equation}
+  \epsilon = 3.0 \times \left(\frac{500}{N_{\text{atoms}}}\right)^{1/3}, \quad
+  \epsilon \in [1.2, 3.0] \; \text{\AA}
+  \label{eq:adaptive_eps}
+\end{equation}
+
+\subsubsection{Watershed Segmentation (Stage 3b)}
+When a DBSCAN cluster spans multiple binding subsites, watershed segmentation identifies
+density peaks within the cluster and partitions voxels by steepest-descent flow to each peak.
+
+\subsubsection{Eikonal BFS (Stage 3c)}
+Distance-field propagation from each watershed-separated cluster boundary via the Fast
+Marching Method, enabling pocket geometry characterization: depth, entry channel width,
+enclosure fraction, and solvent-accessible volume.
+
+\subsubsection{Peak Centroid Tracking (Stage 3d)}
+Intensity$^2$-weighted centroid computation:
+\begin{equation}
+  \mathbf{C} = \frac{\sum_i I_i^2 \cdot \mathbf{r}_i}{\sum_i I_i^2}
+  \label{eq:centroid}
+\end{equation}
+The squared weighting concentrates the centroid on the thermodynamic hotspot rather than the
+volumetric center, providing 3--15\,\AA{} improvement over geometric centroids for oversized
+or irregular pockets.
+
+% ---- 2.6 Benzene Cosolvent Probing ----
+\subsection{UV-Activated Benzene Cosolvent Probing}
+
+Virtual benzene probes are injected at surface-exposed hydrophobic aliphatic residues (LEU,
+ILE, VAL, ALA, MET), using experimentally measured benzene photophysical properties
+($\lambda_{\max}$\,=\,254\,nm, $\varepsilon$\,=\,204\,M$^{-1}$cm$^{-1}$, $\eta$\,=\,0.71;
+\citealt{pantos1978,cundall1972}). The 254\,nm wavelength is integrated into the
+frequency-hopping UV burst schedule alongside native aromatic channels (280/274/258/211\,nm).
+
+% ---- 2.7 Water Inference ----
+\subsection{Hydrophobic Exclusion Water Inference}
+\label{sec:water}
+
+Rather than employing explicit solvent simulation, PRISM-4D infers water density from the
+hydrophobic exclusion field---the ``negative space'' defined by the protein's hydrophobic
+surface. The exclusion field is computed via GPU-accelerated geometric kernels operating in
+Fourier space.
+
+% ---- 2.8 Benchmark Protocol ----
+\subsection{Benchmark Protocol}
+
+All benchmark runs used the command:
+\begin{verbatim}
+nhs_rt_full -t <topology>.json
+  -o <output_dir> --fast --hysteresis
+  --multi-stream 8 -v
+\end{verbatim}
+with \texttt{RUST\_LOG=info}. Topology preparation used \texttt{scripts/prism-prep} with
+AMBER ff14SB force fields (requires OpenMM for \texttt{--use-amber}). Detection accuracy was
+measured by Distance from Centroid to Centroid (DCC): the Euclidean distance between the
+predicted site centroid and the crystallographic ligand centroid after Kabsch superposition
+on backbone C$\alpha$ atoms. Each run uses 8 parallel independent streams (unique PRNG seeds:
+$42 + i \times 12345$ for stream $i$), with consensus merge requiring a site to appear in
+$\geq$4/8 streams (50\% threshold) within 10\,\AA{} spatial tolerance.
+
+All benchmarks were executed on a single NVIDIA GeForce RTX 5080 (16\,GB GDDR7, Blackwell
+architecture, compute capability 12.0).
+
+% ============================================================================
+%  3. RESULTS
+% ============================================================================
+\section{Results}
+
+\subsection{Twelve-Protein Benchmark}
+
+We evaluated PRISM-4D on 12 proteins spanning orthosteric, allosteric, and cryptic binding
+sites (Table~\ref{tab:benchmark}). $\beta$-catenin (2GL7) is excluded from DCC accuracy
+calculations as a computational prediction with no ground-truth ligand.
+
+% TODO: Table 1 with error bars (mean +/- std from 8 streams)
+% TODO: Add DCC cumulative distribution / ROC curve
+
+All 11 ground-truth targets were detected within 10\,\AA{} DCC. Four targets achieved
+excellent accuracy ($<$5\,\AA{}): BACE1 (3.6\,\AA{}), TEM1 $\beta$-lactamase (3.7\,\AA{}),
+KRAS G12C (3.8\,\AA{}), and PTP1B (4.8\,\AA{}). Three marginal cases (9.5--9.8\,\AA{} DCC)
+suggest refinement opportunities for multi-chain complexes and covalent cofactor geometries.
+
+\subsection{Case Study 1: SIRP$\alpha$ WYF Cryptic Pocket}
+
+Signal-regulatory protein alpha (SIRP$\alpha$) is a critical immune checkpoint in the
+CD47--SIRP$\alpha$ axis. In December 2025, Diamond Light Source researchers discovered the WYF
+cryptic pocket via an XChem fragment screening campaign (800+ fragments, 27 hits)
+\citep{sirpa_xchem2025}. PRISM-4D detected this pocket as Site~1 (top-ranked, 7.1\,\AA{} DCC)
+from the closed apo structure where the pocket is completely sealed. P2Rank 2.5 assigns 0.2\%
+probability to the same pocket (Table~\ref{tab:sirpa}).
+
+\subsection{Case Study 2: $\beta$-Catenin Predicted Cryptic Pocket}
+
+$\beta$-catenin is widely considered ``undruggable'' due to its elongated armadillo repeat
+surface. PRISM-4D identified a computationally predicted cryptic pocket---Site~6---featuring
+TRP242 (aromatic anchor), CYS240/CYS278 (dual-cysteine pair), and LYS204 (electrostatic
+anchor), scoring 0.965 quality and 0.844 druggability (Table~\ref{tab:bcatenin}). P2Rank
+ranks this region 8/8 (0.5\% probability). \textit{This prediction requires experimental
+validation.}
+
+\subsection{Reproducibility Validation}
+
+Five independent runs (different random seeds, same binary) demonstrate 0.06\,\AA{} maximum
+pairwise centroid displacement for $\beta$-catenin Site~6 (Table~\ref{tab:repro}).
+% TODO: Extend reproducibility analysis to all 12 targets
+
+% ============================================================================
+%  4. COMPARISON TO EXISTING METHODS
+% ============================================================================
+\section{Comparison to Existing Methods}
+
+Table~\ref{tab:comparison} positions PRISM-4D against established pocket detection methods.
+% TODO: Add head-to-head benchmark with PocketMiner and FTMap on same 12 proteins
+
+% ============================================================================
+%  5. DISCUSSION
+% ============================================================================
+\section{Discussion}
+
+\subsection{Thermodynamic Event Detection}
+
+PRISM-4D approaches pocket detection as a thermodynamic event detection problem. A druggable
+pocket is a region where small molecules can be confined, water is excluded, and aromatic
+residues create favorable interaction geometries. The LIF network detects exactly these
+conditions through spike events at biophysically meaningful thresholds.
+
+\subsection{Technical Contributions}
+
+PRISM-4D introduces several techniques not previously applied to pocket detection
+(Table~\ref{tab:innovations}), including in silico UV pump-probe spectroscopy, UV-activated
+cosolvent probing, three-channel neuromorphic spike detection with temporal isolation, and
+RT-core accelerated spatial clustering.
+
+\subsection{The Dual-Cysteine Opportunity on $\beta$-Catenin}
+
+The CYS240/CYS278 pair in $\beta$-catenin Site~6 represents a computationally predicted
+covalent drug design opportunity requiring experimental validation. Dual-cysteine pockets are
+rare ($<$200 human proteins with surface-accessible Cys pairs within 10\,\AA{}) and would
+offer two-point covalent attachment for enhanced selectivity. The TRP242 aromatic anchor
+creates a triangular Cys--Trp--Cys pharmacophore geometry.
+
+\subsection{Hardware Accessibility}
+
+The complete PRISM-4D platform runs on a single consumer-grade NVIDIA RTX 5080 GPU
+(16\,GB GDDR7). The compiled binary requires only the NVIDIA CUDA runtime, operates without
+network connectivity, and has no external software dependencies. This enables cryptic pocket
+detection on hardware available to academic laboratories, startups, and researchers in
+resource-limited settings.
+
+\subsection{Limitations and Future Work}
+
+\textbf{Benchmark size.} The current 12-protein benchmark is modest. Validation on the full
+CryptoSite dataset \citep{cimermancic2016} ($\sim$55 proteins) and PocketMiner benchmark
+\citep{meller2023} is ongoing.
+
+\textbf{False positive rate.} The false discovery rate across all detected sites has not been
+systematically quantified. PRISM-4D detects multiple sites per protein (e.g., 17 on
+SIRP$\alpha$), and the proportion corresponding to true binding events requires systematic
+evaluation.
+
+\textbf{Negative controls.} The current benchmark lacks proteins with no known cryptic
+pockets. Validation on established negative controls is needed to assess specificity.
+
+\textbf{Parameter sensitivity.} Key parameters (LIF threshold, UV burst energy, epsilon
+range) were empirically tuned. Systematic sensitivity analysis across diverse protein
+families is planned.
+
+\textbf{Multi-chain complexes.} Three marginal results (9.5--9.8\,\AA{} DCC) involve
+multi-chain complexes or covalent cofactor geometries, suggesting algorithmic refinement
+opportunities.
+
+\textbf{GPU vendor dependency.} The current implementation requires NVIDIA GPUs with CUDA
+support and RT cores (Turing architecture or newer). AMD and Intel GPU support is not
+available.
+
+\textbf{Temperature protocol.} The 50\,K cold phase employs temperatures below the glass
+transition of solvated proteins ($\sim$180\,K), which may introduce non-physiological
+conformational states. The extent to which these affect pocket detection accuracy warrants
+investigation.
+
+\textbf{Runtime.} Execution time (3--18 minutes per target) is substantially slower than
+geometric methods (seconds) though faster than conventional MD approaches (hours to days).
+
+% ============================================================================
+%  6. CONCLUSION
+% ============================================================================
+\section{Conclusion}
+
+PRISM-4D introduces a spike-event-driven approach to binding site detection based on physics
+simulation. Its SNDC pipeline---RT-DBSCAN, watershed segmentation, Eikonal BFS, and peak
+centroid tracking---detects all 11 ground-truth targets within 10\,\AA{} DCC on a 12-protein
+benchmark, identifies the experimentally validated SIRP$\alpha$ WYF cryptic pocket as its
+top-ranked site from the closed apo structure, and predicts a novel cryptic pocket on
+$\beta$-catenin with sub-angstrom centroid reproducibility across stochastic seeds. The
+platform achieves these results on consumer-grade hardware with no external dependencies.
+
+% ============================================================================
+%  7. DATA AND CODE AVAILABILITY
+% ============================================================================
+\section{Data and Code Availability}
+
+PRISM-4D is developed by Delfictus IO LLC. The engine is implemented in Rust with CUDA GPU
+acceleration (Blackwell architecture, compute capability $\geq$12.0). Benchmark topologies,
+binding site JSON outputs, and PyMOL session files are deposited at [TODO: Zenodo DOI].
+% TODO: Deposit data and provide DOI
+% TODO: Code availability statement (open-source timeline or embargo)
+
+% ============================================================================
+%  REFERENCES
+% ============================================================================
+\bibliographystyle{plainnat}
+% TODO: Create .bib file with 40+ references
+% \bibliography{prism4d}
+
+\begin{thebibliography}{99}
+
+\bibitem[Bowman and Geissler(2012)]{bowman2012}
+Bowman, G.R. and Geissler, P.L. (2012).
+Equilibrium fluctuations of a single folded protein reveal a multitude of potential cryptic allosteric sites.
+\textit{Proc. Natl. Acad. Sci.}, 109(29), 11681--11686.
+
+\bibitem[Cimermancic et al.(2016)]{cimermancic2016}
+Cimermancic, P., Weinkam, P., Rettenmaier, T.J., et al. (2016).
+CryptoSite: Expanding the druggable proteome by characterization and prediction of cryptic binding sites.
+\textit{J. Mol. Biol.}, 428(4), 709--719.
+
+\bibitem[Cundall and Robinson(1972)]{cundall1972}
+Cundall, R.B. and Robinson, D.A. (1972).
+Primary photophysical processes in aromatic molecules.
+
+\bibitem[Durrant and McCammon(2011)]{durrant2011}
+Durrant, J.D. and McCammon, J.A. (2011).
+Molecular dynamics simulations and drug discovery.
+\textit{BMC Biol.}, 9(1), 71.
+
+\bibitem[Ester et al.(1996)]{ester1996}
+Ester, M., Kriegel, H.P., Sander, J., and Xu, X. (1996).
+A density-based algorithm for discovering clusters in large spatial databases with noise.
+\textit{KDD}, 226--231.
+
+\bibitem[Ghanakota and Carlson(2016)]{ghanakota2016}
+Ghanakota, P. and Carlson, H.A. (2016).
+Driving structure-based drug discovery through cosolvent molecular dynamics.
+\textit{J. Med. Chem.}, 59(23), 10383--10399.
+
+\bibitem[Halgren(2009)]{halgren2009}
+Halgren, T.A. (2009).
+Identifying and characterizing binding sites and assessing druggability.
+\textit{J. Chem. Inf. Model.}, 49(2), 377--389.
+
+\bibitem[Hendlich et al.(1997)]{hendlich1997}
+Hendlich, M., Rippmann, F., and Barnickel, G. (1997).
+LIGSITE: automatic and efficient detection of potential small molecule-binding sites in proteins.
+\textit{J. Mol. Graph. Model.}, 15(6), 359--363.
+
+\bibitem[Izaguirre et al.(2001)]{izaguirre2001}
+Izaguirre, J.A., Catarello, D.P., Wozniak, J.M., and Skeel, R.D. (2001).
+Langevin stabilization of molecular dynamics.
+\textit{J. Chem. Phys.}, 114(5), 2090--2098.
+
+\bibitem[Jimenez et al.(2017)]{jimenez2017}
+Jimenez, J., Doerr, S., Martinez-Rosell, G., Rose, A.S., and De Fabritiis, G. (2017).
+DeepSite: protein-binding site predictor using 3D-convolutional neural networks.
+\textit{Bioinformatics}, 33(19), 3036--3042.
+
+\bibitem[Kozakov et al.(2015)]{kozakov2015}
+Kozakov, D., Grove, L.E., Hall, D.R., et al. (2015).
+The FTMap family of web servers for determining and characterizing ligand-binding hot spots.
+\textit{Nat. Protoc.}, 10(5), 733--755.
+
+\bibitem[Krivak and Hoksza(2018)]{krivak2018}
+Krivak, R. and Hoksza, D. (2018).
+P2Rank: machine learning based tool for rapid and accurate prediction of ligand binding sites.
+\textit{J. Cheminform.}, 10(1), 39.
+
+\bibitem[Lakowicz(2006)]{lakowicz2006}
+Lakowicz, J.R. (2006).
+\textit{Principles of Fluorescence Spectroscopy}, 3rd ed. Springer.
+
+\bibitem[Le~Guilloux et al.(2009)]{leguilloux2009}
+Le~Guilloux, V., Schmidtke, P., and Tuffery, P. (2009).
+Fpocket: an open source platform for ligand pocket detection.
+\textit{BMC Bioinform.}, 10(1), 168.
+
+\bibitem[Maier et al.(2015)]{maier2015}
+Maier, J.A., Martinez, C., Kasavajhala, K., et al. (2015).
+ff14SB: Improving the accuracy of protein side chain and backbone parameters from ff99SB.
+\textit{J. Chem. Theory Comput.}, 11(8), 3696--3713.
+
+\bibitem[Meller et al.(2023)]{meller2023}
+Meller, A., Ward, M., Borowsky, J., et al. (2023).
+Predicting locations of cryptic pockets from single protein structures using the PocketMiner graph neural network.
+\textit{Nat. Commun.}, 14(1), 1177.
+
+\bibitem[Pace et al.(1995)]{pace1995}
+Pace, C.N., Vajdos, F., Fee, L., Grimsley, G., and Gray, T. (1995).
+How to measure and predict the molar absorption coefficient of a protein.
+\textit{Protein Sci.}, 4(11), 2411--2423.
+
+\bibitem[Pantos et al.(1978)]{pantos1978}
+Pantos, E., Philis, J., and Bolovinos, A. (1978).
+The extinction coefficient of benzene vapor in the region 4.6 to 36 eV.
+\textit{J. Mol. Spectrosc.}, 72(1), 36--43.
+
+\bibitem[Ryckaert et al.(1977)]{ryckaert1977}
+Ryckaert, J.P., Ciccotti, G., and Berendsen, H.J.C. (1977).
+Numerical integration of the Cartesian equations of motion of a system with constraints.
+\textit{J. Comput. Phys.}, 23(3), 327--341.
+
+\bibitem[Vajda et al.(2018)]{vajda2018}
+Vajda, S., Beglov, D., Wakefield, A.E., et al. (2018).
+Cryptic binding sites on proteins: definition, detection, and druggability.
+\textit{Curr. Opin. Chem. Biol.}, 44, 1--8.
+
+\bibitem[Vincent and Soille(1991)]{vincent1991}
+Vincent, L. and Soille, P. (1991).
+Watersheds in digital spaces: an efficient algorithm based on immersion simulations.
+\textit{IEEE Trans. Pattern Anal. Mach. Intell.}, 13(6), 583--598.
+
+\bibitem[Wetlaufer(1962)]{wetlaufer1962}
+Wetlaufer, D.B. (1962).
+Ultraviolet spectra of proteins and amino acids.
+\textit{Advances in Protein Chemistry}, 17, 303--390.
+
+\bibitem[SIRPa~XChem(2025)]{sirpa_xchem2025}
+[Authors TBD] (2025).
+Engineering SIRP$\alpha$ conformational plasticity to reveal a cryptic pocket suitable for structure-based drug design.
+bioRxiv preprint, December 23, 2025. Diamond Light Source XChem fragment screening.
+
+% TODO: Add remaining 15-20 references (see remediation tracker)
+
+\end{thebibliography}
+
+\end{document}

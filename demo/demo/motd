@@ -1,0 +1,33 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║   ██████╗ ██████╗ ██╗███████╗███╗   ███╗    ██╗  ██╗██████╗ ║
+║   ██╔══██╗██╔══██╗██║██╔════╝████╗ ████║    ██║  ██║██╔══██╗║
+║   ██████╔╝██████╔╝██║███████╗██╔████╔██║    ███████║██║  ██║║
+║   ██╔═══╝ ██╔══██╗██║╚════██║██║╚██╔╝██║    ╚════██║██║  ██║║
+║   ██║     ██║  ██║██║███████║██║ ╚═╝ ██║         ██║██████╔╝║
+║   ╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝         ╚═╝╚═════╝║
+║                                                              ║
+║   Neuromorphic Holographic Stream Engine                     ║
+║   Cryptic Binding Site Detection Platform                    ║
+║   Delfictus IO LLC — delfictus.com                           ║
+║                                                              ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║   Quick Start:                                               ║
+║                                                              ║
+║   1. Prepare topology from PDB:                              ║
+║      prism-prep samples/3k5v.pdb output/3k5v.topology.json   ║
+║                                                              ║
+║   2. Run NHS cryptic site detection:                         ║
+║      nhs_rt_full --multi-stream 20 --multi-scale \           ║
+║        --rt-clustering --lining-cutoff 8.0 --fast -v \       ║
+║        output/3k5v.topology.json                             ║
+║                                                              ║
+║   Sample proteins available in /opt/prism4d/samples/         ║
+║   Output goes to /opt/prism4d/output/                        ║
+║                                                              ║
+║   Session timeout: 30 minutes idle                           ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+

@@ -56,8 +56,8 @@ SdstConfig sdst_default_config(void) {
     cfg.wavefront_merge_dist = 2.25f;  /* 3 voxels * 0.75Å */
     cfg.wavefront_max_dt = 5;          /* 5 timestep window */
 
-    cfg.avalanche_spatial_cutoff = 3.75f; /* 5 voxels * 0.75Å */
-    cfg.avalanche_max_gap = 3;
+    cfg.avalanche_spatial_cutoff = 7.5f;  /* 10 voxels * 0.75Å — wider net for sparse NHS spikes */
+    cfg.avalanche_max_gap = 50;           /* NHS fires ~1 spike per 100-1000 steps/voxel; 3 caught nothing */
 
     /* Default 5-phase hysteresis: 14K/6K/15K/6K/14K steps */
     cfg.phase_boundaries[0] = 0;

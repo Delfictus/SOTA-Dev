@@ -3984,6 +3984,7 @@ dependencies = [
  "prism-optix",
  "rand 0.8.5",
  "rand_distr",
+ "sdst",
  "serde",
  "serde_json",
  "statrs",
@@ -4978,6 +4979,10 @@ dependencies = [
  "ring",
  "untrusted",
 ]
+
+[[package]]
+name = "sdst"
+version = "0.1.0"
 
 [[package]]
 name = "seahash"

@@ -296,11 +296,11 @@ extern "C" {
         stream: *mut c_void,
     ) -> SdstError;
 
-    // TIDE (Plan C)
+    // TIDE (Plan C) — h_residue_map is a host pointer, linear-voxel-indexed
     pub fn sdst_tide_decomposition(
         handle: SdstHandle,
         pocket: *const SpatialRegion,
-        residue_map: *const u32,
+        h_residue_map: *const u32,  // host pointer, size = grid_nx*grid_ny*grid_nz
         n_residues: u32,
         decomp: *mut *mut TideDecomposition,
         count: *mut u32,
@@ -472,6 +472,39 @@ impl Sdst {
     /// Validate internal consistency (all checks must pass before analyzing results).
     pub fn validate(&self) -> Result<(), SdstError> {
         unsafe { sdst_validate(self.handle).check() }
+    }
+
+    /// Run TIDE (Transfer entropy-Integrated Decomposed Energetics) decomposition
+    /// for a target pocket region.
+    ///
+    /// `h_residue_map` is a dense linear-voxel-indexed array of size
+    /// `grid_nx × grid_ny × grid_nz`. Index = `x + y*grid_nx + z*grid_nx*grid_ny`.
+    /// Use `u32::MAX` for empty (no-residue) voxels.
+    pub fn tide_decomposition(
+        &self,
+        pocket: &SpatialRegion,
+        h_residue_map: &[u32],
+        n_residues: u32,
+    ) -> Result<Vec<TideDecomposition>, SdstError> {
+        let mut ptr: *mut TideDecomposition = std::ptr::null_mut();
+        let mut count = 0u32;
+        unsafe {
+            sdst_tide_decomposition(
+                self.handle,
+                pocket,
+                h_residue_map.as_ptr(),
+                n_residues,
+                &mut ptr,
+                &mut count,
+                std::ptr::null_mut(),
+            ).check()?;
+            if count == 0 || ptr.is_null() {
+                return Ok(Vec::new());
+            }
+            let v = std::slice::from_raw_parts(ptr, count as usize).to_vec();
+            free(ptr as *mut c_void);
+            Ok(v)
+        }
     }
 
     /// Avalanche statistics, optionally filtered by phase (-1 = all phases).

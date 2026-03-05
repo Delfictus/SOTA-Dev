@@ -567,7 +567,7 @@ mod tests {
             water_density,
             vibrational_energy: 0.0,
             n_nearby_excited: 0,
-            _padding: 0,
+            wd_change: 0.0,
         }
     }
 
