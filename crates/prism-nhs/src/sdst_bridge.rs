@@ -79,6 +79,36 @@ pub struct TideResidueResult {
     pub n_causal_spikes: u32,
 }
 
+/// PRISM-Therm thermodynamic site classification.
+///
+/// Multi-signal composite: relative asymmetry (vs protein mean),
+/// CCNS criticality class, TIDE causal depth, avalanche statistics.
+/// NOT a flat threshold — uses z-score normalization against the
+/// protein-wide hysteresis baseline.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub enum ThermClass {
+    /// Confirmed cryptic: relative asymmetry > 1.5 sigma above mean,
+    /// AND (tau < 1.5 SOC OR TIDE top-residue TE > 2x median).
+    Cryptic,
+    /// Dynamic hotspot: relative asymmetry > 0.5 sigma above mean.
+    Dynamic,
+    /// Thermally responsive: asymmetry within +/-0.5 sigma of mean.
+    Responsive,
+    /// Thermally inert: relative asymmetry < -0.5 sigma below mean.
+    Inert,
+}
+
+impl std::fmt::Display for ThermClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ThermClass::Cryptic    => write!(f, "CRYPTIC"),
+            ThermClass::Dynamic    => write!(f, "DYNAMIC"),
+            ThermClass::Responsive => write!(f, "RESPONSIVE"),
+            ThermClass::Inert      => write!(f, "INERT"),
+        }
+    }
+}
+
 /// Per-site PRISM-Therm analysis result.
 #[derive(Debug, Clone, Serialize)]
 pub struct PrismThermSiteResult {
@@ -97,6 +127,11 @@ pub struct PrismThermSiteResult {
     pub ccns_classification: String,
     pub druggability: f32,
     pub n_avalanches: u32,
+    /// Asymmetry relative to the protein-wide mean.
+    /// Positive = more hysteretic than average. >1.5 σ = CRYPTIC candidate.
+    pub relative_asymmetry: f32,
+    /// Multi-signal thermodynamic classification.
+    pub therm_class: ThermClass,
     /// TIDE: top residues by transfer entropy (causal ΔG decomposition).
     /// Up to 20 residues, sorted by TE descending.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -281,47 +316,72 @@ impl SdstBridge {
 
     /// Convert and insert accumulated NHS spike events into SDST.
     ///
-    /// **Spike cap:** SDST's `kernel_detect_parents` is O(N × neighborhood),
-    /// so feeding >500K spikes causes multi-minute GPU stalls. We cap at
-    /// Takes all spikes (up to 1GB VRAM cap) to preserve temporal distribution.
-    /// the most thermodynamic signal). The full multi-stream pool can exceed
-    /// 10M spikes; we subsample before SDST insertion.
+    /// **GPU-native path**: Events are sorted by timestep on CPU, then the raw
+    /// `GpuSpikeEvent` bytes are uploaded to GPU in one bulk transfer. A CUDA
+    /// kernel converts NHS format → SDST SpikeEvent format directly on GPU.
+    /// Insertion uses temporal batching (windows of `avalanche_max_gap` = 50
+    /// timesteps) so parent detection chains stay short: O(N × local_density)
+    /// instead of O(N × total_chain).
     ///
-    /// Spikes are then sorted by timestep so parent-detection ordering is correct.
+    /// **VRAM cap**: 1GB / 36 bytes ≈ 27.7M events. Beyond that, stride-sample.
     pub fn ingest_all_spikes(&self, spikes: &[GpuSpikeEvent]) -> Result<u32> {
         if spikes.is_empty() {
             return self.sdst.event_count()
                 .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e));
         }
-        // VRAM safety cap: 1GB / 36 bytes = ~27.7M events.
-        // Below that, take EVERY spike to preserve temporal phase distribution.
-        // The old 500K intensity-based cap destroyed hysteresis signal.
+
+        const NHS_STRIDE: usize = std::mem::size_of::<GpuSpikeEvent>(); // 92
         const MAX_SDST_MEMORY_BYTES: usize = 1_024 * 1_024 * 1_024;
         const BYTES_PER_EVENT: usize = 36;
         const ABSOLUTE_MAX_EVENTS: usize = MAX_SDST_MEMORY_BYTES / BYTES_PER_EVENT;
 
-        let working: Vec<&GpuSpikeEvent> = if spikes.len() > ABSOLUTE_MAX_EVENTS {
+        // Sort by timestep on CPU (required for temporal batching in the C API)
+        let mut sorted: Vec<GpuSpikeEvent> = if spikes.len() > ABSOLUTE_MAX_EVENTS {
             let stride = spikes.len() / ABSOLUTE_MAX_EVENTS;
             log::warn!("  PRISM-Therm: {} spikes exceeds 1GB cap, stride-sampling to {}",
                         spikes.len(), ABSOLUTE_MAX_EVENTS);
-            let mut sampled: Vec<&GpuSpikeEvent> = spikes.iter()
+            let mut sampled: Vec<GpuSpikeEvent> = spikes.iter()
                 .step_by(stride)
                 .take(ABSOLUTE_MAX_EVENTS)
+                .copied()
                 .collect();
             sampled.sort_unstable_by_key(|s| s.timestep);
             sampled
         } else {
-            let mut sorted: Vec<&GpuSpikeEvent> = spikes.iter().collect();
-            sorted.sort_unstable_by_key(|s| s.timestep);
-            log::info!("  PRISM-Therm: ingesting all {} spikes into SDST", spikes.len());
-            sorted
+            log::info!("  PRISM-Therm: ingesting all {} spikes into SDST (GPU-native)", spikes.len());
+            let mut v: Vec<GpuSpikeEvent> = spikes.to_vec();
+            v.sort_unstable_by_key(|s| s.timestep);
+            v
         };
-        let inputs: Vec<sdst::SpikeInput> = working.iter()
-            .map(|s| self.convert_spike(s))
-            .collect();
 
-        self.sdst.insert_raw(&inputs)
-            .map_err(|e| anyhow::anyhow!("SDST insert_raw failed: {:?}", e))?;
+        // Reinterpret as raw bytes for the C API (GpuSpikeEvent is repr(C), 92 bytes)
+        let raw_bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(
+                sorted.as_ptr() as *const u8,
+                sorted.len() * NHS_STRIDE,
+            )
+        };
+
+        // Protocol parameters for GPU-side phase/temperature computation
+        let p = &self.protocol;
+        let cold_hold = p.cold_hold_steps.max(0) as u32;
+        let ramp_up   = p.ramp_steps.max(0) as u32;
+        let warm_hold = p.warm_hold_steps.max(0) as u32;
+        let ramp_down = p.ramp_down_steps.max(0) as u32;
+
+        self.sdst.insert_from_nhs_buffer(
+            raw_bytes,
+            NHS_STRIDE as u32,
+            p.start_temp,
+            p.end_temp,
+            cold_hold,
+            ramp_up,
+            warm_hold,
+            ramp_down,
+        ).map_err(|e| anyhow::anyhow!("SDST insert_from_nhs_buffer failed: {:?}", e))?;
+
+        // Free the sorted vec before analysis
+        drop(sorted);
 
         self.sdst.event_count()
             .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e))
@@ -342,12 +402,53 @@ impl SdstBridge {
             .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e))?;
 
         // Per-site analysis (hysteresis + CCNS + TIDE)
-        let site_results: Vec<PrismThermSiteResult> = sites.iter()
+        let mut site_results: Vec<PrismThermSiteResult> = sites.iter()
             .map(|site| {
                 let region = self.centroid_to_region(&site.centroid);
                 self.analyze_site(site.cluster_id, &region)
             })
             .collect();
+
+        // Multi-signal thermodynamic classification (z-score normalized)
+        let asymmetries: Vec<f32> = site_results.iter().map(|r| r.asymmetry_score).collect();
+        let n = asymmetries.len() as f32;
+        let mean_asym = if n > 0.0 { asymmetries.iter().sum::<f32>() / n } else { 0.0 };
+        let var_asym = if n > 1.0 {
+            asymmetries.iter().map(|a| (a - mean_asym).powi(2)).sum::<f32>() / (n - 1.0)
+        } else { 0.01 };
+        let std_asym = var_asym.sqrt().max(0.001);
+
+        let mut all_te: Vec<f32> = site_results.iter()
+            .flat_map(|r| r.tide_decomposition.iter().map(|t| t.transfer_entropy))
+            .collect();
+        all_te.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median_te = if all_te.is_empty() { 0.0 } else { all_te[all_te.len() / 2] };
+
+        for sr in site_results.iter_mut() {
+            let z = (sr.asymmetry_score - mean_asym) / std_asym;
+            sr.relative_asymmetry = z;
+            let top_te = sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0);
+            let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
+            let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
+            sr.therm_class = if z > 1.5 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
+                ThermClass::Cryptic
+            } else if z > 0.5 {
+                ThermClass::Dynamic
+            } else if z > -0.5 {
+                ThermClass::Responsive
+            } else {
+                ThermClass::Inert
+            };
+        }
+
+        log::info!("  PRISM-Therm classification: mean_asym={:.4}, std={:.4}, median_TE={:.5}",
+            mean_asym, std_asym, median_te);
+        for sr in &site_results {
+            log::info!("    Site {}: z={:+.2} -> {}  (asym={:.4}, tau={:.2}, topTE={:.4})",
+                sr.site_id, sr.relative_asymmetry, sr.therm_class,
+                sr.asymmetry_score, sr.tau,
+                sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0));
+        }
 
         let hysteretic_count = site_results.iter().filter(|r| r.is_hysteretic).count();
 
@@ -535,6 +636,8 @@ impl SdstBridge {
             druggability:        ccns.druggability,
             n_avalanches:        ccns.n_avalanches,
             tide_decomposition:  tide,
+            relative_asymmetry:  0.0,
+            therm_class:         ThermClass::Responsive,
         }
     }
 

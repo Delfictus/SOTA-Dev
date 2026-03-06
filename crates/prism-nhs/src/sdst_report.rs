@@ -82,7 +82,9 @@ pub struct PocketReport {
     pub ccns_class: String,
     pub druggability_score: f32,
     pub hysteresis_asymmetry: f32,
+    pub relative_asymmetry: f32,
     pub is_cryptic: bool,
+    pub therm_class: String,
     pub top_residues: Vec<ResidueContribution>,
 }
 
@@ -140,7 +142,9 @@ pub fn build_report(
             ccns_class: site.ccns_classification.clone(),
             druggability_score: if site.druggability.is_finite() { site.druggability } else { 0.0 },
             hysteresis_asymmetry: site.asymmetry_score,
-            is_cryptic: site.is_hysteretic || site.asymmetry_score > 0.15,
+            is_cryptic: site.therm_class == crate::sdst_bridge::ThermClass::Cryptic,
+            therm_class: site.therm_class.to_string(),
+            relative_asymmetry: site.relative_asymmetry,
             top_residues,
         });
     }
@@ -253,7 +257,13 @@ pub fn print_summary_table(report: &PrismThermReport) {
     log::info!("╠═════╬══════════════════════╬═══════╬════════╬══════════╬═════════╣");
 
     for (i, p) in report.pockets.iter().enumerate() {
-        let ptype = if p.is_cryptic { "CRYPTIC" } else { "static " };
+        let ptype = match p.therm_class.as_str() {
+            "CRYPTIC"    => "CRYPTIC ",
+            "DYNAMIC"    => "DYNAMIC ",
+            "RESPONSIVE" => "RESPOND.",
+            "INERT"      => "INERT   ",
+            _            => "?       ",
+        };
         log::info!(
             "║ {:>3} ║ ({:>5.1},{:>5.1},{:>5.1}) ║ {:>5.2} ║ {:>5.2}  ║ {:>7.3}  ║ {} ║",
             i + 1,
