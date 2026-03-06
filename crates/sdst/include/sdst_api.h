@@ -288,6 +288,39 @@ SdstError sdst_insert_raw(
     void* stream
 );
 
+/**
+ * GPU-native insertion from NHS raw spike buffer.
+ *
+ * Eliminates the CPU conversion round-trip. Takes a HOST pointer to
+ * the accumulated GpuSpikeEvent[] array (sorted by timestep on CPU),
+ * uploads in one bulk transfer, converts on GPU, and inserts in
+ * temporal batches of avalanche_max_gap timesteps for efficient
+ * parent detection.
+ *
+ * @param h_nhs_events  HOST pointer to sorted GpuSpikeEvent[]
+ * @param count         Number of events
+ * @param nhs_stride    sizeof(GpuSpikeEvent) = 92
+ * @param start_temp    Protocol cold temperature (K)
+ * @param end_temp      Protocol warm temperature (K)
+ * @param cold_hold     Protocol: cold_hold_steps
+ * @param ramp_up       Protocol: ramp_steps
+ * @param warm_hold     Protocol: warm_hold_steps
+ * @param ramp_down     Protocol: ramp_down_steps
+ */
+SdstError sdst_insert_from_nhs_buffer(
+    SdstHandle handle,
+    const void* h_nhs_events,
+    uint32_t count,
+    uint32_t nhs_stride,
+    float start_temp,
+    float end_temp,
+    uint32_t cold_hold,
+    uint32_t ramp_up,
+    uint32_t warm_hold,
+    uint32_t ramp_down,
+    void* stream
+);
+
 /* ============================================================
  * Spatial Queries
  * ============================================================ */

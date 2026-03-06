@@ -206,6 +206,20 @@ extern "C" {
         stream: *mut c_void,
     ) -> SdstError;
 
+    pub fn sdst_insert_from_nhs_buffer(
+        handle: SdstHandle,
+        h_nhs_events: *const c_void,
+        count: u32,
+        nhs_stride: u32,
+        start_temp: f32,
+        end_temp: f32,
+        cold_hold: u32,
+        ramp_up: u32,
+        warm_hold: u32,
+        ramp_down: u32,
+        stream: *mut c_void,
+    ) -> SdstError;
+
     // Queries
     pub fn sdst_query_region(
         handle: SdstHandle,
@@ -375,6 +389,42 @@ impl Sdst {
                 self.handle,
                 inputs.as_ptr(),
                 inputs.len() as u32,
+                std::ptr::null_mut(),
+            ).check()
+        }
+    }
+
+    /// GPU-native insertion from NHS raw spike buffer.
+    ///
+    /// Takes a host slice of raw GpuSpikeEvent bytes (92 bytes/event, sorted
+    /// by timestep). Uploads to GPU, converts via CUDA kernel, and inserts in
+    /// temporal batches for efficient parent detection. Eliminates the CPU
+    /// per-event conversion round-trip.
+    pub fn insert_from_nhs_buffer(
+        &self,
+        nhs_events: &[u8],
+        nhs_stride: u32,
+        start_temp: f32,
+        end_temp: f32,
+        cold_hold: u32,
+        ramp_up: u32,
+        warm_hold: u32,
+        ramp_down: u32,
+    ) -> Result<(), SdstError> {
+        let count = nhs_events.len() / nhs_stride as usize;
+        if count == 0 { return Ok(()); }
+        unsafe {
+            sdst_insert_from_nhs_buffer(
+                self.handle,
+                nhs_events.as_ptr() as *const c_void,
+                count as u32,
+                nhs_stride,
+                start_temp,
+                end_temp,
+                cold_hold,
+                ramp_up,
+                warm_hold,
+                ramp_down,
                 std::ptr::null_mut(),
             ).check()
         }
