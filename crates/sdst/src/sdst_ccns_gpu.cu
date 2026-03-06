@@ -456,7 +456,7 @@ void kernel_batched_ccns(
 
         /* Druggability: SOC = most druggable */
         float confidence = (n_unique >= 20) ? 1.0f : (float)n_unique / 20.0f;
-        float drug = fmaxf(0.0f, (2.0f - tau) * confidence);
+        float drug = fmaxf(0.0f, (1.0f - (tau - 1.0f) / 3.0f) * confidence);
 
         out_results[blockIdx.x].tile_id = tile_id;
         out_results[blockIdx.x].tau = tau;
