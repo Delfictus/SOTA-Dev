@@ -118,6 +118,18 @@ pub struct CcnsResult {
     pub druggability: f32,
 }
 
+impl Default for CcnsResult {
+    fn default() -> Self {
+        Self {
+            tau: 0.0,
+            classification: CcnsClass::Barrier,
+            tau_stderr: 0.0,
+            n_avalanches: 0,
+            druggability: 0.0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct TideDecomposition {
@@ -349,6 +361,16 @@ extern "C" {
         stream: *mut c_void,
     ) -> SdstError;
 
+    /// GPU-native CCNS for caller-specified spatial regions (batched).
+    /// Caller allocates out_results array of n_regions CcnsResult.
+    pub fn sdst_ccns_for_regions(
+        handle: SdstHandle,
+        regions: *const SpatialRegion,
+        n_regions: u32,
+        out_results: *mut CcnsResult,
+        stream: *mut c_void,
+    ) -> SdstError;
+
     /// GPU-native CCNS for all spatial tiles (sort-reduce + CSN estimator).
     pub fn sdst_ccns_all_pockets_gpu(
         handle: SdstHandle,
@@ -449,6 +471,23 @@ impl Sdst {
         let mut bytes = 0usize;
         unsafe { sdst_memory_usage(self.handle, &mut bytes).check()? };
         Ok(bytes)
+    }
+
+    /// Batched GPU-native CCNS for caller-specified spatial regions.
+    /// One GPU call for all regions. Returns one CcnsResult per region.
+    pub fn ccns_for_regions(&self, regions: &[SpatialRegion]) -> Result<Vec<CcnsResult>, SdstError> {
+        if regions.is_empty() { return Ok(Vec::new()); }
+        let mut results = vec![CcnsResult::default(); regions.len()];
+        unsafe {
+            sdst_ccns_for_regions(
+                self.handle,
+                regions.as_ptr(),
+                regions.len() as u32,
+                results.as_mut_ptr(),
+                std::ptr::null_mut(),
+            ).check()?;
+        }
+        Ok(results)
     }
 
     pub fn ccns_region(&self, region: &SpatialRegion) -> Result<CcnsResult, SdstError> {

@@ -401,11 +401,24 @@ impl SdstBridge {
         let event_count = self.sdst.event_count()
             .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e))?;
 
-        // Per-site analysis (hysteresis + CCNS + TIDE)
+        // Collect all site regions for batched GPU CCNS
+        let regions: Vec<SpatialRegion> = sites.iter()
+            .map(|site| self.centroid_to_region(&site.centroid))
+            .collect();
+
+        // One batched GPU call for all per-site CCNS (CSN estimator, not Hill MLE)
+        let ccns_results = self.sdst
+            .ccns_for_regions(&regions)
+            .unwrap_or_else(|e| {
+                log::warn!("  PRISM-Therm: batched ccns_for_regions failed: {:?}, falling back to defaults", e);
+                vec![CcnsResult::default(); regions.len()]
+            });
+
+        // Per-site analysis (hysteresis + TIDE) with pre-computed CCNS
         let mut site_results: Vec<PrismThermSiteResult> = sites.iter()
-            .map(|site| {
-                let region = self.centroid_to_region(&site.centroid);
-                self.analyze_site(site.cluster_id, &region)
+            .enumerate()
+            .map(|(i, site)| {
+                self.analyze_site(site.cluster_id, &regions[i], &ccns_results[i])
             })
             .collect();
 
@@ -595,8 +608,9 @@ impl SdstBridge {
         }
     }
 
-    /// Analyze one NHS binding site: hysteresis + CCNS + TIDE.
-    fn analyze_site(&self, site_id: i32, region: &SpatialRegion) -> PrismThermSiteResult {
+    /// Analyze one NHS binding site: hysteresis + TIDE.
+    /// CCNS is pre-computed via batched `ccns_for_regions()` (GPU CSN estimator).
+    fn analyze_site(&self, site_id: i32, region: &SpatialRegion, ccns: &CcnsResult) -> PrismThermSiteResult {
         let hyst = self.sdst
             .hysteresis_region(region, HYSTERESIS_THRESHOLD)
             .unwrap_or_else(|_| HysteresisResult {
@@ -608,16 +622,6 @@ impl SdstBridge {
                 heating_spike_count: 0,
                 cooling_spike_count: 0,
                 is_hysteretic: false,
-            });
-
-        let ccns = self.sdst
-            .ccns_region(region)
-            .unwrap_or_else(|_| CcnsResult {
-                tau: 0.0,
-                classification: CcnsClass::Soc,
-                tau_stderr: 0.0,
-                n_avalanches: 0,
-                druggability: 0.0,
             });
 
         // TIDE decomposition: per-residue causal ΔG

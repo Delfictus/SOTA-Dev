@@ -464,6 +464,25 @@ SdstError sdst_ccns_all_pockets_gpu(
     void* stream
 );
 
+/**
+ * GPU-native CCNS for caller-specified spatial regions (batched).
+ *
+ * Reuses Stage 1 (avalanche sizes) from the global pipeline, then
+ * sorts events by region membership and runs the fused CSN estimator
+ * per region. One GPU call for all NHS pocket regions.
+ *
+ * @param regions       Host pointer to array of SpatialRegion (pocket bounding boxes)
+ * @param n_regions     Number of regions
+ * @param out_results   Caller-allocated array of n_regions CcnsResult
+ */
+SdstError sdst_ccns_for_regions(
+    SdstHandle handle,
+    const SpatialRegion* regions,
+    uint32_t n_regions,
+    CcnsResult* out_results,
+    void* stream
+);
+
 /* ============================================================
  * Wavefront Analysis
  * ============================================================ */
