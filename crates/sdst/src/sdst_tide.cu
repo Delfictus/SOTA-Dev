@@ -283,13 +283,28 @@ SdstError sdst_tide_decomposition(
         residue_trains[r] = (uint8_t*)calloc(n_bins, sizeof(uint8_t));
     }
 
-    /* Single-pass: map events → residues via dense linear-voxel-indexed map */
+    /* Single-pass: map events → residues via dense linear-voxel-indexed map.
+     * SPATIAL FILTER: Only process events within an expanded pocket region
+     * (pocket + 2 voxel margin) so that residue spike trains are pocket-local.
+     * Without this filter, globally-active residues dominate TE for every pocket. */
+    uint32_t pr_x_min = pocket_region->x_min > 2 ? pocket_region->x_min - 2 : 0;
+    uint32_t pr_x_max = pocket_region->x_max + 2 < grid_nx ? pocket_region->x_max + 2 : grid_nx - 1;
+    uint32_t pr_y_min = pocket_region->y_min > 2 ? pocket_region->y_min - 2 : 0;
+    uint32_t pr_y_max = pocket_region->y_max + 2 < grid_ny ? pocket_region->y_max + 2 : grid_ny - 1;
+    uint32_t pr_z_min = pocket_region->z_min > 2 ? pocket_region->z_min - 2 : 0;
+    uint32_t pr_z_max = pocket_region->z_max + 2 < grid_nz ? pocket_region->z_max + 2 : grid_nz - 1;
+
     for (uint32_t i = 0; i < total_events; i++) {
         MortonCode mc = h_events[i].voxel;
         uint32_t vx, vy, vz;
         morton_decode(mc, &vx, &vy, &vz);
 
         if (vx >= grid_nx || vy >= grid_ny || vz >= grid_nz) continue;
+
+        /* Skip events outside expanded pocket region */
+        if (vx < pr_x_min || vx > pr_x_max ||
+            vy < pr_y_min || vy > pr_y_max ||
+            vz < pr_z_min || vz > pr_z_max) continue;
 
         uint32_t linear = vx + vy * grid_nx + vz * grid_nx * grid_ny;
         uint32_t res_id = h_residue_map[linear];
@@ -302,10 +317,10 @@ SdstError sdst_tide_decomposition(
             residue_spike_counts[res_id]++;
         }
 
-        /* Accumulate energy gradient for mean computation (replaces O(N²) loop) */
+        /* Accumulate energy gradient for mean computation */
         residue_energy_sum[res_id] += f16_bits_to_float(h_events[i].energy_gradient);
 
-        /* Check pocket membership for causal count */
+        /* Check strict pocket membership for causal count */
         if (vx >= pocket_region->x_min && vx <= pocket_region->x_max &&
             vy >= pocket_region->y_min && vy <= pocket_region->y_max &&
             vz >= pocket_region->z_min && vz <= pocket_region->z_max) {
@@ -339,10 +354,15 @@ SdstError sdst_tide_decomposition(
             residue_trains[r], phase_per_bin, n_bins
         );
 
-        /* Causal ΔG: TE-weighted energy contribution.
-         * mean_energy from single-pass accumulation (no second O(N) scan). */
-        float mean_energy = residue_energy_sum[r] / (float)residue_spike_counts[r];
-        td->causal_dG = -td->transfer_entropy * mean_energy;
+        /* Causal ΔG: TE-weighted free energy contribution.
+         * Formula: -TE × log(1 + n_causal_spikes) × RT (kcal/mol at 300K).
+         * TE measures information flow (bits), log(1+n) compresses the huge
+         * dynamic range of spike counts (10 → 100K+), RT converts to energy.
+         * Range: roughly -2 to 0 kcal/mol for active TRIGGER residues. */
+        float RT = 0.596f;  /* kcal/mol at 300K */
+        td->causal_dG = -td->transfer_entropy
+                         * logf(1.0f + (float)residue_causal_counts[r])
+                         * RT;
 
         active_count++;
     }

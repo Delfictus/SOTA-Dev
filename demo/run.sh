@@ -325,7 +325,7 @@ run_nhs() {
     echo -e "${DIVCYAN}  ──────────────────────────────────────────${RESET}"
     echo ""
 
-    local nhs_cmd="RUST_LOG=info nhs_rt_full -t ${topo_file} -o ${out_dir} --multi-stream ${streams} --multi-scale --rt-clustering --lining-cutoff ${cutoff} --steps ${steps} ${fast} -v"
+    local nhs_cmd="RUST_LOG=info nhs_rt_full -t ${topo_file} -o ${out_dir} --multi-stream ${streams} --multi-scale --lining-cutoff ${cutoff} --steps ${steps} ${fast} -v"
 
     echo -e "  ${DIM}\$ ${nhs_cmd}${RESET}"
     echo ""

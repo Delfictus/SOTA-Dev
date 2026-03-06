@@ -463,8 +463,10 @@ impl SdstBridge {
             }
         }
 
-        // Global SDST pocket scan (runs sdst_hysteresis_scan + sdst_ccns internally)
-        let global_pockets = self.run_global_scan();
+        // Global SDST pocket scan (runs sdst_hysteresis_scan + sdst_ccns internally).
+        // TODO: ccns_all_pockets downloads ALL events to host per tile and can
+        // segfault on large event sets (13M+). Disabled until GPU-side fix.
+        let global_pockets = Vec::new();
 
         // Avalanche count: proxy for total observed conformational events
         let total_avalanches = self.sdst.avalanche_stats(-1)

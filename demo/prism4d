@@ -40,7 +40,7 @@ case "${1:-help}" in
         mkdir -p "$OUT"
         "${SELF_DIR}/bin/nhs_rt_full" -t "$TOPO" -o "$OUT" \
             --fast --hysteresis --multi-stream 8 \
-            --spike-percentile 95 --rt-clustering -v "$@"
+            --spike-percentile 95 -v "$@"
         ;;
     batch)
         shift
@@ -51,7 +51,7 @@ case "${1:-help}" in
             mkdir -p "${OUT_DIR}/${TGT}"
             "${SELF_DIR}/bin/nhs_rt_full" -t "$topo" -o "${OUT_DIR}/${TGT}" \
                 --fast --hysteresis --multi-stream 8 \
-                --spike-percentile 95 --rt-clustering -v "$@" || \
+                --spike-percentile 95 -v "$@" || \
                 echo "WARNING: ${TGT} failed"
         done
         ;;
