@@ -433,12 +433,32 @@ SdstError sdst_ccns_region(
 );
 
 /**
- * Compute CCNS for all detected pocket regions.
+ * Compute CCNS for all detected pocket regions (LEGACY — host-side, O(N) per tile).
  * Pockets are identified as spatially contiguous clusters of high spike density.
+ * WARNING: Downloads all events to host. Use sdst_ccns_all_pockets_gpu() instead.
  */
 SdstError sdst_ccns_all_pockets(
     SdstHandle handle,
     CcnsResult** out_results,   /* host pointer, caller frees */
+    SpatialRegion** out_regions,
+    uint32_t* out_count,
+    void* stream
+);
+
+/**
+ * GPU-native CCNS for all spatial tiles (replaces sdst_ccns_all_pockets).
+ *
+ * Sort-reduce architecture: CUB radix sort → tile segmentation → fused
+ * per-tile CSN estimator (Clauset-Shalizi-Newman truncated power law).
+ * Zero host-side event downloads. All 13M+ events stay on GPU.
+ *
+ * @param out_results   Host pointer to CcnsResult array (caller frees)
+ * @param out_regions   Host pointer to SpatialRegion array (caller frees)
+ * @param out_count     Number of valid tiles returned
+ */
+SdstError sdst_ccns_all_pockets_gpu(
+    SdstHandle handle,
+    CcnsResult** out_results,
     SpatialRegion** out_regions,
     uint32_t* out_count,
     void* stream

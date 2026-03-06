@@ -463,10 +463,9 @@ impl SdstBridge {
             }
         }
 
-        // Global SDST pocket scan (runs sdst_hysteresis_scan + sdst_ccns internally).
-        // TODO: ccns_all_pockets downloads ALL events to host per tile and can
-        // segfault on large event sets (13M+). Disabled until GPU-side fix.
-        let global_pockets = Vec::new();
+        // Global SDST pocket scan — GPU-native CCNS (sort-reduce + CSN estimator).
+        // Replaces legacy ccns_all_pockets which downloaded 13M+ events to host.
+        let global_pockets = self.run_global_scan();
 
         // Avalanche count: proxy for total observed conformational events
         let total_avalanches = self.sdst.avalanche_stats(-1)
@@ -686,13 +685,12 @@ impl SdstBridge {
         results
     }
 
-    /// Run the global SDST pocket scan via `ccns_all_pockets()`.
+    /// Run the global SDST pocket scan via GPU-native `ccns_all_pockets_gpu()`.
     ///
-    /// `ccns_all_pockets` internally calls `sdst_hysteresis_scan` to find
-    /// candidate regions, then runs `sdst_ccns_region` on each. We convert
-    /// the region centre to Å for the output JSON.
+    /// Sort-reduce architecture: CUB radix sort → tile segmentation → fused
+    /// CSN estimator per tile. All 13M+ events stay on GPU. No host downloads.
     fn run_global_scan(&self) -> Vec<PrismThermGlobalPocket> {
-        let pockets = match self.sdst.ccns_all_pockets() {
+        let pockets = match self.sdst.ccns_all_pockets_gpu() {
             Ok(v) => v,
             Err(e) => {
                 log::warn!("PRISM-Therm: ccns_all_pockets failed: {:?}", e);

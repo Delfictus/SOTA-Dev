@@ -349,6 +349,15 @@ extern "C" {
         stream: *mut c_void,
     ) -> SdstError;
 
+    /// GPU-native CCNS for all spatial tiles (sort-reduce + CSN estimator).
+    pub fn sdst_ccns_all_pockets_gpu(
+        handle: SdstHandle,
+        out_results: *mut *mut CcnsResult,
+        out_regions: *mut *mut SpatialRegion,
+        out_count: *mut u32,
+        stream: *mut c_void,
+    ) -> SdstError;
+
     pub fn sdst_query_region_timerange(
         handle: SdstHandle,
         region: *const SpatialRegion,
@@ -529,7 +538,31 @@ impl Sdst {
         }
     }
 
-    /// CCNS for all automatically detected pockets via the hysteresis scan.
+    /// GPU-native CCNS for all spatial tiles (sort-reduce + CSN estimator).
+    /// Returns (CcnsResult, SpatialRegion) pairs. Fully GPU-resident, no host downloads.
+    pub fn ccns_all_pockets_gpu(&self) -> Result<Vec<(CcnsResult, SpatialRegion)>, SdstError> {
+        let mut results_ptr: *mut CcnsResult = std::ptr::null_mut();
+        let mut regions_ptr: *mut SpatialRegion = std::ptr::null_mut();
+        let mut count = 0u32;
+        unsafe {
+            sdst_ccns_all_pockets_gpu(
+                self.handle, &mut results_ptr, &mut regions_ptr, &mut count, std::ptr::null_mut(),
+            ).check()?;
+            if count == 0 || results_ptr.is_null() {
+                return Ok(Vec::new());
+            }
+            let results = std::slice::from_raw_parts(results_ptr, count as usize);
+            let regions = std::slice::from_raw_parts(regions_ptr, count as usize);
+            let v: Vec<(CcnsResult, SpatialRegion)> = results.iter().copied()
+                .zip(regions.iter().copied())
+                .collect();
+            free(results_ptr as *mut c_void);
+            free(regions_ptr as *mut c_void);
+            Ok(v)
+        }
+    }
+
+    /// CCNS for all automatically detected pockets via the hysteresis scan (LEGACY).
     /// Returns (CcnsResult, SpatialRegion) pairs sorted by hysteresis asymmetry.
     pub fn ccns_all_pockets(&self) -> Result<Vec<(CcnsResult, SpatialRegion)>, SdstError> {
         let mut results_ptr: *mut CcnsResult = std::ptr::null_mut();
