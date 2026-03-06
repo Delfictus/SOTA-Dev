@@ -488,7 +488,7 @@ SdstError sdst_ccns_region(
         confidence = 1.0f - tau_se / tau;
         if (confidence < 0) confidence = 0;
     }
-    out_result->druggability = (tau < 1e-6f) ? 0.0f : (2.0f - tau) * confidence;
+    out_result->druggability = (tau < 1e-6f) ? 0.0f : (1.0f - (tau - 1.0f) / 3.0f) * confidence;
     if (out_result->druggability < 0) out_result->druggability = 0;
 
     free(h_events); free(avalanche_sizes); free(in_region); free(region_sizes);
