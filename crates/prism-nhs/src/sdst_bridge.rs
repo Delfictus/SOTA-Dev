@@ -443,7 +443,7 @@ impl SdstBridge {
             let top_te = sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0);
             let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
             let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
-            sr.therm_class = if z > 1.5 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
+            sr.therm_class = if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
                 ThermClass::Cryptic
             } else if z > 0.5 {
                 ThermClass::Dynamic
