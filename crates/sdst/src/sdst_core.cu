@@ -1131,7 +1131,7 @@ SdstError sdst_insert_from_nhs_buffer(
      * and O(log n) per voxel instead of O(chain_length).       */
 
     {
-        float cutoff_grid = 3.0f; /* radius=3 grid cells = 2.25Å */
+        float cutoff_grid = 3.0f; /* radius=3: optimal speed/accuracy for current LIF */
 
         /* Allocate sort buffers */
         uint64_t* d_sort_keys;
