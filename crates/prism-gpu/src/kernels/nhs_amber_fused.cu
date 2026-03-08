@@ -2650,3 +2650,597 @@ efp_phase:
         efp_potential_prev[v] = phi;
     }
 }
+
+// ============================================================================
+// MULTI-NEURON RAF (Resonant Adaptive Filter) WITH SHARED MEMORY STENCIL
+// ============================================================================
+//
+// K=8 RAF oscillator neurons per voxel, 8 threads per voxel, 3D tile launch.
+// Each neuron has a different resonant frequency (omega_k = 2*pi/tau_k).
+// Cross-voxel coupling via shared-memory halo stencil (26 Moore neighbors).
+//
+// Neuron timescales: tau_k = 0.5 * 2^k  (k=0..7)
+//   k=0: 0.5 ps   (ultrafast electronic)
+//   k=1: 1.0 ps   (bond vibration)
+//   k=2: 2.0 ps   (hydrogen bond)
+//   k=3: 4.0 ps   (sidechain rotation)
+//   k=4: 8.0 ps   (loop motion)
+//   k=5: 16.0 ps  (domain hinge)
+//   k=6: 32.0 ps  (slow collective)
+//   k=7: 64.0 ps  (cryptic site opening)
+//
+// State arrays (no new buffers — repurposed):
+//   neuron_potential[nidx] = x (real part of oscillator)
+//   neuron_mean[nidx]      = y (imaginary part of oscillator)
+//   neuron_threshold[nidx] = adaptive threshold
+//   neuron_refractory[nidx]= refractory counter
+// ============================================================================
+
+#define K_NEURONS 8
+#define THREADS_PER_VOXEL 8
+#define VOXELS_PER_WARP (WARP_SIZE / THREADS_PER_VOXEL)  // 4
+#define MULTI_LIF_THRESHOLD 0.3f
+#define COUPLING_STRENGTH 0.01f
+#define COUPLING_DECAY 0.9f
+
+// 3D tile dimensions for shared memory stencil
+#define TILE_X 4
+#define TILE_Y 4
+#define TILE_Z 2
+#define VOXELS_PER_TILE (TILE_X * TILE_Y * TILE_Z)  // 32
+#define HALO_X (TILE_X + 2)   // 6
+#define HALO_Y (TILE_Y + 2)   // 6
+#define HALO_Z (TILE_Z + 2)   // 4
+#define HALO_SIZE (HALO_X * HALO_Y * HALO_Z)  // 144
+
+// RAF parameters
+#define CASCADE_RATE 0.01f
+#define JITTER_AMPLITUDE 0.02f
+#define RAF_R_MAX 2.0f
+#define RAF_PI 3.14159265f
+
+// Compute neuron timescale from lane index within voxel
+__device__ __forceinline__ float neuron_tau(int k) {
+    // tau = 0.5 * 2^k = 0.5, 1, 2, 4, 8, 16, 32, 64
+    return 0.5f * (float)(1 << k);
+}
+
+// Compute 1D voxel index from 3D coordinates (clamped)
+__device__ __forceinline__ int voxel_idx_3d(int x, int y, int z, int gdim) {
+    if (x < 0 || x >= gdim || y < 0 || y >= gdim || z < 0 || z >= gdim) return -1;
+    return z * gdim * gdim + y * gdim + x;
+}
+
+extern "C" __global__ void nhs_voxel_step_multi_lif(
+    // === Same as nhs_voxel_step ===
+    const float3* __restrict__ positions,
+    int n_atoms,
+    int grid_dim,
+    float grid_spacing,
+    float grid_origin_x,
+    float grid_origin_y,
+    float grid_origin_z,
+    float* exclusion_field,
+    float* water_density,
+    float* water_density_prev,
+    int* spike_grid,
+    WarpEntry* warp_matrix,
+    const int* __restrict__ atom_types,
+    const float* __restrict__ charges,
+    const int* __restrict__ residue_ids,
+    const float3* __restrict__ d_aromatic_centroids,
+    const float3* __restrict__ d_ring_normals,
+    const int* __restrict__ d_is_excited,
+    const float* __restrict__ d_electronic_population,
+    const float* __restrict__ d_vibrational_energy,
+    const float* __restrict__ d_time_since_excitation,
+    const int* __restrict__ d_aromatic_type,
+    const int* __restrict__ d_atom_to_aromatic,
+    int n_aromatics,
+    float uv_wavelength_nm,
+    int uv_burst_active,
+    float* d_uv_signal_prev,
+    SpikeEvent* spike_events,
+    int* spike_count,
+    int max_spikes,
+    float target_temp,
+    float dt,
+    int timestep,
+    float* efp_potential,
+    float* efp_potential_prev,
+    float* efp_lif_potential,
+    const AromaticNeighbors* __restrict__ d_aromatic_neighbors,
+    const float* __restrict__ d_franck_condon_progress,
+    // === Multi-neuron buffers ===
+    float* neuron_potential,     // [total_voxels * K_NEURONS] = x (real)
+    float* neuron_threshold,     // [total_voxels * K_NEURONS]
+    float* neuron_mean,          // [total_voxels * K_NEURONS] = y (imaginary)
+    int*   neuron_refractory,    // [total_voxels * K_NEURONS]
+    const float* coupling_read,  // [total_voxels] read buffer (from previous step)
+    float* coupling_write        // [total_voxels] write buffer (for next step)
+) {
+    // === Shared memory halo tile for coupling stencil ===
+    extern __shared__ float s_coupling_tile[];  // [HALO_SIZE] = 144 floats
+
+    // === 3D tile mapping ===
+    int tile_bx = blockIdx.x;
+    int tile_by = blockIdx.y;
+    int tile_bz = blockIdx.z;
+
+    int local_voxel = threadIdx.x / THREADS_PER_VOXEL;  // 0..31
+    int k = threadIdx.x % THREADS_PER_VOXEL;             // 0..7
+
+    // Local 3D within tile
+    int lz = local_voxel / (TILE_X * TILE_Y);
+    int ly = (local_voxel / TILE_X) % TILE_Y;
+    int lx = local_voxel % TILE_X;
+
+    // Global 3D voxel coordinates
+    int vx = tile_bx * TILE_X + lx;
+    int vy = tile_by * TILE_Y + ly;
+    int vz = tile_bz * TILE_Z + lz;
+
+    bool is_valid = (vx < grid_dim && vy < grid_dim && vz < grid_dim);
+    int v = is_valid ? (vz * grid_dim * grid_dim + vy * grid_dim + vx) : 0;
+
+    float3 grid_origin = make_float3(grid_origin_x, grid_origin_y, grid_origin_z);
+    float3 voxel_center = make_float3(
+        grid_origin.x + (vx + 0.5f) * grid_spacing,
+        grid_origin.y + (vy + 0.5f) * grid_spacing,
+        grid_origin.z + (vz + 0.5f) * grid_spacing
+    );
+
+    // Warp-level lane info
+    unsigned int warp_mask = 0xFFFFFFFF;
+    int lane_in_warp = threadIdx.x % WARP_SIZE;
+    int voxel_in_warp = lane_in_warp / THREADS_PER_VOXEL;  // 0..3
+    int src_lane = voxel_in_warp * THREADS_PER_VOXEL;
+    unsigned int voxel_mask = 0xFFu << (voxel_in_warp * THREADS_PER_VOXEL);
+
+    // Initialize shared memory halo to zero
+    for (int i = threadIdx.x; i < HALO_SIZE; i += blockDim.x) {
+        s_coupling_tile[i] = 0.0f;
+    }
+    __syncthreads();
+
+    // ====================================================================
+    // PHASE 1: EXCLUSION FIELD + WATER DENSITY (neuron 0 only)
+    // ====================================================================
+    bool has_atoms = false;
+    WarpEntry entry;
+    int nidx = is_valid ? (v * K_NEURONS + k) : 0;
+
+    if (is_valid) {
+        water_density_prev[v] = water_density[v];  // all 8 threads idempotent
+        entry = warp_matrix[v];
+        has_atoms = (entry.n_atoms > 0);
+
+        // Sparse voxel: passive decay only
+        if (!has_atoms) {
+            if (k == 0 && spike_grid[v] > 0) spike_grid[v]--;
+            neuron_potential[nidx] *= 0.9f;
+            neuron_mean[nidx] *= 0.9f;  // y component also decays
+            if (k == 0) efp_lif_potential[v] *= 0.8f;
+        }
+    }
+
+    float total_exclusion = 0.0f;
+    float polar_field = 0.0f;
+
+    if (is_valid && has_atoms && k == 0) {
+        for (int i = 0; i < entry.n_atoms; i++) {
+            int a = entry.atom_indices[i];
+            if (a < 0 || a >= n_atoms) continue;
+
+            float contrib = compute_exclusion_contribution(
+                positions[a], voxel_center,
+                atom_types[a], charges[a]
+            );
+
+            if (n_aromatics > 0 && d_aromatic_centroids != nullptr) {
+                float expanded_modifier = compute_expanded_exclusion_modifier(
+                    positions[a],
+                    d_aromatic_centroids,
+                    d_ring_normals,
+                    d_is_excited,
+                    d_electronic_population,
+                    n_aromatics
+                );
+                contrib *= expanded_modifier;
+            } else {
+                int aromatic_idx = d_atom_to_aromatic[a];
+                if (aromatic_idx >= 0 && aromatic_idx < n_aromatics) {
+                    float excitation_modifier = get_exclusion_modifier(
+                        aromatic_idx,
+                        d_is_excited,
+                        d_electronic_population
+                    );
+                    contrib *= excitation_modifier;
+                }
+            }
+
+            total_exclusion += contrib * entry.atom_weights[i] * 4.0f;
+
+            if (atom_types[a] == 1 || atom_types[a] == 2 || atom_types[a] == 3) {
+                polar_field += contrib * 0.5f;
+            }
+        }
+
+        total_exclusion = fminf(1.0f, total_exclusion);
+        exclusion_field[v] = total_exclusion;
+        water_density[v] = infer_water_density(total_exclusion, polar_field, target_temp);
+    }
+
+    // Broadcast exclusion from neuron 0 to all 8 neurons in voxel
+    total_exclusion = __shfl_sync(warp_mask, total_exclusion, src_lane);
+
+    // ====================================================================
+    // UV SIGNAL COMPUTATION (neuron 0 only, broadcast to all)
+    // Must happen BEFORE refractory check so all threads reach __shfl_sync
+    // ====================================================================
+    float uv_signal = 0.0f;
+    int n_nearby_excited = 0;
+    float min_distance_to_excited = 1000.0f;
+    int closest_excited_idx = -1;
+
+    if (is_valid && has_atoms && k == 0 && n_aromatics > 0) {
+        const float UV_DETECTION_RADIUS = 4.0f;
+        const float UV_DIRECT_STRENGTH = 0.8f;
+        float total_vib_energy = 0.0f;
+
+        for (int a = 0; a < n_aromatics; a++) {
+            if (!d_is_excited[a]) continue;
+            if (d_aromatic_centroids == nullptr) continue;
+
+            float3 arom_pos = d_aromatic_centroids[a];
+            float ddx = voxel_center.x - arom_pos.x;
+            float ddy = voxel_center.y - arom_pos.y;
+            float ddz = voxel_center.z - arom_pos.z;
+            float dist = sqrtf(ddx*ddx + ddy*ddy + ddz*ddz);
+
+            if (dist < UV_DETECTION_RADIUS) {
+                n_nearby_excited++;
+                total_vib_energy += d_vibrational_energy[a];
+                if (dist < min_distance_to_excited) {
+                    min_distance_to_excited = dist;
+                    closest_excited_idx = a;
+                }
+            }
+        }
+
+        if (n_nearby_excited > 0) {
+            float energy_factor = fminf(total_vib_energy / (n_nearby_excited * 3.0f), 1.0f);
+            float coop_boost = 1.0f + 0.3f * (n_nearby_excited - 1);
+            uv_signal = UV_DIRECT_STRENGTH * energy_factor * coop_boost;
+            if (uv_burst_active) uv_signal *= 2.0f;
+        }
+
+        if (d_aromatic_centroids != nullptr && d_uv_signal_prev != nullptr) {
+            float prev_signal = d_uv_signal_prev[v];
+            float advanced_signal = compute_uv_lif_signal(
+                voxel_center,
+                d_aromatic_centroids,
+                d_ring_normals,
+                d_is_excited,
+                d_electronic_population,
+                d_vibrational_energy,
+                d_time_since_excitation,
+                n_aromatics,
+                dt,
+                prev_signal
+            );
+            uv_signal += advanced_signal;
+            d_uv_signal_prev[v] = uv_signal;
+        }
+    }
+
+    // Broadcast UV results from neuron 0 to all 8 neurons
+    uv_signal = __shfl_sync(warp_mask, uv_signal, src_lane);
+    n_nearby_excited = __shfl_sync(warp_mask, n_nearby_excited, src_lane);
+    min_distance_to_excited = __shfl_sync(warp_mask, min_distance_to_excited, src_lane);
+    closest_excited_idx = __shfl_sync(warp_mask, closest_excited_idx, src_lane);
+
+    // ====================================================================
+    // PHASE 2: RAF OSCILLATOR UPDATE
+    // ====================================================================
+
+    // Spike grid decrement (neuron 0 only)
+    if (is_valid && has_atoms && k == 0 && spike_grid[v] > 0) {
+        spike_grid[v]--;
+    }
+
+    // Read coupling from previous step
+    float coupling_input = (is_valid && has_atoms) ? coupling_read[v] : 0.0f;
+
+    // Refractory check — per-neuron
+    bool in_refractory = false;
+    if (is_valid && has_atoms) {
+        int refrac = neuron_refractory[nidx];
+        if (refrac > 0) {
+            neuron_refractory[nidx] = refrac - 1;
+            in_refractory = true;
+        }
+    }
+
+    // RAF oscillator state (initialized for all threads; only updated for active)
+    float x_new = 0.0f, y_new = 0.0f;
+    float threshold = MULTI_LIF_THRESHOLD;
+    bool my_spike = false;
+
+    if (is_valid && has_atoms && !in_refractory) {
+        // Read oscillator state from global memory
+        float x = neuron_potential[nidx];
+        float y = neuron_mean[nidx];  // repurposed as imaginary part
+        threshold = neuron_threshold[nidx];
+        float my_tau = neuron_tau(k);
+
+        // Compute water density signal (bidirectional + exclusion deviation)
+        float wd_curr = water_density[v];
+        float wd_prev = water_density_prev[v];
+        float density_change = wd_curr - wd_prev;
+
+        const float NOISE_FLOOR = 0.002f;
+        float abs_change = fabsf(density_change);
+        float bidirectional_signal = (abs_change > NOISE_FLOOR) ?
+            (abs_change - NOISE_FLOOR) * 3.0f : 0.0f;
+
+        float density_deviation = fabsf(wd_curr - WATER_DENSITY_BULK);
+        const float EXCLUSION_NOISE_FLOOR = 0.005f;
+        float exclusion_signal = (density_deviation > EXCLUSION_NOISE_FLOOR) ?
+            (density_deviation - EXCLUSION_NOISE_FLOOR) * 2.0f : 0.0f;
+
+        float combined_signal = bidirectional_signal + exclusion_signal + uv_signal;
+
+        // RAF oscillator: damped harmonic oscillator with signal injection
+        //   x_new = decay * (x*cos(wt) + y*sin(wt)) + signal
+        //   y_new = decay * (-x*sin(wt) + y*cos(wt))
+        float omega = 2.0f * RAF_PI / my_tau;
+        float cos_wt = cosf(omega * dt);
+        float sin_wt = sinf(omega * dt);
+        float decay = expf(-dt / my_tau);
+
+        x_new = decay * (x * cos_wt + y * sin_wt) + combined_signal;
+        y_new = decay * (-x * sin_wt + y * cos_wt);
+
+        // Stochastic jitter (hash-based PRNG)
+        unsigned int hash = (unsigned int)(v) * 2654435761u
+                          + (unsigned int)(k) * 2246822519u
+                          + (unsigned int)(timestep) * 3266489917u;
+        hash ^= hash >> 16;
+        hash *= 0x45d9f3bu;
+        hash ^= hash >> 16;
+        float jitter = JITTER_AMPLITUDE * ((float)(hash & 0xFFFF) / 65536.0f - 0.5f);
+        x_new += jitter;
+    }
+
+    // Inter-neuron energy cascade: fast neurons (low k) feed slow neurons (high k)
+    // All threads participate in warp shuffle (refractory/invalid contribute amp=0)
+    float my_amp = sqrtf(x_new * x_new + y_new * y_new);
+    float prev_amp = __shfl_up_sync(warp_mask, my_amp, 1);
+    if (is_valid && has_atoms && !in_refractory && k > 0) {
+        x_new += CASCADE_RATE * prev_amp;
+    }
+
+    // Continue RAF update for active neurons: saturated clamp + spike check
+    if (is_valid && has_atoms && !in_refractory) {
+        // Saturated resonance clamp
+        float r2 = x_new * x_new + y_new * y_new;
+        if (r2 > RAF_R_MAX * RAF_R_MAX) {
+            float scale = RAF_R_MAX * rsqrtf(fmaxf(r2, 1e-12f));
+            x_new *= scale;
+            y_new *= scale;
+            r2 = RAF_R_MAX * RAF_R_MAX;
+        }
+
+        // Spike check — coupling modulates threshold (NOT signal)
+        float coupling_norm = fminf(coupling_input, 5.0f);
+        float effective_threshold = threshold - COUPLING_STRENGTH * coupling_norm;
+        if (effective_threshold < 0.2f) effective_threshold = 0.2f;
+
+        float amplitude = sqrtf(r2);
+        // RAF spikes require UV contribution — prevents crowding out EFP
+        my_spike = (amplitude >= effective_threshold) && (uv_signal > 0.0f);
+
+        if (my_spike) {
+            // Always reset oscillator on threshold crossing
+            x_new = 0.01f;
+            y_new = 0.0f;
+            // Only enter refractory + raise threshold when spike can be emitted
+            if (spike_grid[v] == 0) {
+                neuron_refractory[nidx] = REFRACTORY_STEPS;
+                threshold = fminf(threshold + 0.02f, 2.0f * MULTI_LIF_THRESHOLD);
+            }
+        } else {
+            threshold = fmaxf(threshold - 0.001f * dt, MULTI_LIF_THRESHOLD * 0.5f);
+        }
+
+        // Write back oscillator state
+        neuron_potential[nidx] = x_new;
+        neuron_mean[nidx] = y_new;
+        neuron_threshold[nidx] = threshold;
+    }
+
+    // ====================================================================
+    // SPIKE AGGREGATION + SHARED MEMORY STENCIL COUPLING
+    // ====================================================================
+
+    // Warp ballot: aggregate spikes across 8 neurons in voxel
+    unsigned int spike_ballot = __ballot_sync(warp_mask, my_spike);
+    unsigned int voxel_spikes = spike_ballot & voxel_mask;
+    int n_spikes_in_voxel = __popc(voxel_spikes);
+
+    // Max intensity reduction across voxel's 8 neurons (all participate)
+    float my_intensity = my_spike ? neuron_tau(k) : 0.0f;
+    for (int off = THREADS_PER_VOXEL / 2; off > 0; off >>= 1) {
+        float other = __shfl_xor_sync(warp_mask, my_intensity, off);
+        my_intensity = fmaxf(my_intensity, other);
+    }
+    float spike_intensity = my_intensity + (float)n_spikes_in_voxel * 0.1f;
+
+    // Neuron 0: shared memory stencil deposit + spike event emission
+    if (is_valid && has_atoms && k == 0 && n_spikes_in_voxel > 0 && spike_grid[v] == 0) {
+        spike_grid[v] = REFRACTORY_STEPS;
+
+        // Shared memory stencil: 26 Moore neighbors with distance weighting
+        float coupling_deposit = 1.0f;
+        int hx = lx + 1;  // offset +1 for halo border
+        int hy = ly + 1;
+        int hz = lz + 1;
+
+        for (int dz = -1; dz <= 1; dz++)
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0 && dz == 0) continue;
+            int nhx = hx + dx;
+            int nhy = hy + dy;
+            int nhz = hz + dz;
+            int halo_idx = nhz * HALO_X * HALO_Y + nhy * HALO_X + nhx;
+
+            int manhattan = abs(dx) + abs(dy) + abs(dz);
+            float weight = (manhattan == 1) ? 1.0f :
+                           (manhattan == 2) ? 0.7f : 0.5f;
+
+            // Shared memory atomic (~5 cycles vs ~100 for global)
+            atomicAdd(&s_coupling_tile[halo_idx], coupling_deposit * weight);
+        }
+
+        // Spike event emission
+        int spike_source = (n_nearby_excited > 0 && uv_signal > 0.3f) ? 1 : 2;
+
+        int _arom_type = -1, _arom_res = -1;
+        float _wl = 0.0f, _vibe = 0.0f;
+        if (n_nearby_excited > 0 && closest_excited_idx >= 0) {
+            _arom_type = d_aromatic_type[closest_excited_idx];
+            _wl = uv_wavelength_nm;
+            _vibe = d_vibrational_energy[closest_excited_idx];
+            for (int wi = 0; wi < entry.n_atoms && _arom_res < 0; wi++) {
+                int ai = entry.atom_indices[wi];
+                if (ai >= 0 && ai < n_atoms && d_atom_to_aromatic[ai] == closest_excited_idx) {
+                    _arom_res = residue_ids[ai];
+                }
+            }
+        }
+
+        int spike_idx = atomicAdd(spike_count, 1);
+        if (spike_idx < max_spikes) {
+            capture_spike_event(
+                spike_events[spike_idx], timestep, v, voxel_center,
+                spike_intensity, entry, residue_ids,
+                spike_source, _wl, _arom_type, _arom_res,
+                water_density[v], _vibe, n_nearby_excited,
+                fabsf(water_density[v] - water_density_prev[v])
+            );
+        }
+    }
+
+    // ====================================================================
+    // FLUSH SHARED MEMORY HALO TO GLOBAL COUPLING BUFFER
+    // ====================================================================
+    __syncthreads();  // Ensure all stencil writes are visible
+
+    for (int i = threadIdx.x; i < HALO_SIZE; i += blockDim.x) {
+        float val = s_coupling_tile[i];
+        if (val == 0.0f) continue;
+
+        int fhz = i / (HALO_X * HALO_Y);
+        int fhy = (i / HALO_X) % HALO_Y;
+        int fhx = i % HALO_X;
+
+        int gx = tile_bx * TILE_X + fhx - 1;
+        int gy = tile_by * TILE_Y + fhy - 1;
+        int gz = tile_bz * TILE_Z + fhz - 1;
+
+        if (gx < 0 || gx >= grid_dim || gy < 0 || gy >= grid_dim ||
+            gz < 0 || gz >= grid_dim) continue;
+
+        int gv = gz * grid_dim * grid_dim + gy * grid_dim + gx;
+        atomicAdd(&coupling_write[gv], val);
+    }
+
+    // ====================================================================
+    // PHASE 3: EFP (neuron 0 only — same as original)
+    // ====================================================================
+    if (is_valid && has_atoms && k == 0) {
+        float phi = 0.0f;
+        int n_charged_nearby = 0;
+
+        for (int wi = 0; wi < entry.n_atoms; wi++) {
+            int ai = entry.atom_indices[wi];
+            if (ai < 0 || ai >= n_atoms) continue;
+            float q = charges[ai];
+            if (fabsf(q) < 0.3f) continue;
+
+            float3 ap = positions[ai];
+            float ddx = voxel_center.x - ap.x;
+            float ddy = voxel_center.y - ap.y;
+            float ddz = voxel_center.z - ap.z;
+            float dist = sqrtf(ddx*ddx + ddy*ddy + ddz*ddz);
+
+            if (dist > 0.5f && dist < 8.0f) {
+                float eps_r = fmaxf(4.0f * dist, 4.0f);
+                phi += q / (eps_r * dist);
+                n_charged_nearby++;
+            }
+        }
+
+        float wd_change = fabsf(water_density[v] - water_density_prev[v]);
+        float polar_water_signal = fabsf(phi) * wd_change * 10.0f;
+
+        float phi_prev = efp_potential_prev[v];
+        efp_potential[v] = phi;
+
+        float flux = fabsf(phi - phi_prev);
+        float polar_signal = flux * 50.0f + polar_water_signal;
+
+        if (n_charged_nearby >= 2 && spike_grid[v] == 0) {
+            const float EFP_TAU = 0.5f;
+            const float EFP_THRESHOLD = 0.8f;
+            float efp_decay = expf(-dt / EFP_TAU);
+            efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
+
+            if (efp_lif_potential[v] > EFP_THRESHOLD) {
+                spike_grid[v] = REFRACTORY_STEPS;
+                float polar_intensity = efp_lif_potential[v];
+                efp_lif_potential[v] = LIF_RESET;
+
+                int si = atomicAdd(spike_count, 1);
+                if (si < max_spikes) {
+                    int polar_type = (phi > 0.0f) ? 5 : 6;
+                    capture_spike_event(
+                        spike_events[si], timestep, v, voxel_center,
+                        polar_intensity, entry, residue_ids,
+                        3, 0.0f, polar_type, -1,
+                        water_density[v], flux, n_charged_nearby,
+                        wd_change
+                    );
+                }
+            }
+        }
+        efp_potential_prev[v] = phi;
+    }
+}
+
+// Kernel to initialize multi-neuron RAF state
+extern "C" __global__ void init_multi_neuron(
+    float* neuron_potential,
+    float* neuron_threshold,
+    float* neuron_mean,
+    int*   neuron_refractory,
+    float* coupling_a,
+    float* coupling_b,
+    int    total_voxels
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    // Initialize neuron arrays (total_voxels * K_NEURONS elements)
+    if (tid < total_voxels * K_NEURONS) {
+        neuron_potential[tid] = 0.01f;   // small x seed for oscillator
+        neuron_threshold[tid] = MULTI_LIF_THRESHOLD;
+        neuron_mean[tid] = 0.0f;        // y = 0 initially
+        neuron_refractory[tid] = 0;
+    }
+    // Initialize coupling fields (total_voxels elements)
+    if (tid < total_voxels) {
+        coupling_a[tid] = 0.0f;
+        coupling_b[tid] = 0.0f;
+    }
+}

@@ -1355,7 +1355,7 @@ const MAX_GRID_DIM: usize = 128;
 const BLOCK_SIZE_1D: usize = 256;
 
 /// Maximum spikes per step (increased from 10000 to handle UV-LIF coupling which generates many spikes)
-const MAX_SPIKES_PER_STEP: usize = 100000;
+const MAX_SPIKES_PER_STEP: usize = 500000;
 
 /// Maximum hydrogen clusters
 const MAX_H_CLUSTERS: usize = 10000;
@@ -1459,6 +1459,17 @@ pub struct NhsAmberFusedEngine {
     d_efp_potential: CudaSlice<f32>,
     d_efp_potential_prev: CudaSlice<f32>,
     d_efp_lif_potential: CudaSlice<f32>,
+
+    // Multi-neuron LIF buffers (K=8 neurons per voxel)
+    d_neuron_potential: CudaSlice<f32>,   // [total_voxels * 8]
+    d_neuron_threshold: CudaSlice<f32>,   // [total_voxels * 8]
+    d_neuron_mean: CudaSlice<f32>,        // [total_voxels * 8]
+    d_neuron_refractory: CudaSlice<i32>,  // [total_voxels * 8]
+    d_coupling_a: CudaSlice<f32>,         // [total_voxels] double-buffer A
+    d_coupling_b: CudaSlice<f32>,         // [total_voxels] double-buffer B
+    coupling_phase: bool,                  // false = read A/write B, true = read B/write A
+    multi_lif_kernel: CudaFunction,
+    init_multi_neuron_kernel: CudaFunction,
 
     // Spike output (events as raw bytes)
     d_spike_events: CudaSlice<u8>,
@@ -1721,6 +1732,15 @@ impl NhsAmberFusedEngine {
         let init_warp_matrix_kernel = fused_module.load_function("init_warp_matrix")
             .unwrap_or_else(|_| fused_step_kernel.clone());
         let build_uv_targets_kernel = fused_module.load_function("build_uv_targets")
+            .unwrap_or_else(|_| fused_step_kernel.clone());
+
+        // Multi-neuron LIF kernels
+        let multi_lif_kernel = fused_module.load_function("nhs_voxel_step_multi_lif")
+            .unwrap_or_else(|_| {
+                log::warn!("nhs_voxel_step_multi_lif not found in PTX, falling back to single-neuron");
+                fused_step_kernel.clone()
+            });
+        let init_multi_neuron_kernel = fused_module.load_function("init_multi_neuron")
             .unwrap_or_else(|_| fused_step_kernel.clone());
 
         // ====================================================================
@@ -2047,6 +2067,18 @@ impl NhsAmberFusedEngine {
         let d_efp_potential_prev: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_efp_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
 
+        // Multi-neuron LIF buffers (K=8 neurons per voxel)
+        let k_neurons = 8usize;
+        let d_neuron_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
+        let d_neuron_threshold: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
+        let d_neuron_mean: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
+        let d_neuron_refractory: CudaSlice<i32> = stream.alloc_zeros(total_voxels * k_neurons)?;
+        let d_coupling_a: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_coupling_b: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        log::info!("Multi-neuron LIF: {} voxels x {} neurons = {} neuron states ({:.1} MB)",
+            total_voxels, k_neurons, total_voxels * k_neurons,
+            (total_voxels * k_neurons * 4 * 3 + total_voxels * k_neurons * 4 + total_voxels * 4 * 2) as f64 / 1048576.0);
+
         // ====================================================================
         // ALLOCATE SPIKE OUTPUT
         // ====================================================================
@@ -2117,6 +2149,16 @@ impl NhsAmberFusedEngine {
             d_efp_potential,
             d_efp_potential_prev,
             d_efp_lif_potential,
+
+            d_neuron_potential,
+            d_neuron_threshold,
+            d_neuron_mean,
+            d_neuron_refractory,
+            d_coupling_a,
+            d_coupling_b,
+            coupling_phase: false,
+            multi_lif_kernel,
+            init_multi_neuron_kernel,
 
             d_spike_events,
             spike_event_size,
@@ -2224,6 +2266,9 @@ impl NhsAmberFusedEngine {
 
         // Initialize LIF state
         engine.init_lif_state()?;
+
+        // Initialize multi-neuron LIF bank
+        engine.init_multi_neuron_state()?;
 
         // Build warp matrix
         engine.build_warp_matrix()?;
@@ -2680,6 +2725,37 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch init_lif_state")?;
 
+        self.context.synchronize()?;
+        Ok(())
+    }
+
+    /// Initialize multi-neuron LIF bank (K=8 neurons per voxel)
+    fn init_multi_neuron_state(&mut self) -> Result<()> {
+        let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+        let k_neurons = 8i32;
+        let total_elements = total_voxels * k_neurons;
+        let n_blocks = (total_elements as u32).div_ceil(BLOCK_SIZE_1D as u32);
+        let cfg = LaunchConfig {
+            grid_dim: (n_blocks, 1, 1),
+            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            self.stream
+                .launch_builder(&self.init_multi_neuron_kernel)
+                .arg(&mut self.d_neuron_potential)
+                .arg(&mut self.d_neuron_threshold)
+                .arg(&mut self.d_neuron_mean)
+                .arg(&mut self.d_neuron_refractory)
+                .arg(&mut self.d_coupling_a)
+                .arg(&mut self.d_coupling_b)
+                .arg(&total_voxels)
+                .launch(cfg)
+        }
+        .context("Failed to launch init_multi_neuron")?;
+
+        log::info!("Multi-neuron LIF bank initialized: {} voxels x {} neurons", total_voxels, k_neurons);
         self.context.synchronize()?;
         Ok(())
     }
@@ -3849,63 +3925,140 @@ impl NhsAmberFusedEngine {
         .context("Failed to launch nhs_amber_fused_step kernel")?;
 
         // ====================================================================
-        // LAUNCH 2: VOXEL-PARALLEL KERNEL (8192 blocks vs 16 before)
+        // LAUNCH 2: MULTI-NEURON VOXEL KERNEL (K=8 neurons per voxel)
         // ====================================================================
         let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
-        let voxel_blocks = total_voxels.div_ceil(BLOCK_SIZE_1D as u32);
+        // 3D tile launch: grid=(32,32,64), block=256, shared_mem=576 bytes
+        let tile_x = 4u32;
+        let tile_y = 4u32;
+        let tile_z = 2u32;
+        let grid_x = (self.grid_dim as u32 + tile_x - 1) / tile_x;
+        let grid_y = (self.grid_dim as u32 + tile_y - 1) / tile_y;
+        let grid_z = (self.grid_dim as u32 + tile_z - 1) / tile_z;
+        let threads_per_block = tile_x * tile_y * tile_z * 8;  // 32 voxels * 8 neurons = 256
+        let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);  // 144
+        let shared_mem = halo_size * 4;  // 144 * sizeof(float) = 576 bytes
         let voxel_cfg = LaunchConfig {
-            grid_dim: (voxel_blocks, 1, 1),
-            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
-            shared_mem_bytes: 0,
+            grid_dim: (grid_x, grid_y, grid_z),
+            block_dim: (threads_per_block, 1, 1),
+            shared_mem_bytes: shared_mem,
         };
-        log::trace!("Voxel kernel: {} blocks x {} threads = {} threads for {} voxels",
-            voxel_blocks, BLOCK_SIZE_1D, voxel_blocks as u64 * BLOCK_SIZE_1D as u64, total_voxels);
+        log::trace!("Multi-LIF kernel: grid=({},{},{}) block={} shared={}B for {} voxels",
+            grid_x, grid_y, grid_z, threads_per_block, shared_mem, total_voxels);
 
-        unsafe {
-            self.stream
-                .launch_builder(&self.voxel_step_kernel)
-                .arg(&self.d_positions)
-                .arg(&n_atoms_i32)
-                .arg(&grid_dim_i32)
-                .arg(&self.grid_spacing)
-                .arg(&self.grid_origin[0])
-                .arg(&self.grid_origin[1])
-                .arg(&self.grid_origin[2])
-                .arg(&mut self.d_exclusion_field)
-                .arg(&mut self.d_water_density)
-                .arg(&mut self.d_water_density_prev)
-                .arg(&mut self.d_lif_potential)
-                .arg(&mut self.d_spike_grid)
-                .arg(&mut self.d_warp_matrix)
-                .arg(&self.d_atom_types)
-                .arg(&self.d_charges)
-                .arg(&self.d_residue_ids)
-                .arg(&self.d_aromatic_centroids)
-                .arg(&self.d_ring_normals)
-                .arg(&self.d_is_excited)
-                .arg(&self.d_electronic_population)
-                .arg(&self.d_vibrational_energy)
-                .arg(&self.d_time_since_excitation)
-                .arg(&self.d_aromatic_type)
-                .arg(&self.d_atom_to_aromatic)
-                .arg(&(self.n_aromatics as i32))
-                .arg(&uv_wavelength_nm)
-                .arg(&uv_burst_active_i32)
-                .arg(&mut self.d_uv_signal_prev)
-                .arg(&mut self.d_spike_events)
-                .arg(&mut self.d_spike_count)
-                .arg(&max_spikes_i32)
-                .arg(&current_temp)
-                .arg(&self.dt)
-                .arg(&self.timestep)
-                .arg(&self.d_efp_potential)
-                .arg(&self.d_efp_potential_prev)
-                .arg(&self.d_efp_lif_potential)
-                .arg(&self.d_aromatic_neighbors)
-                .arg(&self.d_franck_condon_progress)
-                .launch(voxel_cfg)
+        // Coupling double-buffer: phase=false → read A, write B; phase=true → read B, write A
+        let n_aromatics_i32 = self.n_aromatics as i32;
+        if self.coupling_phase {
+            unsafe {
+                self.stream
+                    .launch_builder(&self.multi_lif_kernel)
+                    .arg(&self.d_positions)
+                    .arg(&n_atoms_i32)
+                    .arg(&grid_dim_i32)
+                    .arg(&self.grid_spacing)
+                    .arg(&self.grid_origin[0])
+                    .arg(&self.grid_origin[1])
+                    .arg(&self.grid_origin[2])
+                    .arg(&mut self.d_exclusion_field)
+                    .arg(&mut self.d_water_density)
+                    .arg(&mut self.d_water_density_prev)
+                    .arg(&mut self.d_spike_grid)
+                    .arg(&mut self.d_warp_matrix)
+                    .arg(&self.d_atom_types)
+                    .arg(&self.d_charges)
+                    .arg(&self.d_residue_ids)
+                    .arg(&self.d_aromatic_centroids)
+                    .arg(&self.d_ring_normals)
+                    .arg(&self.d_is_excited)
+                    .arg(&self.d_electronic_population)
+                    .arg(&self.d_vibrational_energy)
+                    .arg(&self.d_time_since_excitation)
+                    .arg(&self.d_aromatic_type)
+                    .arg(&self.d_atom_to_aromatic)
+                    .arg(&n_aromatics_i32)
+                    .arg(&uv_wavelength_nm)
+                    .arg(&uv_burst_active_i32)
+                    .arg(&mut self.d_uv_signal_prev)
+                    .arg(&mut self.d_spike_events)
+                    .arg(&mut self.d_spike_count)
+                    .arg(&max_spikes_i32)
+                    .arg(&current_temp)
+                    .arg(&self.dt)
+                    .arg(&self.timestep)
+                    .arg(&self.d_efp_potential)
+                    .arg(&self.d_efp_potential_prev)
+                    .arg(&self.d_efp_lif_potential)
+                    .arg(&self.d_aromatic_neighbors)
+                    .arg(&self.d_franck_condon_progress)
+                    .arg(&mut self.d_neuron_potential)
+                    .arg(&mut self.d_neuron_threshold)
+                    .arg(&mut self.d_neuron_mean)
+                    .arg(&mut self.d_neuron_refractory)
+                    .arg(&self.d_coupling_b)
+                    .arg(&mut self.d_coupling_a)
+                    .launch(voxel_cfg)
+            }
+        } else {
+            unsafe {
+                self.stream
+                    .launch_builder(&self.multi_lif_kernel)
+                    .arg(&self.d_positions)
+                    .arg(&n_atoms_i32)
+                    .arg(&grid_dim_i32)
+                    .arg(&self.grid_spacing)
+                    .arg(&self.grid_origin[0])
+                    .arg(&self.grid_origin[1])
+                    .arg(&self.grid_origin[2])
+                    .arg(&mut self.d_exclusion_field)
+                    .arg(&mut self.d_water_density)
+                    .arg(&mut self.d_water_density_prev)
+                    .arg(&mut self.d_spike_grid)
+                    .arg(&mut self.d_warp_matrix)
+                    .arg(&self.d_atom_types)
+                    .arg(&self.d_charges)
+                    .arg(&self.d_residue_ids)
+                    .arg(&self.d_aromatic_centroids)
+                    .arg(&self.d_ring_normals)
+                    .arg(&self.d_is_excited)
+                    .arg(&self.d_electronic_population)
+                    .arg(&self.d_vibrational_energy)
+                    .arg(&self.d_time_since_excitation)
+                    .arg(&self.d_aromatic_type)
+                    .arg(&self.d_atom_to_aromatic)
+                    .arg(&n_aromatics_i32)
+                    .arg(&uv_wavelength_nm)
+                    .arg(&uv_burst_active_i32)
+                    .arg(&mut self.d_uv_signal_prev)
+                    .arg(&mut self.d_spike_events)
+                    .arg(&mut self.d_spike_count)
+                    .arg(&max_spikes_i32)
+                    .arg(&current_temp)
+                    .arg(&self.dt)
+                    .arg(&self.timestep)
+                    .arg(&self.d_efp_potential)
+                    .arg(&self.d_efp_potential_prev)
+                    .arg(&self.d_efp_lif_potential)
+                    .arg(&self.d_aromatic_neighbors)
+                    .arg(&self.d_franck_condon_progress)
+                    .arg(&mut self.d_neuron_potential)
+                    .arg(&mut self.d_neuron_threshold)
+                    .arg(&mut self.d_neuron_mean)
+                    .arg(&mut self.d_neuron_refractory)
+                    .arg(&self.d_coupling_a)
+                    .arg(&mut self.d_coupling_b)
+                    .launch(voxel_cfg)
+            }
         }
-        .context("Failed to launch nhs_voxel_step kernel")?;
+        .context("Failed to launch nhs_voxel_step_multi_lif kernel")?;
+
+        // Swap coupling double-buffer and clear the new write buffer
+        self.coupling_phase = !self.coupling_phase;
+        // Clear the buffer that will be written to next step (now the "write" side)
+        if self.coupling_phase {
+            self.stream.memset_zeros(&mut self.d_coupling_a)?;
+        } else {
+            self.stream.memset_zeros(&mut self.d_coupling_b)?;
+        }
 
         // Advance protocols (CPU-side, no sync needed)
         self.temp_protocol.advance();
@@ -4785,10 +4938,15 @@ impl NhsAmberFusedEngine {
             total_spikes += result.spike_count;
 
             if self.timestep % 10000 == 0 {
-                log::info!("Step {}: T={:.1}K, spikes={}",
+                // Count spike sources for diagnostic
+                let recent_spikes = &self.accumulated_spikes[self.accumulated_spikes.len().saturating_sub(result.spike_count as usize)..];
+                let src1 = recent_spikes.iter().filter(|s| s.spike_source == 1).count();
+                let src2 = recent_spikes.iter().filter(|s| s.spike_source == 2).count();
+                let src3 = recent_spikes.iter().filter(|s| s.spike_source == 3).count();
+                log::info!("Step {}: T={:.1}K, spikes={} (UV={} RAF={} EFP={})",
                     self.timestep,
                     self.temp_protocol.current_temperature(),
-                    result.spike_count);
+                    result.spike_count, src1, src2, src3);
             }
         }
 
