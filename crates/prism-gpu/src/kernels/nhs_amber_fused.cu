@@ -2684,14 +2684,16 @@ efp_phase:
 #define COUPLING_DECAY 0.9f
 
 // 3D tile dimensions for shared memory stencil
+// Reduced from 4x4x2 (256 threads) to 4x2x2 (128 threads) for better
+// SM occupancy on Blackwell (~25% vs ~12.5% at 256 threads/block).
 #define TILE_X 4
-#define TILE_Y 4
+#define TILE_Y 2
 #define TILE_Z 2
-#define VOXELS_PER_TILE (TILE_X * TILE_Y * TILE_Z)  // 32
+#define VOXELS_PER_TILE (TILE_X * TILE_Y * TILE_Z)  // 16
 #define HALO_X (TILE_X + 2)   // 6
-#define HALO_Y (TILE_Y + 2)   // 6
+#define HALO_Y (TILE_Y + 2)   // 4
 #define HALO_Z (TILE_Z + 2)   // 4
-#define HALO_SIZE (HALO_X * HALO_Y * HALO_Z)  // 144
+#define HALO_SIZE (HALO_X * HALO_Y * HALO_Z)  // 96
 
 // RAF parameters
 #define CASCADE_RATE 0.01f
@@ -2711,7 +2713,7 @@ __device__ __forceinline__ int voxel_idx_3d(int x, int y, int z, int gdim) {
     return z * gdim * gdim + y * gdim + x;
 }
 
-extern "C" __global__ void nhs_voxel_step_multi_lif(
+extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     // === Same as nhs_voxel_step ===
     const float3* __restrict__ positions,
     int n_atoms,
@@ -2759,15 +2761,41 @@ extern "C" __global__ void nhs_voxel_step_multi_lif(
     const float* coupling_read,  // [total_voxels] read buffer (from previous step)
     float* coupling_write        // [total_voxels] write buffer (for next step)
 ) {
-    // === Shared memory halo tile for coupling stencil ===
-    extern __shared__ float s_coupling_tile[];  // [HALO_SIZE] = 144 floats
+    // === Shared memory layout ===
+    // [0..HALO_SIZE-1]:  coupling stencil halo tile
+    // [HALO_SIZE..HALO_SIZE+7]:  pre-computed cos(omega*dt) per neuron k
+    // [HALO_SIZE+8..HALO_SIZE+15]: pre-computed sin(omega*dt) per neuron k
+    // [HALO_SIZE+16..HALO_SIZE+23]: pre-computed exp(-dt/tau) per neuron k
+    // [HALO_SIZE+24]: flag: any aromatic excited this step?
+    extern __shared__ float s_coupling_tile[];
+    float* s_cos_lut   = &s_coupling_tile[HALO_SIZE];       // [8]
+    float* s_sin_lut   = &s_coupling_tile[HALO_SIZE + 8];   // [8]
+    float* s_decay_lut = &s_coupling_tile[HALO_SIZE + 16];  // [8]
+    int*   s_any_excited = (int*)&s_coupling_tile[HALO_SIZE + 24]; // [1]
+
+    // Thread 0: build trig/decay LUT + check excited aromatics
+    if (threadIdx.x < K_NEURONS) {
+        float my_tau = neuron_tau(threadIdx.x);
+        float omega = 2.0f * RAF_PI / my_tau;
+        s_cos_lut[threadIdx.x]   = cosf(omega * dt);
+        s_sin_lut[threadIdx.x]   = sinf(omega * dt);
+        s_decay_lut[threadIdx.x] = expf(-dt / my_tau);
+    }
+    if (threadIdx.x == 0) {
+        int any = 0;
+        for (int a = 0; a < n_aromatics && !any; a++) {
+            if (d_is_excited[a]) any = 1;
+        }
+        *s_any_excited = any;
+    }
+    __syncthreads();
 
     // === 3D tile mapping ===
     int tile_bx = blockIdx.x;
     int tile_by = blockIdx.y;
     int tile_bz = blockIdx.z;
 
-    int local_voxel = threadIdx.x / THREADS_PER_VOXEL;  // 0..31
+    int local_voxel = threadIdx.x / THREADS_PER_VOXEL;  // 0..15
     int k = threadIdx.x % THREADS_PER_VOXEL;             // 0..7
 
     // Local 3D within tile
@@ -2883,14 +2911,13 @@ extern "C" __global__ void nhs_voxel_step_multi_lif(
     float min_distance_to_excited = 1000.0f;
     int closest_excited_idx = -1;
 
-    if (is_valid && has_atoms && k == 0 && n_aromatics > 0) {
+    if (is_valid && has_atoms && k == 0 && n_aromatics > 0 && *s_any_excited) {
         const float UV_DETECTION_RADIUS = 4.0f;
         const float UV_DIRECT_STRENGTH = 0.8f;
         float total_vib_energy = 0.0f;
 
         for (int a = 0; a < n_aromatics; a++) {
             if (!d_is_excited[a]) continue;
-            if (d_aromatic_centroids == nullptr) continue;
 
             float3 arom_pos = d_aromatic_centroids[a];
             float ddx = voxel_center.x - arom_pos.x;
@@ -2994,10 +3021,10 @@ extern "C" __global__ void nhs_voxel_step_multi_lif(
         // RAF oscillator: damped harmonic oscillator with signal injection
         //   x_new = decay * (x*cos(wt) + y*sin(wt)) + signal
         //   y_new = decay * (-x*sin(wt) + y*cos(wt))
-        float omega = 2.0f * RAF_PI / my_tau;
-        float cos_wt = cosf(omega * dt);
-        float sin_wt = sinf(omega * dt);
-        float decay = expf(-dt / my_tau);
+        // Read pre-computed trig from shared memory LUT (avoids 3 transcendentals per thread)
+        float cos_wt = s_cos_lut[k];
+        float sin_wt = s_sin_lut[k];
+        float decay  = s_decay_lut[k];
 
         x_new = decay * (x * cos_wt + y * sin_wt) + combined_signal;
         y_new = decay * (-x * sin_wt + y * cos_wt);

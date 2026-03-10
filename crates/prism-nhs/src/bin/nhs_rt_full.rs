@@ -29,7 +29,7 @@ use prism_nhs::{
     write_binding_site_visualizations,
     PrismPrepTopology,
     ParallelReplicaEngine,
-    sdst_bridge::{SdstBridge, PrismThermAnalysis},
+    sdst_bridge::{SdstBridge, PrismThermAnalysis, ThermClass},
     sdst_report,
 };
 
@@ -2617,21 +2617,43 @@ fn run_multi_stream_pipeline(
                 // 6. Intensity quality (unchanged baseline signal)
                 let intensity_q = (site.avg_intensity / 10.0).clamp(0.0, 1.0);
 
-                // Composite: emphasizes temporal and density signals over raw count
+                // 7. Catalytic residue enrichment: sites near catalytic residues
+                //    (GLU/ASP/HIS/SER/CYS/LYS) are more likely to be functional pockets
+                let cat_count = site.lining_residues.iter()
+                    .filter(|r| catalytic_residues.contains(&r.resname.as_str()))
+                    .count();
+                let catalytic_q = (cat_count as f32 / 5.0).clamp(0.0, 1.0);
+
+                // 8. Pocket stability: inverse CV of volume across frames.
+                //    Stable pockets (low CV ~0.5-1.5) score higher than wildly
+                //    fluctuating surface grooves (CV > 2.0) or rigid buried cores (CV < 0.3)
+                let stability_q = if cv_volume >= 0.5 && cv_volume <= 1.5 {
+                    1.0_f32
+                } else if cv_volume < 0.5 {
+                    (cv_volume / 0.5) as f32
+                } else {
+                    (1.5 / cv_volume).clamp(0.0, 1.0) as f32
+                };
+
+                // Composite: emphasizes temporal and density signals over raw count,
+                // with catalytic enrichment and pocket stability boosting functional sites
                 let old_q = site.quality_score;
                 site.quality_score =
-                    0.10 * log_spike_q +           // raw spike abundance (log-scaled)
-                    0.15 * density_q +             // spikes concentrated in pocket volume
-                    0.20 * frame_occupancy +       // temporal persistence across frames
-                    0.15 * temporal_regularity +   // steady firing vs burst noise
+                    0.08 * log_spike_q +           // raw spike abundance (log-scaled)
+                    0.12 * density_q +             // spikes concentrated in pocket volume
+                    0.15 * frame_occupancy +       // temporal persistence across frames
+                    0.12 * temporal_regularity +   // steady firing vs burst noise
                     0.10 * vol_q +                 // pocket-like volume geometry
-                    0.10 * intensity_q +           // spike amplitude
-                    0.20 * site.druggability.overall; // druggability (includes CV penalty)
+                    0.08 * intensity_q +           // spike amplitude
+                    0.15 * site.druggability.overall + // druggability (includes CV penalty)
+                    0.12 * catalytic_q +           // catalytic residue enrichment
+                    0.08 * stability_q;            // pocket volume stability
 
-                log::info!("  Site {}: quality rerank {:.3}->{:.3} [logSp={:.2} dens={:.2} occ={:.2} reg={:.2} vol={:.2} int={:.2} drug={:.2}]",
+                log::info!("  Site {}: quality rerank {:.3}->{:.3} [logSp={:.2} dens={:.2} occ={:.2} reg={:.2} vol={:.2} int={:.2} drug={:.2} cat={:.2} stab={:.2}]",
                     site.cluster_id, old_q, site.quality_score,
                     log_spike_q, density_q, frame_occupancy, temporal_regularity,
-                    vol_q, intensity_q, site.druggability.overall);
+                    vol_q, intensity_q, site.druggability.overall,
+                    catalytic_q, stability_q);
             }
 
             // spike_frames: frames where this site had spikes
@@ -2673,26 +2695,7 @@ fn run_multi_stream_pipeline(
             }));
         }
 
-        // ---- Re-sort by updated quality_score ----
-        // Build permutation indices so we can reorder the JSON vectors too
-        let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(100)).collect();
-        ranked_indices.sort_by(|&a, &b|
-            clustered_sites[b].quality_score
-                .partial_cmp(&clustered_sites[a].quality_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        );
-
-        // Reorder all three parallel vectors + sites
-        let reordered_sites: Vec<_> = ranked_indices.iter().map(|&i| &clustered_sites[i]).collect();
-        let reordered_pockets: Vec<_> = ranked_indices.iter().map(|&i| all_pockets_json[i].clone()).collect();
-        let reordered_cryptic: Vec<_> = ranked_indices.iter().map(|&i| cryptic_sites_json[i].clone()).collect();
-
-        log::info!("Quality reranking applied. New top-3: {}",
-            ranked_indices.iter().take(3)
-                .map(|&i| format!("site{}(q={:.3})", clustered_sites[i].cluster_id, clustered_sites[i].quality_score))
-                .collect::<Vec<_>>().join(", "));
-
-        // ── PRISM-Therm (multi-stream path) ──
+        // ── PRISM-Therm (multi-stream path) — run BEFORE final reranking ──
         let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
             log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)...");
             match SdstBridge::new(&topology, &protocol, all_stream_spikes.len()) {
@@ -2719,6 +2722,85 @@ fn run_multi_stream_pipeline(
         } else {
             None
         };
+
+        // ── Thermodynamic reranking: boost quality_score with tau + z-score ──
+        // When PRISM-Therm data is available, fold thermodynamic signals into
+        // the quality score. These signals are unique to PRISM-4D — no other
+        // tool can compute them.
+        if let Some(ref analysis) = prism_therm_result {
+            log::info!("[Thermo-Rerank] Applying thermodynamic quality boost...");
+            for site in clustered_sites.iter_mut() {
+                if let Some(therm) = analysis.sites.iter().find(|s| s.site_id == site.cluster_id as i32) {
+                    let old_q = site.quality_score;
+
+                    // 1. SOC criticality: tau in [1.2, 1.5] is the self-organized
+                    //    critical regime — most indicative of functional binding.
+                    //    tau=0 (no data) or tau>2 (noise) score low.
+                    let tau_q = if therm.tau >= 1.2 && therm.tau <= 1.5 {
+                        1.0_f32
+                    } else if therm.tau > 1.0 && therm.tau < 1.2 {
+                        (therm.tau - 1.0) / 0.2  // ramp 1.0→1.2
+                    } else if therm.tau > 1.5 && therm.tau < 2.0 {
+                        1.0 - (therm.tau - 1.5) / 0.5  // decay 1.5→2.0
+                    } else {
+                        0.0
+                    };
+
+                    // 2. Thermal asymmetry z-score: high z = hysteretic/dynamic.
+                    //    z > 1.5 = cryptic candidate, z > 0.5 = dynamic, z < -0.5 = inert.
+                    //    Clamp to [0, 1] using sigmoid-like mapping.
+                    let z = therm.relative_asymmetry;
+                    let asym_q = if z > 1.5 {
+                        1.0_f32
+                    } else if z > 0.0 {
+                        z / 1.5
+                    } else {
+                        0.0
+                    };
+
+                    // 3. Thermodynamic class bonus: CRYPTIC and DYNAMIC sites
+                    //    get a direct boost; INERT sites get penalized slightly.
+                    let class_q = match therm.therm_class {
+                        ThermClass::Cryptic  => 1.0_f32,
+                        ThermClass::Dynamic  => 0.7,
+                        ThermClass::Responsive => 0.4,
+                        ThermClass::Inert    => 0.1,
+                    };
+
+                    // Multiplicative thermodynamic boost: preserves base quality
+                    // ordering while giving a proportional edge to sites with
+                    // strong thermodynamic signatures. Max boost ~8% for a
+                    // fully CRYPTIC site with ideal tau and high z-score.
+                    let thermo_avg = (tau_q + asym_q + class_q) / 3.0;
+                    let thermo_factor = 1.0 + 0.08 * thermo_avg;
+                    site.quality_score = old_q * thermo_factor;
+
+                    log::info!("  Site {}: thermo-rerank {:.3}->{:.3} [tau={:.2}→q={:.2} z={:.2}→q={:.2} class={}→q={:.2}]",
+                        site.cluster_id, old_q, site.quality_score,
+                        therm.tau, tau_q, therm.relative_asymmetry, asym_q,
+                        therm.therm_class, class_q);
+                }
+            }
+        }
+
+        // ---- Re-sort by updated quality_score ----
+        // Build permutation indices so we can reorder the JSON vectors too
+        let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(100)).collect();
+        ranked_indices.sort_by(|&a, &b|
+            clustered_sites[b].quality_score
+                .partial_cmp(&clustered_sites[a].quality_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        );
+
+        // Reorder all three parallel vectors + sites
+        let reordered_sites: Vec<_> = ranked_indices.iter().map(|&i| &clustered_sites[i]).collect();
+        let reordered_pockets: Vec<_> = ranked_indices.iter().map(|&i| all_pockets_json[i].clone()).collect();
+        let reordered_cryptic: Vec<_> = ranked_indices.iter().map(|&i| cryptic_sites_json[i].clone()).collect();
+
+        log::info!("Quality reranking applied. New top-3: {}",
+            ranked_indices.iter().take(3)
+                .map(|&i| format!("site{}(q={:.3})", clustered_sites[i].cluster_id, clustered_sites[i].quality_score))
+                .collect::<Vec<_>>().join(", "));
 
         let json_path = output_base.with_extension("binding_sites.json");
 

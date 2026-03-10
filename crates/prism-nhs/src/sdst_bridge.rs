@@ -243,10 +243,10 @@ impl SdstBridge {
         cfg.phase_boundaries = [p0, p1, p2, p3, p4, p5];
 
         // Event buffer: scale to actual spike count. At 36 bytes/event,
-        // 28M events = 1GB -- safe ceiling for 16GB VRAM.
+        // 42M events = 1.5GB -- safe ceiling for 16GB VRAM.
         cfg.max_spike_events = (expected_spike_count as u32)
             .max(1_000_000)
-            .min(28_000_000);
+            .min(42_000_000);
 
         cfg
     }
@@ -323,7 +323,7 @@ impl SdstBridge {
     /// timesteps) so parent detection chains stay short: O(N × local_density)
     /// instead of O(N × total_chain).
     ///
-    /// **VRAM cap**: 1GB / 36 bytes ≈ 27.7M events. Beyond that, stride-sample.
+    /// **VRAM cap**: 1.5GB / 36 bytes ≈ 27.7M events. Beyond that, stride-sample.
     pub fn ingest_all_spikes(&self, spikes: &[GpuSpikeEvent]) -> Result<u32> {
         if spikes.is_empty() {
             return self.sdst.event_count()
@@ -331,9 +331,9 @@ impl SdstBridge {
         }
 
         const NHS_STRIDE: usize = std::mem::size_of::<GpuSpikeEvent>(); // 92
-        const MAX_SDST_MEMORY_BYTES: usize = 1_024 * 1_024 * 1_024;
-        const BYTES_PER_EVENT: usize = 36;
-        const ABSOLUTE_MAX_EVENTS: usize = MAX_SDST_MEMORY_BYTES / BYTES_PER_EVENT;
+        // Must match the max_spike_events cap in build_config() to prevent
+        // ErrorTableFull: 42M events × 36 bytes = 1.51 GB VRAM.
+        const ABSOLUTE_MAX_EVENTS: usize = 42_000_000;
 
         // Sort by timestep on CPU (required for temporal batching in the C API)
         let mut sorted: Vec<GpuSpikeEvent> = if spikes.len() > ABSOLUTE_MAX_EVENTS {

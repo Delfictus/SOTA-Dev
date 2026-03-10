@@ -3928,16 +3928,18 @@ impl NhsAmberFusedEngine {
         // LAUNCH 2: MULTI-NEURON VOXEL KERNEL (K=8 neurons per voxel)
         // ====================================================================
         let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
-        // 3D tile launch: grid=(32,32,64), block=256, shared_mem=576 bytes
+        // 3D tile launch: block=128 threads (16 voxels × 8 neurons)
+        // Reduced from 4x4x2 (256) to 4x2x2 (128) for better SM occupancy
         let tile_x = 4u32;
-        let tile_y = 4u32;
+        let tile_y = 2u32;
         let tile_z = 2u32;
         let grid_x = (self.grid_dim as u32 + tile_x - 1) / tile_x;
         let grid_y = (self.grid_dim as u32 + tile_y - 1) / tile_y;
         let grid_z = (self.grid_dim as u32 + tile_z - 1) / tile_z;
-        let threads_per_block = tile_x * tile_y * tile_z * 8;  // 32 voxels * 8 neurons = 256
-        let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);  // 144
-        let shared_mem = halo_size * 4;  // 144 * sizeof(float) = 576 bytes
+        let threads_per_block = tile_x * tile_y * tile_z * 8;  // 16 voxels * 8 neurons = 128
+        let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);  // 96
+        // Shared memory: halo(96) + trig LUT(24) + excited flag(1) = 121 floats = 484 bytes
+        let shared_mem = (halo_size + 25) * 4;  // 121 * sizeof(float) = 484 bytes
         let voxel_cfg = LaunchConfig {
             grid_dim: (grid_x, grid_y, grid_z),
             block_dim: (threads_per_block, 1, 1),
@@ -4070,7 +4072,9 @@ impl NhsAmberFusedEngine {
         // Higher interval = faster throughput but coarser spike timing
         let sync_interval = 1000; // Sync every 1000 steps (10x faster than 100)
         let num_spikes = if self.timestep % sync_interval == 0 {
-            self.context.synchronize()?;
+            // Use stream-level sync instead of context sync to allow
+            // concurrent execution across multiple CUDA streams/threads.
+            self.stream.synchronize()?;
 
             let mut spike_count_host = [0i32];
             self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
