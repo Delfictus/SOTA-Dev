@@ -1471,6 +1471,10 @@ pub struct NhsAmberFusedEngine {
     multi_lif_kernel: CudaFunction,
     init_multi_neuron_kernel: CudaFunction,
 
+    // Sparse tile index: only launch blocks for tiles containing atoms
+    d_active_tiles: CudaSlice<i32>,       // [n_active_tiles * 3] packed (bx, by, bz) triplets
+    n_active_tiles: u32,                  // number of active tiles
+
     // Spike output (events as raw bytes)
     d_spike_events: CudaSlice<u8>,
     spike_event_size: usize,
@@ -2075,6 +2079,8 @@ impl NhsAmberFusedEngine {
         let d_neuron_refractory: CudaSlice<i32> = stream.alloc_zeros(total_voxels * k_neurons)?;
         let d_coupling_a: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_coupling_b: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        // Sparse tile index — placeholder, resized in build_warp_matrix()
+        let d_active_tiles: CudaSlice<i32> = stream.alloc_zeros(1)?;
         log::info!("Multi-neuron LIF: {} voxels x {} neurons = {} neuron states ({:.1} MB)",
             total_voxels, k_neurons, total_voxels * k_neurons,
             (total_voxels * k_neurons * 4 * 3 + total_voxels * k_neurons * 4 + total_voxels * 4 * 2) as f64 / 1048576.0);
@@ -2159,6 +2165,10 @@ impl NhsAmberFusedEngine {
             coupling_phase: false,
             multi_lif_kernel,
             init_multi_neuron_kernel,
+
+            // Sparse tile index — populated in build_warp_matrix()
+            d_active_tiles,
+            n_active_tiles: 0,
 
             d_spike_events,
             spike_event_size,
@@ -2677,6 +2687,70 @@ impl NhsAmberFusedEngine {
 
         log::info!("Built warp matrix: {} voxels ({} with atoms, avg {:.1} atoms/voxel, max {})",
             total_voxels, voxels_with_atoms, avg_atoms_per_voxel, max_atoms);
+
+        // Build sparse tile index: only tiles with ≥1 atom-containing voxel
+        let tile_x = 4u32;
+        let tile_y = 2u32;
+        let tile_z = 2u32;
+        let grid_x = (self.grid_dim as u32 + tile_x - 1) / tile_x;
+        let grid_y = (self.grid_dim as u32 + tile_y - 1) / tile_y;
+        let grid_z = (self.grid_dim as u32 + tile_z - 1) / tile_z;
+        let total_tiles = grid_x * grid_y * grid_z;
+
+        let mut active_tiles: Vec<i32> = Vec::new();
+        for tbz in 0..grid_z {
+            for tby in 0..grid_y {
+                for tbx in 0..grid_x {
+                    // Check if any voxel in this tile has atoms
+                    let mut has_any = false;
+                    for lz in 0..tile_z {
+                        if has_any { break; }
+                        for ly in 0..tile_y {
+                            if has_any { break; }
+                            for lx in 0..tile_x {
+                                let vx = tbx * tile_x + lx;
+                                let vy = tby * tile_y + ly;
+                                let vz = tbz * tile_z + lz;
+                                if vx < self.grid_dim as u32
+                                    && vy < self.grid_dim as u32
+                                    && vz < self.grid_dim as u32
+                                {
+                                    let v = (vz * self.grid_dim as u32 * self.grid_dim as u32
+                                        + vy * self.grid_dim as u32
+                                        + vx) as usize;
+                                    if warp_entries[v].n_atoms > 0 {
+                                        has_any = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if has_any {
+                        active_tiles.push(tbx as i32);
+                        active_tiles.push(tby as i32);
+                        active_tiles.push(tbz as i32);
+                    }
+                }
+            }
+        }
+
+        self.n_active_tiles = (active_tiles.len() / 3) as u32;
+        let skipped = total_tiles - self.n_active_tiles;
+        let pct_saved = if total_tiles > 0 {
+            skipped as f64 / total_tiles as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        log::info!("Sparse tile index: {}/{} active tiles ({:.1}% empty tiles skipped)",
+            self.n_active_tiles, total_tiles, pct_saved);
+
+        // Upload active tile list to GPU
+        if !active_tiles.is_empty() {
+            self.d_active_tiles = self.stream.alloc_zeros::<i32>(active_tiles.len())?;
+            self.stream.memcpy_htod(&active_tiles, &mut self.d_active_tiles)?;
+        }
+
         Ok(())
     }
 
@@ -3928,25 +4002,32 @@ impl NhsAmberFusedEngine {
         // LAUNCH 2: MULTI-NEURON VOXEL KERNEL (K=8 neurons per voxel)
         // ====================================================================
         let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
-        // 3D tile launch: block=128 threads (16 voxels × 8 neurons)
-        // Reduced from 4x4x2 (256) to 4x2x2 (128) for better SM occupancy
+        // Sparse tile launch: 1D grid over active tiles only (tiles with ≥1 atom voxel)
+        // block=128 threads (16 voxels × 8 neurons per tile of 4x2x2)
         let tile_x = 4u32;
         let tile_y = 2u32;
         let tile_z = 2u32;
-        let grid_x = (self.grid_dim as u32 + tile_x - 1) / tile_x;
-        let grid_y = (self.grid_dim as u32 + tile_y - 1) / tile_y;
-        let grid_z = (self.grid_dim as u32 + tile_z - 1) / tile_z;
         let threads_per_block = tile_x * tile_y * tile_z * 8;  // 16 voxels * 8 neurons = 128
         let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);  // 96
         // Shared memory: halo(96) + trig LUT(24) + excited flag(1) = 121 floats = 484 bytes
         let shared_mem = (halo_size + 25) * 4;  // 121 * sizeof(float) = 484 bytes
+        // Use sparse tile index if available, fall back to full 3D grid
+        let n_tiles = if self.n_active_tiles > 0 {
+            self.n_active_tiles
+        } else {
+            let grid_x = (self.grid_dim as u32 + tile_x - 1) / tile_x;
+            let grid_y = (self.grid_dim as u32 + tile_y - 1) / tile_y;
+            let grid_z = (self.grid_dim as u32 + tile_z - 1) / tile_z;
+            grid_x * grid_y * grid_z
+        };
         let voxel_cfg = LaunchConfig {
-            grid_dim: (grid_x, grid_y, grid_z),
+            grid_dim: (n_tiles, 1, 1),
             block_dim: (threads_per_block, 1, 1),
             shared_mem_bytes: shared_mem,
         };
-        log::trace!("Multi-LIF kernel: grid=({},{},{}) block={} shared={}B for {} voxels",
-            grid_x, grid_y, grid_z, threads_per_block, shared_mem, total_voxels);
+        let n_active_tiles_i32 = self.n_active_tiles as i32;
+        log::trace!("Multi-LIF kernel: {} active tiles (block={} shared={}B) for {} voxels",
+            n_tiles, threads_per_block, shared_mem, total_voxels);
 
         // Coupling double-buffer: phase=false → read A, write B; phase=true → read B, write A
         let n_aromatics_i32 = self.n_aromatics as i32;
@@ -3998,6 +4079,8 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_neuron_refractory)
                     .arg(&self.d_coupling_b)
                     .arg(&mut self.d_coupling_a)
+                    .arg(&self.d_active_tiles)
+                    .arg(&n_active_tiles_i32)
                     .launch(voxel_cfg)
             }
         } else {
@@ -4048,6 +4131,8 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_neuron_refractory)
                     .arg(&self.d_coupling_a)
                     .arg(&mut self.d_coupling_b)
+                    .arg(&self.d_active_tiles)
+                    .arg(&n_active_tiles_i32)
                     .launch(voxel_cfg)
             }
         }
@@ -4932,14 +5017,59 @@ impl NhsAmberFusedEngine {
         log::info!("Dielectric scaling: {}", if enabled { "ENABLED" } else { "disabled" });
     }
 
-    /// Run multiple steps
+    /// Run multiple steps with adaptive early termination.
+    ///
+    /// Monitors spike accumulation rate every `convergence_window` steps.
+    /// If fewer than 0.5% new spikes are generated for 2 consecutive windows
+    /// (after a minimum of 3000 steps), the simulation terminates early.
+    /// This is scientifically justified: a converged neuromorphic field
+    /// produces no new information from further stepping.
     pub fn run(&mut self, n_steps: i32) -> Result<RunSummary> {
         let mut total_spikes = 0usize;
         let start_temp = self.temp_protocol.current_temperature();
 
-        for _step in 0..n_steps {
+        // Adaptive early termination parameters
+        let convergence_window = 2000i32;  // check every 2000 steps
+        let min_steps = 3000i32;           // must complete at least 3000 steps
+        let convergence_rate = 0.005;      // < 0.5% new spikes = stalled
+        let max_stalls = 2u32;             // 2 consecutive stalls = converged
+
+        let mut last_checkpoint_spikes = 0usize;
+        let mut stall_count = 0u32;
+        let mut actual_steps = 0i32;
+
+        for step_idx in 0..n_steps {
             let result = self.step()?;
             total_spikes += result.spike_count;
+            actual_steps = step_idx + 1;
+
+            // Convergence check at window boundaries (after minimum runtime)
+            if actual_steps >= min_steps
+                && actual_steps % convergence_window == 0
+                && total_spikes > 100  // need meaningful spike count
+            {
+                let new_spikes = total_spikes.saturating_sub(last_checkpoint_spikes);
+                let rate = new_spikes as f64 / total_spikes as f64;
+
+                if rate < convergence_rate {
+                    stall_count += 1;
+                    log::info!(
+                        "Convergence check step {}/{}: {:.2}% new spikes (stall {}/{})",
+                        actual_steps, n_steps, rate * 100.0, stall_count, max_stalls
+                    );
+                    if stall_count >= max_stalls {
+                        log::info!(
+                            "EARLY TERMINATION at step {}/{}: spike field converged ({} total spikes, saved {:.0}% steps)",
+                            actual_steps, n_steps, total_spikes,
+                            (1.0 - actual_steps as f64 / n_steps as f64) * 100.0
+                        );
+                        break;
+                    }
+                } else {
+                    stall_count = 0;
+                }
+                last_checkpoint_spikes = total_spikes;
+            }
 
             if self.timestep % 10000 == 0 {
                 // Count spike sources for diagnostic
@@ -4956,8 +5086,12 @@ impl NhsAmberFusedEngine {
 
         let end_temp = self.temp_protocol.current_temperature();
 
+        if actual_steps < n_steps {
+            log::info!("Simulation completed: {}/{} steps ({} spikes)", actual_steps, n_steps, total_spikes);
+        }
+
         Ok(RunSummary {
-            steps_completed: n_steps,
+            steps_completed: actual_steps,
             total_spikes,
             start_temperature: start_temp,
             end_temperature: end_temp,

@@ -924,6 +924,9 @@ fn run_full_pipeline_internal(
         Vec::new()
     };
 
+    // Dimer-aware merge for single-stream path
+    merge_symmetric_sites(&mut clustered_sites, &accumulated_spikes, &topology, 12.0);
+
     // Aromatic proximity analysis
     log::info!("\n[5/6] Aromatic proximity analysis...");
     if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
@@ -2372,6 +2375,8 @@ fn run_multi_stream_pipeline(
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
+    // Dimer-aware merge: detect homodimer symmetry and merge symmetric site pairs
+    merge_symmetric_sites(&mut clustered_sites, &all_stream_spikes, &topology, 12.0);
 
     // ========== SNDC: Spike-Native Density Clustering (PRIMARY) ==========
     // SNDC (OptiX RT clustering) — deprecated on SM120+ (RTX 5080).
@@ -3204,6 +3209,183 @@ fn build_sites_from_clustering(
 
     sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
     sites
+}
+
+/// Merge symmetric binding sites for multi-chain (dimer) proteins.
+///
+/// For homodimers like HIV-1 protease, identical pockets appear on both chains.
+/// This function detects symmetric site pairs and merges them, producing a single
+/// site at the interface centroid with combined spike counts. Also detects and
+/// preserves interface pockets (sites spanning multiple chains).
+///
+/// The merge criterion: two sites within `merge_radius` whose spike contributions
+/// come predominantly from different chains are merged into one.
+#[cfg(feature = "gpu")]
+fn merge_symmetric_sites(
+    sites: &mut Vec<ClusteredBindingSite>,
+    spike_events: &[prism_nhs::fused_engine::GpuSpikeEvent],
+    topology: &prism_nhs::input::PrismPrepTopology,
+    merge_radius: f32,
+) {
+    use std::collections::{HashMap, HashSet};
+
+    // Only relevant for multi-chain structures
+    let unique_chains: HashSet<&str> = topology.chain_ids.iter().map(|s| s.as_str()).collect();
+    if unique_chains.len() < 2 {
+        return;
+    }
+
+    // Check for homodimer: chains with identical residue sequences
+    let mut chain_sequences: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (atom_idx, chain) in topology.chain_ids.iter().enumerate() {
+        let res_name = &topology.residue_names[atom_idx];
+        let atom_name = topology.atom_names.get(atom_idx).map(|s| s.as_str()).unwrap_or("");
+        if atom_name == "CA" {
+            chain_sequences.entry(chain.as_str()).or_default().push(res_name.as_str());
+        }
+    }
+
+    let chain_list: Vec<&str> = chain_sequences.keys().copied().collect();
+    let mut is_homodimer = false;
+    for i in 0..chain_list.len() {
+        for j in (i + 1)..chain_list.len() {
+            let seq_a = &chain_sequences[chain_list[i]];
+            let seq_b = &chain_sequences[chain_list[j]];
+            if seq_a.len() == seq_b.len() && seq_a == seq_b {
+                is_homodimer = true;
+            }
+        }
+    }
+
+    if !is_homodimer {
+        log::info!("  Multi-chain but not homodimer ({} chains, different sequences) — no merge needed",
+            unique_chains.len());
+        return;
+    }
+
+    log::info!("  Homodimer detected ({} chains, {} residues/chain) — checking for symmetric sites",
+        unique_chains.len(),
+        chain_sequences.values().next().map(|v| v.len()).unwrap_or(0));
+
+    // Build residue → chain mapping for fast lookup
+    // First, build a residue_id → chain_id map from atom data
+    let mut residue_chain: HashMap<usize, String> = HashMap::new();
+    for (atom_idx, &res_id) in topology.residue_ids.iter().enumerate() {
+        if !residue_chain.contains_key(&res_id) {
+            residue_chain.insert(res_id, topology.chain_ids[atom_idx].clone());
+        }
+    }
+
+    // For each site, determine chain contributions from spike nearby_residues
+    let mut site_chain_fractions: Vec<HashMap<String, usize>> = Vec::new();
+    for site in sites.iter() {
+        let mut chain_counts: HashMap<String, usize> = HashMap::new();
+        for &spike_idx in &site.spike_indices {
+            if spike_idx >= spike_events.len() { continue; }
+            let spike = &spike_events[spike_idx];
+            let n_res = spike.n_residues.min(8) as usize;
+            for r in 0..n_res {
+                let res_id = spike.nearby_residues[r];
+                if res_id >= 0 {
+                    if let Some(chain) = residue_chain.get(&(res_id as usize)) {
+                        *chain_counts.entry(chain.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        site_chain_fractions.push(chain_counts);
+    }
+
+    // Find merge candidates: site pairs within merge_radius
+    let n = sites.len();
+    let mut merge_pairs: Vec<(usize, usize)> = Vec::new();
+    let mut merged: HashSet<usize> = HashSet::new();
+
+    for i in 0..n {
+        if merged.contains(&i) { continue; }
+        for j in (i + 1)..n {
+            if merged.contains(&j) { continue; }
+
+            let dx = sites[i].centroid[0] - sites[j].centroid[0];
+            let dy = sites[i].centroid[1] - sites[j].centroid[1];
+            let dz = sites[i].centroid[2] - sites[j].centroid[2];
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+            if dist > merge_radius { continue; }
+
+            // Check if sites are on different chains (symmetric pair)
+            let chains_i: HashSet<&str> = site_chain_fractions[i].keys().map(|s| s.as_str()).collect();
+            let chains_j: HashSet<&str> = site_chain_fractions[j].keys().map(|s| s.as_str()).collect();
+
+            // Dominant chain for each site
+            let dom_i = site_chain_fractions[i].iter().max_by_key(|&(_, v)| v).map(|(k, _)| k.as_str());
+            let dom_j = site_chain_fractions[j].iter().max_by_key(|&(_, v)| v).map(|(k, _)| k.as_str());
+
+            // Merge if: (a) dominant chains differ, or (b) both span the interface
+            let should_merge = match (dom_i, dom_j) {
+                (Some(ci), Some(cj)) => ci != cj,
+                _ => false,
+            } || (chains_i.len() > 1 && chains_j.len() > 1 && dist < merge_radius * 0.5);
+
+            if should_merge {
+                log::info!("    Merging site {} (chain {:?}) + site {} (chain {:?}), dist={:.1}Å",
+                    sites[i].cluster_id, dom_i, sites[j].cluster_id, dom_j, dist);
+                merge_pairs.push((i, j));
+                merged.insert(i);
+                merged.insert(j);
+                break;  // Each site merges with at most one partner
+            }
+        }
+    }
+
+    if merge_pairs.is_empty() {
+        log::info!("  No symmetric site pairs found within {:.1}Å", merge_radius);
+        return;
+    }
+
+    // Execute merges: combine spike indices, recompute centroid
+    let mut to_remove: HashSet<usize> = HashSet::new();
+    for (i, j) in &merge_pairs {
+        // Merge j into i
+        let j_indices = sites[*j].spike_indices.clone();
+        let j_count = sites[*j].spike_count;
+        let j_intensity_sum = sites[*j].avg_intensity * j_count as f32;
+
+        sites[*i].spike_indices.extend(j_indices);
+        let combined_count = sites[*i].spike_count + j_count;
+        let i_intensity_sum = sites[*i].avg_intensity * sites[*i].spike_count as f32;
+        sites[*i].avg_intensity = (i_intensity_sum + j_intensity_sum) / combined_count as f32;
+        sites[*i].spike_count = combined_count;
+
+        // Recompute centroid from all spike positions
+        let mut new_centroid = [0.0f32; 3];
+        for &idx in &sites[*i].spike_indices {
+            if idx < spike_events.len() {
+                let pos = spike_events[idx].position;
+                new_centroid[0] += pos[0];
+                new_centroid[1] += pos[1];
+                new_centroid[2] += pos[2];
+            }
+        }
+        let n = sites[*i].spike_indices.len() as f32;
+        if n > 0.0 {
+            new_centroid[0] /= n;
+            new_centroid[1] /= n;
+            new_centroid[2] /= n;
+        }
+        sites[*i].centroid = new_centroid;
+
+        to_remove.insert(*j);
+    }
+
+    // Remove merged sites (in reverse order to preserve indices)
+    let mut remove_indices: Vec<usize> = to_remove.into_iter().collect();
+    remove_indices.sort_unstable_by(|a, b| b.cmp(a));
+    for idx in remove_indices {
+        sites.remove(idx);
+    }
+
+    log::info!("  Merged {} symmetric pairs → {} sites remaining", merge_pairs.len(), sites.len());
 }
 
 /// Build consensus sites from per-replica clustering results
