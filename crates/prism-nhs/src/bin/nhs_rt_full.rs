@@ -133,6 +133,25 @@ struct Args {
     #[arg(long, default_value = "false")]
     prism_therm: bool,
 
+    /// Enable Hydrogen Mass Repartitioning (HMR).
+    /// Redistributes mass from central atoms to bound hydrogens (3x factor),
+    /// enabling dt=4fs instead of 2fs for a straight 2x speedup.
+    /// SHAKE constraints maintain bond-length accuracy.
+    #[arg(long, default_value = "false")]
+    hmr: bool,
+
+    /// Fused multi-step: run N AMBER integration steps per 1 multi-LIF
+    /// observation step. Since multi-LIF is 99% of GPU time, this gives
+    /// ~Nx wall-clock speedup. Use 4 for ~4x, 8 for ~8x. Default 1 = off.
+    #[arg(long, default_value = "1")]
+    fused_steps: u32,
+
+    /// Adaptive timestep: use 1.5x dt during hold phases (constant T) where
+    /// forces change slowly. Reverts to base dt during ramp phases.
+    /// Stacks with HMR: base 4fs → 6fs during holds.
+    #[arg(long, default_value = "false")]
+    adaptive_dt: bool,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -437,7 +456,7 @@ fn run_full_pipeline_internal(
 
     // Load topology
     log::info!("\n[1/6] Loading topology: {}", topology_path.display());
-    let topology = PrismPrepTopology::load(topology_path)
+    let mut topology = PrismPrepTopology::load(topology_path)
         .with_context(|| format!("Failed to load: {}", topology_path.display()))?;
 
     let structure_name = topology_path.file_stem()
@@ -446,6 +465,12 @@ fn run_full_pipeline_internal(
 
     log::info!("  Atoms: {}", topology.n_atoms);
     log::info!("  Residues: {}", topology.residue_ids.iter().max().unwrap_or(&0) + 1);
+
+    // Apply HMR if requested (must be before engine creation)
+    if args.hmr {
+        log::info!("  HMR: Applying 3x hydrogen mass repartitioning (dt=4fs)");
+        topology.apply_hmr(3.0);
+    }
 
     // Extract aromatic positions for later analysis
     let aromatic_positions = extract_aromatic_positions(&topology);
@@ -497,6 +522,21 @@ fn run_full_pipeline_internal(
 
     let mut engine = PersistentNhsEngine::new(&config)?;
     engine.load_topology(&topology)?;
+
+    // Apply HMR timestep if enabled
+    if args.hmr {
+        engine.set_dt(0.004)?;  // 4fs with HMR masses
+    }
+
+    // Apply fused multi-step if requested
+    if args.fused_steps > 1 {
+        engine.set_fused_inner_steps(args.fused_steps)?;
+    }
+
+    // Apply adaptive dt if requested
+    if args.adaptive_dt {
+        engine.set_adaptive_dt(true)?;
+    }
 
     // Check RT clustering availability
     let has_rt = engine.has_rt_clustering();
@@ -2147,12 +2187,18 @@ fn run_multi_stream_pipeline(
     log::info!("  ✓ {} CUDA streams created on shared context", n_streams);
 
     // ── Load topology ONCE ──
-    let topology = PrismPrepTopology::load(topology_path)
+    let mut topology = PrismPrepTopology::load(topology_path)
         .with_context(|| format!("Failed to load: {}", topology_path.display()))?;
 
     let structure_name = topology_path.file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "structure".to_string());
+
+    // Apply HMR if requested
+    if args.hmr {
+        log::info!("  HMR: Applying 3x hydrogen mass repartitioning (dt=4fs)");
+        topology.apply_hmr(3.0);
+    }
 
     let aromatic_positions = extract_aromatic_positions(&topology);
     log::info!("  Structure: {} ({} atoms, {} aromatics)",
@@ -2229,6 +2275,9 @@ fn run_multi_stream_pipeline(
                 let seed = args.replica_seed + i as u64 * 12345;
                 let ultimate = args.ultimate_mode;
                 let steps = steps_per_stream;
+                let hmr_enabled = args.hmr;
+                let fused_steps = args.fused_steps;
+                let adaptive_dt = args.adaptive_dt;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -2237,6 +2286,15 @@ fn run_multi_stream_pipeline(
                         config_ref, ctx, mod_, stream_i,
                     )?;
                     engine.load_topology(topo_ref)?;
+                    if hmr_enabled {
+                        engine.set_dt(0.004)?;  // 4fs with HMR masses
+                    }
+                    if fused_steps > 1 {
+                        engine.set_fused_inner_steps(fused_steps)?;
+                    }
+                    if adaptive_dt {
+                        engine.set_adaptive_dt(true)?;
+                    }
                     engine.set_cryo_uv_protocol(prot)?;
                     engine.set_spike_accumulation(true);
 

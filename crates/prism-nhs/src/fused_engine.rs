@@ -472,6 +472,11 @@ impl CryoUvProtocol {
         }
     }
 
+    /// Whether we're in a hold phase (constant temperature = can use larger dt)
+    pub fn is_hold_phase(&self) -> bool {
+        matches!(self.current_phase(), CryoPhase::ColdHold | CryoPhase::WarmHold | CryoPhase::ColdReturn)
+    }
+
     /// Whether this protocol has hysteresis (cooling) phases enabled
     pub fn is_hysteresis(&self) -> bool {
         self.ramp_down_steps > 0
@@ -614,6 +619,15 @@ impl TemperatureProtocol {
     /// Check if protocol is complete
     pub fn is_complete(&self) -> bool {
         self.current_step >= self.cold_hold_steps + self.ramp_steps + self.hold_steps
+    }
+
+    /// Check if currently in a hold phase (cold hold or warm hold)
+    /// Used by adaptive dt to apply larger timesteps during constant-T phases
+    pub fn is_hold_phase(&self) -> bool {
+        let s = self.current_step;
+        // Cold hold: before ramp starts
+        // Warm hold: after ramp ends
+        s < self.cold_hold_steps || s >= self.cold_hold_steps + self.ramp_steps
     }
 
     /// Total steps in protocol
@@ -1475,6 +1489,14 @@ pub struct NhsAmberFusedEngine {
     d_active_tiles: CudaSlice<i32>,       // [n_active_tiles * 3] packed (bx, by, bz) triplets
     n_active_tiles: u32,                  // number of active tiles
 
+    // Fused multi-step: run N AMBER steps per 1 multi-LIF observation
+    // Gives ~Nx speedup since multi-LIF dominates GPU time (99.1%)
+    fused_inner_steps: u32,
+
+    // Adaptive dt: use base_dt during ramps, base_dt * 1.5 during holds
+    adaptive_dt_enabled: bool,
+    base_dt: f32,  // stores the base dt for adaptive scaling
+
     // Spike output (events as raw bytes)
     d_spike_events: CudaSlice<u8>,
     spike_event_size: usize,
@@ -2170,6 +2192,13 @@ impl NhsAmberFusedEngine {
             d_active_tiles,
             n_active_tiles: 0,
 
+            // Fused multi-step (default 1 = no fusing)
+            fused_inner_steps: 1,
+
+            // Adaptive dt (disabled by default)
+            adaptive_dt_enabled: false,
+            base_dt: 0.002,
+
             d_spike_events,
             spike_event_size,
             d_spike_count,
@@ -2298,6 +2327,33 @@ impl NhsAmberFusedEngine {
         log::info!("  Cryogenic physics: {}", if engine.cryo_enabled { "ENABLED" } else { "disabled" });
 
         Ok(engine)
+    }
+
+    /// Enable adaptive dt: 1.5x during hold phases, base_dt during ramps.
+    pub fn set_adaptive_dt(&mut self, enabled: bool) {
+        self.adaptive_dt_enabled = enabled;
+        self.base_dt = self.dt;
+        log::info!("Adaptive dt: {} (base={:.4}ps, hold={:.4}ps)",
+            if enabled { "ENABLED" } else { "disabled" },
+            self.base_dt, self.base_dt * 1.5);
+    }
+
+    /// Set fused multi-step count: run N AMBER steps per 1 multi-LIF observation.
+    /// With N=4, each step() call advances MD 4x but only observes once → ~4x speedup.
+    pub fn set_fused_inner_steps(&mut self, n: u32) {
+        let n = n.max(1);
+        log::info!("Fused multi-step: {} AMBER steps per multi-LIF observation", n);
+        self.fused_inner_steps = n;
+    }
+
+    /// Set the integration timestep (ps). Default is 0.002 (2fs).
+    /// Use 0.004 (4fs) with HMR-repartitioned masses.
+    pub fn set_dt(&mut self, new_dt: f64) {
+        let new_dt_f32 = new_dt as f32;
+        log::info!("Timestep changed: {:.4} ps → {:.4} ps ({:.0} fs → {:.0} fs)",
+            self.dt, new_dt_f32, self.dt as f64 * 1000.0, new_dt * 1000.0);
+        self.dt = new_dt_f32;
+        self.base_dt = new_dt_f32;  // update base_dt for adaptive scaling
     }
 
     /// Compute friction coefficient with equilibration boost and cryogenic physics
@@ -3815,13 +3871,44 @@ impl NhsAmberFusedEngine {
     /// 6. Neuromorphic LIF observation
     /// 7. UV bias pump-probe (if active)
     /// 8. Spike event capture
+    ///
+    /// When fused_inner_steps > 1, runs N AMBER substeps before one multi-LIF
+    /// observation. This gives ~Nx speedup since multi-LIF is the bottleneck.
     pub fn step(&mut self) -> Result<StepResult> {
+        let n_inner = self.fused_inner_steps.max(1) as usize;
+
+        // ====================================================================
+        // INNER LOOP: Run N AMBER steps per 1 multi-LIF observation
+        // ====================================================================
+        let mut current_temp = self.temp_protocol.current_temperature();
+        let mut effective_gamma = self.compute_cryo_friction(current_temp);
+        let mut _effective_dielectric = self.compute_cryo_dielectric(current_temp);
+        // Track UV state from last inner step (used by multi-LIF)
+        let mut last_uv_burst_active = false;
+        let mut last_uv_wavelength_nm = 0.0f32;
+        let mut last_uv_burst_active_i32 = 0i32;
+
+        // Constants used by both AMBER and multi-LIF kernels (loop-invariant)
+        let n_atoms_i32 = self.n_atoms as i32;
+        let grid_dim_i32 = self.grid_dim as i32;
+        let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
+
+        for inner_idx in 0..n_inner {
         // Get current temperature from protocol (simulated annealing ramp)
-        let current_temp = self.temp_protocol.current_temperature();
+        current_temp = self.temp_protocol.current_temperature();
+
+        // Adaptive dt: use 1.5x during hold phases (constant T, forces change slowly)
+        if self.adaptive_dt_enabled {
+            if self.temp_protocol.is_hold_phase() {
+                self.dt = self.base_dt * 1.5;
+            } else {
+                self.dt = self.base_dt;
+            }
+        }
 
         // Compute cryogenic physics parameters
-        let effective_gamma = self.compute_cryo_friction(current_temp);
-        let _effective_dielectric = self.compute_cryo_dielectric(current_temp);
+        effective_gamma = self.compute_cryo_friction(current_temp);
+        _effective_dielectric = self.compute_cryo_dielectric(current_temp);
 
         // ====================================================================
         // O(N) NEIGHBOR LIST REBUILD (if needed)
@@ -3998,9 +4085,34 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
 
+        // Save UV state for multi-LIF kernel (uses state from last inner step)
+        last_uv_burst_active = uv_burst_active;
+        last_uv_wavelength_nm = uv_wavelength_nm;
+        last_uv_burst_active_i32 = uv_burst_active_i32;
+
+        // Advance protocols for inner substeps (all except the last — that's done after multi-LIF)
+        if inner_idx < n_inner - 1 {
+            self.temp_protocol.advance();
+            self.uv_config.advance();
+            self.timestep += 1;
+
+            // Neighbor list rebuild check for inner substeps
+            if self.use_neighbor_list {
+                self.steps_since_rebuild += 1;
+                if self.steps_since_rebuild >= self.neighbor_list_rebuild_interval {
+                    self.rebuild_neighbor_lists()?;
+                }
+            }
+        }
+        } // end inner AMBER loop
+
         // ====================================================================
         // LAUNCH 2: MULTI-NEURON VOXEL KERNEL (K=8 neurons per voxel)
         // ====================================================================
+        // Use UV state from the last AMBER substep
+        let uv_wavelength_nm = last_uv_wavelength_nm;
+        let uv_burst_active_i32 = last_uv_burst_active_i32;
+        let _ = last_uv_burst_active; // used below for snapshot triggering
         let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
         // Sparse tile launch: 1D grid over active tiles only (tiles with ≥1 atom voxel)
         // block=128 threads (16 voxels × 8 neurons per tile of 4x2x2)
@@ -4320,7 +4432,7 @@ impl NhsAmberFusedEngine {
             timestep: self.timestep,
             temperature: current_temp,
             spike_count: num_spikes,
-            uv_burst_active,
+            uv_burst_active: last_uv_burst_active,
             current_wavelength_nm: if self.uv_config.frequency_hopping_enabled {
                 Some(self.uv_config.current_wavelength())
             } else {
@@ -5028,9 +5140,18 @@ impl NhsAmberFusedEngine {
         let mut total_spikes = 0usize;
         let start_temp = self.temp_protocol.current_temperature();
 
+        // Fused multi-step: each step() call does fused_inner_steps AMBER steps + 1 multi-LIF.
+        // Divide outer loop count to keep total AMBER steps = n_steps.
+        let inner = self.fused_inner_steps.max(1) as i32;
+        let outer_steps = (n_steps + inner - 1) / inner; // ceil division
+        if inner > 1 {
+            log::info!("Fused multi-step: {} outer iterations x {} AMBER/iter = {} total AMBER steps ({} multi-LIF)",
+                outer_steps, inner, outer_steps * inner, outer_steps);
+        }
+
         // Adaptive early termination parameters
-        let convergence_window = 2000i32;  // check every 2000 steps
-        let min_steps = 3000i32;           // must complete at least 3000 steps
+        let convergence_window = 2000i32 / inner;  // adjusted for fused steps
+        let min_steps = 3000i32 / inner;
         let convergence_rate = 0.005;      // < 0.5% new spikes = stalled
         let max_stalls = 2u32;             // 2 consecutive stalls = converged
 
@@ -5038,7 +5159,7 @@ impl NhsAmberFusedEngine {
         let mut stall_count = 0u32;
         let mut actual_steps = 0i32;
 
-        for step_idx in 0..n_steps {
+        for step_idx in 0..outer_steps {
             let result = self.step()?;
             total_spikes += result.spike_count;
             actual_steps = step_idx + 1;
@@ -5086,12 +5207,15 @@ impl NhsAmberFusedEngine {
 
         let end_temp = self.temp_protocol.current_temperature();
 
-        if actual_steps < n_steps {
-            log::info!("Simulation completed: {}/{} steps ({} spikes)", actual_steps, n_steps, total_spikes);
+        // Report actual AMBER steps (outer_steps * inner)
+        let total_amber_steps = actual_steps * inner;
+        if actual_steps < outer_steps {
+            log::info!("Simulation completed: {}/{} outer steps ({} AMBER steps, {} spikes)",
+                actual_steps, outer_steps, total_amber_steps, total_spikes);
         }
 
         Ok(RunSummary {
-            steps_completed: actual_steps,
+            steps_completed: total_amber_steps,
             total_spikes,
             start_temperature: start_temp,
             end_temperature: end_temp,

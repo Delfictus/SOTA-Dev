@@ -352,6 +352,65 @@ impl PrismPrepTopology {
         (min, max)
     }
 
+    /// Apply Hydrogen Mass Repartitioning (HMR).
+    ///
+    /// Redistributes mass from central atoms to bound hydrogens by a given factor.
+    /// This allows using a larger timestep (4fs instead of 2fs) while maintaining
+    /// SHAKE constraint accuracy, because the fastest motions (X-H stretches) are
+    /// already constrained and heavier H atoms reduce remaining vibration frequencies.
+    ///
+    /// Standard HMR factor = 3.0: H mass goes from 1.008 to 3.024 amu.
+    /// The stolen mass is subtracted from the central atom to conserve total mass.
+    pub fn apply_hmr(&mut self, factor: f64) {
+        let mut n_repartitioned = 0usize;
+        let mut total_mass_before = 0.0f64;
+        let mut total_mass_after = 0.0f64;
+
+        for cluster in &mut self.h_clusters {
+            // Original masses from inverse masses
+            let m_h_orig = 1.0 / cluster.inv_mass_h;
+            let m_central_orig = 1.0 / cluster.inv_mass_central;
+
+            total_mass_before += m_central_orig + cluster.n_hydrogens as f64 * m_h_orig;
+
+            // New hydrogen mass = original * factor
+            let m_h_new = m_h_orig * factor;
+            let delta_m = m_h_new - m_h_orig;
+
+            // Steal mass from central atom (conserve total)
+            let m_central_new = m_central_orig - cluster.n_hydrogens as f64 * delta_m;
+
+            // Safety: central atom must retain at least 1.0 amu
+            if m_central_new < 1.0 {
+                log::warn!("HMR: central atom {} would drop to {:.2} amu, skipping cluster",
+                    cluster.central_atom, m_central_new);
+                total_mass_after += m_central_orig + cluster.n_hydrogens as f64 * m_h_orig;
+                continue;
+            }
+
+            cluster.inv_mass_h = 1.0 / m_h_new;
+            cluster.inv_mass_central = 1.0 / m_central_new;
+            n_repartitioned += 1;
+
+            total_mass_after += m_central_new + cluster.n_hydrogens as f64 * m_h_new;
+
+            // Also update the masses array for the atoms
+            if cluster.central_atom < self.masses.len() {
+                self.masses[cluster.central_atom] = m_central_new as f32;
+            }
+            for &h_idx in &cluster.hydrogen_atoms {
+                if h_idx >= 0 && (h_idx as usize) < self.masses.len() {
+                    self.masses[h_idx as usize] = m_h_new as f32;
+                }
+            }
+        }
+
+        log::info!("HMR: repartitioned {}/{} clusters (factor {:.1}x), total mass {:.2} → {:.2} amu (delta={:.4})",
+            n_repartitioned, self.h_clusters.len(), factor,
+            total_mass_before, total_mass_after,
+            (total_mass_after - total_mass_before).abs());
+    }
+
     /// Get grid origin with padding
     pub fn grid_origin(&self, padding: f32) -> [f32; 3] {
         let (min, _) = self.bounding_box();

@@ -1081,6 +1081,36 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Enable adaptive dt.
+    pub fn set_adaptive_dt(&mut self, enabled: bool) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_adaptive_dt(enabled);
+            Ok(())
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
+    /// Set fused multi-step: N AMBER steps per 1 multi-LIF observation.
+    pub fn set_fused_inner_steps(&mut self, n: u32) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_fused_inner_steps(n);
+            Ok(())
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
+    /// Set the integration timestep. Use 0.004 (4fs) with HMR masses.
+    pub fn set_dt(&mut self, dt: f64) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_dt(dt);
+            Ok(())
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
     /// **DEPRECATED**: Configure temperature protocol separately
     ///
     /// Use `set_cryo_uv_protocol()` instead to configure the unified cryo-UV protocol.
