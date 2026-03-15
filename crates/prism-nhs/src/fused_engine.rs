@@ -422,6 +422,35 @@ impl CryoUvProtocol {
         }
     }
 
+    /// Ultra-fast 25K protocol: 55% faster than fast_35k
+    ///
+    /// Aggressive step reduction for rapid screening:
+    /// - 8K cold hold (vs 14K)
+    /// - 4K ramp (vs 6K)
+    /// - 8K warm hold (vs 15K)
+    /// Total: 20K base + 5K hysteresis = 25K
+    ///
+    /// Same UV parameters as fast_35k (42 kcal/mol, burst every 250 steps)
+    /// for consistent aromatic excitation.
+    pub fn fast_25k() -> Self {
+        Self {
+            start_temp: 50.0,           // Ultra-cold start
+            end_temp: 300.0,            // Physiological end
+            cold_hold_steps: 8000,      // Minimal cold hold
+            ramp_steps: 4000,           // Fast ramp 50K→300K
+            warm_hold_steps: 8000,      // Compact warm hold
+            current_step: 0,
+            uv_burst_energy: 42.0,      // Same as fast_35k
+            uv_burst_interval: 250,     // Same as fast_35k
+            uv_burst_duration: 50,
+            // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            wavelength_dwell_steps: 300, // Same as fast_35k
+            ramp_down_steps: 3000,       // Compact cooldown (hysteresis)
+            cold_return_steps: 2000,     // Brief cold return
+        }
+    }
+
     /// Get current temperature (supports 5-phase hysteresis protocol)
     pub fn current_temperature(&self) -> f32 {
         let s = self.current_step;
