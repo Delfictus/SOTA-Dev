@@ -3350,14 +3350,13 @@ fn run_multi_stream_pipeline(
                         ThermClass::Inert    => 0.1,
                     };
 
-                    // Multiplicative thermodynamic boost: preserves base quality
-                    // ordering while giving a proportional edge to sites with
-                    // strong thermodynamic signatures. Max boost ~20% for a
-                    // fully CRYPTIC site with ideal tau and high z-score.
-                    // Increased from 8% → 20% to give PRISM-unique signals
-                    // sufficient weight to shift rankings when physics agrees.
-                    let thermo_avg = (tau_q + asym_q + class_q) / 3.0;
-                    let thermo_factor = 1.0 + 0.20 * thermo_avg;
+                    // Multiplicative thermodynamic boost: weight search found
+                    // hysteresis is 3rd most important feature (0.18 weight).
+                    // Previous 20% max was insufficient. Increased to 40% max
+                    // with asymmetry weighted 2x vs tau and class (asymmetry
+                    // is the strongest thermodynamic discriminator).
+                    let thermo_avg = (tau_q + 2.0 * asym_q + class_q) / 4.0;
+                    let thermo_factor = 1.0 + 0.40 * thermo_avg;
                     site.quality_score = old_q * thermo_factor;
 
                     log::info!("  Site {}: thermo-rerank {:.3}->{:.3} [tau={:.2}→q={:.2} z={:.2}→q={:.2} class={}→q={:.2}]",
