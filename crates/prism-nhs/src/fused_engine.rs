@@ -1362,8 +1362,8 @@ const UV_COLD_DISSIPATION: f32 = 0.3;
 // FUSED ENGINE
 // ============================================================================
 
-/// Maximum grid dimension
-const MAX_GRID_DIM: usize = 128;
+/// Maximum grid dimension (160³ needed for very large proteins >5000 atoms)
+const MAX_GRID_DIM: usize = 160;
 
 /// Block size for 1D kernels
 const BLOCK_SIZE_1D: usize = 256;

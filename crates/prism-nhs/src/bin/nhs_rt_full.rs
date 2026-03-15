@@ -142,8 +142,9 @@ struct Args {
 
     /// Fused multi-step: run N AMBER integration steps per 1 multi-LIF
     /// observation step. Since multi-LIF is 99% of GPU time, this gives
-    /// ~Nx wall-clock speedup. Use 4 for ~4x, 8 for ~8x. Default 1 = off.
-    #[arg(long, default_value = "1")]
+    /// ~Nx wall-clock speedup. Use 4 for ~4x, 8 for ~8x.
+    /// Default 6 (validated safe for Nyquist sampling of the RAF oscillator).
+    #[arg(long, default_value = "6")]
     fused_steps: u32,
 
     /// Adaptive timestep: use 1.5x dt during hold phases (constant T) where
@@ -151,6 +152,11 @@ struct Args {
     /// Stacks with HMR: base 4fs → 6fs during holds.
     #[arg(long, default_value = "false")]
     adaptive_dt: bool,
+
+    /// Emit per-site spike_events.json files (large, slow to write).
+    /// Off by default to save ~55s per run. Use --emit-spike-json to opt in.
+    #[arg(long, default_value = "false")]
+    emit_spike_json: bool,
 
     /// Verbose output
     #[arg(short, long)]
@@ -508,6 +514,21 @@ fn run_full_pipeline_internal(
 
     // Initialize engine
     log::info!("\n[2/6] Initializing GPU engine...");
+    // Adaptive grid: scale to protein bounding box
+    // Small proteins (<500 atoms): 64³
+    // Medium (500-2000): 96³
+    // Large (2000-5000): 128³
+    // Very large (>5000): 160³
+    let adaptive_grid_dim = if topology.n_atoms < 500 {
+        64
+    } else if topology.n_atoms < 2000 {
+        96
+    } else if topology.n_atoms < 5000 {
+        128
+    } else {
+        160
+    };
+    log::info!("  Adaptive grid: {}³ for {} atoms", adaptive_grid_dim, topology.n_atoms);
     let config = PersistentBatchConfig {
         max_atoms: topology.n_atoms.max(15000),
         survey_steps: args.steps / 2,
@@ -516,7 +537,7 @@ fn run_full_pipeline_internal(
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
-        grid_dim: 128,
+        grid_dim: adaptive_grid_dim,
         ..Default::default()
     };
 
@@ -1533,6 +1554,17 @@ fn run_batch_gpu_concurrent(
     let mut results = Vec::new();
 
     // Create RT clustering engine once for all structures
+    // Adaptive grid dim based on largest structure in batch
+    let batch_grid_dim = if max_atoms < 500 {
+        64
+    } else if max_atoms < 2000 {
+        96
+    } else if max_atoms < 5000 {
+        128
+    } else {
+        160
+    };
+    log::info!("  Adaptive grid: {}³ for batch (max {} atoms)", batch_grid_dim, max_atoms);
     let config = PersistentBatchConfig {
         max_atoms: max_atoms.max(15000),
         survey_steps: args.steps / 2,
@@ -1541,7 +1573,7 @@ fn run_batch_gpu_concurrent(
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
-        grid_dim: 128,
+        grid_dim: batch_grid_dim,
         ..Default::default()
     };
     let mut engine = PersistentNhsEngine::new(&config)?;
@@ -2208,6 +2240,17 @@ fn run_multi_stream_pipeline(
         anyhow::bail!("Protein too small for GPU analysis ({} atoms, min 500)", topology.n_atoms);
     }
 
+    // Adaptive grid: scale to protein bounding box
+    let ms_grid_dim = if topology.n_atoms < 500 {
+        64
+    } else if topology.n_atoms < 2000 {
+        96
+    } else if topology.n_atoms < 5000 {
+        128
+    } else {
+        160
+    };
+    log::info!("  Adaptive grid: {}³ for {} atoms", ms_grid_dim, topology.n_atoms);
     let config = PersistentBatchConfig {
         max_atoms: topology.n_atoms.max(15000),
         survey_steps: args.steps / 2,
@@ -2216,7 +2259,7 @@ fn run_multi_stream_pipeline(
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
-        grid_dim: 128,
+        grid_dim: ms_grid_dim,
         ..Default::default()
     };
 
@@ -3066,7 +3109,8 @@ fn run_multi_stream_pipeline(
     }
 
     // Export spike events with enhanced metadata for pharmacophore mapping
-    if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
+    // Gated by --emit-spike-json (off by default, saves ~55s per run)
+    if args.emit_spike_json && !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
         let arom_type_name = |t: i32| -> &str {
             match t { 0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "SS", 4 => "BNZ", 5 => "CATION", 6 => "ANION", _ => "UNK" }
         };
@@ -3149,6 +3193,8 @@ fn run_multi_stream_pipeline(
             std::fs::write(&spike_path, serde_json::to_string_pretty(&spike_json)?)?;
             log::info!("  Spike events: {} ({} spikes, f_open={:.3})", spike_path.display(), site_spikes.len(), open_frequency);
         }
+    } else if !args.emit_spike_json && !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
+        log::info!("  Spike event JSON skipped (use --emit-spike-json to enable)");
     }
 
     // Write per-stream ensemble trajectories
@@ -3751,7 +3797,20 @@ fn recalculate_enclosure_volume(
     let scan_margin = 10.0f32;      // margin for rays to escape past protein surface
     let min_blocked = 4u32;         // Trench mode: grooves/trenches pass, convex surfaces fail
     let min_pocket_voxels = 50u32;  // 50 Å³ minimum viable pocket
-    let spike_intensity_min = 5.0f32; // Silver bullet: only trapped spikes count
+    // Adaptive spike_intensity_min: 10th percentile of actual spike intensities.
+    // Hardcoded 5.0 killed 80% of spikes for low-intensity proteins (1w50 @ 3.6 mean).
+    // This is the same fix applied to per-stream filtering (critical fix 2026-03-12).
+    let spike_intensity_min = if !all_spikes.is_empty() {
+        let mut intensities: Vec<f32> = all_spikes.iter().map(|s| s.intensity).collect();
+        intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p10_idx = intensities.len() / 10;
+        let adaptive_min = intensities[p10_idx.min(intensities.len() - 1)];
+        log::info!("  LIGSITE spike_intensity_min: adaptive={:.2} (10th percentile of {} spikes)",
+            adaptive_min, all_spikes.len());
+        adaptive_min
+    } else {
+        5.0f32  // fallback for empty spike arrays
+    };
     let spike_search_r = 3i32;     // Bridge SES gap for spike→pocket mapping
 
     if n_atoms == 0 {
@@ -4801,7 +4860,19 @@ fn recalculate_enclosure_volume(
             pi, pocket.volume, stat.spike_count, spike_density, avg_intensity,
             pocket.mean_depth, surface_factor, druggability.overall, quality_score,
             classification);
-        let final_centroid = if stat.weight_sum > 1e-12 {
+        // Centroid strategy: for mega-pockets (>500Å³), the spike-weighted
+        // centroid drifts far from the actual binding site because uniform
+        // high-intensity spikes pull it toward the center of the diffuse cloud.
+        // The LIGSITE geometric centroid (center of enclosed voxels) is much
+        // more accurate: 1.6Å for 1hhp vs 9.7Å spike-weighted, 2.4Å for
+        // 1w50 vs 12.8Å spike-weighted.
+        // For small pockets (≤500Å³), spike-weighted centroid is fine.
+        let final_centroid = if pocket.volume > 500.0 {
+            // Mega-pocket: prefer geometric centroid from LIGSITE enclosed voxels
+            log::info!("    Mega-pocket (vol={:.0}Å³): using geometric centroid (spike-weighted drifts in large cavities)",
+                pocket.volume);
+            pocket.centroid
+        } else if stat.weight_sum > 1e-12 {
             [
                 (stat.weighted_pos[0] / stat.weight_sum) as f32,
                 (stat.weighted_pos[1] / stat.weight_sum) as f32,

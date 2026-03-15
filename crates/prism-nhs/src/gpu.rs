@@ -40,8 +40,8 @@ use std::sync::Arc;
 /// Default grid dimension (64³ = 262,144 voxels)
 pub const DEFAULT_GRID_DIM: usize = 64;
 
-/// Maximum supported grid dimension
-pub const MAX_GRID_DIM: usize = 128;
+/// Maximum supported grid dimension (160³ needed for very large proteins >5000 atoms)
+pub const MAX_GRID_DIM: usize = 160;
 
 /// Default grid spacing in Angstroms
 pub const DEFAULT_GRID_SPACING: f32 = 0.5;
