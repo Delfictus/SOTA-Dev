@@ -108,6 +108,26 @@ pub struct HysteresisBinData {
 // CHANNEL INFERENCE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Derive ramp phase from timestep and protocol parameters.
+///
+/// Returns phase 1-5:
+///   1 = cold_hold, 2 = heating ramp, 3 = warm_hold,
+///   4 = cooling ramp, 5 = cold_return_hold
+///
+/// For non-hysteresis protocols (no phases 4/5), all timesteps beyond
+/// cold_hold+ramp fall into phase 3 (warm_hold).
+fn derive_ramp_phase(timestep: i32, cold_hold_steps: i32, ramp_steps: i32, warm_hold_steps: i32) -> i32 {
+    if timestep < cold_hold_steps {
+        1 // cold_hold
+    } else if timestep < cold_hold_steps + ramp_steps {
+        2 // heating ramp
+    } else if timestep < cold_hold_steps + ramp_steps + warm_hold_steps {
+        3 // warm_hold
+    } else {
+        4 // cooling / cold_return (reverse process)
+    }
+}
+
 /// Infer spike source channel from metadata when spike_source == 0.
 ///
 /// GPU kernels may not always populate spike_source. We infer from:
@@ -206,12 +226,16 @@ fn jarzynski_estimator(work_values: &[f64], temperature: f64) -> (f64, f64, bool
 pub fn jarzynski_per_voxel(
     spikes: &[GpuSpikeEvent],
     temperature: f64,
+    cold_hold_steps: i32,
+    ramp_steps: i32,
+    warm_hold_steps: i32,
 ) -> Vec<VoxelFreeEnergy> {
     // Group forward-process spikes (cold_hold + heating + warm_hold) by voxel
     let mut voxel_work: HashMap<i32, Vec<f64>> = HashMap::new();
 
     for spike in spikes {
-        if !matches!(spike.ramp_phase, 1 | 2 | 3) { continue; } // forward process only
+        let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
+        if !matches!(phase, 1 | 2 | 3) { continue; } // forward process only
         let source = infer_spike_source(spike);
         let work = spike_to_work(spike.intensity, source, spike.wavelength_nm);
         voxel_work.entry(spike.voxel_idx).or_default().push(work);
@@ -333,6 +357,9 @@ struct ChannelDecomposition {
 fn channel_decomposition(
     spikes: &[GpuSpikeEvent],
     temperature: f64,
+    cold_hold_steps: i32,
+    ramp_steps: i32,
+    warm_hold_steps: i32,
 ) -> ChannelDecomposition {
     // Separate heating-phase spikes by channel
     let mut uv_work: Vec<f64> = Vec::new();
@@ -341,7 +368,8 @@ fn channel_decomposition(
     let mut all_work: Vec<f64> = Vec::new();
 
     for spike in spikes {
-        if !matches!(spike.ramp_phase, 1 | 2 | 3) { continue; } // forward process only
+        let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
+        if !matches!(phase, 1 | 2 | 3) { continue; } // forward process only
         let source = infer_spike_source(spike);
         let work = spike_to_work(spike.intensity, source, spike.wavelength_nm);
         all_work.push(work);
@@ -422,6 +450,7 @@ fn arrhenius_by_wavelength(
     protocol_end_temp: f64,
     ramp_steps: i32,
     cold_hold_steps: i32,
+    warm_hold_steps: i32,
     n_temp_bins: usize,
 ) -> HashMap<String, f64> {
     let mut results = HashMap::new();
@@ -443,7 +472,8 @@ fn arrhenius_by_wavelength(
         }
 
         for spike in spikes {
-            if !matches!(spike.ramp_phase, 1 | 2 | 3) { continue; } // forward process
+            let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
+            if !matches!(phase, 1 | 2 | 3) { continue; } // forward process
             let source = infer_spike_source(spike);
             if source != 1 { continue; } // UV only
             if (spike.wavelength_nm - wl).abs() > wl_tolerance { continue; }
@@ -451,7 +481,7 @@ fn arrhenius_by_wavelength(
             // Estimate temperature from ramp progress:
             // Phase 2 (heating ramp): temperature interpolates start→end
             // Phase 3 (warm_hold): temperature is constant at end_temp
-            let temp = if spike.ramp_phase == 3 {
+            let temp = if phase == 3 {
                 protocol_end_temp
             } else {
                 let ramp_start_step = cold_hold_steps as f64;
@@ -517,12 +547,18 @@ pub fn compute_binding_free_energy(
     let kt = KB * temperature;
 
     // Layer 1: Jarzynski per-voxel
-    let voxel_energies = jarzynski_per_voxel(pocket_spikes, temperature);
+    let voxel_energies = jarzynski_per_voxel(
+        pocket_spikes, temperature,
+        config.cold_hold_steps, config.ramp_steps, config.warm_hold_steps,
+    );
     let n_voxels = voxel_energies.len();
     let cumulant_valid = voxel_energies.iter().any(|v| v.cumulant_valid);
 
     // Layer 3: Channel decomposition
-    let decomp = channel_decomposition(pocket_spikes, temperature);
+    let decomp = channel_decomposition(
+        pocket_spikes, temperature,
+        config.cold_hold_steps, config.ramp_steps, config.warm_hold_steps,
+    );
 
     // Layer 2: Crooks intersection (if hysteresis data available)
     let delta_g_crooks = hysteresis_bins.and_then(crooks_intersection);
@@ -550,6 +586,7 @@ pub fn compute_binding_free_energy(
         config.protocol_end_temp,
         config.ramp_steps,
         config.cold_hold_steps,
+        config.warm_hold_steps,
         20, // 20 temperature bins
     );
 

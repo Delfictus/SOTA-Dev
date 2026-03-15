@@ -31,6 +31,7 @@ use prism_nhs::{
     ParallelReplicaEngine,
     sdst_bridge::{SdstBridge, PrismThermAnalysis, ThermClass},
     sdst_report,
+    spike_thermodynamic_integration::{compute_binding_free_energy, StiConfig, BindingFreeEnergy},
 };
 
 #[derive(Parser, Clone)]
@@ -2637,6 +2638,23 @@ fn run_multi_stream_pipeline(
 
         let mut all_pockets_json = Vec::new();
         let mut cryptic_sites_json = Vec::new();
+        let mut physics_signals: std::collections::HashMap<i32, (f32, f32, f32, f32)> = std::collections::HashMap::new();
+
+        // Per-site STI free energy and UV enrichment (Task 1 + Task 7)
+        let mut sti_results: std::collections::HashMap<i32, BindingFreeEnergy> = std::collections::HashMap::new();
+        let mut uv_enrichment_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+
+        // Build StiConfig from protocol parameters
+        let sti_config = StiConfig {
+            temperature: protocol.end_temp as f64,
+            protocol_start_temp: protocol.start_temp as f64,
+            protocol_end_temp: protocol.end_temp as f64,
+            ramp_steps: protocol.ramp_steps,
+            cold_hold_steps: protocol.cold_hold_steps,
+            warm_hold_steps: protocol.warm_hold_steps,
+        };
+
+        let mut spatial_signals: std::collections::HashMap<i32, (f32, f32, f32)> = std::collections::HashMap::new();
 
         for (site_idx, site) in clustered_sites.iter_mut().take(100).enumerate() {
             let cx = site.centroid[0];
@@ -2658,6 +2676,113 @@ fn run_multi_stream_pipeline(
             } else {
                 0.0
             };
+
+            // ─── Temporal onset: early activation = low barrier = real pocket ───
+            let onset_score = if !site_spikes.is_empty() {
+                let mut timesteps: Vec<i32> = site_spikes.iter().map(|s| s.timestep).collect();
+                timesteps.sort();
+                let median_ts = timesteps[timesteps.len() / 2];
+                let total_steps = timesteps.last().copied().unwrap_or(1).max(1);
+                // Protocol phases: cold_hold=14000, ramp=6000, warm_hold=15000
+                // Sites that spike during cold_hold or early ramp have lowest activation barrier
+                let onset_fraction = median_ts as f32 / total_steps as f32;
+                (1.0 - onset_fraction).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            // ─── Source diversity: UV+LIF+EFP convergence = real pocket ───
+            let (source_diversity, source_entropy) = if !site_spikes.is_empty() {
+                let mut source_counts = [0u32; 4]; // 0=unknown, 1=UV, 2=LIF, 3=EFP
+                for s in &site_spikes {
+                    let src = (s.spike_source as usize).min(3);
+                    source_counts[src] += 1;
+                }
+                let n_unique = source_counts.iter().filter(|&&c| c > 0).count() as f32;
+                let total = site_spikes.len() as f32;
+                let entropy: f32 = source_counts.iter()
+                    .filter(|&&c| c > 0)
+                    .map(|&c| {
+                        let p = c as f32 / total;
+                        -p * p.ln()
+                    })
+                    .sum();
+                (n_unique / 3.0, entropy)  // diversity normalized to [0,1], entropy in nats
+            } else {
+                (0.0, 0.0)
+            };
+
+            // ─── Burial depth: mean nearby residues per spike ───
+            let (mean_burial, deep_fraction, burial_score) = if !site_spikes.is_empty() {
+                let burial_values: Vec<f32> = site_spikes.iter()
+                    .map(|s| s.n_residues as f32)
+                    .collect();
+                let mean_b = burial_values.iter().sum::<f32>() / burial_values.len() as f32;
+                let deep_frac = burial_values.iter().filter(|&&b| b >= 5.0).count() as f32
+                    / burial_values.len() as f32;
+                // Sigmoid normalization: center=4, slope=1.5
+                let score = 1.0 / (1.0 + (-1.5 * (mean_b - 4.0)).exp());
+                (mean_b, deep_frac, score)
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+
+            // Store physics signals for JSON output later
+            physics_signals.insert(site.cluster_id, (onset_score, source_diversity, mean_burial, burial_score));
+
+            // ─── Task 1: Per-site STI (Jarzynski free energy) ───
+            // Compute binding free energy from spike thermodynamic integration.
+            // Uses per-site spikes to estimate delta_g via Jarzynski equality,
+            // channel decomposition, and kinetic accessibility.
+            if site_spikes.len() >= 10 {
+                let owned_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> =
+                    site_spikes.iter().map(|&s| *s).collect();
+                let bfe = compute_binding_free_energy(
+                    &owned_spikes,
+                    None,  // hysteresis bins not available per-site
+                    None,  // no branching theory delta_g
+                    &sti_config,
+                );
+                log::info!("  Site {}: STI delta_g={:.3} kcal/mol (effective={:.3}, n_voxels={}, n_spikes={}, kinetic_acc={:.3})",
+                    site.cluster_id, bfe.delta_g_sti_kcal_mol, bfe.effective_delta_g_kcal_mol,
+                    bfe.n_voxels, bfe.n_spikes, bfe.kinetic_accessibility);
+                sti_results.insert(site.cluster_id, bfe);
+            }
+
+            // ─── Task 7: UV Aromatic Enrichment ───
+            // Measures whether UV-source spikes are enriched during UV-on periods.
+            // UV burst is active when `timestep % burst_interval < burst_duration`.
+            // uv_enrichment = (uv_on_rate) / (uv_off_rate)
+            // uv_score = min(uv_enrichment / 3.0, 1.0)
+            let uv_score = if !site_spikes.is_empty() {
+                let burst_interval = protocol.uv_burst_interval;
+                let burst_duration = protocol.uv_burst_duration;
+                let mut uv_on_count = 0u32;
+                let mut uv_off_count = 0u32;
+                for s in &site_spikes {
+                    let is_uv_source = s.spike_source == 1 || s.aromatic_type >= 0;
+                    let is_uv_on = (s.timestep % burst_interval) < burst_duration;
+                    if is_uv_source {
+                        if is_uv_on {
+                            uv_on_count += 1;
+                        } else {
+                            uv_off_count += 1;
+                        }
+                    }
+                }
+                let on_fraction = burst_duration as f32 / burst_interval as f32;
+                let off_fraction = 1.0 - on_fraction;
+                let uv_on_rate = if on_fraction > 0.0 { uv_on_count as f32 / on_fraction } else { 0.0 };
+                let uv_off_rate = if off_fraction > 0.0 { uv_off_count as f32 / off_fraction } else { 0.0 };
+                let enrichment = if uv_off_rate > 0.0 { uv_on_rate / uv_off_rate } else { 0.0 };
+                let score = (enrichment / 3.0).min(1.0);
+                log::info!("  Site {}: UV enrichment={:.3} (on={}, off={}, burst_interval={}, burst_duration={}) uv_score={:.3}",
+                    site.cluster_id, enrichment, uv_on_count, uv_off_count, burst_interval, burst_duration, score);
+                score
+            } else {
+                0.0
+            };
+            uv_enrichment_scores.insert(site.cluster_id, uv_score);
 
             // Bin spikes by frame to compute per-frame volumes and activity
             let max_ts = site_spikes.iter().map(|s| s.timestep).max().unwrap_or(0);
@@ -2809,36 +2934,186 @@ fn run_multi_stream_pipeline(
                     0.0
                 };
 
-                // ─── Per-spike quality + enclosure ranking (v3) ───
-                // Per-spike scoring replaces aggregate pocket features with the
-                // ─── Proximity-based ranking (v4) ───
-                // The single strongest discriminator of correct binding sites:
-                // count of lining residues with atoms penetrating < 3Å from
-                // the pocket centroid. Genuine binding pockets have protein
-                // atoms converging from multiple directions toward the center.
-                // Surface grooves and mega-clusters have residues nearby but
-                // at longer distances.
-                //
-                // Validated: SR@3≤8Å = 5/7 (theoretical maximum on SNDC-7).
-                // SR@1≤8Å = 3/7 (vs 1/7 old). SR@3≤5Å = 2/7 (theoretical max).
-                let n_close_3 = site.lining_residues.iter()
-                    .filter(|r| r.min_distance < 3.0)
-                    .count() as f32;
-                let n_close_2 = site.lining_residues.iter()
-                    .filter(|r| r.min_distance < 2.0)
-                    .count() as f32;
-                // Continuous tiebreaker: quadratic distance falloff from 5Å
-                let dist_score: f32 = site.lining_residues.iter()
-                    .map(|r| (5.0 - r.min_distance).max(0.0).powi(2))
-                    .sum();
+                // v5 composite ranking is applied AFTER spatial signals (sphericity, breathing, wd_coherence)
+                // are computed below. See "COMPOSITE PHYSICS RANKING (v5)" block.
+            }
+
+            log::info!("  Site {}: physics signals [onset={:.3} srcDiv={:.2} srcEnt={:.2} burial={:.1} deepFrac={:.2} burialScore={:.3}]",
+                site.cluster_id, onset_score, source_diversity, source_entropy,
+                mean_burial, deep_fraction, burial_score);
+
+            // ─── Sphericity: tight cluster (sphere) vs elongated (groove) ───
+            let sphericity_score = if site_spikes.len() >= 10 {
+                let n = site_spikes.len() as f32;
+                let mx = site_spikes.iter().map(|s| s.position[0]).sum::<f32>() / n;
+                let my = site_spikes.iter().map(|s| s.position[1]).sum::<f32>() / n;
+                let mz = site_spikes.iter().map(|s| s.position[2]).sum::<f32>() / n;
+
+                let mut cov = [0.0f32; 6]; // [xx, xy, xz, yy, yz, zz]
+                for s in &site_spikes {
+                    let dx = s.position[0] - mx;
+                    let dy = s.position[1] - my;
+                    let dz = s.position[2] - mz;
+                    cov[0] += dx * dx; cov[1] += dx * dy; cov[2] += dx * dz;
+                    cov[3] += dy * dy; cov[4] += dy * dz; cov[5] += dz * dz;
+                }
+                for c in cov.iter_mut() { *c /= n; }
+
+                // Eigenvalues via Cardano's formula for 3x3 symmetric matrix
+                let a = cov[0]; let b = cov[3]; let c_val = cov[5];
+                let d = cov[1]; let e = cov[2]; let f = cov[4];
+
+                let p1 = d*d + e*e + f*f;
+                if p1 < 1e-10 {
+                    let mut eigs = [a, b, c_val];
+                    eigs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+                    if eigs[2] > 1e-10 { eigs[0] / eigs[2] } else { 0.0 }
+                } else {
+                    let q = (a + b + c_val) / 3.0;
+                    let p2 = (a - q).powi(2) + (b - q).powi(2) + (c_val - q).powi(2) + 2.0 * p1;
+                    let p = (p2 / 6.0).sqrt();
+
+                    let b00 = (a - q) / p; let b11 = (b - q) / p; let b22 = (c_val - q) / p;
+                    let b01 = d / p; let b02 = e / p; let b12 = f / p;
+
+                    let det_b = b00 * (b11 * b22 - b12 * b12)
+                              - b01 * (b01 * b22 - b12 * b02)
+                              + b02 * (b01 * b12 - b11 * b02);
+
+                    let half_det = (det_b / 2.0).clamp(-1.0, 1.0);
+                    let phi = half_det.acos() / 3.0;
+
+                    let eig1 = q + 2.0 * p * phi.cos();
+                    let eig3 = q + 2.0 * p * (phi + 2.0 * std::f32::consts::PI / 3.0).cos();
+                    let eig2 = 3.0 * q - eig1 - eig3;
+
+                    let mut eigs = [eig1, eig2, eig3];
+                    eigs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+                    let min_eig = eigs[0].max(0.0);
+                    let max_eig = eigs[2].max(1e-10);
+                    (min_eig / max_eig).clamp(0.0, 1.0)
+                }
+            } else {
+                0.0
+            };
+
+            // ─── Water displacement signal: mean wd_change magnitude ───
+            // Higher mean wd_change = stronger water displacement at this site.
+            // Sigmoid normalized: center=0.02, typical range 0.01-0.05
+            let wd_coherence = if site_spikes.len() >= 10 {
+                let mean_wd: f32 = site_spikes.iter()
+                    .map(|s| s.wd_change)
+                    .sum::<f32>() / site_spikes.len() as f32;
+                // sigmoid: 0.01→0.27, 0.02→0.50, 0.04→0.88
+                1.0 / (1.0 + (-100.0 * (mean_wd - 0.02)).exp())
+            } else {
+                0.0
+            };
+
+            // ─── Breathing: variance of burial across frames = pocket dynamics ───
+            let breathing_score = if site_spikes.len() >= 20 {
+                let breath_frame_window = 1000i32;
+                let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> = std::collections::HashMap::new();
+                for s in &site_spikes {
+                    let frame = s.timestep / breath_frame_window;
+                    frame_burials.entry(frame).or_default().push(s.n_residues as f32);
+                }
+                let frame_means: Vec<f32> = frame_burials.values()
+                    .filter(|v| !v.is_empty())
+                    .map(|v| v.iter().sum::<f32>() / v.len() as f32)
+                    .collect();
+
+                if frame_means.len() >= 3 {
+                    let global_mean = frame_means.iter().sum::<f32>() / frame_means.len() as f32;
+                    if global_mean > 0.5 {
+                        let variance = frame_means.iter()
+                            .map(|&m| (m - global_mean).powi(2))
+                            .sum::<f32>() / frame_means.len() as f32;
+                        let cv = variance.sqrt() / global_mean;
+                        cv.clamp(0.0, 2.0) / 2.0
+                    } else { 0.0 }
+                } else { 0.0 }
+            } else {
+                0.0
+            };
+
+            log::info!("  Site {}: spatial signals [sphericity={:.3} wdCoherence={:.3} breathing={:.3}]",
+                site.cluster_id, sphericity_score, wd_coherence, breathing_score);
+            spatial_signals.insert(site.cluster_id, (sphericity_score, wd_coherence, breathing_score));
+
+            // ─── COMPOSITE PHYSICS RANKING (v5) — applied AFTER all signals computed ───
+            {
+                let is_viable_pocket = mean_burial >= 2.0
+                    && site_spikes.len() >= 20
+                    && site.estimated_volume >= 30.0;
+
+                // Recompute enclosure (originally in inner scope above)
+                let n_lining_f = site.lining_residues.len() as f32;
+                let encl = if site.estimated_volume > 1.0 {
+                    n_lining_f / site.estimated_volume.powf(0.667)
+                } else { n_lining_f };
+
+                // delta_g: STI returns POSITIVE values (~6 kcal/mol) for this system.
+                // Lower positive = more favorable (closer to zero = less unfavorable).
+                // Rank by inverse: sites with the LOWEST dG score highest.
+                // Use rank-normalized scoring: compute within-protein percentile.
+                let delta_g_score = if let Some(bfe) = sti_results.get(&site.cluster_id) {
+                    let dg = bfe.effective_delta_g_kcal_mol as f32;
+                    // Collect all dG values for this protein to rank-normalize
+                    let all_dg: Vec<f32> = sti_results.values()
+                        .map(|b| b.effective_delta_g_kcal_mol as f32)
+                        .collect();
+                    if all_dg.len() > 1 {
+                        let min_dg = all_dg.iter().cloned().fold(f32::MAX, f32::min);
+                        let max_dg = all_dg.iter().cloned().fold(f32::MIN, f32::max);
+                        let range = (max_dg - min_dg).max(0.01);
+                        // Lower dG = higher score (inverted, normalized to [0,1])
+                        1.0 - ((dg - min_dg) / range).clamp(0.0, 1.0)
+                    } else {
+                        0.5 // single site — neutral
+                    }
+                } else {
+                    0.3
+                };
+
+                let uv_s = uv_enrichment_scores.get(&site.cluster_id).copied().unwrap_or(0.0);
+
+                // Per-spike quality (recompute — was in inner scope)
+                let spk_q: f32 = if !site_spikes.is_empty() {
+                    let sum: f32 = site_spikes.iter().map(|s| {
+                        let b = (s.n_residues as f32 / 6.0).min(1.0);
+                        let a = (s.n_nearby_excited as f32 / 3.0).min(1.0);
+                        let w = (s.wd_change * 20.0).min(1.0);
+                        let i = (s.intensity / 30.0).min(1.0);
+                        0.40 * b + 0.20 * a + 0.20 * w + 0.20 * i
+                    }).sum();
+                    sum / site_spikes.len() as f32
+                } else { 0.0 };
 
                 let old_q = site.quality_score;
-                site.quality_score = n_close_3 * 1e6 + n_close_2 * 1e4 + dist_score;
 
-                log::info!("  Site {}: quality rerank {:.3}->{:.1} [n<3Å={} n<2Å={} distScore={:.1} spkQ={:.3} encl={:.2} nlr={}]",
+                if is_viable_pocket {
+                    site.quality_score =
+                        0.18 * burial_score +
+                        0.16 * delta_g_score +
+                        0.12 * encl.clamp(0.0, 2.0) / 2.0 +
+                        0.12 * onset_score +
+                        0.10 * sphericity_score +
+                        0.08 * (source_entropy / 1.1).clamp(0.0, 1.0) + // entropy normalized (max ln(3)=1.1)
+                        0.08 * uv_s +
+                        0.08 * (spk_q * 2.0).clamp(0.0, 1.0) +
+                        0.04 * breathing_score +
+                        0.04 * wd_coherence;
+                } else {
+                    site.quality_score = -1.0;
+                }
+
+                log::info!("  Site {}: v5 composite {:.3}->{:.3} [bur={:.2} dG={:.2} encl={:.2} ons={:.2} sph={:.2} src={:.2} uv={:.2} spkQ={:.2} br={:.2} wd={:.2}{}]",
                     site.cluster_id, old_q, site.quality_score,
-                    n_close_3 as i32, n_close_2 as i32, dist_score,
-                    site_spike_quality, enclosure_q, site.lining_residues.len());
+                    burial_score, delta_g_score, encl, onset_score,
+                    sphericity_score, source_diversity, uv_s, spk_q,
+                    breathing_score, wd_coherence,
+                    if !is_viable_pocket { " FILTERED" } else { "" });
             }
 
             // ─── Peak centroid refinement (multi-stream path) ───
@@ -3033,6 +3308,8 @@ fn run_multi_stream_pipeline(
         let mut ms_sites_json: Vec<serde_json::Value> = reordered_sites.iter().map(|s| {
             let cat_count = s.lining_residues.iter()
                 .filter(|r| catalytic_residues.contains(&r.resname.as_str())).count();
+            let (ps_onset, ps_src_div, ps_burial, ps_burial_score) =
+                physics_signals.get(&s.cluster_id).copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
             serde_json::json!({
                 "id": s.cluster_id,
                 "centroid": s.centroid,
@@ -3044,6 +3321,10 @@ fn run_multi_stream_pipeline(
                 "classification": format!("{:?}", s.classification),
                 "aromatic_score": s.aromatic_proximity.as_ref().map(|p| p.aromatic_score),
                 "catalytic_residue_count": cat_count,
+                "onset_score": ps_onset,
+                "source_diversity": ps_src_div,
+                "mean_burial": ps_burial,
+                "burial_score": ps_burial_score,
                 "lining_residues": s.lining_residues.iter().map(|r| {
                     serde_json::json!({
                         "chain": r.chain, "resid": r.resid, "resname": r.resname,
@@ -3070,6 +3351,35 @@ fn run_multi_stream_pipeline(
                         site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
                     }
                 }
+            }
+        }
+
+        // Inject spatial signals (sphericity, wd_coherence, breathing) into each site JSON
+        for site_json in ms_sites_json.iter_mut() {
+            let site_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
+            if let Some(&(sph, wdc, breath)) = spatial_signals.get(&site_id) {
+                site_json["sphericity"] = serde_json::json!(sph);
+                site_json["wd_coherence"] = serde_json::json!(wdc);
+                site_json["breathing_score"] = serde_json::json!(breath);
+            }
+        }
+
+        // Inject STI free energy and UV enrichment into each site JSON
+        for site_json in ms_sites_json.iter_mut() {
+            let site_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
+            if let Some(bfe) = sti_results.get(&site_id) {
+                site_json["delta_g_sti_kcal_mol"] = serde_json::json!(bfe.delta_g_sti_kcal_mol);
+                site_json["effective_delta_g_kcal_mol"] = serde_json::json!(bfe.effective_delta_g_kcal_mol);
+                site_json["delta_g_aromatic_kcal_mol"] = serde_json::json!(bfe.delta_g_aromatic_kcal_mol);
+                site_json["delta_g_dewetting_kcal_mol"] = serde_json::json!(bfe.delta_g_dewetting_kcal_mol);
+                site_json["delta_g_electrostatic_kcal_mol"] = serde_json::json!(bfe.delta_g_electrostatic_kcal_mol);
+                site_json["delta_g_cooperative_kcal_mol"] = serde_json::json!(bfe.delta_g_cooperative_kcal_mol);
+                site_json["kinetic_accessibility"] = serde_json::json!(bfe.kinetic_accessibility);
+                site_json["sti_n_voxels"] = serde_json::json!(bfe.n_voxels);
+                site_json["sti_n_spikes"] = serde_json::json!(bfe.n_spikes);
+            }
+            if let Some(&uv_score) = uv_enrichment_scores.get(&site_id) {
+                site_json["uv_enrichment_score"] = serde_json::json!(uv_score);
             }
         }
 

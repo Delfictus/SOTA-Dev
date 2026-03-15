@@ -104,6 +104,9 @@ pub mod fused_engine;
 /// Requires the `gpu` feature (SDST is CUDA-only).
 #[cfg(feature = "gpu")]
 pub mod sdst_bridge;
+/// Spike Thermodynamic Integration: Jarzynski/Crooks/BAR free energy from spike events.
+#[cfg(feature = "gpu")]
+pub mod spike_thermodynamic_integration;
 /// PRISM-Therm: output pipeline (JSON reports, druggability PDB, ranked table).
 #[cfg(feature = "gpu")]
 pub mod sdst_report;
