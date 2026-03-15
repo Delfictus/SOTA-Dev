@@ -3174,18 +3174,20 @@ fn run_multi_stream_pipeline(
                 };
 
                 if is_viable_pocket {
+                    // v5d weights — all signals now discriminate
+                    // Weights will be optimized by cross-target analysis
                     site.quality_score =
-                        0.18 * burial_score +
-                        0.16 * delta_g_score +
-                        0.14 * encl.clamp(0.0, 2.0) / 2.0 +
-                        0.12 * onset_score +
-                        0.10 * sphericity_score +
+                        0.18 * burial_score +               // recentered sigmoid, 3x more range
+                        0.10 * delta_g_score +              // cumulant expansion, needs cross-target validation
+                        0.16 * encl.clamp(0.0, 2.0) / 2.0 + // enclosure — proven discriminator
+                        0.12 * onset_score +                // temporal onset
+                        0.10 * sphericity_score +           // spatial concentration
                         0.04 * (source_entropy / 1.1).clamp(0.0, 1.0) +
-                        0.04 * source_diversity +  // UV/LIF balance + EFP bonus
-                        0.08 * uv_s +
+                        0.04 * source_diversity +           // UV/LIF balance + EFP bonus
+                        0.08 * uv_s +                       // UV enrichment
                         0.06 * (spk_q * 2.0).clamp(0.0, 1.0) +
-                        0.04 * breathing_score +
-                        0.04 * wd_norm;
+                        0.06 * breathing_score +            // pocket dynamics (4x better range)
+                        0.06 * wd_norm;                     // water displacement variance
                 } else {
                     site.quality_score = -1.0;
                 }
