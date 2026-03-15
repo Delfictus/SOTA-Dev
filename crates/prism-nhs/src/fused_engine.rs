@@ -4121,8 +4121,9 @@ impl NhsAmberFusedEngine {
         let tile_z = 2u32;
         let threads_per_block = tile_x * tile_y * tile_z * 8;  // 16 voxels * 8 neurons = 128
         let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);  // 96
-        // Shared memory: halo(96) + trig LUT(24) + excited flag(1) = 121 floats = 484 bytes
-        let shared_mem = (halo_size + 25) * 4;  // 121 * sizeof(float) = 484 bytes
+        // Shared memory: halo(96) + trig LUT(24) + flags(2) + aromatic cache(64*10=640) = 762 floats = 3048 bytes
+        let max_arom_cached = 64u32;
+        let shared_mem = (halo_size + 26 + max_arom_cached * 10) * 4;  // 762 * sizeof(float) = 3048 bytes
         // Use sparse tile index if available, fall back to full 3D grid
         let n_tiles = if self.n_active_tiles > 0 {
             self.n_active_tiles

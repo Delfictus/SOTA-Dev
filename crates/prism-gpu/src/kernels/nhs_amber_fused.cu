@@ -2764,19 +2764,26 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     const int* active_tiles,     // [n_active_tiles * 3] packed (bx, by, bz) triplets
     int n_active_tiles           // number of active tiles (0 = fallback to full grid)
 ) {
-    // === Shared memory layout ===
-    // [0..HALO_SIZE-1]:  coupling stencil halo tile
-    // [HALO_SIZE..HALO_SIZE+7]:  pre-computed cos(omega*dt) per neuron k
-    // [HALO_SIZE+8..HALO_SIZE+15]: pre-computed sin(omega*dt) per neuron k
-    // [HALO_SIZE+16..HALO_SIZE+23]: pre-computed exp(-dt/tau) per neuron k
-    // [HALO_SIZE+24]: flag: any aromatic excited this step?
+    // === Shared memory layout (SOTA v2) ===
+    // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
+    // [HALO_SIZE..+7]:   cos(omega*dt) LUT per neuron k (8 floats)
+    // [+8..+15]:         sin(omega*dt) LUT (8 floats)
+    // [+16..+23]:        exp(-dt/tau) LUT (8 floats)
+    // [+24]:             flag: any aromatic excited (1 int)
+    // [+25]:             n_excited_cached (1 int)
+    // [+26..+26+MAX_AROM*10-1]: CachedAromaticData array
     extern __shared__ float s_coupling_tile[];
     float* s_cos_lut   = &s_coupling_tile[HALO_SIZE];       // [8]
     float* s_sin_lut   = &s_coupling_tile[HALO_SIZE + 8];   // [8]
     float* s_decay_lut = &s_coupling_tile[HALO_SIZE + 16];  // [8]
     int*   s_any_excited = (int*)&s_coupling_tile[HALO_SIZE + 24]; // [1]
+    int*   s_n_excited   = (int*)&s_coupling_tile[HALO_SIZE + 25]; // [1]
+    // Aromatic cache: 10 floats per aromatic (float3 pos=3, float3 norm=3, epop, vibe, tse, is_excited)
+    #define SMEM_AROM_OFFSET (HALO_SIZE + 26)
+    #define MAX_AROM_CACHED 64
+    float* s_arom_cache = &s_coupling_tile[SMEM_AROM_OFFSET]; // [MAX_AROM_CACHED * 10]
 
-    // Thread 0: build trig/decay LUT + check excited aromatics
+    // Thread 0..7: build trig/decay LUT
     if (threadIdx.x < K_NEURONS) {
         float my_tau = neuron_tau(threadIdx.x);
         float omega = 2.0f * RAF_PI / my_tau;
@@ -2784,12 +2791,34 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         s_sin_lut[threadIdx.x]   = sinf(omega * dt);
         s_decay_lut[threadIdx.x] = expf(-dt / my_tau);
     }
-    if (threadIdx.x == 0) {
-        int any = 0;
-        for (int a = 0; a < n_aromatics && !any; a++) {
-            if (d_is_excited[a]) any = 1;
+
+    // Cooperative aromatic cache load: all 128 threads load aromatic data
+    // into shared memory. Eliminates repeated global reads in exclusion + UV loops.
+    {
+        int n_arom = min(n_aromatics, MAX_AROM_CACHED);
+        int n_excited_count = 0;
+        // Each thread loads a subset of aromatics (10 floats per aromatic)
+        for (int a = threadIdx.x; a < n_arom; a += blockDim.x) {
+            float* dst = &s_arom_cache[a * 10];
+            float3 pos = d_aromatic_centroids[a];
+            float3 nrm = d_ring_normals[a];
+            dst[0] = pos.x;  dst[1] = pos.y;  dst[2] = pos.z;
+            dst[3] = nrm.x;  dst[4] = nrm.y;  dst[5] = nrm.z;
+            dst[6] = d_electronic_population[a];
+            dst[7] = d_vibrational_energy[a];
+            dst[8] = d_time_since_excitation[a];
+            dst[9] = __int_as_float(d_is_excited[a]);
         }
-        *s_any_excited = any;
+        __syncthreads();
+        // Thread 0: count excited aromatics (from shared memory, not global)
+        if (threadIdx.x == 0) {
+            int any = 0;
+            for (int a = 0; a < n_arom; a++) {
+                if (__float_as_int(s_arom_cache[a * 10 + 9])) { any = 1; n_excited_count++; }
+            }
+            *s_any_excited = any;
+            *s_n_excited = n_excited_count;
+        }
     }
     __syncthreads();
 
@@ -2868,11 +2897,23 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         }
     }
 
+    // ────────────────────────────────────────────────────────────────
+    // PHASE 1: WARP-COOPERATIVE EXCLUSION (all 8 neurons contribute)
+    // Instead of k==0 serializing over atoms, all 8 threads process
+    // atoms in parallel with warp shuffle reduction. 8x parallelism
+    // on the most expensive per-voxel loop.
+    // ────────────────────────────────────────────────────────────────
     float total_exclusion = 0.0f;
     float polar_field = 0.0f;
 
-    if (is_valid && has_atoms && k == 0) {
-        for (int i = 0; i < entry.n_atoms; i++) {
+    if (is_valid && has_atoms) {
+        // All 8 neurons cooperatively process atoms: each neuron handles
+        // atoms[k], atoms[k+8], atoms[k+16], ... (strided access)
+        float my_exclusion = 0.0f;
+        float my_polar = 0.0f;
+        int n_arom = min(n_aromatics, MAX_AROM_CACHED);
+
+        for (int i = k; i < entry.n_atoms; i += K_NEURONS) {
             int a = entry.atom_indices[i];
             if (a < 0 || a >= n_atoms) continue;
 
@@ -2881,16 +2922,25 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                 atom_types[a], charges[a]
             );
 
-            if (n_aromatics > 0 && d_aromatic_centroids != nullptr) {
-                float expanded_modifier = compute_expanded_exclusion_modifier(
-                    positions[a],
-                    d_aromatic_centroids,
-                    d_ring_normals,
-                    d_is_excited,
-                    d_electronic_population,
-                    n_aromatics
-                );
-                contrib *= expanded_modifier;
+            // Aromatic exclusion modifier: read from shared memory cache
+            if (n_arom > 0) {
+                float best_mod = 1.0f;
+                float3 atom_pos = positions[a];
+                for (int ar = 0; ar < n_arom; ar++) {
+                    float* ad = &s_arom_cache[ar * 10];
+                    int excited = __float_as_int(ad[9]);
+                    if (!excited) continue;
+                    float dx = atom_pos.x - ad[0];
+                    float dy = atom_pos.y - ad[1];
+                    float dz = atom_pos.z - ad[2];
+                    float dist_sq = dx*dx + dy*dy + dz*dz;
+                    if (dist_sq < 25.0f) { // 5Å cutoff
+                        float epop = ad[6];
+                        float mod = 1.0f + epop * 0.5f;
+                        if (mod > best_mod) best_mod = mod;
+                    }
+                }
+                contrib *= best_mod;
             } else {
                 int aromatic_idx = d_atom_to_aromatic[a];
                 if (aromatic_idx >= 0 && aromatic_idx < n_aromatics) {
@@ -2903,20 +2953,29 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                 }
             }
 
-            total_exclusion += contrib * entry.atom_weights[i] * 4.0f;
+            my_exclusion += contrib * entry.atom_weights[i] * 4.0f;
 
             if (atom_types[a] == 1 || atom_types[a] == 2 || atom_types[a] == 3) {
-                polar_field += contrib * 0.5f;
+                my_polar += contrib * 0.5f;
             }
         }
 
-        total_exclusion = fminf(1.0f, total_exclusion);
-        exclusion_field[v] = total_exclusion;
-        water_density[v] = infer_water_density(total_exclusion, polar_field, target_temp);
+        // Warp shuffle reduction across 8 neurons within voxel
+        for (int off = K_NEURONS / 2; off > 0; off >>= 1) {
+            my_exclusion += __shfl_xor_sync(voxel_mask, my_exclusion, off);
+            my_polar     += __shfl_xor_sync(voxel_mask, my_polar, off);
+        }
+        total_exclusion = fminf(1.0f, my_exclusion);
+        polar_field = my_polar;
+
+        // Neuron 0 writes results
+        if (k == 0) {
+            exclusion_field[v] = total_exclusion;
+            water_density[v] = infer_water_density(total_exclusion, polar_field, target_temp);
+        }
     }
 
-    // Broadcast exclusion from neuron 0 to all 8 neurons in voxel
-    total_exclusion = __shfl_sync(warp_mask, total_exclusion, src_lane);
+    // All neurons already have total_exclusion from the shuffle reduction
 
     // ====================================================================
     // UV SIGNAL COMPUTATION (neuron 0 only, broadcast to all)
@@ -2927,30 +2986,59 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     float min_distance_to_excited = 1000.0f;
     int closest_excited_idx = -1;
 
+    // ────────────────────────────────────────────────────────────────
+    // UV SIGNAL: Shared-memory cached aromatics (zero global reads)
+    // Single fused pass over cached aromatics replaces two separate
+    // global-memory loops (basic UV + advanced compute_uv_lif_signal).
+    // ────────────────────────────────────────────────────────────────
     if (is_valid && has_atoms && k == 0 && n_aromatics > 0 && *s_any_excited) {
         const float UV_DETECTION_RADIUS = 4.0f;
         const float UV_DIRECT_STRENGTH = 0.8f;
+        const float MAX_DETECTION_RADIUS = 20.0f;
         float total_vib_energy = 0.0f;
+        float thermal_wavefront_sum = 0.0f;
+        float halo_sum = 0.0f;
+        int n_arom = min(n_aromatics, MAX_AROM_CACHED);
 
-        for (int a = 0; a < n_aromatics; a++) {
-            if (!d_is_excited[a]) continue;
+        // Single fused loop: basic UV proximity + advanced thermal/halo
+        #pragma unroll 4
+        for (int a = 0; a < n_arom; a++) {
+            float* ad = &s_arom_cache[a * 10];
+            int excited = __float_as_int(ad[9]);
+            if (!excited) continue;
 
-            float3 arom_pos = d_aromatic_centroids[a];
-            float ddx = voxel_center.x - arom_pos.x;
-            float ddy = voxel_center.y - arom_pos.y;
-            float ddz = voxel_center.z - arom_pos.z;
-            float dist = sqrtf(ddx*ddx + ddy*ddy + ddz*ddz);
+            float ddx = voxel_center.x - ad[0];
+            float ddy = voxel_center.y - ad[1];
+            float ddz = voxel_center.z - ad[2];
+            float dist_sq = ddx*ddx + ddy*ddy + ddz*ddz;
 
+            if (dist_sq > MAX_DETECTION_RADIUS * MAX_DETECTION_RADIUS) continue;
+            float dist = sqrtf(dist_sq);
+
+            // Basic UV proximity signal (within 4Å)
             if (dist < UV_DETECTION_RADIUS) {
                 n_nearby_excited++;
-                total_vib_energy += d_vibrational_energy[a];
+                total_vib_energy += ad[7]; // vibrational_energy from cache
                 if (dist < min_distance_to_excited) {
                     min_distance_to_excited = dist;
                     closest_excited_idx = a;
                 }
             }
+
+            // Advanced thermal wavefront (within 20Å)
+            float3 arom_pos = make_float3(ad[0], ad[1], ad[2]);
+            float3 ring_norm = make_float3(ad[3], ad[4], ad[5]);
+            float tse = ad[8]; // time_since_excitation
+            float vibe = ad[7]; // vibrational_energy
+            float epop = ad[6]; // electronic_population
+
+            thermal_wavefront_sum += compute_thermal_wavefront(
+                voxel_center, arom_pos, ring_norm, tse, vibe
+            );
+            halo_sum += compute_dewetting_halo(dist, epop);
         }
 
+        // Basic UV signal
         if (n_nearby_excited > 0) {
             float energy_factor = fminf(total_vib_energy / (n_nearby_excited * 3.0f), 1.0f);
             float coop_boost = 1.0f + 0.3f * (n_nearby_excited - 1);
@@ -2958,21 +3046,15 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
             if (uv_burst_active) uv_signal *= 2.0f;
         }
 
-        if (d_aromatic_centroids != nullptr && d_uv_signal_prev != nullptr) {
+        // Advanced signal from fused thermal + halo (replaces compute_uv_lif_signal)
+        if (d_uv_signal_prev != nullptr && (thermal_wavefront_sum > 0.0f || halo_sum > 0.0f)) {
             float prev_signal = d_uv_signal_prev[v];
-            float advanced_signal = compute_uv_lif_signal(
-                voxel_center,
-                d_aromatic_centroids,
-                d_ring_normals,
-                d_is_excited,
-                d_electronic_population,
-                d_vibrational_energy,
-                d_time_since_excitation,
-                n_aromatics,
-                dt,
-                prev_signal
-            );
-            uv_signal += advanced_signal;
+            int n_contrib = n_nearby_excited > 0 ? n_nearby_excited : 1;
+            float coop = compute_cooperative_boost(n_contrib);
+            float advanced_signal = (thermal_wavefront_sum + halo_sum) * coop;
+            // Temporal smoothing
+            float smoothed = 0.7f * advanced_signal + 0.3f * prev_signal;
+            uv_signal += smoothed;
             d_uv_signal_prev[v] = uv_signal;
         }
     }
