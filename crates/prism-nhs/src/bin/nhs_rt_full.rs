@@ -2517,6 +2517,127 @@ fn run_multi_stream_pipeline(
     log::info!("  Running Dynamic LIGSITE pocket detection...");
     recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions);
 
+    // ========== Cubical PH: density-peak centroid refinement ==========
+    // Build a spike density grid and run 0-dim persistent homology to find
+    // density peaks. For each LIGSITE site, if a PH peak is within 5A,
+    // refine the centroid to the density maximum (birth voxel).
+    if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
+        let ph_start = std::time::Instant::now();
+        let (grid_origin, grid_dims, grid_spacing) =
+            prism_nhs::cubical_ph::compute_density_grid_bounds(
+                &topology.positions, 10.0, 1.0,
+            );
+
+        let grid_n = grid_dims[0] * grid_dims[1] * grid_dims[2];
+        if grid_n > 0 && grid_n < 8_000_000 {
+            // Gaussian splatting of spike density onto the grid
+            let mut density = vec![0.0f32; grid_n];
+            let sigma = 2.0f32;
+            let cutoff = (3.0 * sigma / grid_spacing) as i32 + 1;
+            let inv_2sig2 = 1.0 / (2.0 * sigma * sigma);
+
+            for spike in &all_stream_spikes {
+                let ix = ((spike.position[0] - grid_origin[0]) / grid_spacing) as i32;
+                let iy = ((spike.position[1] - grid_origin[1]) / grid_spacing) as i32;
+                let iz = ((spike.position[2] - grid_origin[2]) / grid_spacing) as i32;
+                let w = spike.intensity * spike.intensity; // intensity^2 weighting
+
+                for dz in -cutoff..=cutoff {
+                    for dy in -cutoff..=cutoff {
+                        for dx in -cutoff..=cutoff {
+                            let gx = ix + dx;
+                            let gy = iy + dy;
+                            let gz = iz + dz;
+                            if gx < 0 || gy < 0 || gz < 0 { continue; }
+                            let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
+                            if gx >= grid_dims[0] || gy >= grid_dims[1] || gz >= grid_dims[2] {
+                                continue;
+                            }
+                            let r2 = (dx * dx + dy * dy + dz * dz) as f32
+                                * grid_spacing * grid_spacing;
+                            let val = w * (-r2 * inv_2sig2).exp();
+                            density[(gz * grid_dims[1] + gy) * grid_dims[0] + gx] += val;
+                        }
+                    }
+                }
+            }
+
+            // Run cubical PH
+            let ph_pockets = prism_nhs::cubical_ph::compute_cubical_ph_cpu(
+                &density,
+                grid_dims,
+                grid_origin,
+                grid_spacing,
+                0.0,  // min_persistence — filter below
+                10,   // min_component_size (voxels)
+            );
+
+            // Adaptive persistence threshold: 10th percentile
+            let persistence_threshold = if ph_pockets.len() > 3 {
+                let mut persis: Vec<f32> = ph_pockets.iter().map(|p| p.persistence).collect();
+                persis.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                persis[persis.len() / 10]
+            } else {
+                0.0
+            };
+
+            let significant: Vec<_> = ph_pockets
+                .iter()
+                .filter(|p| p.persistence >= persistence_threshold)
+                .collect();
+
+            let ph_elapsed = ph_start.elapsed();
+            log::info!(
+                "  Cubical PH: {} total pairs, {} significant (persistence > {:.2}), {:.1}ms",
+                ph_pockets.len(),
+                significant.len(),
+                persistence_threshold,
+                ph_elapsed.as_secs_f64() * 1000.0
+            );
+
+            // Refine LIGSITE centroids: for each site, find nearest PH peak within 5A
+            let ph_refine_radius = 5.0f32;
+            let mut refined_count = 0usize;
+            for site in clustered_sites.iter_mut() {
+                let mut best_dist = f32::MAX;
+                let mut best_centroid: Option<[f32; 3]> = None;
+                let mut best_persistence = 0.0f32;
+                for ph in &significant {
+                    let dx = ph.centroid[0] - site.centroid[0];
+                    let dy = ph.centroid[1] - site.centroid[1];
+                    let dz = ph.centroid[2] - site.centroid[2];
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                    if dist < ph_refine_radius && dist < best_dist {
+                        best_dist = dist;
+                        best_centroid = Some(ph.centroid);
+                        best_persistence = ph.persistence;
+                    }
+                }
+                if let Some(new_c) = best_centroid {
+                    log::info!(
+                        "  PH refine site {}: shift {:.1}A -> ({:.1},{:.1},{:.1}), persistence={:.2}",
+                        site.cluster_id,
+                        best_dist,
+                        new_c[0], new_c[1], new_c[2],
+                        best_persistence
+                    );
+                    site.centroid = new_c;
+                    refined_count += 1;
+                }
+            }
+            log::info!(
+                "  Cubical PH: refined {}/{} site centroids to density peaks",
+                refined_count,
+                clustered_sites.len()
+            );
+        } else if grid_n >= 8_000_000 {
+            log::warn!(
+                "  Cubical PH: grid too large ({} voxels > 8M), skipping",
+                grid_n
+            );
+        }
+    }
+
     if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
         enhance_sites_with_aromatics(&mut clustered_sites, &aromatic_positions);
     }
@@ -2720,7 +2841,6 @@ fn run_multi_stream_pipeline(
                     let src = (s.spike_source as usize).min(3);
                     source_counts[src] += 1;
                 }
-                let n_unique = source_counts.iter().filter(|&&c| c > 0).count() as f32;
                 let total = site_spikes.len() as f32;
                 let entropy: f32 = source_counts.iter()
                     .filter(|&&c| c > 0)
@@ -2729,7 +2849,21 @@ fn run_multi_stream_pipeline(
                         -p * p.ln()
                     })
                     .sum();
-                (n_unique / 3.0, entropy)  // diversity normalized to [0,1], entropy in nats
+
+                // UV/LIF balance: binding pockets show convergent multi-channel
+                // signals (balanced UV+LIF), while surface grooves are LIF-dominated.
+                // balance = 1 - |frac_uv - frac_lif| → 1.0 = perfectly balanced,
+                //                                       0.0 = single-channel dominated
+                // EFP bonus: sites with EFP spikes get a boost (EFP requires
+                // charged residues = functional site).
+                let uv_count = source_counts[1] as f32;
+                let lif_count = source_counts[2] as f32;
+                let efp_count = source_counts[3] as f32;
+                let ul_total = (uv_count + lif_count).max(1.0);
+                let balance = 1.0 - ((uv_count - lif_count).abs() / ul_total);
+                let efp_bonus = (efp_count / total).min(0.3) / 0.3; // 0..1, saturates at 30% EFP
+                let diversity = balance * 0.7 + efp_bonus * 0.3;
+                (diversity, entropy)
             } else {
                 (0.0, 0.0)
             };
@@ -2742,8 +2876,12 @@ fn run_multi_stream_pipeline(
                 let mean_b = burial_values.iter().sum::<f32>() / burial_values.len() as f32;
                 let deep_frac = burial_values.iter().filter(|&&b| b >= 5.0).count() as f32
                     / burial_values.len() as f32;
-                // Sigmoid normalization: center=4, slope=1.5
-                let score = 1.0 / (1.0 + (-1.5 * (mean_b - 4.0)).exp());
+                // Sigmoid normalization: center=3, slope=2.0
+                // Recentered to match actual n_residues distribution (2.4-3.5).
+                // WarpEntry has max 16 atoms → ~3-5 unique residues in buried pockets,
+                // ~1-2 for surface grooves. center=3 puts the discrimination midpoint
+                // at the observed mean; slope=2.0 sharpens the transition.
+                let score = 1.0 / (1.0 + (-2.0 * (mean_b - 3.0)).exp());
                 (mean_b, deep_frac, score)
             } else {
                 (0.0, 0.0, 0.0)
@@ -2919,22 +3057,29 @@ fn run_multi_stream_pipeline(
                 0.0
             };
 
-            // ─── Water displacement signal: mean wd_change magnitude ───
-            // Higher mean wd_change = stronger water displacement at this site.
-            // Sigmoid normalized: center=0.02, typical range 0.01-0.05
+            // ─── Water displacement signal: rank-normalized within protein ───
+            // Mean wd_change is uniform across sites (~0.02 for all).
+            // Instead use the VARIANCE of wd_change: sites with high variance
+            // have intermittent strong dewetting events (pocket opening).
+            // Rank-normalize: highest variance site = 1.0, lowest = 0.0.
             let wd_coherence = if site_spikes.len() >= 10 {
                 let mean_wd: f32 = site_spikes.iter()
-                    .map(|s| s.wd_change)
+                    .map(|s| s.wd_change).sum::<f32>() / site_spikes.len() as f32;
+                let var_wd: f32 = site_spikes.iter()
+                    .map(|s| (s.wd_change - mean_wd).powi(2))
                     .sum::<f32>() / site_spikes.len() as f32;
-                // sigmoid: 0.01→0.27, 0.02→0.50, 0.04→0.88
-                1.0 / (1.0 + (-100.0 * (mean_wd - 0.02)).exp())
+                // Store raw variance; will be rank-normalized in v5 block
+                var_wd
             } else {
                 0.0
             };
 
             // ─── Breathing: variance of burial across frames = pocket dynamics ───
             let breathing_score = if site_spikes.len() >= 20 {
-                let breath_frame_window = 1000i32;
+                // Finer frame window (200 steps vs 1000) to capture sub-nanosecond
+                // pocket dynamics. With dt=0.002ps and fused_steps=4, 200 steps =
+                // 0.4ps windows — enough to see water entry/exit events.
+                let breath_frame_window = 200i32;
                 let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> = std::collections::HashMap::new();
                 for s in &site_spikes {
                     let frame = s.timestep / breath_frame_window;
@@ -2952,7 +3097,9 @@ fn run_multi_stream_pipeline(
                             .map(|&m| (m - global_mean).powi(2))
                             .sum::<f32>() / frame_means.len() as f32;
                         let cv = variance.sqrt() / global_mean;
-                        cv.clamp(0.0, 2.0) / 2.0
+                        // Normalize: CV of 0.5 = maximum breathing score.
+                        // Previous /2.0 made even moderate CV (~0.15-0.3) invisible.
+                        (cv / 0.5).clamp(0.0, 1.0)
                     } else { 0.0 }
                 } else { 0.0 }
             } else {
@@ -3014,18 +3161,31 @@ fn run_multi_stream_pipeline(
 
                 let old_q = site.quality_score;
 
+                // Rank-normalize wd_coherence (raw variance) within this protein
+                let wd_norm = {
+                    // Collect all wd variances computed so far
+                    let all_wd: Vec<f32> = spatial_signals.values().map(|&(_, w, _)| w).collect();
+                    if all_wd.len() > 1 {
+                        let min_w = all_wd.iter().cloned().fold(f32::MAX, f32::min);
+                        let max_w = all_wd.iter().cloned().fold(f32::MIN, f32::max);
+                        let range = (max_w - min_w).max(1e-10);
+                        ((wd_coherence - min_w) / range).clamp(0.0, 1.0)
+                    } else { 0.5 }
+                };
+
                 if is_viable_pocket {
                     site.quality_score =
                         0.18 * burial_score +
                         0.16 * delta_g_score +
-                        0.12 * encl.clamp(0.0, 2.0) / 2.0 +
+                        0.14 * encl.clamp(0.0, 2.0) / 2.0 +
                         0.12 * onset_score +
                         0.10 * sphericity_score +
-                        0.08 * (source_entropy / 1.1).clamp(0.0, 1.0) + // entropy normalized (max ln(3)=1.1)
+                        0.04 * (source_entropy / 1.1).clamp(0.0, 1.0) +
+                        0.04 * source_diversity +  // UV/LIF balance + EFP bonus
                         0.08 * uv_s +
-                        0.08 * (spk_q * 2.0).clamp(0.0, 1.0) +
+                        0.06 * (spk_q * 2.0).clamp(0.0, 1.0) +
                         0.04 * breathing_score +
-                        0.04 * wd_coherence;
+                        0.04 * wd_norm;
                 } else {
                     site.quality_score = -1.0;
                 }
@@ -3034,7 +3194,7 @@ fn run_multi_stream_pipeline(
                     site.cluster_id, old_q, site.quality_score,
                     burial_score, delta_g_score, encl, onset_score,
                     sphericity_score, source_diversity, uv_s, spk_q,
-                    breathing_score, wd_coherence,
+                    breathing_score, wd_norm,
                     if !is_viable_pocket { " FILTERED" } else { "" });
             }
 

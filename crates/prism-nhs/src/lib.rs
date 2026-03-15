@@ -134,6 +134,7 @@ pub mod parallel_replica;
 pub mod pharmacophore_gpu;
 #[cfg(feature = "gpu")]
 pub mod gpu_knn;
+pub mod cubical_ph;
 pub mod composition;
 pub mod batch_scheduler;
 pub mod input;

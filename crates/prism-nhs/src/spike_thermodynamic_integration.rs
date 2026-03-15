@@ -191,6 +191,12 @@ fn spike_to_work(intensity: f32, source: i32, wavelength_nm: f32) -> f64 {
 /// ΔG = -kT · ln( (1/N) · Σ exp(-W/kT) )
 ///
 /// Also computes cumulant expansion: ΔG ≈ ⟨W⟩ - σ²_W/(2kT)
+///
+/// When W/kT >> 1 for all samples (typical for spike intensities at 300K),
+/// the exact Jarzynski degenerates to min(W) + kT·ln(N) — dominated by
+/// a single outlier. In this regime we return the cumulant expansion as
+/// the primary estimate, which uses mean and variance of the full work
+/// distribution and produces much better inter-site discrimination.
 fn jarzynski_estimator(work_values: &[f64], temperature: f64) -> (f64, f64, bool) {
     if work_values.is_empty() {
         return (0.0, 0.0, false);
@@ -199,20 +205,34 @@ fn jarzynski_estimator(work_values: &[f64], temperature: f64) -> (f64, f64, bool
     let kt = KB * temperature;
     let n = work_values.len() as f64;
 
-    // Exact Jarzynski
-    // For numerical stability, shift by max(-W/kT)
-    let neg_w_over_kt: Vec<f64> = work_values.iter().map(|w| -w / kt).collect();
-    let max_val = neg_w_over_kt.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let sum_exp: f64 = neg_w_over_kt.iter().map(|&x| (x - max_val).exp()).sum();
-    let delta_g = -kt * (sum_exp.ln() - n.ln() + max_val);
-
-    // Cumulant expansion
+    // Cumulant expansion (always computed, robust at any W/kT)
     let mean_w: f64 = work_values.iter().sum::<f64>() / n;
     let var_w: f64 = work_values.iter().map(|w| (w - mean_w).powi(2)).sum::<f64>() / n;
     let delta_g_cumulant = mean_w - var_w / (2.0 * kt);
 
-    // Validity: cumulant is good when σ²/(kT)² < 1 and n >= 5
+    // Validity: cumulant is exact when σ²/(kT)² < 1
     let cumulant_valid = (var_w / (kt * kt)) < 1.0 && work_values.len() >= 5;
+
+    // Exact Jarzynski (log-sum-exp trick for numerical stability)
+    let neg_w_over_kt: Vec<f64> = work_values.iter().map(|w| -w / kt).collect();
+    let max_val = neg_w_over_kt.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let sum_exp: f64 = neg_w_over_kt.iter().map(|&x| (x - max_val).exp()).sum();
+    let delta_g_exact = -kt * (sum_exp.ln() - n.ln() + max_val);
+
+    // When W/kT >> 1 (high dissipation regime), the exact estimator is
+    // dominated by the single smallest W value (all other exp(-W/kT) terms
+    // vanish). Detect this: if only ~1 term contributes to the sum, switch
+    // to cumulant. Effective sample size: (Σ exp)² / Σ exp² after shift.
+    let sum_exp_sq: f64 = neg_w_over_kt.iter().map(|&x| (2.0 * (x - max_val)).exp()).sum();
+    let n_eff = if sum_exp_sq > 0.0 { (sum_exp * sum_exp) / sum_exp_sq } else { 1.0 };
+
+    // Use cumulant when effective sample size is < 10% of actual samples
+    // (exact Jarzynski is degenerate in this regime)
+    let delta_g = if n_eff < 0.1 * n && n > 5.0 {
+        delta_g_cumulant
+    } else {
+        delta_g_exact
+    };
 
     (delta_g, delta_g_cumulant, cumulant_valid)
 }
