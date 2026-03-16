@@ -3596,7 +3596,103 @@ fn run_multi_stream_pipeline(
             }
         }
 
-        // Re-sort all sites (including new sub-sites, peak-centroid, and triangulation variants)
+        // ── Frustrated Solvent Centroid (Strategy 6): thermodynamic binding hotspot ──
+        // The geometric center of a pocket is rarely its thermodynamic center.
+        // Binding is fundamentally a solvent-displacement event. This centroid
+        // is placed at the spatial center of the most thermodynamically
+        // frustrated water molecules — those displaced EARLY (low temperature)
+        // with HIGH wd_change (large displacement event) via the LIF dewetting
+        // channel (spike_source == 2). These are water molecules that WANT to
+        // leave — the exact spot where a ligand heavy atom gains maximum
+        // enthalpic and entropic benefit from displacing them.
+        //
+        // Novel: no other tool computes centroids from time-resolved water
+        // displacement events detected by neuromorphic oscillators.
+        {
+            let mut frustrated_sites = Vec::new();
+            // Median timestep across all spikes for "early" threshold
+            let median_ts = if !all_stream_spikes.is_empty() {
+                let mut ts: Vec<i32> = all_stream_spikes.iter().map(|s| s.timestep).collect();
+                ts.sort();
+                ts[ts.len() / 2]
+            } else { 0 };
+            // Median wd_change for "high displacement" threshold
+            let wd_threshold = {
+                let mut wds: Vec<f32> = all_stream_spikes.iter()
+                    .filter(|s| s.wd_change > 0.001)
+                    .map(|s| s.wd_change)
+                    .collect();
+                if wds.len() > 10 {
+                    wds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    wds[wds.len() * 3 / 4]  // 75th percentile = "high" displacement
+                } else { 0.02 }
+            };
+
+            for site in &clustered_sites {
+                if site.cluster_id >= 4000 || site.spike_indices.len() < 50 {
+                    continue;
+                }
+
+                // Filter to frustrated water spikes: LIF dewetting + high wd_change + early onset
+                let frustrated_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> =
+                    site.spike_indices.iter()
+                        .filter_map(|&idx| all_stream_spikes.get(idx))
+                        .filter(|s| {
+                            s.wd_change >= wd_threshold      // high water displacement
+                            && s.timestep <= median_ts        // early onset (frustrated = low barrier)
+                            && (s.spike_source == 2 || s.spike_source == 0) // LIF/dewetting channel
+                        })
+                        .collect();
+
+                if frustrated_spikes.len() < 10 {
+                    continue;
+                }
+
+                // Intensity²-weighted centroid of frustrated water events
+                let mut fw = [0.0f64; 3];
+                let mut fws = 0.0f64;
+                for s in &frustrated_spikes {
+                    let w = (s.intensity as f64 * s.wd_change as f64).powi(2);
+                    fw[0] += s.position[0] as f64 * w;
+                    fw[1] += s.position[1] as f64 * w;
+                    fw[2] += s.position[2] as f64 * w;
+                    fws += w;
+                }
+
+                if fws > 1e-12 {
+                    let fc = [
+                        (fw[0] / fws) as f32,
+                        (fw[1] / fws) as f32,
+                        (fw[2] / fws) as f32,
+                    ];
+
+                    let cx = site.centroid[0];
+                    let cy = site.centroid[1];
+                    let cz = site.centroid[2];
+                    let shift = ((fc[0] - cx).powi(2) + (fc[1] - cy).powi(2) + (fc[2] - cz).powi(2)).sqrt();
+
+                    if shift > 1.0 && shift < 20.0 {
+                        let mut fs_site = site.clone();
+                        fs_site.cluster_id = site.cluster_id + 4000;
+                        fs_site.centroid = fc;
+                        fs_site.quality_score *= 0.92;
+
+                        log::info!("  Frustrated solvent centroid {}: ({:.1},{:.1},{:.1}), {:.1}A from site {}, {} frustrated spikes (of {}), q={:.3}",
+                            fs_site.cluster_id, fc[0], fc[1], fc[2],
+                            shift, site.cluster_id, frustrated_spikes.len(),
+                            site.spike_indices.len(), fs_site.quality_score);
+
+                        frustrated_sites.push(fs_site);
+                    }
+                }
+            }
+            if !frustrated_sites.is_empty() {
+                log::info!("  Frustrated solvent emission: added {} thermodynamic hotspot sites", frustrated_sites.len());
+                clustered_sites.extend(frustrated_sites);
+            }
+        }
+
+        // Re-sort all sites (including all 6 centroid strategies)
         clustered_sites.sort_by(|a, b|
             b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -3637,9 +3733,11 @@ fn run_multi_stream_pipeline(
             for site in clustered_sites.iter_mut() {
                 // Sub-sites inherit parent's thermodynamic classification.
                 // Map sub-site ID back to parent:
-                // 3XXX→XXX (triangulation), 2XXX→XXX (dual centroid),
-                // 1XXX→XXX (k-means), 5XX→XX (PH peak)
-                let thermo_lookup_id = if site.cluster_id >= 3000 {
+                // 4XXX→XXX (frustrated solvent), 3XXX→XXX (triangulation),
+                // 2XXX→XXX (dual centroid), 1XXX→XXX (k-means), 5XX→XX (PH peak)
+                let thermo_lookup_id = if site.cluster_id >= 4000 {
+                    site.cluster_id - 4000
+                } else if site.cluster_id >= 3000 {
                     site.cluster_id - 3000
                 } else if site.cluster_id >= 2000 {
                     site.cluster_id - 2000
