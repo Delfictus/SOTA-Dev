@@ -3993,6 +3993,117 @@ fn run_multi_stream_pipeline(
             log::info!("  Multi-head ranking + sigmoid squash + saliency cross + enclosure cliff applied");
         }
 
+        // ══════════════════════════════════════════════════════════════
+        // NEUROMORPHIC BINDING LANDSCAPE (NBL)
+        // The kinetic multiplier from temporal spike wavefront analysis.
+        // Uses the TEMPORAL ORDER of spike activation during the CryoUV
+        // heating ramp to distinguish real binding sites (sequential
+        // funnel opening) from dead voids (random popcorn firing).
+        //
+        // Three pillars:
+        // 1. Kinetic Entry Point: CoM(early) → CoM(late) = ligand approach vector
+        // 2. Wavefront Coherence: Pearson(timestamp, projection_onto_path)
+        //    1.0 = sequential funnel, 0.0 = random void
+        // 3. Funnel Ratio: var(early_positions) / var(late_positions)
+        //    Wide mouth → narrow core = druggable funnel
+        //
+        // Final: Cobb_Douglas_Score × (coherence × log(1 + funnel_ratio))
+        // ══════════════════════════════════════════════════════════════
+        {
+            for site in clustered_sites.iter_mut() {
+                if site.spike_indices.len() < 50 { continue; }
+
+                // Collect local spikes sorted by timestep
+                let mut local_spikes: Vec<(i32, [f32; 3])> = site.spike_indices.iter()
+                    .take(5000)
+                    .filter_map(|&idx| all_stream_spikes.get(idx))
+                    .map(|s| (s.timestep, s.position))
+                    .collect();
+                local_spikes.sort_by_key(|&(ts, _)| ts);
+
+                let n = local_spikes.len();
+                if n < 30 { continue; }
+                let cutoff = (n as f32 * 0.20) as usize;
+                if cutoff < 5 { continue; }
+
+                // 1. Kinetic funnel: entry (early 20%) and anchor (late 20%)
+                let (early, late) = (&local_spikes[..cutoff], &local_spikes[n - cutoff..]);
+
+                let com_entry = {
+                    let mut s = [0.0f64; 3];
+                    for &(_, p) in early { s[0] += p[0] as f64; s[1] += p[1] as f64; s[2] += p[2] as f64; }
+                    let n = early.len() as f64;
+                    [(s[0]/n) as f32, (s[1]/n) as f32, (s[2]/n) as f32]
+                };
+                let com_anchor = {
+                    let mut s = [0.0f64; 3];
+                    for &(_, p) in late { s[0] += p[0] as f64; s[1] += p[1] as f64; s[2] += p[2] as f64; }
+                    let n = late.len() as f64;
+                    [(s[0]/n) as f32, (s[1]/n) as f32, (s[2]/n) as f32]
+                };
+
+                // Ligand approach vector
+                let v_path = [
+                    com_anchor[0] - com_entry[0],
+                    com_anchor[1] - com_entry[1],
+                    com_anchor[2] - com_entry[2],
+                ];
+                let path_length = (v_path[0].powi(2) + v_path[1].powi(2) + v_path[2].powi(2)).sqrt();
+                if path_length < 0.5 { continue; } // degenerate path
+
+                // 2. Wavefront coherence: Pearson(timestamp, projection onto path)
+                let mut times = Vec::with_capacity(n);
+                let mut projs = Vec::with_capacity(n);
+                for &(ts, pos) in &local_spikes {
+                    let v = [pos[0] - com_entry[0], pos[1] - com_entry[1], pos[2] - com_entry[2]];
+                    let proj = (v[0]*v_path[0] + v[1]*v_path[1] + v[2]*v_path[2]) / path_length;
+                    times.push(ts as f32);
+                    projs.push(proj);
+                }
+
+                // Pearson correlation
+                let n_f = n as f32;
+                let mean_t = times.iter().sum::<f32>() / n_f;
+                let mean_p = projs.iter().sum::<f32>() / n_f;
+                let mut cov = 0.0f32;
+                let mut var_t = 0.0f32;
+                let mut var_p = 0.0f32;
+                for i in 0..n {
+                    let dt = times[i] - mean_t;
+                    let dp = projs[i] - mean_p;
+                    cov += dt * dp;
+                    var_t += dt * dt;
+                    var_p += dp * dp;
+                }
+                let denom = (var_t * var_p).sqrt();
+                let wavefront_coherence = if denom > 1e-10 { (cov / denom).max(0.0) } else { 0.0 };
+
+                // 3. Funnel ratio: early spatial variance / late spatial variance
+                let var_early = {
+                    let mut v = 0.0f32;
+                    for &(_, p) in early {
+                        v += (p[0]-com_entry[0]).powi(2) + (p[1]-com_entry[1]).powi(2) + (p[2]-com_entry[2]).powi(2);
+                    }
+                    v / early.len() as f32
+                };
+                let var_late = {
+                    let mut v = 0.0f32;
+                    for &(_, p) in late {
+                        v += (p[0]-com_anchor[0]).powi(2) + (p[1]-com_anchor[1]).powi(2) + (p[2]-com_anchor[2]).powi(2);
+                    }
+                    v / late.len() as f32
+                };
+                let funnel_ratio = (var_early / (var_late + 0.001)).min(10.0);
+
+                // Kinetic multiplier
+                let kinetic = wavefront_coherence * (1.0 + funnel_ratio).ln();
+                let kinetic_factor = 1.0 + kinetic.clamp(0.0, 3.0); // max 4x boost
+
+                site.quality_score *= kinetic_factor;
+            }
+            log::info!("  NBL kinetic multiplier applied (wavefront coherence × funnel ratio)");
+        }
+
         // ── Step 3: Duplicate pruning ──
         // If two candidates are within 2Å of each other, keep only the
         // higher-scoring one. Reduces noise without losing coverage.
