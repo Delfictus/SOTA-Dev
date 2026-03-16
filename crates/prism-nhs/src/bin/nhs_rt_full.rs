@@ -3525,7 +3525,19 @@ fn run_multi_stream_pipeline(
         if let Some(ref analysis) = prism_therm_result {
             log::info!("[Thermo-Rerank] Applying thermodynamic quality boost...");
             for site in clustered_sites.iter_mut() {
-                if let Some(therm) = analysis.sites.iter().find(|s| s.site_id == site.cluster_id as i32) {
+                // Sub-sites (PH peaks +500, k-means +1000, dual centroid +2000)
+                // inherit their parent's thermodynamic classification.
+                // Map sub-site ID back to parent: 2XXX→XXX, 1XXX→XXX, 5XX→XX
+                let thermo_lookup_id = if site.cluster_id >= 2000 {
+                    site.cluster_id - 2000
+                } else if site.cluster_id >= 1000 {
+                    site.cluster_id - 1000
+                } else if site.cluster_id >= 500 {
+                    site.cluster_id - 500
+                } else {
+                    site.cluster_id
+                };
+                if let Some(therm) = analysis.sites.iter().find(|s| s.site_id == thermo_lookup_id as i32) {
                     let old_q = site.quality_score;
 
                     // 1. SOC criticality: tau in [1.2, 1.5] is the self-organized
