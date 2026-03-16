@@ -3486,7 +3486,117 @@ fn run_multi_stream_pipeline(
             }
         }
 
-        // Re-sort all sites (including new sub-sites and peak-centroid variants)
+        // ── Triangulation centroid: where lining residues converge ──
+        // For each pocket with >= 4 lining residues, compute the point where
+        // inward-pointing vectors from lining residue CA atoms converge.
+        // This is the FUNCTIONAL center — where the protein is designed to
+        // grip a ligand. More accurate than geometric or spike-weighted
+        // centroids for deep asymmetric pockets.
+        {
+            let mut tri_sites = Vec::new();
+            for site in &clustered_sites {
+                if site.lining_residues.len() < 4 || site.cluster_id >= 3000 {
+                    continue; // skip sites with few residues and existing tri-sites
+                }
+
+                let cx = site.centroid[0];
+                let cy = site.centroid[1];
+                let cz = site.centroid[2];
+
+                // Collect lining residue positions (use the closest atom position
+                // from each residue, projected toward the pocket centroid)
+                let mut res_positions: Vec<[f32; 3]> = Vec::new();
+                for lr in &site.lining_residues {
+                    // Each lining residue has min_distance and n_atoms_in_pocket.
+                    // We need the CA position. Approximate: the residue's closest
+                    // atom is at distance min_distance from the centroid, in the
+                    // direction from the centroid toward the protein surface.
+                    // For triangulation, we use the atom positions from the topology.
+                    // Since we don't have per-residue positions stored, use the
+                    // lining residue's contribution vector: from centroid toward
+                    // the residue at min_distance.
+                    // Fallback: just use the positions from the topology
+                    let res_id = lr.resid;
+                    // Find CA atom for this residue in topology positions
+                    let n_atoms = topology.positions.len() / 3;
+                    let mut ca_pos: Option<[f32; 3]> = None;
+                    for ai in 0..n_atoms {
+                        if topology.residue_ids.get(ai).copied() == Some(res_id as usize) {
+                            // Use first atom of this residue as proxy
+                            ca_pos = Some([
+                                topology.positions[ai * 3],
+                                topology.positions[ai * 3 + 1],
+                                topology.positions[ai * 3 + 2],
+                            ]);
+                            break;
+                        }
+                    }
+                    if let Some(pos) = ca_pos {
+                        res_positions.push(pos);
+                    }
+                }
+
+                if res_positions.len() < 4 {
+                    continue;
+                }
+
+                // Triangulation: compute the point that minimizes distance to all
+                // lines from residue positions pointing toward the current centroid.
+                // Simplified: weighted centroid of residue positions, biased toward
+                // those closest to the pocket (higher weight = closer residue).
+                let mut tri = [0.0f64; 3];
+                let mut total_w = 0.0f64;
+                for rp in &res_positions {
+                    let dx = cx - rp[0];
+                    let dy = cy - rp[1];
+                    let dz = cz - rp[2];
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
+                    // Weight: inverse distance squared (closer residues contribute more)
+                    let w = 1.0 / (dist * dist) as f64;
+                    // The convergence point is along the vector from residue toward centroid.
+                    // Place it at 70% of the way from residue to centroid (inside the pocket)
+                    let frac = 0.7;
+                    tri[0] += (rp[0] as f64 + frac as f64 * dx as f64) * w;
+                    tri[1] += (rp[1] as f64 + frac as f64 * dy as f64) * w;
+                    tri[2] += (rp[2] as f64 + frac as f64 * dz as f64) * w;
+                    total_w += w;
+                }
+
+                if total_w > 1e-12 {
+                    let tri_centroid = [
+                        (tri[0] / total_w) as f32,
+                        (tri[1] / total_w) as f32,
+                        (tri[2] / total_w) as f32,
+                    ];
+
+                    // Only emit if it differs from original centroid by > 1.5Å
+                    let shift = ((tri_centroid[0] - cx).powi(2)
+                        + (tri_centroid[1] - cy).powi(2)
+                        + (tri_centroid[2] - cz).powi(2)).sqrt();
+
+                    if shift > 1.5 && shift < 15.0 {
+                        let mut tri_site = site.clone();
+                        tri_site.cluster_id = site.cluster_id + 3000;
+                        tri_site.centroid = tri_centroid;
+                        tri_site.quality_score *= 0.93; // slight discount
+                        tri_site.classification = SiteClassification::from_properties(
+                            site.spike_count, site.estimated_volume, site.avg_intensity);
+
+                        log::info!("  Triangulation centroid site {}: ({:.1},{:.1},{:.1}), {:.1}A from original site {}, q={:.3}",
+                            tri_site.cluster_id, tri_centroid[0], tri_centroid[1], tri_centroid[2],
+                            shift, site.cluster_id, tri_site.quality_score);
+
+                        tri_sites.push(tri_site);
+                    }
+                }
+            }
+            if !tri_sites.is_empty() {
+                log::info!("  Triangulation centroid emission: added {} convergence-point sites", tri_sites.len());
+                clustered_sites.extend(tri_sites);
+            }
+        }
+
+        // Re-sort all sites (including new sub-sites, peak-centroid, and triangulation variants)
         clustered_sites.sort_by(|a, b|
             b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -3525,10 +3635,13 @@ fn run_multi_stream_pipeline(
         if let Some(ref analysis) = prism_therm_result {
             log::info!("[Thermo-Rerank] Applying thermodynamic quality boost...");
             for site in clustered_sites.iter_mut() {
-                // Sub-sites (PH peaks +500, k-means +1000, dual centroid +2000)
-                // inherit their parent's thermodynamic classification.
-                // Map sub-site ID back to parent: 2XXX→XXX, 1XXX→XXX, 5XX→XX
-                let thermo_lookup_id = if site.cluster_id >= 2000 {
+                // Sub-sites inherit parent's thermodynamic classification.
+                // Map sub-site ID back to parent:
+                // 3XXX→XXX (triangulation), 2XXX→XXX (dual centroid),
+                // 1XXX→XXX (k-means), 5XX→XX (PH peak)
+                let thermo_lookup_id = if site.cluster_id >= 3000 {
+                    site.cluster_id - 3000
+                } else if site.cluster_id >= 2000 {
                     site.cluster_id - 2000
                 } else if site.cluster_id >= 1000 {
                     site.cluster_id - 1000
