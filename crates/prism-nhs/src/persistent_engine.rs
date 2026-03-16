@@ -1091,6 +1091,17 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Enable spike-guided adaptive bias: closed-loop UV energy modulation
+    /// driven by real-time spike activity in each voxel region.
+    pub fn set_adaptive_bias(&mut self, enabled: bool) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_adaptive_bias(enabled);
+            Ok(())
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
     /// Set fused multi-step: N AMBER steps per 1 multi-LIF observation.
     pub fn set_fused_inner_steps(&mut self, n: u32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {
@@ -1214,6 +1225,19 @@ impl PersistentNhsEngine {
     pub fn set_spike_accumulation(&mut self, enabled: bool) {
         if let Some(ref mut engine) = self.engine {
             engine.set_spike_accumulation(enabled);
+        }
+    }
+
+    /// Adapt internal protocol parameters based on measured cold-hold spike rate.
+    ///
+    /// Delegates to `NhsAmberFusedEngine::adapt_protocol_from_spike_rate()`.
+    /// Returns the detected `FlexibilityClass`.
+    pub fn adapt_protocol_from_spike_rate(&mut self, cold_hold_steps: i32) -> crate::fused_engine::FlexibilityClass {
+        if let Some(ref mut engine) = self.engine {
+            engine.adapt_protocol_from_spike_rate(cold_hold_steps)
+        } else {
+            log::warn!("adapt_protocol_from_spike_rate called with no engine loaded");
+            crate::fused_engine::FlexibilityClass::Normal
         }
     }
 

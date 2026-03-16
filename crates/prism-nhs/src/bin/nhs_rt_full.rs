@@ -159,6 +159,21 @@ struct Args {
     #[arg(long, default_value = "false")]
     adaptive_dt: bool,
 
+    /// Adaptive cryo-thermal protocol: measure spike rate during cold_hold phase
+    /// and auto-tune remaining protocol phases based on protein flexibility.
+    /// Stiff proteins (low spike rate) get aggressive ramping + extended warm hold.
+    /// Flexible proteins (high spike rate) get faster cooling to trap open states.
+    #[arg(long, default_value = "false")]
+    adaptive_protocol: bool,
+
+    /// Spike-guided adaptive bias: closed-loop UV energy modulation driven by
+    /// real-time neuromorphic spike activity. Voxel regions with high spike rates
+    /// get boosted UV energy, creating a positive feedback loop that enhances
+    /// conformational sampling in dynamically active regions. The spikes become
+    /// the collective variable -- the protein tells the simulation where to push.
+    #[arg(long, default_value = "false")]
+    adaptive_bias: bool,
+
     /// Emit per-site spike_events.json files (large, slow to write).
     /// Off by default to save ~55s per run. Use --emit-spike-json to opt in.
     #[arg(long, default_value = "false")]
@@ -565,6 +580,13 @@ fn run_full_pipeline_internal(
         engine.set_adaptive_dt(true)?;
     }
 
+    // Apply spike-guided adaptive bias if requested
+    if args.adaptive_bias {
+        engine.set_adaptive_bias(true)?;
+        // Adaptive bias requires spike accumulation to track activity
+        engine.set_spike_accumulation(true);
+    }
+
     // Check RT clustering availability
     let has_rt = engine.has_rt_clustering();
     log::info!("  RT-core clustering: {}", if has_rt { "✓ Available" } else { "✗ Fallback mode" });
@@ -691,7 +713,27 @@ fn run_full_pipeline_internal(
                 engine.reset_for_replica(replica_seed)?;
             }
 
-            let summary = engine.run(steps_per_replica)?;
+            // Adaptive protocol: split run into cold_hold + rest, adapt between
+            let summary = if args.adaptive_protocol {
+                let cold_steps = protocol.cold_hold_steps;
+                log::info!("  [adaptive-protocol] Running cold_hold phase ({} steps)...", cold_steps);
+                let cold_summary = engine.run(cold_steps)?;
+                log::info!("  [adaptive-protocol] Cold hold complete: {} spikes in {} steps",
+                    cold_summary.total_spikes, cold_steps);
+
+                // Adapt engine parameters based on measured spike rate
+                let _flexibility = engine.adapt_protocol_from_spike_rate(cold_steps);
+
+                // Run remaining steps with adapted parameters
+                let remaining = steps_per_replica - cold_steps;
+                if remaining > 0 {
+                    engine.run(remaining)?
+                } else {
+                    cold_summary
+                }
+            } else {
+                engine.run(steps_per_replica)?
+            };
 
             // Collect spikes from this replica
             let replica_spikes = engine.get_accumulated_spikes();
@@ -1275,6 +1317,26 @@ fn run_full_pipeline_internal(
                     // Override heuristic classification if PRISM-Therm says CRYPTIC
                     if therm_site.therm_class.to_string() == "CRYPTIC" {
                         site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
+                    }
+                    // TIDE coupling score for single-structure path
+                    if !therm_site.tide_decomposition.is_empty() {
+                        if let Some(site_ref) = clustered_sites.iter().find(|s| s.cluster_id == site_id) {
+                            let trigger_residues: std::collections::HashSet<i32> = therm_site.tide_decomposition.iter()
+                                .take(5)
+                                .map(|t| t.residue_id as i32)
+                                .collect();
+                            let lining_ids: std::collections::HashSet<i32> = site_ref.lining_residues.iter()
+                                .map(|r| r.resid)
+                                .collect();
+                            let overlap = trigger_residues.intersection(&lining_ids).count();
+                            let tide_coupling = overlap as f32 / trigger_residues.len().max(1) as f32;
+                            site_json["tide_coupling_score"] = serde_json::json!(tide_coupling);
+                            let trigger_ids: Vec<u32> = therm_site.tide_decomposition.iter()
+                                .take(5)
+                                .map(|t| t.residue_id)
+                                .collect();
+                            site_json["tide_trigger_residues"] = serde_json::json!(trigger_ids);
+                        }
                     }
                 }
             }
@@ -2345,6 +2407,9 @@ fn run_multi_stream_pipeline(
                 let hmr_enabled = args.hmr;
                 let fused_steps = args.fused_steps;
                 let adaptive_dt = args.adaptive_dt;
+                let adaptive_bias = args.adaptive_bias;
+                let adaptive_protocol = args.adaptive_protocol;
+                let cold_hold_steps = prot.cold_hold_steps;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -2362,6 +2427,9 @@ fn run_multi_stream_pipeline(
                     if adaptive_dt {
                         engine.set_adaptive_dt(true)?;
                     }
+                    if adaptive_bias {
+                        engine.set_adaptive_bias(true)?;
+                    }
                     engine.set_cryo_uv_protocol(prot)?;
                     engine.set_spike_accumulation(true);
 
@@ -2373,7 +2441,25 @@ fn run_multi_stream_pipeline(
                     }
 
                     engine.reset_for_replica(seed)?;
-                    let summary = engine.run(steps)?;
+
+                    // Adaptive protocol: split run into cold_hold + rest, adapt between
+                    let summary = if adaptive_protocol {
+                        log::info!("    [stream {}] [adaptive-protocol] Running cold_hold ({} steps)...", i, cold_hold_steps);
+                        let cold_summary = engine.run(cold_hold_steps)?;
+                        log::info!("    [stream {}] [adaptive-protocol] Cold hold: {} spikes", i, cold_summary.total_spikes);
+
+                        let _flexibility = engine.adapt_protocol_from_spike_rate(cold_hold_steps);
+
+                        let remaining = steps - cold_hold_steps;
+                        if remaining > 0 {
+                            engine.run(remaining)?
+                        } else {
+                            cold_summary
+                        }
+                    } else {
+                        engine.run(steps)?
+                    };
+
                     let spikes = engine.get_accumulated_spikes();
                     let snapshots = engine.get_snapshots();
 
@@ -3933,8 +4019,41 @@ fn run_multi_stream_pipeline(
                             })
                             .sum();
                         let density = (total_intensity / n_sampled).ln().max(0.0) / 5.0; // log-scale
-                        // Chem = log(1 + density) * type_entropy
-                        ((1.0 + density) * (1.0 + type_entropy)).max(eps)
+                        // Chem = log(1 + density) * type_entropy * frustrated_solvent
+                        // Frustrated solvent: inline computation for Cobb-Douglas
+                        let frustrated_solvent = {
+                            let median_ts = {
+                                let mut ts_vec: Vec<i32> = spikes.iter().take(5000)
+                                    .filter_map(|&idx| all_stream_spikes.get(idx))
+                                    .map(|s| s.timestep).collect();
+                                ts_vec.sort();
+                                if !ts_vec.is_empty() { ts_vec[ts_vec.len() / 2] } else { 0 }
+                            };
+                            let mut n_frustrated = 0u32;
+                            let mut sum_wd = 0.0f32;
+                            for &idx in spikes.iter().take(5000) {
+                                if let Some(s) = all_stream_spikes.get(idx) {
+                                    let dx = s.position[0] - cx;
+                                    let dy = s.position[1] - cy;
+                                    let dz = s.position[2] - cz;
+                                    if dx*dx + dy*dy + dz*dz > chem_radius_sq { continue; }
+                                    if s.wd_change > 0.01
+                                        && s.timestep <= median_ts
+                                        && (s.spike_source == 2 || s.spike_source == 0)
+                                    {
+                                        n_frustrated += 1;
+                                        sum_wd += s.wd_change;
+                                    }
+                                }
+                            }
+                            if n_frustrated > 0 {
+                                let frac = n_frustrated as f32 / n_sampled;
+                                let mean_wd = sum_wd / n_frustrated as f32;
+                                let raw = frac * mean_wd * 100.0;
+                                1.0 / (1.0 + (-5.0 * (raw - 0.5)).exp())
+                            } else { 0.0 }
+                        };
+                        ((1.0 + density) * (1.0 + type_entropy) * (1.0 + frustrated_solvent)).max(eps)
                     } else { eps }
                 };
 
@@ -4146,6 +4265,7 @@ fn run_multi_stream_pipeline(
         // This ensures sub-sites (k-means, PH peaks, dual centroid, triangulation,
         // frustrated solvent) have genuine physics signals from their own local
         // spike cloud, not inherited parent data.
+        let mut frustrated_solvent_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
         {
             let reap_radius = 8.0f32;
             for site in clustered_sites.iter_mut() {
@@ -4157,6 +4277,13 @@ fn run_multi_stream_pipeline(
                     protocol.uv_burst_interval as i32,
                     protocol.uv_burst_duration as i32,
                 );
+
+                // Store frustrated solvent score for JSON export and log per site
+                frustrated_solvent_scores.insert(site.cluster_id, lp.frustrated_solvent_score);
+                if lp.frustrated_solvent_score > 0.01 {
+                    log::info!("  Site {}: frustrated_solvent_score={:.4} (n_local={})",
+                        site.cluster_id, lp.frustrated_solvent_score, lp.n_local_spikes);
+                }
 
                 // Recompute v7-style quality_score from local physics
                 if lp.n_local_spikes >= 20 {
@@ -4172,18 +4299,20 @@ fn run_multi_stream_pipeline(
                     // We'll do a two-pass: first collect all wd variances, then normalize.
                     // For now store raw; second pass below.
                     site.quality_score =
-                        0.20 * lp.burial_score +
-                        0.16 * lp.lining_score +
-                        0.14 * lp.log_spike_norm +
+                        0.18 * lp.burial_score +
+                        0.14 * lp.lining_score +
+                        0.12 * lp.log_spike_norm +
                         0.10 * encl.clamp(0.0, 2.0) / 2.0 +
+                        0.08 * lp.frustrated_solvent_score +  // ΔG_solvation proxy
                         0.08 * lp.onset_score +
                         0.06 * lp.uv_enrichment +
                         0.06 * lp.sphericity +
                         0.06 * (lp.per_spike_quality * 2.0).clamp(0.0, 1.0) +
                         0.04 * lp.source_diversity +
-                        0.04 * lp.breathing_score +
-                        0.04 * lp.wd_coherence.min(1.0) + // raw variance capped at 1.0
-                        0.02 * (lp.source_entropy / 1.1).clamp(0.0, 1.0);
+                        0.02 * lp.breathing_score +
+                        0.02 * lp.wd_coherence.min(1.0) + // raw variance capped at 1.0
+                        0.02 * (lp.source_entropy / 1.1).clamp(0.0, 1.0) +
+                        0.02 * 0.0; // reserved
                 }
                 // Sites with < 20 local spikes keep their inherited score
             }
@@ -4284,19 +4413,51 @@ fn run_multi_stream_pipeline(
                         ThermClass::Inert    => 0.1,
                     };
 
+                    // 4. TIDE coupling score: measures overlap between the
+                    //    top-5 TIDE trigger residues (highest transfer entropy)
+                    //    and the site's lining residues. When the residues that
+                    //    CAUSE pocket opening ARE the residues that LINE the
+                    //    pocket, the site is mechanistically coupled to the
+                    //    protein's dynamics — a strong indicator of functional
+                    //    binding. Score in [0.0, 1.0].
+                    let tide_coupling_score = if !therm.tide_decomposition.is_empty() {
+                        let trigger_residues: std::collections::HashSet<i32> = therm.tide_decomposition.iter()
+                            .take(5)
+                            .map(|t| t.residue_id as i32)
+                            .collect();
+                        let lining_ids: std::collections::HashSet<i32> = site.lining_residues.iter()
+                            .map(|r| r.resid)
+                            .collect();
+                        let overlap = trigger_residues.intersection(&lining_ids).count();
+                        overlap as f32 / trigger_residues.len().max(1) as f32
+                    } else {
+                        0.0_f32
+                    };
+
+                    // FUTURE: Feed TIDE trigger residues back into the simulation as
+                    // enhanced sampling targets. Apply additional UV energy to aromatics
+                    // near trigger residues. This creates a TIDE-guided adaptive
+                    // sampling protocol where the simulation focuses on the residues
+                    // that CAUSE pocket opening — a collective variable feedback loop
+                    // driven by transfer entropy.
+
                     // Multiplicative thermodynamic boost: weight search found
                     // hysteresis is 3rd most important feature (0.18 weight).
                     // Previous 20% max was insufficient. Increased to 40% max
                     // with asymmetry weighted 2x vs tau and class (asymmetry
                     // is the strongest thermodynamic discriminator).
+                    // TIDE coupling adds a 5th signal: sites where trigger
+                    // residues overlap with lining residues get an additional
+                    // mechanistic boost (up to +10% quality).
                     let thermo_avg = (tau_q + 2.0 * asym_q + class_q) / 4.0;
-                    let thermo_factor = 1.0 + 0.40 * thermo_avg;
+                    let tide_boost = 0.10 * tide_coupling_score;
+                    let thermo_factor = 1.0 + 0.40 * thermo_avg + tide_boost;
                     site.quality_score = old_q * thermo_factor;
 
-                    log::info!("  Site {}: thermo-rerank {:.3}->{:.3} [tau={:.2}→q={:.2} z={:.2}→q={:.2} class={}→q={:.2}]",
+                    log::info!("  Site {}: thermo-rerank {:.3}->{:.3} [tau={:.2}→q={:.2} z={:.2}→q={:.2} class={}→q={:.2} tide={:.2}]",
                         site.cluster_id, old_q, site.quality_score,
                         therm.tau, tau_q, therm.relative_asymmetry, asym_q,
-                        therm.therm_class, class_q);
+                        therm.therm_class, class_q, tide_coupling_score);
                 }
             }
         }
@@ -4376,6 +4537,30 @@ fn run_multi_stream_pipeline(
                     if therm_site.therm_class.to_string() == "CRYPTIC" {
                         site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
                     }
+                    // TIDE coupling score: overlap of top-5 trigger residues with lining residues.
+                    // Exported per-site for downstream analysis and explicit solvent validation.
+                    if !therm_site.tide_decomposition.is_empty() {
+                        // Look up the site from reordered_sites by matching cluster_id
+                        let site_cluster_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
+                        if let Some(site_ref) = reordered_sites.iter().find(|s| s.cluster_id == site_cluster_id) {
+                            let trigger_residues: std::collections::HashSet<i32> = therm_site.tide_decomposition.iter()
+                                .take(5)
+                                .map(|t| t.residue_id as i32)
+                                .collect();
+                            let lining_ids: std::collections::HashSet<i32> = site_ref.lining_residues.iter()
+                                .map(|r| r.resid)
+                                .collect();
+                            let overlap = trigger_residues.intersection(&lining_ids).count();
+                            let tide_coupling = overlap as f32 / trigger_residues.len().max(1) as f32;
+                            site_json["tide_coupling_score"] = serde_json::json!(tide_coupling);
+                            // Export trigger residue IDs for downstream analysis
+                            let trigger_ids: Vec<u32> = therm_site.tide_decomposition.iter()
+                                .take(5)
+                                .map(|t| t.residue_id)
+                                .collect();
+                            site_json["tide_trigger_residues"] = serde_json::json!(trigger_ids);
+                        }
+                    }
                 }
             }
         }
@@ -4387,6 +4572,9 @@ fn run_multi_stream_pipeline(
                 site_json["sphericity"] = serde_json::json!(sph);
                 site_json["wd_coherence"] = serde_json::json!(wdc);
                 site_json["breathing_score"] = serde_json::json!(breath);
+            }
+            if let Some(&fs_score) = frustrated_solvent_scores.get(&site_id) {
+                site_json["frustrated_solvent_score"] = serde_json::json!(fs_score);
             }
         }
 
@@ -5132,6 +5320,7 @@ struct LocalPhysics {
     n_local_spikes: usize,
     log_spike_norm: f32,
     lining_score: f32,
+    frustrated_solvent_score: f32,  // ΔG_solvation proxy
 }
 
 /// Compute physics signals for a site centroid from the LOCAL spike cloud.
@@ -5166,6 +5355,7 @@ fn compute_local_physics(
             source_entropy: 0.0, sphericity: 0.0, wd_coherence: 0.0,
             breathing_score: 0.0, uv_enrichment: 0.0, per_spike_quality: 0.0,
             n_local_spikes: 0, log_spike_norm: 0.0, lining_score: 0.0,
+            frustrated_solvent_score: 0.0,
         };
     }
 
@@ -5346,6 +5536,38 @@ fn compute_local_physics(
     // ── Lining score: sigmoid(n_lining, center=12, slope=0.3) ──
     let lining_score = 1.0 / (1.0 + (-0.3 * (n_lining as f32 - 12.0)).exp());
 
+    // ── Frustrated solvent score: ΔG_solvation proxy ──
+    // High score = many frustrated water molecules displaced early in the simulation.
+    // Frustrated water = significant wd_change at early timesteps via LIF/dewetting channel.
+    // These are water molecules being displaced from energetically unfavorable hydration sites.
+    let frustrated_solvent_score = {
+        let median_ts = if !local_spikes.is_empty() {
+            let mut ts: Vec<i32> = local_spikes.iter().map(|s| s.timestep).collect();
+            ts.sort();
+            ts[ts.len() / 2]
+        } else { 0 };
+
+        let frustrated: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = local_spikes.iter()
+            .copied()
+            .filter(|s| {
+                s.wd_change > 0.01           // significant water displacement
+                && s.timestep <= median_ts     // early onset (low barrier)
+                && (s.spike_source == 2 || s.spike_source == 0) // LIF/dewetting
+            })
+            .collect();
+
+        if n >= 10 {
+            let frac = frustrated.len() as f32 / n as f32;
+            let mean_wd: f32 = if !frustrated.is_empty() {
+                frustrated.iter().map(|s| s.wd_change).sum::<f32>() / frustrated.len() as f32
+            } else { 0.0 };
+            // Score = fraction of frustrated spikes × mean displacement magnitude
+            // Sigmoid normalize to [0, 1]
+            let raw = frac * mean_wd * 100.0;
+            1.0 / (1.0 + (-5.0 * (raw - 0.5)).exp())
+        } else { 0.0 }
+    };
+
     LocalPhysics {
         burial_score,
         onset_score,
@@ -5359,6 +5581,7 @@ fn compute_local_physics(
         n_local_spikes: n,
         log_spike_norm,
         lining_score,
+        frustrated_solvent_score,
     }
 }
 

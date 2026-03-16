@@ -171,7 +171,7 @@ pub use gpu::{NhsGpuEngine, FrameResult, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING}
 pub use fused_engine::{
     NhsAmberFusedEngine,
     // Unified cryo-UV protocol (canonical method)
-    CryoUvProtocol, CryoPhase,
+    CryoUvProtocol, CryoPhase, FlexibilityClass,
     // Deprecated (use CryoUvProtocol instead)
     TemperatureProtocol,
     UvProbeConfig,

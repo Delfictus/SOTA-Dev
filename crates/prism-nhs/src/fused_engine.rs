@@ -296,6 +296,37 @@ pub enum CryoPhase {
     ColdReturn,
 }
 
+/// Protein flexibility classification based on cold-hold spike rate.
+///
+/// During the cold_hold phase (constant low temperature), the spike rate
+/// reveals intrinsic protein flexibility:
+/// - Stiff proteins (kinases, large multi-domain) produce few spikes at cold T
+/// - Flexible proteins (small single-domain) spike readily even at cold T
+///
+/// Used by `--adaptive-protocol` to tune remaining thermal cycling phases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlexibilityClass {
+    /// Low spike rate (<1.0/step) — needs aggressive ramping and extended warm hold
+    Stiff,
+    /// Normal spike rate (1.0–5.0/step) — standard protocol is appropriate
+    Normal,
+    /// High spike rate (>5.0/step) — faster cooling to trap open states
+    Flexible,
+}
+
+impl FlexibilityClass {
+    /// Classify from measured spike rate during cold_hold phase.
+    pub fn from_spike_rate(rate: f32) -> Self {
+        if rate < 1.0 {
+            FlexibilityClass::Stiff
+        } else if rate < 5.0 {
+            FlexibilityClass::Normal
+        } else {
+            FlexibilityClass::Flexible
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CryoUvProtocol {
     // Temperature protocol
@@ -1639,6 +1670,26 @@ pub struct NhsAmberFusedEngine {
     ultimate_engine: Option<UltimateEngine>,
     /// Current optimization level
     optimization_level: OptimizationLevel,
+
+    // ====================================================================
+    // SPIKE-GUIDED ADAPTIVE BIAS (opt-in via --adaptive-bias)
+    // ====================================================================
+    /// Enable closed-loop adaptive biasing driven by spike activity
+    adaptive_bias_enabled: bool,
+    /// Per-voxel accumulated spike intensity [grid_dim^3]
+    spike_activity_map: Vec<f32>,
+    /// Per-aromatic UV energy multiplier [n_aromatics], updated from activity map
+    adaptive_bias_multipliers: Vec<f32>,
+    /// How often (in steps) to update bias from activity map
+    adaptive_bias_update_interval: i32,
+    /// Exponential decay factor applied to activity map each update (0.7 = 30% decay)
+    adaptive_bias_decay: f32,
+    /// UV energy boost factor for aromatics near high-activity voxels
+    adaptive_bias_boost: f32,
+    /// Percentile threshold for "high activity" voxels (90 = top 10%)
+    adaptive_bias_percentile: f32,
+    /// Total number of aromatic boost events (diagnostic counter)
+    adaptive_bias_total_boosts: u64,
 }
 
 #[cfg(feature = "gpu")]
@@ -2321,6 +2372,16 @@ impl NhsAmberFusedEngine {
             stream_pool: Vec::new(),
             replica_states: Vec::new(),
             n_parallel_streams: 0,
+
+            // Spike-guided adaptive bias (disabled by default, --adaptive-bias)
+            adaptive_bias_enabled: false,
+            spike_activity_map: vec![0.0f32; total_voxels],
+            adaptive_bias_multipliers: vec![1.0f32; n_aromatics.max(1)],
+            adaptive_bias_update_interval: 2000,
+            adaptive_bias_decay: 0.7,
+            adaptive_bias_boost: 1.5,
+            adaptive_bias_percentile: 90.0,
+            adaptive_bias_total_boosts: 0u64,
         };
 
         // Upload all data to GPU
@@ -2365,6 +2426,31 @@ impl NhsAmberFusedEngine {
         log::info!("Adaptive dt: {} (base={:.4}ps, hold={:.4}ps)",
             if enabled { "ENABLED" } else { "disabled" },
             self.base_dt, self.base_dt * 1.5);
+    }
+
+    /// Enable spike-guided adaptive bias: closed-loop UV energy modulation driven
+    /// by real-time spike activity. When enabled, voxel regions with high spike
+    /// rates get boosted UV energy, creating a positive feedback loop that enhances
+    /// conformational sampling in dynamically active regions.
+    pub fn set_adaptive_bias(&mut self, enabled: bool) {
+        self.adaptive_bias_enabled = enabled;
+        if enabled {
+            // Reset activity map and multipliers
+            self.spike_activity_map.iter_mut().for_each(|v| *v = 0.0);
+            self.adaptive_bias_multipliers.iter_mut().for_each(|v| *v = 1.0);
+            self.adaptive_bias_total_boosts = 0;
+            // Adaptive bias REQUIRES spike accumulation to track activity
+            if !self.accumulate_spikes {
+                self.accumulate_spikes = true;
+                log::info!("Spike accumulation auto-enabled (required by adaptive bias)");
+            }
+        }
+        log::info!("Spike-guided adaptive bias: {} (update every {} steps, boost={:.1}x, decay={:.1}, percentile={:.0})",
+            if enabled { "ENABLED" } else { "disabled" },
+            self.adaptive_bias_update_interval,
+            self.adaptive_bias_boost,
+            self.adaptive_bias_decay,
+            self.adaptive_bias_percentile);
     }
 
     /// Set fused multi-step count: run N AMBER steps per 1 multi-LIF observation.
@@ -3542,7 +3628,8 @@ impl NhsAmberFusedEngine {
             -1
         };
         let uv_burst_energy = if uv_burst_active {
-            self.compute_uv_energy(self.uv_config.burst_energy, current_temp)
+            let base = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
+            self.compute_adaptive_uv_energy(base, self.uv_config.current_target)
         } else {
             0.0
         };
@@ -3953,7 +4040,9 @@ impl NhsAmberFusedEngine {
         // Determine UV burst state and parameters
         let uv_burst_active = self.uv_config.is_burst_active();
         let uv_target_idx = self.uv_config.get_target_idx().unwrap_or(0) as i32;
-        let uv_burst_energy = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
+        let base_uv_energy = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
+        // Apply spike-guided adaptive bias: boost UV for aromatics near high-activity voxels
+        let uv_burst_energy = self.compute_adaptive_uv_energy(base_uv_energy, self.uv_config.current_target);
         let uv_wavelength_nm = self.uv_config.current_wavelength();  // GPU wavelength-dependent σ(λ)
 
         // Track last UV burst timestep for spike quality scoring
@@ -4445,6 +4534,13 @@ impl NhsAmberFusedEngine {
                 }
             }
 
+            // ================================================================
+            // SPIKE-GUIDED ADAPTIVE BIAS UPDATE
+            // ================================================================
+            if self.adaptive_bias_enabled && spikes > 0 {
+                self.update_adaptive_bias_from_spikes(spikes)?;
+            }
+
             // Reset spike count for next sync interval
             // This must happen AFTER we've read the spike count to preserve accumulated spikes
             let zero = [0i32];
@@ -4498,7 +4594,9 @@ impl NhsAmberFusedEngine {
             let uv_burst_active_i32 = if uv_burst_active { 1i32 } else { 0i32 };
             let uv_target_idx = self.uv_config.current_target as i32;
             let uv_burst_energy = if uv_burst_active {
-                self.compute_uv_energy(self.uv_config.burst_energy, current_temp)
+                let base = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
+                // Apply spike-guided adaptive bias multiplier
+                self.compute_adaptive_uv_energy(base, self.uv_config.current_target)
             } else {
                 0.0
             };
@@ -5045,6 +5143,148 @@ impl NhsAmberFusedEngine {
         log::info!("Spike accumulation: {}", if enabled { "ENABLED" } else { "disabled" });
     }
 
+    // ========================================================================
+    // SPIKE-GUIDED ADAPTIVE BIAS: internal methods
+    // ========================================================================
+
+    /// Update adaptive bias state from recently downloaded spikes.
+    /// Called at each sync point (every 1000 steps) when adaptive bias is enabled.
+    ///
+    /// Algorithm:
+    /// 1. Accumulate spike intensities into per-voxel activity map
+    /// 2. Every `adaptive_bias_update_interval` steps, recompute per-aromatic
+    ///    energy multipliers: aromatics near high-activity voxels get boosted UV
+    /// 3. Decay the activity map (exponential moving average)
+    fn update_adaptive_bias_from_spikes(&mut self, n_spikes: usize) -> Result<()> {
+        // Step 1: Accumulate spike positions into activity map from recently
+        // accumulated spikes (use the tail of accumulated_spikes)
+        let total_accumulated = self.accumulated_spikes.len();
+        let recent_start = total_accumulated.saturating_sub(n_spikes);
+        for spike in &self.accumulated_spikes[recent_start..] {
+            let voxel = spike.voxel_idx as usize;
+            if voxel < self.spike_activity_map.len() {
+                self.spike_activity_map[voxel] += spike.intensity.abs().max(0.01);
+            }
+        }
+
+        // Step 2: Periodically recompute per-aromatic multipliers
+        if self.timestep % self.adaptive_bias_update_interval == 0 && self.timestep > 0 {
+            self.recompute_adaptive_bias_multipliers()?;
+        }
+
+        Ok(())
+    }
+
+    /// Recompute per-aromatic UV energy multipliers from the activity map.
+    /// Aromatics whose centroids fall in high-activity voxels get boosted energy.
+    fn recompute_adaptive_bias_multipliers(&mut self) -> Result<()> {
+        let total_voxels = self.spike_activity_map.len();
+        if total_voxels == 0 || self.n_aromatics == 0 {
+            return Ok(());
+        }
+
+        // Compute activity threshold at the configured percentile
+        let threshold = {
+            let mut sorted: Vec<f32> = self.spike_activity_map.iter()
+                .copied()
+                .filter(|&v| v > 0.0)
+                .collect();
+            if sorted.is_empty() {
+                // No activity at all — reset multipliers to 1.0
+                self.adaptive_bias_multipliers.iter_mut().for_each(|v| *v = 1.0);
+                return Ok(());
+            }
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let idx = ((self.adaptive_bias_percentile / 100.0) * sorted.len() as f32) as usize;
+            let idx = idx.min(sorted.len() - 1);
+            sorted[idx]
+        };
+
+        // Download current aromatic centroid positions from GPU
+        let mut centroids_host = vec![0.0f32; self.n_aromatics * 3];
+        self.stream.synchronize()?;
+        self.stream.memcpy_dtoh(&self.d_aromatic_centroids, &mut centroids_host)?;
+
+        let grid_dim = self.grid_dim;
+        let grid_spacing = self.grid_spacing;
+        let origin = self.grid_origin;
+        let mut n_boosted = 0usize;
+
+        // For each aromatic, check if its centroid is near a high-activity voxel
+        for arom_idx in 0..self.n_aromatics {
+            let cx = centroids_host[arom_idx * 3];
+            let cy = centroids_host[arom_idx * 3 + 1];
+            let cz = centroids_host[arom_idx * 3 + 2];
+
+            // Convert position to voxel indices
+            let vx = ((cx - origin[0]) / grid_spacing) as i32;
+            let vy = ((cy - origin[1]) / grid_spacing) as i32;
+            let vz = ((cz - origin[2]) / grid_spacing) as i32;
+
+            // Check 3x3x3 neighborhood around the aromatic centroid
+            let mut max_activity = 0.0f32;
+            for dz in -1..=1i32 {
+                for dy in -1..=1i32 {
+                    for dx in -1..=1i32 {
+                        let nx = vx + dx;
+                        let ny = vy + dy;
+                        let nz = vz + dz;
+                        if nx >= 0 && nx < grid_dim as i32
+                            && ny >= 0 && ny < grid_dim as i32
+                            && nz >= 0 && nz < grid_dim as i32
+                        {
+                            let vidx = (nz as usize) * grid_dim * grid_dim
+                                + (ny as usize) * grid_dim
+                                + (nx as usize);
+                            max_activity = max_activity.max(self.spike_activity_map[vidx]);
+                        }
+                    }
+                }
+            }
+
+            // Apply boost if activity exceeds threshold
+            if max_activity > threshold {
+                self.adaptive_bias_multipliers[arom_idx] = self.adaptive_bias_boost;
+                n_boosted += 1;
+            } else {
+                // Smoothly decay back to 1.0 (don't snap to 1.0 instantly)
+                let current = self.adaptive_bias_multipliers[arom_idx];
+                self.adaptive_bias_multipliers[arom_idx] = 1.0 + (current - 1.0) * 0.5;
+            }
+        }
+
+        self.adaptive_bias_total_boosts += n_boosted as u64;
+
+        // Decay the activity map
+        for v in self.spike_activity_map.iter_mut() {
+            *v *= self.adaptive_bias_decay;
+        }
+
+        if n_boosted > 0 {
+            log::info!("[ADAPTIVE-BIAS] step={}: boosted {}/{} aromatics (threshold={:.3}, total_boosts={})",
+                self.timestep, n_boosted, self.n_aromatics, threshold,
+                self.adaptive_bias_total_boosts);
+        } else {
+            log::debug!("[ADAPTIVE-BIAS] step={}: no aromatics above threshold {:.3} (map decayed)",
+                self.timestep, threshold);
+        }
+
+        Ok(())
+    }
+
+    /// Compute UV energy for a specific aromatic target, including adaptive bias.
+    /// Returns `base_energy * adaptive_multiplier` if bias is enabled, else `base_energy`.
+    fn compute_adaptive_uv_energy(&self, base_energy: f32, target_idx: usize) -> f32 {
+        if !self.adaptive_bias_enabled {
+            return base_energy;
+        }
+        if target_idx < self.adaptive_bias_multipliers.len() {
+            base_energy * self.adaptive_bias_multipliers[target_idx]
+        } else {
+            base_energy
+        }
+    }
+
     /// Get accumulated spike events
     ///
     /// Returns all spike events accumulated since the last clear.
@@ -5056,6 +5296,68 @@ impl NhsAmberFusedEngine {
     /// Clear accumulated spike events
     pub fn clear_accumulated_spikes(&mut self) {
         self.accumulated_spikes.clear();
+    }
+
+    /// Adapt internal protocol parameters based on measured cold-hold spike rate.
+    ///
+    /// Called after the cold_hold phase completes (when `--adaptive-protocol` is enabled).
+    /// Measures the spike rate from the cold_hold phase and adjusts the remaining
+    /// protocol parameters (ramp rate, warm hold duration, UV energy) to match
+    /// the protein's intrinsic flexibility.
+    ///
+    /// Returns the detected `FlexibilityClass` for logging.
+    pub fn adapt_protocol_from_spike_rate(&mut self, cold_hold_steps: i32) -> FlexibilityClass {
+        let spike_count = self.accumulated_spikes.len();
+        let spike_rate = if cold_hold_steps > 0 {
+            spike_count as f32 / cold_hold_steps as f32
+        } else {
+            0.0
+        };
+
+        let flexibility = FlexibilityClass::from_spike_rate(spike_rate);
+
+        match flexibility {
+            FlexibilityClass::Stiff => {
+                // Stiff protein: needs more aggressive ramping to open pockets
+                // Reduce ramp steps (reach warm T faster): ramp_steps *= 0.7
+                let old_ramp = self.temp_protocol.ramp_steps;
+                self.temp_protocol.ramp_steps = (old_ramp as f32 * 0.7) as i32;
+
+                // Extend warm hold for more sampling: hold_steps *= 1.3
+                let old_hold = self.temp_protocol.hold_steps;
+                self.temp_protocol.hold_steps = (old_hold as f32 * 1.3) as i32;
+
+                // Increase UV energy by 1.5x to drive stronger aromatic excitation
+                let old_uv = self.uv_config.burst_energy;
+                self.uv_config.burst_energy = old_uv * 1.5;
+
+                log::info!("  Adaptive protocol: spike_rate={:.2}/step -> {:?} class", spike_rate, flexibility);
+                log::info!("  Adjusted (STIFF): ramp {} -> {}, warm_hold {} -> {}, uv_energy {:.1} -> {:.1}",
+                    old_ramp, self.temp_protocol.ramp_steps,
+                    old_hold, self.temp_protocol.hold_steps,
+                    old_uv, self.uv_config.burst_energy);
+            }
+            FlexibilityClass::Normal => {
+                // Normal protein: keep standard parameters, just log
+                log::info!("  Adaptive protocol: spike_rate={:.2}/step -> {:?} class (no adjustment)", spike_rate, flexibility);
+            }
+            FlexibilityClass::Flexible => {
+                // Flexible protein: faster cooling to trap open states
+                // Standard ramp rate (already sufficient)
+                // Reduce warm hold (already enough sampling): hold_steps *= 0.8
+                let old_hold = self.temp_protocol.hold_steps;
+                self.temp_protocol.hold_steps = (old_hold as f32 * 0.8) as i32;
+
+                // NOTE: ramp_down is stored on CryoUvProtocol, not on TemperatureProtocol.
+                // The engine doesn't directly track ramp_down_steps internally,
+                // so we log the recommendation for the caller.
+                log::info!("  Adaptive protocol: spike_rate={:.2}/step -> {:?} class", spike_rate, flexibility);
+                log::info!("  Adjusted (FLEXIBLE): warm_hold {} -> {} (recommend ramp_down *= 0.7 externally)",
+                    old_hold, self.temp_protocol.hold_steps);
+            }
+        }
+
+        flexibility
     }
 
     /// Reset engine state for a new replica
@@ -5071,6 +5373,13 @@ impl NhsAmberFusedEngine {
         // Clear accumulated data
         self.accumulated_spikes.clear();
         self.ensemble_snapshots.clear();
+
+        // Reset adaptive bias state for new replica
+        if self.adaptive_bias_enabled {
+            self.spike_activity_map.iter_mut().for_each(|v| *v = 0.0);
+            self.adaptive_bias_multipliers.iter_mut().for_each(|v| *v = 1.0);
+            self.adaptive_bias_total_boosts = 0;
+        }
 
         // Re-initialize GPU RNG with new seed (affects Langevin noise in kernels)
         self.init_rng(seed)?;
