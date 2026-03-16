@@ -2204,6 +2204,7 @@ fn run_multi_stream_pipeline(
     use cudarc::driver::CudaContext;
     use cudarc::nvrtc::Ptx;
     use std::path::Path;
+    use prism_nhs::SiteClassification;
 
     let total_start = Instant::now();
 
@@ -2595,8 +2596,10 @@ fn run_multi_stream_pipeline(
                 ph_elapsed.as_secs_f64() * 1000.0
             );
 
-            // Refine LIGSITE centroids: for each site, find nearest PH peak within 5A
-            let ph_refine_radius = 5.0f32;
+            // Refine LIGSITE centroids: for each site, find nearest PH peak within 8A
+            // Extended from 5A to 8A to capture near-miss centroids that are offset
+            // from the density peak by more than one pocket radius.
+            let ph_refine_radius = 8.0f32;
             let mut refined_count = 0usize;
             for site in clustered_sites.iter_mut() {
                 let mut best_dist = f32::MAX;
@@ -2630,6 +2633,53 @@ fn run_multi_stream_pipeline(
                 refined_count,
                 clustered_sites.len()
             );
+
+            // ── PH peak site emission: create additional site candidates at PH density peaks ──
+            // For each significant PH peak, if any LIGSITE site is within 10A,
+            // emit an ADDITIONAL site at the PH peak location. This captures
+            // density maxima that are offset from LIGSITE geometric centroids.
+            let mut ph_new_sites: Vec<ClusteredBindingSite> = Vec::new();
+            let max_cluster_id = clustered_sites.iter().map(|s| s.cluster_id).max().unwrap_or(0);
+            let mut next_ph_id = max_cluster_id + 500; // PH site IDs start at +500
+
+            for ph in &significant {
+                // Find nearest LIGSITE site within 10A
+                let mut nearest_dist = f32::MAX;
+                let mut nearest_idx: Option<usize> = None;
+                for (si, site) in clustered_sites.iter().enumerate() {
+                    let dx = ph.centroid[0] - site.centroid[0];
+                    let dy = ph.centroid[1] - site.centroid[1];
+                    let dz = ph.centroid[2] - site.centroid[2];
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                    if dist < 10.0 && dist < nearest_dist {
+                        nearest_dist = dist;
+                        nearest_idx = Some(si);
+                    }
+                }
+                // Only emit if PH peak is >2A from nearest site centroid (otherwise redundant)
+                if let Some(ni) = nearest_idx {
+                    if nearest_dist > 2.0 {
+                        let parent = &clustered_sites[ni];
+                        let mut ph_site = parent.clone();
+                        ph_site.cluster_id = next_ph_id;
+                        ph_site.centroid = ph.centroid;
+                        ph_site.quality_score = parent.quality_score * 0.90;
+                        ph_site.classification = SiteClassification::Cryptic; // mark as PH-derived
+                        log::info!("  PH peak site {}: centroid ({:.1},{:.1},{:.1}), {:.1}A from site {}, q={:.3}",
+                            next_ph_id, ph.centroid[0], ph.centroid[1], ph.centroid[2],
+                            nearest_dist, parent.cluster_id, ph_site.quality_score);
+                        next_ph_id += 1;
+                        ph_new_sites.push(ph_site);
+                    }
+                }
+            }
+            if !ph_new_sites.is_empty() {
+                log::info!("  Cubical PH: emitted {} additional PH-peak sites", ph_new_sites.len());
+                clustered_sites.extend(ph_new_sites);
+                // Re-sort after adding PH sites
+                clustered_sites.sort_by(|a, b|
+                    b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+            }
         } else if grid_n >= 8_000_000 {
             log::warn!(
                 "  Cubical PH: grid too large ({} voxels > 8M), skipping",
@@ -3302,6 +3352,144 @@ fn run_multi_stream_pipeline(
             }));
         }
 
+        // ── K-means sub-pocket splitting for mega-pockets ──
+        // Pockets with volume > 500A^3 and > 1000 spikes often contain the
+        // binding site as a sub-region. Split into k=3 sub-sites via k-means
+        // on spike positions to surface the binding hotspot centroid.
+        {
+            let max_id_before = clustered_sites.iter().map(|s| s.cluster_id).max().unwrap_or(0);
+            let mut next_sub_id = max_id_before + 1000; // sub-site IDs start at +1000
+            let mut new_sub_sites: Vec<ClusteredBindingSite> = Vec::new();
+
+            for site in clustered_sites.iter() {
+                if site.estimated_volume <= 500.0 || site.spike_count < 1000 {
+                    continue;
+                }
+                // Collect spike positions for this site
+                let spike_positions: Vec<[f32; 3]> = site.spike_indices.iter()
+                    .filter_map(|&idx| all_stream_spikes.get(idx))
+                    .map(|s| s.position)
+                    .collect();
+
+                if spike_positions.len() < 30 {
+                    continue;
+                }
+
+                let centers = kmeans_split(&spike_positions, 3, 3);
+
+                // Count spikes per sub-cluster
+                let mut counts = [0usize; 3];
+                for p in &spike_positions {
+                    let nearest = centers.iter().enumerate()
+                        .min_by(|(_, a), (_, b)| {
+                            let da = (p[0]-a[0]).powi(2) + (p[1]-a[1]).powi(2) + (p[2]-a[2]).powi(2);
+                            let db = (p[0]-b[0]).powi(2) + (p[1]-b[1]).powi(2) + (p[2]-b[2]).powi(2);
+                            da.partial_cmp(&db).unwrap()
+                        })
+                        .map(|(i, _)| i).unwrap();
+                    counts[nearest] += 1;
+                }
+
+                let total_spikes = spike_positions.len();
+                log::info!("  K-means split site {} (vol={:.0}A^3, {} spikes) -> 3 sub-sites [{}, {}, {}]",
+                    site.cluster_id, site.estimated_volume, total_spikes,
+                    counts[0], counts[1], counts[2]);
+
+                for (ki, center) in centers.iter().enumerate() {
+                    // Skip degenerate clusters with very few spikes
+                    if counts[ki] < 10 {
+                        continue;
+                    }
+                    let spike_frac = counts[ki] as f32 / total_spikes as f32;
+                    let mut sub_site = site.clone();
+                    sub_site.cluster_id = next_sub_id;
+                    sub_site.centroid = *center;
+                    sub_site.estimated_volume = site.estimated_volume / 3.0;
+                    sub_site.spike_count = counts[ki];
+                    sub_site.quality_score = site.quality_score * spike_frac;
+                    sub_site.classification = SiteClassification::Cryptic;
+                    log::info!("    Sub-site {}: centroid ({:.1},{:.1},{:.1}), {} spikes, q={:.3}",
+                        next_sub_id, center[0], center[1], center[2],
+                        counts[ki], sub_site.quality_score);
+                    next_sub_id += 1;
+                    new_sub_sites.push(sub_site);
+                }
+            }
+            if !new_sub_sites.is_empty() {
+                log::info!("  K-means splitting: added {} sub-sites from mega-pockets", new_sub_sites.len());
+                clustered_sites.extend(new_sub_sites);
+            }
+        }
+
+        // ── Dual centroid emission: add peak-centroid variants for large pockets ──
+        // For each pocket with volume > 200A^3, emit a COPY with centroid =
+        // peak_centroid (top-50 intensity^2-weighted). The copy has slightly
+        // lower quality_score (0.95x) to avoid always beating the original.
+        {
+            let max_id_before = clustered_sites.iter().map(|s| s.cluster_id).max().unwrap_or(0);
+            let mut next_peak_id = max_id_before + 2000; // peak centroid IDs start at +2000
+            let mut peak_sites: Vec<ClusteredBindingSite> = Vec::new();
+
+            for site in clustered_sites.iter() {
+                if site.estimated_volume <= 200.0 || site.spike_indices.is_empty() {
+                    continue;
+                }
+                // Collect top 50 hottest spikes by intensity
+                let mut top_spikes: Vec<(f32, [f32; 3])> = site.spike_indices.iter()
+                    .filter_map(|&idx| all_stream_spikes.get(idx))
+                    .map(|s| (s.intensity, s.position))
+                    .collect();
+                top_spikes.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                top_spikes.truncate(50);
+
+                if top_spikes.is_empty() {
+                    continue;
+                }
+
+                let mut pw = [0.0f64; 3];
+                let mut pws = 0.0f64;
+                for &(intensity, pos) in &top_spikes {
+                    let w2 = (intensity as f64).powi(2);
+                    pw[0] += pos[0] as f64 * w2;
+                    pw[1] += pos[1] as f64 * w2;
+                    pw[2] += pos[2] as f64 * w2;
+                    pws += w2;
+                }
+                if pws < 1e-12 {
+                    continue;
+                }
+                let pc = [
+                    (pw[0] / pws) as f32,
+                    (pw[1] / pws) as f32,
+                    (pw[2] / pws) as f32,
+                ];
+                let dist = ((pc[0] - site.centroid[0]).powi(2)
+                    + (pc[1] - site.centroid[1]).powi(2)
+                    + (pc[2] - site.centroid[2]).powi(2)).sqrt();
+
+                // Only emit if peak centroid differs by > 2A from original
+                if dist > 2.0 {
+                    let mut peak_site = site.clone();
+                    peak_site.cluster_id = next_peak_id;
+                    peak_site.centroid = pc;
+                    peak_site.quality_score = site.quality_score * 0.95;
+                    peak_site.classification = SiteClassification::Cryptic;
+                    log::info!("  Dual centroid site {}: peak centroid ({:.1},{:.1},{:.1}), {:.1}A from original site {}, q={:.3}",
+                        next_peak_id, pc[0], pc[1], pc[2], dist, site.cluster_id, peak_site.quality_score);
+                    next_peak_id += 1;
+                    peak_sites.push(peak_site);
+                }
+            }
+            if !peak_sites.is_empty() {
+                log::info!("  Dual centroid emission: added {} peak-centroid sites", peak_sites.len());
+                clustered_sites.extend(peak_sites);
+            }
+        }
+
+        // Re-sort all sites (including new sub-sites and peak-centroid variants)
+        clustered_sites.sort_by(|a, b|
+            b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+
         // ── PRISM-Therm (multi-stream path) — run BEFORE final reranking ──
         let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
             log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)...");
@@ -3393,7 +3581,10 @@ fn run_multi_stream_pipeline(
 
         // ---- Re-sort by updated quality_score ----
         // Build permutation indices so we can reorder the JSON vectors too
-        let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(100)).collect();
+        // Note: all_pockets_json/cryptic_sites_json only cover original sites (indices < n_original).
+        // New sites from k-means/dual centroid/PH peak emission have no JSON entries.
+        let n_original_json = all_pockets_json.len();
+        let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(200)).collect();
         ranked_indices.sort_by(|&a, &b|
             clustered_sites[b].quality_score
                 .partial_cmp(&clustered_sites[a].quality_score)
@@ -3402,8 +3593,13 @@ fn run_multi_stream_pipeline(
 
         // Reorder all three parallel vectors + sites
         let reordered_sites: Vec<_> = ranked_indices.iter().map(|&i| &clustered_sites[i]).collect();
-        let reordered_pockets: Vec<_> = ranked_indices.iter().map(|&i| all_pockets_json[i].clone()).collect();
-        let reordered_cryptic: Vec<_> = ranked_indices.iter().map(|&i| cryptic_sites_json[i].clone()).collect();
+        let empty_json = serde_json::json!({});
+        let reordered_pockets: Vec<_> = ranked_indices.iter().map(|&i| {
+            if i < n_original_json { all_pockets_json[i].clone() } else { empty_json.clone() }
+        }).collect();
+        let reordered_cryptic: Vec<_> = ranked_indices.iter().map(|&i| {
+            if i < n_original_json { cryptic_sites_json[i].clone() } else { empty_json.clone() }
+        }).collect();
 
         log::info!("Quality reranking applied. New top-3: {}",
             ranked_indices.iter().take(3)
@@ -4198,6 +4394,57 @@ fn build_consensus_sites(
 ///   6. O(N) spike overlay: map each spike to nearest pocket via component_id grid
 ///   7. Score pockets (spike density + depth penalty), rebuild sites vector
 ///
+/// K-means clustering on 3D positions for sub-pocket splitting.
+/// Uses k-means++ initialization (farthest-point seeding) and runs for
+/// a fixed number of iterations. Returns k centroids.
+#[cfg(feature = "gpu")]
+fn kmeans_split(positions: &[[f32; 3]], k: usize, iters: usize) -> Vec<[f32; 3]> {
+    if positions.is_empty() || k == 0 {
+        return Vec::new();
+    }
+    // Initialize centroids: first spike, then farthest from existing centers
+    let mut centers = vec![positions[0]];
+    for _ in 1..k {
+        let mut best_dist = 0.0f32;
+        let mut best_pos = positions[0];
+        for p in positions {
+            let min_d = centers.iter()
+                .map(|c| ((p[0]-c[0]).powi(2) + (p[1]-c[1]).powi(2) + (p[2]-c[2]).powi(2)).sqrt())
+                .fold(f32::MAX, f32::min);
+            if min_d > best_dist { best_dist = min_d; best_pos = *p; }
+        }
+        centers.push(best_pos);
+    }
+
+    for _ in 0..iters {
+        let mut sums = vec![[0.0f64; 3]; k];
+        let mut counts = vec![0usize; k];
+        for p in positions {
+            let nearest = centers.iter().enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    let da = (p[0]-a[0]).powi(2) + (p[1]-a[1]).powi(2) + (p[2]-a[2]).powi(2);
+                    let db = (p[0]-b[0]).powi(2) + (p[1]-b[1]).powi(2) + (p[2]-b[2]).powi(2);
+                    da.partial_cmp(&db).unwrap()
+                })
+                .map(|(i, _)| i).unwrap();
+            sums[nearest][0] += p[0] as f64;
+            sums[nearest][1] += p[1] as f64;
+            sums[nearest][2] += p[2] as f64;
+            counts[nearest] += 1;
+        }
+        for i in 0..k {
+            if counts[i] > 0 {
+                centers[i] = [
+                    (sums[i][0] / counts[i] as f64) as f32,
+                    (sums[i][1] / counts[i] as f64) as f32,
+                    (sums[i][2] / counts[i] as f64) as f32,
+                ];
+            }
+        }
+    }
+    centers
+}
+
 /// Negative controls (convex rocks): zero enclosed components → zero sites
 /// Positive controls (pockets/grooves): enclosed voids with high spike density
 #[cfg(feature = "gpu")]
