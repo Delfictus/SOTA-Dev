@@ -3719,6 +3719,77 @@ fn run_multi_stream_pipeline(
             log::info!("  Volumetric consensus scoring applied to {} candidates", clustered_sites.len());
         }
 
+        // ── Mean-Shift Centroid Refinement ──
+        // DISABLED: Testing showed mean-shift pulls centroids AWAY from ligand
+        // on asymmetric pockets where the spike density peak ≠ ligand position.
+        // The 6 centroid strategies already cover density peaks (strategy 2).
+        // Mean-shift adds redundancy and caused regression on 1btl (rank 4→10).
+        // TODO: Re-enable with a smarter kernel (e.g., only shift toward
+        // lining-residue-convergent direction, not raw spike density).
+        if false {
+            let shift_radius = 4.0f32;
+            let shift_fraction = 0.3f32;
+            let n_iters = 2;
+            let mut total_shift = 0.0f32;
+            let mut n_shifted = 0u32;
+
+            for site in clustered_sites.iter_mut() {
+                if site.spike_indices.len() < 10 { continue; }
+
+                let mut cx = site.centroid[0];
+                let mut cy = site.centroid[1];
+                let mut cz = site.centroid[2];
+
+                for _ in 0..n_iters {
+                    let mut wx = 0.0f64;
+                    let mut wy = 0.0f64;
+                    let mut wz = 0.0f64;
+                    let mut ws = 0.0f64;
+
+                    for &idx in site.spike_indices.iter().take(5000) {
+                        if let Some(s) = all_stream_spikes.get(idx) {
+                            let dx = s.position[0] - cx;
+                            let dy = s.position[1] - cy;
+                            let dz = s.position[2] - cz;
+                            let d2 = dx * dx + dy * dy + dz * dz;
+                            if d2 < shift_radius * shift_radius {
+                                let w = (s.intensity as f64).powi(2);
+                                wx += s.position[0] as f64 * w;
+                                wy += s.position[1] as f64 * w;
+                                wz += s.position[2] as f64 * w;
+                                ws += w;
+                            }
+                        }
+                    }
+
+                    if ws > 1e-12 {
+                        let target_x = (wx / ws) as f32;
+                        let target_y = (wy / ws) as f32;
+                        let target_z = (wz / ws) as f32;
+                        cx += shift_fraction * (target_x - cx);
+                        cy += shift_fraction * (target_y - cy);
+                        cz += shift_fraction * (target_z - cz);
+                    }
+                }
+
+                let shift = ((cx - site.centroid[0]).powi(2)
+                    + (cy - site.centroid[1]).powi(2)
+                    + (cz - site.centroid[2]).powi(2)).sqrt();
+                // Only apply if shift is meaningful (>0.5Å) but not excessive (<3Å)
+                // Large shifts indicate the spike cloud is far from the centroid,
+                // which usually means the centroid is better as-is.
+                if shift > 0.5 && shift < 3.0 {
+                    total_shift += shift;
+                    n_shifted += 1;
+                    site.centroid = [cx, cy, cz];
+                }
+            }
+            if n_shifted > 0 {
+                log::info!("  Mean-shift refinement: {}/{} sites shifted, avg {:.1}A",
+                    n_shifted, clustered_sites.len(), total_shift / n_shifted as f32);
+            }
+        }
+
         // ══════════════════════════════════════════════════════════════
         // MULTI-ENGINE COBB-DOUGLAS RANKING (Package B)
         // Four orthogonal engines combined via geometric mean.
@@ -3869,16 +3940,18 @@ fn run_multi_stream_pipeline(
                 let vcs_score = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
 
                 // ── COBB-DOUGLAS GEOMETRIC MEAN ──
-                // Final = Geo^0.3 × Chem^0.2 × Phys^0.4 × VCS^0.1
-                // If any engine ≈ 0, the score tanks. No single signal can dominate.
-                let final_score = geo_score.powf(0.30)
-                    * chem_score.powf(0.20)
-                    * phys_score.powf(0.40)
-                    * vcs_score.powf(0.10);
+                // Cobb-Douglas: Geo^0.25 × Chem^0.15 × Phys^0.45 × VCS^0.15
+                // Phys (v7 quality) is dominant — it has the most validated
+                // signals (burial, lining, spikes). Geo and Chem are multipliers
+                // that penalize shallow/chemically simple pockets.
+                let final_score = geo_score.powf(0.25)
+                    * chem_score.powf(0.15)
+                    * phys_score.powf(0.45)
+                    * vcs_score.powf(0.15);
 
                 site.quality_score = final_score;
             }
-            log::info!("  Cobb-Douglas 4-engine ranking applied (Geo^0.3 × Chem^0.2 × Phys^0.4 × VCS^0.1)");
+            log::info!("  Cobb-Douglas 4-engine ranking applied (Geo^0.25 × Chem^0.15 × Phys^0.45 × VCS^0.15)");
         }
 
         // ── Step 3: Duplicate pruning ──
