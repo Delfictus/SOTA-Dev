@@ -3938,54 +3938,59 @@ fn run_multi_stream_pipeline(
                     } else { eps }
                 };
 
-                // ── ENGINE 3: Physical (v7 quality_score, already computed) ──
-                // This encompasses burial, lining, spike count, onset, etc.
-                // All sites (including sub-sites) now have genuine local physics
-                // from the re-reap pass — no penalty needed.
-                let phys_score = (site.quality_score).max(eps);
+                // ── ENGINE 3: Physical (sigmoid-squashed) ──
+                // Sigmoid squash prevents mega-pockets from winning on
+                // brute-force spike count. Once a site has "enough" physics
+                // signal, more doesn't help. Turns intensity into pass/fail.
+                let phys_raw = site.quality_score;
+                let phys_score = (1.0 / (1.0 + (-8.0 * (phys_raw - 0.5)).exp())).max(eps);
 
-                // ── ENGINE 4: Orthogonal VCS (precomputed) ──
-                let vcs_score = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
+                // ── ENGINE 4: Orthogonal VCS (dynamic weighting) ──
+                // Thermodynamic + Geometric agreement = 2x multiplier.
+                // Two geometric algorithms agreeing = only 1.2x.
+                let vcs_raw = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
+                let vcs_score = vcs_raw; // orthogonal weighting already in precompute
 
-                // ── GOLDILOCKS DEPTH CURTAIN ──
-                // Drug binding sites are in the 4-10Å depth range.
-                // Too deep (>12Å) = protein core void (not druggable).
-                // Too shallow (<2Å) = surface bump (not a pocket).
-                // Parabolic penalty: peak at 6Å depth, drops off both sides.
-                let goldilocks = {
-                    let occluded_dists: Vec<f32> = hit_distances.iter()
-                        .filter(|&&d| d < max_ray_dist).copied().collect();
-                    let mean_depth = if !occluded_dists.is_empty() {
-                        occluded_dists.iter().sum::<f32>() / occluded_dists.len() as f32
-                    } else { 0.0 };
-                    // Parabolic: 1.0 at depth=6Å, 0.5 at depth=2Å and 10Å, ~0.2 at depth=14Å
-                    let d = (mean_depth - 6.0).abs();
-                    (1.0 - (d * d) / 50.0).clamp(0.2, 1.0)
-                };
+                // ── GOLDILOCKS DEPTH + ENCLOSURE CLIFF ──
+                let occluded_dists: Vec<f32> = hit_distances.iter()
+                    .filter(|&&d| d < max_ray_dist).copied().collect();
+                let mean_depth = if !occluded_dists.is_empty() {
+                    occluded_dists.iter().sum::<f32>() / occluded_dists.len() as f32
+                } else { 0.0 };
+
+                // Goldilocks: peak at 6Å, drops off both sides
+                let d_off = (mean_depth - 6.0).abs();
+                let goldilocks = (1.0 - (d_off * d_off) / 50.0).clamp(0.2, 1.0);
+
+                // Enclosure cliff: if >90% enclosed (exposure < 0.10),
+                // this is a dead internal void — brutal 0.15x penalty.
+                // No ligand can reach it without unfolding the protein.
+                let enclosure_cliff = if exposure < 0.10 { 0.15 } else { 1.0 };
+
+                // ── SALIENCY CROSS: Chem × Geo interaction ──
+                // A site that is BOTH geometrically complex (high ray entropy)
+                // AND chemically diverse (high type entropy) is exponentially
+                // more likely to be a true binding site.
+                let saliency = (chem_score * geo_score).powf(0.5); // sqrt of product
 
                 // ── MULTI-HEAD RANKING ──
-                // Head A: Deep-Pocket Mode (traditional buried enzymes)
-                //   Weighted toward Geo/Phys
-                // Head B: Surface-Pocket Mode (PPIs, shallow clefts, allosteric)
-                //   Weighted toward Chem/VCS/Entropy
-                // Final score = MAX of both heads. This allows a shallow but
-                // chemically complex site to win even if it loses in depth mode.
+                // Head A: Deep-Pocket (enzymes, proteases)
+                let head_a = (geo_score * goldilocks * enclosure_cliff).powf(0.30)
+                    * chem_score.powf(0.15)
+                    * phys_score.powf(0.35)
+                    * vcs_score.powf(0.20);
 
-                let head_a = (geo_score * goldilocks).powf(0.35)
-                    * chem_score.powf(0.10)
-                    * phys_score.powf(0.40)
-                    * vcs_score.powf(0.15);
-
-                let head_b = (geo_score * ray_entropy / max_entropy.max(0.01)).max(eps).powf(0.15)
-                    * chem_score.powf(0.35)
-                    * phys_score.powf(0.25)
-                    * vcs_score.powf(0.25);
+                // Head B: Surface-Pocket (PPIs, allosteric, shallow clefts)
+                // Saliency cross replaces separate Geo/Chem terms
+                let head_b = saliency.powf(0.35)
+                    * phys_score.powf(0.20)
+                    * vcs_score.powf(0.25)
+                    * goldilocks.powf(0.20);
 
                 let final_score = head_a.max(head_b);
-
                 site.quality_score = final_score;
             }
-            log::info!("  Multi-head Cobb-Douglas ranking applied (Deep vs Surface modes)");
+            log::info!("  Multi-head ranking + sigmoid squash + saliency cross + enclosure cliff applied");
         }
 
         // ── Step 3: Duplicate pruning ──
