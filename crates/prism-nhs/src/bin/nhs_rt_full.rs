@@ -3173,15 +3173,18 @@ fn run_multi_stream_pipeline(
                     } else { 0.5 }
                 };
 
-                // Lining density: n_lining / vol^0.33 — best single feature
-                // from 2.5M-trial weight optimization (0.32 weight when solo)
-                let lining_density = if site.estimated_volume > 1.0 {
-                    n_lining_f / site.estimated_volume.powf(0.33)
-                } else { n_lining_f };
-                // Rank-normalize lining_density within protein
-                // (computed inline since we don't have all sites' values yet —
-                // use sigmoid normalization centered on typical value)
-                let lining_density_norm = 1.0 / (1.0 + (-2.0 * (lining_density - 2.5)).exp());
+                // Lining residue count: use n_lining DIRECTLY (not divided by volume).
+                // Audit found: n_lining/vol^0.33 systematically penalizes large pockets
+                // (945Å³ with 17 residues scores LOWER than 60Å³ with 13 residues).
+                // Real binding pockets are large AND have many lining residues.
+                // Sigmoid: center=12 (typical pocket has 10-15 lining residues)
+                let lining_score = 1.0 / (1.0 + (-0.3 * (n_lining_f - 12.0)).exp());
+
+                // Log spike count: correct sites have 4.4x MORE spikes on average.
+                // This signal was completely missing from v6 — critical omission.
+                let log_spike_norm = if !site_spikes.is_empty() {
+                    ((site_spikes.len() as f32).ln() / 14.0).clamp(0.0, 1.0) // ln(1M)≈14
+                } else { 0.0 };
 
                 // Hysteresis asymmetry: pull directly from PRISM-Therm
                 // if available (computed later in thermo-rerank, but we can
@@ -3192,25 +3195,23 @@ fn run_multi_stream_pipeline(
                 // happen when we restructure to compute SDST before ranking.
 
                 if is_viable_pocket {
-                    // v6 weights — optimized via 2.5M-trial search on SNDC
-                    // + cross-target analysis. Key changes from v5:
-                    // - burial raised 0.18→0.22 (consistently discriminates)
-                    // - lining_density added at 0.12 (best single feature)
-                    // - onset/sphericity reduced (anti-correlate on some targets)
-                    // - dead signals removed (source_entropy was uniform 0.667)
+                    // v7 weights — fixes 3 root causes from deep audit:
+                    // 1. REMOVED delta_g (Jarzynski produces -2795 to +147 kcal/mol garbage)
+                    // 2. REPLACED lining_density with raw n_lining (no vol divisor)
+                    // 3. ADDED log_spike_count (correct sites have 4x more spikes)
                     site.quality_score =
-                        0.22 * burial_score +               // recentered sigmoid, 3x range
-                        0.12 * lining_density_norm +        // NEW: n_lining/vol^0.33
-                        0.10 * encl.clamp(0.0, 2.0) / 2.0 + // enclosure
-                        0.08 * delta_g_score +              // Jarzynski ΔG (cumulant)
-                        0.08 * onset_score +                // temporal onset (reduced)
-                        0.06 * sphericity_score +           // spatial concentration (reduced)
-                        0.08 * uv_s +                       // UV enrichment
+                        0.20 * burial_score +               // per-spike burial depth
+                        0.16 * lining_score +               // raw n_lining (no vol penalty!)
+                        0.14 * log_spike_norm +             // NEW: log(spike_count) — was missing!
+                        0.10 * encl.clamp(0.0, 2.0) / 2.0 + // enclosure (kept but reduced)
+                        0.08 * onset_score +                // temporal onset
+                        0.06 * uv_s +                       // UV enrichment
+                        0.06 * sphericity_score +           // spatial concentration
                         0.06 * (spk_q * 2.0).clamp(0.0, 1.0) + // per-spike quality
-                        0.06 * source_diversity +           // UV/LIF balance + EFP
-                        0.06 * breathing_score +            // pocket dynamics
+                        0.04 * source_diversity +           // UV/LIF balance
+                        0.04 * breathing_score +            // pocket dynamics
                         0.04 * wd_norm +                    // water displacement
-                        0.04 * (source_entropy / 1.1).clamp(0.0, 1.0); // source entropy
+                        0.02 * (source_entropy / 1.1).clamp(0.0, 1.0); // source entropy
                 } else {
                     site.quality_score = -1.0;
                 }
