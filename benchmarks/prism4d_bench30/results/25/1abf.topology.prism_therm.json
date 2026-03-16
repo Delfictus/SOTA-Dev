@@ -1,0 +1,3481 @@
+{
+  "structure": "1abf.topology",
+  "sdst_event_count": 5215711,
+  "total_pockets": 16,
+  "cryptic_pockets": 2,
+  "tide_residues_mapped": 120658,
+  "pockets": [
+    {
+      "pocket_id": 9,
+      "centroid": [
+        10.898366,
+        44.20202,
+        47.516785
+      ],
+      "ccns_tau": 1.2627184,
+      "ccns_class": "Soc",
+      "druggability_score": 0.9124272,
+      "hysteresis_asymmetry": 0.24032076,
+      "relative_asymmetry": -1.8122181,
+      "is_cryptic": false,
+      "therm_class": "INERT",
+      "top_residues": [
+        {
+          "residue_id": 259,
+          "residue_name": "PHE260",
+          "transfer_entropy": 0.03699256,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0127152065,
+          "kl_divergence": 0.012569397,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 25,
+          "residue_name": "LEU26",
+          "transfer_entropy": 0.036471643,
+          "causal_dg": -0.102371536,
+          "fisher_info": 0.019423299,
+          "kl_divergence": 0.010896062,
+          "role": "TRIGGER",
+          "n_causal_spikes": 110
+        },
+        {
+          "residue_id": 22,
+          "residue_name": "LEU23",
+          "transfer_entropy": 0.029210225,
+          "causal_dg": -0.17681615,
+          "fisher_info": 0.018586721,
+          "kl_divergence": 0.01824986,
+          "role": "TRIGGER",
+          "n_causal_spikes": 25755
+        },
+        {
+          "residue_id": 3,
+          "residue_name": "ASN4",
+          "transfer_entropy": 0.024693742,
+          "causal_dg": -0.0,
+          "fisher_info": 0.013471385,
+          "kl_divergence": 0.0030178842,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 14,
+          "residue_name": "ASN15",
+          "transfer_entropy": 0.022100518,
+          "causal_dg": -0.10492601,
+          "fisher_info": 0.0058289096,
+          "kl_divergence": 0.016106157,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2880
+        },
+        {
+          "residue_id": 31,
+          "residue_name": "LEU32",
+          "transfer_entropy": 0.021425514,
+          "causal_dg": -0.0,
+          "fisher_info": 0.010993373,
+          "kl_divergence": 0.003158387,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 17,
+          "residue_name": "LEU18",
+          "transfer_entropy": 0.020452142,
+          "causal_dg": -0.1239562,
+          "fisher_info": 0.017848553,
+          "kl_divergence": 0.009951455,
+          "role": "TRIGGER",
+          "n_causal_spikes": 26084
+        },
+        {
+          "residue_id": 21,
+          "residue_name": "LEU22",
+          "transfer_entropy": 0.019983105,
+          "causal_dg": -0.12870336,
+          "fisher_info": 0.013132656,
+          "kl_divergence": 0.041751623,
+          "role": "TRIGGER",
+          "n_causal_spikes": 49334
+        },
+        {
+          "residue_id": 4,
+          "residue_name": "ASN5",
+          "transfer_entropy": 0.019348584,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006067848,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 7,
+          "residue_name": "ASN8",
+          "transfer_entropy": 0.019348584,
+          "causal_dg": -0.09926054,
+          "fisher_info": 0.006067848,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5472
+        },
+        {
+          "residue_id": 9,
+          "residue_name": "ASN10",
+          "transfer_entropy": 0.019348584,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006067848,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 35,
+          "residue_name": "LYS36",
+          "transfer_entropy": 0.018074984,
+          "causal_dg": -0.11372039,
+          "fisher_info": 0.0142026385,
+          "kl_divergence": 0.005318923,
+          "role": "TRIGGER",
+          "n_causal_spikes": 38420
+        },
+        {
+          "residue_id": 255,
+          "residue_name": "TRP256",
+          "transfer_entropy": 0.01735808,
+          "causal_dg": -0.09812404,
+          "fisher_info": 0.013986874,
+          "kl_divergence": 0.025724385,
+          "role": "TRIGGER",
+          "n_causal_spikes": 13157
+        },
+        {
+          "residue_id": 15,
+          "residue_name": "ASN16",
+          "transfer_entropy": 0.016921757,
+          "causal_dg": -0.10416269,
+          "fisher_info": 0.014676648,
+          "kl_divergence": 0.005496122,
+          "role": "TRIGGER",
+          "n_causal_spikes": 30579
+        },
+        {
+          "residue_id": 26,
+          "residue_name": "LEU27",
+          "transfer_entropy": 0.016921757,
+          "causal_dg": -0.042555287,
+          "fisher_info": 0.016191382,
+          "kl_divergence": 0.0028304553,
+          "role": "TRIGGER",
+          "n_causal_spikes": 67
+        },
+        {
+          "residue_id": 23,
+          "residue_name": "LEU24",
+          "transfer_entropy": 0.016386183,
+          "causal_dg": -0.09425307,
+          "fisher_info": 0.013092528,
+          "kl_divergence": 0.037169974,
+          "role": "TRIGGER",
+          "n_causal_spikes": 15536
+        },
+        {
+          "residue_id": 13,
+          "residue_name": "ASN14",
+          "transfer_entropy": 0.015579808,
+          "causal_dg": -0.072135225,
+          "fisher_info": 0.005616614,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2364
+        },
+        {
+          "residue_id": 232,
+          "residue_name": "PRO233",
+          "transfer_entropy": 0.014826922,
+          "causal_dg": -0.019416535,
+          "fisher_info": 0.015417896,
+          "kl_divergence": 0.0061566536,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8
+        },
+        {
+          "residue_id": 258,
+          "residue_name": "TRP259",
+          "transfer_entropy": 0.012267697,
+          "causal_dg": -0.06201034,
+          "fisher_info": 0.014022099,
+          "kl_divergence": 0.02173521,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4822
+        },
+        {
+          "residue_id": 254,
+          "residue_name": "TRP255",
+          "transfer_entropy": 0.01170639,
+          "causal_dg": -0.055153765,
+          "fisher_info": 0.009339203,
+          "kl_divergence": 0.00435033,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2710
+        }
+      ]
+    },
+    {
+      "pocket_id": 0,
+      "centroid": [
+        -4.6480384,
+        68.43876,
+        46.18454
+      ],
+      "ccns_tau": 1.2941775,
+      "ccns_class": "Soc",
+      "druggability_score": 0.9019408,
+      "hysteresis_asymmetry": 0.4854256,
+      "relative_asymmetry": -0.34266433,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 218,
+          "residue_name": "GLU219",
+          "transfer_entropy": 0.04136578,
+          "causal_dg": -0.21460085,
+          "fisher_info": 0.019585954,
+          "kl_divergence": 0.020629182,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6029
+        },
+        {
+          "residue_id": 238,
+          "residue_name": "TRP239",
+          "transfer_entropy": 0.039149724,
+          "causal_dg": -0.18537898,
+          "fisher_info": 0.030938897,
+          "kl_divergence": 0.02456785,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2820
+        },
+        {
+          "residue_id": 246,
+          "residue_name": "TRP247",
+          "transfer_entropy": 0.02921859,
+          "causal_dg": -0.1681955,
+          "fisher_info": 0.014099282,
+          "kl_divergence": 0.008453581,
+          "role": "TRIGGER",
+          "n_causal_spikes": 15653
+        },
+        {
+          "residue_id": 247,
+          "residue_name": "TRP248",
+          "transfer_entropy": 0.022777159,
+          "causal_dg": -0.094109274,
+          "fisher_info": 0.011345242,
+          "kl_divergence": 0.0061566536,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1024
+        },
+        {
+          "residue_id": 209,
+          "residue_name": "GLU210",
+          "transfer_entropy": 0.021864833,
+          "causal_dg": -0.0,
+          "fisher_info": 0.011399299,
+          "kl_divergence": 0.0116611635,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 214,
+          "residue_name": "GLU215",
+          "transfer_entropy": 0.019799659,
+          "causal_dg": -0.11764506,
+          "fisher_info": 0.013961788,
+          "kl_divergence": 0.007200201,
+          "role": "TRIGGER",
+          "n_causal_spikes": 21362
+        },
+        {
+          "residue_id": 219,
+          "residue_name": "GLU220",
+          "transfer_entropy": 0.019410232,
+          "causal_dg": -0.10920228,
+          "fisher_info": 0.0119445175,
+          "kl_divergence": 0.003637429,
+          "role": "TRIGGER",
+          "n_causal_spikes": 12576
+        },
+        {
+          "residue_id": 208,
+          "residue_name": "GLU209",
+          "transfer_entropy": 0.017490873,
+          "causal_dg": -0.09014659,
+          "fisher_info": 0.012850163,
+          "kl_divergence": 0.01737318,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5695
+        },
+        {
+          "residue_id": 126,
+          "residue_name": "VAL127",
+          "transfer_entropy": 0.015365936,
+          "causal_dg": -0.057005115,
+          "fisher_info": 0.01280158,
+          "kl_divergence": 0.015987882,
+          "role": "TRIGGER",
+          "n_causal_spikes": 504
+        },
+        {
+          "residue_id": 188,
+          "residue_name": "PRO189",
+          "transfer_entropy": 0.014297257,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009859198,
+          "kl_divergence": 0.00011561924,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 136,
+          "residue_name": "VAL137",
+          "transfer_entropy": 0.014138931,
+          "causal_dg": -0.0,
+          "fisher_info": 0.011068044,
+          "kl_divergence": 0.003039434,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 223,
+          "residue_name": "PRO224",
+          "transfer_entropy": 0.014138931,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009016005,
+          "kl_divergence": 0.009658875,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 289,
+          "residue_name": "GLN290",
+          "transfer_entropy": 0.012382582,
+          "causal_dg": -0.05633441,
+          "fisher_info": 0.010549538,
+          "kl_divergence": 0.005318923,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2065
+        },
+        {
+          "residue_id": 213,
+          "residue_name": "GLU214",
+          "transfer_entropy": 0.011968795,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009905051,
+          "kl_divergence": 0.0011063245,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 217,
+          "residue_name": "GLU218",
+          "transfer_entropy": 0.011521291,
+          "causal_dg": -0.044336632,
+          "fisher_info": 0.0103579415,
+          "kl_divergence": 0.0017326945,
+          "role": "TRIGGER",
+          "n_causal_spikes": 636
+        },
+        {
+          "residue_id": 211,
+          "residue_name": "GLU212",
+          "transfer_entropy": 0.011521291,
+          "causal_dg": -0.06190108,
+          "fisher_info": 0.010791571,
+          "kl_divergence": 0.0004238791,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8222
+        },
+        {
+          "residue_id": 224,
+          "residue_name": "PRO225",
+          "transfer_entropy": 0.011498355,
+          "causal_dg": -0.06423373,
+          "fisher_info": 0.0139267305,
+          "kl_divergence": 0.0009349082,
+          "role": "TRIGGER",
+          "n_causal_spikes": 11766
+        },
+        {
+          "residue_id": 216,
+          "residue_name": "GLU217",
+          "transfer_entropy": 0.011463922,
+          "causal_dg": -0.0421966,
+          "fisher_info": 0.0025556318,
+          "kl_divergence": 0.3624779,
+          "role": "TRIGGER",
+          "n_causal_spikes": 480
+        },
+        {
+          "residue_id": 197,
+          "residue_name": "GLU198",
+          "transfer_entropy": 0.009593918,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009996405,
+          "kl_divergence": 0.00011982206,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 245,
+          "residue_name": "TRP246",
+          "transfer_entropy": 0.009441692,
+          "causal_dg": -0.04537109,
+          "fisher_info": 0.01072297,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3173
+        }
+      ]
+    },
+    {
+      "pocket_id": 7,
+      "centroid": [
+        4.7305584,
+        50.969517,
+        57.737263
+      ],
+      "ccns_tau": 1.2954961,
+      "ccns_class": "Soc",
+      "druggability_score": 0.9015013,
+      "hysteresis_asymmetry": 0.5192024,
+      "relative_asymmetry": -0.14015159,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 9,
+          "residue_name": "ASN10",
+          "transfer_entropy": 0.035114206,
+          "causal_dg": -0.2044232,
+          "fisher_info": 0.019173382,
+          "kl_divergence": 0.031245738,
+          "role": "TRIGGER",
+          "n_causal_spikes": 17463
+        },
+        {
+          "residue_id": 14,
+          "residue_name": "ASN15",
+          "transfer_entropy": 0.03384624,
+          "causal_dg": -0.16598175,
+          "fisher_info": 0.008504322,
+          "kl_divergence": 0.021408657,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3744
+        },
+        {
+          "residue_id": 7,
+          "residue_name": "ASN8",
+          "transfer_entropy": 0.03216,
+          "causal_dg": -0.19017224,
+          "fisher_info": 0.018642519,
+          "kl_divergence": 0.03801125,
+          "role": "TRIGGER",
+          "n_causal_spikes": 20366
+        },
+        {
+          "residue_id": 36,
+          "residue_name": "LYS37",
+          "transfer_entropy": 0.031201508,
+          "causal_dg": -0.12722737,
+          "fisher_info": 0.010383509,
+          "kl_divergence": 0.013809082,
+          "role": "TRIGGER",
+          "n_causal_spikes": 935
+        },
+        {
+          "residue_id": 230,
+          "residue_name": "PRO231",
+          "transfer_entropy": 0.027197756,
+          "causal_dg": -0.121866785,
+          "fisher_info": 0.0077407276,
+          "kl_divergence": 0.00018793037,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1840
+        },
+        {
+          "residue_id": 16,
+          "residue_name": "LEU17",
+          "transfer_entropy": 0.026367502,
+          "causal_dg": -0.14560452,
+          "fisher_info": 0.018169427,
+          "kl_divergence": 0.029854273,
+          "role": "TRIGGER",
+          "n_causal_spikes": 10564
+        },
+        {
+          "residue_id": 15,
+          "residue_name": "ASN16",
+          "transfer_entropy": 0.025917297,
+          "causal_dg": -0.16034165,
+          "fisher_info": 0.012790244,
+          "kl_divergence": 0.0038630802,
+          "role": "TRIGGER",
+          "n_causal_spikes": 32218
+        },
+        {
+          "residue_id": 38,
+          "residue_name": "LYS39",
+          "transfer_entropy": 0.025860664,
+          "causal_dg": -0.1152607,
+          "fisher_info": 0.01545329,
+          "kl_divergence": 0.0048617353,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1768
+        },
+        {
+          "residue_id": 18,
+          "residue_name": "LEU19",
+          "transfer_entropy": 0.025638355,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0063358312,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 233,
+          "residue_name": "PRO234",
+          "transfer_entropy": 0.025638355,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0063358312,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 19,
+          "residue_name": "LEU20",
+          "transfer_entropy": 0.025567904,
+          "causal_dg": -0.13322103,
+          "fisher_info": 0.009759343,
+          "kl_divergence": 0.010896062,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6262
+        },
+        {
+          "residue_id": 8,
+          "residue_name": "ASN9",
+          "transfer_entropy": 0.02481336,
+          "causal_dg": -0.11243749,
+          "fisher_info": 0.016352016,
+          "kl_divergence": 0.006074416,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2003
+        },
+        {
+          "residue_id": 13,
+          "residue_name": "ASN14",
+          "transfer_entropy": 0.021439103,
+          "causal_dg": -0.0,
+          "fisher_info": 0.005908506,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 10,
+          "residue_name": "ASN11",
+          "transfer_entropy": 0.016381599,
+          "causal_dg": -0.09285605,
+          "fisher_info": 0.011300921,
+          "kl_divergence": 0.008967364,
+          "role": "TRIGGER",
+          "n_causal_spikes": 13501
+        },
+        {
+          "residue_id": 37,
+          "residue_name": "LYS38",
+          "transfer_entropy": 0.011417715,
+          "causal_dg": -0.05922813,
+          "fisher_info": 0.010116147,
+          "kl_divergence": 0.00011300571,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6024
+        },
+        {
+          "residue_id": 40,
+          "residue_name": "LYS41",
+          "transfer_entropy": 0.008331291,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 43,
+          "residue_name": "LYS44",
+          "transfer_entropy": 0.008331291,
+          "causal_dg": -0.01806225,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 37
+        },
+        {
+          "residue_id": 174,
+          "residue_name": "GLN175",
+          "transfer_entropy": 0.008331291,
+          "causal_dg": -0.024913048,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 150
+        },
+        {
+          "residue_id": 176,
+          "residue_name": "GLN177",
+          "transfer_entropy": 0.008331291,
+          "causal_dg": -0.03381542,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 906
+        },
+        {
+          "residue_id": 178,
+          "residue_name": "PRO179",
+          "transfer_entropy": 0.008331291,
+          "causal_dg": -0.019987682,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 55
+        }
+      ]
+    },
+    {
+      "pocket_id": 8,
+      "centroid": [
+        13.765232,
+        37.771828,
+        52.91787
+      ],
+      "ccns_tau": 1.2970557,
+      "ccns_class": "Soc",
+      "druggability_score": 0.9009814,
+      "hysteresis_asymmetry": 0.28992736,
+      "relative_asymmetry": -1.514796,
+      "is_cryptic": false,
+      "therm_class": "INERT",
+      "top_residues": [
+        {
+          "residue_id": 59,
+          "residue_name": "LEU60",
+          "transfer_entropy": 0.046020716,
+          "causal_dg": -0.20447065,
+          "fisher_info": 0.021729345,
+          "kl_divergence": 0.014647396,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1727
+        },
+        {
+          "residue_id": 0,
+          "residue_name": "ASN1",
+          "transfer_entropy": 0.045139942,
+          "causal_dg": -0.0,
+          "fisher_info": 0.01974566,
+          "kl_divergence": 0.047634397,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 31,
+          "residue_name": "LEU32",
+          "transfer_entropy": 0.0423538,
+          "causal_dg": -0.25253448,
+          "fisher_info": 0.01948721,
+          "kl_divergence": 0.022573883,
+          "role": "TRIGGER",
+          "n_causal_spikes": 22118
+        },
+        {
+          "residue_id": 1,
+          "residue_name": "ASN2",
+          "transfer_entropy": 0.041472353,
+          "causal_dg": -0.18808469,
+          "fisher_info": 0.017670456,
+          "kl_divergence": 0.02433234,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2016
+        },
+        {
+          "residue_id": 2,
+          "residue_name": "ASN3",
+          "transfer_entropy": 0.038663637,
+          "causal_dg": -0.21138908,
+          "fisher_info": 0.019274537,
+          "kl_divergence": 0.034948792,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9637
+        },
+        {
+          "residue_id": 58,
+          "residue_name": "LEU59",
+          "transfer_entropy": 0.032560136,
+          "causal_dg": -0.0,
+          "fisher_info": 0.019294456,
+          "kl_divergence": 0.03451615,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 61,
+          "residue_name": "LEU62",
+          "transfer_entropy": 0.0310049,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009150965,
+          "kl_divergence": 0.015449511,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 22,
+          "residue_name": "LEU23",
+          "transfer_entropy": 0.030441849,
+          "causal_dg": -0.18532376,
+          "fisher_info": 0.015297383,
+          "kl_divergence": 0.01824986,
+          "role": "TRIGGER",
+          "n_causal_spikes": 27293
+        },
+        {
+          "residue_id": 32,
+          "residue_name": "LEU33",
+          "transfer_entropy": 0.029484965,
+          "causal_dg": -0.17934713,
+          "fisher_info": 0.018953204,
+          "kl_divergence": 0.034948792,
+          "role": "TRIGGER",
+          "n_causal_spikes": 27059
+        },
+        {
+          "residue_id": 258,
+          "residue_name": "TRP259",
+          "transfer_entropy": 0.028663369,
+          "causal_dg": -0.13102879,
+          "fisher_info": 0.011633014,
+          "kl_divergence": 0.007528121,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2142
+        },
+        {
+          "residue_id": 60,
+          "residue_name": "LEU61",
+          "transfer_entropy": 0.027028907,
+          "causal_dg": -0.154569,
+          "fisher_info": 0.018047605,
+          "kl_divergence": 0.011833695,
+          "role": "TRIGGER",
+          "n_causal_spikes": 14691
+        },
+        {
+          "residue_id": 6,
+          "residue_name": "ASN7",
+          "transfer_entropy": 0.026658183,
+          "causal_dg": -0.14443664,
+          "fisher_info": 0.020872585,
+          "kl_divergence": 0.043477535,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8872
+        },
+        {
+          "residue_id": 7,
+          "residue_name": "ASN8",
+          "transfer_entropy": 0.024851331,
+          "causal_dg": -0.0,
+          "fisher_info": 0.010296302,
+          "kl_divergence": 0.0056882715,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 259,
+          "residue_name": "PHE260",
+          "transfer_entropy": 0.02444643,
+          "causal_dg": -0.11180619,
+          "fisher_info": 0.016027082,
+          "kl_divergence": 0.009679859,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2150
+        },
+        {
+          "residue_id": 36,
+          "residue_name": "LYS37",
+          "transfer_entropy": 0.024294572,
+          "causal_dg": -0.13012709,
+          "fisher_info": 0.014852592,
+          "kl_divergence": 0.0038630802,
+          "role": "TRIGGER",
+          "n_causal_spikes": 7997
+        },
+        {
+          "residue_id": 26,
+          "residue_name": "LEU27",
+          "transfer_entropy": 0.023592414,
+          "causal_dg": -0.14009492,
+          "fisher_info": 0.010254354,
+          "kl_divergence": 0.010243138,
+          "role": "TRIGGER",
+          "n_causal_spikes": 21232
+        },
+        {
+          "residue_id": 34,
+          "residue_name": "LEU35",
+          "transfer_entropy": 0.023299217,
+          "causal_dg": -0.12752776,
+          "fisher_info": 0.0148620885,
+          "kl_divergence": 0.024040794,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9736
+        },
+        {
+          "residue_id": 23,
+          "residue_name": "LEU24",
+          "transfer_entropy": 0.019011773,
+          "causal_dg": -0.1095764,
+          "fisher_info": 0.016964277,
+          "kl_divergence": 0.037169974,
+          "role": "TRIGGER",
+          "n_causal_spikes": 15842
+        },
+        {
+          "residue_id": 35,
+          "residue_name": "LYS36",
+          "transfer_entropy": 0.018909855,
+          "causal_dg": -0.12448539,
+          "fisher_info": 0.011426404,
+          "kl_divergence": 0.0064157653,
+          "role": "TRIGGER",
+          "n_causal_spikes": 62658
+        },
+        {
+          "residue_id": 56,
+          "residue_name": "LYS57",
+          "transfer_entropy": 0.017314363,
+          "causal_dg": -0.06820426,
+          "fisher_info": 0.013632832,
+          "kl_divergence": 0.0005398822,
+          "role": "TRIGGER",
+          "n_causal_spikes": 741
+        }
+      ]
+    },
+    {
+      "pocket_id": 3,
+      "centroid": [
+        7.2955585,
+        49.664516,
+        43.277264
+      ],
+      "ccns_tau": 1.2971572,
+      "ccns_class": "Soc",
+      "druggability_score": 0.90094763,
+      "hysteresis_asymmetry": 0.3544578,
+      "relative_asymmetry": -1.1278965,
+      "is_cryptic": false,
+      "therm_class": "INERT",
+      "top_residues": [
+        {
+          "residue_id": 255,
+          "residue_name": "TRP256",
+          "transfer_entropy": 0.043709792,
+          "causal_dg": -0.0,
+          "fisher_info": 0.011326264,
+          "kl_divergence": 0.017950414,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 14,
+          "residue_name": "ASN15",
+          "transfer_entropy": 0.03279621,
+          "causal_dg": -0.19885704,
+          "fisher_info": 0.011767224,
+          "kl_divergence": 0.021408657,
+          "role": "TRIGGER",
+          "n_causal_spikes": 26199
+        },
+        {
+          "residue_id": 233,
+          "residue_name": "PRO234",
+          "transfer_entropy": 0.030330114,
+          "causal_dg": -0.15677035,
+          "fisher_info": 0.011445315,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5839
+        },
+        {
+          "residue_id": 19,
+          "residue_name": "LEU20",
+          "transfer_entropy": 0.027326673,
+          "causal_dg": -0.13128987,
+          "fisher_info": 0.011602389,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3168
+        },
+        {
+          "residue_id": 292,
+          "residue_name": "GLN293",
+          "transfer_entropy": 0.026699655,
+          "causal_dg": -0.15072562,
+          "fisher_info": 0.01223092,
+          "kl_divergence": 0.03943712,
+          "role": "TRIGGER",
+          "n_causal_spikes": 12988
+        },
+        {
+          "residue_id": 13,
+          "residue_name": "ASN14",
+          "transfer_entropy": 0.025879396,
+          "causal_dg": -0.14603321,
+          "fisher_info": 0.011321712,
+          "kl_divergence": 0.00018793037,
+          "role": "TRIGGER",
+          "n_causal_spikes": 12936
+        },
+        {
+          "residue_id": 230,
+          "residue_name": "PRO231",
+          "transfer_entropy": 0.025879396,
+          "causal_dg": -0.13226606,
+          "fisher_info": 0.011321712,
+          "kl_divergence": 0.00018793037,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5298
+        },
+        {
+          "residue_id": 254,
+          "residue_name": "TRP255",
+          "transfer_entropy": 0.025879396,
+          "causal_dg": -0.14712176,
+          "fisher_info": 0.011321712,
+          "kl_divergence": 0.00018793037,
+          "role": "TRIGGER",
+          "n_causal_spikes": 13882
+        },
+        {
+          "residue_id": 15,
+          "residue_name": "ASN16",
+          "transfer_entropy": 0.02455436,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006997602,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 22,
+          "residue_name": "LEU23",
+          "transfer_entropy": 0.02455436,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006997602,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 12,
+          "residue_name": "ASN13",
+          "transfer_entropy": 0.02455436,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006997602,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 291,
+          "residue_name": "GLN292",
+          "transfer_entropy": 0.02455436,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006997602,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 20,
+          "residue_name": "LEU21",
+          "transfer_entropy": 0.021490607,
+          "causal_dg": -0.1308637,
+          "fisher_info": 0.009330969,
+          "kl_divergence": 0.0048617353,
+          "role": "TRIGGER",
+          "n_causal_spikes": 27364
+        },
+        {
+          "residue_id": 17,
+          "residue_name": "LEU18",
+          "transfer_entropy": 0.021254072,
+          "causal_dg": -0.12999536,
+          "fisher_info": 0.010237973,
+          "kl_divergence": 0.009951455,
+          "role": "TRIGGER",
+          "n_causal_spikes": 28628
+        },
+        {
+          "residue_id": 296,
+          "residue_name": "THR297",
+          "transfer_entropy": 0.020792998,
+          "causal_dg": -0.10841645,
+          "fisher_info": 0.010825539,
+          "kl_divergence": 0.0048617353,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6300
+        },
+        {
+          "residue_id": 106,
+          "residue_name": "LEU107",
+          "transfer_entropy": 0.020438556,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0065920595,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 232,
+          "residue_name": "PRO233",
+          "transfer_entropy": 0.01731329,
+          "causal_dg": -0.10500245,
+          "fisher_info": 0.014074423,
+          "kl_divergence": 0.0061566536,
+          "role": "TRIGGER",
+          "n_causal_spikes": 26262
+        },
+        {
+          "residue_id": 293,
+          "residue_name": "GLN294",
+          "transfer_entropy": 0.016678179,
+          "causal_dg": -0.0,
+          "fisher_info": 0.01187604,
+          "kl_divergence": 0.019660186,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 239,
+          "residue_name": "TRP240",
+          "transfer_entropy": 0.014541883,
+          "causal_dg": -0.024555353,
+          "fisher_info": 0.009841042,
+          "kl_divergence": 0.00017317332,
+          "role": "TRIGGER",
+          "n_causal_spikes": 16
+        },
+        {
+          "residue_id": 18,
+          "residue_name": "LEU19",
+          "transfer_entropy": 0.013792517,
+          "causal_dg": -0.072364666,
+          "fisher_info": 0.008403924,
+          "kl_divergence": 0.0011063245,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6654
+        }
+      ]
+    },
+    {
+      "pocket_id": 12,
+      "centroid": [
+        20.104923,
+        48.844,
+        44.93235
+      ],
+      "ccns_tau": 1.3028497,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8990501,
+      "hysteresis_asymmetry": 0.46043676,
+      "relative_asymmetry": -0.49248767,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 25,
+          "residue_name": "LEU26",
+          "transfer_entropy": 0.048003227,
+          "causal_dg": -0.0,
+          "fisher_info": 0.014580337,
+          "kl_divergence": 0.016660664,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 20,
+          "residue_name": "LEU21",
+          "transfer_entropy": 0.04791851,
+          "causal_dg": -0.0,
+          "fisher_info": 0.017030945,
+          "kl_divergence": 0.011262894,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 279,
+          "residue_name": "GLN280",
+          "transfer_entropy": 0.033721603,
+          "causal_dg": -0.13642263,
+          "fisher_info": 0.016913684,
+          "kl_divergence": 0.0051550325,
+          "role": "TRIGGER",
+          "n_causal_spikes": 886
+        },
+        {
+          "residue_id": 149,
+          "residue_name": "LYS150",
+          "transfer_entropy": 0.028473618,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009258106,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 256,
+          "residue_name": "TRP257",
+          "transfer_entropy": 0.027057728,
+          "causal_dg": -0.1481759,
+          "fisher_info": 0.013830723,
+          "kl_divergence": 0.0037460648,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9782
+        },
+        {
+          "residue_id": 19,
+          "residue_name": "LEU20",
+          "transfer_entropy": 0.025647199,
+          "causal_dg": -0.12176449,
+          "fisher_info": 0.0066026384,
+          "kl_divergence": 0.00017317332,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2880
+        },
+        {
+          "residue_id": 23,
+          "residue_name": "LEU24",
+          "transfer_entropy": 0.024188343,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0065978398,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 15,
+          "residue_name": "ASN16",
+          "transfer_entropy": 0.022829112,
+          "causal_dg": -0.0,
+          "fisher_info": 0.005484423,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 35,
+          "residue_name": "LYS36",
+          "transfer_entropy": 0.022829112,
+          "causal_dg": -0.0,
+          "fisher_info": 0.005484423,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 280,
+          "residue_name": "GLN281",
+          "transfer_entropy": 0.021680757,
+          "causal_dg": -0.05662337,
+          "fisher_info": 0.010477039,
+          "kl_divergence": 0.00427497,
+          "role": "TRIGGER",
+          "n_causal_spikes": 79
+        },
+        {
+          "residue_id": 14,
+          "residue_name": "ASN15",
+          "transfer_entropy": 0.020562306,
+          "causal_dg": -0.12327696,
+          "fisher_info": 0.016391922,
+          "kl_divergence": 0.0011063245,
+          "role": "TRIGGER",
+          "n_causal_spikes": 23369
+        },
+        {
+          "residue_id": 22,
+          "residue_name": "LEU23",
+          "transfer_entropy": 0.019979434,
+          "causal_dg": -0.11071802,
+          "fisher_info": 0.0154301,
+          "kl_divergence": 0.02433234,
+          "role": "TRIGGER",
+          "n_causal_spikes": 10915
+        },
+        {
+          "residue_id": 106,
+          "residue_name": "LEU107",
+          "transfer_entropy": 0.018777767,
+          "causal_dg": -0.04332474,
+          "fisher_info": 0.005028093,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 47
+        },
+        {
+          "residue_id": 230,
+          "residue_name": "PRO231",
+          "transfer_entropy": 0.018777767,
+          "causal_dg": -0.0,
+          "fisher_info": 0.005028093,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 260,
+          "residue_name": "PHE261",
+          "transfer_entropy": 0.016671736,
+          "causal_dg": -0.09494321,
+          "fisher_info": 0.011985691,
+          "kl_divergence": 0.0062391744,
+          "role": "TRIGGER",
+          "n_causal_spikes": 14116
+        },
+        {
+          "residue_id": 18,
+          "residue_name": "LEU19",
+          "transfer_entropy": 0.016451905,
+          "causal_dg": -0.100220285,
+          "fisher_info": 0.01132177,
+          "kl_divergence": 0.000108180466,
+          "role": "TRIGGER",
+          "n_causal_spikes": 27473
+        },
+        {
+          "residue_id": 263,
+          "residue_name": "PHE264",
+          "transfer_entropy": 0.015323734,
+          "causal_dg": -0.066588074,
+          "fisher_info": 0.013184104,
+          "kl_divergence": 0.00041129274,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1466
+        },
+        {
+          "residue_id": 254,
+          "residue_name": "TRP255",
+          "transfer_entropy": 0.015101142,
+          "causal_dg": -0.086990364,
+          "fisher_info": 0.008754529,
+          "kl_divergence": 0.00435033,
+          "role": "TRIGGER",
+          "n_causal_spikes": 15760
+        },
+        {
+          "residue_id": 105,
+          "residue_name": "LEU106",
+          "transfer_entropy": 0.011138155,
+          "causal_dg": -0.038312793,
+          "fisher_info": 0.009464568,
+          "kl_divergence": 0.014854398,
+          "role": "TRIGGER",
+          "n_causal_spikes": 320
+        },
+        {
+          "residue_id": 17,
+          "residue_name": "LEU18",
+          "transfer_entropy": 0.009463402,
+          "causal_dg": -0.044129092,
+          "fisher_info": 0.012399745,
+          "kl_divergence": 0.010557146,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2499
+        }
+      ]
+    },
+    {
+      "pocket_id": 14,
+      "centroid": [
+        25.824396,
+        35.43263,
+        58.44422
+      ],
+      "ccns_tau": 1.3104303,
+      "ccns_class": "Soc",
+      "druggability_score": 0.89652324,
+      "hysteresis_asymmetry": 0.522908,
+      "relative_asymmetry": -0.11793447,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 31,
+          "residue_name": "LEU32",
+          "transfer_entropy": 0.052159958,
+          "causal_dg": -0.29701945,
+          "fisher_info": 0.01591308,
+          "kl_divergence": 0.02116338,
+          "role": "TRIGGER",
+          "n_causal_spikes": 14105
+        },
+        {
+          "residue_id": 32,
+          "residue_name": "LEU33",
+          "transfer_entropy": 0.042528763,
+          "causal_dg": -0.20854725,
+          "fisher_info": 0.013527899,
+          "kl_divergence": 0.021056091,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3742
+        },
+        {
+          "residue_id": 267,
+          "residue_name": "PHE268",
+          "transfer_entropy": 0.0375086,
+          "causal_dg": -0.19675459,
+          "fisher_info": 0.026499478,
+          "kl_divergence": 0.002652946,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6642
+        },
+        {
+          "residue_id": 5,
+          "residue_name": "ASN6",
+          "transfer_entropy": 0.035719506,
+          "causal_dg": -0.0,
+          "fisher_info": 0.008960335,
+          "kl_divergence": 0.021408657,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 33,
+          "residue_name": "LEU34",
+          "transfer_entropy": 0.032468475,
+          "causal_dg": -0.0,
+          "fisher_info": 0.01326076,
+          "kl_divergence": 0.00427497,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 0,
+          "residue_name": "ASN1",
+          "transfer_entropy": 0.030599661,
+          "causal_dg": -0.1391509,
+          "fisher_info": 0.013482004,
+          "kl_divergence": 0.028433342,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2058
+        },
+        {
+          "residue_id": 30,
+          "residue_name": "LEU31",
+          "transfer_entropy": 0.029380772,
+          "causal_dg": -0.0,
+          "fisher_info": 0.006875193,
+          "kl_divergence": 0.016106157,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 60,
+          "residue_name": "LEU61",
+          "transfer_entropy": 0.029319199,
+          "causal_dg": -0.13495567,
+          "fisher_info": 0.012963902,
+          "kl_divergence": 0.0068097087,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2259
+        },
+        {
+          "residue_id": 270,
+          "residue_name": "PHE271",
+          "transfer_entropy": 0.027188545,
+          "causal_dg": -0.14108323,
+          "fisher_info": 0.015307582,
+          "kl_divergence": 0.024040794,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6041
+        },
+        {
+          "residue_id": 275,
+          "residue_name": "PHE276",
+          "transfer_entropy": 0.02344755,
+          "causal_dg": -0.0825259,
+          "fisher_info": 0.01233048,
+          "kl_divergence": 0.0011063245,
+          "role": "TRIGGER",
+          "n_causal_spikes": 366
+        },
+        {
+          "residue_id": 79,
+          "residue_name": "GLY80",
+          "transfer_entropy": 0.023168392,
+          "causal_dg": -0.0,
+          "fisher_info": 0.01164635,
+          "kl_divergence": 0.005318923,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 274,
+          "residue_name": "PHE275",
+          "transfer_entropy": 0.022824015,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009127971,
+          "kl_divergence": 0.0048089502,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 4,
+          "residue_name": "ASN5",
+          "transfer_entropy": 0.02152541,
+          "causal_dg": -0.11139606,
+          "fisher_info": 0.007837419,
+          "kl_divergence": 0.0015313633,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5901
+        },
+        {
+          "residue_id": 52,
+          "residue_name": "LYS53",
+          "transfer_entropy": 0.021011041,
+          "causal_dg": -0.076050185,
+          "fisher_info": 0.011044683,
+          "kl_divergence": 0.002652946,
+          "role": "TRIGGER",
+          "n_causal_spikes": 433
+        },
+        {
+          "residue_id": 266,
+          "residue_name": "PHE267",
+          "transfer_entropy": 0.020955015,
+          "causal_dg": -0.12300048,
+          "fisher_info": 0.009856284,
+          "kl_divergence": 0.02512803,
+          "role": "TRIGGER",
+          "n_causal_spikes": 18930
+        },
+        {
+          "residue_id": 2,
+          "residue_name": "ASN3",
+          "transfer_entropy": 0.0196349,
+          "causal_dg": -0.11507298,
+          "fisher_info": 0.012500577,
+          "kl_divergence": 0.027788391,
+          "role": "TRIGGER",
+          "n_causal_spikes": 18643
+        },
+        {
+          "residue_id": 269,
+          "residue_name": "PHE270",
+          "transfer_entropy": 0.0196349,
+          "causal_dg": -0.11415134,
+          "fisher_info": 0.0139390845,
+          "kl_divergence": 0.02456785,
+          "role": "TRIGGER",
+          "n_causal_spikes": 17231
+        },
+        {
+          "residue_id": 59,
+          "residue_name": "LEU60",
+          "transfer_entropy": 0.01834305,
+          "causal_dg": -0.10949621,
+          "fisher_info": 0.009047284,
+          "kl_divergence": 0.011224214,
+          "role": "TRIGGER",
+          "n_causal_spikes": 22374
+        },
+        {
+          "residue_id": 272,
+          "residue_name": "PHE273",
+          "transfer_entropy": 0.017811662,
+          "causal_dg": -0.074304126,
+          "fisher_info": 0.011282346,
+          "kl_divergence": 0.0010661721,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1095
+        },
+        {
+          "residue_id": 1,
+          "residue_name": "ASN2",
+          "transfer_entropy": 0.017268417,
+          "causal_dg": -0.1131105,
+          "fisher_info": 0.011770794,
+          "kl_divergence": 0.029899495,
+          "role": "TRIGGER",
+          "n_causal_spikes": 59287
+        }
+      ]
+    },
+    {
+      "pocket_id": 13,
+      "centroid": [
+        17.641693,
+        72.809074,
+        43.773735
+      ],
+      "ccns_tau": 1.3107024,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8964325,
+      "hysteresis_asymmetry": 0.61935276,
+      "relative_asymmetry": 0.4603111,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 162,
+          "residue_name": "GLN163",
+          "transfer_entropy": 0.038291264,
+          "causal_dg": -0.19311386,
+          "fisher_info": 0.018628653,
+          "kl_divergence": 0.028433342,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4730
+        },
+        {
+          "residue_id": 116,
+          "residue_name": "LEU117",
+          "transfer_entropy": 0.03778001,
+          "causal_dg": -0.18879454,
+          "fisher_info": 0.014607751,
+          "kl_divergence": 0.005496122,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4378
+        },
+        {
+          "residue_id": 122,
+          "residue_name": "VAL123",
+          "transfer_entropy": 0.036061626,
+          "causal_dg": -0.111491084,
+          "fisher_info": 0.015247837,
+          "kl_divergence": 0.005496122,
+          "role": "TRIGGER",
+          "n_causal_spikes": 178
+        },
+        {
+          "residue_id": 121,
+          "residue_name": "LEU122",
+          "transfer_entropy": 0.034298718,
+          "causal_dg": -0.19260442,
+          "fisher_info": 0.016623937,
+          "kl_divergence": 0.0025739002,
+          "role": "TRIGGER",
+          "n_causal_spikes": 12356
+        },
+        {
+          "residue_id": 198,
+          "residue_name": "GLU199",
+          "transfer_entropy": 0.031045264,
+          "causal_dg": -0.15268037,
+          "fisher_info": 0.012980722,
+          "kl_divergence": 0.0038630802,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3833
+        },
+        {
+          "residue_id": 135,
+          "residue_name": "VAL136",
+          "transfer_entropy": 0.029090509,
+          "causal_dg": -0.14778467,
+          "fisher_info": 0.014508653,
+          "kl_divergence": 0.0027382176,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5032
+        },
+        {
+          "residue_id": 167,
+          "residue_name": "GLN168",
+          "transfer_entropy": 0.028785266,
+          "causal_dg": -0.10907526,
+          "fisher_info": 0.013863536,
+          "kl_divergence": 0.0038958334,
+          "role": "TRIGGER",
+          "n_causal_spikes": 576
+        },
+        {
+          "residue_id": 119,
+          "residue_name": "LEU120",
+          "transfer_entropy": 0.02191762,
+          "causal_dg": -0.109443106,
+          "fisher_info": 0.011205089,
+          "kl_divergence": 0.00090791157,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4350
+        },
+        {
+          "residue_id": 123,
+          "residue_name": "VAL124",
+          "transfer_entropy": 0.019488022,
+          "causal_dg": -0.076782316,
+          "fisher_info": 0.013703184,
+          "kl_divergence": 0.0048617353,
+          "role": "TRIGGER",
+          "n_causal_spikes": 742
+        },
+        {
+          "residue_id": 117,
+          "residue_name": "LEU118",
+          "transfer_entropy": 0.014847385,
+          "causal_dg": -0.07598754,
+          "fisher_info": 0.013080077,
+          "kl_divergence": 0.00043745185,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5361
+        },
+        {
+          "residue_id": 118,
+          "residue_name": "LEU119",
+          "transfer_entropy": 0.013993429,
+          "causal_dg": -0.06385055,
+          "fisher_info": 0.011380879,
+          "kl_divergence": 0.002193993,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2112
+        },
+        {
+          "residue_id": 120,
+          "residue_name": "LEU121",
+          "transfer_entropy": 0.012267661,
+          "causal_dg": -0.0762193,
+          "fisher_info": 0.011118272,
+          "kl_divergence": 0.02205952,
+          "role": "TRIGGER",
+          "n_causal_spikes": 33675
+        },
+        {
+          "residue_id": 286,
+          "residue_name": "GLN287",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.025010874,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 126
+        },
+        {
+          "residue_id": 110,
+          "residue_name": "LEU111",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.026753906,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 177
+        },
+        {
+          "residue_id": 111,
+          "residue_name": "LEU112",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.011344422,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 8
+        },
+        {
+          "residue_id": 112,
+          "residue_name": "LEU113",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.02990973,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 327
+        },
+        {
+          "residue_id": 115,
+          "residue_name": "LEU116",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.036386818,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 1149
+        },
+        {
+          "residue_id": 153,
+          "residue_name": "LYS154",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.032753896,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 568
+        },
+        {
+          "residue_id": 156,
+          "residue_name": "LYS157",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.03359752,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 669
+        },
+        {
+          "residue_id": 200,
+          "residue_name": "GLU201",
+          "transfer_entropy": 0.008662867,
+          "causal_dg": -0.024077658,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 105
+        }
+      ]
+    },
+    {
+      "pocket_id": 5,
+      "centroid": [
+        4.912322,
+        70.18456,
+        63.045296
+      ],
+      "ccns_tau": 1.3116007,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8961331,
+      "hysteresis_asymmetry": 0.658144,
+      "relative_asymmetry": 0.6928884,
+      "is_cryptic": false,
+      "therm_class": "DYNAMIC",
+      "top_residues": [
+        {
+          "residue_id": 187,
+          "residue_name": "PRO188",
+          "transfer_entropy": 0.053640362,
+          "causal_dg": -0.23916475,
+          "fisher_info": 0.015288177,
+          "kl_divergence": 0.027788391,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1773
+        },
+        {
+          "residue_id": 168,
+          "residue_name": "GLN169",
+          "transfer_entropy": 0.04964168,
+          "causal_dg": -0.24090329,
+          "fisher_info": 0.016286857,
+          "kl_divergence": 0.03890729,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3436
+        },
+        {
+          "residue_id": 137,
+          "residue_name": "VAL138",
+          "transfer_entropy": 0.03561433,
+          "causal_dg": -0.10663759,
+          "fisher_info": 0.017578926,
+          "kl_divergence": 0.006605457,
+          "role": "TRIGGER",
+          "n_causal_spikes": 151
+        },
+        {
+          "residue_id": 177,
+          "residue_name": "PRO178",
+          "transfer_entropy": 0.029428478,
+          "causal_dg": -0.13472167,
+          "fisher_info": 0.016793791,
+          "kl_divergence": 0.0056882715,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2166
+        },
+        {
+          "residue_id": 178,
+          "residue_name": "PRO179",
+          "transfer_entropy": 0.025000587,
+          "causal_dg": -0.12488881,
+          "fisher_info": 0.011280974,
+          "kl_divergence": 0.027182112,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4365
+        },
+        {
+          "residue_id": 184,
+          "residue_name": "PRO185",
+          "transfer_entropy": 0.023731504,
+          "causal_dg": -0.102909654,
+          "fisher_info": 0.014883837,
+          "kl_divergence": 0.0039894492,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1444
+        },
+        {
+          "residue_id": 197,
+          "residue_name": "GLU198",
+          "transfer_entropy": 0.021493636,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009807566,
+          "kl_divergence": 0.009246746,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 185,
+          "residue_name": "PRO186",
+          "transfer_entropy": 0.021160487,
+          "causal_dg": -0.08455373,
+          "fisher_info": 0.014978453,
+          "kl_divergence": 0.0028304553,
+          "role": "TRIGGER",
+          "n_causal_spikes": 815
+        },
+        {
+          "residue_id": 181,
+          "residue_name": "PRO182",
+          "transfer_entropy": 0.02071278,
+          "causal_dg": -0.11914991,
+          "fisher_info": 0.014613799,
+          "kl_divergence": 0.0025004416,
+          "role": "TRIGGER",
+          "n_causal_spikes": 15549
+        },
+        {
+          "residue_id": 209,
+          "residue_name": "GLU210",
+          "transfer_entropy": 0.019567609,
+          "causal_dg": -0.0,
+          "fisher_info": 0.010684716,
+          "kl_divergence": 0.00427497,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 182,
+          "residue_name": "PRO183",
+          "transfer_entropy": 0.019464308,
+          "causal_dg": -0.10339274,
+          "fisher_info": 0.010167465,
+          "kl_divergence": 0.055081002,
+          "role": "TRIGGER",
+          "n_causal_spikes": 7424
+        },
+        {
+          "residue_id": 136,
+          "residue_name": "VAL137",
+          "transfer_entropy": 0.018671582,
+          "causal_dg": -0.0,
+          "fisher_info": 0.010101686,
+          "kl_divergence": 0.0028349108,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 213,
+          "residue_name": "GLU214",
+          "transfer_entropy": 0.015830671,
+          "causal_dg": -0.05655351,
+          "fisher_info": 0.009927928,
+          "kl_divergence": 0.0004521274,
+          "role": "TRIGGER",
+          "n_causal_spikes": 400
+        },
+        {
+          "residue_id": 169,
+          "residue_name": "GLN170",
+          "transfer_entropy": 0.012996669,
+          "causal_dg": -0.0572013,
+          "fisher_info": 0.012110161,
+          "kl_divergence": 0.0025739002,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1610
+        },
+        {
+          "residue_id": 174,
+          "residue_name": "GLN175",
+          "transfer_entropy": 0.007655834,
+          "causal_dg": -0.014687335,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 24
+        },
+        {
+          "residue_id": 176,
+          "residue_name": "GLN177",
+          "transfer_entropy": 0.007655834,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 139,
+          "residue_name": "LYS140",
+          "transfer_entropy": 0.007655834,
+          "causal_dg": -0.02798594,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 460
+        },
+        {
+          "residue_id": 140,
+          "residue_name": "LYS141",
+          "transfer_entropy": 0.007655834,
+          "causal_dg": -0.023380017,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 167
+        },
+        {
+          "residue_id": 146,
+          "residue_name": "LYS147",
+          "transfer_entropy": 0.007655834,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 150,
+          "residue_name": "LYS151",
+          "transfer_entropy": 0.007655834,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        }
+      ]
+    },
+    {
+      "pocket_id": 15,
+      "centroid": [
+        29.213022,
+        44.85215,
+        48.676544
+      ],
+      "ccns_tau": 1.3139794,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8953402,
+      "hysteresis_asymmetry": 0.7955261,
+      "relative_asymmetry": 1.5165782,
+      "is_cryptic": true,
+      "therm_class": "CRYPTIC",
+      "top_residues": [
+        {
+          "residue_id": 279,
+          "residue_name": "GLN280",
+          "transfer_entropy": 0.060795963,
+          "causal_dg": -0.2498242,
+          "fisher_info": 0.019456577,
+          "kl_divergence": 0.015574395,
+          "role": "TRIGGER",
+          "n_causal_spikes": 986
+        },
+        {
+          "residue_id": 3,
+          "residue_name": "ASN4",
+          "transfer_entropy": 0.05398655,
+          "causal_dg": -0.23657203,
+          "fisher_info": 0.018138835,
+          "kl_divergence": 0.010896062,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1559
+        },
+        {
+          "residue_id": 25,
+          "residue_name": "LEU26",
+          "transfer_entropy": 0.04164636,
+          "causal_dg": -0.0,
+          "fisher_info": 0.015170758,
+          "kl_divergence": 0.003158387,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 277,
+          "residue_name": "PHE278",
+          "transfer_entropy": 0.040558234,
+          "causal_dg": -0.11295493,
+          "fisher_info": 0.01854408,
+          "kl_divergence": 0.0001579434,
+          "role": "TRIGGER",
+          "n_causal_spikes": 106
+        },
+        {
+          "residue_id": 256,
+          "residue_name": "TRP257",
+          "transfer_entropy": 0.03399509,
+          "causal_dg": -0.12817457,
+          "fisher_info": 0.01773954,
+          "kl_divergence": 0.0037460648,
+          "role": "TRIGGER",
+          "n_causal_spikes": 558
+        },
+        {
+          "residue_id": 278,
+          "residue_name": "PHE279",
+          "transfer_entropy": 0.033876132,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0069779176,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 267,
+          "residue_name": "PHE268",
+          "transfer_entropy": 0.030515186,
+          "causal_dg": -0.16589136,
+          "fisher_info": 0.01621569,
+          "kl_divergence": 0.0016303604,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9148
+        },
+        {
+          "residue_id": 260,
+          "residue_name": "PHE261",
+          "transfer_entropy": 0.027803112,
+          "causal_dg": -0.15262303,
+          "fisher_info": 0.013597441,
+          "kl_divergence": 0.0062391744,
+          "role": "TRIGGER",
+          "n_causal_spikes": 10000
+        },
+        {
+          "residue_id": 266,
+          "residue_name": "PHE267",
+          "transfer_entropy": 0.027716992,
+          "causal_dg": -0.1539053,
+          "fisher_info": 0.015980799,
+          "kl_divergence": 0.031245738,
+          "role": "TRIGGER",
+          "n_causal_spikes": 11121
+        },
+        {
+          "residue_id": 273,
+          "residue_name": "PHE274",
+          "transfer_entropy": 0.024914032,
+          "causal_dg": -0.13833183,
+          "fisher_info": 0.014993377,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 11114
+        },
+        {
+          "residue_id": 268,
+          "residue_name": "PHE269",
+          "transfer_entropy": 0.023041587,
+          "causal_dg": -0.12390825,
+          "fisher_info": 0.014918975,
+          "kl_divergence": 0.0017326945,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8289
+        },
+        {
+          "residue_id": 103,
+          "residue_name": "LEU104",
+          "transfer_entropy": 0.021716287,
+          "causal_dg": -0.062177997,
+          "fisher_info": 0.014278922,
+          "kl_divergence": 0.00011982206,
+          "role": "TRIGGER",
+          "n_causal_spikes": 121
+        },
+        {
+          "residue_id": 269,
+          "residue_name": "PHE270",
+          "transfer_entropy": 0.020099308,
+          "causal_dg": -0.06633277,
+          "fisher_info": 0.010683615,
+          "kl_divergence": 0.0005398822,
+          "role": "TRIGGER",
+          "n_causal_spikes": 253
+        },
+        {
+          "residue_id": 264,
+          "residue_name": "PHE265",
+          "transfer_entropy": 0.019628841,
+          "causal_dg": -0.102431536,
+          "fisher_info": 0.0132688405,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6346
+        },
+        {
+          "residue_id": 29,
+          "residue_name": "LEU30",
+          "transfer_entropy": 0.017283944,
+          "causal_dg": -0.07642257,
+          "fisher_info": 0.0100831995,
+          "kl_divergence": 0.0025004416,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1666
+        },
+        {
+          "residue_id": 31,
+          "residue_name": "LEU32",
+          "transfer_entropy": 0.015684813,
+          "causal_dg": -0.059087485,
+          "fisher_info": 0.0125440145,
+          "kl_divergence": 0.019660186,
+          "role": "TRIGGER",
+          "n_causal_spikes": 555
+        },
+        {
+          "residue_id": 272,
+          "residue_name": "PHE273",
+          "transfer_entropy": 0.015311864,
+          "causal_dg": -0.0,
+          "fisher_info": 0.013015201,
+          "kl_divergence": 0.0004794123,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 259,
+          "residue_name": "PHE260",
+          "transfer_entropy": 0.013654467,
+          "causal_dg": -0.07837733,
+          "fisher_info": 0.010121781,
+          "kl_divergence": 0.031436477,
+          "role": "TRIGGER",
+          "n_causal_spikes": 15228
+        },
+        {
+          "residue_id": 265,
+          "residue_name": "PHE266",
+          "transfer_entropy": 0.011226128,
+          "causal_dg": -0.059916276,
+          "fisher_info": 0.00810819,
+          "kl_divergence": 0.012835648,
+          "role": "TRIGGER",
+          "n_causal_spikes": 7746
+        },
+        {
+          "residue_id": 102,
+          "residue_name": "PHE103",
+          "transfer_entropy": 0.010261198,
+          "causal_dg": -0.033389047,
+          "fisher_info": 0.0049122903,
+          "kl_divergence": 0.9527773,
+          "role": "TRIGGER",
+          "n_causal_spikes": 234
+        }
+      ]
+    },
+    {
+      "pocket_id": 4,
+      "centroid": [
+        4.310559,
+        68.11452,
+        36.482265
+      ],
+      "ccns_tau": 1.3152536,
+      "ccns_class": "Soc",
+      "druggability_score": 0.89491546,
+      "hysteresis_asymmetry": 0.6145708,
+      "relative_asymmetry": 0.43164033,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 121,
+          "residue_name": "LEU122",
+          "transfer_entropy": 0.03992976,
+          "causal_dg": -0.0,
+          "fisher_info": 0.010162588,
+          "kl_divergence": 0.021408657,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 290,
+          "residue_name": "GLN291",
+          "transfer_entropy": 0.034591112,
+          "causal_dg": -0.15399665,
+          "fisher_info": 0.014716513,
+          "kl_divergence": 0.027767422,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1753
+        },
+        {
+          "residue_id": 126,
+          "residue_name": "VAL127",
+          "transfer_entropy": 0.03217197,
+          "causal_dg": -0.16977276,
+          "fisher_info": 0.013825166,
+          "kl_divergence": 0.031245738,
+          "role": "TRIGGER",
+          "n_causal_spikes": 7002
+        },
+        {
+          "residue_id": 247,
+          "residue_name": "TRP248",
+          "transfer_entropy": 0.031121297,
+          "causal_dg": -0.20232734,
+          "fisher_info": 0.020160211,
+          "kl_divergence": 0.02205952,
+          "role": "TRIGGER",
+          "n_causal_spikes": 54618
+        },
+        {
+          "residue_id": 289,
+          "residue_name": "GLN290",
+          "transfer_entropy": 0.025497144,
+          "causal_dg": -0.14900127,
+          "fisher_info": 0.017228484,
+          "kl_divergence": 0.005920383,
+          "role": "TRIGGER",
+          "n_causal_spikes": 18125
+        },
+        {
+          "residue_id": 123,
+          "residue_name": "VAL124",
+          "transfer_entropy": 0.02456196,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0075868075,
+          "kl_divergence": 0.0069549354,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 292,
+          "residue_name": "GLN293",
+          "transfer_entropy": 0.023595734,
+          "causal_dg": -0.0,
+          "fisher_info": 0.010650413,
+          "kl_divergence": 0.001919744,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 238,
+          "residue_name": "TRP239",
+          "transfer_entropy": 0.02281509,
+          "causal_dg": -0.13070288,
+          "fisher_info": 0.015525874,
+          "kl_divergence": 0.026073044,
+          "role": "TRIGGER",
+          "n_causal_spikes": 14943
+        },
+        {
+          "residue_id": 119,
+          "residue_name": "LEU120",
+          "transfer_entropy": 0.020898266,
+          "causal_dg": -0.07671379,
+          "fisher_info": 0.013489358,
+          "kl_divergence": 0.0025739002,
+          "role": "TRIGGER",
+          "n_causal_spikes": 472
+        },
+        {
+          "residue_id": 291,
+          "residue_name": "GLN292",
+          "transfer_entropy": 0.020178607,
+          "causal_dg": -0.08151103,
+          "fisher_info": 0.01304319,
+          "kl_divergence": 0.015987882,
+          "role": "TRIGGER",
+          "n_causal_spikes": 877
+        },
+        {
+          "residue_id": 287,
+          "residue_name": "GLN288",
+          "transfer_entropy": 0.01871069,
+          "causal_dg": -0.0718799,
+          "fisher_info": 0.011653468,
+          "kl_divergence": 0.01824986,
+          "role": "TRIGGER",
+          "n_causal_spikes": 629
+        },
+        {
+          "residue_id": 226,
+          "residue_name": "PRO227",
+          "transfer_entropy": 0.016891377,
+          "causal_dg": -0.0,
+          "fisher_info": 0.007162577,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 248,
+          "residue_name": "TRP249",
+          "transfer_entropy": 0.015971323,
+          "causal_dg": -0.08914327,
+          "fisher_info": 0.010831246,
+          "kl_divergence": 0.01737318,
+          "role": "TRIGGER",
+          "n_causal_spikes": 11670
+        },
+        {
+          "residue_id": 245,
+          "residue_name": "TRP246",
+          "transfer_entropy": 0.0146153765,
+          "causal_dg": -0.06421131,
+          "fisher_info": 0.008952631,
+          "kl_divergence": 0.00011982206,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1589
+        },
+        {
+          "residue_id": 118,
+          "residue_name": "LEU119",
+          "transfer_entropy": 0.013720803,
+          "causal_dg": -0.023168882,
+          "fisher_info": 0.008099482,
+          "kl_divergence": 0.0065380293,
+          "role": "TRIGGER",
+          "n_causal_spikes": 16
+        },
+        {
+          "residue_id": 225,
+          "residue_name": "PRO226",
+          "transfer_entropy": 0.013033556,
+          "causal_dg": -0.06404606,
+          "fisher_info": 0.012307254,
+          "kl_divergence": 0.00096397434,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3807
+        },
+        {
+          "residue_id": 244,
+          "residue_name": "TRP245",
+          "transfer_entropy": 0.012647971,
+          "causal_dg": -0.0700401,
+          "fisher_info": 0.012330728,
+          "kl_divergence": 0.00010180669,
+          "role": "TRIGGER",
+          "n_causal_spikes": 10843
+        },
+        {
+          "residue_id": 198,
+          "residue_name": "GLU199",
+          "transfer_entropy": 0.012401891,
+          "causal_dg": -0.0,
+          "fisher_info": 0.005516358,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 227,
+          "residue_name": "PRO228",
+          "transfer_entropy": 0.011414478,
+          "causal_dg": -0.056309745,
+          "fisher_info": 0.011855664,
+          "kl_divergence": 0.0016303604,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3932
+        },
+        {
+          "residue_id": 240,
+          "residue_name": "TRP241",
+          "transfer_entropy": 0.009921848,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        }
+      ]
+    },
+    {
+      "pocket_id": 11,
+      "centroid": [
+        24.456312,
+        56.099762,
+        53.803215
+      ],
+      "ccns_tau": 1.3167655,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8944115,
+      "hysteresis_asymmetry": 0.5354548,
+      "relative_asymmetry": -0.042708497,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 277,
+          "residue_name": "PHE278",
+          "transfer_entropy": 0.03169032,
+          "causal_dg": -0.17204088,
+          "fisher_info": 0.011906856,
+          "kl_divergence": 0.006605457,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9033
+        },
+        {
+          "residue_id": 279,
+          "residue_name": "GLN280",
+          "transfer_entropy": 0.027072575,
+          "causal_dg": -0.15894471,
+          "fisher_info": 0.013166803,
+          "kl_divergence": 0.003637429,
+          "role": "TRIGGER",
+          "n_causal_spikes": 18972
+        },
+        {
+          "residue_id": 99,
+          "residue_name": "PHE100",
+          "transfer_entropy": 0.024378162,
+          "causal_dg": -0.1167194,
+          "fisher_info": 0.012039109,
+          "kl_divergence": 0.0047300607,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3081
+        },
+        {
+          "residue_id": 89,
+          "residue_name": "PHE90",
+          "transfer_entropy": 0.02374482,
+          "causal_dg": -0.118722275,
+          "fisher_info": 0.015121857,
+          "kl_divergence": 0.007762825,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4398
+        },
+        {
+          "residue_id": 88,
+          "residue_name": "PHE89",
+          "transfer_entropy": 0.020067535,
+          "causal_dg": -0.08088394,
+          "fisher_info": 0.009316556,
+          "kl_divergence": 0.001919744,
+          "role": "TRIGGER",
+          "n_causal_spikes": 864
+        },
+        {
+          "residue_id": 103,
+          "residue_name": "LEU104",
+          "transfer_entropy": 0.016450504,
+          "causal_dg": -0.09959311,
+          "fisher_info": 0.010284676,
+          "kl_divergence": 0.0024320171,
+          "role": "TRIGGER",
+          "n_causal_spikes": 25793
+        },
+        {
+          "residue_id": 280,
+          "residue_name": "GLN281",
+          "transfer_entropy": 0.014326206,
+          "causal_dg": -0.08401271,
+          "fisher_info": 0.011846891,
+          "kl_divergence": 0.035633504,
+          "role": "TRIGGER",
+          "n_causal_spikes": 18757
+        },
+        {
+          "residue_id": 105,
+          "residue_name": "LEU106",
+          "transfer_entropy": 0.012412115,
+          "causal_dg": -0.0642826,
+          "fisher_info": 0.0069944304,
+          "kl_divergence": 0.00011698084,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5940
+        },
+        {
+          "residue_id": 63,
+          "residue_name": "LEU64",
+          "transfer_entropy": 0.010288575,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009270766,
+          "kl_divergence": 0.01802895,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 108,
+          "residue_name": "LEU109",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.033847675,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 503
+        },
+        {
+          "residue_id": 62,
+          "residue_name": "LEU63",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.02236108,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 60
+        },
+        {
+          "residue_id": 102,
+          "residue_name": "PHE103",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.0322972,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 378
+        },
+        {
+          "residue_id": 84,
+          "residue_name": "PHE85",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 111,
+          "residue_name": "LEU112",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.031079821,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 302
+        },
+        {
+          "residue_id": 143,
+          "residue_name": "LYS144",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.01541125,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 16
+        },
+        {
+          "residue_id": 144,
+          "residue_name": "LYS145",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.030878676,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 291
+        },
+        {
+          "residue_id": 145,
+          "residue_name": "LYS146",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.03792746,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 1066
+        },
+        {
+          "residue_id": 146,
+          "residue_name": "LYS147",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 148,
+          "residue_name": "LYS149",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.03394395,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 512
+        },
+        {
+          "residue_id": 149,
+          "residue_name": "LYS150",
+          "transfer_entropy": 0.00912667,
+          "causal_dg": -0.018125512,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 27
+        }
+      ]
+    },
+    {
+      "pocket_id": 6,
+      "centroid": [
+        6.2857294,
+        84.203735,
+        55.24539
+      ],
+      "ccns_tau": 1.3181547,
+      "ccns_class": "Soc",
+      "druggability_score": 0.89394844,
+      "hysteresis_asymmetry": 0.7425993,
+      "relative_asymmetry": 1.1992497,
+      "is_cryptic": false,
+      "therm_class": "DYNAMIC",
+      "top_residues": [
+        {
+          "residue_id": 163,
+          "residue_name": "GLN164",
+          "transfer_entropy": 0.058010917,
+          "causal_dg": -0.26609278,
+          "fisher_info": 0.015211231,
+          "kl_divergence": 0.011262894,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2199
+        },
+        {
+          "residue_id": 136,
+          "residue_name": "VAL137",
+          "transfer_entropy": 0.05012482,
+          "causal_dg": -0.0,
+          "fisher_info": 0.015675364,
+          "kl_divergence": 0.009658875,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 198,
+          "residue_name": "GLU199",
+          "transfer_entropy": 0.05012482,
+          "causal_dg": -0.0,
+          "fisher_info": 0.016592933,
+          "kl_divergence": 0.007268913,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 157,
+          "residue_name": "LYS158",
+          "transfer_entropy": 0.046971455,
+          "causal_dg": -0.0,
+          "fisher_info": 0.011465391,
+          "kl_divergence": 0.013664536,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 219,
+          "residue_name": "GLU220",
+          "transfer_entropy": 0.038889017,
+          "causal_dg": -0.1444092,
+          "fisher_info": 0.017510843,
+          "kl_divergence": 0.0056882715,
+          "role": "TRIGGER",
+          "n_causal_spikes": 507
+        },
+        {
+          "residue_id": 191,
+          "residue_name": "GLU192",
+          "transfer_entropy": 0.02637611,
+          "causal_dg": -0.1351044,
+          "fisher_info": 0.015519367,
+          "kl_divergence": 0.00096397434,
+          "role": "TRIGGER",
+          "n_causal_spikes": 5400
+        },
+        {
+          "residue_id": 135,
+          "residue_name": "VAL136",
+          "transfer_entropy": 0.025398884,
+          "causal_dg": -0.13359009,
+          "fisher_info": 0.014461239,
+          "kl_divergence": 0.000882778,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6801
+        },
+        {
+          "residue_id": 169,
+          "residue_name": "GLN170",
+          "transfer_entropy": 0.023813803,
+          "causal_dg": -0.09991409,
+          "fisher_info": 0.013498791,
+          "kl_divergence": 0.002652946,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1140
+        },
+        {
+          "residue_id": 167,
+          "residue_name": "GLN168",
+          "transfer_entropy": 0.023647057,
+          "causal_dg": -0.13035733,
+          "fisher_info": 0.01616469,
+          "kl_divergence": 0.0048617353,
+          "role": "TRIGGER",
+          "n_causal_spikes": 10397
+        },
+        {
+          "residue_id": 196,
+          "residue_name": "GLU197",
+          "transfer_entropy": 0.022681888,
+          "causal_dg": -0.10873317,
+          "fisher_info": 0.013151793,
+          "kl_divergence": 0.0017326945,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3112
+        },
+        {
+          "residue_id": 134,
+          "residue_name": "VAL135",
+          "transfer_entropy": 0.022509338,
+          "causal_dg": -0.12450466,
+          "fisher_info": 0.013911662,
+          "kl_divergence": 0.0037460648,
+          "role": "TRIGGER",
+          "n_causal_spikes": 10727
+        },
+        {
+          "residue_id": 162,
+          "residue_name": "GLN163",
+          "transfer_entropy": 0.016965102,
+          "causal_dg": -0.09230209,
+          "fisher_info": 0.014857593,
+          "kl_divergence": 0.02205952,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9215
+        },
+        {
+          "residue_id": 168,
+          "residue_name": "GLN169",
+          "transfer_entropy": 0.016088791,
+          "causal_dg": -0.09997801,
+          "fisher_info": 0.013583548,
+          "kl_divergence": 0.041751623,
+          "role": "TRIGGER",
+          "n_causal_spikes": 33738
+        },
+        {
+          "residue_id": 188,
+          "residue_name": "PRO189",
+          "transfer_entropy": 0.014888333,
+          "causal_dg": -0.03854453,
+          "fisher_info": 0.009172911,
+          "kl_divergence": 0.002193993,
+          "role": "TRIGGER",
+          "n_causal_spikes": 76
+        },
+        {
+          "residue_id": 224,
+          "residue_name": "PRO225",
+          "transfer_entropy": 0.012210584,
+          "causal_dg": -0.0,
+          "fisher_info": 0.008450523,
+          "kl_divergence": 0.011945962,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 133,
+          "residue_name": "VAL134",
+          "transfer_entropy": 0.010731767,
+          "causal_dg": -0.03345887,
+          "fisher_info": 0.003391944,
+          "kl_divergence": 0.8526422,
+          "role": "TRIGGER",
+          "n_causal_spikes": 186
+        },
+        {
+          "residue_id": 187,
+          "residue_name": "PRO188",
+          "transfer_entropy": 0.010145631,
+          "causal_dg": -0.054370895,
+          "fisher_info": 0.012827448,
+          "kl_divergence": 0.026611282,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8035
+        },
+        {
+          "residue_id": 195,
+          "residue_name": "GLU196",
+          "transfer_entropy": 0.009692623,
+          "causal_dg": -0.033045117,
+          "fisher_info": 0.013533637,
+          "kl_divergence": 0.009315408,
+          "role": "TRIGGER",
+          "n_causal_spikes": 304
+        },
+        {
+          "residue_id": 193,
+          "residue_name": "GLU194",
+          "transfer_entropy": 0.008876067,
+          "causal_dg": -0.036414452,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 975
+        },
+        {
+          "residue_id": 131,
+          "residue_name": "VAL132",
+          "transfer_entropy": 0.005868424,
+          "causal_dg": -0.019670457,
+          "fisher_info": 0.0,
+          "kl_divergence": 0.17425698,
+          "role": "STABIL.",
+          "n_causal_spikes": 276
+        }
+      ]
+    },
+    {
+      "pocket_id": 1,
+      "centroid": [
+        0.85748625,
+        73.362816,
+        49.83362
+      ],
+      "ccns_tau": 1.3272889,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8909037,
+      "hysteresis_asymmetry": 0.53981316,
+      "relative_asymmetry": -0.016577512,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 209,
+          "residue_name": "GLU210",
+          "transfer_entropy": 0.04432718,
+          "causal_dg": -0.2247982,
+          "fisher_info": 0.012661834,
+          "kl_divergence": 0.018512864,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4958
+        },
+        {
+          "residue_id": 246,
+          "residue_name": "TRP247",
+          "transfer_entropy": 0.04207115,
+          "causal_dg": -0.23976456,
+          "fisher_info": 0.013050705,
+          "kl_divergence": 0.010557146,
+          "role": "TRIGGER",
+          "n_causal_spikes": 14215
+        },
+        {
+          "residue_id": 218,
+          "residue_name": "GLU219",
+          "transfer_entropy": 0.038279667,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0108628115,
+          "kl_divergence": 0.013664536,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 247,
+          "residue_name": "TRP248",
+          "transfer_entropy": 0.03678325,
+          "causal_dg": -0.18200906,
+          "fisher_info": 0.009908179,
+          "kl_divergence": 0.010434832,
+          "role": "TRIGGER",
+          "n_causal_spikes": 4032
+        },
+        {
+          "residue_id": 185,
+          "residue_name": "PRO186",
+          "transfer_entropy": 0.035621423,
+          "causal_dg": -0.0,
+          "fisher_info": 0.011435749,
+          "kl_divergence": 0.012095021,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 228,
+          "residue_name": "PRO229",
+          "transfer_entropy": 0.03544683,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009908179,
+          "kl_divergence": 0.008458413,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 134,
+          "residue_name": "VAL135",
+          "transfer_entropy": 0.033874243,
+          "causal_dg": -0.16051307,
+          "fisher_info": 0.017267577,
+          "kl_divergence": 0.0051550325,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2836
+        },
+        {
+          "residue_id": 223,
+          "residue_name": "PRO224",
+          "transfer_entropy": 0.0330852,
+          "causal_dg": -0.18939915,
+          "fisher_info": 0.016664933,
+          "kl_divergence": 0.009951455,
+          "role": "TRIGGER",
+          "n_causal_spikes": 14838
+        },
+        {
+          "residue_id": 196,
+          "residue_name": "GLU197",
+          "transfer_entropy": 0.030449677,
+          "causal_dg": -0.16020362,
+          "fisher_info": 0.015981153,
+          "kl_divergence": 0.011224214,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6819
+        },
+        {
+          "residue_id": 135,
+          "residue_name": "VAL136",
+          "transfer_entropy": 0.029271606,
+          "causal_dg": -0.0,
+          "fisher_info": 0.011097773,
+          "kl_divergence": 0.0056882715,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 136,
+          "residue_name": "VAL137",
+          "transfer_entropy": 0.028564952,
+          "causal_dg": -0.15438351,
+          "fisher_info": 0.017039824,
+          "kl_divergence": 0.005920383,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8674
+        },
+        {
+          "residue_id": 168,
+          "residue_name": "GLN169",
+          "transfer_entropy": 0.028564952,
+          "causal_dg": -0.10456642,
+          "fisher_info": 0.0122712245,
+          "kl_divergence": 0.035790823,
+          "role": "TRIGGER",
+          "n_causal_spikes": 464
+        },
+        {
+          "residue_id": 184,
+          "residue_name": "PRO185",
+          "transfer_entropy": 0.025418507,
+          "causal_dg": -0.10320315,
+          "fisher_info": 0.01152785,
+          "kl_divergence": 0.0039894492,
+          "role": "TRIGGER",
+          "n_causal_spikes": 908
+        },
+        {
+          "residue_id": 219,
+          "residue_name": "GLU220",
+          "transfer_entropy": 0.024288261,
+          "causal_dg": -0.15503177,
+          "fisher_info": 0.0142322,
+          "kl_divergence": 0.0015418328,
+          "role": "TRIGGER",
+          "n_causal_spikes": 44788
+        },
+        {
+          "residue_id": 128,
+          "residue_name": "VAL129",
+          "transfer_entropy": 0.022592321,
+          "causal_dg": -0.117855854,
+          "fisher_info": 0.018746676,
+          "kl_divergence": 0.0094264075,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6327
+        },
+        {
+          "residue_id": 187,
+          "residue_name": "PRO188",
+          "transfer_entropy": 0.022214102,
+          "causal_dg": -0.08816642,
+          "fisher_info": 0.013541859,
+          "kl_divergence": 0.029854273,
+          "role": "TRIGGER",
+          "n_causal_spikes": 779
+        },
+        {
+          "residue_id": 197,
+          "residue_name": "GLU198",
+          "transfer_entropy": 0.02210346,
+          "causal_dg": -0.14209078,
+          "fisher_info": 0.015673937,
+          "kl_divergence": 0.012261277,
+          "role": "TRIGGER",
+          "n_causal_spikes": 48337
+        },
+        {
+          "residue_id": 213,
+          "residue_name": "GLU214",
+          "transfer_entropy": 0.021217557,
+          "causal_dg": -0.11952025,
+          "fisher_info": 0.010882824,
+          "kl_divergence": 0.0035363308,
+          "role": "TRIGGER",
+          "n_causal_spikes": 12726
+        },
+        {
+          "residue_id": 181,
+          "residue_name": "PRO182",
+          "transfer_entropy": 0.019852245,
+          "causal_dg": -0.108211294,
+          "fisher_info": 0.010967622,
+          "kl_divergence": 0.00090791157,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9373
+        },
+        {
+          "residue_id": 211,
+          "residue_name": "GLU212",
+          "transfer_entropy": 0.019022549,
+          "causal_dg": -0.10358672,
+          "fisher_info": 0.0119093405,
+          "kl_divergence": 0.0004238791,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9289
+        }
+      ]
+    },
+    {
+      "pocket_id": 10,
+      "centroid": [
+        17.013988,
+        55.664677,
+        40.127335
+      ],
+      "ccns_tau": 1.3332341,
+      "ccns_class": "Soc",
+      "druggability_score": 0.888922,
+      "hysteresis_asymmetry": 0.82976043,
+      "relative_asymmetry": 1.7218341,
+      "is_cryptic": true,
+      "therm_class": "CRYPTIC",
+      "top_residues": [
+        {
+          "residue_id": 230,
+          "residue_name": "PRO231",
+          "transfer_entropy": 0.02265136,
+          "causal_dg": -0.09332348,
+          "fisher_info": 0.003469651,
+          "kl_divergence": 0.0018560889,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1004
+        },
+        {
+          "residue_id": 13,
+          "residue_name": "ASN14",
+          "transfer_entropy": 0.018898347,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0042219497,
+          "kl_divergence": 0.0008439287,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 17,
+          "residue_name": "LEU18",
+          "transfer_entropy": 0.00915601,
+          "causal_dg": -0.04274349,
+          "fisher_info": 0.00043929476,
+          "kl_divergence": 0.012535121,
+          "role": "STABIL.",
+          "n_causal_spikes": 2521
+        },
+        {
+          "residue_id": 287,
+          "residue_name": "GLN288",
+          "transfer_entropy": 0.005205631,
+          "causal_dg": -0.019805187,
+          "fisher_info": 0.0017084338,
+          "kl_divergence": 0.9527773,
+          "role": "STABIL.",
+          "n_causal_spikes": 591
+        },
+        {
+          "residue_id": 232,
+          "residue_name": "PRO233",
+          "transfer_entropy": 0.0037999565,
+          "causal_dg": -0.018793752,
+          "fisher_info": 0.00018148535,
+          "kl_divergence": 0.0061566536,
+          "role": "SPECTAT",
+          "n_causal_spikes": 4016
+        },
+        {
+          "residue_id": 301,
+          "residue_name": "THR302",
+          "transfer_entropy": 0.0028464007,
+          "causal_dg": -0.0117152985,
+          "fisher_info": 0.00018723893,
+          "kl_divergence": 1.4605544,
+          "role": "GATEWAY",
+          "n_causal_spikes": 997
+        },
+        {
+          "residue_id": 255,
+          "residue_name": "TRP256",
+          "transfer_entropy": 0.0025775887,
+          "causal_dg": -0.010432965,
+          "fisher_info": 0.00358039,
+          "kl_divergence": 0.00046804137,
+          "role": "SPECTAT",
+          "n_causal_spikes": 889
+        },
+        {
+          "residue_id": 253,
+          "residue_name": "TRP254",
+          "transfer_entropy": 0.0024758612,
+          "causal_dg": -0.011299886,
+          "fisher_info": 0.0001279136,
+          "kl_divergence": 0.45873943,
+          "role": "GATEWAY",
+          "n_causal_spikes": 2116
+        },
+        {
+          "residue_id": 250,
+          "residue_name": "TRP251",
+          "transfer_entropy": 0.0024758612,
+          "causal_dg": -0.009994447,
+          "fisher_info": 0.0001279136,
+          "kl_divergence": 0.45873943,
+          "role": "GATEWAY",
+          "n_causal_spikes": 873
+        },
+        {
+          "residue_id": 252,
+          "residue_name": "TRP253",
+          "transfer_entropy": 0.0024758612,
+          "causal_dg": -0.011563452,
+          "fisher_info": 0.0001279136,
+          "kl_divergence": 0.45873943,
+          "role": "GATEWAY",
+          "n_causal_spikes": 2530
+        },
+        {
+          "residue_id": 254,
+          "residue_name": "TRP255",
+          "transfer_entropy": 0.002460827,
+          "causal_dg": -0.013039551,
+          "fisher_info": 0.00014416262,
+          "kl_divergence": 0.00435033,
+          "role": "SPECTAT",
+          "n_causal_spikes": 7263
+        },
+        {
+          "residue_id": 114,
+          "residue_name": "LEU115",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 204,
+          "residue_name": "GLU205",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 228,
+          "residue_name": "PRO229",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 229,
+          "residue_name": "PRO230",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0037610333,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 75
+        },
+        {
+          "residue_id": 249,
+          "residue_name": "TRP250",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0044601937,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 169
+        },
+        {
+          "residue_id": 260,
+          "residue_name": "PHE261",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 281,
+          "residue_name": "GLN282",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.005793239,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 788
+        },
+        {
+          "residue_id": 282,
+          "residue_name": "GLN283",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.0053688427,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 483
+        },
+        {
+          "residue_id": 283,
+          "residue_name": "GLN284",
+          "transfer_entropy": 0.0014571339,
+          "causal_dg": -0.006762966,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "GATEWAY",
+          "n_causal_spikes": 2409
+        }
+      ]
+    },
+    {
+      "pocket_id": 2,
+      "centroid": [
+        3.1902773,
+        58.731464,
+        35.77654
+      ],
+      "ccns_tau": 1.342851,
+      "ccns_class": "Soc",
+      "druggability_score": 0.8857163,
+      "hysteresis_asymmetry": 0.47334966,
+      "relative_asymmetry": -0.41506693,
+      "is_cryptic": false,
+      "therm_class": "RESPONSIVE",
+      "top_residues": [
+        {
+          "residue_id": 294,
+          "residue_name": "GLN295",
+          "transfer_entropy": 0.035203032,
+          "causal_dg": -0.16168305,
+          "fisher_info": 0.016334336,
+          "kl_divergence": 0.0039894492,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2221
+        },
+        {
+          "residue_id": 289,
+          "residue_name": "GLN290",
+          "transfer_entropy": 0.030264517,
+          "causal_dg": -0.1633536,
+          "fisher_info": 0.016845398,
+          "kl_divergence": 0.0034420376,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8571
+        },
+        {
+          "residue_id": 296,
+          "residue_name": "THR297",
+          "transfer_entropy": 0.029820563,
+          "causal_dg": -0.15600947,
+          "fisher_info": 0.015754621,
+          "kl_divergence": 0.0048617353,
+          "role": "TRIGGER",
+          "n_causal_spikes": 6488
+        },
+        {
+          "residue_id": 244,
+          "residue_name": "TRP245",
+          "transfer_entropy": 0.020318953,
+          "causal_dg": -0.08793414,
+          "fisher_info": 0.010957172,
+          "kl_divergence": 0.0,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1423
+        },
+        {
+          "residue_id": 247,
+          "residue_name": "TRP248",
+          "transfer_entropy": 0.019384386,
+          "causal_dg": -0.082188204,
+          "fisher_info": 0.009281954,
+          "kl_divergence": 0.00046804137,
+          "role": "TRIGGER",
+          "n_causal_spikes": 1228
+        },
+        {
+          "residue_id": 304,
+          "residue_name": "THR305",
+          "transfer_entropy": 0.017399192,
+          "causal_dg": -0.094020955,
+          "fisher_info": 0.010320782,
+          "kl_divergence": 0.023706814,
+          "role": "TRIGGER",
+          "n_causal_spikes": 8661
+        },
+        {
+          "residue_id": 291,
+          "residue_name": "GLN292",
+          "transfer_entropy": 0.014979768,
+          "causal_dg": -0.08190483,
+          "fisher_info": 0.011022983,
+          "kl_divergence": 0.020629182,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9642
+        },
+        {
+          "residue_id": 287,
+          "residue_name": "GLN288",
+          "transfer_entropy": 0.014961616,
+          "causal_dg": -0.081255384,
+          "fisher_info": 0.0099704275,
+          "kl_divergence": 0.022573883,
+          "role": "TRIGGER",
+          "n_causal_spikes": 9065
+        },
+        {
+          "residue_id": 227,
+          "residue_name": "PRO228",
+          "transfer_entropy": 0.013230308,
+          "causal_dg": -0.0,
+          "fisher_info": 0.009793096,
+          "kl_divergence": 0.052500535,
+          "role": "TRIGGER",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 290,
+          "residue_name": "GLN291",
+          "transfer_entropy": 0.0127439955,
+          "causal_dg": -0.07122386,
+          "fisher_info": 0.009586818,
+          "kl_divergence": 0.012835648,
+          "role": "TRIGGER",
+          "n_causal_spikes": 11815
+        },
+        {
+          "residue_id": 248,
+          "residue_name": "TRP249",
+          "transfer_entropy": 0.010673721,
+          "causal_dg": -0.051682092,
+          "fisher_info": 0.007931407,
+          "kl_divergence": 0.015202142,
+          "role": "TRIGGER",
+          "n_causal_spikes": 3374
+        },
+        {
+          "residue_id": 231,
+          "residue_name": "PRO232",
+          "transfer_entropy": 0.009745335,
+          "causal_dg": -0.016455926,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 16
+        },
+        {
+          "residue_id": 232,
+          "residue_name": "PRO233",
+          "transfer_entropy": 0.009745335,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 249,
+          "residue_name": "TRP250",
+          "transfer_entropy": 0.009745335,
+          "causal_dg": -0.021845877,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 42
+        },
+        {
+          "residue_id": 236,
+          "residue_name": "TRP237",
+          "transfer_entropy": 0.009745335,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 297,
+          "residue_name": "THR298",
+          "transfer_entropy": 0.009745335,
+          "causal_dg": -0.030031309,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 175
+        },
+        {
+          "residue_id": 301,
+          "residue_name": "THR302",
+          "transfer_entropy": 0.009745335,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0008978676,
+          "kl_divergence": 0.26750526,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 239,
+          "residue_name": "TRP240",
+          "transfer_entropy": 0.009575688,
+          "causal_dg": -0.043536793,
+          "fisher_info": 0.009443139,
+          "kl_divergence": 0.0038958334,
+          "role": "TRIGGER",
+          "n_causal_spikes": 2055
+        },
+        {
+          "residue_id": 234,
+          "residue_name": "PRO235",
+          "transfer_entropy": 0.0064481776,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0,
+          "kl_divergence": 0.17425698,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        },
+        {
+          "residue_id": 251,
+          "residue_name": "TRP252",
+          "transfer_entropy": 0.0064481776,
+          "causal_dg": -0.0,
+          "fisher_info": 0.0,
+          "kl_divergence": 0.17425698,
+          "role": "STABIL.",
+          "n_causal_spikes": 0
+        }
+      ]
+    }
+  ]
+}
