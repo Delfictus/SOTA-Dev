@@ -3902,11 +3902,17 @@ fn run_multi_stream_pipeline(
                 // Spike type entropy: UV(aromatic), LIF(dewetting), EFP(electrostatic)
                 let chem_score = {
                     let spikes = &site.spike_indices;
+                    let chem_radius_sq = 8.0f32 * 8.0f32; // only count spikes within 8Å of centroid
                     if spikes.len() >= 10 {
                         let mut type_counts = [0u32; 4]; // UV, LIF, EFP, other
                         let mut total_intensity = 0.0f32;
                         for &idx in spikes.iter().take(5000) { // cap for speed
                             if let Some(s) = all_stream_spikes.get(idx) {
+                                // Spatial filter: only count spikes near THIS centroid
+                                let dx = s.position[0] - cx;
+                                let dy = s.position[1] - cy;
+                                let dz = s.position[2] - cz;
+                                if dx*dx + dy*dy + dz*dz > chem_radius_sq { continue; }
                                 let t = match s.spike_source {
                                     1 => 0, // UV
                                     2 => 1, // LIF
@@ -3934,7 +3940,13 @@ fn run_multi_stream_pipeline(
 
                 // ── ENGINE 3: Physical (v7 quality_score, already computed) ──
                 // This encompasses burial, lining, spike count, onset, etc.
-                let phys_score = site.quality_score.max(eps);
+                // Sub-sites created after the v7 loop (id >= 1000) have inherited
+                // quality_score but NO individually computed physics signals.
+                // Apply a 50% penalty to prevent them from outranking
+                // physics-validated original sites on geometry alone.
+                // PH peaks (id 500-999) DO go through v7 and are not penalized.
+                let phys_penalty = if site.cluster_id >= 1000 { 0.50 } else { 1.0 };
+                let phys_score = (site.quality_score * phys_penalty).max(eps);
 
                 // ── ENGINE 4: Orthogonal VCS (precomputed) ──
                 let vcs_score = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
