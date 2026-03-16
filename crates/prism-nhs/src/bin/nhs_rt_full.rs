@@ -3719,21 +3719,55 @@ fn run_multi_stream_pipeline(
             log::info!("  Volumetric consensus scoring applied to {} candidates", clustered_sites.len());
         }
 
-        // ── Step 2: Local Ambient Occlusion (LAO) with Depth Tracking ──
-        // Cast 64 Fibonacci-sphere rays from each centroid.
-        // Track HOW FAR each ray travels before hitting protein (not just hit/miss).
-        // Short hits (2-4Å) = tight pocket wall. Long hits (>10Å) = open channel.
-        // The ratio of short-hits to total rays = "pocket-ness" score.
-        // This is the non-naive version: depth-aware, not binary.
+        // ══════════════════════════════════════════════════════════════
+        // MULTI-ENGINE COBB-DOUGLAS RANKING (Package B)
+        // Four orthogonal engines combined via geometric mean.
+        // Unlike additive scoring, if ANY engine scores near zero,
+        // the entire score tanks — enforcing that viable pockets
+        // must be geometrically, chemically, AND physically valid.
+        // ══════════════════════════════════════════════════════════════
         {
             let n_rays = 64usize;
             let max_ray_dist = 15.0f32;
-            let ray_step = 0.5f32; // 0.5Å steps for precision
+            let ray_step = 0.5f32;
             let atom_hit_radius_sq = 2.5f32 * 2.5f32;
             let n_atoms = topology.positions.len() / 3;
             let n_steps = (max_ray_dist / ray_step) as usize;
+            let eps = 0.05f32; // floor to prevent zero-out
 
-            // Fibonacci sphere directions (uniform coverage)
+            // Precompute Orthogonal VCS scores (needs immutable borrow)
+            let vcs_scores: std::collections::HashMap<usize, f32> = {
+                let mut scores = std::collections::HashMap::new();
+                for (i, site) in clustered_sites.iter().enumerate() {
+                    let sid = site.cluster_id;
+                    let my_type = if sid >= 4000 { 5 } else if sid >= 3000 { 4 }
+                        else if sid >= 2000 { 3 } else if sid >= 1000 { 2 }
+                        else if sid >= 500 { 1 } else { 0 };
+                    let mut orthogonal_types = std::collections::HashSet::new();
+                    for (j, other) in clustered_sites.iter().enumerate() {
+                        if i == j { continue; }
+                        let oid = other.cluster_id;
+                        let otype = if oid >= 4000 { 5 } else if oid >= 3000 { 4 }
+                            else if oid >= 2000 { 3 } else if oid >= 1000 { 2 }
+                            else if oid >= 500 { 1 } else { 0 };
+                        if otype == my_type { continue; }
+                        let d = ((site.centroid[0]-other.centroid[0]).powi(2)
+                               + (site.centroid[1]-other.centroid[1]).powi(2)
+                               + (site.centroid[2]-other.centroid[2]).powi(2)).sqrt();
+                        if d < 4.0 { orthogonal_types.insert(otype); }
+                    }
+                    let vcs = match orthogonal_types.len() {
+                        0 => eps * 2.0,
+                        1 => 0.5,
+                        2 => 0.75,
+                        _ => 1.0,
+                    };
+                    scores.insert(sid as usize, vcs);
+                }
+                scores
+            };
+
+            // Fibonacci sphere directions
             let golden_ratio = (1.0 + 5.0f32.sqrt()) / 2.0;
             let ray_dirs: Vec<[f32; 3]> = (0..n_rays).map(|i| {
                 let theta = 2.0 * std::f32::consts::PI * i as f32 / golden_ratio;
@@ -3746,10 +3780,8 @@ fn run_multi_stream_pipeline(
                 let cy = site.centroid[1];
                 let cz = site.centroid[2];
 
+                // ── ENGINE 1: Geometric (LAO + Ray-Length Entropy) ──
                 let mut hit_distances: Vec<f32> = Vec::with_capacity(n_rays);
-                let mut n_exposed = 0u32;
-                let mut n_tight = 0u32; // hits within 4Å
-
                 for dir in &ray_dirs {
                     let mut hit_dist = max_ray_dist;
                     for step in 1..=n_steps {
@@ -3759,50 +3791,94 @@ fn run_multi_stream_pipeline(
                         let pz = cz + dir[2] * t;
                         let mut hit = false;
                         for ai in 0..n_atoms {
-                            let ax = topology.positions[ai * 3];
-                            let ay = topology.positions[ai * 3 + 1];
-                            let az = topology.positions[ai * 3 + 2];
-                            let d2 = (px-ax).powi(2) + (py-ay).powi(2) + (pz-az).powi(2);
-                            if d2 < atom_hit_radius_sq {
-                                hit = true;
-                                break;
-                            }
+                            let d2 = (px - topology.positions[ai*3]).powi(2)
+                                   + (py - topology.positions[ai*3+1]).powi(2)
+                                   + (pz - topology.positions[ai*3+2]).powi(2);
+                            if d2 < atom_hit_radius_sq { hit = true; break; }
                         }
-                        if hit {
-                            hit_dist = t;
-                            break;
-                        }
+                        if hit { hit_dist = t; break; }
                     }
                     hit_distances.push(hit_dist);
-                    if hit_dist >= max_ray_dist { n_exposed += 1; }
-                    if hit_dist <= 4.0 { n_tight += 1; }
                 }
 
-                let exposure = n_exposed as f32 / n_rays as f32;
-                let tightness = n_tight as f32 / n_rays as f32;
-                // Mean hit distance (excluding exposed rays)
-                let occluded: Vec<f32> = hit_distances.iter().filter(|&&d| d < max_ray_dist).copied().collect();
-                let mean_wall_dist = if !occluded.is_empty() {
-                    occluded.iter().sum::<f32>() / occluded.len() as f32
-                } else { max_ray_dist };
+                let n_tight = hit_distances.iter().filter(|&&d| d <= 4.0).count() as f32;
+                let n_exposed = hit_distances.iter().filter(|&&d| d >= max_ray_dist).count() as f32;
+                let tightness = n_tight / n_rays as f32;
+                let exposure = n_exposed / n_rays as f32;
 
-                // Pocket-ness score: combines tightness, exposure, and wall proximity
-                // Deep enclosed pocket: high tightness, low exposure, short mean wall dist
-                // Shallow surface: low tightness, high exposure, long mean wall dist
-                let pocket_depth_score = tightness * (1.0 - exposure) *
-                    (1.0 / (1.0 + (mean_wall_dist / 5.0))); // sigmoid-ish decay
+                // Ray-length entropy: histogram of hit distances (3Å bins)
+                let mut bins = [0u32; 5]; // [0-3], [3-6], [6-9], [9-12], [12+]
+                for &d in &hit_distances {
+                    let b = ((d / 3.0) as usize).min(4);
+                    bins[b] += 1;
+                }
+                let ray_entropy: f32 = bins.iter()
+                    .filter(|&&c| c > 0)
+                    .map(|&c| {
+                        let p = c as f32 / n_rays as f32;
+                        -p * p.ln()
+                    })
+                    .sum();
+                let max_entropy = (5.0f32).ln(); // uniform across 5 bins
 
-                // Apply to quality: deep pockets boosted up to 30%, shallow penalized 30%
-                let lao_factor = if pocket_depth_score > 0.15 {
-                    1.0 + (pocket_depth_score - 0.15).min(0.15) * 2.0 // up to +30%
-                } else if pocket_depth_score < 0.05 {
-                    0.70 // -30% for very shallow
-                } else {
-                    0.85 + (pocket_depth_score - 0.05) / 0.10 * 0.15 // linear ramp
+                let lao_depth = tightness * (1.0 - exposure);
+                // Geo = LAO_depth * (1 + normalized_entropy)
+                // Deep uniform hole: high depth, low entropy → moderate
+                // Active site: moderate depth, high entropy → high
+                let geo_score = (lao_depth * (1.0 + ray_entropy / max_entropy)).max(eps);
+
+                // ── ENGINE 2: Chemical (Spike Density × Type Diversity) ──
+                // Spike type entropy: UV(aromatic), LIF(dewetting), EFP(electrostatic)
+                let chem_score = {
+                    let spikes = &site.spike_indices;
+                    if spikes.len() >= 10 {
+                        let mut type_counts = [0u32; 4]; // UV, LIF, EFP, other
+                        let mut total_intensity = 0.0f32;
+                        for &idx in spikes.iter().take(5000) { // cap for speed
+                            if let Some(s) = all_stream_spikes.get(idx) {
+                                let t = match s.spike_source {
+                                    1 => 0, // UV
+                                    2 => 1, // LIF
+                                    3 => 2, // EFP
+                                    _ => if s.aromatic_type >= 0 { 0 } else { 3 },
+                                };
+                                type_counts[t] += 1;
+                                total_intensity += s.intensity;
+                            }
+                        }
+                        let n_sampled = spikes.len().min(5000) as f32;
+                        // Spike type entropy (LPV)
+                        let type_entropy: f32 = type_counts.iter()
+                            .filter(|&&c| c > 0)
+                            .map(|&c| {
+                                let p = c as f32 / n_sampled;
+                                -p * p.ln()
+                            })
+                            .sum();
+                        let density = (total_intensity / n_sampled).ln().max(0.0) / 5.0; // log-scale
+                        // Chem = log(1 + density) * type_entropy
+                        ((1.0 + density) * (1.0 + type_entropy)).max(eps)
+                    } else { eps }
                 };
-                site.quality_score *= lao_factor;
+
+                // ── ENGINE 3: Physical (v7 quality_score, already computed) ──
+                // This encompasses burial, lining, spike count, onset, etc.
+                let phys_score = site.quality_score.max(eps);
+
+                // ── ENGINE 4: Orthogonal VCS (precomputed) ──
+                let vcs_score = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
+
+                // ── COBB-DOUGLAS GEOMETRIC MEAN ──
+                // Final = Geo^0.3 × Chem^0.2 × Phys^0.4 × VCS^0.1
+                // If any engine ≈ 0, the score tanks. No single signal can dominate.
+                let final_score = geo_score.powf(0.30)
+                    * chem_score.powf(0.20)
+                    * phys_score.powf(0.40)
+                    * vcs_score.powf(0.10);
+
+                site.quality_score = final_score;
             }
-            log::info!("  LAO depth-tracking applied ({} rays × {:.1}A steps/site)", n_rays, ray_step);
+            log::info!("  Cobb-Douglas 4-engine ranking applied (Geo^0.3 × Chem^0.2 × Phys^0.4 × VCS^0.1)");
         }
 
         // ── Step 3: Duplicate pruning ──
