@@ -3692,7 +3692,134 @@ fn run_multi_stream_pipeline(
             }
         }
 
-        // Re-sort all sites (including all 6 centroid strategies)
+        // ══════════════════════════════════════════════════════════════
+        // POST-GENERATION REFINEMENT: Consensus + Exposure + Dedup
+        // ══════════════════════════════════════════════════════════════
+
+        // ── Step 1: Volumetric Consensus Scoring (VCS) ──
+        // If multiple strategies place centroids within 4Å of each other,
+        // that volume has overwhelming evidence. Boost candidates near
+        // consensus clusters, penalize lone outliers.
+        {
+            let consensus_radius = 4.0f32;
+            for i in 0..clustered_sites.len() {
+                let ci = clustered_sites[i].centroid;
+                let mut n_nearby = 0u32;
+                for j in 0..clustered_sites.len() {
+                    if i == j { continue; }
+                    let cj = clustered_sites[j].centroid;
+                    let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
+                    if d < consensus_radius { n_nearby += 1; }
+                }
+                // Consensus boost: each nearby candidate adds 5% quality
+                // Max 25% boost (5 nearby = strong consensus)
+                let consensus_factor = 1.0 + 0.05 * (n_nearby as f32).min(5.0);
+                clustered_sites[i].quality_score *= consensus_factor;
+            }
+            log::info!("  Volumetric consensus scoring applied to {} candidates", clustered_sites.len());
+        }
+
+        // ── Step 2: Ray-Casting Exposure Index ──
+        // Cast 42 rays from each centroid in Fibonacci sphere distribution.
+        // If a ray travels >12Å without hitting protein, it's "exposed."
+        // Deeply enclosed pockets (exposure < 0.3) get boosted.
+        // Shallow/exposed sites (exposure > 0.6) get penalized.
+        {
+            let n_rays = 42usize;
+            let max_ray_dist = 12.0f32;
+            let atom_hit_radius = 2.5f32; // VDW-ish radius for "hitting" an atom
+            let n_atoms = topology.positions.len() / 3;
+
+            // Pre-build: Fibonacci sphere directions
+            let golden_ratio = (1.0 + 5.0f32.sqrt()) / 2.0;
+            let ray_dirs: Vec<[f32; 3]> = (0..n_rays).map(|i| {
+                let theta = 2.0 * std::f32::consts::PI * i as f32 / golden_ratio;
+                let phi = (1.0 - 2.0 * (i as f32 + 0.5) / n_rays as f32).acos();
+                [phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos()]
+            }).collect();
+
+            for site in clustered_sites.iter_mut() {
+                let cx = site.centroid[0];
+                let cy = site.centroid[1];
+                let cz = site.centroid[2];
+
+                let mut exposed_rays = 0u32;
+                for dir in &ray_dirs {
+                    let mut hit = false;
+                    // March along ray in 1Å steps
+                    for step in 1..=(max_ray_dist as i32) {
+                        let px = cx + dir[0] * step as f32;
+                        let py = cy + dir[1] * step as f32;
+                        let pz = cz + dir[2] * step as f32;
+                        // Check against atom positions (brute force — fast for <10K atoms)
+                        for ai in 0..n_atoms {
+                            let ax = topology.positions[ai * 3];
+                            let ay = topology.positions[ai * 3 + 1];
+                            let az = topology.positions[ai * 3 + 2];
+                            let d2 = (px-ax).powi(2) + (py-ay).powi(2) + (pz-az).powi(2);
+                            if d2 < atom_hit_radius * atom_hit_radius {
+                                hit = true;
+                                break;
+                            }
+                        }
+                        if hit { break; }
+                    }
+                    if !hit { exposed_rays += 1; }
+                }
+
+                let exposure = exposed_rays as f32 / n_rays as f32;
+
+                // Apply exposure factor to quality_score:
+                // exposure < 0.2: deep pocket, boost 15%
+                // exposure 0.2-0.5: moderate, neutral
+                // exposure > 0.6: shallow/exposed, penalize 20%
+                let exposure_factor = if exposure < 0.2 {
+                    1.15
+                } else if exposure < 0.5 {
+                    1.0
+                } else {
+                    0.80
+                };
+                site.quality_score *= exposure_factor;
+            }
+            log::info!("  Ray-casting exposure index applied ({} rays/site)", n_rays);
+        }
+
+        // ── Step 3: Duplicate pruning ──
+        // If two candidates are within 2Å of each other, keep only the
+        // higher-scoring one. Reduces noise without losing coverage.
+        {
+            let prune_radius = 2.0f32;
+            let mut keep = vec![true; clustered_sites.len()];
+            // Sort by quality descending first so we keep the best
+            let mut indices: Vec<usize> = (0..clustered_sites.len()).collect();
+            indices.sort_by(|&a, &b|
+                clustered_sites[b].quality_score.partial_cmp(&clustered_sites[a].quality_score)
+                    .unwrap_or(std::cmp::Ordering::Equal));
+
+            for &i in &indices {
+                if !keep[i] { continue; }
+                for &j in &indices {
+                    if i == j || !keep[j] { continue; }
+                    if clustered_sites[j].quality_score >= clustered_sites[i].quality_score { continue; }
+                    let ci = clustered_sites[i].centroid;
+                    let cj = clustered_sites[j].centroid;
+                    let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
+                    if d < prune_radius {
+                        keep[j] = false;
+                    }
+                }
+            }
+            let before = clustered_sites.len();
+            let kept: Vec<_> = clustered_sites.iter().enumerate()
+                .filter(|(i, _)| keep[*i])
+                .map(|(_, s)| s.clone())
+                .collect();
+            clustered_sites = kept;
+            log::info!("  Duplicate pruning: {} -> {} sites (removed {} within {:.0}A)", before, clustered_sites.len(), before - clustered_sites.len(), prune_radius);
+        }
+
+        // Re-sort refined sites
         clustered_sites.sort_by(|a, b|
             b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
 
