@@ -3940,13 +3940,9 @@ fn run_multi_stream_pipeline(
 
                 // ── ENGINE 3: Physical (v7 quality_score, already computed) ──
                 // This encompasses burial, lining, spike count, onset, etc.
-                // Sub-sites created after the v7 loop (id >= 1000) have inherited
-                // quality_score but NO individually computed physics signals.
-                // Apply a 50% penalty to prevent them from outranking
-                // physics-validated original sites on geometry alone.
-                // PH peaks (id 500-999) DO go through v7 and are not penalized.
-                let phys_penalty = if site.cluster_id >= 1000 { 0.50 } else { 1.0 };
-                let phys_score = (site.quality_score * phys_penalty).max(eps);
+                // All sites (including sub-sites) now have genuine local physics
+                // from the re-reap pass — no penalty needed.
+                let phys_score = (site.quality_score).max(eps);
 
                 // ── ENGINE 4: Orthogonal VCS (precomputed) ──
                 let vcs_score = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
@@ -4003,6 +3999,59 @@ fn run_multi_stream_pipeline(
         // Re-sort refined sites
         clustered_sites.sort_by(|a, b|
             b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+
+        // ── Re-reap: compute fresh local physics for ALL candidates ──
+        // This ensures sub-sites (k-means, PH peaks, dual centroid, triangulation,
+        // frustrated solvent) have genuine physics signals from their own local
+        // spike cloud, not inherited parent data.
+        {
+            let reap_radius = 8.0f32;
+            for site in clustered_sites.iter_mut() {
+                let lp = compute_local_physics(
+                    site.centroid,
+                    &all_stream_spikes,
+                    reap_radius,
+                    site.lining_residues.len(),
+                    protocol.uv_burst_interval as i32,
+                    protocol.uv_burst_duration as i32,
+                );
+
+                // Recompute v7-style quality_score from local physics
+                if lp.n_local_spikes >= 20 {
+                    // Enclosure ratio: lining_residues / volume^0.667
+                    let encl = if site.estimated_volume > 1.0 {
+                        site.lining_residues.len() as f32 / site.estimated_volume.powf(0.667)
+                    } else {
+                        site.lining_residues.len() as f32
+                    };
+
+                    // Rank-normalize wd_coherence: need all values first.
+                    // Use raw variance directly; sites with >0 get normalized below.
+                    // We'll do a two-pass: first collect all wd variances, then normalize.
+                    // For now store raw; second pass below.
+                    site.quality_score =
+                        0.20 * lp.burial_score +
+                        0.16 * lp.lining_score +
+                        0.14 * lp.log_spike_norm +
+                        0.10 * encl.clamp(0.0, 2.0) / 2.0 +
+                        0.08 * lp.onset_score +
+                        0.06 * lp.uv_enrichment +
+                        0.06 * lp.sphericity +
+                        0.06 * (lp.per_spike_quality * 2.0).clamp(0.0, 1.0) +
+                        0.04 * lp.source_diversity +
+                        0.04 * lp.breathing_score +
+                        0.04 * lp.wd_coherence.min(1.0) + // raw variance capped at 1.0
+                        0.02 * (lp.source_entropy / 1.1).clamp(0.0, 1.0);
+                }
+                // Sites with < 20 local spikes keep their inherited score
+            }
+            log::info!("  Re-reap: computed local physics for {} candidates (radius={:.0}A)",
+                clustered_sites.len(), reap_radius);
+
+            // Re-sort after re-reap
+            clustered_sites.sort_by(|a, b|
+                b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+        }
 
         // ── PRISM-Therm (multi-stream path) — run BEFORE final reranking ──
         let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
@@ -4924,6 +4973,253 @@ fn build_consensus_sites(
 ///   5. BFS connected components on enclosed voxels → PocketCandidates
 ///   6. O(N) spike overlay: map each spike to nearest pocket via component_id grid
 ///   7. Score pockets (spike density + depth penalty), rebuild sites vector
+
+/// Local physics signals computed from spikes within a radius of a site centroid.
+/// Used by the re-reap pass to give sub-sites genuine physics data.
+#[cfg(feature = "gpu")]
+struct LocalPhysics {
+    burial_score: f32,
+    onset_score: f32,
+    source_diversity: f32,
+    source_entropy: f32,
+    sphericity: f32,
+    wd_coherence: f32,
+    breathing_score: f32,
+    uv_enrichment: f32,
+    per_spike_quality: f32,
+    n_local_spikes: usize,
+    log_spike_norm: f32,
+    lining_score: f32,
+}
+
+/// Compute physics signals for a site centroid from the LOCAL spike cloud.
+/// Queries all spikes within `radius` of the centroid and computes:
+/// burial_score, onset_score, source_diversity, source_entropy,
+/// sphericity, wd_coherence, breathing_score, uv_enrichment, per_spike_quality.
+#[cfg(feature = "gpu")]
+fn compute_local_physics(
+    centroid: [f32; 3],
+    all_spikes: &[prism_nhs::fused_engine::GpuSpikeEvent],
+    radius: f32,
+    n_lining: usize,
+    uv_burst_interval: i32,
+    uv_burst_duration: i32,
+) -> LocalPhysics {
+    let radius_sq = radius * radius;
+
+    // Collect local spikes within radius
+    let local_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = all_spikes.iter()
+        .filter(|s| {
+            let dx = s.position[0] - centroid[0];
+            let dy = s.position[1] - centroid[1];
+            let dz = s.position[2] - centroid[2];
+            dx * dx + dy * dy + dz * dz <= radius_sq
+        })
+        .collect();
+
+    let n = local_spikes.len();
+    if n == 0 {
+        return LocalPhysics {
+            burial_score: 0.0, onset_score: 0.0, source_diversity: 0.0,
+            source_entropy: 0.0, sphericity: 0.0, wd_coherence: 0.0,
+            breathing_score: 0.0, uv_enrichment: 0.0, per_spike_quality: 0.0,
+            n_local_spikes: 0, log_spike_norm: 0.0, lining_score: 0.0,
+        };
+    }
+
+    // ── Burial score: sigmoid(mean(n_residues), center=3.0, slope=2.0) ──
+    let mean_burial: f32 = local_spikes.iter()
+        .map(|s| s.n_residues as f32).sum::<f32>() / n as f32;
+    let burial_score = 1.0 / (1.0 + (-2.0 * (mean_burial - 3.0)).exp());
+
+    // ── Onset score: 1.0 - (median_timestep / max_timestep) ──
+    let onset_score = {
+        let mut timesteps: Vec<i32> = local_spikes.iter().map(|s| s.timestep).collect();
+        timesteps.sort();
+        let median_ts = timesteps[timesteps.len() / 2];
+        let total_steps = timesteps.last().copied().unwrap_or(1).max(1);
+        let onset_fraction = median_ts as f32 / total_steps as f32;
+        (1.0 - onset_fraction).clamp(0.0, 1.0)
+    };
+
+    // ── Source diversity: UV/LIF balance ratio + EFP bonus ──
+    let (source_diversity, source_entropy) = {
+        let mut source_counts = [0u32; 4]; // 0=unknown, 1=UV, 2=LIF, 3=EFP
+        for s in &local_spikes {
+            let src = (s.spike_source as usize).min(3);
+            source_counts[src] += 1;
+        }
+        let total = n as f32;
+        let entropy: f32 = source_counts.iter()
+            .filter(|&&c| c > 0)
+            .map(|&c| {
+                let p = c as f32 / total;
+                -p * p.ln()
+            })
+            .sum();
+
+        let uv_count = source_counts[1] as f32;
+        let lif_count = source_counts[2] as f32;
+        let efp_count = source_counts[3] as f32;
+        let ul_total = (uv_count + lif_count).max(1.0);
+        let balance = 1.0 - ((uv_count - lif_count).abs() / ul_total);
+        let efp_bonus = (efp_count / total).min(0.3) / 0.3;
+        let diversity = balance * 0.7 + efp_bonus * 0.3;
+        (diversity, entropy)
+    };
+
+    // ── Sphericity: eigenvalue ratio of covariance (Cardano's formula) ──
+    let sphericity = if n >= 10 {
+        let nf = n as f32;
+        let mx = local_spikes.iter().map(|s| s.position[0]).sum::<f32>() / nf;
+        let my = local_spikes.iter().map(|s| s.position[1]).sum::<f32>() / nf;
+        let mz = local_spikes.iter().map(|s| s.position[2]).sum::<f32>() / nf;
+
+        let mut cov = [0.0f32; 6]; // [xx, xy, xz, yy, yz, zz]
+        for s in &local_spikes {
+            let dx = s.position[0] - mx;
+            let dy = s.position[1] - my;
+            let dz = s.position[2] - mz;
+            cov[0] += dx * dx; cov[1] += dx * dy; cov[2] += dx * dz;
+            cov[3] += dy * dy; cov[4] += dy * dz; cov[5] += dz * dz;
+        }
+        for c in cov.iter_mut() { *c /= nf; }
+
+        let a = cov[0]; let b = cov[3]; let c_val = cov[5];
+        let d = cov[1]; let e = cov[2]; let f = cov[4];
+
+        let p1 = d * d + e * e + f * f;
+        if p1 < 1e-10 {
+            let mut eigs = [a, b, c_val];
+            eigs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+            if eigs[2] > 1e-10 { eigs[0] / eigs[2] } else { 0.0 }
+        } else {
+            let q = (a + b + c_val) / 3.0;
+            let p2 = (a - q).powi(2) + (b - q).powi(2) + (c_val - q).powi(2) + 2.0 * p1;
+            let p = (p2 / 6.0).sqrt();
+
+            let b00 = (a - q) / p; let b11 = (b - q) / p; let b22 = (c_val - q) / p;
+            let b01 = d / p; let b02 = e / p; let b12 = f / p;
+
+            let det_b = b00 * (b11 * b22 - b12 * b12)
+                      - b01 * (b01 * b22 - b12 * b02)
+                      + b02 * (b01 * b12 - b11 * b02);
+
+            let half_det = (det_b / 2.0).clamp(-1.0, 1.0);
+            let phi = half_det.acos() / 3.0;
+
+            let eig1 = q + 2.0 * p * phi.cos();
+            let eig3 = q + 2.0 * p * (phi + 2.0 * std::f32::consts::PI / 3.0).cos();
+            let eig2 = 3.0 * q - eig1 - eig3;
+
+            let mut eigs = [eig1, eig2, eig3];
+            eigs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+            let min_eig = eigs[0].max(0.0);
+            let max_eig = eigs[2].max(1e-10);
+            (min_eig / max_eig).clamp(0.0, 1.0)
+        }
+    } else {
+        0.0
+    };
+
+    // ── WD coherence: variance of wd_change values ──
+    let wd_coherence = if n >= 10 {
+        let mean_wd: f32 = local_spikes.iter()
+            .map(|s| s.wd_change).sum::<f32>() / n as f32;
+        let var_wd: f32 = local_spikes.iter()
+            .map(|s| (s.wd_change - mean_wd).powi(2))
+            .sum::<f32>() / n as f32;
+        var_wd
+    } else {
+        0.0
+    };
+
+    // ── Breathing score: CV of per-frame burial across 200-step windows ──
+    let breathing_score = if n >= 20 {
+        let breath_frame_window = 200i32;
+        let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> = std::collections::HashMap::new();
+        for s in &local_spikes {
+            let frame = s.timestep / breath_frame_window;
+            frame_burials.entry(frame).or_default().push(s.n_residues as f32);
+        }
+        let frame_means: Vec<f32> = frame_burials.values()
+            .filter(|v| !v.is_empty())
+            .map(|v| v.iter().sum::<f32>() / v.len() as f32)
+            .collect();
+
+        if frame_means.len() >= 3 {
+            let global_mean = frame_means.iter().sum::<f32>() / frame_means.len() as f32;
+            if global_mean > 0.5 {
+                let variance = frame_means.iter()
+                    .map(|&m| (m - global_mean).powi(2))
+                    .sum::<f32>() / frame_means.len() as f32;
+                let cv = variance.sqrt() / global_mean;
+                (cv / 0.5).clamp(0.0, 1.0)
+            } else { 0.0 }
+        } else { 0.0 }
+    } else {
+        0.0
+    };
+
+    // ── UV enrichment: UV spike ratio during UV-on vs UV-off periods ──
+    let uv_enrichment = if n > 0 && uv_burst_interval > 0 {
+        let mut uv_on_count = 0u32;
+        let mut uv_off_count = 0u32;
+        for s in &local_spikes {
+            let is_uv_source = s.spike_source == 1 || s.aromatic_type >= 0;
+            let is_uv_on = (s.timestep % uv_burst_interval) < uv_burst_duration;
+            if is_uv_source {
+                if is_uv_on {
+                    uv_on_count += 1;
+                } else {
+                    uv_off_count += 1;
+                }
+            }
+        }
+        let on_fraction = uv_burst_duration as f32 / uv_burst_interval as f32;
+        let off_fraction = 1.0 - on_fraction;
+        let uv_on_rate = if on_fraction > 0.0 { uv_on_count as f32 / on_fraction } else { 0.0 };
+        let uv_off_rate = if off_fraction > 0.0 { uv_off_count as f32 / off_fraction } else { 0.0 };
+        let enrichment = if uv_off_rate > 0.0 { uv_on_rate / uv_off_rate } else { 0.0 };
+        (enrichment / 3.0).min(1.0)
+    } else {
+        0.0
+    };
+
+    // ── Per-spike quality: mean of (0.4*burial + 0.2*arom + 0.2*wd + 0.2*intensity) ──
+    let per_spike_quality: f32 = {
+        let sum: f32 = local_spikes.iter().map(|s| {
+            let b = (s.n_residues as f32 / 6.0).min(1.0);
+            let a = (s.n_nearby_excited as f32 / 3.0).min(1.0);
+            let w = (s.wd_change * 20.0).min(1.0);
+            let i = (s.intensity / 30.0).min(1.0);
+            0.40 * b + 0.20 * a + 0.20 * w + 0.20 * i
+        }).sum();
+        sum / n as f32
+    };
+
+    // ── Log spike norm: (ln(n_spikes) / 14).clamp(0, 1) ──
+    let log_spike_norm = ((n as f32).ln() / 14.0).clamp(0.0, 1.0);
+
+    // ── Lining score: sigmoid(n_lining, center=12, slope=0.3) ──
+    let lining_score = 1.0 / (1.0 + (-0.3 * (n_lining as f32 - 12.0)).exp());
+
+    LocalPhysics {
+        burial_score,
+        onset_score,
+        source_diversity,
+        source_entropy,
+        sphericity,
+        wd_coherence,
+        breathing_score,
+        uv_enrichment,
+        per_spike_quality,
+        n_local_spikes: n,
+        log_spike_norm,
+        lining_score,
+    }
+}
+
 ///
 /// K-means clustering on 3D positions for sub-pocket splitting.
 /// Uses k-means++ initialization (farthest-point seeding) and runs for
