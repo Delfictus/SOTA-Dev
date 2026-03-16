@@ -5234,9 +5234,12 @@ fn recalculate_enclosure_volume(
             0.0
         };
 
-        // Burial penalty: surface-proximal pockets get full score
-        // depth=2Å -> factor=1.0, depth=5Å -> 0.55, depth=8Å -> 0.30
-        let surface_factor = (-(pocket.mean_depth - 2.0).max(0.0) / 5.0).exp();
+        // Burial REWARD: deeper pockets are more likely to be real binding sites.
+        // depth=1Å -> 0.33, depth=2Å -> 0.67, depth=3Å+ -> 1.0
+        // Previous formula PENALIZED depth (exp(-(d-2)/5)), which systematically
+        // ranked surface grooves above deep binding pockets — the exact opposite
+        // of what drug binding sites look like.
+        let surface_factor = (pocket.mean_depth / 3.0).clamp(0.3, 1.0);
 
         let bbox_extents = [
             pocket.bbox[1][0] - pocket.bbox[0][0],
@@ -5258,18 +5261,22 @@ fn recalculate_enclosure_volume(
             let n_lining = 0.0_f32; // lining_residues computed later; use spike_frac + vol + drug here
             let total = all_spikes.len() as f32;
             let spike_frac = if total > 0.0 { stat.spike_count as f32 / total } else { 0.0 };
-            let vol_q = if pocket.volume >= 100.0 && pocket.volume <= 800.0 {
+            // Volume quality: expanded range [50, 2000] for drug-like pockets.
+            // Real binding sites range from 50Å³ (fragment) to 2000Å³ (kinase cleft).
+            // Previous 800Å³ cap penalized most real drug targets.
+            let vol_q = if pocket.volume >= 50.0 && pocket.volume <= 2000.0 {
                 1.0_f32
-            } else if pocket.volume > 800.0 {
-                (800.0 / pocket.volume).sqrt()
+            } else if pocket.volume > 2000.0 {
+                (2000.0 / pocket.volume).sqrt()
             } else {
-                (pocket.volume / 100.0).clamp(0.1, 1.0)
+                (pocket.volume / 50.0).clamp(0.1, 1.0)
             };
-            0.35 * (spike_frac * 5.0).clamp(0.0, 1.0)    // spike fraction (dominant here)
-                + 0.25 * vol_q                               // pocket-like volume
+            0.25 * (spike_frac * 5.0).clamp(0.0, 1.0)    // spike fraction
+                + 0.20 * vol_q                               // pocket-like volume (wider range)
                 + 0.20 * spike_density.clamp(0.0, 10.0) / 10.0  // spike density
-                + 0.10 * druggability.overall                // druggability (secondary)
-                + 0.10 * surface_factor                      // burial/surface accessibility
+                + 0.15 * surface_factor                      // burial REWARD (was penalty!)
+                + 0.10 * druggability.overall                // druggability
+                + 0.10 * (stat.spike_count as f32).log2().clamp(0.0, 16.0) / 16.0 // log spike count
         };
 
         log::info!("  Site {}: vol={:.0}Å³ spikes={} density={:.2} intensity={:.1} depth={:.1}Å \
