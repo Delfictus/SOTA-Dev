@@ -3947,19 +3947,45 @@ fn run_multi_stream_pipeline(
                 // ── ENGINE 4: Orthogonal VCS (precomputed) ──
                 let vcs_score = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
 
-                // ── COBB-DOUGLAS GEOMETRIC MEAN ──
-                // Cobb-Douglas: Geo^0.25 × Chem^0.15 × Phys^0.45 × VCS^0.15
-                // Phys (v7 quality) is dominant — it has the most validated
-                // signals (burial, lining, spikes). Geo and Chem are multipliers
-                // that penalize shallow/chemically simple pockets.
-                let final_score = geo_score.powf(0.25)
-                    * chem_score.powf(0.15)
-                    * phys_score.powf(0.45)
+                // ── GOLDILOCKS DEPTH CURTAIN ──
+                // Drug binding sites are in the 4-10Å depth range.
+                // Too deep (>12Å) = protein core void (not druggable).
+                // Too shallow (<2Å) = surface bump (not a pocket).
+                // Parabolic penalty: peak at 6Å depth, drops off both sides.
+                let goldilocks = {
+                    let occluded_dists: Vec<f32> = hit_distances.iter()
+                        .filter(|&&d| d < max_ray_dist).copied().collect();
+                    let mean_depth = if !occluded_dists.is_empty() {
+                        occluded_dists.iter().sum::<f32>() / occluded_dists.len() as f32
+                    } else { 0.0 };
+                    // Parabolic: 1.0 at depth=6Å, 0.5 at depth=2Å and 10Å, ~0.2 at depth=14Å
+                    let d = (mean_depth - 6.0).abs();
+                    (1.0 - (d * d) / 50.0).clamp(0.2, 1.0)
+                };
+
+                // ── MULTI-HEAD RANKING ──
+                // Head A: Deep-Pocket Mode (traditional buried enzymes)
+                //   Weighted toward Geo/Phys
+                // Head B: Surface-Pocket Mode (PPIs, shallow clefts, allosteric)
+                //   Weighted toward Chem/VCS/Entropy
+                // Final score = MAX of both heads. This allows a shallow but
+                // chemically complex site to win even if it loses in depth mode.
+
+                let head_a = (geo_score * goldilocks).powf(0.35)
+                    * chem_score.powf(0.10)
+                    * phys_score.powf(0.40)
                     * vcs_score.powf(0.15);
+
+                let head_b = (geo_score * ray_entropy / max_entropy.max(0.01)).max(eps).powf(0.15)
+                    * chem_score.powf(0.35)
+                    * phys_score.powf(0.25)
+                    * vcs_score.powf(0.25);
+
+                let final_score = head_a.max(head_b);
 
                 site.quality_score = final_score;
             }
-            log::info!("  Cobb-Douglas 4-engine ranking applied (Geo^0.25 × Chem^0.15 × Phys^0.45 × VCS^0.15)");
+            log::info!("  Multi-head Cobb-Douglas ranking applied (Deep vs Surface modes)");
         }
 
         // ── Step 3: Duplicate pruning ──
