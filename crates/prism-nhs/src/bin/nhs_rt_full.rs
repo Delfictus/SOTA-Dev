@@ -3719,18 +3719,21 @@ fn run_multi_stream_pipeline(
             log::info!("  Volumetric consensus scoring applied to {} candidates", clustered_sites.len());
         }
 
-        // ── Step 2: Ray-Casting Exposure Index ──
-        // Cast 42 rays from each centroid in Fibonacci sphere distribution.
-        // If a ray travels >12Å without hitting protein, it's "exposed."
-        // Deeply enclosed pockets (exposure < 0.3) get boosted.
-        // Shallow/exposed sites (exposure > 0.6) get penalized.
+        // ── Step 2: Local Ambient Occlusion (LAO) with Depth Tracking ──
+        // Cast 64 Fibonacci-sphere rays from each centroid.
+        // Track HOW FAR each ray travels before hitting protein (not just hit/miss).
+        // Short hits (2-4Å) = tight pocket wall. Long hits (>10Å) = open channel.
+        // The ratio of short-hits to total rays = "pocket-ness" score.
+        // This is the non-naive version: depth-aware, not binary.
         {
-            let n_rays = 42usize;
-            let max_ray_dist = 12.0f32;
-            let atom_hit_radius = 2.5f32; // VDW-ish radius for "hitting" an atom
+            let n_rays = 64usize;
+            let max_ray_dist = 15.0f32;
+            let ray_step = 0.5f32; // 0.5Å steps for precision
+            let atom_hit_radius_sq = 2.5f32 * 2.5f32;
             let n_atoms = topology.positions.len() / 3;
+            let n_steps = (max_ray_dist / ray_step) as usize;
 
-            // Pre-build: Fibonacci sphere directions
+            // Fibonacci sphere directions (uniform coverage)
             let golden_ratio = (1.0 + 5.0f32.sqrt()) / 2.0;
             let ray_dirs: Vec<[f32; 3]> = (0..n_rays).map(|i| {
                 let theta = 2.0 * std::f32::consts::PI * i as f32 / golden_ratio;
@@ -3743,46 +3746,63 @@ fn run_multi_stream_pipeline(
                 let cy = site.centroid[1];
                 let cz = site.centroid[2];
 
-                let mut exposed_rays = 0u32;
+                let mut hit_distances: Vec<f32> = Vec::with_capacity(n_rays);
+                let mut n_exposed = 0u32;
+                let mut n_tight = 0u32; // hits within 4Å
+
                 for dir in &ray_dirs {
-                    let mut hit = false;
-                    // March along ray in 1Å steps
-                    for step in 1..=(max_ray_dist as i32) {
-                        let px = cx + dir[0] * step as f32;
-                        let py = cy + dir[1] * step as f32;
-                        let pz = cz + dir[2] * step as f32;
-                        // Check against atom positions (brute force — fast for <10K atoms)
+                    let mut hit_dist = max_ray_dist;
+                    for step in 1..=n_steps {
+                        let t = step as f32 * ray_step;
+                        let px = cx + dir[0] * t;
+                        let py = cy + dir[1] * t;
+                        let pz = cz + dir[2] * t;
+                        let mut hit = false;
                         for ai in 0..n_atoms {
                             let ax = topology.positions[ai * 3];
                             let ay = topology.positions[ai * 3 + 1];
                             let az = topology.positions[ai * 3 + 2];
                             let d2 = (px-ax).powi(2) + (py-ay).powi(2) + (pz-az).powi(2);
-                            if d2 < atom_hit_radius * atom_hit_radius {
+                            if d2 < atom_hit_radius_sq {
                                 hit = true;
                                 break;
                             }
                         }
-                        if hit { break; }
+                        if hit {
+                            hit_dist = t;
+                            break;
+                        }
                     }
-                    if !hit { exposed_rays += 1; }
+                    hit_distances.push(hit_dist);
+                    if hit_dist >= max_ray_dist { n_exposed += 1; }
+                    if hit_dist <= 4.0 { n_tight += 1; }
                 }
 
-                let exposure = exposed_rays as f32 / n_rays as f32;
+                let exposure = n_exposed as f32 / n_rays as f32;
+                let tightness = n_tight as f32 / n_rays as f32;
+                // Mean hit distance (excluding exposed rays)
+                let occluded: Vec<f32> = hit_distances.iter().filter(|&&d| d < max_ray_dist).copied().collect();
+                let mean_wall_dist = if !occluded.is_empty() {
+                    occluded.iter().sum::<f32>() / occluded.len() as f32
+                } else { max_ray_dist };
 
-                // Apply exposure factor to quality_score:
-                // exposure < 0.2: deep pocket, boost 15%
-                // exposure 0.2-0.5: moderate, neutral
-                // exposure > 0.6: shallow/exposed, penalize 20%
-                let exposure_factor = if exposure < 0.2 {
-                    1.15
-                } else if exposure < 0.5 {
-                    1.0
+                // Pocket-ness score: combines tightness, exposure, and wall proximity
+                // Deep enclosed pocket: high tightness, low exposure, short mean wall dist
+                // Shallow surface: low tightness, high exposure, long mean wall dist
+                let pocket_depth_score = tightness * (1.0 - exposure) *
+                    (1.0 / (1.0 + (mean_wall_dist / 5.0))); // sigmoid-ish decay
+
+                // Apply to quality: deep pockets boosted up to 30%, shallow penalized 30%
+                let lao_factor = if pocket_depth_score > 0.15 {
+                    1.0 + (pocket_depth_score - 0.15).min(0.15) * 2.0 // up to +30%
+                } else if pocket_depth_score < 0.05 {
+                    0.70 // -30% for very shallow
                 } else {
-                    0.80
+                    0.85 + (pocket_depth_score - 0.05) / 0.10 * 0.15 // linear ramp
                 };
-                site.quality_score *= exposure_factor;
+                site.quality_score *= lao_factor;
             }
-            log::info!("  Ray-casting exposure index applied ({} rays/site)", n_rays);
+            log::info!("  LAO depth-tracking applied ({} rays × {:.1}A steps/site)", n_rays, ray_step);
         }
 
         // ── Step 3: Duplicate pruning ──
