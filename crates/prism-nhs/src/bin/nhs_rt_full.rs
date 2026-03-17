@@ -4031,8 +4031,11 @@ fn run_multi_stream_pipeline(
                             .sum();
                         // V9: Log-squash intensive normalization — prevents mega-pockets
                         // from winning on brute-force spike count
-                        let log_vol = (site.estimated_volume + 10.0).ln().max(1.0);
-                        let intensive_density = total_intensity / log_vol;
+                        // Log-squash intensive: converts extensive to intensive density.
+                        // sqrt was tested but too aggressive — penalized large orthosteric
+                        // pockets (3TMN 921A3 regressed from rank 1 to 6).
+                        let vol_squash = (site.estimated_volume + 10.0).ln().max(1.0);
+                        let intensive_density = total_intensity / vol_squash;
                         let density = (intensive_density / n_sampled).ln().max(0.0) / 5.0; // log-scale
                         // Chem = log(1 + density) * type_entropy * frustrated_solvent
                         // Frustrated solvent: inline computation for Cobb-Douglas
@@ -4078,8 +4081,9 @@ fn run_multi_stream_pipeline(
                 // intensive normalization on top of the sigmoid.
                 let phys_raw = site.quality_score;
                 let phys_sigmoid = (1.0 / (1.0 + (-8.0 * (phys_raw - 0.5)).exp())).max(eps);
-                let phys_log_vol = (site.estimated_volume + 10.0).ln().max(1.0);
-                let phys_score = (phys_sigmoid / phys_log_vol).max(eps);
+                // Log-squash on phys: intensive energy density
+                let phys_vol_squash = (site.estimated_volume + 10.0).ln().max(1.0);
+                let phys_score = (phys_sigmoid / phys_vol_squash).max(eps);
 
                 // ── ENGINE 4: Orthogonal VCS (dynamic weighting) ──
                 // Thermodynamic + Geometric agreement = 2x multiplier.
@@ -4264,6 +4268,9 @@ fn run_multi_stream_pipeline(
                 clustered_sites[b].quality_score.partial_cmp(&clustered_sites[a].quality_score)
                     .unwrap_or(std::cmp::Ordering::Equal));
 
+            // Track how many strategy types each survivor absorbs
+            let mut absorbed_count = vec![0u32; clustered_sites.len()];
+
             for &i in &indices {
                 if !keep[i] { continue; }
                 for &j in &indices {
@@ -4273,17 +4280,32 @@ fn run_multi_stream_pipeline(
                     let cj = clustered_sites[j].centroid;
                     let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
                     if d < prune_radius {
+                        // Consensus harvesting: survivor absorbs the pruned site's vote
+                        absorbed_count[i] += 1;
                         keep[j] = false;
                     }
                 }
             }
+
+            // Apply consensus boost: each absorbed neighbor adds 8% quality
+            // This rewards sites where multiple strategies converged
+            let mut n_boosted = 0u32;
+            for i in 0..clustered_sites.len() {
+                if keep[i] && absorbed_count[i] > 0 {
+                    let boost = 1.0 + 0.08 * (absorbed_count[i] as f32).min(5.0);
+                    clustered_sites[i].quality_score *= boost;
+                    n_boosted += 1;
+                }
+            }
+
             let before = clustered_sites.len();
             let kept: Vec<_> = clustered_sites.iter().enumerate()
                 .filter(|(i, _)| keep[*i])
                 .map(|(_, s)| s.clone())
                 .collect();
             clustered_sites = kept;
-            log::info!("  Duplicate pruning: {} -> {} sites (removed {} within {:.0}A)", before, clustered_sites.len(), before - clustered_sites.len(), prune_radius);
+            log::info!("  Consensus harvesting: {} -> {} sites ({} pruned, {} boosted within {:.1}A)",
+                before, clustered_sites.len(), before - clustered_sites.len(), n_boosted, prune_radius);
         }
 
         // Re-sort refined sites
