@@ -3938,7 +3938,7 @@ fn run_multi_stream_pipeline(
                 [phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos()]
             }).collect();
 
-            for site in clustered_sites.iter_mut() {
+            for (site_idx, site) in clustered_sites.iter_mut().enumerate() {
                 let cx = site.centroid[0];
                 let cy = site.centroid[1];
                 let cz = site.centroid[2];
@@ -3997,7 +3997,8 @@ fn run_multi_stream_pipeline(
                     let chem_radius_sq = 8.0f32 * 8.0f32; // only count spikes within 8Å of centroid
                     if spikes.len() >= 10 {
                         let mut type_counts = [0u32; 4]; // UV, LIF, EFP, other
-                        let mut total_intensity = 0.0f32;
+                        // Collect intensities for Neumaier summation
+                        let mut intensity_vec: Vec<f32> = Vec::with_capacity(spikes.len().min(5000));
                         for &idx in spikes.iter().take(5000) { // cap for speed
                             if let Some(s) = all_stream_spikes.get(idx) {
                                 // Spatial filter: only count spikes near THIS centroid
@@ -4012,9 +4013,10 @@ fn run_multi_stream_pipeline(
                                     _ => if s.aromatic_type >= 0 { 0 } else { 3 },
                                 };
                                 type_counts[t] += 1;
-                                total_intensity += s.intensity;
+                                intensity_vec.push(s.intensity);
                             }
                         }
+                        let total_intensity = neumaier_sum(intensity_vec.iter().copied());
                         let n_sampled = spikes.len().min(5000) as f32;
                         // Spike type entropy (LPV)
                         let type_entropy: f32 = type_counts.iter()
@@ -4024,7 +4026,11 @@ fn run_multi_stream_pipeline(
                                 -p * p.ln()
                             })
                             .sum();
-                        let density = (total_intensity / n_sampled).ln().max(0.0) / 5.0; // log-scale
+                        // V9: Log-squash intensive normalization — prevents mega-pockets
+                        // from winning on brute-force spike count
+                        let log_vol = (site.estimated_volume + 10.0).ln().max(1.0);
+                        let intensive_density = total_intensity / log_vol;
+                        let density = (intensive_density / n_sampled).ln().max(0.0) / 5.0; // log-scale
                         // Chem = log(1 + density) * type_entropy * frustrated_solvent
                         // Frustrated solvent: inline computation for Cobb-Douglas
                         let frustrated_solvent = {
@@ -4063,12 +4069,14 @@ fn run_multi_stream_pipeline(
                     } else { eps }
                 };
 
-                // ── ENGINE 3: Physical (sigmoid-squashed) ──
+                // ── ENGINE 3: Physical (sigmoid-squashed, V9 intensive) ──
                 // Sigmoid squash prevents mega-pockets from winning on
-                // brute-force spike count. Once a site has "enough" physics
-                // signal, more doesn't help. Turns intensity into pass/fail.
+                // brute-force spike count. Log-volume denominator adds
+                // intensive normalization on top of the sigmoid.
                 let phys_raw = site.quality_score;
-                let phys_score = (1.0 / (1.0 + (-8.0 * (phys_raw - 0.5)).exp())).max(eps);
+                let phys_sigmoid = (1.0 / (1.0 + (-8.0 * (phys_raw - 0.5)).exp())).max(eps);
+                let phys_log_vol = (site.estimated_volume + 10.0).ln().max(1.0);
+                let phys_score = (phys_sigmoid / phys_log_vol).max(eps);
 
                 // ── ENGINE 4: Orthogonal VCS (dynamic weighting) ──
                 // Thermodynamic + Geometric agreement = 2x multiplier.
@@ -4098,12 +4106,12 @@ fn run_multi_stream_pipeline(
                 // more likely to be a true binding site.
                 let saliency = (chem_score * geo_score).powf(0.5); // sqrt of product
 
-                // ── MULTI-HEAD RANKING ──
+                // ── MULTI-HEAD RANKING (V9 intensive weights) ──
                 // Head A: Deep-Pocket (enzymes, proteases)
-                let head_a = (geo_score * goldilocks * enclosure_cliff).powf(0.30)
-                    * chem_score.powf(0.15)
-                    * phys_score.powf(0.35)
-                    * vcs_score.powf(0.20);
+                let head_a = (geo_score * goldilocks * enclosure_cliff).powf(0.40)
+                    * chem_score.powf(0.35)
+                    * phys_score.powf(0.10)
+                    * vcs_score.powf(0.15);
 
                 // Head B: Surface-Pocket (PPIs, allosteric, shallow clefts)
                 // Saliency cross replaces separate Geo/Chem terms
@@ -4113,9 +4121,16 @@ fn run_multi_stream_pipeline(
                     * goldilocks.powf(0.20);
 
                 let final_score = head_a.max(head_b);
+
+                // V9 diagnostic: top-3 sites get component breakdown
+                if site_idx < 3 {
+                    log::info!("  V9 ranking: geo={:.3} chem_int={:.3} phys_int={:.3} vcs={:.3} → q={:.3}",
+                        geo_score, chem_score, phys_score, vcs_score, final_score);
+                }
+
                 site.quality_score = final_score;
             }
-            log::info!("  Multi-head ranking + sigmoid squash + saliency cross + enclosure cliff applied");
+            log::info!("  V9 multi-head ranking + intensive normalization + saliency cross applied");
         }
 
         // ══════════════════════════════════════════════════════════════
@@ -4229,11 +4244,13 @@ fn run_multi_stream_pipeline(
             log::info!("  NBL kinetic multiplier applied (wavefront coherence × funnel ratio)");
         }
 
-        // ── Step 3: Duplicate pruning ──
-        // If two candidates are within 2Å of each other, keep only the
-        // higher-scoring one. Reduces noise without losing coverage.
+        // ── Step 3: Duplicate pruning (V9: 4.5Å consensus harvesting) ──
+        // If two candidates are within 4.5Å of each other, keep only the
+        // higher-scoring one. The wider radius collapses near-duplicate
+        // predictions while the survivor implicitly retains multi-strategy
+        // agreement signals from VCS precomputation.
         {
-            let prune_radius = 2.0f32;
+            let prune_radius = 4.5f32;
             let mut keep = vec![true; clustered_sites.len()];
             // Sort by quality descending first so we keep the best
             let mut indices: Vec<usize> = (0..clustered_sites.len()).collect();
@@ -5642,6 +5659,24 @@ fn compute_local_physics(
 
 ///
 /// K-means clustering on 3D positions for sub-pocket splitting.
+/// Neumaier (Improved Kahan-Babuška) Summation — preserves microscopic
+/// chemical signals during spike accumulation. Zero-cost abstraction.
+#[inline(always)]
+fn neumaier_sum<I: Iterator<Item = f32>>(iter: I) -> f32 {
+    let mut sum = 0.0f32;
+    let mut c = 0.0f32;
+    for v in iter {
+        let t = sum + v;
+        if sum.abs() >= v.abs() {
+            c += (sum - t) + v;
+        } else {
+            c += (v - t) + sum;
+        }
+        sum = t;
+    }
+    sum + c
+}
+
 /// Uses k-means++ initialization (farthest-point seeding) and runs for
 /// a fixed number of iterations. Returns k centroids.
 #[cfg(feature = "gpu")]
