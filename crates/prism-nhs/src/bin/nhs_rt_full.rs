@@ -174,6 +174,12 @@ struct Args {
     #[arg(long, default_value = "false")]
     adaptive_bias: bool,
 
+    /// Use learned Boltzmann thermodynamic ranking (trained on BENCH30).
+    /// Replaces the hand-tuned Cobb-Douglas with ΔG = ΔH - TΔS + W + K + C
+    /// using JAX-optimized thermodynamic constants.
+    #[arg(long, default_value = "false")]
+    boltzmann_rank: bool,
+
     /// Emit per-site spike_events.json files (large, slow to write).
     /// Off by default to save ~55s per run. Use --emit-spike-json to opt in.
     #[arg(long, default_value = "false")]
@@ -4462,17 +4468,66 @@ fn run_multi_stream_pipeline(
             }
         }
 
-        // ---- Re-sort by updated quality_score ----
-        // Build permutation indices so we can reorder the JSON vectors too
-        // Note: all_pockets_json/cryptic_sites_json only cover original sites (indices < n_original).
-        // New sites from k-means/dual centroid/PH peak emission have no JSON entries.
+        // ---- Final ranking: Boltzmann thermodynamic OR quality_score ----
         let n_original_json = all_pockets_json.len();
         let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(200)).collect();
-        ranked_indices.sort_by(|&a, &b|
-            clustered_sites[b].quality_score
-                .partial_cmp(&clustered_sites[a].quality_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        );
+
+        if args.boltzmann_rank {
+            // Boltzmann ranking: compute ΔG from learned thermodynamic constants
+            // and rank by Boltzmann probability P(i) = exp(-β*ΔG_i) / Z
+            use prism_nhs::boltzmann_weights;
+            log::info!("[Boltzmann Rank] Applying learned thermodynamic constants (β={:.2})", boltzmann_weights::BETA);
+
+            let mut delta_gs: Vec<(usize, f32)> = ranked_indices.iter().map(|&i| {
+                let s = &clustered_sites[i];
+                let vol = s.estimated_volume.max(1.0);
+                let n_lr = s.lining_residues.len();
+                // Extract 15 features matching the JAX training order
+                let features: [f32; 15] = [
+                    (s.spike_count as f32).ln().max(0.0) / 14.0,  // H_spike_density
+                    s.avg_intensity / 8.0,                         // H_burial_depth proxy
+                    0.3,                                           // H_frustrated_water (default)
+                    (n_lr as f32 / 20.0).min(1.0),                // H_lining_count
+                    0.5,                                           // S_ray_entropy (computed in Cobb-Douglas but not stored)
+                    0.5,                                           // S_spike_type_LPV
+                    0.5,                                           // S_uv_enrichment
+                    0.5,                                           // S_sphericity
+                    0.5,                                           // W_activation
+                    1.0 - (n_lr as f32 / vol.powf(0.667)).min(1.0), // W_enclosure
+                    0.3,                                           // K_wavefront_coherence
+                    0.1,                                           // K_funnel_ratio
+                    0.1,                                           // K_breathing
+                    0.5,                                           // C_vcs_orthogonal
+                    s.quality_score.clamp(0.0, 2.0) / 2.0,       // C_quality_score
+                ];
+                let dg = boltzmann_weights::compute_delta_g(&features);
+                (i, dg)
+            }).collect();
+
+            // Sort by ΔG ascending (most negative = most favorable)
+            delta_gs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            ranked_indices = delta_gs.iter().map(|&(i, _)| i).collect();
+
+            // Update quality_score to reflect Boltzmann probability
+            let dg_vals: Vec<f32> = delta_gs.iter().map(|&(_, dg)| dg).collect();
+            let probs = boltzmann_weights::boltzmann_probabilities(&dg_vals);
+            for (rank, (&(idx, _), &prob)) in delta_gs.iter().zip(probs.iter()).enumerate() {
+                clustered_sites[idx].quality_score = prob;
+            }
+
+            log::info!("  Boltzmann ranking: top-1 P={:.4}, top-3 P={:.4}+{:.4}+{:.4}",
+                probs.get(0).unwrap_or(&0.0),
+                probs.get(0).unwrap_or(&0.0),
+                probs.get(1).unwrap_or(&0.0),
+                probs.get(2).unwrap_or(&0.0));
+        } else {
+            // Standard quality_score ranking
+            ranked_indices.sort_by(|&a, &b|
+                clustered_sites[b].quality_score
+                    .partial_cmp(&clustered_sites[a].quality_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            );
+        }
 
         // Reorder all three parallel vectors + sites
         let reordered_sites: Vec<_> = ranked_indices.iter().map(|&i| &clustered_sites[i]).collect();
