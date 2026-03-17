@@ -1,0 +1,317 @@
+PRISM4D-BENCH30: 30 targets
+================================================================================
+
+--- Target 1: 1JWP -> 1PZO (CBT) [cryptic] ---
+  31 sites, 128s | Top-1: 19.4A | Top-3: 11.9A | Top-5: 11.9A | Top-10: 11.9A | Best: 4.0A (rank 30)
+    #1 id=4007 q=0.082 DCC=19.4 vol=626
+    #2 id=7 q=0.076 DCC=11.9 vol=626
+    #3 id=4008 q=0.072 DCC=27.2 vol=154
+    #4 id=8 q=0.068 DCC=20.9 vol=154
+    #5 id=3517 q=0.064 DCC=13.3 vol=626
+
+--- Target 2: 2NPQ -> 2ZB1 (GK4) [cryptic] ---
+  33 sites, 156s | Top-1: 4.2A | Top-3: 4.2A | Top-5: 4.2A | Top-10: 4.2A | Best: 4.2A (rank 1)
+    #1 id=4507 q=0.094 DCC=4.2 vol=4721 **
+    #2 id=4508 q=0.087 DCC=4.2 vol=4721 **
+    #3 id=507 q=0.070 DCC=18.8 vol=4721
+    #4 id=508 q=0.070 DCC=18.8 vol=4721
+    #5 id=3520 q=0.069 DCC=22.0 vol=4721
+
+--- Target 3: 1KV1 -> 1KV2 (B96) [allosteric] ---
+  31 sites, 159s | Top-1: 14.9A | Top-3: 9.7A | Top-5: 9.7A | Top-10: 7.6A | Best: 7.6A (rank 6)
+    #1 id=508 q=0.119 DCC=14.9 vol=3249
+    #2 id=3523 q=0.117 DCC=19.7 vol=3249
+    #3 id=4512 q=0.087 DCC=9.7 vol=1083
+    #4 id=1512 q=0.080 DCC=13.2 vol=1083
+    #5 id=1511 q=0.060 DCC=15.1 vol=1083
+
+--- Target 4: 1MY0 -> 1N0T (AT1) [cryptic] ---
+  25 sites, 124s | Top-1: 12.8A | Top-3: 10.2A | Top-5: 10.2A | Top-10: 10.2A | Best: 10.2A (rank 3)
+    #1 id=2 q=0.101 DCC=12.8 vol=1316
+    #2 id=4002 q=0.093 DCC=13.8 vol=1316
+    #3 id=5 q=0.080 DCC=10.2 vol=717
+    #4 id=4005 q=0.079 DCC=16.0 vol=717
+    #5 id=4508 q=0.076 DCC=17.4 vol=374
+
+--- Target 5: 4EY4 -> 4EY7 (E20) [orthosteric] ---
+  38 sites, 236s | Top-1: 23.9A | Top-3: 7.2A | Top-5: 7.2A | Top-10: 6.1A | Best: 6.1A (rank 7)
+    #1 id=4000 q=0.074 DCC=23.9 vol=1516
+    #2 id=1 q=0.073 DCC=11.3 vol=953
+    #3 id=4001 q=0.068 DCC=7.2 vol=953 *
+    #4 id=0 q=0.063 DCC=17.4 vol=1516
+    #5 id=3528 q=0.061 DCC=34.6 vol=1516
+
+--- Target 6: 2HNP -> 1T49 (892) [allosteric] ---
+  31 sites, 132s | Top-1: 27.7A | Top-3: 23.8A | Top-5: 23.8A | Top-10: 3.0A | Best: 3.0A (rank 7)
+    #1 id=4006 q=0.076 DCC=27.7 vol=1010
+    #2 id=6 q=0.065 DCC=23.8 vol=1010
+    #3 id=3018 q=0.057 DCC=28.5 vol=1010
+    #4 id=3 q=0.053 DCC=30.1 vol=685
+    #5 id=4003 q=0.052 DCC=37.2 vol=685
+
+--- Target 7: 1M47 -> 1PY2 (FRH) [PPI] ---
+  17 sites, 92s | Top-1: 11.6A | Top-3: 11.6A | Top-5: 11.6A | Top-10: 11.6A | Best: 4.4A (rank 12)
+    #1 id=4508 q=0.117 DCC=11.6 vol=263
+    #2 id=508 q=0.113 DCC=13.4 vol=263
+    #3 id=5509 q=0.111 DCC=23.4 vol=263
+    #4 id=2509 q=0.109 DCC=28.4 vol=263
+    #5 id=7 q=0.104 DCC=12.5 vol=263
+
+--- Target 8: 1HCL -> 1JSV (U55) [orthosteric] ---
+  28 sites, 173s | Top-1: 19.8A | Top-3: 11.6A | Top-5: 11.6A | Top-10: 11.0A | Best: 4.2A (rank 15)
+    #1 id=3 q=0.081 DCC=19.8 vol=1510
+    #2 id=4003 q=0.069 DCC=11.6 vol=1510
+    #3 id=3518 q=0.061 DCC=24.9 vol=1510
+    #4 id=3516 q=0.060 DCC=22.9 vol=1315
+    #5 id=4001 q=0.060 DCC=23.7 vol=1315
+
+--- Target 9: 1YES -> 1YET (GDM) [orthosteric] ---
+  34 sites, 131s | Top-1: 8.6A | Top-3: 8.6A | Top-5: 8.6A | Top-10: 4.1A | Best: 4.1A (rank 7)
+    #1 id=4004 q=0.067 DCC=8.6 vol=980
+    #2 id=3527 q=0.067 DCC=10.3 vol=980
+    #3 id=512 q=0.066 DCC=10.8 vol=980
+    #4 id=513 q=0.066 DCC=10.8 vol=980
+    #5 id=4001 q=0.046 DCC=20.0 vol=700
+
+--- Target 10: 2OSS -> 3MXF (JQ1) [orthosteric] ---
+  13 sites, 76s | Top-1: 16.4A | Top-3: 16.4A | Top-5: 15.5A | Top-10: 12.5A | Best: 3.2A (rank 11)
+    #1 id=2505 q=0.111 DCC=16.4 vol=346
+    #2 id=4505 q=0.099 DCC=26.7 vol=346
+    #3 id=4005 q=0.094 DCC=21.2 vol=81
+    #4 id=505 q=0.093 DCC=23.4 vol=346
+    #5 id=5 q=0.091 DCC=15.5 vol=81
+
+--- Target 11: 1FKG -> 1FKJ (FK5) [orthosteric] ---
+  12 sites, 68s | Top-1: 6.2A | Top-3: 6.2A | Top-5: 6.2A | Top-10: 4.0A | Best: 4.0A (rank 6)
+    #1 id=4000 q=0.169 DCC=6.2 vol=779 *
+    #2 id=0 q=0.163 DCC=8.9 vol=779
+    #3 id=3 q=0.089 DCC=25.5 vol=376
+    #4 id=1505 q=0.079 DCC=11.6 vol=260
+    #5 id=4003 q=0.079 DCC=19.2 vol=376
+
+--- Target 12: 1HPV -> 1HVR (XK2) [orthosteric] ---
+  15 sites, 60s | Top-1: 15.1A | Top-3: 9.7A | Top-5: 7.1A | Top-10: 4.0A | Best: 4.0A (rank 9)
+    #1 id=4 q=0.113 DCC=15.1 vol=82
+    #2 id=4004 q=0.113 DCC=20.0 vol=82
+    #3 id=3 q=0.105 DCC=9.7 vol=541
+    #4 id=3507 q=0.101 DCC=7.1 vol=541 *
+    #5 id=4002 q=0.071 DCC=26.2 vol=111
+
+--- Target 13: 3ERT -> 1ERR (RAL) [orthosteric] ---
+  25 sites, 122s | Top-1: 15.9A | Top-3: 15.9A | Top-5: 13.5A | Top-10: 5.6A | Best: 5.6A (rank 9)
+    #1 id=4004 q=0.085 DCC=15.9 vol=1190
+    #2 id=3520 q=0.080 DCC=27.7 vol=1390
+    #3 id=4 q=0.073 DCC=19.3 vol=1190
+    #4 id=3 q=0.065 DCC=13.5 vol=181
+    #5 id=4005 q=0.055 DCC=27.7 vol=220
+
+--- Target 14: 1K3F -> 1K3G (HEC) [orthosteric] ---
+  24 sites, 121s | Top-1: 25.6A | Top-3: 23.9A | Top-5: 20.4A | Top-10: 15.7A | Best: 7.9A (rank 21)
+    #1 id=2 q=0.071 DCC=25.6 vol=1342
+    #2 id=4001 q=0.070 DCC=28.2 vol=278
+    #3 id=1 q=0.070 DCC=23.9 vol=278
+    #4 id=4002 q=0.069 DCC=22.4 vol=1342
+    #5 id=3512 q=0.064 DCC=20.4 vol=278
+
+--- Target 15: 1P38 -> 3HEC (STI) [cryptic] ---
+  41 sites, 166s | Top-1: 10.9A | Top-3: 10.2A | Top-5: 10.2A | Top-10: 9.6A | Best: 9.6A (rank 9)
+    #1 id=0 q=0.079 DCC=10.9 vol=1665
+    #2 id=4000 q=0.075 DCC=10.2 vol=1665
+    #3 id=3530 q=0.068 DCC=15.7 vol=1665
+    #4 id=8 q=0.046 DCC=14.5 vol=223
+    #5 id=4008 q=0.042 DCC=19.6 vol=223
+
+--- Target 16: 1YVF -> 1YV3 (ADP) [allosteric] ---
+  47 sites, 220s | Top-1: 20.8A | Top-3: 20.8A | Top-5: 11.3A | Top-10: 7.7A | Best: 7.3A (rank 21)
+    #1 id=4000 q=0.081 DCC=20.8 vol=2789
+    #2 id=0 q=0.080 DCC=23.1 vol=2789
+    #3 id=3537 q=0.068 DCC=28.2 vol=2789
+    #4 id=1530 q=0.046 DCC=23.4 vol=930
+    #5 id=4001 q=0.043 DCC=11.3 vol=1546
+
+--- Target 17: 1PKL -> 1PKN (PYR) [orthosteric] ---
+  22 sites, 213s | Top-1: 30.0A | Top-3: 30.0A | Top-5: 9.4A | Top-10: 9.4A | Best: 9.4A (rank 4)
+    #1 id=4000 q=0.150 DCC=30.0 vol=5407
+    #2 id=0 q=0.135 DCC=31.3 vol=5407
+    #3 id=3012 q=0.122 DCC=32.0 vol=5407
+    #4 id=4003 q=0.078 DCC=9.4 vol=2559
+    #5 id=3 q=0.074 DCC=19.5 vol=2559
+
+--- Target 18: 1DWD -> 1DWC (MIT) [orthosteric] ---
+  25 sites, 125s | Top-1: 31.3A | Top-3: 27.2A | Top-5: 13.1A | Top-10: 6.5A | Best: 6.5A (rank 8)
+    #1 id=3514 q=0.088 DCC=31.3 vol=1817
+    #2 id=3516 q=0.087 DCC=34.4 vol=1519
+    #3 id=4004 q=0.085 DCC=27.2 vol=1519
+    #4 id=4000 q=0.080 DCC=13.1 vol=1817
+    #5 id=4006 q=0.059 DCC=20.9 vol=453
+
+--- Target 19: 1TTH -> 1TTI (PGA) [orthosteric] ---
+  21 sites, 153s | Top-1: 16.6A | Top-3: 16.6A | Top-5: 16.6A | Top-10: 16.6A | Best: 3.2A (rank 13)
+    #1 id=11 q=0.121 DCC=16.6 vol=545
+    #2 id=3516 q=0.106 DCC=22.8 vol=545
+    #3 id=4002 q=0.093 DCC=17.4 vol=326
+    #4 id=2 q=0.083 DCC=18.4 vol=326
+    #5 id=4511 q=0.067 DCC=31.7 vol=487
+
+--- Target 20: 2CBA -> 3HS4 (AZM) [orthosteric] ---
+  29 sites, 112s | Top-1: 18.6A | Top-3: 18.6A | Top-5: 4.9A | Top-10: 4.9A | Best: 4.9A (rank 5)
+    #1 id=0 q=0.087 DCC=18.6 vol=854
+    #2 id=4513 q=0.087 DCC=22.6 vol=854
+    #3 id=3521 q=0.074 DCC=24.4 vol=854
+    #4 id=513 q=0.073 DCC=16.2 vol=854
+    #5 id=9 q=0.046 DCC=4.9 vol=185 **
+
+--- Target 21: 1RDQ -> 1K1J (FD2) [orthosteric] ---
+  39 sites, 174s | Top-1: 19.3A | Top-3: 19.3A | Top-5: 19.3A | Top-10: 11.9A | Best: 11.6A (rank 13)
+    #1 id=4004 q=0.070 DCC=19.3 vol=1311
+    #2 id=4 q=0.062 DCC=22.2 vol=1311
+    #3 id=3529 q=0.057 DCC=26.7 vol=1311
+    #4 id=511 q=0.052 DCC=24.6 vol=1016
+    #5 id=7527 q=0.045 DCC=22.8 vol=1016
+
+--- Target 22: 3L3N -> 3L3M (A92) [orthosteric] ---
+  48 sites, 248s | Top-1: 11.3A | Top-3: 11.3A | Top-5: 11.3A | Top-10: 6.1A | Best: 6.1A (rank 7)
+    #1 id=4003 q=0.079 DCC=11.3 vol=2391
+    #2 id=3 q=0.072 DCC=12.9 vol=2391
+    #3 id=522 q=0.062 DCC=19.0 vol=2391
+    #4 id=3546 q=0.061 DCC=39.9 vol=2391
+    #5 id=4006 q=0.040 DCC=22.2 vol=1124
+
+--- Target 23: 1NNA -> 1NNC (ZMR) [orthosteric] ---
+  28 sites, 165s | Top-1: 19.4A | Top-3: 10.8A | Top-5: 10.8A | Top-10: 10.8A | Best: 5.1A (rank 20)
+    #1 id=4008 q=0.098 DCC=19.4 vol=1321
+    #2 id=8 q=0.097 DCC=10.8 vol=1321
+    #3 id=3516 q=0.075 DCC=32.9 vol=1321
+    #4 id=1515 q=0.068 DCC=19.0 vol=440
+    #5 id=9 q=0.050 DCC=28.4 vol=245
+
+--- Target 24: 1TPA -> 1TPP (APA) [orthosteric] ---
+  15 sites, 106s | Top-1: 12.3A | Top-3: 4.1A | Top-5: 4.1A | Top-10: 4.1A | Best: 4.1A (rank 2)
+    #1 id=4003 q=0.166 DCC=12.3 vol=1009
+    #2 id=3 q=0.164 DCC=4.1 vol=1009 **
+    #3 id=3510 q=0.141 DCC=17.8 vol=1009
+    #4 id=1506 q=0.084 DCC=12.8 vol=336
+    #5 id=1508 q=0.076 DCC=18.2 vol=336
+
+--- Target 25: 1ABF -> 1ABE (ARA) [orthosteric] ---
+  27 sites, 119s | Top-1: 13.8A | Top-3: 13.8A | Top-5: 12.1A | Top-10: 11.0A | Best: 7.5A (rank 11)
+    #1 id=12 q=0.075 DCC=13.8 vol=259
+    #2 id=3 q=0.070 DCC=14.2 vol=361
+    #3 id=1 q=0.069 DCC=21.3 vol=115
+    #4 id=3517 q=0.066 DCC=20.3 vol=259
+    #5 id=11 q=0.064 DCC=12.1 vol=556
+
+--- Target 26: 4HT0 -> 4HT2 (V50) [orthosteric] ---
+  21 sites, 109s | Top-1: 17.6A | Top-3: 12.5A | Top-5: 12.5A | Top-10: 5.6A | Best: 5.6A (rank 7)
+    #1 id=3017 q=0.145 DCC=17.6 vol=693
+    #2 id=4007 q=0.135 DCC=12.5 vol=693
+    #3 id=4000 q=0.079 DCC=25.9 vol=553
+    #4 id=0 q=0.073 DCC=27.0 vol=553
+    #5 id=1012 q=0.064 DCC=19.4 vol=231
+
+--- Target 27: 1C5Y -> 1C5X (FLC) [orthosteric] ---
+  27 sites, 114s | Top-1: 11.3A | Top-3: 2.0A | Top-5: 2.0A | Top-10: 2.0A | Best: 2.0A (rank 2)
+    #1 id=4003 q=0.113 DCC=11.3 vol=945
+    #2 id=3515 q=0.106 DCC=2.0 vol=945 ***
+    #3 id=1513 q=0.077 DCC=4.4 vol=315 **
+    #4 id=4 q=0.065 DCC=23.1 vol=109
+    #5 id=4004 q=0.059 DCC=32.1 vol=109
+
+--- Target 28: 1GKC -> 1GKD (STN) [orthosteric] ---
+  24 sites, 88s | Top-1: 3.0A | Top-3: 3.0A | Top-5: 3.0A | Top-10: 3.0A | Best: 3.0A (rank 1)
+    #1 id=9 q=0.085 DCC=3.0 vol=297 ***
+    #2 id=512 q=0.079 DCC=8.1 vol=297
+    #3 id=4512 q=0.079 DCC=6.5 vol=297 *
+    #4 id=11 q=0.057 DCC=8.4 vol=63
+    #5 id=4007 q=0.057 DCC=21.9 vol=132
+
+--- Target 29: 3TMN -> 5TMN (0PJ) [orthosteric] ---
+  23 sites, 143s | Top-1: 1.3A | Top-3: 1.3A | Top-5: 1.3A | Top-10: 1.3A | Best: 1.3A (rank 1)
+    #1 id=4005 q=0.097 DCC=1.3 vol=921 ***
+    #2 id=5 q=0.096 DCC=7.3 vol=921 *
+    #3 id=3013 q=0.079 DCC=11.4 vol=921
+    #4 id=0 q=0.067 DCC=23.8 vol=138
+    #5 id=4003 q=0.066 DCC=18.6 vol=1069
+
+--- Target 30: 4DFR -> 3DFR (MTX) [orthosteric] ---
+  18 sites, 84s | Top-1: 12.0A | Top-3: 12.0A | Top-5: 5.8A | Top-10: 3.7A | Best: 3.7A (rank 8)
+    #1 id=3 q=0.139 DCC=12.0 vol=662
+    #2 id=7 q=0.114 DCC=25.4 vol=363
+    #3 id=4007 q=0.103 DCC=17.7 vol=363
+    #4 id=4508 q=0.089 DCC=6.1 vol=221 *
+    #5 id=1510 q=0.071 DCC=5.8 vol=221 *
+
+================================================================================
+PRISM4D-BENCH30 AGGREGATE RESULTS
+================================================================================
+
+Metric                DCC<=4A  DCC<=5A  DCC<=8A  DCC<=10A
+------------------------------------------------------------
+SR@1                  2/30 ( 7%)  3/30 (10%)  4/30 (13%)  5/30 (17%)
+SR@3                  3/30 (10%)  5/30 (17%)  7/30 (23%)  10/30 (33%)
+SR@N+2                3/30 (10%)  5/30 (17%)  7/30 (23%)  10/30 (33%)
+SR@5                  3/30 (10%)  6/30 (20%)  10/30 (33%)  13/30 (43%)
+SR@10                 6/30 (20%)  11/30 (37%)  18/30 (60%)  20/30 (67%)
+
+Mean Top-1 DCC        15.7A
+Median Top-1 DCC      15.5A
+Mean Best DCC         5.4A
+Mean time/target      138s
+
+--- SR@N Curve (DCC <= 5A) ---
+N   SR@N   Cumulative targets
+ 1   3/30 (10%)  ###
+ 2   5/30 (17%)  #####
+ 3   5/30 (17%)  #####
+ 4   5/30 (17%)  #####
+ 5   6/30 (20%)  ######
+ 6   8/30 (27%)  ########
+ 7  10/30 (33%)  ##########
+ 8  10/30 (33%)  ##########
+ 9  11/30 (37%)  ###########
+10  11/30 (37%)  ###########
+
+--- By Pocket Type ---
+  orthosteric   N=22  SR@1<=5A: 2/22 ( 9%)  SR@3<=5A: 4/22 (18%)  SR@1<=8A: 3/22 (14%)
+  cryptic       N= 4  SR@1<=5A: 1/4 (25%)  SR@3<=5A: 1/4 (25%)  SR@1<=8A: 1/4 (25%)
+  allosteric    N= 3  SR@1<=5A: 0/3 ( 0%)  SR@3<=5A: 0/3 ( 0%)  SR@1<=8A: 0/3 ( 0%)
+  PPI           N= 1  SR@1<=5A: 0/1 ( 0%)  SR@3<=5A: 0/1 ( 0%)  SR@1<=8A: 0/1 ( 0%)
+
+--- Per-Target Detail ---
+   #   APO  HOLO   LIG TYPE           Top1   Top3  Top10    Best  Rank
+---------------------------------------------------------------------------
+   1  1JWP  1PZO   CBT cryptic       19.4A  11.9A  11.9A    4.0A   30 
+   2  2NPQ  2ZB1   GK4 cryptic        4.2A   4.2A   4.2A    4.2A    1 **
+   3  1KV1  1KV2   B96 allosteric    14.9A   9.7A   7.6A    7.6A    6 
+   4  1MY0  1N0T   AT1 cryptic       12.8A  10.2A  10.2A   10.2A    3 
+   5  4EY4  4EY7   E20 orthosteric   23.9A   7.2A   6.1A    6.1A    7 
+   6  2HNP  1T49   892 allosteric    27.7A  23.8A   3.0A    3.0A    7 
+   7  1M47  1PY2   FRH PPI           11.6A  11.6A  11.6A    4.4A   12 
+   8  1HCL  1JSV   U55 orthosteric   19.8A  11.6A  11.0A    4.2A   15 
+   9  1YES  1YET   GDM orthosteric    8.6A   8.6A   4.1A    4.1A    7 
+  10  2OSS  3MXF   JQ1 orthosteric   16.4A  16.4A  12.5A    3.2A   11 
+  11  1FKG  1FKJ   FK5 orthosteric    6.2A   6.2A   4.0A    4.0A    6 *
+  12  1HPV  1HVR   XK2 orthosteric   15.1A   9.7A   4.0A    4.0A    9 
+  13  3ERT  1ERR   RAL orthosteric   15.9A  15.9A   5.6A    5.6A    9 
+  14  1K3F  1K3G   HEC orthosteric   25.6A  23.9A  15.7A    7.9A   21 
+  15  1P38  3HEC   STI cryptic       10.9A  10.2A   9.6A    9.6A    9 
+  16  1YVF  1YV3   ADP allosteric    20.8A  20.8A   7.7A    7.3A   21 
+  17  1PKL  1PKN   PYR orthosteric   30.0A  30.0A   9.4A    9.4A    4 
+  18  1DWD  1DWC   MIT orthosteric   31.3A  27.2A   6.5A    6.5A    8 
+  19  1TTH  1TTI   PGA orthosteric   16.6A  16.6A  16.6A    3.2A   13 
+  20  2CBA  3HS4   AZM orthosteric   18.6A  18.6A   4.9A    4.9A    5 
+  21  1RDQ  1K1J   FD2 orthosteric   19.3A  19.3A  11.9A   11.6A   13 
+  22  3L3N  3L3M   A92 orthosteric   11.3A  11.3A   6.1A    6.1A    7 
+  23  1NNA  1NNC   ZMR orthosteric   19.4A  10.8A  10.8A    5.1A   20 
+  24  1TPA  1TPP   APA orthosteric   12.3A   4.1A   4.1A    4.1A    2 
+  25  1ABF  1ABE   ARA orthosteric   13.8A  13.8A  11.0A    7.5A   11 
+  26  4HT0  4HT2   V50 orthosteric   17.6A  12.5A   5.6A    5.6A    7 
+  27  1C5Y  1C5X   FLC orthosteric   11.3A   2.0A   2.0A    2.0A    2 
+  28  1GKC  1GKD   STN orthosteric    3.0A   3.0A   3.0A    3.0A    1 ***
+  29  3TMN  5TMN   0PJ orthosteric    1.3A   1.3A   1.3A    1.3A    1 ***
+  30  4DFR  3DFR   MTX orthosteric   12.0A  12.0A   3.7A    3.7A    8 
+
+================================================================================
+BENCHMARK COMPLETE - 30 targets evaluated
+Results saved to benchmarks/prism4d_bench30/benchmark_results.json
+================================================================================
