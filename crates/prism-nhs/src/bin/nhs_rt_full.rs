@@ -3883,6 +3883,9 @@ fn run_multi_stream_pipeline(
         }
 
         // ══════════════════════════════════════════════════════════════
+        // Store engine scores per site for Boltzmann training export
+        let mut engine_scores: std::collections::HashMap<i32, (f32, f32, f32, f32)> = std::collections::HashMap::new();
+
         // MULTI-ENGINE COBB-DOUGLAS RANKING (Package B)
         // Four orthogonal engines combined via geometric mean.
         // Unlike additive scoring, if ANY engine scores near zero,
@@ -4121,6 +4124,9 @@ fn run_multi_stream_pipeline(
                     * goldilocks.powf(0.20);
 
                 let final_score = head_a.max(head_b);
+
+                // Store engine scores for Boltzmann training
+                engine_scores.insert(site.cluster_id, (geo_score, chem_score, phys_score, vcs_score));
 
                 // V9 diagnostic: top-3 sites get component breakdown
                 if site_idx < 3 {
@@ -4647,6 +4653,13 @@ fn run_multi_stream_pipeline(
             }
             if let Some(&fs_score) = frustrated_solvent_scores.get(&site_id) {
                 site_json["frustrated_solvent_score"] = serde_json::json!(fs_score);
+            }
+            // Export Cobb-Douglas engine scores for Boltzmann training
+            if let Some(&(geo, chem, phys, vcs)) = engine_scores.get(&site_id) {
+                site_json["engine_geo"] = serde_json::json!(geo);
+                site_json["engine_chem"] = serde_json::json!(chem);
+                site_json["engine_phys"] = serde_json::json!(phys);
+                site_json["engine_vcs"] = serde_json::json!(vcs);
             }
         }
 
