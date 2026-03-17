@@ -11,36 +11,36 @@ lighting soft
 # cartoon
 # color #1 gray80
 
-# ========== Site 1 (ActiveSite) [DRUGGABLE] ==========
+# ========== Site 1 (Unknown) [DRUGGABLE] ==========
 # Pocket 1 lining residues
-name pocket1_lining #1/A:53,/A:52,/A:54,/A:48,/A:47,/A:55,/A:46,/A:49,/A:51,/A:50,/A:56
+name pocket1_lining #1/A:6,/A:5,/A:7,/A:4,/A:3,/A:8,/A:9
 show pocket1_lining atoms
 style pocket1_lining stick
-color #1/A:55 magenta
-color #1/A:53 forest green
-color #1/A:54,/A:47,/A:46,/A:50,/A:56 gold
+color #1/A:6 forest green
+color #1/A:5,/A:3,/A:9 gold
 surface pocket1_lining
 transparency pocket1_lining 70
 color pocket1_lining slate gray
-marker #101 position 6.375,10.832,2.177 color red radius 1.0
-2dlabels text "Pocket 1 (81% druggable) *" xpos 0.02 ypos 0.95 color black size 14
+marker #101 position 10.398,30.326,14.323 color red radius 1.0
+2dlabels text "Pocket 1 (65% druggable) *" xpos 0.02 ypos 0.95 color black size 14
 
-# ========== Site 2 (Unknown) [DRUGGABLE] ==========
+# ========== Site 2 (ActiveSite) [DRUGGABLE] ==========
 # Pocket 2 lining residues
-name pocket2_lining #1/A:5,/A:4,/A:99,/A:6,/A:98,/A:3,/A:2,/A:7
+name pocket2_lining #1/A:53,/A:52,/A:55,/A:54,/A:48,/A:46,/A:47,/A:49,/A:51
 show pocket2_lining atoms
 style pocket2_lining stick
-color #1/A:99,/A:6 forest green
-color #1/A:5,/A:3 gold
+color #1/A:55 magenta
+color #1/A:53 forest green
+color #1/A:54,/A:46,/A:47 gold
 surface pocket2_lining
 transparency pocket2_lining 70
 color pocket2_lining slate gray
-marker #102 position 14.845,30.052,14.021 color red radius 1.0
-2dlabels text "Pocket 2 (63% druggable) *" xpos 0.02 ypos 0.91 color black size 14
+marker #102 position 6.378,9.839,2.214 color red radius 1.0
+2dlabels text "Pocket 2 (81% druggable) *" xpos 0.02 ypos 0.91 color black size 14
 
 # ========== Site 3 (Unknown) [DRUGGABLE] ==========
 # Pocket 3 lining residues
-name pocket3_lining #1/A:57,/A:42,/A:35,/A:55,/A:56,/A:44,/A:45,/A:79,/A:77,/A:78,/A:43,/A:58
+name pocket3_lining #1/A:57,/A:42,/A:35,/A:55,/A:56,/A:44,/A:79,/A:45,/A:77,/A:78,/A:43,/A:58
 show pocket3_lining atoms
 style pocket3_lining stick
 color #1/A:35,/A:55,/A:45,/A:43 magenta
@@ -49,7 +49,7 @@ color #1/A:56,/A:44,/A:79,/A:77 gold
 surface pocket3_lining
 transparency pocket3_lining 70
 color pocket3_lining slate gray
-marker #103 position -1.058,13.295,-4.699 color red radius 1.0
+marker #103 position -1.068,13.299,-4.700 color red radius 1.0
 2dlabels text "Pocket 3 (61% druggable) *" xpos 0.02 ypos 0.87 color black size 14
 
 # ========== Site 4 (Unknown) [DRUGGABLE] ==========
@@ -63,34 +63,47 @@ color #1/A:62,/A:39,/A:38,/A:63,/A:75,/A:15,/A:72 gold
 surface pocket4_lining
 transparency pocket4_lining 70
 color pocket4_lining slate gray
-marker #104 position 2.753,23.819,-9.853 color red radius 1.0
+marker #104 position 2.765,23.810,-9.863 color red radius 1.0
 2dlabels text "Pocket 4 (58% druggable) *" xpos 0.02 ypos 0.83 color black size 14
 
-# ========== Site 5 (Unknown) [DRUGGABLE] ==========
+# ========== Site 5 (Cryptic) [DRUGGABLE] ==========
 # Pocket 5 lining residues
-name pocket5_lining #1/A:87,/A:91,/A:96,/A:26,/A:95,/A:90,/A:97,/A:29,/A:88
+name pocket5_lining #1/A:10,/A:11,/A:9,/A:24,/A:22,/A:23,/A:3,/A:85,/A:21,/A:8,/A:12,/A:13,/A:66,/A:25,/A:90,/A:84,/A:83,/A:67,/A:93,/A:82,/A:95
 show pocket5_lining atoms
 style pocket5_lining stick
-color #1/A:95,/A:29 magenta
-color #1/A:90,/A:97 gold
+color #1/A:21,/A:25,/A:67,/A:95 magenta
+color #1/A:10,/A:11,/A:9,/A:24,/A:22,/A:23,/A:3,/A:85,/A:13,/A:66,/A:90,/A:84,/A:93,/A:82 gold
 surface pocket5_lining
 transparency pocket5_lining 70
 color pocket5_lining slate gray
-marker #105 position 16.484,24.636,1.227 color red radius 1.0
+marker #105 position 6.329,27.291,3.820 color red radius 1.0
 2dlabels text "Pocket 5 (48% druggable) *" xpos 0.02 ypos 0.79 color black size 14
 
 # ========== Site 6 (Unknown) [DRUGGABLE] ==========
 # Pocket 6 lining residues
-name pocket6_lining #1/A:82,/A:8,/A:21,/A:83,/A:10,/A:22,/A:23,/A:81,/A:20,/A:34,/A:11,/A:84
+name pocket6_lining #1/A:87,/A:91,/A:96,/A:26,/A:95,/A:97,/A:90,/A:29,/A:88
 show pocket6_lining atoms
 style pocket6_lining stick
-color #1/A:21,/A:20,/A:34 magenta
-color #1/A:82,/A:10,/A:22,/A:23,/A:81,/A:11,/A:84 gold
+color #1/A:95,/A:29 magenta
+color #1/A:97,/A:90 gold
 surface pocket6_lining
 transparency pocket6_lining 70
 color pocket6_lining slate gray
-marker #106 position 1.590,25.000,5.580 color red radius 1.0
-2dlabels text "Pocket 6 (46% druggable) *" xpos 0.02 ypos 0.75 color black size 14
+marker #106 position 16.489,24.646,1.230 color red radius 1.0
+2dlabels text "Pocket 6 (48% druggable) *" xpos 0.02 ypos 0.75 color black size 14
+
+# ========== Site 7 (Unknown) [DRUGGABLE] ==========
+# Pocket 7 lining residues
+name pocket7_lining #1/A:82,/A:8,/A:21,/A:83,/A:10,/A:22,/A:23,/A:81,/A:20,/A:34,/A:11,/A:84
+show pocket7_lining atoms
+style pocket7_lining stick
+color #1/A:21,/A:20,/A:34 magenta
+color #1/A:82,/A:10,/A:22,/A:23,/A:81,/A:11,/A:84 gold
+surface pocket7_lining
+transparency pocket7_lining 70
+color pocket7_lining slate gray
+marker #107 position 1.595,25.011,5.583 color red radius 1.0
+2dlabels text "Pocket 7 (46% druggable) *" xpos 0.02 ypos 0.71 color black size 14
 
 # ========== Color Legend ==========
 # Magenta = Catalytic residues (GLU, ASP, HIS, SER, CYS, LYS)

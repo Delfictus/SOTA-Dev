@@ -3,12 +3,13 @@ REMARK   Pseudo-atoms at binding site centroids
 REMARK   B-factor = quality score * 100
 REMARK   Occupancy = druggability score
 REMARK
-HETATM    1  BS  CRY A   1      -3.923 -13.142   1.602  0.78 89.30
-HETATM    2  BS  CRY A   2       1.416  10.394   9.790  0.79 87.28
-HETATM    3  BS  ACT A   3      11.015   3.517  16.366  0.61 81.58
-HETATM    4  BS  CRY A   4      10.036  -9.075   7.846  0.70 77.09
-HETATM    5  BS  UNK A   5       9.506  -9.667 -14.055  0.54 74.59
-HETATM    6  BS  ACT A   6       7.092  11.715  -1.490  0.67 73.29
-HETATM    7  BS  CRY A   7      18.076  -1.681  -7.219  0.65 72.95
-HETATM    8  BS  UNK A   8      10.491  20.349  13.922  0.50 70.91
+HETATM    1  BS  CRY A   1       6.210   9.430   9.083  0.82 96.12
+HETATM    2  BS  CRY A   2      -3.923 -13.142   1.602  0.78 89.30
+HETATM    3  BS  CRY A   3      10.362  -5.695  14.020  0.75 85.40
+HETATM    4  BS  ACT A   4      11.015   3.517  16.366  0.61 81.58
+HETATM    5  BS  CRY A   5      10.043  -9.064   7.851  0.70 77.10
+HETATM    6  BS  UNK A   6       9.510  -9.672 -14.061  0.54 74.57
+HETATM    7  BS  ACT A   7       7.092  11.715  -1.490  0.67 73.29
+HETATM    8  BS  CRY A   8      18.083  -1.668  -7.248  0.65 72.95
+HETATM    9  BS  UNK A   9      10.505  20.348  13.915  0.50 70.91
 END
