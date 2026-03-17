@@ -11,10 +11,11 @@
 //! Regenerate with: conda run -n prism_dock python benchmarks/prism4d_bench30/train_boltzmann_jax.py
 
 /// Inverse temperature β (controls ranking sharpness)
-pub const BETA: f32 = 4.912;
+/// V9 Stage 2 retrained constants
+pub const BETA: f32 = 3.953;
 
 /// Effective temperature T for TΔS term
-pub const T_EFF: f32 = 0.062;
+pub const T_EFF: f32 = 0.063;
 
 /// Thermodynamic scaling coefficients (convert arbitrary units to energy scale)
 /// Index mapping:
@@ -33,20 +34,21 @@ pub const T_EFF: f32 = 0.062;
 /// [12] K_breathing          — pocket dynamics
 /// [13] C_vcs_orthogonal     — cross-strategy consensus
 /// [14] C_quality_score      — composite v7 quality
+/// V9 Stage 2 weights — retrained on V9 intensive feature landscape
 pub const WEIGHTS: [f32; 15] = [
-    1.9565,  // H_spike_density (DOMINANT — 82.9% Fisher information)
-    0.0399,  // H_burial_depth
-    0.0514,  // H_frustrated_water
-    0.0266,  // H_lining_count
-    0.0517,  // S_ray_entropy
-    0.0467,  // S_spike_type_LPV
-    0.0608,  // S_uv_enrichment
-    0.0843,  // S_sphericity
-    0.0297,  // W_activation
-    0.0058,  // W_enclosure
-    0.0517,  // K_wavefront_coherence
-    0.0517,  // K_funnel_ratio
-    0.0142,  // K_breathing
+    1.9238,  // H_spike_density (DOMINANT — 96.2% Fisher information)
+    0.0234,  // H_burial_depth
+    0.0453,  // H_frustrated_water
+    0.0932,  // H_lining_count (increased from 0.027 — lining matters more with intensive)
+    0.0454,  // S_ray_entropy
+    0.0561,  // S_spike_type_LPV
+    0.0634,  // S_uv_enrichment
+    0.0603,  // S_sphericity
+    0.0133,  // W_activation
+    0.0054,  // W_enclosure
+    0.0454,  // K_wavefront_coherence
+    0.0454,  // K_funnel_ratio
+    0.0089,  // K_breathing
     0.0517,  // C_vcs_orthogonal
     0.6019,  // C_quality_score (15.1% Fisher information)
 ];
