@@ -32,7 +32,9 @@ for t in m['targets']:
         'target/release/nhs_rt_full', '-t', topo, '-o', outdir,
         '--fast', '--hysteresis', '--multi-stream', '8',
         '--spike-percentile', '95', '--prism-therm',
-        '--hmr', '--adaptive-dt', '-v'
+        '--hmr', '--adaptive-dt',
+        '--adaptive-bias', '--adaptive-protocol',
+        '--boltzmann-rank', '-v'
     ], capture_output=True, text=True, timeout=600)
     elapsed = time.time() - start
 
