@@ -4279,7 +4279,19 @@ fn run_multi_stream_pipeline(
                     let ci = clustered_sites[i].centroid;
                     let cj = clustered_sites[j].centroid;
                     let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
-                    if d < prune_radius {
+
+                    // Volumetric NMS: two pruning criteria
+                    // 1. Within 4.5Å (standard spatial NMS)
+                    // 2. Within 6.0Å AND volumes within 20% (same pocket, different centroid)
+                    let vi = clustered_sites[i].estimated_volume;
+                    let vj = clustered_sites[j].estimated_volume;
+                    let vol_ratio = if vi > 0.0 && vj > 0.0 {
+                        (vi / vj).max(vj / vi)
+                    } else { 1.0 };
+                    let is_duplicate = d < prune_radius
+                        || (d < 6.0 && vol_ratio < 1.20);
+
+                    if is_duplicate {
                         // Consensus harvesting: survivor absorbs the pruned site's vote
                         absorbed_count[i] += 1;
                         keep[j] = false;
