@@ -17,11 +17,12 @@ venv/
 myc_max_cosolvent_results/
 e2e_validation_test/results_*/
 
-# Loose test structures (use e2e_validation_test/prep/ instead)
+# PDB / structure files — never push these (huge, regenerable)
 *.pdb
 *.cif
-!e2e_validation_test/**/*.pdb
-!benchmarks/**/*.pdb
+*.pdbqt
+*.sdf
+*.mol2
 
 # Python cache
 __pycache__/
@@ -50,3 +51,66 @@ benchmarks/cryptobench/structures/
 
 # SQLite profiling databases
 *.sqlite
+
+# NVIDIA driver installers
+NVIDIA-Linux-*.run
+NVIDIA-Linux-*.run.*
+
+# Per-target detection output dirs (SNDC validation runs)
+*_out/
+*_out2/
+*_out3/
+*_out4/
+
+# Docking results (large, regenerable)
+docking_results/
+docking_results_fast/
+docking_results_full/
+gnina_out/
+
+# CUDA compiled binaries
+*.cubin
+
+# ML models / pickled artifacts
+*.pkl
+models/
+
+# Benchmark intermediates
+benchmarks/prism4d_bench30/apo/*.orig
+benchmarks/prism4d_bench30/apo/*.pdbqt
+benchmarks/prism4d_bench30/apo/*_out/
+benchmarks/prism4d_bench30/holo/*.pdbqt
+benchmarks/prism4d_bench30/*.log
+benchmarks/prism4d_bench30/*.csv
+benchmarks/prism4d_bench30/xgb_*.json
+
+# RunPod unpacked training data (use tar.gz)
+runpod_training/bench60_data/
+
+# Loose scratch scripts in project root
+apply_ai_ranker.py
+build_ml_dataset.py
+check_*.py
+clean_patch.py
+debug_*.pml
+harvest_*.py
+patch_*.py
+pilot_train.py
+prism4d.py
+train_master_ranker.py
+run_all_benchmarks.sh
+run_full_benchmark.sh
+run_gnina_pipeline.sh
+run_unidock_pipeline.sh
+
+# Scan results
+scan_results/
+
+# Tools directory
+tools/
+
+# Training features
+training_features.csv
+
+# Shell history artifacts
+h\ history*

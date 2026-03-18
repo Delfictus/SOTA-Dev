@@ -1,0 +1,87 @@
+## HARDENED docker-compose for demo.delfictus.com
+## Maximum isolation + obfuscation
+##
+## Deploy: sudo bash deploy-hardened.sh
+##
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.hardened
+    container_name: prism4d-demo
+    runtime: nvidia
+
+    ## ---------- NETWORK ISOLATION ----------
+    networks:
+      demo_isolated:
+        ipv4_address: 10.99.0.2
+
+    ## Ports bound to localhost ONLY — only Cloudflare tunnel can reach them
+    ports:
+      - "127.0.0.1:7681:7681"
+      - "127.0.0.1:8080:8080"
+
+    ## ---------- RESOURCE LIMITS ----------
+
+    ## ---------- SECURITY HARDENING ----------
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID               # Needed for p4-init privilege drop
+      - SETGID               # Needed for p4-init privilege drop
+      - CHOWN                # Needed for p4-init to chown decrypted kernels
+      - DAC_OVERRIDE         # Needed for p4-init to read/write protected files
+      - FOWNER               # Needed for p4-init to chmod decrypted kernels
+      - SYS_NICE             # GPU scheduling
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,nosuid,nodev
+      - /var/lib/p4r/o:size=2g,nosuid,nodev
+      - /home/demo:size=64m,noexec,nosuid,nodev
+      - /run:size=64m,nosuid,nodev
+
+    ## ---------- ENVIRONMENT ----------
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    ## ---------- RESTART / HEALTH ----------
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:7681/')\" 2>/dev/null || exit 0"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    ## ---------- LOGGING ----------
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+          pids: 150
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+## ---------- ISOLATED NETWORK ----------
+networks:
+  demo_isolated:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.99.0.0/24
+          gateway: 10.99.0.1
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "false"

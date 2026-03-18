@@ -3427,7 +3427,7 @@ fn run_multi_stream_pipeline(
                         (pw[2] / pws) as f32,
                     ];
                     let dist = ((pc[0] - cx).powi(2) + (pc[1] - cy).powi(2) + (pc[2] - cz).powi(2)).sqrt();
-                    let max_shift = site.estimated_volume.cbrt() * 2.0;
+                    let max_shift = 4.0f32; // Capped at 4A — prevents centroid from jumping across pocket
                     if dist > 2.0 && dist < max_shift {
                         log::info!("  Site {}: peak centroid shift {:.1}Å (vol={:.0}Å³, {} top spikes)",
                             site.cluster_id, dist, site.estimated_volume, top_spikes.len());
@@ -4382,34 +4382,52 @@ fn run_multi_stream_pipeline(
                         site.cluster_id, lp.frustrated_solvent_score, lp.n_local_spikes);
                 }
 
-                // Recompute v7-style quality_score from local physics
+                // Update ALL signal hashmaps so JSON export gets real values for sub-sites
+                physics_signals.insert(site.cluster_id,
+                    (lp.onset_score, lp.source_diversity, lp.mean_burial, lp.burial_score));
+                spatial_signals.insert(site.cluster_id,
+                    (lp.sphericity, lp.wd_coherence, lp.breathing_score));
+                uv_enrichment_scores.insert(site.cluster_id, lp.uv_enrichment);
+
+                // Engine scores: sub-sites (4xxx, 5xxx, etc.) inherit from parent
+                // Parent ID derivation: 4xxx→xxx, 5xxx→xxx, 3xxx→xxx, 2xxx→xxx, 1xxx→xxx
+                if !engine_scores.contains_key(&site.cluster_id) {
+                    let parent_id = site.cluster_id % 1000;
+                    if let Some(&parent_engines) = engine_scores.get(&parent_id) {
+                        engine_scores.insert(site.cluster_id, parent_engines);
+                    }
+                }
+                // STI results: same parent inheritance
+                if !sti_results.contains_key(&site.cluster_id) {
+                    let parent_id = site.cluster_id % 1000;
+                    if let Some(parent_sti) = sti_results.get(&parent_id) {
+                        sti_results.insert(site.cluster_id, parent_sti.clone());
+                    }
+                }
+
+                // Recompute quality_score using SAME v7 weights as parent sites
+                // (line ~3344) to ensure consistent ranking across parent + sub-sites
                 if lp.n_local_spikes >= 20 {
-                    // Enclosure ratio: lining_residues / volume^0.667
                     let encl = if site.estimated_volume > 1.0 {
                         site.lining_residues.len() as f32 / site.estimated_volume.powf(0.667)
                     } else {
                         site.lining_residues.len() as f32
                     };
 
-                    // Rank-normalize wd_coherence: need all values first.
-                    // Use raw variance directly; sites with >0 get normalized below.
-                    // We'll do a two-pass: first collect all wd variances, then normalize.
-                    // For now store raw; second pass below.
+                    // v7 weights — identical to the parent site formula
                     site.quality_score =
-                        0.18 * lp.burial_score +
-                        0.14 * lp.lining_score +
-                        0.12 * lp.log_spike_norm +
+                        0.20 * lp.burial_score +
+                        0.16 * lp.lining_score +
+                        0.14 * lp.log_spike_norm +
                         0.10 * encl.clamp(0.0, 2.0) / 2.0 +
-                        0.08 * lp.frustrated_solvent_score +  // ΔG_solvation proxy
                         0.08 * lp.onset_score +
                         0.06 * lp.uv_enrichment +
                         0.06 * lp.sphericity +
                         0.06 * (lp.per_spike_quality * 2.0).clamp(0.0, 1.0) +
                         0.04 * lp.source_diversity +
-                        0.02 * lp.breathing_score +
-                        0.02 * lp.wd_coherence.min(1.0) + // raw variance capped at 1.0
-                        0.02 * (lp.source_entropy / 1.1).clamp(0.0, 1.0) +
-                        0.02 * 0.0; // reserved
+                        0.04 * lp.breathing_score +
+                        0.04 * lp.wd_coherence.min(1.0) +
+                        0.02 * (lp.source_entropy / 1.1).clamp(0.0, 1.0);
                 }
                 // Sites with < 20 local spikes keep their inherited score
             }
@@ -5533,6 +5551,7 @@ fn build_consensus_sites(
 #[cfg(feature = "gpu")]
 struct LocalPhysics {
     burial_score: f32,
+    mean_burial: f32,
     onset_score: f32,
     source_diversity: f32,
     source_entropy: f32,
@@ -5577,11 +5596,12 @@ fn compute_local_physics(
     let n = local_spikes.len();
     if n == 0 {
         return LocalPhysics {
-            burial_score: 0.0, onset_score: 0.0, source_diversity: 0.0,
-            source_entropy: 0.0, sphericity: 0.0, wd_coherence: 0.0,
-            breathing_score: 0.0, uv_enrichment: 0.0, per_spike_quality: 0.0,
-            n_local_spikes: 0, log_spike_norm: 0.0, lining_score: 0.0,
-            frustrated_solvent_score: 0.0, asymmetry_offset: 0.0, ray_escape_ratio: 0.0,
+            burial_score: 0.0, mean_burial: 0.0, onset_score: 0.0,
+            source_diversity: 0.0, source_entropy: 0.0, sphericity: 0.0,
+            wd_coherence: 0.0, breathing_score: 0.0, uv_enrichment: 0.0,
+            per_spike_quality: 0.0, n_local_spikes: 0, log_spike_norm: 0.0,
+            lining_score: 0.0, frustrated_solvent_score: 0.0,
+            asymmetry_offset: 0.0, ray_escape_ratio: 0.0,
         };
     }
 
@@ -5860,6 +5880,7 @@ fn compute_local_physics(
 
     LocalPhysics {
         burial_score,
+        mean_burial,
         onset_score,
         source_diversity,
         source_entropy,

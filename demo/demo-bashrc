@@ -1,0 +1,33 @@
+# Restricted demo shell
+cd /var/lib/p4r/o 2>/dev/null || true
+cat /home/demo/.motd 2>/dev/null
+
+export TMOUT=900
+readonly TMOUT
+export PATH="/var/lib/p4r/d:/var/lib/p4r/e:/usr/bin:/bin"
+readonly PATH
+readonly HOME
+export HISTSIZE=0
+export HISTFILESIZE=0
+unset HISTFILE
+
+# Trap to prevent env snooping
+_p4_guard() {
+    local cmd="$BASH_COMMAND"
+    case "$cmd" in
+        *cat*/var/lib/p4r/.re*|*cat*runtime*|*.enc*|*openssl*|*/proc/*|*/sys/*|*KERNEL*|*/etc/shadow*|*/etc/passwd*)
+            echo "Access denied." >&2
+            return 1 ;;
+    esac
+}
+trap '_p4_guard' DEBUG
+
+alias cat='cat --'
+alias ls='ls --color=auto'
+alias env='echo "Not available"'
+alias set='echo "Not available"'
+alias export='echo "Not available"'
+alias printenv='echo "Not available"'
+alias declare='echo "Not available"'
+alias compgen='echo "Not available"'
+alias history='echo "Not available"'

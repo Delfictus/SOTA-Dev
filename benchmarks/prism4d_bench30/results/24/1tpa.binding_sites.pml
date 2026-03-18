@@ -14,160 +14,284 @@ set surface_quality, 1
 # color gray80, protein
 
 # ========== Site 1 (Cryptic) [DRUGGABLE] ==========
-select pocket_1_lining, (chain E and resi 206) or (chain E and resi 161) or (chain E and resi 162) or (chain E and resi 207) or (chain E and resi 160) or (chain E and resi 205) or (chain E and resi 208) or (chain E and resi 189) or (chain E and resi 163) or (chain E and resi 190) or (chain E and resi 181) or (chain E and resi 204) or (chain E and resi 142) or (chain E and resi 192) or (chain E and resi 159) or (chain E and resi 156) or (chain E and resi 209) or (chain E and resi 148) or (chain E and resi 191) or (chain E and resi 188) or (chain E and resi 143) or (chain E and resi 193) or (chain E and resi 118)
+select pocket_1_lining, (chain A and resi 5) or (chain A and resi 139) or (chain A and resi 137) or (chain A and resi 7) or (chain A and resi 6) or (chain A and resi 117) or (chain A and resi 138) or (chain A and resi 4) or (chain A and resi 11) or (chain A and resi 8) or (chain A and resi 170) or (chain A and resi 136) or (chain A and resi 115) or (chain A and resi 12) or (chain A and resi 3) or (chain A and resi 118) or (chain A and resi 1) or (chain A and resi 119) or (chain A and resi 135) or (chain A and resi 116)
 show sticks, pocket_1_lining
 set stick_radius, 0.15, pocket_1_lining
-select pocket_1_catalytic, (chain E and resi 162) or (chain E and resi 208) or (chain E and resi 192) or (chain E and resi 148)
+select pocket_1_catalytic, (chain A and resi 139) or (chain A and resi 137) or (chain A and resi 7) or (chain A and resi 170) or (chain A and resi 136) or (chain A and resi 119) or (chain A and resi 116)
 color magenta, pocket_1_catalytic
-select pocket_1_aromatic, (chain E and resi 206) or (chain E and resi 161) or (chain E and resi 193)
+select pocket_1_aromatic, (chain A and resi 5)
 color forest, pocket_1_aromatic
-select pocket_1_hydrophobic, (chain E and resi 160) or (chain E and resi 205) or (chain E and resi 163) or (chain E and resi 190) or (chain E and resi 181) or (chain E and resi 142) or (chain E and resi 156) or (chain E and resi 209) or (chain E and resi 191) or (chain E and resi 143) or (chain E and resi 118)
+select pocket_1_hydrophobic, (chain A and resi 117) or (chain A and resi 138) or (chain A and resi 12) or (chain A and resi 118) or (chain A and resi 1) or (chain A and resi 135)
 color tv_yellow, pocket_1_hydrophobic
 create pocket_1_surface, pocket_1_lining
 show surface, pocket_1_surface
 set surface_color, slate, pocket_1_surface
 set transparency, 0.7, pocket_1_surface
-pseudoatom pocket_1_center, pos=[14.957, 66.757, 26.827]
+pseudoatom pocket_1_center, pos=[-7.716, -1.493, 19.236]
 show spheres, pocket_1_center
 set sphere_scale, 0.5, pocket_1_center
 color red, pocket_1_center
 group pocket_1, pocket_1_lining pocket_1_surface pocket_1_center pocket_1_catalytic pocket_1_aromatic pocket_1_hydrophobic
 
-# ========== Site 2 (Cryptic) [DRUGGABLE] ==========
-select pocket_2_lining, (chain E and resi 5) or (chain E and resi 7) or (chain E and resi 6) or (chain E and resi 137) or (chain E and resi 11) or (chain E and resi 8) or (chain E and resi 12) or (chain E and resi 117) or (chain E and resi 139) or (chain E and resi 136) or (chain E and resi 135) or (chain E and resi 138) or (chain E and resi 119) or (chain E and resi 53) or (chain E and resi 9) or (chain E and resi 4)
+# ========== Site 2 (Unknown) [DRUGGABLE] ==========
+select pocket_2_lining, (chain A and resi 215) or (chain A and resi 212) or (chain A and resi 73) or (chain A and resi 211) or (chain A and resi 214) or (chain A and resi 216) or (chain A and resi 74) or (chain A and resi 213) or (chain A and resi 83) or (chain A and resi 85) or (chain A and resi 75) or (chain A and resi 218) or (chain A and resi 159) or (chain A and resi 209) or (chain A and resi 217) or (chain A and resi 210) or (chain A and resi 219) or (chain A and resi 208) or (chain A and resi 87) or (chain A and resi 207) or (chain A and resi 76) or (chain A and resi 82) or (chain A and resi 158) or (chain A and resi 72)
 show sticks, pocket_2_lining
 set stick_radius, 0.15, pocket_2_lining
-select pocket_2_catalytic, (chain E and resi 7) or (chain E and resi 137) or (chain E and resi 139) or (chain E and resi 136) or (chain E and resi 119) or (chain E and resi 53)
+select pocket_2_catalytic, (chain A and resi 214) or (chain A and resi 75) or (chain A and resi 217) or (chain A and resi 210) or (chain A and resi 208) or (chain A and resi 158)
 color magenta, pocket_2_catalytic
-select pocket_2_aromatic, (chain E and resi 5)
+select pocket_2_aromatic, (chain A and resi 215) or (chain A and resi 212) or (chain A and resi 76)
 color forest, pocket_2_aromatic
-select pocket_2_hydrophobic, (chain E and resi 12) or (chain E and resi 117) or (chain E and resi 135) or (chain E and resi 138) or (chain E and resi 9)
+select pocket_2_hydrophobic, (chain A and resi 216) or (chain A and resi 74) or (chain A and resi 213) or (chain A and resi 85) or (chain A and resi 209) or (chain A and resi 87) or (chain A and resi 72)
 color tv_yellow, pocket_2_hydrophobic
 create pocket_2_surface, pocket_2_lining
 show surface, pocket_2_surface
 set surface_color, slate, pocket_2_surface
 set transparency, 0.7, pocket_2_surface
-pseudoatom pocket_2_center, pos=[15.743, 55.875, 13.978]
+pseudoatom pocket_2_center, pos=[16.036, 8.443, 22.668]
 show spheres, pocket_2_center
 set sphere_scale, 0.5, pocket_2_center
 color red, pocket_2_center
 group pocket_2, pocket_2_lining pocket_2_surface pocket_2_center pocket_2_catalytic pocket_2_aromatic pocket_2_hydrophobic
 
 # ========== Site 3 (Unknown) [DRUGGABLE] ==========
-select pocket_3_lining, (chain E and resi 34) or (chain E and resi 220) or (chain E and resi 33) or (chain E and resi 31) or (chain E and resi 89) or (chain E and resi 223) or (chain E and resi 221) or (chain E and resi 222) or (chain E and resi 219) or (chain E and resi 32) or (chain E and resi 30) or (chain E and resi 90) or (chain E and resi 217) or (chain E and resi 93)
+select pocket_3_lining, (chain A and resi 165) or (chain A and resi 170) or (chain A and resi 164) or (chain A and resi 168) or (chain A and resi 167) or (chain A and resi 166) or (chain A and resi 141) or (chain A and resi 138) or (chain A and resi 140) or (chain A and resi 171) or (chain A and resi 169) or (chain A and resi 143) or (chain A and resi 203) or (chain A and resi 163) or (chain A and resi 198) or (chain A and resi 139) or (chain A and resi 204) or (chain A and resi 3) or (chain A and resi 2) or (chain A and resi 199) or (chain A and resi 200) or (chain A and resi 201) or (chain A and resi 118) or (chain A and resi 172) or (chain A and resi 202) or (chain A and resi 206) or (chain A and resi 162) or (chain A and resi 142) or (chain A and resi 4) or (chain A and resi 115) or (chain A and resi 1) or (chain A and resi 197) or (chain A and resi 116)
 show sticks, pocket_3_lining
 set stick_radius, 0.15, pocket_3_lining
-select pocket_3_catalytic, (chain E and resi 89) or (chain E and resi 222) or (chain E and resi 32) or (chain E and resi 217)
+select pocket_3_catalytic, (chain A and resi 170) or (chain A and resi 167) or (chain A and resi 171) or (chain A and resi 139) or (chain A and resi 200) or (chain A and resi 172) or (chain A and resi 202) or (chain A and resi 162) or (chain A and resi 197) or (chain A and resi 116)
 color magenta, pocket_3_catalytic
-select pocket_3_aromatic, (chain E and resi 34)
+select pocket_3_aromatic, (chain A and resi 165) or (chain A and resi 206)
 color forest, pocket_3_aromatic
-select pocket_3_hydrophobic, (chain E and resi 220) or (chain E and resi 221) or (chain E and resi 30) or (chain E and resi 90) or (chain E and resi 93)
+select pocket_3_hydrophobic, (chain A and resi 166) or (chain A and resi 141) or (chain A and resi 138) or (chain A and resi 140) or (chain A and resi 143) or (chain A and resi 203) or (chain A and resi 163) or (chain A and resi 198) or (chain A and resi 2) or (chain A and resi 118) or (chain A and resi 142) or (chain A and resi 1)
 color tv_yellow, pocket_3_hydrophobic
 create pocket_3_surface, pocket_3_lining
 show surface, pocket_3_surface
 set surface_color, slate, pocket_3_surface
 set transparency, 0.7, pocket_3_surface
-pseudoatom pocket_3_center, pos=[-4.721, 61.537, 22.722]
+pseudoatom pocket_3_center, pos=[-3.814, 6.321, 11.837]
 show spheres, pocket_3_center
 set sphere_scale, 0.5, pocket_3_center
 color red, pocket_3_center
 group pocket_3, pocket_3_lining pocket_3_surface pocket_3_center pocket_3_catalytic pocket_3_aromatic pocket_3_hydrophobic
 
 # ========== Site 4 (Unknown) [DRUGGABLE] ==========
-select pocket_4_lining, (chain E and resi 215) or (chain E and resi 73) or (chain E and resi 212) or (chain E and resi 214) or (chain E and resi 216) or (chain E and resi 211) or (chain E and resi 74) or (chain E and resi 213) or (chain E and resi 219) or (chain E and resi 218) or (chain E and resi 75) or (chain E and resi 85) or (chain E and resi 217) or (chain E and resi 83) or (chain E and resi 87) or (chain E and resi 159)
+select pocket_4_lining, (chain A and resi 5) or (chain A and resi 4) or (chain A and resi 170) or (chain A and resi 3) or (chain A and resi 138) or (chain A and resi 137) or (chain A and resi 139) or (chain A and resi 6) or (chain A and resi 1) or (chain A and resi 136) or (chain A and resi 7) or (chain A and resi 165) or (chain A and resi 117) or (chain A and resi 2) or (chain A and resi 140) or (chain A and resi 118) or (chain A and resi 169) or (chain A and resi 171)
 show sticks, pocket_4_lining
 set stick_radius, 0.15, pocket_4_lining
-select pocket_4_catalytic, (chain E and resi 214) or (chain E and resi 75) or (chain E and resi 217)
+select pocket_4_catalytic, (chain A and resi 170) or (chain A and resi 137) or (chain A and resi 139) or (chain A and resi 136) or (chain A and resi 7) or (chain A and resi 171)
 color magenta, pocket_4_catalytic
-select pocket_4_aromatic, (chain E and resi 215) or (chain E and resi 212)
+select pocket_4_aromatic, (chain A and resi 5) or (chain A and resi 165)
 color forest, pocket_4_aromatic
-select pocket_4_hydrophobic, (chain E and resi 216) or (chain E and resi 74) or (chain E and resi 213) or (chain E and resi 85) or (chain E and resi 87)
+select pocket_4_hydrophobic, (chain A and resi 138) or (chain A and resi 1) or (chain A and resi 117) or (chain A and resi 2) or (chain A and resi 140) or (chain A and resi 118)
 color tv_yellow, pocket_4_hydrophobic
 create pocket_4_surface, pocket_4_lining
 show surface, pocket_4_surface
 set surface_color, slate, pocket_4_surface
 set transparency, 0.7, pocket_4_surface
-pseudoatom pocket_4_center, pos=[2.756, 68.327, 31.220]
+pseudoatom pocket_4_center, pos=[-8.755, 1.452, 17.271]
 show spheres, pocket_4_center
 set sphere_scale, 0.5, pocket_4_center
 color red, pocket_4_center
 group pocket_4, pocket_4_lining pocket_4_surface pocket_4_center pocket_4_catalytic pocket_4_aromatic pocket_4_hydrophobic
 
-# ========== Site 5 (Cryptic) [DRUGGABLE] ==========
-select pocket_5_lining, (chain E and resi 109) or (chain E and resi 208) or (chain E and resi 210) or (chain E and resi 211) or (chain E and resi 110) or (chain E and resi 158) or (chain E and resi 108) or (chain E and resi 188) or (chain E and resi 161) or (chain E and resi 159) or (chain E and resi 160) or (chain E and resi 111) or (chain E and resi 142) or (chain E and resi 209) or (chain E and resi 106) or (chain E and resi 145) or (chain E and resi 212)
+# ========== Site 5 (Allosteric) [DRUGGABLE] ==========
+select pocket_5_lining, (chain A and resi 64) or (chain A and resi 63) or (chain A and resi 62) or (chain A and resi 65) or (chain A and resi 50) or (chain A and resi 49) or (chain A and resi 47) or (chain A and resi 58) or (chain A and resi 61) or (chain A and resi 48) or (chain A and resi 52) or (chain A and resi 51) or (chain A and resi 60) or (chain A and resi 66) or (chain A and resi 100) or (chain A and resi 94) or (chain A and resi 95) or (chain A and resi 59) or (chain A and resi 92)
 show sticks, pocket_5_lining
 set stick_radius, 0.15, pocket_5_lining
-select pocket_5_catalytic, (chain E and resi 109) or (chain E and resi 208) or (chain E and resi 210) or (chain E and resi 158) or (chain E and resi 108) or (chain E and resi 111) or (chain E and resi 145)
+select pocket_5_catalytic, (chain A and resi 62) or (chain A and resi 52) or (chain A and resi 66) or (chain A and resi 95) or (chain A and resi 59) or (chain A and resi 92)
 color magenta, pocket_5_catalytic
-select pocket_5_aromatic, (chain E and resi 161) or (chain E and resi 212)
+select pocket_5_aromatic, (chain A and resi 64)
 color forest, pocket_5_aromatic
-select pocket_5_hydrophobic, (chain E and resi 110) or (chain E and resi 160) or (chain E and resi 142) or (chain E and resi 209) or (chain E and resi 106)
+select pocket_5_hydrophobic, (chain A and resi 65) or (chain A and resi 50) or (chain A and resi 58) or (chain A and resi 48) or (chain A and resi 100) or (chain A and resi 94)
 color tv_yellow, pocket_5_hydrophobic
 create pocket_5_surface, pocket_5_lining
 show surface, pocket_5_surface
 set surface_color, slate, pocket_5_surface
 set transparency, 0.7, pocket_5_surface
-pseudoatom pocket_5_center, pos=[12.220, 63.800, 31.968]
+pseudoatom pocket_5_center, pos=[-2.600, 4.400, 40.098]
 show spheres, pocket_5_center
 set sphere_scale, 0.5, pocket_5_center
 color red, pocket_5_center
 group pocket_5, pocket_5_lining pocket_5_surface pocket_5_center pocket_5_catalytic pocket_5_aromatic pocket_5_hydrophobic
 
-# ========== Site 6 (ActiveSite) [DRUGGABLE] ==========
-select pocket_6_lining, (chain E and resi 174) or (chain E and resi 40) or (chain E and resi 177) or (chain E and resi 175) or (chain E and resi 131) or (chain E and resi 192) or (chain E and resi 173) or (chain E and resi 24) or (chain E and resi 193) or (chain E and resi 25)
+# ========== Site 6 (Unknown) [DRUGGABLE] ==========
+select pocket_6_lining, (chain A and resi 31) or (chain A and resi 30) or (chain A and resi 105) or (chain A and resi 220) or (chain A and resi 216) or (chain A and resi 34) or (chain A and resi 217) or (chain A and resi 102) or (chain A and resi 103) or (chain A and resi 104) or (chain A and resi 32) or (chain A and resi 33) or (chain A and resi 29) or (chain A and resi 87) or (chain A and resi 213) or (chain A and resi 36) or (chain A and resi 221) or (chain A and resi 35) or (chain A and resi 187) or (chain A and resi 28) or (chain A and resi 106) or (chain A and resi 218) or (chain A and resi 96) or (chain A and resi 219) or (chain A and resi 209) or (chain A and resi 215) or (chain A and resi 212)
 show sticks, pocket_6_lining
 set stick_radius, 0.15, pocket_6_lining
-select pocket_6_catalytic, (chain E and resi 177) or (chain E and resi 192) or (chain E and resi 173) or (chain E and resi 25)
+select pocket_6_catalytic, (chain A and resi 217) or (chain A and resi 102) or (chain A and resi 104) or (chain A and resi 32) or (chain A and resi 28)
 color magenta, pocket_6_catalytic
-select pocket_6_aromatic, (chain E and resi 131) or (chain E and resi 24) or (chain E and resi 193)
+select pocket_6_aromatic, (chain A and resi 34) or (chain A and resi 215) or (chain A and resi 212)
 color forest, pocket_6_aromatic
+select pocket_6_hydrophobic, (chain A and resi 30) or (chain A and resi 105) or (chain A and resi 220) or (chain A and resi 216) or (chain A and resi 103) or (chain A and resi 29) or (chain A and resi 87) or (chain A and resi 213) or (chain A and resi 36) or (chain A and resi 221) or (chain A and resi 35) or (chain A and resi 187) or (chain A and resi 106) or (chain A and resi 96) or (chain A and resi 209)
+color tv_yellow, pocket_6_hydrophobic
 create pocket_6_surface, pocket_6_lining
 show surface, pocket_6_surface
 set surface_color, slate, pocket_6_surface
 set transparency, 0.7, pocket_6_surface
-pseudoatom pocket_6_center, pos=[12.782, 73.542, 16.404]
+pseudoatom pocket_6_center, pos=[10.489, 1.135, 29.066]
 show spheres, pocket_6_center
 set sphere_scale, 0.5, pocket_6_center
 color red, pocket_6_center
-group pocket_6, pocket_6_lining pocket_6_surface pocket_6_center pocket_6_catalytic pocket_6_aromatic
+group pocket_6, pocket_6_lining pocket_6_surface pocket_6_center pocket_6_catalytic pocket_6_aromatic pocket_6_hydrophobic
 
-# ========== Site 7 (Unknown) [DRUGGABLE] ==========
-select pocket_7_lining, (chain E and resi 105) or (chain E and resi 217) or (chain E and resi 30) or (chain E and resi 31) or (chain E and resi 104) or (chain E and resi 220) or (chain E and resi 103) or (chain E and resi 216) or (chain E and resi 102) or (chain E and resi 213) or (chain E and resi 106)
+# ========== Site 7 (ActiveSite) [DRUGGABLE] ==========
+select pocket_7_lining, (chain A and resi 174) or (chain A and resi 175) or (chain A and resi 177) or (chain A and resi 40) or (chain A and resi 131) or (chain A and resi 173) or (chain A and resi 193) or (chain A and resi 176) or (chain A and resi 192) or (chain A and resi 24) or (chain A and resi 25) or (chain A and resi 194) or (chain A and resi 81) or (chain A and resi 41) or (chain A and resi 197) or (chain A and resi 196) or (chain A and resi 123) or (chain A and resi 191) or (chain A and resi 122) or (chain A and resi 38) or (chain A and resi 178) or (chain A and resi 195) or (chain A and resi 84)
 show sticks, pocket_7_lining
 set stick_radius, 0.15, pocket_7_lining
-select pocket_7_catalytic, (chain E and resi 217) or (chain E and resi 104) or (chain E and resi 102)
+select pocket_7_catalytic, (chain A and resi 177) or (chain A and resi 173) or (chain A and resi 176) or (chain A and resi 192) or (chain A and resi 25) or (chain A and resi 41) or (chain A and resi 197) or (chain A and resi 195) or (chain A and resi 84)
 color magenta, pocket_7_catalytic
-select pocket_7_hydrophobic, (chain E and resi 105) or (chain E and resi 30) or (chain E and resi 220) or (chain E and resi 103) or (chain E and resi 216) or (chain E and resi 213) or (chain E and resi 106)
+select pocket_7_aromatic, (chain A and resi 131) or (chain A and resi 193) or (chain A and resi 24)
+color forest, pocket_7_aromatic
+select pocket_7_hydrophobic, (chain A and resi 81) or (chain A and resi 191) or (chain A and resi 38)
 color tv_yellow, pocket_7_hydrophobic
 create pocket_7_surface, pocket_7_lining
 show surface, pocket_7_surface
 set surface_color, slate, pocket_7_surface
 set transparency, 0.7, pocket_7_surface
-pseudoatom pocket_7_center, pos=[1.126, 58.140, 26.009]
+pseudoatom pocket_7_center, pos=[-0.652, 16.200, 22.673]
 show spheres, pocket_7_center
 set sphere_scale, 0.5, pocket_7_center
 color red, pocket_7_center
-group pocket_7, pocket_7_lining pocket_7_surface pocket_7_center pocket_7_catalytic pocket_7_hydrophobic
+group pocket_7, pocket_7_lining pocket_7_surface pocket_7_center pocket_7_catalytic pocket_7_aromatic pocket_7_hydrophobic
 
 # ========== Site 8 (Unknown) [DRUGGABLE] ==========
-select pocket_8_lining, (chain E and resi 199) or (chain E and resi 126) or (chain E and resi 200) or (chain E and resi 127) or (chain E and resi 198) or (chain E and resi 168) or (chain E and resi 197) or (chain E and resi 169) or (chain E and resi 202) or (chain E and resi 196) or (chain E and resi 167) or (chain E and resi 2) or (chain E and resi 125)
+select pocket_8_lining, (chain A and resi 43) or (chain A and resi 42) or (chain A and resi 44) or (chain A and resi 41) or (chain A and resi 46) or (chain A and resi 24) or (chain A and resi 20) or (chain A and resi 22) or (chain A and resi 45) or (chain A and resi 40) or (chain A and resi 39) or (chain A and resi 86) or (chain A and resi 25) or (chain A and resi 18) or (chain A and resi 72) or (chain A and resi 70) or (chain A and resi 19) or (chain A and resi 38)
 show sticks, pocket_8_lining
 set stick_radius, 0.15, pocket_8_lining
-select pocket_8_catalytic, (chain E and resi 126) or (chain E and resi 200) or (chain E and resi 127) or (chain E and resi 197) or (chain E and resi 202) or (chain E and resi 167) or (chain E and resi 125)
+select pocket_8_catalytic, (chain A and resi 43) or (chain A and resi 44) or (chain A and resi 41) or (chain A and resi 20) or (chain A and resi 25) or (chain A and resi 70)
 color magenta, pocket_8_catalytic
-select pocket_8_hydrophobic, (chain E and resi 198) or (chain E and resi 2)
+select pocket_8_aromatic, (chain A and resi 42) or (chain A and resi 24) or (chain A and resi 22)
+color forest, pocket_8_aromatic
+select pocket_8_hydrophobic, (chain A and resi 46) or (chain A and resi 39) or (chain A and resi 86) or (chain A and resi 18) or (chain A and resi 72) or (chain A and resi 38)
 color tv_yellow, pocket_8_hydrophobic
 create pocket_8_surface, pocket_8_lining
 show surface, pocket_8_surface
 set surface_color, slate, pocket_8_surface
 set transparency, 0.7, pocket_8_surface
-pseudoatom pocket_8_center, pos=[27.331, 71.607, 16.742]
+pseudoatom pocket_8_center, pos=[3.450, 18.186, 30.896]
 show spheres, pocket_8_center
 set sphere_scale, 0.5, pocket_8_center
 color red, pocket_8_center
-group pocket_8, pocket_8_lining pocket_8_surface pocket_8_center pocket_8_catalytic pocket_8_hydrophobic
+group pocket_8, pocket_8_lining pocket_8_surface pocket_8_center pocket_8_catalytic pocket_8_aromatic pocket_8_hydrophobic
 
-group all_pockets, pocket_1 pocket_2 pocket_3 pocket_4 pocket_5 pocket_6 pocket_7 pocket_8
+# ========== Site 9 (Unknown) [DRUGGABLE] ==========
+select pocket_9_lining, (chain A and resi 46) or (chain A and resi 45) or (chain A and resi 67) or (chain A and resi 44) or (chain A and resi 43) or (chain A and resi 70) or (chain A and resi 69) or (chain A and resi 88) or (chain A and resi 42) or (chain A and resi 68) or (chain A and resi 66) or (chain A and resi 91) or (chain A and resi 47) or (chain A and resi 89) or (chain A and resi 48) or (chain A and resi 24) or (chain A and resi 20) or (chain A and resi 86) or (chain A and resi 71) or (chain A and resi 18) or (chain A and resi 19) or (chain A and resi 90) or (chain A and resi 87) or (chain A and resi 65) or (chain A and resi 41) or (chain A and resi 72)
+show sticks, pocket_9_lining
+set stick_radius, 0.15, pocket_9_lining
+select pocket_9_catalytic, (chain A and resi 44) or (chain A and resi 43) or (chain A and resi 70) or (chain A and resi 69) or (chain A and resi 68) or (chain A and resi 66) or (chain A and resi 91) or (chain A and resi 89) or (chain A and resi 20) or (chain A and resi 41)
+color magenta, pocket_9_catalytic
+select pocket_9_aromatic, (chain A and resi 42) or (chain A and resi 24)
+color forest, pocket_9_aromatic
+select pocket_9_hydrophobic, (chain A and resi 46) or (chain A and resi 67) or (chain A and resi 88) or (chain A and resi 48) or (chain A and resi 86) or (chain A and resi 71) or (chain A and resi 18) or (chain A and resi 90) or (chain A and resi 87) or (chain A and resi 65) or (chain A and resi 72)
+color tv_yellow, pocket_9_hydrophobic
+create pocket_9_surface, pocket_9_lining
+show surface, pocket_9_surface
+set surface_color, slate, pocket_9_surface
+set transparency, 0.7, pocket_9_surface
+pseudoatom pocket_9_center, pos=[6.308, 13.706, 35.444]
+show spheres, pocket_9_center
+set sphere_scale, 0.5, pocket_9_center
+color red, pocket_9_center
+group pocket_9, pocket_9_lining pocket_9_surface pocket_9_center pocket_9_catalytic pocket_9_aromatic pocket_9_hydrophobic
+
+# ========== Site 10 (Unknown) [DRUGGABLE] ==========
+select pocket_10_lining, (chain A and resi 2) or (chain A and resi 1) or (chain A and resi 124) or (chain A and resi 3) or (chain A and resi 171) or (chain A and resi 4) or (chain A and resi 123) or (chain A and resi 173) or (chain A and resi 172) or (chain A and resi 170) or (chain A and resi 138) or (chain A and resi 198) or (chain A and resi 176) or (chain A and resi 136) or (chain A and resi 125) or (chain A and resi 197) or (chain A and resi 169) or (chain A and resi 122) or (chain A and resi 132) or (chain A and resi 137) or (chain A and resi 126) or (chain A and resi 5) or (chain A and resi 120) or (chain A and resi 118) or (chain A and resi 174) or (chain A and resi 130) or (chain A and resi 119) or (chain A and resi 121) or (chain A and resi 206) or (chain A and resi 131) or (chain A and resi 165) or (chain A and resi 127) or (chain A and resi 139) or (chain A and resi 140) or (chain A and resi 191) or (chain A and resi 6) or (chain A and resi 168) or (chain A and resi 199) or (chain A and resi 135)
+show sticks, pocket_10_lining
+set stick_radius, 0.15, pocket_10_lining
+select pocket_10_catalytic, (chain A and resi 171) or (chain A and resi 173) or (chain A and resi 172) or (chain A and resi 170) or (chain A and resi 176) or (chain A and resi 136) or (chain A and resi 125) or (chain A and resi 197) or (chain A and resi 137) or (chain A and resi 126) or (chain A and resi 130) or (chain A and resi 119) or (chain A and resi 127) or (chain A and resi 139)
+color magenta, pocket_10_catalytic
+select pocket_10_aromatic, (chain A and resi 5) or (chain A and resi 121) or (chain A and resi 206) or (chain A and resi 131) or (chain A and resi 165)
+color forest, pocket_10_aromatic
+select pocket_10_hydrophobic, (chain A and resi 2) or (chain A and resi 1) or (chain A and resi 138) or (chain A and resi 198) or (chain A and resi 132) or (chain A and resi 118) or (chain A and resi 140) or (chain A and resi 191) or (chain A and resi 135)
+color tv_yellow, pocket_10_hydrophobic
+create pocket_10_surface, pocket_10_lining
+show surface, pocket_10_surface
+set surface_color, slate, pocket_10_surface
+set transparency, 0.7, pocket_10_surface
+pseudoatom pocket_10_center, pos=[-6.185, 8.545, 19.190]
+show spheres, pocket_10_center
+set sphere_scale, 0.5, pocket_10_center
+color red, pocket_10_center
+group pocket_10, pocket_10_lining pocket_10_surface pocket_10_center pocket_10_catalytic pocket_10_aromatic pocket_10_hydrophobic
+
+# ========== Site 11 (Unknown) [DRUGGABLE] ==========
+select pocket_11_lining, (chain A and resi 2) or (chain A and resi 1) or (chain A and resi 124) or (chain A and resi 3) or (chain A and resi 171) or (chain A and resi 4) or (chain A and resi 123) or (chain A and resi 173) or (chain A and resi 172) or (chain A and resi 170) or (chain A and resi 138) or (chain A and resi 198) or (chain A and resi 176) or (chain A and resi 136) or (chain A and resi 125) or (chain A and resi 197) or (chain A and resi 169) or (chain A and resi 122) or (chain A and resi 132) or (chain A and resi 137) or (chain A and resi 126) or (chain A and resi 5) or (chain A and resi 120) or (chain A and resi 118) or (chain A and resi 174) or (chain A and resi 130) or (chain A and resi 119) or (chain A and resi 121) or (chain A and resi 206) or (chain A and resi 131) or (chain A and resi 165) or (chain A and resi 127) or (chain A and resi 139) or (chain A and resi 140) or (chain A and resi 191) or (chain A and resi 6) or (chain A and resi 168) or (chain A and resi 199) or (chain A and resi 135)
+show sticks, pocket_11_lining
+set stick_radius, 0.15, pocket_11_lining
+select pocket_11_catalytic, (chain A and resi 171) or (chain A and resi 173) or (chain A and resi 172) or (chain A and resi 170) or (chain A and resi 176) or (chain A and resi 136) or (chain A and resi 125) or (chain A and resi 197) or (chain A and resi 137) or (chain A and resi 126) or (chain A and resi 130) or (chain A and resi 119) or (chain A and resi 127) or (chain A and resi 139)
+color magenta, pocket_11_catalytic
+select pocket_11_aromatic, (chain A and resi 5) or (chain A and resi 121) or (chain A and resi 206) or (chain A and resi 131) or (chain A and resi 165)
+color forest, pocket_11_aromatic
+select pocket_11_hydrophobic, (chain A and resi 2) or (chain A and resi 1) or (chain A and resi 138) or (chain A and resi 198) or (chain A and resi 132) or (chain A and resi 118) or (chain A and resi 140) or (chain A and resi 191) or (chain A and resi 135)
+color tv_yellow, pocket_11_hydrophobic
+create pocket_11_surface, pocket_11_lining
+show surface, pocket_11_surface
+set surface_color, slate, pocket_11_surface
+set transparency, 0.7, pocket_11_surface
+pseudoatom pocket_11_center, pos=[-6.185, 8.545, 19.190]
+show spheres, pocket_11_center
+set sphere_scale, 0.5, pocket_11_center
+color red, pocket_11_center
+group pocket_11, pocket_11_lining pocket_11_surface pocket_11_center pocket_11_catalytic pocket_11_aromatic pocket_11_hydrophobic
+
+# ========== Site 12 (Unknown) [DRUGGABLE] ==========
+select pocket_12_lining, (chain A and resi 58) or (chain A and resi 57) or (chain A and resi 59) or (chain A and resi 56) or (chain A and resi 62) or (chain A and resi 54) or (chain A and resi 60) or (chain A and resi 55) or (chain A and resi 64) or (chain A and resi 52) or (chain A and resi 53) or (chain A and resi 49) or (chain A and resi 61) or (chain A and resi 133) or (chain A and resi 134) or (chain A and resi 51)
+show sticks, pocket_12_lining
+set stick_radius, 0.15, pocket_12_lining
+select pocket_12_catalytic, (chain A and resi 59) or (chain A and resi 62) or (chain A and resi 52) or (chain A and resi 53) or (chain A and resi 133)
+color magenta, pocket_12_catalytic
+select pocket_12_aromatic, (chain A and resi 64)
+color forest, pocket_12_aromatic
+select pocket_12_hydrophobic, (chain A and resi 58) or (chain A and resi 57) or (chain A and resi 55) or (chain A and resi 134)
+color tv_yellow, pocket_12_hydrophobic
+create pocket_12_surface, pocket_12_lining
+show surface, pocket_12_surface
+set surface_color, slate, pocket_12_surface
+set transparency, 0.7, pocket_12_surface
+pseudoatom pocket_12_center, pos=[-10.799, 5.433, 36.580]
+show spheres, pocket_12_center
+set sphere_scale, 0.5, pocket_12_center
+color red, pocket_12_center
+group pocket_12, pocket_12_lining pocket_12_surface pocket_12_center pocket_12_catalytic pocket_12_aromatic pocket_12_hydrophobic
+
+# ========== Site 13 (Unknown) [DRUGGABLE] ==========
+select pocket_13_lining, (chain A and resi 201) or (chain A and resi 166) or (chain A and resi 200) or (chain A and resi 151) or (chain A and resi 150) or (chain A and resi 147) or (chain A and resi 203) or (chain A and resi 202) or (chain A and resi 167) or (chain A and resi 143) or (chain A and resi 165) or (chain A and resi 168) or (chain A and resi 199) or (chain A and resi 148) or (chain A and resi 153) or (chain A and resi 152) or (chain A and resi 146) or (chain A and resi 149)
+show sticks, pocket_13_lining
+set stick_radius, 0.15, pocket_13_lining
+select pocket_13_catalytic, (chain A and resi 200) or (chain A and resi 150) or (chain A and resi 147) or (chain A and resi 202) or (chain A and resi 167) or (chain A and resi 148) or (chain A and resi 146) or (chain A and resi 149)
+color magenta, pocket_13_catalytic
+select pocket_13_aromatic, (chain A and resi 165) or (chain A and resi 152)
+color forest, pocket_13_aromatic
+select pocket_13_hydrophobic, (chain A and resi 166) or (chain A and resi 151) or (chain A and resi 203) or (chain A and resi 143) or (chain A and resi 153)
+color tv_yellow, pocket_13_hydrophobic
+create pocket_13_surface, pocket_13_lining
+show surface, pocket_13_surface
+set surface_color, slate, pocket_13_surface
+set transparency, 0.7, pocket_13_surface
+pseudoatom pocket_13_center, pos=[-0.967, 11.862, 3.305]
+show spheres, pocket_13_center
+set sphere_scale, 0.5, pocket_13_center
+color red, pocket_13_center
+group pocket_13, pocket_13_lining pocket_13_surface pocket_13_center pocket_13_catalytic pocket_13_aromatic pocket_13_hydrophobic
+
+# ========== Site 14 (Unknown) [DRUGGABLE] ==========
+select pocket_14_lining, (chain A and resi 108) or (chain A and resi 184) or (chain A and resi 110) or (chain A and resi 109) or (chain A and resi 188) or (chain A and resi 107) or (chain A and resi 186) or (chain A and resi 111) or (chain A and resi 114) or (chain A and resi 183) or (chain A and resi 106) or (chain A and resi 210) or (chain A and resi 185) or (chain A and resi 142) or (chain A and resi 105) or (chain A and resi 187) or (chain A and resi 115) or (chain A and resi 116)
+show sticks, pocket_14_lining
+set stick_radius, 0.15, pocket_14_lining
+select pocket_14_catalytic, (chain A and resi 108) or (chain A and resi 184) or (chain A and resi 109) or (chain A and resi 186) or (chain A and resi 111) or (chain A and resi 183) or (chain A and resi 210) or (chain A and resi 116)
+color magenta, pocket_14_catalytic
+select pocket_14_hydrophobic, (chain A and resi 110) or (chain A and resi 106) or (chain A and resi 142) or (chain A and resi 105) or (chain A and resi 187)
+color tv_yellow, pocket_14_hydrophobic
+create pocket_14_surface, pocket_14_lining
+show surface, pocket_14_surface
+set surface_color, slate, pocket_14_surface
+set transparency, 0.7, pocket_14_surface
+pseudoatom pocket_14_center, pos=[9.001, -3.604, 16.331]
+show spheres, pocket_14_center
+set sphere_scale, 0.5, pocket_14_center
+color red, pocket_14_center
+group pocket_14, pocket_14_lining pocket_14_surface pocket_14_center pocket_14_catalytic pocket_14_hydrophobic
+
+group all_pockets, pocket_1 pocket_2 pocket_3 pocket_4 pocket_5 pocket_6 pocket_7 pocket_8 pocket_9 pocket_10 pocket_11 pocket_12 pocket_13 pocket_14
 
 # ========== Color Legend ==========
 # Magenta = Catalytic residues (GLU, ASP, HIS, SER, CYS, LYS)

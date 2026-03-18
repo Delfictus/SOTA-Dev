@@ -11,186 +11,187 @@ lighting soft
 # cartoon
 # color #1 gray80
 
-# ========== Site 1 (Unknown) [DRUGGABLE] ==========
+# ========== Site 1 (Cryptic) [DRUGGABLE] ==========
 # Pocket 1 lining residues
-name pocket1_lining #1/A:239,/A:212,/A:209,/A:217,/A:237,/A:208,/A:236,/A:213,/A:210,/A:211,/A:218,/A:238,/A:205,/A:206,/A:214,/A:216,/A:265,/A:207,/A:171,/A:215,/A:235
+name pocket1_lining #1/A:276,/A:99,/A:102,/A:98,/A:95,/A:275,/A:279,/A:271,/A:252,/A:100,/A:270,/A:96,/A:273,/A:97,/A:94,/A:103,/A:101,/A:179,/A:183,/A:277,/A:272,/A:256,/A:249,/A:274,/A:280,/A:186,/A:267,/A:278,/A:92,/A:93,/A:91,/A:248,/A:269,/A:265,/A:131,/A:104,/A:253,/A:245,/A:268,/A:176,/A:105,/A:180
 show pocket1_lining atoms
 style pocket1_lining stick
-color #1/A:238,/A:206,/A:235 magenta
-color #1/A:239,/A:212,/A:209,/A:236,/A:265 forest green
-color #1/A:237,/A:208,/A:211,/A:218,/A:205,/A:171,/A:215 gold
+color #1/A:95,/A:96,/A:278,/A:248,/A:268 magenta
+color #1/A:276,/A:99,/A:275,/A:97,/A:183 forest green
+color #1/A:102,/A:98,/A:279,/A:271,/A:252,/A:270,/A:94,/A:101,/A:179,/A:272,/A:256,/A:274,/A:186,/A:267,/A:92,/A:93,/A:91,/A:269,/A:265,/A:131,/A:253,/A:245,/A:176,/A:105 gold
 surface pocket1_lining
 transparency pocket1_lining 70
 color pocket1_lining slate gray
-marker #101 position 92.905,71.971,79.581 color red radius 1.0
-2dlabels text "Pocket 1 (70% druggable) *" xpos 0.02 ypos 0.95 color black size 14
+marker #101 position 2.997,-6.217,16.463 color red radius 1.0
+2dlabels text "Pocket 1 (77% druggable) *" xpos 0.02 ypos 0.95 color black size 14
 
-# ========== Site 2 (ActiveSite) [DRUGGABLE] ==========
+# ========== Site 2 (Unknown) [DRUGGABLE] ==========
 # Pocket 2 lining residues
-name pocket2_lining #1/A:175,/A:176,/A:174,/A:173,/A:177,/A:122,/A:180,/A:120,/A:168,/A:169,/A:172
+name pocket2_lining #1/A:259,/A:217,/A:260,/A:212,/A:216,/A:261,/A:220,/A:161,/A:258,/A:264,/A:213,/A:218,/A:165,/A:177,/A:206,/A:162,/A:257,/A:223,/A:262,/A:210,/A:205,/A:263,/A:209,/A:235,/A:211,/A:214,/A:215,/A:219,/A:202,/A:221,/A:226,/A:160,/A:163,/A:173,/A:230
 show pocket2_lining atoms
 style pocket2_lining stick
-color #1/A:174,/A:173,/A:177,/A:168 magenta
-color #1/A:175,/A:176 forest green
-color #1/A:180,/A:120,/A:169 gold
+color #1/A:260,/A:213,/A:162,/A:263,/A:214 magenta
+color #1/A:259,/A:217,/A:177,/A:206,/A:226,/A:230 forest green
+color #1/A:212,/A:216,/A:261,/A:220,/A:161,/A:218,/A:165,/A:257,/A:223,/A:205,/A:209,/A:215,/A:202,/A:160,/A:163,/A:173 gold
 surface pocket2_lining
 transparency pocket2_lining 70
 color pocket2_lining slate gray
-marker #102 position 105.222,79.329,89.503 color red radius 1.0
-2dlabels text "Pocket 2 (72% druggable) *" xpos 0.02 ypos 0.91 color black size 14
+marker #102 position 13.058,-19.976,24.989 color red radius 1.0
+2dlabels text "Pocket 2 (65% druggable) *" xpos 0.02 ypos 0.91 color black size 14
 
 # ========== Site 3 (Unknown) [DRUGGABLE] ==========
 # Pocket 3 lining residues
-name pocket3_lining #1/A:155,/A:16,/A:15,/A:36,/A:17,/A:14,/A:154,/A:13,/A:156,/A:37,/A:35,/A:34,/A:38,/A:157,/A:151,/A:12,/A:71,/A:158,/A:153
+name pocket3_lining #1/A:206,/A:233,/A:203,/A:202,/A:211,/A:230,/A:231,/A:207,/A:212,/A:259,/A:204,/A:205,/A:199,/A:232,/A:210,/A:165,/A:201,/A:208,/A:200,/A:226,/A:209,/A:164,/A:161,/A:229,/A:198,/A:227,/A:220,/A:217,/A:234,/A:213,/A:225,/A:235,/A:228,/A:193
 show pocket3_lining atoms
 style pocket3_lining stick
-color #1/A:34,/A:38,/A:12,/A:71,/A:158 magenta
-color #1/A:155,/A:15 forest green
-color #1/A:17,/A:35,/A:151 gold
+color #1/A:232,/A:200,/A:229,/A:198,/A:227,/A:213,/A:225 magenta
+color #1/A:206,/A:233,/A:203,/A:230,/A:259,/A:226,/A:217,/A:193 forest green
+color #1/A:202,/A:231,/A:212,/A:205,/A:199,/A:165,/A:209,/A:164,/A:161,/A:220,/A:234,/A:228 gold
 surface pocket3_lining
 transparency pocket3_lining 70
 color pocket3_lining slate gray
-marker #103 position 96.649,96.335,91.050 color red radius 1.0
-2dlabels text "Pocket 3 (65% druggable) *" xpos 0.02 ypos 0.87 color black size 14
+marker #103 position 12.207,-18.801,34.022 color red radius 1.0
+2dlabels text "Pocket 3 (62% druggable) *" xpos 0.02 ypos 0.87 color black size 14
 
-# ========== Site 4 (Unknown) [DRUGGABLE] ==========
+# ========== Site 4 (Allosteric) [DRUGGABLE] ==========
 # Pocket 4 lining residues
-name pocket4_lining #1/A:175,/A:176,/A:174,/A:173,/A:177,/A:122,/A:180,/A:120,/A:168,/A:169,/A:172
+name pocket4_lining #1/A:226,/A:221,/A:228,/A:232,/A:230,/A:227,/A:212,/A:211,/A:213,/A:220,/A:229,/A:214,/A:206,/A:231,/A:222,/A:165,/A:223,/A:215,/A:203,/A:217,/A:233,/A:202,/A:219,/A:225,/A:216,/A:210
 show pocket4_lining atoms
 style pocket4_lining stick
-color #1/A:174,/A:173,/A:177,/A:168 magenta
-color #1/A:175,/A:176 forest green
-color #1/A:180,/A:120,/A:169 gold
+color #1/A:232,/A:227,/A:213,/A:229,/A:214,/A:222,/A:225 magenta
+color #1/A:226,/A:230,/A:206,/A:203,/A:217,/A:233 forest green
+color #1/A:228,/A:212,/A:220,/A:231,/A:165,/A:223,/A:215,/A:202,/A:216 gold
 surface pocket4_lining
 transparency pocket4_lining 70
 color pocket4_lining slate gray
-marker #104 position 105.222,79.329,89.503 color red radius 1.0
-2dlabels text "Pocket 4 (70% druggable) *" xpos 0.02 ypos 0.83 color black size 14
+marker #104 position 16.184,-25.772,32.050 color red radius 1.0
+2dlabels text "Pocket 4 (69% druggable) *" xpos 0.02 ypos 0.83 color black size 14
 
 # ========== Site 5 (Unknown) [DRUGGABLE] ==========
 # Pocket 5 lining residues
-name pocket5_lining #1/A:239,/A:212,/A:209,/A:217,/A:237,/A:208,/A:236,/A:213,/A:210,/A:211,/A:218,/A:238,/A:205,/A:206,/A:214,/A:216,/A:265,/A:207,/A:171,/A:215,/A:235
+name pocket5_lining #1/A:15,/A:149,/A:14,/A:145,/A:36,/A:148,/A:16,/A:35,/A:142,/A:147,/A:150,/A:13,/A:143,/A:34,/A:151,/A:144,/A:154,/A:17,/A:146,/A:138,/A:152,/A:66,/A:139,/A:12
 show pocket5_lining atoms
 style pocket5_lining stick
-color #1/A:238,/A:206,/A:235 magenta
-color #1/A:239,/A:212,/A:209,/A:236,/A:265 forest green
-color #1/A:237,/A:208,/A:211,/A:218,/A:205,/A:171,/A:215 gold
+color #1/A:34,/A:152,/A:12 magenta
+color #1/A:15,/A:149,/A:142 forest green
+color #1/A:145,/A:35,/A:144,/A:154,/A:17,/A:146,/A:138,/A:66,/A:139 gold
 surface pocket5_lining
 transparency pocket5_lining 70
 color pocket5_lining slate gray
-marker #105 position 92.905,71.971,79.581 color red radius 1.0
-2dlabels text "Pocket 5 (68% druggable) *" xpos 0.02 ypos 0.79 color black size 14
+marker #105 position 23.268,2.686,29.871 color red radius 1.0
+2dlabels text "Pocket 5 (64% druggable) *" xpos 0.02 ypos 0.79 color black size 14
 
-# ========== Site 6 (Unknown) [DRUGGABLE] ==========
+# ========== Site 6 (Cryptic) [DRUGGABLE] ==========
 # Pocket 6 lining residues
-name pocket6_lining #1/A:244,/A:243,/A:245,/A:256,/A:247,/A:246,/A:248,/A:242,/A:260,/A:259,/A:241,/A:249,/A:215,/A:251,/A:214,/A:257,/A:253,/A:198,/A:263,/A:252
+name pocket6_lining #1/A:274,/A:275,/A:277,/A:276,/A:248,/A:278,/A:95,/A:273,/A:279,/A:249,/A:246,/A:272,/A:252,/A:247,/A:251,/A:91,/A:271,/A:270,/A:99,/A:183,/A:250,/A:98,/A:245,/A:280
 show pocket6_lining atoms
 style pocket6_lining stick
-color #1/A:243,/A:245,/A:246,/A:260,/A:257,/A:253,/A:252 magenta
-color #1/A:244 forest green
-color #1/A:247,/A:248,/A:259,/A:249,/A:215,/A:251,/A:198,/A:263 gold
+color #1/A:248,/A:278,/A:95,/A:246,/A:247,/A:251 magenta
+color #1/A:275,/A:276,/A:99,/A:183 forest green
+color #1/A:274,/A:279,/A:272,/A:252,/A:91,/A:271,/A:270,/A:98,/A:245 gold
 surface pocket6_lining
 transparency pocket6_lining 70
 color pocket6_lining slate gray
-marker #106 position 101.224,74.639,68.156 color red radius 1.0
-2dlabels text "Pocket 6 (61% druggable) *" xpos 0.02 ypos 0.75 color black size 14
+marker #106 position -3.146,-10.521,14.063 color red radius 1.0
+2dlabels text "Pocket 6 (75% druggable) *" xpos 0.02 ypos 0.75 color black size 14
 
 # ========== Site 7 (Unknown) [DRUGGABLE] ==========
 # Pocket 7 lining residues
-name pocket7_lining #1/A:282,/A:105,/A:108,/A:104,/A:101,/A:277,/A:281,/A:285,/A:258,/A:106,/A:276,/A:102,/A:262,/A:103,/A:109,/A:100,/A:107,/A:279,/A:185,/A:278,/A:189,/A:283,/A:284,/A:273
+name pocket7_lining #1/A:238,/A:241,/A:242,/A:250,/A:253,/A:239,/A:237,/A:254,/A:240,/A:245,/A:209,/A:236,/A:243,/A:257,/A:235,/A:251,/A:208,/A:249,/A:184,/A:192,/A:247,/A:246,/A:255,/A:252,/A:188,/A:193,/A:187,/A:183,/A:256,/A:244,/A:248,/A:180
 show pocket7_lining atoms
 style pocket7_lining stick
-color #1/A:101,/A:102,/A:284 magenta
-color #1/A:282,/A:105,/A:281,/A:103,/A:189 forest green
-color #1/A:108,/A:104,/A:277,/A:285,/A:258,/A:276,/A:262,/A:100,/A:107,/A:185,/A:278,/A:273 gold
+color #1/A:239,/A:237,/A:254,/A:240,/A:251,/A:247,/A:246,/A:248 magenta
+color #1/A:238,/A:193,/A:183 forest green
+color #1/A:241,/A:242,/A:253,/A:245,/A:209,/A:243,/A:257,/A:184,/A:192,/A:252,/A:187,/A:256,/A:244 gold
 surface pocket7_lining
 transparency pocket7_lining 70
 color pocket7_lining slate gray
-marker #107 position 111.378,84.627,71.158 color red radius 1.0
-2dlabels text "Pocket 7 (59% druggable) *" xpos 0.02 ypos 0.71 color black size 14
+marker #107 position 0.961,-15.192,25.735 color red radius 1.0
+2dlabels text "Pocket 7 (62% druggable) *" xpos 0.02 ypos 0.71 color black size 14
 
-# ========== Site 8 (Unknown) [DRUGGABLE] ==========
+# ========== Site 8 (ActiveSite) [DRUGGABLE] ==========
 # Pocket 8 lining residues
-name pocket8_lining #1/A:101,/A:281,/A:284,/A:252,/A:97,/A:254,/A:283,/A:255,/A:282,/A:280,/A:251,/A:98,/A:253,/A:285,/A:189,/A:279
+name pocket8_lining #1/A:94,/A:93,/A:89,/A:90,/A:95,/A:91,/A:97,/A:186,/A:92,/A:96,/A:98,/A:80,/A:187,/A:183,/A:282,/A:275,/A:77,/A:88,/A:99,/A:131,/A:245,/A:81,/A:276,/A:279,/A:284,/A:101,/A:84,/A:182,/A:100,/A:280,/A:185,/A:125,/A:189,/A:281,/A:188,/A:184,/A:129,/A:283,/A:179
 show pocket8_lining atoms
 style pocket8_lining stick
-color #1/A:101,/A:284,/A:252,/A:254,/A:253 magenta
-color #1/A:281,/A:282,/A:189 forest green
-color #1/A:97,/A:280,/A:251,/A:98,/A:285 gold
+color #1/A:95,/A:96,/A:84,/A:185,/A:281 magenta
+color #1/A:97,/A:80,/A:183,/A:275,/A:99,/A:276 forest green
+color #1/A:94,/A:93,/A:89,/A:90,/A:91,/A:186,/A:92,/A:98,/A:187,/A:282,/A:77,/A:131,/A:245,/A:81,/A:279,/A:284,/A:101,/A:182,/A:125,/A:184,/A:283,/A:179 gold
 surface pocket8_lining
 transparency pocket8_lining 70
 color pocket8_lining slate gray
-marker #108 position 110.539,81.745,63.231 color red radius 1.0
-2dlabels text "Pocket 8 (62% druggable) *" xpos 0.02 ypos 0.67 color black size 14
+marker #108 position -0.228,-2.381,21.791 color red radius 1.0
+2dlabels text "Pocket 8 (60% druggable) *" xpos 0.02 ypos 0.67 color black size 14
 
-# ========== Site 9 (Cryptic) [DRUGGABLE] ==========
+# ========== Site 9 (Allosteric) [DRUGGABLE] ==========
 # Pocket 9 lining residues
-name pocket9_lining #1/A:100,/A:99,/A:95,/A:101,/A:96,/A:97,/A:103,/A:192,/A:98,/A:102,/A:104,/A:86,/A:193,/A:189,/A:83,/A:288,/A:281,/A:87,/A:94,/A:105,/A:137,/A:107
+name pocket9_lining #1/A:67,/A:34,/A:65,/A:6,/A:1,/A:36,/A:62,/A:19,/A:17,/A:66,/A:32,/A:35,/A:63,/A:2,/A:33,/A:60,/A:16,/A:64,/A:4
 show pocket9_lining atoms
 style pocket9_lining stick
-color #1/A:101,/A:102 magenta
-color #1/A:103,/A:86,/A:189,/A:281,/A:105 forest green
-color #1/A:100,/A:99,/A:95,/A:96,/A:97,/A:192,/A:98,/A:104,/A:193,/A:83,/A:288,/A:87,/A:137,/A:107 gold
+color #1/A:34,/A:65,/A:6,/A:63,/A:2,/A:33 magenta
+color #1/A:67,/A:19,/A:4 forest green
+color #1/A:1,/A:17,/A:66,/A:32,/A:35,/A:60 gold
 surface pocket9_lining
 transparency pocket9_lining 70
 color pocket9_lining slate gray
-marker #109 position 106.073,88.498,67.647 color red radius 1.0
-2dlabels text "Pocket 9 (56% druggable) *" xpos 0.02 ypos 0.63 color black size 14
+marker #109 position 25.134,15.034,28.838 color red radius 1.0
+2dlabels text "Pocket 9 (63% druggable) *" xpos 0.02 ypos 0.63 color black size 14
 
 # ========== Site 10 (ActiveSite) [DRUGGABLE] ==========
 # Pocket 10 lining residues
-name pocket10_lining #1/A:77,/A:79,/A:138,/A:78,/A:132,/A:63,/A:60,/A:61,/A:80,/A:29,/A:76,/A:30,/A:28,/A:130,/A:31,/A:59
+name pocket10_lining #1/A:107,/A:110,/A:111,/A:50,/A:106,/A:108,/A:103,/A:268,/A:109,/A:49,/A:104,/A:105,/A:51,/A:112,/A:48,/A:271,/A:53,/A:102,/A:267,/A:113
 show pocket10_lining atoms
 style pocket10_lining stick
-color #1/A:77,/A:138,/A:61,/A:28 magenta
-color #1/A:78,/A:76 forest green
-color #1/A:79,/A:63,/A:60,/A:29,/A:30,/A:130,/A:31,/A:59 gold
+color #1/A:110,/A:108,/A:268 magenta
+color #1/A:107 forest green
+color #1/A:106,/A:105,/A:51,/A:48,/A:271,/A:53,/A:102,/A:267,/A:113 gold
 surface pocket10_lining
 transparency pocket10_lining 70
 color pocket10_lining slate gray
-marker #1010 position 110.984,100.605,78.085 color red radius 1.0
-2dlabels text "Pocket 10 (70% druggable) *" xpos 0.02 ypos 0.59 color black size 14
+marker #1010 position 13.652,-3.729,8.811 color red radius 1.0
+2dlabels text "Pocket 10 (58% druggable) *" xpos 0.02 ypos 0.59 color black size 14
 
-# ========== Site 11 (Unknown) [DRUGGABLE] ==========
+# ========== Site 11 (ActiveSite) [DRUGGABLE] ==========
 # Pocket 11 lining residues
-name pocket11_lining #1/A:238,/A:240,/A:241,/A:239,/A:216,/A:217,/A:219,/A:222,/A:218,/A:215,/A:265
+name pocket11_lining #1/A:71,/A:28,/A:57,/A:55,/A:72,/A:132,/A:30,/A:29,/A:70,/A:73,/A:54,/A:126,/A:56,/A:69,/A:31,/A:26,/A:53,/A:51,/A:74,/A:49
 show pocket11_lining atoms
 style pocket11_lining stick
-color #1/A:238,/A:219 magenta
-color #1/A:239,/A:265 forest green
-color #1/A:240,/A:222,/A:218,/A:215 gold
+color #1/A:71,/A:28,/A:55,/A:132 magenta
+color #1/A:72,/A:70 forest green
+color #1/A:57,/A:30,/A:29,/A:73,/A:54,/A:56,/A:69,/A:31,/A:53,/A:51 gold
 surface pocket11_lining
 transparency pocket11_lining 70
 color pocket11_lining slate gray
-marker #1011 position 97.270,64.624,74.767 color red radius 1.0
-2dlabels text "Pocket 11 (52% druggable) *" xpos 0.02 ypos 0.55 color black size 14
+marker #1011 position 11.788,11.665,14.089 color red radius 1.0
+2dlabels text "Pocket 11 (68% druggable) *" xpos 0.02 ypos 0.55 color black size 14
 
 # ========== Site 12 (Allosteric) [DRUGGABLE] ==========
 # Pocket 12 lining residues
-name pocket12_lining #1/A:64,/A:66,/A:65,/A:4,/A:23,/A:63,/A:1,/A:25,/A:75,/A:26,/A:52,/A:3,/A:73,/A:67
+name pocket12_lining #1/A:45,/A:44,/A:46,/A:48,/A:42,/A:47,/A:41,/A:43,/A:56,/A:113,/A:137,/A:136,/A:40,/A:138,/A:49,/A:59,/A:141,/A:53,/A:107,/A:70,/A:39,/A:111,/A:38,/A:108,/A:68,/A:140,/A:55,/A:54,/A:135,/A:114,/A:142,/A:37,/A:112,/A:57,/A:50
 show pocket12_lining atoms
 style pocket12_lining stick
-color #1/A:64,/A:52 magenta
-color #1/A:4,/A:73 forest green
-color #1/A:66,/A:65,/A:63,/A:1,/A:25,/A:75 gold
+color #1/A:46,/A:47,/A:41,/A:43,/A:108,/A:55,/A:135 magenta
+color #1/A:136,/A:107,/A:70,/A:142 forest green
+color #1/A:45,/A:44,/A:48,/A:42,/A:56,/A:113,/A:138,/A:59,/A:141,/A:53,/A:39,/A:38,/A:68,/A:54,/A:114,/A:57 gold
 surface pocket12_lining
 transparency pocket12_lining 70
 color pocket12_lining slate gray
-marker #1012 position 113.052,105.016,90.835 color red radius 1.0
-2dlabels text "Pocket 12 (61% druggable) *" xpos 0.02 ypos 0.51 color black size 14
+marker #1012 position 20.550,1.411,15.735 color red radius 1.0
+2dlabels text "Pocket 12 (56% druggable) *" xpos 0.02 ypos 0.51 color black size 14
 
-# ========== Site 13 (ActiveSite) [DRUGGABLE] ==========
+# ========== Site 13 (Unknown) [DRUGGABLE] ==========
 # Pocket 13 lining residues
-name pocket13_lining #1/A:92,/A:91,/A:93,/A:195,/A:90,/A:94,/A:89,/A:88,/A:87
+name pocket13_lining #1/A:39,/A:36,/A:66,/A:61,/A:38,/A:142,/A:40,/A:64,/A:37,/A:42,/A:59,/A:35,/A:41,/A:65,/A:141,/A:68,/A:43,/A:62,/A:67,/A:60,/A:63
 show pocket13_lining atoms
 style pocket13_lining stick
-color #1/A:90,/A:88 magenta
-color #1/A:92,/A:91,/A:89,/A:87 gold
+color #1/A:41,/A:65,/A:43,/A:63 magenta
+color #1/A:142,/A:67 forest green
+color #1/A:39,/A:66,/A:38,/A:42,/A:59,/A:35,/A:141,/A:68,/A:60 gold
 surface pocket13_lining
 transparency pocket13_lining 70
 color pocket13_lining slate gray
-marker #1013 position 95.368,91.852,62.982 color red radius 1.0
-2dlabels text "Pocket 13 (48% druggable) *" xpos 0.02 ypos 0.47 color black size 14
+marker #1013 position 29.888,5.190,21.887 color red radius 1.0
+2dlabels text "Pocket 13 (49% druggable) *" xpos 0.02 ypos 0.47 color black size 14
 
 # ========== Color Legend ==========
 # Magenta = Catalytic residues (GLU, ASP, HIS, SER, CYS, LYS)

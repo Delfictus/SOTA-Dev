@@ -1,0 +1,198 @@
+## ============================================================
+## PRISM-4D Demo — Maximum Isolation & Obfuscation Dockerfile
+## ============================================================
+## THREAT MODEL: Internet-facing container via Cloudflare tunnel
+## GOAL: Demo users can run simulations, view results. Nothing else.
+## ============================================================
+
+FROM ubuntu:24.04 AS builder
+ENV DEBIAN_FRONTEND=noninteractive
+
+## --- Build stage: strip binary, encrypt PTX kernels, scrub metadata ---
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 binutils openssl xxd \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy binary and strip ALL symbols + debug info
+COPY nhs_rt_full /build/nhs_rt_full
+RUN strip --strip-all --remove-section=.comment --remove-section=.note \
+    --remove-section=.note.gnu.build-id --remove-section=.note.ABI-tag \
+    /build/nhs_rt_full 2>/dev/null || strip -s /build/nhs_rt_full
+
+# Copy kernels
+COPY kernels/ /build/kernels/
+
+# Obfuscate PTX kernels: encrypt with AES-256, load via wrapper at runtime
+# Generate a random runtime key baked into the entrypoint (not extractable from files alone)
+RUN KFILE=/build/.k && openssl rand -hex 32 > "$KFILE" && \
+    for f in /build/kernels/ptx/*.ptx; do \
+        openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+            -in "$f" -out "${f}.enc" -pass "file:${KFILE}" && \
+        rm "$f"; \
+    done && \
+    for f in /build/kernels/optixir/*.optixir; do \
+        openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+            -in "$f" -out "${f}.enc" -pass "file:${KFILE}" && \
+        rm "$f"; \
+    done && \
+    echo "KERNEL_KEY=$(cat $KFILE)" > /build/.runtime_env && \
+    rm "$KFILE"
+
+# Copy topologies and scrub any host paths from JSON
+COPY topologies/ /build/topologies/
+RUN for f in /build/topologies/*.json; do \
+        python3 -c "import json; d=json.load(open('$f')); [d.__setitem__(k,'redacted') for k in ['source_pdb','source_path','build_path','host_path'] if k in d]; json.dump(d,open('$f','w'))"; \
+    done
+
+# Copy samples and remove any REMARK/HEADER lines with identifying info from PDBs
+COPY samples/ /build/samples/
+RUN for f in /build/samples/*.pdb; do \
+        sed -i '/^REMARK.*path\|^REMARK.*user\|^REMARK.*home\|^HEADER/Id' "$f" 2>/dev/null || true; \
+    done
+
+# ============================================================
+# RUNTIME STAGE — Minimal, locked-down image
+# ============================================================
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install ONLY what's needed — absolute minimum
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tmux less openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+# Install ttyd
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 \
+       -o /usr/local/bin/ttyd && chmod +x /usr/local/bin/ttyd \
+    && apt-get purge -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install nvitop (needed for GPU monitoring in demo)
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip \
+    && pip3 install --break-system-packages nvitop \
+    && rm -rf /var/lib/apt/lists/* /root/.cache
+
+## --- Create demo user (no password, locked) ---
+RUN useradd -m -s /bin/bash -u 1001 demo && passwd -l demo
+
+## --- Remove ALL dangerous binaries ---
+RUN rm -f /usr/bin/su /usr/bin/sudo /usr/bin/chsh /usr/bin/chfn \
+          /usr/bin/newgrp /usr/bin/gpasswd /usr/bin/passwd \
+          /usr/bin/apt /usr/bin/apt-get /usr/bin/dpkg /usr/bin/dpkg-deb \
+          /usr/bin/wget /usr/bin/curl \
+          /usr/bin/nc /usr/bin/nc.openbsd /usr/bin/ncat /usr/bin/netcat \
+          /bin/mount /bin/umount /usr/bin/mount /usr/bin/umount \
+          /usr/bin/find /usr/bin/locate \
+          /usr/bin/ssh /usr/bin/scp /usr/bin/sftp \
+          /usr/bin/perl /usr/bin/ruby \
+          /usr/bin/cc /usr/bin/gcc /usr/bin/g++ /usr/bin/make \
+          /usr/bin/gdb /usr/bin/strace /usr/bin/ltrace \
+          /usr/bin/strings /usr/bin/objdump /usr/bin/readelf /usr/bin/nm \
+          /usr/bin/file /usr/bin/hexdump /usr/bin/xxd \
+          /usr/bin/dd /usr/bin/base64 /usr/bin/base32 \
+          /usr/bin/xargs /usr/bin/nohup \
+          2>/dev/null; true
+
+## --- Set up obfuscated directory structure ---
+## No /opt/prism4d — use randomized opaque paths
+RUN RUNTIME_DIR="/var/lib/p4r" && \
+    mkdir -p "$RUNTIME_DIR"/{e,k,s,t,d,o} && \
+    echo "$RUNTIME_DIR" > /etc/p4r_base
+
+# e = engine (binary)
+# k = kernel data (encrypted)
+# s = sample data
+# t = topology data
+# d = demo scripts
+# o = output
+
+## --- Copy from builder with obfuscated names ---
+COPY --from=builder /build/nhs_rt_full /var/lib/p4r/e/p4core
+RUN chmod +x /var/lib/p4r/e/p4core
+
+COPY --from=builder /build/kernels/ /var/lib/p4r/k/
+COPY --from=builder /build/topologies/ /var/lib/p4r/t/
+COPY --from=builder /build/samples/ /var/lib/p4r/s/
+COPY --from=builder /build/.runtime_env /var/lib/p4r/.re
+
+## --- Wrapper script that decrypts kernels to tmpfs at boot ---
+## Kernels only exist decrypted in RAM (tmpfs), never on disk
+COPY p4-init.sh /usr/local/bin/p4-init
+COPY hardened-entrypoint.sh /usr/local/bin/hardened-entrypoint.sh
+RUN chmod +x /usr/local/bin/p4-init /usr/local/bin/hardened-entrypoint.sh
+
+## --- Obfuscated 'run' wrapper (user sees 'run', not internal paths) ---
+COPY run.sh /var/lib/p4r/d/run
+COPY output.sh /var/lib/p4r/d/output
+COPY view.sh /var/lib/p4r/d/view
+COPY tmux.conf /var/lib/p4r/d/tmux.conf
+COPY generate_viewer.py /var/lib/p4r/d/generate_viewer.py
+RUN chmod +x /var/lib/p4r/d/run /var/lib/p4r/d/output /var/lib/p4r/d/view /var/lib/p4r/d/generate_viewer.py
+
+## --- Patch scripts to use obfuscated paths ---
+RUN sed -i 's|/opt/prism4d/topologies|/var/lib/p4r/t|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d/output|/var/lib/p4r/o|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d/bin/tmux.conf|/var/lib/p4r/d/tmux.conf|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d/bin|/var/lib/p4r/e|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d/kernels/ptx|$PRISM4D_PTX_DIR|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d/kernels/optixir|$PRISM_OPTIXIR_DIR|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d|/var/lib/p4r|g' /var/lib/p4r/d/run && \
+    sed -i 's|nhs_rt_full|p4core|g' /var/lib/p4r/d/run && \
+    sed -i 's|/opt/prism4d/bin/run|/var/lib/p4r/d/run|g' /var/lib/p4r/d/output && \
+    sed -i 's|/opt/prism4d/output|/var/lib/p4r/o|g' /var/lib/p4r/d/view && \
+    sed -i 's|/opt/prism4d/samples|/var/lib/p4r/s|g' /var/lib/p4r/d/view && \
+    sed -i 's|/opt/prism4d/scripts/generate_viewer.py|/var/lib/p4r/d/generate_viewer.py|g' /var/lib/p4r/d/view && \
+    sed -i 's|/opt/prism4d/samples|/var/lib/p4r/s|g' /var/lib/p4r/d/generate_viewer.py && \
+    sed -i 's|/opt/prism4d|/var/lib/p4r|g' /var/lib/p4r/d/generate_viewer.py
+
+## --- MOTD (sanitized — no internal paths) ---
+COPY motd /home/demo/.motd
+RUN sed -i 's|Topologies:.*|Topologies: run|g' /home/demo/.motd && \
+    sed -i '/ls topologies/d' /home/demo/.motd
+
+## --- Hardened bashrc: restricted shell, no path inspection ---
+COPY demo-bashrc /home/demo/.bashrc
+
+## --- Remove /opt/prism4d and all host-path symlinks ---
+RUN rm -rf /opt/prism4d /home/diddy 2>/dev/null; true
+
+## --- Remove ALL SUID/SGID bits ---
+RUN find / -perm -4000 -exec chmod u-s {} + 2>/dev/null; \
+    find / -perm -2000 -exec chmod g-s {} + 2>/dev/null; \
+    true
+
+## --- Permissions: demo user can only access what's needed ---
+## Note: /var/lib/p4r/o is a tmpfs mount at runtime, create placeholder for perms
+RUN mkdir -p /var/lib/p4r/o && \
+    chown -R root:root /var/lib/p4r && \
+    chmod 711 /var/lib/p4r && \
+    chmod 500 /var/lib/p4r/e && \
+    chmod 500 /var/lib/p4r/e/p4core && \
+    chmod -R 400 /var/lib/p4r/k && \
+    chmod 500 /var/lib/p4r/d && \
+    chmod 500 /var/lib/p4r/d/* && \
+    chmod -R 444 /var/lib/p4r/t && \
+    chmod -R 444 /var/lib/p4r/s && \
+    chown -R demo:demo /var/lib/p4r/o && \
+    chmod 700 /var/lib/p4r/o && \
+    chmod 400 /var/lib/p4r/.re && \
+    chown -R demo:demo /home/demo
+
+## --- Final cleanup: remove package manager state entirely ---
+RUN rm -rf /var/lib/apt /var/lib/dpkg /var/cache /var/log/* \
+           /usr/share/doc /usr/share/man /usr/share/info \
+           /usr/share/locale /tmp/* 2>/dev/null; true
+
+EXPOSE 7681 8080
+
+## NOTE: Container starts as root for kernel decryption,
+## then p4-init drops to demo user via exec su/gosu
+WORKDIR /var/lib/p4r/o
+
+ENTRYPOINT ["/usr/local/bin/p4-init"]
+CMD ["/usr/local/bin/hardened-entrypoint.sh"]

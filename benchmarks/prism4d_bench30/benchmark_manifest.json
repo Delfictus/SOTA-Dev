@@ -771,7 +771,8 @@
       "holo_pdb": "1aq1",
       "ligand_resname": "STU",
       "protein_name": "p38 MAP kinase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1aq1_apo.topology.json"
     },
     {
       "id": 32,
@@ -779,7 +780,8 @@
       "holo_pdb": "1b9v",
       "ligand_resname": "RA2",
       "protein_name": "dihydrofolate reductase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1b9v_apo.topology.json"
     },
     {
       "id": 33,
@@ -787,7 +789,8 @@
       "holo_pdb": "1bl6",
       "ligand_resname": "SB6",
       "protein_name": "acetylcholinesterase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1bl6_apo.topology.json"
     },
     {
       "id": 34,
@@ -795,7 +798,8 @@
       "holo_pdb": "1bmq",
       "ligand_resname": "MNO",
       "protein_name": "adenylate kinase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1bmq_apo.topology.json"
     },
     {
       "id": 35,
@@ -812,7 +816,8 @@
       "holo_pdb": "1cbs",
       "ligand_resname": "REA",
       "protein_name": "retinol binding protein",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1cbs_apo.topology.json"
     },
     {
       "id": 37,
@@ -820,7 +825,8 @@
       "holo_pdb": "1com",
       "ligand_resname": "PRE",
       "protein_name": "cytochrome c peroxidase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1com_apo.topology.json"
     },
     {
       "id": 38,
@@ -828,7 +834,8 @@
       "holo_pdb": "1cvu",
       "ligand_resname": "NAG",
       "protein_name": "PTP1B phosphatase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1cvu_apo.topology.json"
     },
     {
       "id": 39,
@@ -836,7 +843,8 @@
       "holo_pdb": "1d3h",
       "ligand_resname": "FMN",
       "protein_name": "cAMP-dep protein kinase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1d3h_apo.topology.json"
     },
     {
       "id": 40,
@@ -844,7 +852,8 @@
       "holo_pdb": "1ejn",
       "ligand_resname": "AGB",
       "protein_name": "HCV polymerase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1ejn_apo.topology.json"
     },
     {
       "id": 41,
@@ -852,7 +861,8 @@
       "holo_pdb": "1f0r",
       "ligand_resname": "815",
       "protein_name": "CDK2",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1f0r_apo.topology.json"
     },
     {
       "id": 42,
@@ -860,7 +870,8 @@
       "holo_pdb": "1f0s",
       "ligand_resname": "PR2",
       "protein_name": "CDK2 variant",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1f0s_apo.topology.json"
     },
     {
       "id": 43,
@@ -868,7 +879,8 @@
       "holo_pdb": "1g2k",
       "ligand_resname": "NM1",
       "protein_name": "carbonic anhydrase II",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1g2k_apo.topology.json"
     },
     {
       "id": 44,
@@ -876,7 +888,8 @@
       "holo_pdb": "1g9v",
       "ligand_resname": "HEM",
       "protein_name": "HIV-1 integrase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1g9v_apo.topology.json"
     },
     {
       "id": 45,
@@ -884,7 +897,8 @@
       "holo_pdb": "1gpk",
       "ligand_resname": "NAG",
       "protein_name": "GSK-3 beta",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1gpk_apo.topology.json"
     },
     {
       "id": 46,
@@ -892,7 +906,8 @@
       "holo_pdb": "1h1s",
       "ligand_resname": "4SP",
       "protein_name": "cAMP-dep protein kinase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1h1s_apo.topology.json"
     },
     {
       "id": 47,
@@ -900,7 +915,8 @@
       "holo_pdb": "1hnn",
       "ligand_resname": "SAH",
       "protein_name": "thermolysin",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1hnn_apo.topology.json"
     },
     {
       "id": 48,
@@ -908,7 +924,8 @@
       "holo_pdb": "1hp0",
       "ligand_resname": "AD3",
       "protein_name": "PDE4",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1hp0_apo.topology.json"
     },
     {
       "id": 49,
@@ -916,7 +933,8 @@
       "holo_pdb": "1hq2",
       "ligand_resname": "APC",
       "protein_name": "HIV-1 reverse transcriptase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1hq2_apo.topology.json"
     },
     {
       "id": 50,
@@ -924,7 +942,8 @@
       "holo_pdb": "1hvy",
       "ligand_resname": "D16",
       "protein_name": "carbonic anhydrase II",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1hvy_apo.topology.json"
     },
     {
       "id": 51,
@@ -932,7 +951,8 @@
       "holo_pdb": "1ig3",
       "ligand_resname": "VIB",
       "protein_name": "CDK2 variant 2",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1ig3_apo.topology.json"
     },
     {
       "id": 52,
@@ -940,7 +960,8 @@
       "holo_pdb": "1j3j",
       "ligand_resname": "UMP",
       "protein_name": "factor Xa",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1j3j_apo.topology.json"
     },
     {
       "id": 53,
@@ -948,7 +969,8 @@
       "holo_pdb": "1jla",
       "ligand_resname": "TNK",
       "protein_name": "HCV polymerase variant",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1jla_apo.topology.json"
     },
     {
       "id": 54,
@@ -956,7 +978,8 @@
       "holo_pdb": "1k1i",
       "ligand_resname": "FD1",
       "protein_name": "AHAS",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1k1i_apo.topology.json"
     },
     {
       "id": 55,
@@ -964,7 +987,8 @@
       "holo_pdb": "1ke5",
       "ligand_resname": "LS1",
       "protein_name": "thymidine kinase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1ke5_apo.topology.json"
     },
     {
       "id": 56,
@@ -972,7 +996,8 @@
       "holo_pdb": "1l2s",
       "ligand_resname": "STC",
       "protein_name": "farnesyl transferase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1l2s_apo.topology.json"
     },
     {
       "id": 57,
@@ -980,7 +1005,8 @@
       "holo_pdb": "1lpz",
       "ligand_resname": "CMB",
       "protein_name": "beta-secretase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1lpz_apo.topology.json"
     },
     {
       "id": 58,
@@ -988,7 +1014,8 @@
       "holo_pdb": "1mq6",
       "ligand_resname": "XLD",
       "protein_name": "estrogen receptor",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1mq6_apo.topology.json"
     },
     {
       "id": 59,
@@ -996,7 +1023,8 @@
       "holo_pdb": "1n46",
       "ligand_resname": "PFA",
       "protein_name": "ABL kinase",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1n46_apo.topology.json"
     },
     {
       "id": 60,
@@ -1004,7 +1032,8 @@
       "holo_pdb": "1of1",
       "ligand_resname": "SCT",
       "protein_name": "androgen receptor",
-      "source": "pseudo-apo"
+      "source": "pseudo-apo",
+      "topology_file": "topologies/1of1_apo.topology.json"
     }
   ]
 }
