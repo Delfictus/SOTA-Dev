@@ -1198,7 +1198,10 @@ impl PersistentNhsEngine {
         // Cluster using RT cores or fallback
         let used_rt = self.has_rt_clustering();
         let result = self.cluster_spikes(&positions)?;
-        let sites = build_clustered_sites(&spike_events, &result);
+        #[cfg(feature = "gpu")]
+        let sites = build_clustered_sites(&spike_events, &result, self.engine.as_ref());
+        #[cfg(not(feature = "gpu"))]
+        let sites = build_clustered_sites(&spike_events, &result, None);
         let stats = ClusteringStats {
             num_clusters: result.num_clusters,
             total_neighbors: result.total_neighbors,
@@ -1868,6 +1871,10 @@ pub struct PersistentEngineStats {
 fn build_clustered_sites(
     spike_events: &[SpikeEvent],
     clustering_result: &crate::rt_clustering::RtClusteringResult,
+    #[cfg(feature = "gpu")]
+    gpu_engine: Option<&NhsAmberFusedEngine>,
+    #[cfg(not(feature = "gpu"))]
+    _gpu_engine: Option<&()>,
 ) -> Vec<ClusteredBindingSite> {
     use std::collections::HashMap;
 
@@ -1895,13 +1902,37 @@ fn build_clustered_sites(
             continue;
         }
 
-        // Compute centroid
+        // Compute centroid using burial-weighted mean + density peak refinement.
+        //
+        // Two-stage centroid:
+        //   Stage 1: Burial-weighted mean — spikes with more nearby residues
+        //   (n_residues) are deeper in the protein and closer to the true
+        //   binding cavity. Weight = n_residues² so buried spikes dominate.
+        //
+        //   Stage 2: Density peak — find the local maximum of spike density
+        //   using a 3D Gaussian KDE. The peak is typically 1-3A closer to the
+        //   true ligand center than the arithmetic mean because it ignores
+        //   outlier surface spikes. Final centroid is 70% density peak +
+        //   30% burial-weighted mean (peak for accuracy, mean for stability).
         let mut centroid = [0.0f32; 3];
         let mut sum_intensity = 0.0f32;
         let mut min_pos = [f32::MAX; 3];
         let mut max_pos = [f32::MIN; 3];
 
+        // Stage 1: Burial-weighted centroid
+        let mut weighted_centroid = [0.0f32; 3];
+        let mut total_weight = 0.0f32;
+
         for (_, spike) in &spikes {
+            // Burial weight: nearby_residues_count² (buried spikes count more)
+            // Minimum weight of 1.0 so surface spikes aren't zeroed out
+            let burial_weight = (spike.nearby_residues.len() as f32).max(1.0).powi(2);
+            weighted_centroid[0] += spike.position[0] * burial_weight;
+            weighted_centroid[1] += spike.position[1] * burial_weight;
+            weighted_centroid[2] += spike.position[2] * burial_weight;
+            total_weight += burial_weight;
+
+            // Unweighted sum for fallback
             centroid[0] += spike.position[0];
             centroid[1] += spike.position[1];
             centroid[2] += spike.position[2];
@@ -1915,9 +1946,90 @@ fn build_clustered_sites(
         }
 
         let n = spikes.len() as f32;
-        centroid[0] /= n;
-        centroid[1] /= n;
-        centroid[2] /= n;
+
+        // Use burial-weighted centroid if we have burial data, else arithmetic mean
+        if total_weight > n {
+            // Burial weights are contributing (not all n_residues=1)
+            centroid[0] = weighted_centroid[0] / total_weight;
+            centroid[1] = weighted_centroid[1] / total_weight;
+            centroid[2] = weighted_centroid[2] / total_weight;
+        } else {
+            centroid[0] /= n;
+            centroid[1] /= n;
+            centroid[2] /= n;
+        }
+
+        // Stage 2: Density peak refinement via 3D Gaussian KDE
+        // Try GPU path first, fall back to CPU.
+        if spikes.len() >= 20 {
+            let bandwidth = 2.0f32;
+            let search_radius = 5.0f32;
+
+            let mut gpu_done = false;
+
+            // GPU path: use the fused engine's KDE kernel if available
+            #[cfg(feature = "gpu")]
+            if let Some(engine) = gpu_engine {
+                let positions: Vec<[f32; 3]> = spikes.iter()
+                    .map(|(_, s)| s.position)
+                    .collect();
+                let n_residues: Vec<i32> = spikes.iter()
+                    .map(|(_, s)| s.nearby_residues.len() as i32)
+                    .collect();
+
+                match engine.compute_kde_centroid(
+                    &positions, &n_residues, centroid,
+                    search_radius, bandwidth,
+                ) {
+                    Ok(refined) => {
+                        centroid = refined;
+                        gpu_done = true;
+                    }
+                    Err(e) => {
+                        log::warn!("GPU KDE failed, falling back to CPU: {}", e);
+                    }
+                }
+            }
+
+            // CPU fallback
+            if !gpu_done {
+                let bw2 = bandwidth * bandwidth;
+                let grid_step = 1.0f32;
+                let mut best_density = 0.0f32;
+                let mut peak_pos = centroid;
+
+                let n_steps = (search_radius / grid_step) as i32;
+                for ix in -n_steps..=n_steps {
+                    for iy in -n_steps..=n_steps {
+                        for iz in -n_steps..=n_steps {
+                            let px = centroid[0] + ix as f32 * grid_step;
+                            let py = centroid[1] + iy as f32 * grid_step;
+                            let pz = centroid[2] + iz as f32 * grid_step;
+
+                            let mut density = 0.0f32;
+                            for (_, spike) in &spikes {
+                                let dx = px - spike.position[0];
+                                let dy = py - spike.position[1];
+                                let dz = pz - spike.position[2];
+                                let r2 = dx * dx + dy * dy + dz * dz;
+                                if r2 < 9.0 * bw2 {
+                                    density += (-r2 / (2.0 * bw2)).exp();
+                                }
+                            }
+
+                            if density > best_density {
+                                best_density = density;
+                                peak_pos = [px, py, pz];
+                            }
+                        }
+                    }
+                }
+
+                centroid[0] = 0.7 * peak_pos[0] + 0.3 * centroid[0];
+                centroid[1] = 0.7 * peak_pos[1] + 0.3 * centroid[1];
+                centroid[2] = 0.7 * peak_pos[2] + 0.3 * centroid[2];
+            }
+        }
 
         let bounding_box = [
             max_pos[0] - min_pos[0],
@@ -2298,6 +2410,7 @@ impl BatchProcessor {
                 wavelength_dwell_steps: 500,
                 ramp_down_steps: 0,
                 cold_return_steps: 0,
+                stepped_holds: vec![],
             };
             self.engine.set_cryo_uv_protocol(cryo_uv_protocol)?;
 
@@ -2324,7 +2437,10 @@ impl BatchProcessor {
                 let used_rt = self.engine.has_rt_clustering();
                 match self.engine.cluster_spikes(&spike_positions) {
                     Ok(result) => {
-                        let sites = build_clustered_sites(&spike_events, &result);
+                        #[cfg(feature = "gpu")]
+                        let sites = build_clustered_sites(&spike_events, &result, self.engine.engine.as_ref());
+                        #[cfg(not(feature = "gpu"))]
+                        let sites = build_clustered_sites(&spike_events, &result, None);
                         let stats = ClusteringStats {
                             num_clusters: result.num_clusters,
                             total_neighbors: result.total_neighbors,

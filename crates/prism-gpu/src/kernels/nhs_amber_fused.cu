@@ -3369,3 +3369,226 @@ extern "C" __global__ void init_multi_neuron(
         coupling_b[tid] = 0.0f;
     }
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GPU-ACCELERATED SPIKE DENSITY PEAK FINDING (KDE)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Computes burial-weighted Gaussian KDE on spike positions to find the
+// density peak (hottest spot) within each detected pocket. This replaces
+// the naive arithmetic centroid with a statistically robust estimate of
+// the true pocket center.
+//
+// Architecture:
+//   - One thread per 3D grid evaluation point (11³ = 1331 points per pocket)
+//   - Shared memory caches spike positions + burial weights for the pocket
+//   - Each thread evaluates the full KDE at its grid point
+//   - Warp reduction finds the global maximum
+//   - Final centroid = 70% density peak + 30% burial-weighted mean
+//
+// The burial weight (n_residues²) ensures that spikes deep inside the
+// protein contribute more to the density field than surface spikes.
+// This naturally pulls the peak toward the binding cavity interior.
+//
+// Complexity: O(n_grid_points × n_spikes_per_pocket)
+// Typical: 1331 × 2000 = 2.6M kernel evaluations per pocket
+// At ~1 TFLOP on RTX 5080: <1ms per pocket
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Maximum spikes per pocket to fit in shared memory
+// RTX 5080: 128KB shared mem per SM, SpikeKDE = 16 bytes, 128K/16 = 8192 max
+#define KDE_MAX_SPIKES_SHARED 4096
+#define KDE_GRID_DIM 11          // 11³ = 1331 grid points
+#define KDE_GRID_TOTAL (KDE_GRID_DIM * KDE_GRID_DIM * KDE_GRID_DIM)
+
+struct SpikeKDE {
+    float x, y, z;      // position
+    float weight;        // burial weight (n_residues²)
+};
+
+// Device function: evaluate Gaussian KDE at a point
+__device__ __forceinline__ float kde_evaluate(
+    float px, float py, float pz,
+    const SpikeKDE* __restrict__ spikes,
+    int n_spikes,
+    float inv_2bw2  // 1 / (2 * bandwidth²)
+) {
+    float density = 0.0f;
+    for (int i = 0; i < n_spikes; i++) {
+        float dx = px - spikes[i].x;
+        float dy = py - spikes[i].y;
+        float dz = pz - spikes[i].z;
+        float r2 = dx*dx + dy*dy + dz*dz;
+        // Skip distant spikes (>3σ): exp(-9/2) ≈ 0.01
+        if (r2 < 9.0f / inv_2bw2) {
+            density += spikes[i].weight * expf(-r2 * inv_2bw2);
+        }
+    }
+    return density;
+}
+
+// Kernel: find density peak for one pocket
+// Launch: <<<ceil(KDE_GRID_TOTAL/256), 256>>> per pocket
+// Inputs:
+//   spike_positions: float3 array of spike xyz for this pocket
+//   spike_n_residues: int array of nearby residue counts per spike
+//   n_spikes: number of spikes in this pocket
+//   centroid_in: [cx, cy, cz] initial centroid (burial-weighted mean from CPU)
+//   search_radius: how far from centroid to search (typically 5.0A)
+//   bandwidth: KDE bandwidth (typically 2.0A)
+// Outputs:
+//   peak_out: [px, py, pz, density] — position and density of the peak
+extern "C" __global__ void kde_density_peak(
+    const float* __restrict__ spike_x,
+    const float* __restrict__ spike_y,
+    const float* __restrict__ spike_z,
+    const int*   __restrict__ spike_n_res,
+    int          n_spikes,
+    const float* __restrict__ centroid_in,  // [cx, cy, cz]
+    float        search_radius,
+    float        bandwidth,
+    float*       peak_out                   // [px, py, pz, density]
+) {
+    // Shared memory for spike cache
+    __shared__ SpikeKDE s_spikes[KDE_MAX_SPIKES_SHARED];
+    __shared__ float s_best_density;
+    __shared__ float s_best_pos[3];
+
+    int tid = threadIdx.x;
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Initialize shared best
+    if (tid == 0) {
+        s_best_density = 0.0f;
+        s_best_pos[0] = centroid_in[0];
+        s_best_pos[1] = centroid_in[1];
+        s_best_pos[2] = centroid_in[2];
+    }
+
+    // Load spikes into shared memory (collaborative)
+    int spikes_to_load = min(n_spikes, KDE_MAX_SPIKES_SHARED);
+    for (int i = tid; i < spikes_to_load; i += blockDim.x) {
+        s_spikes[i].x = spike_x[i];
+        s_spikes[i].y = spike_y[i];
+        s_spikes[i].z = spike_z[i];
+        // Burial weight: n_residues², minimum 1.0
+        float nr = fmaxf((float)spike_n_res[i], 1.0f);
+        s_spikes[i].weight = nr * nr;
+    }
+    __syncthreads();
+
+    float cx = centroid_in[0];
+    float cy = centroid_in[1];
+    float cz = centroid_in[2];
+    float grid_step = 2.0f * search_radius / (float)(KDE_GRID_DIM - 1);
+    float inv_2bw2 = 1.0f / (2.0f * bandwidth * bandwidth);
+
+    // Each thread evaluates one grid point
+    if (gid < KDE_GRID_TOTAL) {
+        int iz = gid / (KDE_GRID_DIM * KDE_GRID_DIM);
+        int iy = (gid / KDE_GRID_DIM) % KDE_GRID_DIM;
+        int ix = gid % KDE_GRID_DIM;
+
+        float px = cx - search_radius + ix * grid_step;
+        float py = cy - search_radius + iy * grid_step;
+        float pz = cz - search_radius + iz * grid_step;
+
+        float density = kde_evaluate(px, py, pz, s_spikes, spikes_to_load, inv_2bw2);
+
+        // Warp-level reduction to find maximum within each warp
+        // Then atomic update to shared best
+        // Use atomicMax on int representation of float (positive floats preserve order)
+        unsigned int density_bits = __float_as_uint(density);
+
+        // AtomicMax for the density, then set position if we won
+        // Simple approach: atomic compare-and-swap
+        if (density > 0.0f) {
+            // Thread-safe update: only one thread per block can update
+            // Use a simple lock-free approach
+            atomicMax((unsigned int*)&s_best_density, density_bits);
+        }
+
+        __syncthreads();
+
+        // Check if this thread has the best density
+        if (__float_as_uint(density) == __float_as_uint(s_best_density) && density > 0.0f) {
+            s_best_pos[0] = px;
+            s_best_pos[1] = py;
+            s_best_pos[2] = pz;
+        }
+    }
+
+    __syncthreads();
+
+    // Thread 0 writes the final result: 70% peak + 30% centroid
+    if (tid == 0) {
+        peak_out[0] = 0.7f * s_best_pos[0] + 0.3f * cx;
+        peak_out[1] = 0.7f * s_best_pos[1] + 0.3f * cy;
+        peak_out[2] = 0.7f * s_best_pos[2] + 0.3f * cz;
+        peak_out[3] = s_best_density;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GPU-ACCELERATED BURIAL-WEIGHTED CENTROID
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Computes weighted centroid of spike positions where weight = n_residues².
+// Uses parallel reduction for O(log N) performance.
+//
+// Launch: <<<1, 256>>> per pocket
+// ═══════════════════════════════════════════════════════════════════════════
+
+extern "C" __global__ void burial_weighted_centroid(
+    const float* __restrict__ spike_x,
+    const float* __restrict__ spike_y,
+    const float* __restrict__ spike_z,
+    const int*   __restrict__ spike_n_res,
+    int          n_spikes,
+    float*       centroid_out    // [cx, cy, cz, total_weight]
+) {
+    __shared__ float s_wx[256];
+    __shared__ float s_wy[256];
+    __shared__ float s_wz[256];
+    __shared__ float s_w[256];
+
+    int tid = threadIdx.x;
+
+    // Each thread accumulates over a strided range
+    float wx = 0.0f, wy = 0.0f, wz = 0.0f, w = 0.0f;
+    for (int i = tid; i < n_spikes; i += blockDim.x) {
+        float nr = fmaxf((float)spike_n_res[i], 1.0f);
+        float weight = nr * nr;
+        wx += spike_x[i] * weight;
+        wy += spike_y[i] * weight;
+        wz += spike_z[i] * weight;
+        w  += weight;
+    }
+
+    s_wx[tid] = wx;
+    s_wy[tid] = wy;
+    s_wz[tid] = wz;
+    s_w[tid]  = w;
+    __syncthreads();
+
+    // Tree reduction
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            s_wx[tid] += s_wx[tid + stride];
+            s_wy[tid] += s_wy[tid + stride];
+            s_wz[tid] += s_wz[tid + stride];
+            s_w[tid]  += s_w[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        float inv_w = (s_w[0] > 0.0f) ? 1.0f / s_w[0] : 0.0f;
+        centroid_out[0] = s_wx[0] * inv_w;
+        centroid_out[1] = s_wy[0] * inv_w;
+        centroid_out[2] = s_wz[0] * inv_w;
+        centroid_out[3] = s_w[0];
+    }
+}

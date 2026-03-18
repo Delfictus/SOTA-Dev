@@ -44,6 +44,9 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import numpy as np
 
 # ── Conda environment paths ──────────────────────────────────────────────
@@ -129,10 +132,10 @@ for entry in data["ligands"]:
 
         # Minimize with MMFF94s (200 steps)
         try:
-            AllChem.MMFFOptimizeMolecule(mol, maxIters=200)
+            AllChem.MMFFOptimizeMolecule(mol, maxIters=50)
         except:
             try:
-                AllChem.UFFOptimizeMolecule(mol, maxIters=200)
+                AllChem.UFFOptimizeMolecule(mol, maxIters=50)
             except:
                 pass
 
@@ -203,17 +206,104 @@ print(json.dumps({"results": results}))
     return sdf_path, pdbqt_dir, prep_results["results"]
 
 
+def _clean_pdb_for_obabel(pdb_path, output_dir):
+    """Strip non-protein atoms from PDB to prevent OpenBabel kekulization failures.
+
+    Removes: HETATMs (metals, ligands, waters, sugars), alternate conformations
+    (keeps only 'A' or first altloc), and non-standard residue naming artifacts.
+    The receptor PDBQT only needs protein backbone + sidechains.
+
+    Returns:
+        Path to cleaned PDB file.
+    """
+    STANDARD_AA = {
+        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
+        "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "PRO", "SER",
+        "THR", "TRP", "TYR", "VAL",
+        # Common modified residues that obabel handles fine
+        "MSE", "HID", "HIE", "HIP", "CYX", "ASH", "GLH",
+    }
+
+    cleaned_path = Path(output_dir) / (Path(pdb_path).stem + "_clean.pdb")
+    kept = 0
+    dropped_hetatm = 0
+    dropped_altloc = 0
+
+    with open(pdb_path) as fin, open(cleaned_path, "w") as fout:
+        for line in fin:
+            record = line[:6].strip()
+
+            # Pass through non-coordinate records (HEADER, REMARK, etc.)
+            if record not in ("ATOM", "HETATM", "TER", "END", "ANISOU", "MODEL", "ENDMDL"):
+                fout.write(line)
+                continue
+
+            if record in ("TER", "END", "MODEL", "ENDMDL"):
+                fout.write(line)
+                continue
+
+            if record == "ANISOU":
+                continue
+
+            # For ATOM/HETATM lines, parse fields (PDB fixed-width format)
+            resname = line[17:20].strip()
+            altloc = line[16]  # column 17 (0-indexed 16)
+
+            # Drop alternate conformations — keep blank or 'A' only
+            if altloc not in (" ", "", "A"):
+                dropped_altloc += 1
+                continue
+
+            # For altloc 'A', blank it out so obabel doesn't choke
+            if altloc == "A":
+                line = line[:16] + " " + line[17:]
+
+            if record == "HETATM":
+                # Keep MSE (selenomethionine) as it's basically MET
+                if resname == "MSE":
+                    # Rewrite as ATOM record
+                    line = "ATOM  " + line[6:]
+                    fout.write(line)
+                    kept += 1
+                else:
+                    dropped_hetatm += 1
+                    continue
+            elif record == "ATOM":
+                # Strip non-standard residue name prefixes (e.g., AGLN → GLN)
+                # Some PDBs use the altloc prefix in the residue name field
+                if len(resname) == 4 and resname[1:] in STANDARD_AA:
+                    resname_clean = resname[1:]
+                    line = line[:17] + f" {resname_clean}" + line[20:]
+
+                if resname in STANDARD_AA or (len(resname) == 4 and resname[1:] in STANDARD_AA):
+                    fout.write(line)
+                    kept += 1
+                else:
+                    dropped_hetatm += 1
+                    continue
+
+    print(f"  PDB cleanup: {kept} protein atoms kept, "
+          f"{dropped_hetatm} HETATM/non-std dropped, "
+          f"{dropped_altloc} alt-confs dropped")
+    return cleaned_path
+
+
 def prepare_receptor_pdbqt(pdb_path, output_dir):
     """Convert receptor PDB to PDBQT using OpenBabel.
 
     Adds polar hydrogens and assigns Gasteiger charges.
-    For production use, AMBER ff14SB charges via prism-prep are preferred.
+    Pre-cleans the PDB to strip HETATMs, metals, waters, alternate
+    conformations, and non-standard residues that cause OpenBabel
+    kekulization failures.
     """
     output_dir = Path(output_dir)
     pdbqt_path = output_dir / (Path(pdb_path).stem + ".pdbqt")
 
+    # Clean PDB first to avoid kekulization failures from metals/ligands/altlocs
+    cleaned_pdb = _clean_pdb_for_obabel(pdb_path, output_dir)
+
     result = subprocess.run(
-        [str(OBABEL_BIN), str(pdb_path), "-O", str(pdbqt_path),
+        [str(OBABEL_BIN), str(cleaned_pdb), "-O", str(pdbqt_path),
          "-xr", "-xh", "--partialcharge", "gasteiger"],
         capture_output=True, text=True, timeout=120
     )
@@ -221,8 +311,16 @@ def prepare_receptor_pdbqt(pdb_path, output_dir):
         print(f"WARNING: obabel receptor conversion had issues: {result.stderr[:200]}")
 
     if not pdbqt_path.exists() or pdbqt_path.stat().st_size < 100:
-        print(f"ERROR: Receptor PDBQT conversion failed for {pdb_path}")
-        sys.exit(1)
+        # Fallback: try the raw PDB in case cleaning was too aggressive
+        print(f"  WARNING: Cleaned PDB failed, retrying with raw PDB...")
+        result = subprocess.run(
+            [str(OBABEL_BIN), str(pdb_path), "-O", str(pdbqt_path),
+             "-xr", "-xh", "--partialcharge", "gasteiger"],
+            capture_output=True, text=True, timeout=120
+        )
+        if not pdbqt_path.exists() or pdbqt_path.stat().st_size < 100:
+            print(f"ERROR: Receptor PDBQT conversion failed for {pdb_path}")
+            sys.exit(1)
 
     print(f"  Receptor PDBQT: {pdbqt_path} ({pdbqt_path.stat().st_size / 1024:.0f} KB)")
     return pdbqt_path
@@ -336,9 +434,10 @@ def run_unidock(receptor_pdbqt, ligand_sdf, box, output_dir, exhaustiveness=32,
 
 def run_unidock_with_pdbqt_ligands(receptor_pdbqt, pdbqt_dir, box, output_dir,
                                      exhaustiveness=32, num_modes=20, scoring="vina"):
-    """Run UniDock with individual PDBQT ligand files (fallback if SDF batch fails).
+    """Run UniDock with individual PDBQT ligand files (single-box, single-call).
 
     UniDock --gpu_batch accepts SDF, but some edge cases need PDBQT input.
+    For concurrent multi-pocket docking, see _unidock_one_site().
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -386,50 +485,93 @@ def run_unidock_with_pdbqt_ligands(receptor_pdbqt, pdbqt_dir, box, output_dir,
     return output_dir, out_files
 
 
-# ── GNINA CNN rescoring ──────────────────────────────────────────────────
+# ── Concurrent per-site docking workers ──────────────────────────────────
 
-def run_gnina_rescore(receptor_pdb, docked_dir, box, output_dir, top_n=500):
-    """Rescore UniDock poses with GNINA CNN scoring.
+def _unidock_one_site(receptor_pdbqt, ligand_sdf, box, site_dir,
+                      exhaustiveness, num_modes, scoring, env):
+    """Dock all ligands against ONE pocket in its own isolated directory.
 
-    GNINA uses a 3D convolutional neural network ensemble (dense_1_3 +
-    crossdock_default2018_KD_4) trained on the CrossDocked2020 dataset
-    to predict binding affinity and pose quality.
-    Ref: McNutt et al. J Cheminform 2025. doi:10.1186/s13321-025-00973-x
+    Thread-safe worker. Uses --gpu_batch with SDF input (not --ligand_index
+    with PDBQT) because UniDock v1.1.3 segfaults on Meeko-generated PDBQT
+    ROOT tags. SDF input works reliably.
 
-    CNN scoring modes:
-      - rescore: CNN evaluates final poses only (fast, default)
-      - refinement: CNN guides pose optimization (10x slower)
-      - all: CNN at every step (1000x slower, highest accuracy)
-
-    Args:
-        receptor_pdb: path to receptor PDB (GNINA accepts PDB natively)
-        docked_dir: directory with UniDock output (PDBQT/SDF files)
-        box: docking box dict
-        output_dir: output directory for rescored poses
-        top_n: max poses to keep after rescoring
+    Each site gets its own --dir so UniDock output files never collide.
 
     Returns:
-        Path to rescored SDF with CNN scores, list of score dicts
+        (site_id, list_of_output_files, elapsed_seconds, error_msg_or_None)
     """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    site_id = box["site_id"]
+    unidock_dir = Path(site_dir) / "unidock_out"
+    unidock_dir.mkdir(parents=True, exist_ok=True)
 
-    # Collect all docked poses
-    docked_files = sorted(Path(docked_dir).glob("*_out.pdbqt"))
+    if not Path(ligand_sdf).exists():
+        return site_id, [], 0, f"ligand SDF not found: {ligand_sdf}"
+
+    cmd = [
+        str(UNIDOCK_BIN),
+        "--receptor", str(receptor_pdbqt),
+        "--gpu_batch", str(ligand_sdf),
+        "--center_x", str(box["center_x"]),
+        "--center_y", str(box["center_y"]),
+        "--center_z", str(box["center_z"]),
+        "--size_x", str(box["size_x"]),
+        "--size_y", str(box["size_y"]),
+        "--size_z", str(box["size_z"]),
+        "--exhaustiveness", str(exhaustiveness),
+        "--num_modes", str(num_modes),
+        "--scoring", scoring,
+        "--dir", str(unidock_dir),
+        "--seed", "42",
+    ]
+
+    t0 = time.time()
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
+    elapsed = time.time() - t0
+
+    error = None
+    if result.returncode != 0:
+        error = result.stderr[:300] if result.stderr else f"exit code {result.returncode}"
+
+    # UniDock with --gpu_batch outputs *_out.sdf files
+    out_files = sorted(unidock_dir.glob("*_out.sdf"))
+    if not out_files:
+        out_files = sorted(unidock_dir.glob("*_out.pdbqt"))
+    return site_id, out_files, elapsed, error
+
+
+def _gnina_rescore_one_site(receptor_pdb, box, site_dir, env):
+    """Rescore all UniDock poses for ONE pocket, reading and writing to its own dir.
+
+    Thread-safe worker. Reads *_out.pdbqt from site_dir/unidock_out/,
+    writes *_rescored.sdf into site_dir/gnina_rescore/.
+
+    Returns:
+        (site_id, rescored_files, scores_list, elapsed_seconds)
+    """
+    site_id = box["site_id"]
+    unidock_dir = Path(site_dir) / "unidock_out"
+    gnina_dir = Path(site_dir) / "gnina_rescore"
+    gnina_dir.mkdir(parents=True, exist_ok=True)
+
+    # UniDock --gpu_batch produces *_out.sdf; --ligand_index produces *_out.pdbqt
+    docked_files = sorted(unidock_dir.glob("*_out.sdf"))
     if not docked_files:
-        docked_files = sorted(Path(docked_dir).glob("*.sdf"))
+        docked_files = sorted(unidock_dir.glob("*_out.pdbqt"))
     if not docked_files:
-        docked_files = sorted(Path(docked_dir).glob("*.pdbqt"))
+        docked_files = sorted(unidock_dir.glob("*.sdf"))
+    if not docked_files:
+        docked_files = sorted(unidock_dir.glob("*.pdbqt"))
+        docked_files = [f for f in docked_files if f.name != "ligand_index.txt"]
 
     if not docked_files:
-        print("  WARNING: No docked poses found for GNINA rescoring")
-        return None, []
+        return site_id, [], [], 0
 
     all_scores = []
     rescored_files = []
+    t0 = time.time()
 
     for docked_file in docked_files:
-        out_sdf = output_dir / (docked_file.stem + "_rescored.sdf")
+        out_sdf = gnina_dir / (docked_file.stem + "_rescored.sdf")
 
         cmd = [
             str(GNINA_BIN),
@@ -446,32 +588,24 @@ def run_gnina_rescore(receptor_pdb, docked_dir, box, output_dir, top_n=500):
             "--seed", "42",
         ]
 
-        env = os.environ.copy()
-        env["LD_LIBRARY_PATH"] = GNINA_LD_PATH + ":" + env.get("LD_LIBRARY_PATH", "")
-
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
 
         if result.returncode != 0:
-            print(f"  GNINA rescore warning for {docked_file.name}: {result.stderr[:200]}")
             continue
 
-        # Parse GNINA output for scores
         for line in result.stdout.split("\n"):
             line = line.strip()
             if line and not line.startswith("#") and not line.startswith("Using") and not line.startswith("WARNING"):
                 parts = line.split()
                 if len(parts) >= 4:
                     try:
-                        mode = int(parts[0])
-                        vina_score = float(parts[1])
-                        cnn_score = float(parts[2])
-                        cnn_affinity = float(parts[3])
                         all_scores.append({
                             "file": docked_file.name,
-                            "mode": mode,
-                            "vina_score": vina_score,
-                            "cnn_score": cnn_score,
-                            "cnn_affinity": cnn_affinity,
+                            "site_id": site_id,
+                            "mode": int(parts[0]),
+                            "vina_score": float(parts[1]),
+                            "cnn_score": float(parts[2]),
+                            "cnn_affinity": float(parts[3]),
                         })
                     except (ValueError, IndexError):
                         pass
@@ -479,17 +613,9 @@ def run_gnina_rescore(receptor_pdb, docked_dir, box, output_dir, top_n=500):
         if out_sdf.exists():
             rescored_files.append(out_sdf)
 
-    # Sort by CNN affinity (more negative = better)
+    elapsed = time.time() - t0
     all_scores.sort(key=lambda x: x.get("cnn_affinity", 0))
-
-    print(f"  GNINA rescored: {len(all_scores)} poses from {len(rescored_files)} files")
-    if all_scores:
-        best = all_scores[0]
-        print(f"  Best: {best['file']} mode {best['mode']}: "
-              f"Vina={best['vina_score']:.1f} CNN_score={best['cnn_score']:.3f} "
-              f"CNN_affinity={best['cnn_affinity']:.2f} kcal/mol")
-
-    return rescored_files, all_scores
+    return site_id, rescored_files, all_scores, elapsed
 
 
 # ── GNINA direct docking (alternative to UniDock + rescore) ──────────────
@@ -837,75 +963,346 @@ def main():
         if not ligand_sdf.exists():
             print(f"ERROR: Ligand file not found: {ligand_sdf}")
             sys.exit(1)
-        # Also generate PDBQT versions
+        # Convert to PDBQT via Meeko (preserves existing 3D coords)
         pdbqt_dir = output_dir / "pdbqt_ligands"
         pdbqt_dir.mkdir(exist_ok=True)
-        result = subprocess.run(
-            [str(OBABEL_BIN), str(ligand_sdf), "-O",
-             str(pdbqt_dir / "lig_.pdbqt"), "-m",
-             "--partialcharge", "gasteiger", "--gen3d"],
-            capture_output=True, text=True, timeout=300
+        prep_script = '''
+import sys, json, os, subprocess, tempfile, math
+
+ligand_path = sys.argv[1]
+pdbqt_dir = sys.argv[2]
+obabel_bin = sys.argv[3] if len(sys.argv) > 3 else "obabel"
+
+sdf_path = os.path.join(os.path.dirname(pdbqt_dir), "ligands_3d.sdf")
+meeko_ok = False
+
+# ── Strategy 1: Extract HETATM ligand from holo PDB manually, then use
+#    RDKit + Meeko. Fixes fragment-not-found by parsing HETATM lines
+#    directly instead of relying on RDKit fragmentation. ──
+
+SKIP_RESNAMES = {"HOH", "WAT", "NA", "CL", "MG", "ZN", "CA", "K", "FE",
+                 "MN", "CO", "NI", "CU", "SO4", "PO4", "GOL", "EDO",
+                 "ACE", "NH2", "BUM", "NDP"}
+PROTEIN = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
+           "LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL","MSE"}
+
+ext = ligand_path.rsplit(".", 1)[-1].lower()
+
+if ext == "pdb":
+    # Parse HETATM lines, group by (resname, chain, resseq) to find ligand
+    hetatm_groups = {}
+    with open(ligand_path) as f:
+        for line in f:
+            if not line.startswith("HETATM"):
+                continue
+            resname = line[17:20].strip()
+            chain = line[21]
+            resseq = line[22:26].strip()
+            key = (resname, chain, resseq)
+            if resname in SKIP_RESNAMES or resname in PROTEIN:
+                continue
+            hetatm_groups.setdefault(resname, []).append(line)
+
+    if hetatm_groups:
+        # Pick the residue with the most HETATM lines (= largest ligand)
+        best_res = max(hetatm_groups, key=lambda r: len(hetatm_groups[r]))
+        lig_lines = hetatm_groups[best_res]
+        sys.stderr.write(f"  Extracted HETATM ligand: {best_res} ({len(lig_lines)} atoms)\\n")
+
+        # Write extracted ligand to temp PDB
+        lig_pdb = os.path.join(pdbqt_dir, "_extracted_ligand.pdb")
+        with open(lig_pdb, "w") as f:
+            for line in lig_lines:
+                f.write(line)
+            f.write("END\\n")
+
+        # Try RDKit + Meeko on the extracted fragment
+        try:
+            from rdkit import Chem
+            from rdkit.Chem import AllChem, Descriptors
+            from meeko import MoleculePreparation, PDBQTWriterLegacy
+
+            mol = Chem.MolFromPDBFile(lig_pdb, removeHs=False, sanitize=False)
+            if mol is not None:
+                try:
+                    Chem.SanitizeMol(mol)
+                except:
+                    pass
+                mol = Chem.AddHs(mol, addCoords=True)
+                AllChem.ComputeGasteigerCharges(mol)
+
+                # Fix NaN charges — replace with 0.0
+                for atom in mol.GetAtoms():
+                    try:
+                        q = float(atom.GetDoubleProp("_GasteigerCharge"))
+                        if math.isnan(q) or math.isinf(q):
+                            atom.SetDoubleProp("_GasteigerCharge", 0.0)
+                    except:
+                        atom.SetDoubleProp("_GasteigerCharge", 0.0)
+
+                preparator = MoleculePreparation(merge_these_atom_types=("H",))
+                mol_setups = preparator.prepare(mol)
+                for i, setup in enumerate(mol_setups):
+                    pdbqt_string, is_ok, err = PDBQTWriterLegacy.write_string(setup)
+                    if is_ok:
+                        out_path = f"{pdbqt_dir}/lig_{i+1}.pdbqt"
+                        with open(out_path, "w") as f:
+                            f.write(pdbqt_string)
+                        meeko_ok = True
+
+                writer = Chem.SDWriter(sdf_path)
+                writer.write(mol)
+                writer.close()
+        except Exception as e:
+            sys.stderr.write(f"  RDKit/Meeko failed: {e}\\n")
+
+        # Strategy 2: If Meeko failed, use OpenBabel directly
+        if not meeko_ok:
+            sys.stderr.write("  Falling back to OpenBabel for ligand PDBQT conversion\\n")
+            out_pdbqt = os.path.join(pdbqt_dir, "lig_1.pdbqt")
+            r = subprocess.run(
+                [obabel_bin, lig_pdb, "-O", out_pdbqt,
+                 "-xh", "--partialcharge", "gasteiger"],
+                capture_output=True, text=True, timeout=60
+            )
+            if os.path.exists(out_pdbqt) and os.path.getsize(out_pdbqt) > 50:
+                meeko_ok = True
+            # Also write SDF
+            r2 = subprocess.run(
+                [obabel_bin, lig_pdb, "-O", sdf_path, "--gen3d"],
+                capture_output=True, text=True, timeout=60
+            )
+    else:
+        sys.stderr.write("  No HETATM ligand groups found in holo PDB\\n")
+
+elif ext in ("sdf", "mol"):
+    # SDF/MOL input — straightforward RDKit load
+    from rdkit import Chem
+    from rdkit.Chem import AllChem, Descriptors
+    from meeko import MoleculePreparation, PDBQTWriterLegacy
+
+    mol = next(Chem.ForwardSDMolSupplier(ligand_path, removeHs=False, sanitize=False))
+    if mol is not None:
+        try:
+            Chem.SanitizeMol(mol)
+        except:
+            pass
+        mol = Chem.AddHs(mol, addCoords=True)
+        AllChem.ComputeGasteigerCharges(mol)
+
+        # Fix NaN charges
+        for atom in mol.GetAtoms():
+            try:
+                q = float(atom.GetDoubleProp("_GasteigerCharge"))
+                if math.isnan(q) or math.isinf(q):
+                    atom.SetDoubleProp("_GasteigerCharge", 0.0)
+            except:
+                atom.SetDoubleProp("_GasteigerCharge", 0.0)
+
+        preparator = MoleculePreparation(merge_these_atom_types=("H",))
+        mol_setups = preparator.prepare(mol)
+        for i, setup in enumerate(mol_setups):
+            pdbqt_string, is_ok, err = PDBQTWriterLegacy.write_string(setup)
+            if is_ok:
+                out_path = f"{pdbqt_dir}/lig_{i+1}.pdbqt"
+                with open(out_path, "w") as f:
+                    f.write(pdbqt_string)
+                meeko_ok = True
+
+        writer = Chem.SDWriter(sdf_path)
+        writer.write(mol)
+        writer.close()
+
+# Final fallback: obabel on the raw input file
+if not meeko_ok:
+    sys.stderr.write("  Last resort: obabel on raw ligand file\\n")
+    out_pdbqt = os.path.join(pdbqt_dir, "lig_1.pdbqt")
+    r = subprocess.run(
+        [obabel_bin, ligand_path, "-O", out_pdbqt,
+         "-xh", "--partialcharge", "gasteiger"],
+        capture_output=True, text=True, timeout=60
+    )
+    if os.path.exists(out_pdbqt) and os.path.getsize(out_pdbqt) > 50:
+        meeko_ok = True
+    if not os.path.exists(sdf_path):
+        subprocess.run(
+            [obabel_bin, ligand_path, "-O", sdf_path],
+            capture_output=True, text=True, timeout=60
         )
-        print(f"  Converted {len(list(pdbqt_dir.glob('*.pdbqt')))} ligands to PDBQT")
+
+n_pdbqt = len([f for f in os.listdir(pdbqt_dir) if f.endswith(".pdbqt") and not f.startswith("_")])
+# Get mol weight if we have the SDF
+mw = 0.0
+n_atoms = 0
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Descriptors
+    if os.path.exists(sdf_path):
+        suppl = Chem.SDMolSupplier(sdf_path, sanitize=False)
+        for m in suppl:
+            if m is not None:
+                mw = Descriptors.MolWt(m)
+                n_atoms = m.GetNumAtoms()
+                break
+except:
+    pass
+
+print(json.dumps({"n_ligands": n_pdbqt, "mw": round(mw, 1), "n_atoms": n_atoms}))
+'''
+        result = subprocess.run(
+            [str(PYTHON_BIN), "-c", prep_script, str(ligand_sdf), str(pdbqt_dir),
+             str(OBABEL_BIN)],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.stderr:
+            # Show stderr (extraction info, fallback notices) but don't fail on it
+            for line in result.stderr.strip().split("\n"):
+                if line.strip():
+                    print(f"  {line.strip()}")
+        if result.returncode != 0:
+            print(f"  ERROR in ligand prep (exit {result.returncode})")
+            print(f"  stdout: {result.stdout[:300]}")
+            sys.exit(1)
+        prep_info = json.loads(result.stdout)
+        print(f"  Converted {prep_info['n_ligands']} ligands to PDBQT "
+              f"(MW={prep_info['mw']}, {prep_info['n_atoms']} atoms)")
+        ligand_sdf = output_dir / "ligands_3d.sdf"
     else:
         print("ERROR: Provide --ligands (SDF) or --smiles")
         sys.exit(1)
     print()
 
-    # Step 4 & 5: Dock each site
+    # Step 4 & 5: Concurrent UniDock + GNINA, isolated per-site directories
     all_results = []
-    for i, box in enumerate(boxes):
-        site = site_data["sites"][i]
-        site_dir = output_dir / f"site{box['site_id']}"
-        site_dir.mkdir(exist_ok=True)
 
-        print(f"[4/5] Docking site {box['site_id']} ({box['classification']})...")
-
-        gnina_scores = []
-
-        if args.gnina_only:
-            # Direct GNINA docking
+    if args.gnina_only:
+        # GNINA-only: concurrent across sites
+        for i, box in enumerate(boxes):
+            site = site_data["sites"][i]
+            site_dir = output_dir / f"site{box['site_id']}"
+            site_dir.mkdir(exist_ok=True)
+            print(f"[4/5] GNINA direct docking site {box['site_id']} ({box['classification']})...")
             out_sdf, gnina_scores = run_gnina_dock(
                 args.receptor, ligand_sdf, box, site_dir,
                 exhaustiveness=args.exhaustiveness,
                 num_modes=args.num_modes,
                 cnn_scoring=args.cnn_scoring,
             )
-        else:
-            # UniDock GPU batch docking
-            unidock_dir = site_dir / "unidock_out"
+            results = generate_results(
+                site, box, [], gnina_scores, ligand_info,
+                site_dir, args.receptor
+            )
+            all_results.append(results)
+    else:
+        # ── Concurrent UniDock: one thread per pocket, isolated output dirs ──
+        if not pdbqt_dir or not list(Path(pdbqt_dir).glob("*.pdbqt")):
+            print("  ERROR: No ligands available for docking")
+            sys.exit(1)
 
-            # Prefer PDBQT ligand index (handles multiple ligands reliably)
-            # UniDock --gpu_batch with SDF only processes the first molecule
-            if pdbqt_dir and list(Path(pdbqt_dir).glob("*.pdbqt")):
-                _, unidock_files = run_unidock_with_pdbqt_ligands(
-                    receptor_pdbqt, pdbqt_dir, box, unidock_dir,
-                    exhaustiveness=args.exhaustiveness,
-                    num_modes=args.num_modes,
-                    scoring=args.scoring,
+        n_pockets = len(boxes)
+        max_workers = min(n_pockets, 4)
+
+        env = os.environ.copy()
+        env["LD_LIBRARY_PATH"] = GNINA_LD_PATH + ":" + env.get("LD_LIBRARY_PATH", "")
+
+        # Create all site dirs upfront
+        site_dirs = {}
+        for box in boxes:
+            sd = output_dir / f"site{box['site_id']}"
+            sd.mkdir(exist_ok=True)
+            site_dirs[box["site_id"]] = sd
+
+        # ── Phase 1: Concurrent UniDock ──
+        print(f"[4/5] Concurrent UniDock GPU docking: {n_pockets} pockets, "
+              f"{max_workers} threads...")
+        t0 = time.time()
+
+        unidock_results = {}  # site_id → (out_files, elapsed, error)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {}
+            for box in boxes:
+                fut = pool.submit(
+                    _unidock_one_site,
+                    receptor_pdbqt, ligand_sdf, box,
+                    site_dirs[box["site_id"]],
+                    args.exhaustiveness, args.num_modes, args.scoring,
+                    env,
                 )
-            else:
-                print("  ERROR: No ligands available for docking")
-                continue
+                futures[fut] = box["site_id"]
 
-            # GNINA rescore
-            if not args.skip_gnina and unidock_files:
-                print(f"\n[5/5] GNINA CNN rescoring site {box['site_id']}...")
-                gnina_dir = site_dir / "gnina_rescore"
-                _, gnina_scores = run_gnina_rescore(
-                    args.receptor, unidock_dir, box, gnina_dir
-                )
+            for fut in as_completed(futures):
+                sid = futures[fut]
+                try:
+                    site_id, out_files, elapsed, error = fut.result()
+                    unidock_results[site_id] = (out_files, elapsed, error)
+                    if error:
+                        print(f"    Site {site_id}: UniDock ERROR ({elapsed:.1f}s) — {error[:120]}")
+                    else:
+                        print(f"    Site {site_id}: {len(out_files)} poses ({elapsed:.1f}s)")
+                except Exception as e:
+                    print(f"    Site {sid}: THREAD EXCEPTION — {e}")
+                    unidock_results[sid] = ([], 0, str(e))
 
+        ud_elapsed = time.time() - t0
+        total_poses = sum(len(v[0]) for v in unidock_results.values())
+        print(f"  UniDock complete: {total_poses} total pose files in {ud_elapsed:.1f}s")
         print()
 
-        # Generate results
-        print(f"  Generating results for site {box['site_id']}...")
-        results = generate_results(
-            site, box, [], gnina_scores, ligand_info,
-            site_dir, args.receptor
-        )
-        all_results.append(results)
+        # ── Phase 2: Concurrent GNINA rescore ──
+        gnina_results = {}  # site_id → scores list
+        if not args.skip_gnina:
+            # Only rescore sites that produced docked poses
+            sites_with_poses = [b for b in boxes if unidock_results.get(b["site_id"], ([],))[0]]
+
+            if sites_with_poses:
+                print(f"[5/5] Concurrent GNINA CNN rescoring: {len(sites_with_poses)} pockets, "
+                      f"{max_workers} threads...")
+                t0 = time.time()
+
+                with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    futures = {}
+                    for box in sites_with_poses:
+                        fut = pool.submit(
+                            _gnina_rescore_one_site,
+                            args.receptor, box,
+                            site_dirs[box["site_id"]],
+                            env,
+                        )
+                        futures[fut] = box["site_id"]
+
+                    for fut in as_completed(futures):
+                        sid = futures[fut]
+                        try:
+                            site_id, rescored_files, scores, elapsed = fut.result()
+                            gnina_results[site_id] = scores
+                            if scores:
+                                best = scores[0]
+                                print(f"    Site {site_id}: {len(scores)} scored, "
+                                      f"best Vina={best['vina_score']:.1f} "
+                                      f"CNN={best['cnn_score']:.3f} "
+                                      f"aff={best['cnn_affinity']:.2f} ({elapsed:.1f}s)")
+                            else:
+                                print(f"    Site {site_id}: no scored poses ({elapsed:.1f}s)")
+                        except Exception as e:
+                            print(f"    Site {sid}: GNINA EXCEPTION — {e}")
+                            gnina_results[sid] = []
+
+                gn_elapsed = time.time() - t0
+                total_scored = sum(len(v) for v in gnina_results.values())
+                print(f"  GNINA complete: {total_scored} total scored poses in {gn_elapsed:.1f}s")
         print()
+
+        # ── Generate per-site results ──
+        for i, box in enumerate(boxes):
+            site = site_data["sites"][i]
+            site_id = box["site_id"]
+
+            gnina_scores = gnina_results.get(site_id, [])
+            results = generate_results(
+                site, box, [], gnina_scores, ligand_info,
+                site_dirs[site_id], args.receptor
+            )
+            all_results.append(results)
 
     # Summary
     print("=" * 60)

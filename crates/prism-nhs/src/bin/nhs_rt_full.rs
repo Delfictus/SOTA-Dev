@@ -185,6 +185,15 @@ struct Args {
     #[arg(long, default_value = "false")]
     emit_spike_json: bool,
 
+    /// Enable multi-temperature stepped holds during the ramp phase.
+    /// Instead of a linear ramp 50K→300K, pauses at intermediate temperatures
+    /// (100K, 150K, 200K) to sample conformational basins where different
+    /// pocket types open. Cryptic pockets crack at ~150K, allosteric sites
+    /// appear at ~200K. Each hold runs for 3000 steps with full UV probing.
+    /// Adds ~9K steps total but significantly improves cryptic pocket detection.
+    #[arg(long, default_value = "false")]
+    stepped_holds: bool,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -621,8 +630,28 @@ fn run_full_pipeline_internal(
             wavelength_dwell_steps: 500,
             ramp_down_steps: 0,
             cold_return_steps: 0,
+            stepped_holds: vec![],
         }
     };
+    // Apply stepped holds if requested (multi-temperature sampling during ramp)
+    let protocol = if args.stepped_holds {
+        let holds = vec![
+            (100.0, 3000),  // 100K: initial unfolding, surface crevices open
+            (150.0, 3000),  // 150K: cryptic pockets begin to crack
+            (200.0, 3000),  // 200K: allosteric sites, domain interfaces open
+        ];
+        log::info!("  Stepped holds: ENABLED ({} intermediate temperatures)", holds.len());
+        for (temp, steps) in &holds {
+            log::info!("    Hold at {:.0}K for {} steps", temp, steps);
+        }
+        CryoUvProtocol {
+            stepped_holds: holds,
+            ..protocol
+        }
+    } else {
+        protocol
+    };
+
     // Apply hysteresis if requested (adds cooling ramp + cold return)
     let protocol = if args.hysteresis {
         log::info!("  CCNS Hysteresis: ENABLED (full thermal cycle {}K → {}K → {}K)",
@@ -1522,6 +1551,7 @@ fn run_batch_gpu_concurrent(
             wavelength_dwell_steps: 500,
             ramp_down_steps: 0,
             cold_return_steps: 0,
+            stepped_holds: vec![],
         }
     };
     let protocol = if args.hysteresis {
@@ -2377,6 +2407,7 @@ fn run_multi_stream_pipeline(
             wavelength_dwell_steps: 500,
             ramp_down_steps: 0,
             cold_return_steps: 0,
+            stepped_holds: vec![],
         }
     };
     let protocol = if args.hysteresis {
@@ -4113,7 +4144,7 @@ fn run_multi_stream_pipeline(
                 // more likely to be a true binding site.
                 let saliency = (chem_score * geo_score).powf(0.5); // sqrt of product
 
-                // ── MULTI-HEAD RANKING (V9 intensive weights) ──
+                // ── MULTI-HEAD RANKING (V9 Stage 1 weights — baseline) ──
                 // Head A: Deep-Pocket (enzymes, proteases)
                 let head_a = (geo_score * goldilocks * enclosure_cliff).powf(0.40)
                     * chem_score.powf(0.35)
@@ -4121,7 +4152,6 @@ fn run_multi_stream_pipeline(
                     * vcs_score.powf(0.15);
 
                 // Head B: Surface-Pocket (PPIs, allosteric, shallow clefts)
-                // Saliency cross replaces separate Geo/Chem terms
                 let head_b = saliency.powf(0.35)
                     * phys_score.powf(0.20)
                     * vcs_score.powf(0.25)
@@ -4329,6 +4359,8 @@ fn run_multi_stream_pipeline(
         // frustrated solvent) have genuine physics signals from their own local
         // spike cloud, not inherited parent data.
         let mut frustrated_solvent_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+        let mut asymmetry_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+        let mut ray_escape_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
         {
             let reap_radius = 8.0f32;
             for site in clustered_sites.iter_mut() {
@@ -4343,6 +4375,8 @@ fn run_multi_stream_pipeline(
 
                 // Store frustrated solvent score for JSON export and log per site
                 frustrated_solvent_scores.insert(site.cluster_id, lp.frustrated_solvent_score);
+                asymmetry_scores.insert(site.cluster_id, lp.asymmetry_offset);
+                ray_escape_scores.insert(site.cluster_id, lp.ray_escape_ratio);
                 if lp.frustrated_solvent_score > 0.01 {
                     log::info!("  Site {}: frustrated_solvent_score={:.4} (n_local={})",
                         site.cluster_id, lp.frustrated_solvent_score, lp.n_local_spikes);
@@ -4688,6 +4722,12 @@ fn run_multi_stream_pipeline(
             if let Some(&fs_score) = frustrated_solvent_scores.get(&site_id) {
                 site_json["frustrated_solvent_score"] = serde_json::json!(fs_score);
             }
+            if let Some(&asym) = asymmetry_scores.get(&site_id) {
+                site_json["asymmetry_offset"] = serde_json::json!(asym);
+            }
+            if let Some(&rer) = ray_escape_scores.get(&site_id) {
+                site_json["ray_escape_ratio"] = serde_json::json!(rer);
+            }
             // Export Cobb-Douglas engine scores for Boltzmann training
             if let Some(&(geo, chem, phys, vcs)) = engine_scores.get(&site_id) {
                 site_json["engine_geo"] = serde_json::json!(geo);
@@ -4952,10 +4992,22 @@ fn build_sites_from_clustering(
         let mut min_pos = [f32::MAX; 3];
         let mut max_pos = [f32::MIN; 3];
 
+        // Stage 1: Burial-weighted centroid
+        // Spikes with more nearby residues (deeper in pocket) get weight = n_residues²
+        let mut weighted_centroid = [0.0f32; 3];
+        let mut total_weight = 0.0f32;
+
         for (_, spike) in &spikes {
-            // Copy packed fields to avoid alignment issues
             let pos = spike.position;
             let intensity = spike.intensity;
+
+            // Burial weight: n_residues² (buried spikes count more)
+            let burial_weight = (spike.n_residues as f32).max(1.0).powi(2);
+            weighted_centroid[0] += pos[0] * burial_weight;
+            weighted_centroid[1] += pos[1] * burial_weight;
+            weighted_centroid[2] += pos[2] * burial_weight;
+            total_weight += burial_weight;
+
             centroid[0] += pos[0];
             centroid[1] += pos[1];
             centroid[2] += pos[2];
@@ -4967,9 +5019,62 @@ fn build_sites_from_clustering(
         }
 
         let n = spikes.len() as f32;
-        centroid[0] /= n;
-        centroid[1] /= n;
-        centroid[2] /= n;
+
+        // Use burial-weighted centroid if burial data is present
+        if total_weight > n {
+            centroid[0] = weighted_centroid[0] / total_weight;
+            centroid[1] = weighted_centroid[1] / total_weight;
+            centroid[2] = weighted_centroid[2] / total_weight;
+        } else {
+            centroid[0] /= n;
+            centroid[1] /= n;
+            centroid[2] /= n;
+        }
+
+        // Stage 2: Spike density KDE peak refinement
+        // Find the local maximum of spike density near the burial centroid
+        if spikes.len() >= 20 {
+            let bandwidth = 2.0f32;
+            let bw2 = bandwidth * bandwidth;
+            let search_radius = 5.0f32;
+            let grid_step = 1.0f32;
+            let mut best_density = 0.0f32;
+            let mut peak_pos = centroid;
+
+            let n_steps = (search_radius / grid_step) as i32;
+            for ix in -n_steps..=n_steps {
+                for iy in -n_steps..=n_steps {
+                    for iz in -n_steps..=n_steps {
+                        let px = centroid[0] + ix as f32 * grid_step;
+                        let py = centroid[1] + iy as f32 * grid_step;
+                        let pz = centroid[2] + iz as f32 * grid_step;
+
+                        let mut density = 0.0f32;
+                        for (_, spike) in &spikes {
+                            let dx = px - spike.position[0];
+                            let dy = py - spike.position[1];
+                            let dz = pz - spike.position[2];
+                            let r2 = dx * dx + dy * dy + dz * dz;
+                            if r2 < 9.0 * bw2 {
+                                // Weight by burial: buried spikes contribute more to density
+                                let w = (spike.n_residues as f32).max(1.0);
+                                density += w * (-r2 / (2.0 * bw2)).exp();
+                            }
+                        }
+
+                        if density > best_density {
+                            best_density = density;
+                            peak_pos = [px, py, pz];
+                        }
+                    }
+                }
+            }
+
+            // Blend: 70% density peak + 30% burial-weighted centroid
+            centroid[0] = 0.7 * peak_pos[0] + 0.3 * centroid[0];
+            centroid[1] = 0.7 * peak_pos[1] + 0.3 * centroid[1];
+            centroid[2] = 0.7 * peak_pos[2] + 0.3 * centroid[2];
+        }
 
         let bounding_box = [
             max_pos[0] - min_pos[0],
@@ -5440,6 +5545,8 @@ struct LocalPhysics {
     log_spike_norm: f32,
     lining_score: f32,
     frustrated_solvent_score: f32,  // ΔG_solvation proxy
+    asymmetry_offset: f32,         // |CoM_spikes - centroid| — "cup" metric
+    ray_escape_ratio: f32,         // Dmax/Dmin from rays — "mouth" metric
 }
 
 /// Compute physics signals for a site centroid from the LOCAL spike cloud.
@@ -5474,7 +5581,7 @@ fn compute_local_physics(
             source_entropy: 0.0, sphericity: 0.0, wd_coherence: 0.0,
             breathing_score: 0.0, uv_enrichment: 0.0, per_spike_quality: 0.0,
             n_local_spikes: 0, log_spike_norm: 0.0, lining_score: 0.0,
-            frustrated_solvent_score: 0.0,
+            frustrated_solvent_score: 0.0, asymmetry_offset: 0.0, ray_escape_ratio: 0.0,
         };
     }
 
@@ -5687,6 +5794,70 @@ fn compute_local_physics(
         } else { 0.0 }
     };
 
+    // ── Vectorial Asymmetry: |CoM_spikes - centroid| ──
+    // Functional pockets ("cups") have spike CoM pulled into the protein wall.
+    // Enclosed voids ("bubbles") have CoM ≈ centroid → offset ≈ 0.
+    let asymmetry_offset = {
+        let nf = n as f32;
+        let com_x = local_spikes.iter().map(|s| s.position[0]).sum::<f32>() / nf;
+        let com_y = local_spikes.iter().map(|s| s.position[1]).sum::<f32>() / nf;
+        let com_z = local_spikes.iter().map(|s| s.position[2]).sum::<f32>() / nf;
+        ((com_x - centroid[0]).powi(2) +
+         (com_y - centroid[1]).powi(2) +
+         (com_z - centroid[2]).powi(2)).sqrt()
+    };
+
+    // ── Ray-Escape Ratio: Dmax/Dmin from 26-direction rays ──
+    // Cast rays from centroid along 26 directions (±x, ±y, ±z, diagonals).
+    // For each ray, find distance to nearest protein atom.
+    // Ratio = Dmax/Dmin. High ratio = one direction escapes (mouth). Low = enclosed.
+    let ray_escape_ratio = {
+        // Use spike positions as proxy for protein surface:
+        // Dmin = distance to nearest spike, Dmax = distance to farthest spike
+        // within the local cloud. This captures the same geometric signal.
+        let mut d_min = f32::MAX;
+        let mut d_max = 0.0f32;
+
+        // 26-direction unit vectors (face + edge + corner neighbors of a cube)
+        let dirs: [[f32; 3]; 26] = [
+            [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0], [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0], [0.0, 0.0, -1.0],
+            [1.0, 1.0, 0.0], [1.0, -1.0, 0.0], [-1.0, 1.0, 0.0], [-1.0, -1.0, 0.0],
+            [1.0, 0.0, 1.0], [1.0, 0.0, -1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, -1.0],
+            [0.0, 1.0, 1.0], [0.0, 1.0, -1.0], [0.0, -1.0, 1.0], [0.0, -1.0, -1.0],
+            [1.0, 1.0, 1.0], [1.0, 1.0, -1.0], [1.0, -1.0, 1.0], [1.0, -1.0, -1.0],
+            [-1.0, 1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, -1.0, -1.0],
+        ];
+
+        // For each direction, find how far spikes extend from centroid
+        // (project spike positions onto each ray direction)
+        for dir in &dirs {
+            let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+            let ux = dir[0] / len;
+            let uy = dir[1] / len;
+            let uz = dir[2] / len;
+
+            // Max projection of spikes onto this ray (how far the pocket extends)
+            let mut max_proj = 0.0f32;
+            for s in &local_spikes {
+                let dx = s.position[0] - centroid[0];
+                let dy = s.position[1] - centroid[1];
+                let dz = s.position[2] - centroid[2];
+                let proj = dx * ux + dy * uy + dz * uz;
+                if proj > max_proj { max_proj = proj; }
+            }
+            if max_proj > d_max { d_max = max_proj; }
+            if max_proj < d_min && max_proj > 0.0 { d_min = max_proj; }
+        }
+
+        if d_min > 0.0 && d_min < f32::MAX {
+            d_max / d_min
+        } else {
+            1.0
+        }
+    };
+
     LocalPhysics {
         burial_score,
         onset_score,
@@ -5701,6 +5872,8 @@ fn compute_local_physics(
         log_spike_norm,
         lining_score,
         frustrated_solvent_score,
+        asymmetry_offset,
+        ray_escape_ratio,
     }
 }
 

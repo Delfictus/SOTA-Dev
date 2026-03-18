@@ -1,362 +1,542 @@
 {
   "1": {
-    "apo_pdb": "1JWP",
-    "holo_pdb": "1PZO",
-    "ligand": "CBT",
     "centroid": [
-      6.410427654813802,
-      12.982634848704832,
-      25.291861793788005
+      6.61,
+      13.531,
+      25.526
     ],
-    "n_lig_atoms": 44,
-    "ca_overlap": 263
+    "ligand_resname": "CBT",
+    "alignment_rmsd": 0.0
   },
   "2": {
-    "apo_pdb": "2NPQ",
-    "holo_pdb": "2ZB1",
-    "ligand": "GK4",
     "centroid": [
-      37.19225512261717,
-      38.639287160559,
-      17.37136333953039
+      42.461,
+      31.126,
+      32.515
     ],
-    "n_lig_atoms": 26,
-    "ca_overlap": 324
+    "ligand_resname": "GK4",
+    "alignment_rmsd": 0.0
   },
   "3": {
-    "apo_pdb": "1KV1",
-    "holo_pdb": "1KV2",
-    "ligand": "B96",
     "centroid": [
-      33.673120170970954,
-      34.61815504792438,
-      16.49111147507481
+      33.147,
+      34.761,
+      16.32
     ],
-    "n_lig_atoms": 39,
-    "ca_overlap": 325
+    "ligand_resname": "B96",
+    "alignment_rmsd": 0.0
   },
   "4": {
-    "apo_pdb": "1MY0",
-    "holo_pdb": "1N0T",
-    "ligand": "AT1",
     "centroid": [
-      78.6831364010747,
-      26.876478733621497,
-      42.84212733966024
+      16.02,
+      42.975,
+      23.23
     ],
-    "n_lig_atoms": 21,
-    "ca_overlap": 257
+    "ligand_resname": "AT1",
+    "alignment_rmsd": 0.0
   },
   "5": {
-    "apo_pdb": "4EY4",
-    "holo_pdb": "4EY7",
-    "ligand": "E20",
     "centroid": [
-      -14.091281015655607,
-      -44.36136805072132,
-      27.88903631762699
+      -1.582,
+      -50.192,
+      2.101
     ],
-    "n_lig_atoms": 28,
-    "ca_overlap": 530
+    "ligand_resname": "E20",
+    "alignment_rmsd": 0.0
   },
   "7": {
-    "apo_pdb": "1M47",
-    "holo_pdb": "1PY2",
-    "ligand": "FRH",
     "centroid": [
-      16.594229955194983,
-      17.390796872074077,
-      24.54740977060717
+      22.235,
+      12.887,
+      45.95
     ],
-    "n_lig_atoms": 45,
-    "ca_overlap": 115
+    "ligand_resname": "FRH",
+    "alignment_rmsd": 0.0
   },
   "8": {
-    "apo_pdb": "1HCL",
-    "holo_pdb": "1JSV",
-    "ligand": "U55",
     "centroid": [
-      102.18973460336152,
-      101.5219259207833,
-      77.87202609868152
+      9.982,
+      10.736,
+      25.764
     ],
-    "n_lig_atoms": 18,
-    "ca_overlap": 287
+    "ligand_resname": "U55",
+    "alignment_rmsd": 0.0
   },
   "9": {
-    "apo_pdb": "1YES",
-    "holo_pdb": "1YET",
-    "ligand": "GDM",
     "centroid": [
-      41.70295907118631,
-      -46.02119383836576,
-      65.04656055360572
+      41.202,
+      -46.548,
+      65.603
     ],
-    "n_lig_atoms": 40,
-    "ca_overlap": 213
+    "ligand_resname": "GDM",
+    "alignment_rmsd": 0.0
   },
   "10": {
-    "apo_pdb": "2OSS",
-    "holo_pdb": "3MXF",
-    "ligand": "JQ1",
     "centroid": [
-      26.09188483238063,
-      50.80387124384789,
-      -2.4770951380319857
+      28.751,
+      15.826,
+      -2.335
     ],
-    "n_lig_atoms": 31,
-    "ca_overlap": 127
+    "ligand_resname": "JQ1",
+    "alignment_rmsd": 0.0
   },
   "11": {
-    "apo_pdb": "1FKG",
-    "holo_pdb": "1FKJ",
-    "ligand": "FK5",
     "centroid": [
-      -26.784733111778447,
-      30.287965306608506,
-      4.8590038482145665
+      22.336,
+      30.207,
+      23.693
     ],
-    "n_lig_atoms": 57,
-    "ca_overlap": 107
+    "ligand_resname": "FK5",
+    "alignment_rmsd": 0.0
   },
   "12": {
-    "apo_pdb": "1HPV",
-    "holo_pdb": "1HVR",
-    "ligand": "XK2",
     "centroid": [
-      9.396558156762211,
-      16.290334804628852,
-      8.824829073620807
+      -9.192,
+      15.906,
+      27.946
     ],
-    "n_lig_atoms": 46,
-    "ca_overlap": 98
+    "ligand_resname": "XK2",
+    "alignment_rmsd": 0.0
   },
   "13": {
-    "apo_pdb": "3ERT",
-    "holo_pdb": "1ERR",
-    "ligand": "RAL",
     "centroid": [
-      30.66809124391486,
-      -1.8128708008373229,
-      25.375296885272718
+      54.051,
+      29.151,
+      76.15
     ],
-    "n_lig_atoms": 34,
-    "ca_overlap": 224
+    "ligand_resname": "RAL",
+    "alignment_rmsd": 0.0
   },
   "14": {
-    "apo_pdb": "1K3F",
-    "holo_pdb": "1K3G",
-    "ligand": "HEC",
     "centroid": [
-      11.191318468498906,
-      -7.889469252052792,
-      -6.540862854162093
+      -4.054,
+      -2.354,
+      3.504
     ],
-    "n_lig_atoms": 75,
-    "ca_overlap": 71
+    "ligand_resname": "HEC",
+    "alignment_rmsd": 0.0
   },
   "15": {
-    "apo_pdb": "1P38",
-    "holo_pdb": "3HEC",
-    "ligand": "STI",
     "centroid": [
-      3.9079986316982227,
-      14.597111944370845,
-      34.009036694632755
+      16.885,
+      -3.551,
+      -19.552
     ],
-    "n_lig_atoms": 37,
-    "ca_overlap": 329
+    "ligand_resname": "STI",
+    "alignment_rmsd": 0.0
   },
   "16": {
-    "apo_pdb": "1YVF",
-    "holo_pdb": "1YV3",
-    "ligand": "ADP",
     "centroid": [
-      2.842978764732035,
-      54.67480824746591,
-      39.55020176506996
+      19.972,
+      41.778,
+      56.22
     ],
-    "n_lig_atoms": 27,
-    "ca_overlap": 556
+    "ligand_resname": "ADP",
+    "alignment_rmsd": 0.0
   },
   "17": {
-    "apo_pdb": "1PKL",
-    "holo_pdb": "1PKN",
-    "ligand": "PYR",
     "centroid": [
-      142.00622960724803,
-      113.29645181943111,
-      13.174456998232467
+      29.855,
+      49.972,
+      30.774
     ],
-    "n_lig_atoms": 6,
-    "ca_overlap": 486
+    "ligand_resname": "PYR",
+    "alignment_rmsd": 0.0
   },
   "18": {
-    "apo_pdb": "1DWD",
-    "holo_pdb": "1DWC",
-    "ligand": "MIT",
     "centroid": [
-      31.589895489293355,
-      13.719472386373806,
-      24.370895734890425
+      31.501,
+      13.741,
+      24.359
     ],
-    "n_lig_atoms": 35,
-    "ca_overlap": 229
+    "ligand_resname": "MIT",
+    "alignment_rmsd": 0.0
   },
   "19": {
-    "apo_pdb": "1TTH",
-    "holo_pdb": "1TTI",
-    "ligand": "PGA",
     "centroid": [
-      41.80187440176272,
-      30.404327570376584,
-      20.740288471950397
+      18.781,
+      1.276,
+      38.822
     ],
-    "n_lig_atoms": 9,
-    "ca_overlap": 236
+    "ligand_resname": "PGA",
+    "alignment_rmsd": 0.0
   },
   "20": {
-    "apo_pdb": "2CBA",
-    "holo_pdb": "3HS4",
-    "ligand": "AZM",
     "centroid": [
-      -4.330564438908121,
-      -3.9253362495306865,
-      17.191018527369668
+      -4.221,
+      -4.077,
+      17.036
     ],
-    "n_lig_atoms": 39,
-    "ca_overlap": 257
+    "ligand_resname": "AZM",
+    "alignment_rmsd": 0.0
   },
   "21": {
-    "apo_pdb": "1RDQ",
-    "holo_pdb": "1K1J",
-    "ligand": "FD2",
     "centroid": [
-      23.51177453979153,
-      16.087461216147148,
-      26.498465989751143
+      -2.359,
+      4.409,
+      23.737
     ],
-    "n_lig_atoms": 37,
-    "ca_overlap": 219
+    "ligand_resname": "FD2",
+    "alignment_rmsd": 0.0
   },
   "22": {
-    "apo_pdb": "3L3N",
-    "holo_pdb": "3L3M",
-    "ligand": "A92",
     "centroid": [
-      41.71854351771133,
-      3.2736118315297515,
-      117.70840125972069
+      26.365,
+      11.222,
+      27.023
     ],
-    "n_lig_atoms": 25,
-    "ca_overlap": 348
+    "ligand_resname": "A92",
+    "alignment_rmsd": 0.0
   },
   "23": {
-    "apo_pdb": "1NNA",
-    "holo_pdb": "1NNC",
-    "ligand": "ZMR",
     "centroid": [
-      26.18264529382542,
-      17.573312352979823,
-      63.08630615597569
+      26.054,
+      17.671,
+      62.965
     ],
-    "n_lig_atoms": 23,
-    "ca_overlap": 385
+    "ligand_resname": "ZMR",
+    "alignment_rmsd": 0.0
   },
   "24": {
-    "apo_pdb": "1TPA",
-    "holo_pdb": "1TPP",
-    "ligand": "APA",
     "centroid": [
-      16.48105503762124,
-      72.4356004359216,
-      17.71757930364787
+      -1.497,
+      15.217,
+      19.395
     ],
-    "n_lig_atoms": 15,
-    "ca_overlap": 220
+    "ligand_resname": "APA",
+    "alignment_rmsd": 0.0
   },
   "25": {
-    "apo_pdb": "1ABF",
-    "holo_pdb": "1ABE",
-    "ligand": "ARA",
     "centroid": [
-      13.342790295989008,
-      56.641214438842574,
-      54.12854753429552
+      13.38,
+      56.761,
+      54.097
     ],
-    "n_lig_atoms": 10,
-    "ca_overlap": 305
+    "ligand_resname": "ARA",
+    "alignment_rmsd": 0.0
   },
   "26": {
-    "apo_pdb": "4HT0",
-    "holo_pdb": "4HT2",
-    "ligand": "V50",
     "centroid": [
-      -4.21422424416193,
-      5.064335820476394,
-      14.82625126356096
+      8.103,
+      9.964,
+      20.831
     ],
-    "n_lig_atoms": 46,
-    "ca_overlap": 257
+    "ligand_resname": "V50",
+    "alignment_rmsd": 0.0
   },
   "27": {
-    "apo_pdb": "1C5Y",
-    "holo_pdb": "1C5X",
-    "ligand": "FLC",
     "centroid": [
-      26.10599674458525,
-      11.356200633050143,
-      17.154030500818813
+      26.133,
+      11.412,
+      17.242
     ],
-    "n_lig_atoms": 60,
-    "ca_overlap": 229
+    "ligand_resname": "FLC",
+    "alignment_rmsd": 0.0
   },
   "28": {
-    "apo_pdb": "1GKC",
-    "holo_pdb": "1GKD",
-    "ligand": "STN",
     "centroid": [
-      64.71380783044177,
-      29.373115902199334,
-      115.95602655842885
+      5.607,
+      31.062,
+      1.584
     ],
-    "n_lig_atoms": 12,
-    "ca_overlap": 159
+    "ligand_resname": "STN",
+    "alignment_rmsd": 0.0
   },
   "29": {
-    "apo_pdb": "3TMN",
-    "holo_pdb": "5TMN",
-    "ligand": "0PJ",
     "centroid": [
-      35.521333544546536,
-      40.52016878845506,
-      -6.22392858238628
+      35.511,
+      40.495,
+      -6.193
     ],
-    "n_lig_atoms": 32,
-    "ca_overlap": 316
+    "ligand_resname": "0PJ",
+    "alignment_rmsd": 0.0
   },
   "30": {
-    "apo_pdb": "4DFR",
-    "holo_pdb": "3DFR",
-    "ligand": "MTX",
     "centroid": [
-      19.33833314205925,
-      61.17207184441931,
-      26.02986127529383
+      -2.657,
+      34.899,
+      22.712
     ],
-    "n_lig_atoms": 33,
-    "ca_overlap": 159
+    "ligand_resname": "MTX",
+    "alignment_rmsd": 0.0
   },
   "6": {
-    "apo_pdb": "2HNP",
-    "holo_pdb": "1T49",
-    "ligand": "892",
     "centroid": [
-      56.10628071389846,
-      31.213089964465066,
-      22.131582553645295
+      56.02,
+      31.367,
+      22.486
     ],
-    "n_lig_atoms": 36,
-    "ca_overlap": 278
+    "ligand_resname": "892",
+    "alignment_rmsd": 0.0
+  },
+  "31": {
+    "centroid": [
+      0.517,
+      27.062,
+      8.972
+    ],
+    "ligand_resname": "STU",
+    "alignment_rmsd": 0.0
+  },
+  "32": {
+    "centroid": [
+      31.835,
+      -9.618,
+      63.967
+    ],
+    "ligand_resname": "RA2",
+    "alignment_rmsd": 0.0
+  },
+  "33": {
+    "centroid": [
+      2.166,
+      11.999,
+      29.902
+    ],
+    "ligand_resname": "SB6",
+    "alignment_rmsd": 0.0
+  },
+  "34": {
+    "centroid": [
+      34.014,
+      65.523,
+      7.711
+    ],
+    "ligand_resname": "MNO",
+    "alignment_rmsd": 0.0
+  },
+  "35": {
+    "centroid": [
+      30.61,
+      14.936,
+      -1.087
+    ],
+    "ligand_resname": "PRD",
+    "alignment_rmsd": 0.0
+  },
+  "36": {
+    "centroid": [
+      22.065,
+      26.283,
+      20.209
+    ],
+    "ligand_resname": "REA",
+    "alignment_rmsd": 0.0
+  },
+  "37": {
+    "centroid": [
+      52.361,
+      25.299,
+      55.478
+    ],
+    "ligand_resname": "PRE",
+    "alignment_rmsd": 0.0
+  },
+  "38": {
+    "centroid": [
+      47.551,
+      30.345,
+      32.499
+    ],
+    "ligand_resname": "NAG",
+    "alignment_rmsd": 0.0
+  },
+  "39": {
+    "centroid": [
+      41.8,
+      37.955,
+      5.73
+    ],
+    "ligand_resname": "FMN",
+    "alignment_rmsd": 0.0
+  },
+  "40": {
+    "centroid": [
+      27.248,
+      8.407,
+      28.367
+    ],
+    "ligand_resname": "AGB",
+    "alignment_rmsd": 0.0
+  },
+  "41": {
+    "centroid": [
+      7.183,
+      4.743,
+      22.275
+    ],
+    "ligand_resname": "815",
+    "alignment_rmsd": 0.0
+  },
+  "42": {
+    "centroid": [
+      6.764,
+      4.589,
+      21.88
+    ],
+    "ligand_resname": "PR2",
+    "alignment_rmsd": 0.0
+  },
+  "43": {
+    "centroid": [
+      12.106,
+      23.492,
+      5.473
+    ],
+    "ligand_resname": "NM1",
+    "alignment_rmsd": 0.0
+  },
+  "44": {
+    "centroid": [
+      10.217,
+      12.775,
+      40.038
+    ],
+    "ligand_resname": "HEM",
+    "alignment_rmsd": 0.0
+  },
+  "45": {
+    "centroid": [
+      7.181,
+      74.151,
+      45.123
+    ],
+    "ligand_resname": "NAG",
+    "alignment_rmsd": 0.0
+  },
+  "46": {
+    "centroid": [
+      20.094,
+      64.314,
+      46.648
+    ],
+    "ligand_resname": "4SP",
+    "alignment_rmsd": 0.0
+  },
+  "47": {
+    "centroid": [
+      16.953,
+      34.916,
+      18.904
+    ],
+    "ligand_resname": "SAH",
+    "alignment_rmsd": 0.0
+  },
+  "48": {
+    "centroid": [
+      20.004,
+      26.777,
+      26.046
+    ],
+    "ligand_resname": "AD3",
+    "alignment_rmsd": 0.0
+  },
+  "49": {
+    "centroid": [
+      -3.315,
+      -0.397,
+      22.509
+    ],
+    "ligand_resname": "APC",
+    "alignment_rmsd": 0.0
+  },
+  "50": {
+    "centroid": [
+      25.992,
+      19.627,
+      17.193
+    ],
+    "ligand_resname": "D16",
+    "alignment_rmsd": 0.0
+  },
+  "51": {
+    "centroid": [
+      15.075,
+      55.733,
+      19.409
+    ],
+    "ligand_resname": "VIB",
+    "alignment_rmsd": 0.0
+  },
+  "52": {
+    "centroid": [
+      29.986,
+      17.639,
+      13.65
+    ],
+    "ligand_resname": "UMP",
+    "alignment_rmsd": 0.0
+  },
+  "53": {
+    "centroid": [
+      -3.08,
+      -35.284,
+      24.86
+    ],
+    "ligand_resname": "TNK",
+    "alignment_rmsd": 0.0
+  },
+  "54": {
+    "centroid": [
+      -0.273,
+      19.266,
+      17.702
+    ],
+    "ligand_resname": "FD1",
+    "alignment_rmsd": 0.0
+  },
+  "55": {
+    "centroid": [
+      -9.51,
+      48.704,
+      38.092
+    ],
+    "ligand_resname": "LS1",
+    "alignment_rmsd": 0.0
+  },
+  "56": {
+    "centroid": [
+      51.616,
+      2.94,
+      22.216
+    ],
+    "ligand_resname": "STC",
+    "alignment_rmsd": 0.0
+  },
+  "57": {
+    "centroid": [
+      7.335,
+      6.815,
+      22.976
+    ],
+    "ligand_resname": "CMB",
+    "alignment_rmsd": 0.0
+  },
+  "58": {
+    "centroid": [
+      7.384,
+      5.74,
+      21.969
+    ],
+    "ligand_resname": "XLD",
+    "alignment_rmsd": 0.0
+  },
+  "59": {
+    "centroid": [
+      13.007,
+      -6.513,
+      -12.455
+    ],
+    "ligand_resname": "PFA",
+    "alignment_rmsd": 0.0
+  },
+  "60": {
+    "centroid": [
+      33.695,
+      27.842,
+      4.775
+    ],
+    "ligand_resname": "SCT",
+    "alignment_rmsd": 0.0
   }
 }

@@ -360,6 +360,15 @@ pub struct CryoUvProtocol {
     pub ramp_down_steps: i32,
     /// Steps to hold at cold after ramp-down (0 = no cold return hold)
     pub cold_return_steps: i32,
+
+    // === Multi-temperature stepped holds ===
+    /// Intermediate temperature hold points during the ramp phase.
+    /// Each entry is (temperature_K, hold_steps). The ramp phase will
+    /// pause at each temperature for the specified number of steps
+    /// before continuing. This samples different conformational basins:
+    /// cryptic pockets open at ~150K, allosteric sites at ~200K, etc.
+    /// Empty = standard linear ramp (default behavior).
+    pub stepped_holds: Vec<(f32, i32)>,
 }
 
 impl CryoUvProtocol {
@@ -391,6 +400,7 @@ impl CryoUvProtocol {
             wavelength_dwell_steps: 500,
             ramp_down_steps: 6000,       // Symmetric cooldown 300K→50K (hysteresis)
             cold_return_steps: 4000,     // Cold return hold (detect re-closure)
+            stepped_holds: vec![],
         }
     }
 
@@ -450,6 +460,7 @@ impl CryoUvProtocol {
             wavelength_dwell_steps: 300, // Proportionally reduced (was 400)
             ramp_down_steps: 6000,       // Symmetric cooldown 300K→50K (hysteresis)
             cold_return_steps: 4000,     // Cold return hold (detect re-closure)
+            stepped_holds: vec![],
         }
     }
 
@@ -479,23 +490,86 @@ impl CryoUvProtocol {
             wavelength_dwell_steps: 300, // Same as fast_35k
             ramp_down_steps: 3000,       // Compact cooldown (hysteresis)
             cold_return_steps: 2000,     // Brief cold return
+            stepped_holds: vec![],
         }
     }
 
-    /// Get current temperature (supports 5-phase hysteresis protocol)
+    /// Get current temperature (supports 5-phase hysteresis + stepped holds)
+    ///
+    /// When `stepped_holds` is non-empty, the ramp phase (Phase 2) is replaced
+    /// with a staircase: ramp to T1, hold, ramp to T2, hold, ..., ramp to end_temp.
+    /// This samples conformational basins at intermediate temperatures where
+    /// different pocket types open (cryptic ~150K, allosteric ~200K, etc.).
     pub fn current_temperature(&self) -> f32 {
         let s = self.current_step;
         let p1_end = self.cold_hold_steps;
-        let p2_end = p1_end + self.ramp_steps;
-        let p3_end = p2_end + self.warm_hold_steps;
-        let p4_end = p3_end + self.ramp_down_steps;
-        // p5_end = p4_end + self.cold_return_steps (final)
 
         if s < p1_end {
             // Phase 1: Cold hold
-            self.start_temp
-        } else if s < p2_end {
-            // Phase 2: Ramp up (heating)
+            return self.start_temp;
+        }
+
+        // Phase 2: Ramp up — with optional stepped holds
+        let ramp_start = s - p1_end;
+
+        if !self.stepped_holds.is_empty() {
+            // Stepped ramp: distribute ramp_steps across segments
+            let n_segments = self.stepped_holds.len() + 1; // N holds + final ramp to end_temp
+            let steps_per_ramp_segment = self.ramp_steps / n_segments as i32;
+
+            let mut cursor = 0i32;
+            let mut prev_temp = self.start_temp;
+
+            for (hold_temp, hold_steps) in &self.stepped_holds {
+                // Ramp segment: prev_temp → hold_temp
+                if ramp_start < cursor + steps_per_ramp_segment {
+                    let progress = (ramp_start - cursor) as f32 / steps_per_ramp_segment.max(1) as f32;
+                    return prev_temp + progress * (hold_temp - prev_temp);
+                }
+                cursor += steps_per_ramp_segment;
+
+                // Hold segment at this temperature
+                if ramp_start < cursor + hold_steps {
+                    return *hold_temp;
+                }
+                cursor += hold_steps;
+
+                prev_temp = *hold_temp;
+            }
+
+            // Final ramp segment: last hold temp → end_temp
+            let final_ramp_end = cursor + steps_per_ramp_segment;
+            if ramp_start < final_ramp_end {
+                let progress = (ramp_start - cursor) as f32 / steps_per_ramp_segment.max(1) as f32;
+                return prev_temp + progress * (self.end_temp - prev_temp);
+            }
+
+            // Past the ramp phase — adjust step accounting for the extra hold steps
+            let total_hold_steps: i32 = self.stepped_holds.iter().map(|(_, h)| h).sum();
+            let effective_ramp_end = p1_end + self.ramp_steps + total_hold_steps;
+
+            let p3_end = effective_ramp_end + self.warm_hold_steps;
+            let p4_end = p3_end + self.ramp_down_steps;
+
+            if s < effective_ramp_end {
+                return self.end_temp; // should have been caught above
+            } else if s < p3_end {
+                return self.end_temp;
+            } else if s < p4_end {
+                let progress = (s - p3_end) as f32 / self.ramp_down_steps.max(1) as f32;
+                return self.end_temp - progress * (self.end_temp - self.start_temp);
+            } else {
+                return self.start_temp;
+            }
+        }
+
+        // Standard linear ramp (no stepped holds)
+        let p2_end = p1_end + self.ramp_steps;
+        let p3_end = p2_end + self.warm_hold_steps;
+        let p4_end = p3_end + self.ramp_down_steps;
+
+        if s < p2_end {
+            // Phase 2: Linear ramp up
             let progress = (s - p1_end) as f32 / self.ramp_steps as f32;
             self.start_temp + progress * (self.end_temp - self.start_temp)
         } else if s < p3_end {
@@ -564,10 +638,12 @@ impl CryoUvProtocol {
         self.current_step >= self.total_steps()
     }
 
-    /// Total steps in protocol (includes cooling phases if hysteresis enabled)
+    /// Total steps in protocol (includes cooling phases if hysteresis enabled,
+    /// and intermediate hold steps if stepped holds are configured)
     pub fn total_steps(&self) -> i32 {
-        self.cold_hold_steps + self.ramp_steps + self.warm_hold_steps
-            + self.ramp_down_steps + self.cold_return_steps
+        let stepped_hold_time: i32 = self.stepped_holds.iter().map(|(_, h)| h).sum();
+        self.cold_hold_steps + self.ramp_steps + stepped_hold_time
+            + self.warm_hold_steps + self.ramp_down_steps + self.cold_return_steps
     }
 
     /// Create a hysteresis version of this protocol (full thermal cycle)
@@ -1485,6 +1561,8 @@ pub struct NhsAmberFusedEngine {
     init_lif_kernel: CudaFunction,
     init_warp_matrix_kernel: CudaFunction,
     build_uv_targets_kernel: CudaFunction,
+    kde_density_peak_kernel: Option<CudaFunction>,
+    burial_centroid_kernel: Option<CudaFunction>,
 
     // Atom state buffers (float3 = 3 contiguous floats)
     d_positions: CudaSlice<f32>,
@@ -1848,6 +1926,16 @@ impl NhsAmberFusedEngine {
             });
         let init_multi_neuron_kernel = fused_module.load_function("init_multi_neuron")
             .unwrap_or_else(|_| fused_step_kernel.clone());
+
+        // KDE density peak + burial centroid kernels (optional, graceful fallback to CPU)
+        let kde_density_peak_kernel = fused_module.load_function("kde_density_peak").ok();
+        let burial_centroid_kernel = fused_module.load_function("burial_weighted_centroid").ok();
+        if kde_density_peak_kernel.is_some() {
+            log::info!("  GPU KDE density peak kernel: ✓ loaded");
+        }
+        if burial_centroid_kernel.is_some() {
+            log::info!("  GPU burial centroid kernel: ✓ loaded");
+        }
 
         // ====================================================================
         // ALLOCATE ATOM STATE BUFFERS
@@ -2267,6 +2355,8 @@ impl NhsAmberFusedEngine {
             coupling_phase: false,
             multi_lif_kernel,
             init_multi_neuron_kernel,
+            kde_density_peak_kernel,
+            burial_centroid_kernel,
 
             // Sparse tile index — populated in build_warp_matrix()
             d_active_tiles,
@@ -3897,6 +3987,7 @@ impl NhsAmberFusedEngine {
     ///     current_step: 0,
     ///     ramp_down_steps: 0,
     ///     cold_return_steps: 0,
+    ///     stepped_holds: vec![],
     /// };
     /// engine.set_cryo_uv_protocol(protocol)?;
     /// ```
@@ -5367,6 +5458,118 @@ impl NhsAmberFusedEngine {
     /// The Langevin thermostat will naturally thermalize to target temperature.
     /// Topology, force field parameters, and neighbor lists are preserved.
     ///
+    /// Compute burial-weighted KDE centroid for a pocket on GPU.
+    ///
+    /// Takes spike positions and burial counts, returns refined centroid.
+    /// Falls back to CPU if GPU kernels aren't loaded.
+    ///
+    /// # Arguments
+    /// * `spike_positions` - flat [x,y,z, x,y,z, ...] array of spike positions
+    /// * `spike_n_residues` - nearby residue count per spike
+    /// * `initial_centroid` - [cx, cy, cz] from burial-weighted mean
+    /// * `search_radius` - search radius for KDE peak (typically 5.0A)
+    /// * `bandwidth` - KDE bandwidth (typically 2.0A)
+    pub fn compute_kde_centroid(
+        &self,
+        spike_positions: &[[f32; 3]],
+        spike_n_residues: &[i32],
+        initial_centroid: [f32; 3],
+        search_radius: f32,
+        bandwidth: f32,
+    ) -> Result<[f32; 3]> {
+        let n_spikes = spike_positions.len();
+        if n_spikes < 20 {
+            return Ok(initial_centroid);
+        }
+
+        // Check if GPU kernels are available
+        let (kde_kernel, centroid_kernel) = match (&self.kde_density_peak_kernel, &self.burial_centroid_kernel) {
+            (Some(kde), Some(cent)) => (kde, cent),
+            _ => {
+                // Fallback: CPU computation (already done in persistent_engine.rs)
+                return Ok(initial_centroid);
+            }
+        };
+
+        // Upload spike data to GPU
+        let spike_x: Vec<f32> = spike_positions.iter().map(|p| p[0]).collect();
+        let spike_y: Vec<f32> = spike_positions.iter().map(|p| p[1]).collect();
+        let spike_z: Vec<f32> = spike_positions.iter().map(|p| p[2]).collect();
+
+        let mut d_spike_x: CudaSlice<f32> = self.stream.alloc_zeros(n_spikes)?;
+        let mut d_spike_y: CudaSlice<f32> = self.stream.alloc_zeros(n_spikes)?;
+        let mut d_spike_z: CudaSlice<f32> = self.stream.alloc_zeros(n_spikes)?;
+        let mut d_spike_nr: CudaSlice<i32> = self.stream.alloc_zeros(n_spikes)?;
+        let mut d_centroid: CudaSlice<f32> = self.stream.alloc_zeros(3)?;
+        let mut d_peak: CudaSlice<f32> = self.stream.alloc_zeros(4)?; // [x,y,z,density]
+
+        self.stream.memcpy_htod(&spike_x, &mut d_spike_x)?;
+        self.stream.memcpy_htod(&spike_y, &mut d_spike_y)?;
+        self.stream.memcpy_htod(&spike_z, &mut d_spike_z)?;
+        self.stream.memcpy_htod(spike_n_residues, &mut d_spike_nr)?;
+        self.stream.memcpy_htod(&initial_centroid, &mut d_centroid)?;
+
+        // Step 1: Burial-weighted centroid on GPU
+        let cfg_centroid = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        let mut d_centroid_out: CudaSlice<f32> = self.stream.alloc_zeros(4)?;
+        unsafe {
+            self.stream
+                .launch_builder(centroid_kernel)
+                .arg(&d_spike_x)
+                .arg(&d_spike_y)
+                .arg(&d_spike_z)
+                .arg(&d_spike_nr)
+                .arg(&(n_spikes as i32))
+                .arg(&mut d_centroid_out)
+                .launch(cfg_centroid)
+        }
+        .context("Failed to launch burial_weighted_centroid")?;
+
+        // Read burial centroid back
+        let mut centroid_result = [0.0f32; 4];
+        self.stream.memcpy_dtoh(&d_centroid_out, &mut centroid_result)?;
+
+        // Use burial centroid as input to KDE
+        let burial_centroid = [centroid_result[0], centroid_result[1], centroid_result[2]];
+        self.stream.memcpy_htod(&burial_centroid, &mut d_centroid)?;
+
+        // Step 2: KDE density peak on GPU
+        let kde_grid_total = 11 * 11 * 11; // 1331
+        let n_blocks = ((kde_grid_total as u32) + 255) / 256;
+        let cfg_kde = LaunchConfig {
+            grid_dim: (n_blocks, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            self.stream
+                .launch_builder(kde_kernel)
+                .arg(&d_spike_x)
+                .arg(&d_spike_y)
+                .arg(&d_spike_z)
+                .arg(&d_spike_nr)
+                .arg(&(n_spikes as i32))
+                .arg(&d_centroid)
+                .arg(&search_radius)
+                .arg(&bandwidth)
+                .arg(&mut d_peak)
+                .launch(cfg_kde)
+        }
+        .context("Failed to launch kde_density_peak")?;
+
+        // Read peak result
+        let mut peak_result = [0.0f32; 4];
+        self.stream.memcpy_dtoh(&d_peak, &mut peak_result)?;
+
+        Ok([peak_result[0], peak_result[1], peak_result[2]])
+    }
+
     /// # Arguments
     /// * `seed` - Random seed for RNG (affects stochastic Langevin dynamics)
     pub fn reset_for_replica(&mut self, seed: u64) -> Result<()> {
