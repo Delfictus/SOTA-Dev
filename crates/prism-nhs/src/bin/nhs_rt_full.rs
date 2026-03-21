@@ -2513,16 +2513,77 @@ fn run_multi_stream_pipeline(
                 // high-barrier cryptic sites that equilibrium sampling misses.
                 let prot = if args.multi_temp && n_streams >= 4 {
                     let base_temp = protocol.end_temp;
-                    // Temperature ladder: first half at/near base, second half escalating
-                    let ladder: Vec<f32> = (0..n_streams).map(|s| {
-                        let frac = s as f32 / (n_streams - 1).max(1) as f32;
-                        // 0→base, 0.5→1.33×base, 1.0→2×base
-                        base_temp * (1.0 + frac)
-                    }).collect();
                     let mut p = protocol.clone();
-                    p.end_temp = ladder[i];
-                    log::info!("    [stream {}] Multi-temp: end_temp={:.0}K (base={:.0}K)",
-                        i, p.end_temp, base_temp);
+
+                    // Hybrid multi-temperature protocol:
+                    // Mix of equilibrium streams (standard ramp) and flash-freeze
+                    // streams (heat high → quench rapidly to trap open conformations).
+                    //
+                    // 8-stream layout:
+                    //   0: 300K baseline (reference)
+                    //   1: 350K mild heat
+                    //   2: 400K → QUENCH (flash-freeze from 400K)
+                    //   3: 450K → QUENCH (flash-freeze from 450K)
+                    //   4: 500K equilibrium
+                    //   5: 500K → QUENCH (flash-freeze from 500K)
+                    //   6: 600K → QUENCH (flash-freeze from 600K)
+                    //   7: 300K baseline (duplicate for consensus)
+                    //
+                    // Flash-freeze: ramp_down in 200 steps (~0.4ps) instead of 6000+
+                    // This traps the backbone in the open conformation while the pocket
+                    // is still accessible, like computational cryo-EM vitrification.
+                    // The cold_return hold then probes the trapped state with UV/LIF/EFP.
+
+                    match i % n_streams {
+                        0 => {
+                            // Baseline reference
+                            p.end_temp = base_temp;
+                            log::info!("    [stream {}] baseline {:.0}K", i, p.end_temp);
+                        }
+                        1 => {
+                            // Mild heat, standard ramp-down
+                            p.end_temp = base_temp * 1.17; // ~350K
+                            log::info!("    [stream {}] mild heat {:.0}K", i, p.end_temp);
+                        }
+                        2 => {
+                            // Flash-freeze from 400K
+                            p.end_temp = base_temp * 1.33; // ~400K
+                            p.ramp_down_steps = 200; // rapid quench
+                            p.cold_return_steps = p.cold_return_steps.max(5000); // extended probing
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                        }
+                        3 => {
+                            // Flash-freeze from 450K
+                            p.end_temp = base_temp * 1.5; // ~450K
+                            p.ramp_down_steps = 200;
+                            p.cold_return_steps = p.cold_return_steps.max(5000);
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                        }
+                        4 => {
+                            // Hot equilibrium (standard ramp-down)
+                            p.end_temp = base_temp * 1.67; // ~500K
+                            log::info!("    [stream {}] hot equilibrium {:.0}K", i, p.end_temp);
+                        }
+                        5 => {
+                            // Flash-freeze from 500K
+                            p.end_temp = base_temp * 1.67; // ~500K
+                            p.ramp_down_steps = 200;
+                            p.cold_return_steps = p.cold_return_steps.max(5000);
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                        }
+                        6 => {
+                            // Flash-freeze from 600K
+                            p.end_temp = base_temp * 2.0; // ~600K
+                            p.ramp_down_steps = 200;
+                            p.cold_return_steps = p.cold_return_steps.max(5000);
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                        }
+                        _ => {
+                            // Additional streams: duplicate baseline for consensus
+                            p.end_temp = base_temp;
+                            log::info!("    [stream {}] baseline {:.0}K (consensus duplicate)", i, p.end_temp);
+                        }
+                    }
                     p
                 } else {
                     protocol.clone()
