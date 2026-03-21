@@ -2546,18 +2546,22 @@ fn run_multi_stream_pipeline(
                             log::info!("    [stream {}] mild heat {:.0}K", i, p.end_temp);
                         }
                         2 => {
-                            // Flash-freeze from 400K
+                            // Flash-freeze from 400K + intensified probing
                             p.end_temp = base_temp * 1.33; // ~400K
                             p.ramp_down_steps = 200; // rapid quench
                             p.cold_return_steps = p.cold_return_steps.max(5000); // extended probing
-                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                            p.uv_burst_energy *= 2.0; // 2× UV energy: aggressive pocket interrogation
+                            p.uv_burst_interval = (p.uv_burst_interval / 2).max(50); // 2× burst frequency
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200, UV 2x)", i, p.end_temp);
                         }
                         3 => {
-                            // Flash-freeze from 450K
+                            // Flash-freeze from 450K + intensified probing
                             p.end_temp = base_temp * 1.5; // ~450K
                             p.ramp_down_steps = 200;
                             p.cold_return_steps = p.cold_return_steps.max(5000);
-                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                            p.uv_burst_energy *= 2.0;
+                            p.uv_burst_interval = (p.uv_burst_interval / 2).max(50);
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200, UV 2x)", i, p.end_temp);
                         }
                         4 => {
                             // Hot equilibrium (standard ramp-down)
@@ -2565,18 +2569,22 @@ fn run_multi_stream_pipeline(
                             log::info!("    [stream {}] hot equilibrium {:.0}K", i, p.end_temp);
                         }
                         5 => {
-                            // Flash-freeze from 500K
+                            // Flash-freeze from 500K + intensified probing
                             p.end_temp = base_temp * 1.67; // ~500K
                             p.ramp_down_steps = 200;
                             p.cold_return_steps = p.cold_return_steps.max(5000);
-                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                            p.uv_burst_energy *= 2.5; // 2.5× UV: maximum probe intensity
+                            p.uv_burst_interval = (p.uv_burst_interval / 3).max(50); // 3× frequency
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200, UV 2.5x)", i, p.end_temp);
                         }
                         6 => {
-                            // Flash-freeze from 600K
+                            // Flash-freeze from 600K + intensified probing
                             p.end_temp = base_temp * 2.0; // ~600K
                             p.ramp_down_steps = 200;
                             p.cold_return_steps = p.cold_return_steps.max(5000);
-                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200 steps)", i, p.end_temp);
+                            p.uv_burst_energy *= 3.0; // 3× UV: maximum energy for deep pockets
+                            p.uv_burst_interval = (p.uv_burst_interval / 3).max(50); // 3× frequency
+                            log::info!("    [stream {}] FLASH-FREEZE from {:.0}K (quench 200, UV 3x)", i, p.end_temp);
                         }
                         _ => {
                             // Additional streams: duplicate baseline for consensus
