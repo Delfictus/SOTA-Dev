@@ -300,7 +300,7 @@ efp_phase:
             int ai = warp_matrix[v].atom_indices[wi];
             if (ai < 0 || ai >= n_atoms) continue;
             float q = charges[ai];
-            if (fabsf(q) < 0.3f) continue;
+            if (fabsf(q) < 0.15f) continue;
 
             float3 ap = positions[ai];
             float dx = voxel_center.x - ap.x;
@@ -316,17 +316,17 @@ efp_phase:
         }
 
         float wd_change = fabsf(water_density[v] - water_density_prev[v]);
-        float polar_water_signal = fabsf(phi) * wd_change * 10.0f;
+        float polar_water_signal = fabsf(phi) * wd_change * 40.0f;
 
         float phi_prev = efp_potential_prev[v];
         efp_potential[v] = phi;
 
         float flux = fabsf(phi - phi_prev);
-        float polar_signal = flux * 50.0f + polar_water_signal;
+        float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 2 && spike_grid[v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid[v] == 0) {
             const float EFP_TAU = 0.5f;
-            const float EFP_THRESHOLD = 0.8f;
+            const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
 

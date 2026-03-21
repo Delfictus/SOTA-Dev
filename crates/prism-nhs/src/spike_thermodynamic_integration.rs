@@ -128,19 +128,41 @@ fn derive_ramp_phase(timestep: i32, cold_hold_steps: i32, ramp_steps: i32, warm_
     }
 }
 
-/// Infer spike source channel from metadata when spike_source == 0.
+/// Classify spike source channel for thermodynamic decomposition.
 ///
-/// GPU kernels may not always populate spike_source. We infer from:
-/// - wavelength_nm > 200 && aromatic_type >= 0 → UV (1)
-/// - water_density > 0 or remaining → LIF/dewetting (2)
+/// The GPU kernel sets spike_source to 1 (UV) or 2 (LIF) but never 3 (EFP).
+/// We reclassify spikes into three thermodynamic channels:
+///
+/// UV (1):  Aromatic fluorescence — π-stacking interactions
+///          Identified by: wavelength > 200nm AND aromatic_type >= 0
+///          OR kernel-assigned source == 1
+///
+/// EFP (3): Electrostatic field perturbation — charged residue interactions
+///          Identified by: high collective excitation (n_nearby_excited >= 3)
+///          WITHOUT aromatic origin (aromatic_type < 0).
+///          These are spikes driven by Coulombic interactions (salt bridges,
+///          H-bond networks, charged sidechains) rather than dewetting.
+///
+/// LIF (2): Laser-induced fluorescence / dewetting — water displacement
+///          Default for remaining density-based spikes.
 #[cfg(feature = "gpu")]
 fn infer_spike_source(spike: &GpuSpikeEvent) -> i32 {
-    if spike.spike_source != 0 {
-        return spike.spike_source;
+    // If the GPU already set source correctly (1=UV, 2=LIF, 3=EFP), trust it
+    if spike.spike_source == 3 {
+        return 3;
     }
-    // UV channel: has valid wavelength and aromatic metadata
-    if spike.wavelength_nm > 200.0 && spike.aromatic_type >= 0 {
+    // UV channel: aromatic fluorescence metadata present
+    if spike.spike_source == 1
+        || (spike.wavelength_nm > 200.0 && spike.aromatic_type >= 0) {
         return 1;
+    }
+    // EFP reclassification: GPU sometimes sets source=2 for what should be EFP.
+    // EFP spikes are characterized by:
+    //   - vibrational_energy > 0 (energy deposition from charged interactions)
+    //   - aromatic_type < 0 (not aromatic origin)
+    //   - OR n_nearby_excited >= 2 with no aromatic origin (collective charged excitation)
+    if spike.aromatic_type < 0 && (spike.vibrational_energy > 0.001 || spike.n_nearby_excited >= 2) {
+        return 3;
     }
     // LIF/dewetting channel: default for density-based spikes
     2
@@ -387,10 +409,12 @@ fn channel_decomposition(
     let mut efp_work: Vec<f64> = Vec::new();
     let mut all_work: Vec<f64> = Vec::new();
 
+    let mut src_counts = [0usize; 4]; // [unknown, UV, LIF, EFP]
     for spike in spikes {
         let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
         if !matches!(phase, 1 | 2 | 3) { continue; } // forward process only
         let source = infer_spike_source(spike);
+        if (source as usize) < 4 { src_counts[source as usize] += 1; }
         let work = spike_to_work(spike.intensity, source, spike.wavelength_nm);
         all_work.push(work);
         match source {
@@ -400,6 +424,21 @@ fn channel_decomposition(
             _ => lif_work.push(work), // default to dewetting
         }
     }
+
+    // Diagnostic: check raw field values for non-UV spikes
+    let mut n_ve_nonzero = 0usize;
+    let mut n_nne_ge2 = 0usize;
+    let mut n_src3 = 0usize;
+    for spike in spikes {
+        if spike.spike_source == 3 { n_src3 += 1; }
+        if spike.spike_source != 1 {
+            if spike.vibrational_energy > 0.001 { n_ve_nonzero += 1; }
+            if spike.n_nearby_excited >= 2 { n_nne_ge2 += 1; }
+        }
+    }
+    log::info!("  STI channel decomposition: UV={} LIF={} EFP={} (raw_src3={} non-UV:ve>0={} nne>=2={}) total={}",
+        src_counts[1], src_counts[2], src_counts[3], n_src3, n_ve_nonzero, n_nne_ge2,
+        uv_work.len() + lif_work.len() + efp_work.len());
 
     let (dg_total, _, _) = jarzynski_estimator(&all_work, temperature);
     let (dg_uv, _, _) = jarzynski_estimator(&uv_work, temperature);
@@ -438,7 +477,7 @@ fn arrhenius_barrier(
         })
         .collect();
 
-    if valid_bins.len() < 5 { return None; }
+    if valid_bins.len() < 3 { return None; }
 
     // Linear regression: ln(rate) = -E_a/k_B * (1/T) + intercept
     let n = valid_bins.len() as f64;
@@ -482,10 +521,10 @@ fn arrhenius_by_wavelength(
     let bin_width = temp_range / n_temp_bins as f64;
     let steps_per_bin = (ramp_steps as f64 / n_temp_bins as f64).ceil() as usize;
 
+    // First: per-wavelength analysis (UV spikes only, original approach)
     for (wl, label) in wavelengths.iter().zip(wavelength_labels.iter()) {
         let wl_tolerance = 3.0f32;
 
-        // Bin spikes by temperature during heating ramp
         let mut temp_counts = vec![(0.0f64, 0usize); n_temp_bins];
         for (i, tc) in temp_counts.iter_mut().enumerate() {
             tc.0 = protocol_start_temp + (i as f64 + 0.5) * bin_width;
@@ -493,14 +532,11 @@ fn arrhenius_by_wavelength(
 
         for spike in spikes {
             let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
-            if !matches!(phase, 1 | 2 | 3) { continue; } // forward process
+            if !matches!(phase, 1 | 2 | 3) { continue; }
             let source = infer_spike_source(spike);
-            if source != 1 { continue; } // UV only
+            if source != 1 { continue; }
             if (spike.wavelength_nm - wl).abs() > wl_tolerance { continue; }
 
-            // Estimate temperature from ramp progress:
-            // Phase 2 (heating ramp): temperature interpolates start→end
-            // Phase 3 (warm_hold): temperature is constant at end_temp
             let temp = if phase == 3 {
                 protocol_end_temp
             } else {
@@ -518,6 +554,39 @@ fn arrhenius_by_wavelength(
 
         if let Some(e_a) = arrhenius_barrier(&temp_counts, steps_per_bin) {
             results.insert(label.to_string(), e_a);
+        }
+    }
+
+    // Second: all-source pooled analysis (uses ALL spikes regardless of source)
+    // This provides the kinetic barrier estimate even when UV spikes alone are
+    // too sparse for per-wavelength fitting (common with 8 streams).
+    {
+        let mut temp_counts = vec![(0.0f64, 0usize); n_temp_bins];
+        for (i, tc) in temp_counts.iter_mut().enumerate() {
+            tc.0 = protocol_start_temp + (i as f64 + 0.5) * bin_width;
+        }
+
+        for spike in spikes {
+            let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
+            if !matches!(phase, 1 | 2 | 3) { continue; }
+
+            let temp = if phase == 3 {
+                protocol_end_temp
+            } else {
+                let ramp_start_step = cold_hold_steps as f64;
+                let progress = ((spike.timestep as f64) - ramp_start_step)
+                    / (ramp_steps as f64).max(1.0);
+                protocol_start_temp + progress.clamp(0.0, 1.0) * temp_range
+            };
+
+            let bin_idx = ((temp - protocol_start_temp) / bin_width) as usize;
+            if bin_idx < n_temp_bins {
+                temp_counts[bin_idx].1 += 1;
+            }
+        }
+
+        if let Some(e_a) = arrhenius_barrier(&temp_counts, steps_per_bin) {
+            results.insert("all_sources".to_string(), e_a);
         }
     }
 

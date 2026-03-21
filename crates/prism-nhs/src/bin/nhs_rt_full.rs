@@ -180,9 +180,11 @@ struct Args {
     #[arg(long, default_value = "false")]
     boltzmann_rank: bool,
 
-    /// Emit per-site spike_events.json files (large, slow to write).
-    /// Off by default to save ~55s per run. Use --emit-spike-json to opt in.
-    #[arg(long, default_value = "false")]
+    /// Emit per-site spike_events.json files with full per-spike temporal data.
+    /// Enabled by default — these files contain the raw neuromorphic signals
+    /// (timestep, intensity, n_nearby_excited, water_density, spike_source)
+    /// needed for spike-train ranking. Use --no-emit-spike-json to disable.
+    #[arg(long, default_value = "true")]
     emit_spike_json: bool,
 
     /// Enable multi-temperature stepped holds during the ramp phase.
@@ -801,20 +803,52 @@ fn run_full_pipeline_internal(
     log::info!("  Final temperature: {:.1}K", final_temperature);
 
     // Intensity pre-filtering: keep only spikes above --spike-percentile
+    // Apply PER-CHANNEL to prevent high-intensity LIF/UV from drowning out
+    // lower-intensity EFP (electrostatic) spikes. EFP spikes are rare (~0.2%)
+    // but carry critical electrostatic binding information.
     let pct = (args.spike_percentile.min(99) as f32) / 100.0;
     let accumulated_spikes = if all_spikes.len() > 1000 {
-        let mut intensities: Vec<f32> = all_spikes.iter()
-            .map(|s| s.intensity)
-            .collect();
-        intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let threshold_idx = (intensities.len() as f32 * pct) as usize;
-        let intensity_threshold = intensities.get(threshold_idx).copied().unwrap_or(0.0);
+        // Partition by source channel
+        let mut uv_spikes: Vec<_> = Vec::new();
+        let mut lif_spikes: Vec<_> = Vec::new();
+        let mut efp_spikes: Vec<_> = Vec::new();
+        for s in all_spikes {
+            match s.spike_source {
+                1 => uv_spikes.push(s),
+                3 => efp_spikes.push(s),
+                _ => lif_spikes.push(s),
+            }
+        }
 
-        let filtered: Vec<_> = all_spikes.into_iter()
-            .filter(|s| s.intensity >= intensity_threshold)
-            .collect();
-        log::info!("  Intensity filter: kept {} spikes (top {}%, threshold={:.2})",
-            filtered.len(), 100 - args.spike_percentile, intensity_threshold);
+        // Apply percentile filter independently per channel
+        let filter_channel = |mut spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent>| -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
+            if spikes.len() < 100 {
+                return spikes; // keep all if too few
+            }
+            let mut intensities: Vec<f32> = spikes.iter().map(|s| s.intensity).collect();
+            intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let idx = (intensities.len() as f32 * pct) as usize;
+            let thresh = intensities.get(idx).copied().unwrap_or(0.0);
+            spikes.into_iter().filter(|s| s.intensity >= thresh).collect()
+        };
+
+        let n_uv_pre = uv_spikes.len();
+        let n_lif_pre = lif_spikes.len();
+        let n_efp_pre = efp_spikes.len();
+
+        let uv_filtered = filter_channel(uv_spikes);
+        let lif_filtered = filter_channel(lif_spikes);
+        let efp_filtered = filter_channel(efp_spikes);
+
+        log::info!("  Intensity filter (per-channel, top {}%):", 100 - args.spike_percentile);
+        log::info!("    UV:  {} → {}", n_uv_pre, uv_filtered.len());
+        log::info!("    LIF: {} → {}", n_lif_pre, lif_filtered.len());
+        log::info!("    EFP: {} → {} (preserved)", n_efp_pre, efp_filtered.len());
+
+        let mut filtered = uv_filtered;
+        filtered.extend(lif_filtered);
+        filtered.extend(efp_filtered);
+        log::info!("    Total: {} spikes retained", filtered.len());
         filtered
     } else {
         all_spikes
@@ -2541,13 +2575,32 @@ fn run_multi_stream_pipeline(
             }
         };
 
+        // Per-channel intensity filter: preserves EFP spikes that would be
+        // drowned by high-intensity LIF/UV under a global percentile cut.
         let pct_f = (args.spike_percentile.min(99) as f32) / 100.0;
         let filtered = if raw_spikes.len() > 1000 {
-            let mut intensities: Vec<f32> = raw_spikes.iter().map(|s| s.intensity).collect();
-            intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let idx = (intensities.len() as f32 * pct_f) as usize;
-            let threshold = intensities.get(idx).copied().unwrap_or(0.0);
-            raw_spikes.into_iter().filter(|s| s.intensity >= threshold).collect::<Vec<_>>()
+            let mut uv_s: Vec<_> = Vec::new();
+            let mut lif_s: Vec<_> = Vec::new();
+            let mut efp_s: Vec<_> = Vec::new();
+            for s in raw_spikes {
+                match s.spike_source {
+                    1 => uv_s.push(s),
+                    3 => efp_s.push(s),
+                    _ => lif_s.push(s),
+                }
+            }
+            let filter_ch = |mut spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent>| -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
+                if spikes.len() < 100 { return spikes; }
+                let mut ints: Vec<f32> = spikes.iter().map(|s| s.intensity).collect();
+                ints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let idx = (ints.len() as f32 * pct_f) as usize;
+                let thresh = ints.get(idx).copied().unwrap_or(0.0);
+                spikes.into_iter().filter(|s| s.intensity >= thresh).collect()
+            };
+            let mut result = filter_ch(uv_s);
+            result.extend(filter_ch(lif_s));
+            result.extend(filter_ch(efp_s));
+            result
         } else {
             raw_spikes
         };
@@ -4426,7 +4479,7 @@ fn run_multi_stream_pipeline(
                         0.06 * (lp.per_spike_quality * 2.0).clamp(0.0, 1.0) +
                         0.04 * lp.source_diversity +
                         0.04 * lp.breathing_score +
-                        0.04 * lp.wd_coherence.min(1.0) +
+                        0.04 * (lp.wd_coherence * 1e4).clamp(0.0, 1.0) + // scale raw variance (~1e-5) to 0-1
                         0.02 * (lp.source_entropy / 1.1).clamp(0.0, 1.0);
                 }
                 // Sites with < 20 local spikes keep their inherited score
@@ -4729,12 +4782,33 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // Rank-normalize wd_coherence (raw variance → 0.0–1.0) across all sites
+        // before writing to JSON. The raw variance is tiny (1e-10 to 1e-4) and
+        // useless for ranking; the rank-normalized version preserves relative order.
+        let wd_raw_values: Vec<(i32, f32)> = spatial_signals.iter()
+            .map(|(&id, &(_, wdc, _))| (id, wdc))
+            .collect();
+        let mut wd_normalized: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+        if wd_raw_values.len() > 1 {
+            let min_w = wd_raw_values.iter().map(|(_, w)| *w).fold(f32::MAX, f32::min);
+            let max_w = wd_raw_values.iter().map(|(_, w)| *w).fold(f32::MIN, f32::max);
+            let range = (max_w - min_w).max(1e-10);
+            for &(id, w) in &wd_raw_values {
+                wd_normalized.insert(id, ((w - min_w) / range).clamp(0.0, 1.0));
+            }
+        } else {
+            for &(id, _) in &wd_raw_values {
+                wd_normalized.insert(id, 0.5);
+            }
+        }
+
         // Inject spatial signals (sphericity, wd_coherence, breathing) into each site JSON
         for site_json in ms_sites_json.iter_mut() {
             let site_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
-            if let Some(&(sph, wdc, breath)) = spatial_signals.get(&site_id) {
+            if let Some(&(sph, _wdc_raw, breath)) = spatial_signals.get(&site_id) {
+                let wdc_norm = wd_normalized.get(&site_id).copied().unwrap_or(0.5);
                 site_json["sphericity"] = serde_json::json!(sph);
-                site_json["wd_coherence"] = serde_json::json!(wdc);
+                site_json["wd_coherence"] = serde_json::json!(wdc_norm);
                 site_json["breathing_score"] = serde_json::json!(breath);
             }
             if let Some(&fs_score) = frustrated_solvent_scores.get(&site_id) {

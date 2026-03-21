@@ -1536,7 +1536,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             int ai = warp_matrix[efp_v].atom_indices[wi];
             if (ai < 0 || ai >= n_atoms) continue;
             float q = charges[ai];
-            if (fabsf(q) < 0.3f) continue;
+            if (fabsf(q) < 0.15f) continue;
 
             float3 ap = positions[ai];
             float dx = efp_center.x - ap.x;
@@ -1553,17 +1553,17 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
 
         // Water-electrostatic coupling
         float wd_change = fabsf(water_density[efp_v] - water_density_prev[efp_v]);
-        float polar_water_signal = fabsf(phi) * wd_change * 10.0f;
+        float polar_water_signal = fabsf(phi) * wd_change * 40.0f;
 
         float phi_prev = efp_potential_prev[efp_v];
         efp_potential[efp_v] = phi;
 
         float flux = fabsf(phi - phi_prev);
-        float polar_signal = flux * 50.0f + polar_water_signal;
+        float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 2 && spike_grid[efp_v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid[efp_v] == 0) {
             const float EFP_TAU = 0.5f;
-            const float EFP_THRESHOLD = 0.8f;
+            const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[efp_v] = efp_decay * efp_lif_potential[efp_v] + polar_signal;
 
@@ -2599,7 +2599,7 @@ efp_phase:
             int ai = warp_matrix[v].atom_indices[wi];
             if (ai < 0 || ai >= n_atoms) continue;
             float q = charges[ai];
-            if (fabsf(q) < 0.3f) continue;
+            if (fabsf(q) < 0.15f) continue;
 
             float3 ap = positions[ai];
             float dx = voxel_center.x - ap.x;
@@ -2615,17 +2615,17 @@ efp_phase:
         }
 
         float wd_change = fabsf(water_density[v] - water_density_prev[v]);
-        float polar_water_signal = fabsf(phi) * wd_change * 10.0f;
+        float polar_water_signal = fabsf(phi) * wd_change * 40.0f;
 
         float phi_prev = efp_potential_prev[v];
         efp_potential[v] = phi;
 
         float flux = fabsf(phi - phi_prev);
-        float polar_signal = flux * 50.0f + polar_water_signal;
+        float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 2 && spike_grid[v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid[v] == 0) {
             const float EFP_TAU = 0.5f;
-            const float EFP_THRESHOLD = 0.8f;
+            const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
 
@@ -3164,7 +3164,7 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
 
         float amplitude = sqrtf(r2);
         // RAF spikes require UV contribution — prevents crowding out EFP
-        my_spike = (amplitude >= effective_threshold) && (uv_signal > 0.0f);
+        my_spike = (amplitude >= effective_threshold);
 
         if (my_spike) {
             // Always reset oscillator on threshold crossing
@@ -3293,7 +3293,7 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
             int ai = entry.atom_indices[wi];
             if (ai < 0 || ai >= n_atoms) continue;
             float q = charges[ai];
-            if (fabsf(q) < 0.3f) continue;
+            if (fabsf(q) < 0.15f) continue;
 
             float3 ap = positions[ai];
             float ddx = voxel_center.x - ap.x;
@@ -3309,17 +3309,17 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         }
 
         float wd_change = fabsf(water_density[v] - water_density_prev[v]);
-        float polar_water_signal = fabsf(phi) * wd_change * 10.0f;
+        float polar_water_signal = fabsf(phi) * wd_change * 40.0f;
 
         float phi_prev = efp_potential_prev[v];
         efp_potential[v] = phi;
 
         float flux = fabsf(phi - phi_prev);
-        float polar_signal = flux * 50.0f + polar_water_signal;
+        float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 2 && spike_grid[v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid[v] == 0) {
             const float EFP_TAU = 0.5f;
-            const float EFP_THRESHOLD = 0.8f;
+            const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
 
