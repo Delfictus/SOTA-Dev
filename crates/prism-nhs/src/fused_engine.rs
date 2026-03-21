@@ -1607,6 +1607,7 @@ pub struct NhsAmberFusedEngine {
     d_water_density_prev: CudaSlice<f32>,
     d_lif_potential: CudaSlice<f32>,
     d_spike_grid: CudaSlice<i32>,
+    d_spike_grid_efp: CudaSlice<i32>,
     // EFP buffers
     d_efp_potential: CudaSlice<f32>,
     d_efp_potential_prev: CudaSlice<f32>,
@@ -2257,6 +2258,7 @@ impl NhsAmberFusedEngine {
         let d_water_density_prev: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_spike_grid_efp: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         let d_efp_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_efp_potential_prev: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_efp_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
@@ -2342,6 +2344,7 @@ impl NhsAmberFusedEngine {
             d_water_density_prev,
             d_lif_potential,
             d_spike_grid,
+            d_spike_grid_efp,
             d_efp_potential,
             d_efp_potential_prev,
             d_efp_lif_potential,
@@ -4403,6 +4406,7 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_coupling_a)
                     .arg(&self.d_active_tiles)
                     .arg(&n_active_tiles_i32)
+                    .arg(&mut self.d_spike_grid_efp)
                     .launch(voxel_cfg)
             }
         } else {
@@ -4455,6 +4459,7 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_coupling_b)
                     .arg(&self.d_active_tiles)
                     .arg(&n_active_tiles_i32)
+                    .arg(&mut self.d_spike_grid_efp)
                     .launch(voxel_cfg)
             }
         }

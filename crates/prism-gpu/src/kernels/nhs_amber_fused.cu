@@ -2762,7 +2762,9 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     float* coupling_write,       // [total_voxels] write buffer (for next step)
     // === Sparse tile index ===
     const int* active_tiles,     // [n_active_tiles * 3] packed (bx, by, bz) triplets
-    int n_active_tiles           // number of active tiles (0 = fallback to full grid)
+    int n_active_tiles,          // number of active tiles (0 = fallback to full grid)
+    // === Independent EFP refractory grid ===
+    int* spike_grid_efp          // [grid_dim³] — prevents UV/LIF from blocking EFP
 ) {
     // === Shared memory layout (SOTA v2) ===
     // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
@@ -3073,6 +3075,9 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     if (is_valid && has_atoms && k == 0 && spike_grid[v] > 0) {
         spike_grid[v]--;
     }
+    if (is_valid && has_atoms && k == 0 && spike_grid_efp[v] > 0) {
+        spike_grid_efp[v]--;
+    }
 
     // Read coupling from previous step
     float coupling_input = (is_valid && has_atoms) ? coupling_read[v] : 0.0f;
@@ -3317,14 +3322,14 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         float flux = fabsf(phi - phi_prev);
         float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 1 && spike_grid[v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid_efp[v] == 0) {
             const float EFP_TAU = 0.5f;
             const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
 
             if (efp_lif_potential[v] > EFP_THRESHOLD) {
-                spike_grid[v] = REFRACTORY_STEPS;
+                spike_grid_efp[v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[v];
                 efp_lif_potential[v] = LIF_RESET;
 
