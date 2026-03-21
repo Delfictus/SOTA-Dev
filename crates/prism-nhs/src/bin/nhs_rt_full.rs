@@ -187,6 +187,29 @@ struct Args {
     #[arg(long, default_value = "true")]
     emit_spike_json: bool,
 
+    /// Enable ALL four stages of the hierarchical elimination cascade.
+    /// Progressively filters detected sites through multi-channel convergence,
+    /// temporal persistence, persistent homology, and Boltzmann gap gates.
+    /// Reduces ~34 sites to ~5-8 high-confidence candidates.
+    #[arg(long, default_value = "false")]
+    cascade: bool,
+
+    /// Stage 1: require spikes from both UV AND LIF channels.
+    #[arg(long, default_value = "false")]
+    cascade_multichannel: bool,
+
+    /// Stage 2: require spike activity across ≥2 protocol phases.
+    #[arg(long, default_value = "false")]
+    cascade_temporal: bool,
+
+    /// Stage 3: eliminate sites with below-median persistent homology persistence.
+    #[arg(long, default_value = "false")]
+    cascade_ph: bool,
+
+    /// Stage 4: eliminate sites with Boltzmann probability <1% of rank-1.
+    #[arg(long, default_value = "false")]
+    cascade_boltzmann_gap: bool,
+
     /// Enable multi-temperature stepped holds during the ramp phase.
     /// Instead of a linear ramp 50K→300K, pauses at intermediate temperatures
     /// (100K, 150K, 200K) to sample conformational basins where different
@@ -4414,6 +4437,7 @@ fn run_multi_stream_pipeline(
         let mut frustrated_solvent_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
         let mut asymmetry_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
         let mut ray_escape_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+        let mut source_count_map: std::collections::HashMap<i32, [u32; 4]> = std::collections::HashMap::new();
         {
             let reap_radius = 8.0f32;
             for site in clustered_sites.iter_mut() {
@@ -4430,6 +4454,7 @@ fn run_multi_stream_pipeline(
                 frustrated_solvent_scores.insert(site.cluster_id, lp.frustrated_solvent_score);
                 asymmetry_scores.insert(site.cluster_id, lp.asymmetry_offset);
                 ray_escape_scores.insert(site.cluster_id, lp.ray_escape_ratio);
+                source_count_map.insert(site.cluster_id, lp.source_counts);
                 if lp.frustrated_solvent_score > 0.01 {
                     log::info!("  Site {}: frustrated_solvent_score={:.4} (n_local={})",
                         site.cluster_id, lp.frustrated_solvent_score, lp.n_local_spikes);
@@ -4626,6 +4651,184 @@ fn run_multi_stream_pipeline(
                         site.cluster_id, old_q, site.quality_score,
                         therm.tau, tau_q, therm.relative_asymmetry, asym_q,
                         therm.therm_class, class_q, tide_coupling_score);
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // HIERARCHICAL ELIMINATION CASCADE
+        // 4-stage progressive filtering: multichannel → temporal → PH → ΔG gap
+        // ══════════════════════════════════════════════════════════════════
+        {
+            let enable_s1 = args.cascade || args.cascade_multichannel;
+            let enable_s2 = args.cascade || args.cascade_temporal;
+            let enable_s3 = args.cascade || args.cascade_ph;
+            let enable_s4 = args.cascade || args.cascade_boltzmann_gap;
+
+            if enable_s1 || enable_s2 || enable_s3 || enable_s4 {
+                // Sort by quality_score descending before cascade
+                clustered_sites.sort_by(|a, b|
+                    b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+
+                let rank1_id = clustered_sites.first().map(|s| s.cluster_id).unwrap_or(-1);
+                let mut cascade_eliminated: std::collections::HashSet<i32> = std::collections::HashSet::new();
+                let total_before = clustered_sites.len();
+
+                // ── Stage 1: Multi-Channel Convergence Gate ──
+                if enable_s1 && clustered_sites.len() > 1 {
+                    let before = cascade_eliminated.len();
+                    for site in &clustered_sites {
+                        if site.cluster_id == rank1_id { continue; }
+                        let counts = source_count_map.get(&site.cluster_id).copied().unwrap_or([0; 4]);
+                        // Require both UV AND LIF channels active
+                        if counts[1] == 0 || counts[2] == 0 {
+                            cascade_eliminated.insert(site.cluster_id);
+                        }
+                    }
+                    log::info!("[Cascade S1] Multi-channel gate: {} eliminated (UV+LIF required)",
+                        cascade_eliminated.len() - before);
+                }
+
+                // ── Stage 2: Temporal Persistence Gate ──
+                if enable_s2 && clustered_sites.len() > 1 {
+                    let before = cascade_eliminated.len();
+                    for site in &clustered_sites {
+                        if cascade_eliminated.contains(&site.cluster_id) || site.cluster_id == rank1_id {
+                            continue;
+                        }
+                        // Check if site has spikes in ≥2 of 3 forward protocol phases
+                        let p1 = protocol.cold_hold_steps;
+                        let p2 = p1 + protocol.ramp_steps;
+                        let p3 = p2 + protocol.warm_hold_steps;
+                        let radius_sq = 64.0f32; // 8Å
+                        let mut has_cold = false;
+                        let mut has_ramp = false;
+                        let mut has_warm = false;
+                        for spike in &all_stream_spikes {
+                            let dx = spike.position[0] - site.centroid[0];
+                            let dy = spike.position[1] - site.centroid[1];
+                            let dz = spike.position[2] - site.centroid[2];
+                            if dx*dx + dy*dy + dz*dz > radius_sq { continue; }
+                            if spike.timestep < p1 { has_cold = true; }
+                            else if spike.timestep < p2 { has_ramp = true; }
+                            else if spike.timestep < p3 { has_warm = true; }
+                            if has_cold && has_warm { break; } // early exit
+                        }
+                        let n_phases = has_cold as u8 + has_ramp as u8 + has_warm as u8;
+                        if n_phases < 2 {
+                            cascade_eliminated.insert(site.cluster_id);
+                        }
+                    }
+                    log::info!("[Cascade S2] Temporal persistence gate: {} eliminated (≥2 phases required)",
+                        cascade_eliminated.len() - before);
+                }
+
+                // ── Stage 3: Persistent Homology Pruning ──
+                if enable_s3 && clustered_sites.len() > 1 {
+                    let before = cascade_eliminated.len();
+                    let local_spacing = 2.0f32;
+                    let local_radius = 8.0f32;
+                    let sigma = 1.5f32;
+                    let inv_2sig2 = 1.0 / (2.0 * sigma * sigma);
+                    let cutoff_vox = (2.0 * sigma / local_spacing) as i32 + 1;
+
+                    let mut site_ph: Vec<(i32, f32)> = Vec::new();
+                    for site in &clustered_sites {
+                        if cascade_eliminated.contains(&site.cluster_id) { continue; }
+
+                        let margin = 2.0f32;
+                        let grid_half = local_radius + margin;
+                        let origin = [
+                            site.centroid[0] - grid_half,
+                            site.centroid[1] - grid_half,
+                            site.centroid[2] - grid_half,
+                        ];
+                        let dim = ((2.0 * grid_half) / local_spacing).ceil() as usize;
+                        let mut density = vec![0.0f32; dim * dim * dim];
+
+                        // Gaussian splat local spikes
+                        for spike in &all_stream_spikes {
+                            let dx = spike.position[0] - site.centroid[0];
+                            let dy = spike.position[1] - site.centroid[1];
+                            let dz = spike.position[2] - site.centroid[2];
+                            if dx*dx + dy*dy + dz*dz > local_radius * local_radius { continue; }
+
+                            let ix = ((spike.position[0] - origin[0]) / local_spacing) as i32;
+                            let iy = ((spike.position[1] - origin[1]) / local_spacing) as i32;
+                            let iz = ((spike.position[2] - origin[2]) / local_spacing) as i32;
+
+                            for ddz in -cutoff_vox..=cutoff_vox {
+                                for ddy in -cutoff_vox..=cutoff_vox {
+                                    for ddx in -cutoff_vox..=cutoff_vox {
+                                        let gx = (ix + ddx) as usize;
+                                        let gy = (iy + ddy) as usize;
+                                        let gz = (iz + ddz) as usize;
+                                        if gx >= dim || gy >= dim || gz >= dim { continue; }
+                                        let r2 = ((ddx*ddx + ddy*ddy + ddz*ddz) as f32) * local_spacing * local_spacing;
+                                        density[(gz * dim + gy) * dim + gx] += spike.intensity * (-r2 * inv_2sig2).exp();
+                                    }
+                                }
+                            }
+                        }
+
+                        let ph_pockets = prism_nhs::cubical_ph::compute_cubical_ph_cpu(
+                            &density, [dim, dim, dim], origin, local_spacing,
+                            0.0, 3,
+                        );
+                        let max_pers = ph_pockets.iter()
+                            .map(|p| p.persistence)
+                            .fold(0.0f32, f32::max);
+                        site_ph.push((site.cluster_id, max_pers));
+                    }
+
+                    // Median persistence
+                    let mut pers_vals: Vec<f32> = site_ph.iter().map(|&(_, p)| p).collect();
+                    pers_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let median_pers = if !pers_vals.is_empty() { pers_vals[pers_vals.len() / 2] } else { 0.0 };
+
+                    for &(sid, pers) in &site_ph {
+                        if pers < median_pers && sid != rank1_id {
+                            cascade_eliminated.insert(sid);
+                        }
+                    }
+                    log::info!("[Cascade S3] PH pruning: {} eliminated (median persistence={:.2})",
+                        cascade_eliminated.len() - before, median_pers);
+                }
+
+                // ── Stage 4: Boltzmann ΔG Gap Cutoff ──
+                if enable_s4 && clustered_sites.len() > 1 {
+                    let before = cascade_eliminated.len();
+                    let surviving: Vec<(i32, f32)> = clustered_sites.iter()
+                        .filter(|s| !cascade_eliminated.contains(&s.cluster_id))
+                        .map(|s| (s.cluster_id, s.quality_score))
+                        .collect();
+
+                    if surviving.len() > 1 {
+                        let beta = 10.0f32;
+                        let max_q = surviving[0].1;
+                        let exp_vals: Vec<f32> = surviving.iter()
+                            .map(|&(_, q)| (beta * (q - max_q)).exp())
+                            .collect();
+                        let z: f32 = exp_vals.iter().sum();
+                        let p_rank1 = exp_vals[0] / z;
+                        let cutoff_p = 0.01 * p_rank1;
+
+                        for (i, &(sid, _)) in surviving.iter().enumerate() {
+                            let p = exp_vals[i] / z;
+                            if p < cutoff_p && sid != rank1_id {
+                                cascade_eliminated.insert(sid);
+                            }
+                        }
+                    }
+                    log::info!("[Cascade S4] Boltzmann gap: {} eliminated (P < 1% of rank-1)",
+                        cascade_eliminated.len() - before);
+                }
+
+                // ── Apply eliminations ──
+                if !cascade_eliminated.is_empty() {
+                    clustered_sites.retain(|s| !cascade_eliminated.contains(&s.cluster_id));
+                    log::info!("[Cascade] Complete: {} → {} sites ({} eliminated)",
+                        total_before, clustered_sites.len(), cascade_eliminated.len());
                 }
             }
         }
@@ -5640,6 +5843,7 @@ struct LocalPhysics {
     frustrated_solvent_score: f32,  // ΔG_solvation proxy
     asymmetry_offset: f32,         // |CoM_spikes - centroid| — "cup" metric
     ray_escape_ratio: f32,         // Dmax/Dmin from rays — "mouth" metric
+    source_counts: [u32; 4],       // [unknown, UV, LIF, EFP] raw spike counts
 }
 
 /// Compute physics signals for a site centroid from the LOCAL spike cloud.
@@ -5676,6 +5880,7 @@ fn compute_local_physics(
             per_spike_quality: 0.0, n_local_spikes: 0, log_spike_norm: 0.0,
             lining_score: 0.0, frustrated_solvent_score: 0.0,
             asymmetry_offset: 0.0, ray_escape_ratio: 0.0,
+            source_counts: [0; 4],
         };
     }
 
@@ -5695,14 +5900,14 @@ fn compute_local_physics(
     };
 
     // ── Source diversity: UV/LIF balance ratio + EFP bonus ──
+    let mut local_source_counts = [0u32; 4]; // 0=unknown, 1=UV, 2=LIF, 3=EFP
     let (source_diversity, source_entropy) = {
-        let mut source_counts = [0u32; 4]; // 0=unknown, 1=UV, 2=LIF, 3=EFP
         for s in &local_spikes {
             let src = (s.spike_source as usize).min(3);
-            source_counts[src] += 1;
+            local_source_counts[src] += 1;
         }
         let total = n as f32;
-        let entropy: f32 = source_counts.iter()
+        let entropy: f32 = local_source_counts.iter()
             .filter(|&&c| c > 0)
             .map(|&c| {
                 let p = c as f32 / total;
@@ -5710,9 +5915,9 @@ fn compute_local_physics(
             })
             .sum();
 
-        let uv_count = source_counts[1] as f32;
-        let lif_count = source_counts[2] as f32;
-        let efp_count = source_counts[3] as f32;
+        let uv_count = local_source_counts[1] as f32;
+        let lif_count = local_source_counts[2] as f32;
+        let efp_count = local_source_counts[3] as f32;
         let ul_total = (uv_count + lif_count).max(1.0);
         let balance = 1.0 - ((uv_count - lif_count).abs() / ul_total);
         let efp_bonus = (efp_count / total).min(0.3) / 0.3;
@@ -5969,6 +6174,7 @@ fn compute_local_physics(
         frustrated_solvent_score,
         asymmetry_offset,
         ray_escape_ratio,
+        source_counts: local_source_counts,
     }
 }
 
