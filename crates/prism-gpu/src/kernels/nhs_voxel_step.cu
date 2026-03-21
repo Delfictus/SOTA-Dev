@@ -56,7 +56,8 @@ extern "C" __global__ void nhs_voxel_step(
     float* efp_lif_potential,
     // Aromatic neighbors (for expanded exclusion)
     const AromaticNeighbors* __restrict__ d_aromatic_neighbors,
-    const float* __restrict__ d_franck_condon_progress
+    const float* __restrict__ d_franck_condon_progress,
+    int* spike_grid_efp              // independent EFP refractory grid
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int total_voxels = grid_dim * grid_dim * grid_dim;
@@ -324,14 +325,14 @@ efp_phase:
         float flux = fabsf(phi - phi_prev);
         float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 1 && spike_grid[v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid_efp[v] == 0) {
             const float EFP_TAU = 0.5f;
             const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
 
             if (efp_lif_potential[v] > EFP_THRESHOLD) {
-                spike_grid[v] = REFRACTORY_STEPS;
+                spike_grid_efp[v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[v];
                 efp_lif_potential[v] = LIF_RESET;
 

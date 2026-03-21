@@ -4293,6 +4293,7 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_efp_potential)
                 .arg(&self.d_efp_potential_prev)
                 .arg(&self.d_efp_lif_potential)
+                .arg(&mut self.d_spike_grid_efp)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;

@@ -824,7 +824,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // Electrostatic Flux Probe (EFP)
     float* efp_potential,            // [grid_dim³]
     float* efp_potential_prev,       // [grid_dim³]
-    float* efp_lif_potential         // [grid_dim³]
+    float* efp_lif_potential,        // [grid_dim³]
+    int* spike_grid_efp              // [grid_dim³] — independent EFP refractory
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1235,6 +1236,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
 
     for (int v = tid; v < total_voxels; v += gridDim.x * blockDim.x) {
         // Refractory countdown: decrement if >0, only fire-able when ==0
+        if (spike_grid_efp[v] > 0) spike_grid_efp[v]--;
         if (spike_grid[v] > 0) { spike_grid[v]--; continue; }
         float spike_intensity = 0.0f;
 
@@ -1561,14 +1563,14 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         float flux = fabsf(phi - phi_prev);
         float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 1 && spike_grid[efp_v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid_efp[efp_v] == 0) {
             const float EFP_TAU = 0.5f;
             const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[efp_v] = efp_decay * efp_lif_potential[efp_v] + polar_signal;
 
             if (efp_lif_potential[efp_v] > EFP_THRESHOLD) {
-                spike_grid[efp_v] = REFRACTORY_STEPS;
+                spike_grid_efp[efp_v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[efp_v];
                 efp_lif_potential[efp_v] = LIF_RESET;
 
@@ -2345,7 +2347,8 @@ extern "C" __global__ void nhs_voxel_step(
     float* efp_lif_potential,
     // Aromatic neighbors (for expanded exclusion)
     const AromaticNeighbors* __restrict__ d_aromatic_neighbors,
-    const float* __restrict__ d_franck_condon_progress
+    const float* __restrict__ d_franck_condon_progress,
+    int* spike_grid_efp              // independent EFP refractory grid
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int total_voxels = grid_dim * grid_dim * grid_dim;
@@ -2376,6 +2379,7 @@ extern "C" __global__ void nhs_voxel_step(
     if (entry.n_atoms == 0) {
         // Still need to decay refractory counter and LIF potential
         if (spike_grid[v] > 0) spike_grid[v]--;
+        if (spike_grid_efp[v] > 0) spike_grid_efp[v]--;
         lif_potential[v] *= 0.9f;  // passive decay
         efp_lif_potential[v] *= 0.8f;
         return;
@@ -2429,6 +2433,7 @@ extern "C" __global__ void nhs_voxel_step(
     // ====================================================================
 
     // Refractory check — if counting down, decrement and skip LIF+EFP
+    if (spike_grid_efp[v] > 0) spike_grid_efp[v]--;
     if (spike_grid[v] > 0) {
         spike_grid[v]--;
         // Still do EFP below (it has its own refractory check)
@@ -2623,14 +2628,14 @@ efp_phase:
         float flux = fabsf(phi - phi_prev);
         float polar_signal = flux * 150.0f + polar_water_signal;
 
-        if (n_charged_nearby >= 1 && spike_grid[v] == 0) {
+        if (n_charged_nearby >= 1 && spike_grid_efp[v] == 0) {
             const float EFP_TAU = 0.5f;
             const float EFP_THRESHOLD = 0.15f;
             float efp_decay = expf(-dt / EFP_TAU);
             efp_lif_potential[v] = efp_decay * efp_lif_potential[v] + polar_signal;
 
             if (efp_lif_potential[v] > EFP_THRESHOLD) {
-                spike_grid[v] = REFRACTORY_STEPS;
+                spike_grid_efp[v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[v];
                 efp_lif_potential[v] = LIF_RESET;
 
