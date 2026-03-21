@@ -210,6 +210,17 @@ struct Args {
     #[arg(long, default_value = "false")]
     cascade_boltzmann_gap: bool,
 
+    /// Multi-temperature streams: spread end temperatures across streams.
+    /// With 8 streams at --temperature 300, the ladder becomes:
+    /// [300, 325, 350, 375, 400, 450, 500, 600] K.
+    /// Higher-temperature streams crack high-barrier cryptic pockets
+    /// (DFG flips, loop rearrangements) that equilibrium sampling misses.
+    /// All streams share the same start_temp (cryo). Consensus merging
+    /// naturally filters thermally-denatured artifacts because they won't
+    /// appear consistently across the cooler streams.
+    #[arg(long, default_value = "false")]
+    multi_temp: bool,
+
     /// Enable multi-temperature stepped holds during the ramp phase.
     /// Instead of a linear ramp 50K→300K, pauses at intermediate temperatures
     /// (100K, 150K, 200K) to sample conformational basins where different
@@ -2494,7 +2505,28 @@ fn run_multi_stream_pipeline(
                 let stream_i = streams[i].clone();
                 let topo_ref = &topology;
                 let config_ref = &config;
-                let prot = protocol.clone();
+                // Multi-temperature ladder: spread end_temp across streams
+                // Stream 0 gets the base temperature; higher streams get progressively
+                // hotter to crack high-barrier pockets. The ramp_down phase then cools
+                // from the higher temperature, producing larger hysteresis asymmetry
+                // for pockets that require elevated temperatures to open — exactly the
+                // high-barrier cryptic sites that equilibrium sampling misses.
+                let prot = if args.multi_temp && n_streams >= 4 {
+                    let base_temp = protocol.end_temp;
+                    // Temperature ladder: first half at/near base, second half escalating
+                    let ladder: Vec<f32> = (0..n_streams).map(|s| {
+                        let frac = s as f32 / (n_streams - 1).max(1) as f32;
+                        // 0→base, 0.5→1.33×base, 1.0→2×base
+                        base_temp * (1.0 + frac)
+                    }).collect();
+                    let mut p = protocol.clone();
+                    p.end_temp = ladder[i];
+                    log::info!("    [stream {}] Multi-temp: end_temp={:.0}K (base={:.0}K)",
+                        i, p.end_temp, base_temp);
+                    p
+                } else {
+                    protocol.clone()
+                };
                 let seed = args.replica_seed + i as u64 * 12345;
                 let ultimate = args.ultimate_mode;
                 let steps = steps_per_stream;
