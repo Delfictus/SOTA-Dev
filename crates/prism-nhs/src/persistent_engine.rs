@@ -1275,6 +1275,15 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Download signal preservation buffers from the GPU engine
+    pub fn download_signal_preservation(&self) -> anyhow::Result<crate::fused_engine::SignalPreservationData> {
+        if let Some(ref engine) = self.engine {
+            engine.download_signal_preservation()
+        } else {
+            anyhow::bail!("No engine initialized")
+        }
+    }
+
     /// Get snapshots from current run
     pub fn get_snapshots(&self) -> Vec<EnsembleSnapshot> {
         if let Some(ref engine) = self.engine {

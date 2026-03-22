@@ -820,6 +820,11 @@ fn run_full_pipeline_internal(
             let spike_count = replica_spikes.len();
             all_spikes.extend(replica_spikes);
 
+            // Download signal preservation diagnostic (one-time per replica)
+            if let Ok(_sig) = engine.download_signal_preservation() {
+                // Summary logged inside download_signal_preservation()
+            }
+
             final_temperature = summary.end_temperature;
             let snapshots = engine.get_snapshots();
             total_snapshots += snapshots.len();
@@ -2694,6 +2699,11 @@ fn run_multi_stream_pipeline(
 
                     let spikes = engine.get_accumulated_spikes();
                     let snapshots = engine.get_snapshots();
+
+                    // Signal preservation diagnostic
+                    if let Ok(_sig) = engine.download_signal_preservation() {
+                        // Summary logged inside download_signal_preservation()
+                    }
 
                     log::info!("    [stream {}] Complete: {} spikes, {} snapshots, T={:.1}K",
                         i, spikes.len(), snapshots.len(), summary.end_temperature);

@@ -57,7 +57,13 @@ extern "C" __global__ void nhs_voxel_step(
     // Aromatic neighbors (for expanded exclusion)
     const AromaticNeighbors* __restrict__ d_aromatic_neighbors,
     const float* __restrict__ d_franck_condon_progress,
-    int* spike_grid_efp              // independent EFP refractory grid
+    int* spike_grid_efp,             // independent EFP refractory grid
+    // Signal preservation buffers (accumulated across all timesteps)
+    unsigned int* voxel_hit_grid,          // [grid_dim³] spatial recurrence counter
+    int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
+    unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
+    int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
+    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int total_voxels = grid_dim * grid_dim * grid_dim;
@@ -205,6 +211,11 @@ extern "C" __global__ void nhs_voxel_step(
                 lif_potential[v] += uv_signal;
             }
 
+            // Record UV event timestamp for causal tracking
+            if (uv_signal > 0.1f) {
+                last_uv_step[v] = timestep;
+            }
+
             // Direct UV spike trigger
             const float DIRECT_UV_SPIKE_THRESHOLD = 0.3f;
             const float MAX_SPIKE_DISTANCE = 4.0f;
@@ -227,6 +238,12 @@ extern "C" __global__ void nhs_voxel_step(
                 spike_grid[v] = REFRACTORY_STEPS;
                 spike_intensity = uv_signal;
 
+                // Signal preservation (legacy UV spike)
+                update_signal_preservation(v, timestep, 1,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 int _arom_type = (closest_excited_idx >= 0) ? d_aromatic_type[closest_excited_idx] : -1;
                 int _arom_res = -1;
                 if (closest_excited_idx >= 0) {
@@ -245,7 +262,8 @@ extern "C" __global__ void nhs_voxel_step(
                         spike_events[spike_idx], timestep, v, voxel_center,
                         spike_intensity, warp_matrix[v], residue_ids,
                         1, uv_wavelength_nm, _arom_type, _arom_res,
-                        water_density[v], _vib_e, n_nearby_excited
+                        water_density[v], _vib_e, n_nearby_excited,
+                        fabsf(water_density[v] - water_density_prev[v])
                     );
                 }
                 lif_potential[v] = LIF_RESET;
@@ -261,6 +279,14 @@ extern "C" __global__ void nhs_voxel_step(
 
             if (spike) {
                 spike_grid[v] = REFRACTORY_STEPS;
+
+                // Signal preservation (legacy LIF spike)
+                int lif_src = (n_nearby_excited > 0) ? 1 : 2;
+                update_signal_preservation(v, timestep, lif_src,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
                     int lif_atype = -1, lif_ares = -1;
@@ -279,9 +305,10 @@ extern "C" __global__ void nhs_voxel_step(
                     capture_spike_event(
                         spike_events[spike_idx], timestep, v, voxel_center,
                         spike_intensity, warp_matrix[v], residue_ids,
-                        (n_nearby_excited > 0) ? 1 : 2, lif_wl,
+                        lif_src, lif_wl,
                         lif_atype, lif_ares, water_density[v],
-                        lif_vibe, n_nearby_excited
+                        lif_vibe, n_nearby_excited,
+                        fabsf(water_density[v] - water_density_prev[v])
                     );
                 }
             }
@@ -336,6 +363,12 @@ efp_phase:
                 float polar_intensity = efp_lif_potential[v];
                 efp_lif_potential[v] = LIF_RESET;
 
+                // Signal preservation (legacy EFP spike)
+                update_signal_preservation(v, timestep, 3,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
                     int polar_type = (phi > 0.0f) ? 5 : 6;
@@ -343,7 +376,8 @@ efp_phase:
                         spike_events[si], timestep, v, voxel_center,
                         polar_intensity, warp_matrix[v], residue_ids,
                         3, 0.0f, polar_type, -1,
-                        water_density[v], flux, n_charged_nearby
+                        water_density[v], flux, n_charged_nearby,
+                        wd_change
                     );
                 }
             }

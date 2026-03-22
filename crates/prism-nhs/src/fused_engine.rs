@@ -998,6 +998,21 @@ impl std::fmt::Display for SpikeQualityCategory {
     }
 }
 
+/// Signal preservation data downloaded from GPU
+#[derive(Debug, Clone)]
+pub struct SignalPreservationData {
+    /// Per-voxel spike recurrence count
+    pub voxel_hit_grid: Vec<i32>,
+    /// Per-voxel UV→LIF causal spike count
+    pub coupled_spike_grid: Vec<i32>,
+    /// Per-voxel dominant driver residue ID (-1 = none)
+    pub primary_residue_id: Vec<i32>,
+    /// Per-voxel count for the dominant driver residue
+    pub primary_residue_count: Vec<i32>,
+    /// Grid dimension (grid_dim³ = voxel count)
+    pub grid_dim: usize,
+}
+
 /// Spike persistence tracker for computing recurrence scores
 #[derive(Debug, Clone, Default)]
 pub struct SpikePersistenceTracker {
@@ -1608,6 +1623,12 @@ pub struct NhsAmberFusedEngine {
     d_lif_potential: CudaSlice<f32>,
     d_spike_grid: CudaSlice<i32>,
     d_spike_grid_efp: CudaSlice<i32>,
+    // Signal preservation buffers (accumulated across all timesteps)
+    d_voxel_hit_grid: CudaSlice<i32>,       // [total_voxels] spatial recurrence
+    d_last_uv_step: CudaSlice<i32>,         // [total_voxels] last UV event timestep
+    d_coupled_spike_grid: CudaSlice<i32>,   // [total_voxels] UV→LIF causal counter
+    d_primary_residue_id: CudaSlice<i32>,   // [total_voxels] dominant residue ID
+    d_primary_residue_count: CudaSlice<i32>, // [total_voxels] dominant residue count
     /// Focused REST2: per-atom λ values. 1.0 = physical, <1.0 = softened.
     d_atom_lambda: CudaSlice<f32>,
     /// Global λ for this stream (used to set frustrated atoms' λ).
@@ -2263,6 +2284,24 @@ impl NhsAmberFusedEngine {
         let d_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid_efp: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        // Signal preservation buffers
+        let d_voxel_hit_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_coupled_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_primary_residue_count: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_last_uv_step: CudaSlice<i32> = {
+            let sentinel = vec![-1i32; total_voxels];
+            let mut buf: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+            stream.memcpy_htod(&sentinel, &mut buf)?;
+            buf
+        };
+        let d_primary_residue_id: CudaSlice<i32> = {
+            let sentinel = vec![-1i32; total_voxels];
+            let mut buf: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+            stream.memcpy_htod(&sentinel, &mut buf)?;
+            buf
+        };
+        log::info!("Signal preservation buffers: {} voxels x 5 grids = {:.1} MB",
+            total_voxels, (total_voxels * 5 * 4) as f64 / 1048576.0);
         // Focused REST2: per-atom λ (all 1.0 = physical by default)
         let max_atoms_alloc = 15000usize; // same cap as engine allocation
         let d_atom_lambda: CudaSlice<f32> = {
@@ -2357,6 +2396,11 @@ impl NhsAmberFusedEngine {
             d_lif_potential,
             d_spike_grid,
             d_spike_grid_efp,
+            d_voxel_hit_grid,
+            d_last_uv_step,
+            d_coupled_spike_grid,
+            d_primary_residue_id,
+            d_primary_residue_count,
             d_atom_lambda: d_atom_lambda,
             solute_lambda: 1.0,
             d_efp_potential,
@@ -4467,6 +4511,12 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_efp_lif_potential)
                 .arg(&mut self.d_spike_grid_efp)
                 .arg(&self.d_atom_lambda)
+                // Signal preservation buffers
+                .arg(&mut self.d_voxel_hit_grid)
+                .arg(&mut self.d_last_uv_step)
+                .arg(&mut self.d_coupled_spike_grid)
+                .arg(&mut self.d_primary_residue_id)
+                .arg(&mut self.d_primary_residue_count)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -4581,6 +4631,12 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_active_tiles)
                     .arg(&n_active_tiles_i32)
                     .arg(&mut self.d_spike_grid_efp)
+                    // Signal preservation buffers
+                    .arg(&mut self.d_voxel_hit_grid)
+                    .arg(&mut self.d_last_uv_step)
+                    .arg(&mut self.d_coupled_spike_grid)
+                    .arg(&mut self.d_primary_residue_id)
+                    .arg(&mut self.d_primary_residue_count)
                     .launch(voxel_cfg)
             }
         } else {
@@ -4634,6 +4690,12 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_active_tiles)
                     .arg(&n_active_tiles_i32)
                     .arg(&mut self.d_spike_grid_efp)
+                    // Signal preservation buffers
+                    .arg(&mut self.d_voxel_hit_grid)
+                    .arg(&mut self.d_last_uv_step)
+                    .arg(&mut self.d_coupled_spike_grid)
+                    .arg(&mut self.d_primary_residue_id)
+                    .arg(&mut self.d_primary_residue_count)
                     .launch(voxel_cfg)
             }
         }
@@ -5391,6 +5453,42 @@ impl NhsAmberFusedEngine {
         let mut spike_grid = vec![0i32; total_voxels];
         self.stream.memcpy_dtoh(&self.d_spike_grid, &mut spike_grid)?;
         Ok(spike_grid)
+    }
+
+    /// Download signal preservation buffers from GPU.
+    /// These accumulate across all timesteps and capture:
+    /// - Spatial recurrence (voxel_hit_grid)
+    /// - UV→LIF causal coupling (coupled_spike_grid)
+    /// - Dominant residue driver (primary_residue_id + count)
+    pub fn download_signal_preservation(&self) -> Result<SignalPreservationData> {
+        // Synchronize stream to ensure all kernel writes are complete
+        self.stream.synchronize()?;
+
+        let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
+        let mut voxel_hit_grid = vec![0i32; total_voxels];
+        let mut coupled_spike_grid = vec![0i32; total_voxels];
+        let mut primary_residue_id = vec![0i32; total_voxels];
+        let mut primary_residue_count = vec![0i32; total_voxels];
+
+        self.stream.memcpy_dtoh(&self.d_voxel_hit_grid, &mut voxel_hit_grid)?;
+        self.stream.memcpy_dtoh(&self.d_coupled_spike_grid, &mut coupled_spike_grid)?;
+        self.stream.memcpy_dtoh(&self.d_primary_residue_id, &mut primary_residue_id)?;
+        self.stream.memcpy_dtoh(&self.d_primary_residue_count, &mut primary_residue_count)?;
+
+        let n_recurrent = voxel_hit_grid.iter().filter(|&&v| v > 0).count();
+        let max_recurrence = voxel_hit_grid.iter().copied().max().unwrap_or(0);
+        let n_coupled = coupled_spike_grid.iter().filter(|&&v| v > 0).count();
+        let n_residue_tracked = primary_residue_id.iter().filter(|&&v| v >= 0).count();
+        log::info!("Signal preservation: recurrent_voxels={} max_recurrence={} coupled_voxels={} residue_tracked_voxels={}",
+            n_recurrent, max_recurrence, n_coupled, n_residue_tracked);
+
+        Ok(SignalPreservationData {
+            voxel_hit_grid,
+            coupled_spike_grid,
+            primary_residue_id,
+            primary_residue_count,
+            grid_dim: self.grid_dim,
+        })
     }
 
     /// Clear spike events buffer on GPU

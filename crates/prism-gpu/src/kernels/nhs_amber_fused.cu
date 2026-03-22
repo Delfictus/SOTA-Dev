@@ -57,8 +57,9 @@
 #define WATER_DENSITY_BULK 0.0334f  // molecules/A^3
 #define LIF_THRESHOLD 0.5f           // Tuned threshold for cryo-UV water density changes
 #define LIF_RESET 0.0f              // Reset potential
-#define REFRACTORY_STEPS 250       // 50 steps * 0.002ps = 0.1ps refractory period
+#define REFRACTORY_STEPS 250       // 250 steps * 0.004ps (HMR) = 1.0ps refractory period
 #define UV_WAVELENGTH 280.0f        // nm - aromatic absorption
+#define UV_LIF_WINDOW 100           // Steps within which LIF spike is causally linked to prior UV (~0.4 ps at dt=0.004ps/HMR)
 
 // ============================================================================
 // WARP-LEVEL PRIMITIVES (for fast reductions without shared memory)
@@ -669,6 +670,65 @@ __device__ void build_warp_entry(
 }
 
 // ============================================================================
+// SIGNAL PRESERVATION: per-spike update of voxel-level tracking buffers
+// ============================================================================
+
+__device__ __forceinline__ void update_signal_preservation(
+    int v, int timestep, int spike_source,
+    unsigned int* voxel_hit_grid,
+    int* last_uv_step,
+    unsigned int* coupled_spike_grid,
+    int* primary_residue_id,
+    unsigned int* primary_residue_count,
+    const WarpEntry& entry,
+    const int* residue_ids,
+    int n_atoms
+) {
+    // 1. Spatial recurrence
+    atomicAdd(&voxel_hit_grid[v], 1u);
+
+    // 2. UV→LIF causal linkage
+    if (spike_source == 1) {
+        // UV spike: record timestamp for downstream causal check
+        last_uv_step[v] = timestep;
+    } else {
+        // LIF/RAF/EFP spike: check for recent UV activity at this voxel
+        int last_uv = last_uv_step[v];
+        if (last_uv >= 0 && (timestep - last_uv) < UV_LIF_WINDOW) {
+            atomicAdd(&coupled_spike_grid[v], 1u);
+        }
+    }
+
+    // 3. Dominant residue tracking (top-1 Misra-Gries heavy hitter)
+    int primary_res = -1;
+    if (entry.n_atoms > 0) {
+        int a0 = entry.atom_indices[0];  // highest-weight contributing atom
+        if (a0 >= 0 && a0 < n_atoms) {
+            primary_res = residue_ids[a0];
+        }
+    }
+    if (primary_res >= 0) {
+        int stored = primary_residue_id[v];
+        if (stored < 0) {
+            // First spike at this voxel
+            primary_residue_id[v] = primary_res;
+            primary_residue_count[v] = 1u;
+        } else if (stored == primary_res) {
+            primary_residue_count[v]++;
+        } else {
+            // Different residue: Misra-Gries decrement-or-replace
+            unsigned int cnt = primary_residue_count[v];
+            if (cnt <= 1u) {
+                primary_residue_id[v] = primary_res;
+                primary_residue_count[v] = 1u;
+            } else {
+                primary_residue_count[v] = cnt - 1u;
+            }
+        }
+    }
+}
+
+// ============================================================================
 // SPIKE-TRIGGERED SNAPSHOT CAPTURE
 // ============================================================================
 
@@ -827,8 +887,14 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     float* efp_lif_potential,        // [grid_dim³]
     int* spike_grid_efp,             // [grid_dim³] — independent EFP refractory
     // Focused REST2: per-atom λ for solute tempering
-    const float* __restrict__ atom_lambda  // [n_atoms] — per-atom λ ∈ (0,1].
+    const float* __restrict__ atom_lambda,  // [n_atoms] — per-atom λ ∈ (0,1].
                                            // 1.0 = physical. <1.0 = softened (frustrated region).
+    // === Signal preservation buffers (accumulated across all timesteps) ===
+    unsigned int* voxel_hit_grid,          // [grid_dim³] spatial recurrence counter
+    int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
+    unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
+    int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
+    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1424,6 +1490,12 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 spike_grid[v] = REFRACTORY_STEPS;
                 spike_intensity = uv_signal;  // Use UV signal as intensity
 
+                // Signal preservation
+                update_signal_preservation(v, timestep, 1,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 // Extract closest aromatic metadata for enhanced spike event
                 int _arom_type = (closest_excited_idx >= 0) ? d_aromatic_type[closest_excited_idx] : -1;
                 int _arom_res = -1;
@@ -1486,6 +1558,13 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             if (spike) {
                 spike_grid[v] = REFRACTORY_STEPS;
 
+                // Signal preservation
+                int lif_source = (n_nearby_excited > 0) ? 1 : 2;
+                update_signal_preservation(v, timestep, lif_source,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 // Capture spike event with proper intensity
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
@@ -1514,7 +1593,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         spike_intensity,
                         warp_matrix[v],
                         residue_ids,
-                        (n_nearby_excited > 0) ? 1 : 2,  // UV-enriched or pure LIF
+                        lif_source,
                         lif_wl,
                         lif_atype,
                         lif_ares,
@@ -1588,6 +1667,12 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 spike_grid_efp[efp_v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[efp_v];
                 efp_lif_potential[efp_v] = LIF_RESET;
+
+                // Signal preservation (EFP spike)
+                update_signal_preservation(efp_v, timestep, 3,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[efp_v], residue_ids, n_atoms);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
@@ -2363,7 +2448,13 @@ extern "C" __global__ void nhs_voxel_step(
     // Aromatic neighbors (for expanded exclusion)
     const AromaticNeighbors* __restrict__ d_aromatic_neighbors,
     const float* __restrict__ d_franck_condon_progress,
-    int* spike_grid_efp              // independent EFP refractory grid
+    int* spike_grid_efp,             // independent EFP refractory grid
+    // Signal preservation buffers (accumulated across all timesteps)
+    unsigned int* voxel_hit_grid,          // [grid_dim³] spatial recurrence counter
+    int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
+    unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
+    int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
+    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int total_voxels = grid_dim * grid_dim * grid_dim;
@@ -2521,6 +2612,11 @@ extern "C" __global__ void nhs_voxel_step(
                 lif_potential[v] += uv_signal;
             }
 
+            // Record UV event timestamp for causal tracking (inline nhs_voxel_step)
+            if (uv_signal > 0.1f) {
+                last_uv_step[v] = timestep;
+            }
+
             // Direct UV spike trigger
             const float DIRECT_UV_SPIKE_THRESHOLD = 0.3f;
             const float MAX_SPIKE_DISTANCE = 4.0f;
@@ -2555,6 +2651,12 @@ extern "C" __global__ void nhs_voxel_step(
                 }
                 float _vib_e = (closest_excited_idx >= 0) ? d_vibrational_energy[closest_excited_idx] : 0.0f;
 
+                // Signal preservation (late UV spike)
+                update_signal_preservation(v, timestep, 1,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
                     capture_spike_event(
@@ -2578,6 +2680,14 @@ extern "C" __global__ void nhs_voxel_step(
 
             if (spike) {
                 spike_grid[v] = REFRACTORY_STEPS;
+
+                // Signal preservation (late LIF spike)
+                int lif_source2 = (n_nearby_excited > 0) ? 1 : 2;
+                update_signal_preservation(v, timestep, lif_source2,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
+
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
                     int lif_atype = -1, lif_ares = -1;
@@ -2596,7 +2706,7 @@ extern "C" __global__ void nhs_voxel_step(
                     capture_spike_event(
                         spike_events[spike_idx], timestep, v, voxel_center,
                         spike_intensity, warp_matrix[v], residue_ids,
-                        (n_nearby_excited > 0) ? 1 : 2, lif_wl,
+                        lif_source2, lif_wl,
                         lif_atype, lif_ares, water_density[v],
                         lif_vibe, n_nearby_excited,
                         fabsf(water_density[v] - water_density_prev[v])
@@ -2653,6 +2763,12 @@ efp_phase:
                 spike_grid_efp[v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[v];
                 efp_lif_potential[v] = LIF_RESET;
+
+                // Signal preservation (late EFP spike)
+                update_signal_preservation(v, timestep, 3,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    warp_matrix[v], residue_ids, n_atoms);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
@@ -2784,7 +2900,13 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     const int* active_tiles,     // [n_active_tiles * 3] packed (bx, by, bz) triplets
     int n_active_tiles,          // number of active tiles (0 = fallback to full grid)
     // === Independent EFP refractory grid ===
-    int* spike_grid_efp          // [grid_dim³] — prevents UV/LIF from blocking EFP
+    int* spike_grid_efp,         // [grid_dim³] — prevents UV/LIF from blocking EFP
+    // === Signal preservation buffers (accumulated across all timesteps) ===
+    unsigned int* voxel_hit_grid,          // [grid_dim³] spatial recurrence counter
+    int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
+    unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
+    int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
+    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
 ) {
     // === Shared memory layout (SOTA v2) ===
     // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
@@ -3081,6 +3203,11 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         }
     }
 
+    // Record UV event timestamp for causal tracking (neuron 0 only, before broadcast)
+    if (is_valid && has_atoms && k == 0 && uv_signal > 0.1f) {
+        last_uv_step[v] = timestep;
+    }
+
     // Broadcast UV results from neuron 0 to all 8 neurons
     uv_signal = __shfl_sync(warp_mask, uv_signal, src_lane);
     n_nearby_excited = __shfl_sync(warp_mask, n_nearby_excited, src_lane);
@@ -3231,6 +3358,13 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     if (is_valid && has_atoms && k == 0 && n_spikes_in_voxel > 0 && spike_grid[v] == 0) {
         spike_grid[v] = REFRACTORY_STEPS;
 
+        // Signal preservation (RAF spike)
+        int spike_source = (n_nearby_excited > 0 && uv_signal > 0.3f) ? 1 : 2;
+        update_signal_preservation(v, timestep, spike_source,
+            voxel_hit_grid, last_uv_step, coupled_spike_grid,
+            primary_residue_id, primary_residue_count,
+            entry, residue_ids, n_atoms);
+
         // Shared memory stencil: 26 Moore neighbors with distance weighting
         float coupling_deposit = 1.0f;
         int hx = lx + 1;  // offset +1 for halo border
@@ -3255,8 +3389,6 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         }
 
         // Spike event emission
-        int spike_source = (n_nearby_excited > 0 && uv_signal > 0.3f) ? 1 : 2;
-
         int _arom_type = -1, _arom_res = -1;
         float _wl = 0.0f, _vibe = 0.0f;
         if (n_nearby_excited > 0 && closest_excited_idx >= 0) {
@@ -3352,6 +3484,12 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                 spike_grid_efp[v] = REFRACTORY_STEPS;
                 float polar_intensity = efp_lif_potential[v];
                 efp_lif_potential[v] = LIF_RESET;
+
+                // Signal preservation (multi-LIF EFP spike)
+                update_signal_preservation(v, timestep, 3,
+                    voxel_hit_grid, last_uv_step, coupled_spike_grid,
+                    primary_residue_id, primary_residue_count,
+                    entry, residue_ids, n_atoms);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
