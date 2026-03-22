@@ -1101,6 +1101,15 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Focus REST2 λ on spike-frustrated residues identified during cold_hold.
+    pub fn apply_focused_lambda(&mut self) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.apply_focused_lambda()
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
     /// Enable spike-guided adaptive bias: closed-loop UV energy modulation
     /// driven by real-time spike activity in each voxel region.
     pub fn set_adaptive_bias(&mut self, enabled: bool) -> Result<()> {

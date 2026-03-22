@@ -1608,7 +1608,9 @@ pub struct NhsAmberFusedEngine {
     d_lif_potential: CudaSlice<f32>,
     d_spike_grid: CudaSlice<i32>,
     d_spike_grid_efp: CudaSlice<i32>,
-    /// REST2 solute tempering parameter. λ=1.0 = physical, λ<1 = softened potential.
+    /// Focused REST2: per-atom λ values. 1.0 = physical, <1.0 = softened.
+    d_atom_lambda: CudaSlice<f32>,
+    /// Global λ for this stream (used to set frustrated atoms' λ).
     solute_lambda: f32,
     // EFP buffers
     d_efp_potential: CudaSlice<f32>,
@@ -2261,6 +2263,14 @@ impl NhsAmberFusedEngine {
         let d_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid_efp: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        // Focused REST2: per-atom λ (all 1.0 = physical by default)
+        let max_atoms_alloc = 15000usize; // same cap as engine allocation
+        let d_atom_lambda: CudaSlice<f32> = {
+            let ones = vec![1.0f32; max_atoms_alloc];
+            let mut buf: CudaSlice<f32> = stream.alloc_zeros(max_atoms_alloc)?;
+            stream.memcpy_htod(&ones, &mut buf)?;
+            buf
+        };
         let d_efp_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_efp_potential_prev: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_efp_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
@@ -2347,7 +2357,8 @@ impl NhsAmberFusedEngine {
             d_lif_potential,
             d_spike_grid,
             d_spike_grid_efp,
-            solute_lambda: 1.0, // physical (no scaling) by default
+            d_atom_lambda: d_atom_lambda,
+            solute_lambda: 1.0,
             d_efp_potential,
             d_efp_potential_prev,
             d_efp_lif_potential,
@@ -2516,13 +2527,83 @@ impl NhsAmberFusedEngine {
     }
 
     /// Enable adaptive dt: 1.5x during hold phases, base_dt during ramps.
-    /// Set REST2 solute tempering parameter λ.
-    /// λ=1.0 = physical (no scaling). λ<1.0 = softened potential.
-    /// Effective temperature on PES = T/λ. Barrier crossing rate ~ exp(-λ·ΔE/kT).
+    /// Set REST2 solute tempering parameter λ (global — applied to all atoms initially).
+    /// Call apply_focused_lambda() after cold_hold to focus it on frustrated regions.
     pub fn set_solute_lambda(&mut self, lambda: f32) {
         self.solute_lambda = lambda.clamp(0.1, 1.0);
         log::info!("REST2 solute lambda: {:.3} (effective T_PES = {:.0}K at 300K)",
             self.solute_lambda, 300.0 / self.solute_lambda);
+    }
+
+    /// Focus REST2 λ on spike-frustrated atoms.
+    /// Uses accumulated spikes from cold_hold to identify residues near
+    /// high-spike-rate voxels that fail to form persistent pockets.
+    /// These are the conformational barriers — they spike (want to open)
+    /// but can't maintain the open state.
+    /// Only those atoms get λ < 1.0; the scaffold stays at λ=1.0.
+    pub fn apply_focused_lambda(&mut self) -> anyhow::Result<()> {
+        if self.solute_lambda >= 0.99 {
+            return Ok(()); // No softening needed
+        }
+
+        let spikes = &self.accumulated_spikes;
+        if spikes.is_empty() {
+            log::warn!("Focused REST2: no accumulated spikes, keeping global λ");
+            return Ok(());
+        }
+
+        // Count spikes per residue (via the warp matrix nearby_residues field)
+        let mut residue_spike_count: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+        for spike in spikes {
+            // GpuSpikeEvent is #[repr(C, packed)] — read fields via copy to avoid unaligned access
+            let nearby = spike.nearby_residues;
+            let n_res = spike.n_residues;
+            for idx in 0..n_res.min(8) as usize {
+                let res_id = nearby[idx];
+                if res_id >= 0 {
+                    *residue_spike_count.entry(res_id).or_insert(0) += 1;
+                }
+            }
+        }
+
+        if residue_spike_count.is_empty() {
+            log::warn!("Focused REST2: no residue mappings in spikes");
+            return Ok(());
+        }
+
+        // Find frustrated residues: top quartile by spike count
+        // These residues are most dynamically active but their pockets didn't persist
+        let mut counts: Vec<usize> = residue_spike_count.values().copied().collect();
+        counts.sort();
+        let q75_idx = counts.len() * 3 / 4;
+        let threshold = counts.get(q75_idx).copied().unwrap_or(0);
+
+        let frustrated_residues: std::collections::HashSet<i32> = residue_spike_count.iter()
+            .filter(|(_, &count)| count >= threshold)
+            .map(|(&res_id, _)| res_id)
+            .collect();
+
+        // Map frustrated residues to atoms via residue_ids topology
+        let mut atom_lambda = vec![1.0f32; self.n_atoms];
+        let mut residue_ids = vec![0i32; self.n_atoms];
+        self.stream.memcpy_dtoh(&self.d_residue_ids, &mut residue_ids)?;
+
+        let mut n_softened = 0usize;
+        for (atom_idx, &res_id) in residue_ids.iter().enumerate() {
+            if frustrated_residues.contains(&res_id) {
+                atom_lambda[atom_idx] = self.solute_lambda;
+                n_softened += 1;
+            }
+        }
+
+        // Upload to GPU
+        self.stream.memcpy_htod(&atom_lambda, &mut self.d_atom_lambda)?;
+
+        log::info!("Focused REST2: {}/{} atoms softened (λ={:.2}), {} frustrated residues (threshold={})",
+            n_softened, self.n_atoms, self.solute_lambda,
+            frustrated_residues.len(), threshold);
+
+        Ok(())
     }
 
     // Enable adaptive dt: 1.5x during hold phases, base_dt during ramps.
@@ -4307,7 +4388,7 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_efp_potential_prev)
                 .arg(&self.d_efp_lif_potential)
                 .arg(&mut self.d_spike_grid_efp)
-                .arg(&self.solute_lambda)
+                .arg(&self.d_atom_lambda)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;

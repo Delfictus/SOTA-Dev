@@ -2662,12 +2662,25 @@ fn run_multi_stream_pipeline(
                     engine.reset_for_replica(seed)?;
 
                     // Adaptive protocol: split run into cold_hold + rest, adapt between
-                    let summary = if adaptive_protocol {
-                        log::info!("    [stream {}] [adaptive-protocol] Running cold_hold ({} steps)...", i, cold_hold_steps);
+                    let summary = if adaptive_protocol || rest2_lambda < 1.0 {
+                        // Split run: cold_hold first, then apply focused REST2, then remaining steps.
+                        // Cold_hold at λ=1.0 (physical) probes the native conformation to identify
+                        // spike-frustrated residues. Then those residues get softened for the ramp.
+                        log::info!("    [stream {}] Running cold_hold ({} steps)...", i, cold_hold_steps);
                         let cold_summary = engine.run(cold_hold_steps)?;
-                        log::info!("    [stream {}] [adaptive-protocol] Cold hold: {} spikes", i, cold_summary.total_spikes);
+                        log::info!("    [stream {}] Cold hold: {} spikes", i, cold_summary.total_spikes);
 
-                        let _flexibility = engine.adapt_protocol_from_spike_rate(cold_hold_steps);
+                        if adaptive_protocol {
+                            let _flexibility = engine.adapt_protocol_from_spike_rate(cold_hold_steps);
+                        }
+
+                        // Focused REST2: after cold_hold, identify frustrated residues and soften them
+                        if rest2_lambda < 1.0 {
+                            match engine.apply_focused_lambda() {
+                                Ok(()) => {},
+                                Err(e) => log::warn!("    [stream {}] Focused REST2 failed: {}", i, e),
+                            }
+                        }
 
                         let remaining = steps - cold_hold_steps;
                         if remaining > 0 {

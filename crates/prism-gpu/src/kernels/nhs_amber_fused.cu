@@ -826,11 +826,9 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     float* efp_potential_prev,       // [grid_dim³]
     float* efp_lif_potential,        // [grid_dim³]
     int* spike_grid_efp,             // [grid_dim³] — independent EFP refractory
-    // REST2 solute tempering
-    float solute_lambda              // λ ∈ (0,1] — scales intramolecular forces.
-                                     // λ=1.0 = physical (no scaling).
-                                     // λ=0.5 = effective 2× temperature on potential.
-                                     // Barrier crossing rate: exp(-λ·ΔE/kT).
+    // Focused REST2: per-atom λ for solute tempering
+    const float* __restrict__ atom_lambda  // [n_atoms] — per-atom λ ∈ (0,1].
+                                           // 1.0 = physical. <1.0 = softened (frustrated region).
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1072,15 +1070,17 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         float inv_mass = 1.0f / masses[tid];
         curandState local_rng = rng_states[tid];
 
-        // REST2 SOLUTE TEMPERING: scale intramolecular forces by λ.
-        // V_eff = λ × V_protein → F_eff = λ × F_protein.
-        // Barrier height scales linearly: ΔE_eff = λ × ΔE.
-        // Crossing rate: exp(-λ·ΔE/kT) — exponential speedup.
-        // λ=1.0 → physical. λ=0.5 → 2× effective temperature on PES.
+        // FOCUSED REST2: per-atom solute tempering.
+        // atom_lambda[i] = 1.0 for scaffold (physical forces).
+        // atom_lambda[i] < 1.0 for spike-frustrated regions (softened).
+        // Only residues near frustrated voxels get softened, so the scaffold
+        // stays rigid while the barrier region (e.g., DFG loop) becomes flexible.
+        // F_eff(i) = atom_lambda[i] × F(i).
+        float per_atom_lam = atom_lambda[tid];
         float3 scaled_force = forces[tid];
-        scaled_force.x *= solute_lambda;
-        scaled_force.y *= solute_lambda;
-        scaled_force.z *= solute_lambda;
+        scaled_force.x *= per_atom_lam;
+        scaled_force.y *= per_atom_lam;
+        scaled_force.z *= per_atom_lam;
 
         // FORCE CLAMPING: Prevent runaway from unminimized structures
         // Max force ~1000 kcal/mol/Å prevents numerical blowup
