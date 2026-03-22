@@ -1608,6 +1608,8 @@ pub struct NhsAmberFusedEngine {
     d_lif_potential: CudaSlice<f32>,
     d_spike_grid: CudaSlice<i32>,
     d_spike_grid_efp: CudaSlice<i32>,
+    /// REST2 solute tempering parameter. λ=1.0 = physical, λ<1 = softened potential.
+    solute_lambda: f32,
     // EFP buffers
     d_efp_potential: CudaSlice<f32>,
     d_efp_potential_prev: CudaSlice<f32>,
@@ -2345,6 +2347,7 @@ impl NhsAmberFusedEngine {
             d_lif_potential,
             d_spike_grid,
             d_spike_grid_efp,
+            solute_lambda: 1.0, // physical (no scaling) by default
             d_efp_potential,
             d_efp_potential_prev,
             d_efp_lif_potential,
@@ -2513,6 +2516,16 @@ impl NhsAmberFusedEngine {
     }
 
     /// Enable adaptive dt: 1.5x during hold phases, base_dt during ramps.
+    /// Set REST2 solute tempering parameter λ.
+    /// λ=1.0 = physical (no scaling). λ<1.0 = softened potential.
+    /// Effective temperature on PES = T/λ. Barrier crossing rate ~ exp(-λ·ΔE/kT).
+    pub fn set_solute_lambda(&mut self, lambda: f32) {
+        self.solute_lambda = lambda.clamp(0.1, 1.0);
+        log::info!("REST2 solute lambda: {:.3} (effective T_PES = {:.0}K at 300K)",
+            self.solute_lambda, 300.0 / self.solute_lambda);
+    }
+
+    // Enable adaptive dt: 1.5x during hold phases, base_dt during ramps.
     pub fn set_adaptive_dt(&mut self, enabled: bool) {
         self.adaptive_dt_enabled = enabled;
         self.base_dt = self.dt;
@@ -4294,6 +4307,7 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_efp_potential_prev)
                 .arg(&self.d_efp_lif_potential)
                 .arg(&mut self.d_spike_grid_efp)
+                .arg(&self.solute_lambda)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;

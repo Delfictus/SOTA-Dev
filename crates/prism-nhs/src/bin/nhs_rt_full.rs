@@ -210,6 +210,15 @@ struct Args {
     #[arg(long, default_value = "false")]
     cascade_boltzmann_gap: bool,
 
+    /// REST2 solute tempering: scale intramolecular forces by λ per stream.
+    /// With 8 streams, λ ladder = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3].
+    /// Lower λ = softer potential = exponentially faster barrier crossing.
+    /// λ=0.5 at 300K ≈ effective 600K on the potential energy surface.
+    /// Consensus merging filters artifacts: sites must appear in physical (λ=1)
+    /// AND softened streams to survive.
+    #[arg(long, default_value = "false")]
+    rest2: bool,
+
     /// Multi-temperature streams: spread end temperatures across streams.
     /// With 8 streams at --temperature 300, the ladder becomes:
     /// [300, 325, 350, 375, 400, 450, 500, 600] K.
@@ -2596,6 +2605,18 @@ fn run_multi_stream_pipeline(
                 } else {
                     protocol.clone()
                 };
+                // REST2 solute tempering: λ ladder across streams
+                // Linear ladder from 1.0 (physical) to 0.3 (very soft)
+                let rest2_lambda = if args.rest2 && n_streams >= 4 {
+                    let lambda = 1.0 - 0.7 * (i as f32 / (n_streams - 1).max(1) as f32);
+                    let lambda = lambda.clamp(0.3, 1.0);
+                    log::info!("    [stream {}] REST2: λ={:.2} (effective T_PES={:.0}K)",
+                        i, lambda, 300.0 / lambda);
+                    lambda
+                } else {
+                    1.0
+                };
+
                 let seed = args.replica_seed + i as u64 * 12345;
                 let ultimate = args.ultimate_mode;
                 let steps = steps_per_stream;
@@ -2613,6 +2634,9 @@ fn run_multi_stream_pipeline(
                         config_ref, ctx, mod_, stream_i,
                     )?;
                     engine.load_topology(topo_ref)?;
+                    if rest2_lambda < 1.0 {
+                        engine.set_solute_lambda(rest2_lambda);
+                    }
                     if hmr_enabled {
                         engine.set_dt(0.004)?;  // 4fs with HMR masses
                     }

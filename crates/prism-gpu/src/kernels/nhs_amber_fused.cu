@@ -825,7 +825,12 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     float* efp_potential,            // [grid_dim³]
     float* efp_potential_prev,       // [grid_dim³]
     float* efp_lif_potential,        // [grid_dim³]
-    int* spike_grid_efp              // [grid_dim³] — independent EFP refractory
+    int* spike_grid_efp,             // [grid_dim³] — independent EFP refractory
+    // REST2 solute tempering
+    float solute_lambda              // λ ∈ (0,1] — scales intramolecular forces.
+                                     // λ=1.0 = physical (no scaling).
+                                     // λ=0.5 = effective 2× temperature on potential.
+                                     // Barrier crossing rate: exp(-λ·ΔE/kT).
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1067,10 +1072,20 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         float inv_mass = 1.0f / masses[tid];
         curandState local_rng = rng_states[tid];
 
+        // REST2 SOLUTE TEMPERING: scale intramolecular forces by λ.
+        // V_eff = λ × V_protein → F_eff = λ × F_protein.
+        // Barrier height scales linearly: ΔE_eff = λ × ΔE.
+        // Crossing rate: exp(-λ·ΔE/kT) — exponential speedup.
+        // λ=1.0 → physical. λ=0.5 → 2× effective temperature on PES.
+        float3 scaled_force = forces[tid];
+        scaled_force.x *= solute_lambda;
+        scaled_force.y *= solute_lambda;
+        scaled_force.z *= solute_lambda;
+
         // FORCE CLAMPING: Prevent runaway from unminimized structures
         // Max force ~1000 kcal/mol/Å prevents numerical blowup
         const float MAX_FORCE = 1000.0f;
-        float3 clamped_force = forces[tid];
+        float3 clamped_force = scaled_force;
         float force_mag = sqrtf(clamped_force.x * clamped_force.x +
                                 clamped_force.y * clamped_force.y +
                                 clamped_force.z * clamped_force.z);

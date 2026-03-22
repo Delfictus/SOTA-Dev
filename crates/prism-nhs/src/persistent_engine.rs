@@ -1091,6 +1091,16 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
+    pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_solute_lambda(lambda);
+            Ok(())
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
     /// Enable spike-guided adaptive bias: closed-loop UV energy modulation
     /// driven by real-time spike activity in each voxel region.
     pub fn set_adaptive_bias(&mut self, enabled: bool) -> Result<()> {
