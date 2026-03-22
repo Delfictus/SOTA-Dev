@@ -2571,27 +2571,103 @@ impl NhsAmberFusedEngine {
             return Ok(());
         }
 
-        // Find frustrated residues: top quartile by spike count
-        // These residues are most dynamically active but their pockets didn't persist
-        let mut counts: Vec<usize> = residue_spike_count.values().copied().collect();
-        counts.sort();
-        let q75_idx = counts.len() * 3 / 4;
-        let threshold = counts.get(q75_idx).copied().unwrap_or(0);
-
-        let frustrated_residues: std::collections::HashSet<i32> = residue_spike_count.iter()
-            .filter(|(_, &count)| count >= threshold)
-            .map(|(&res_id, _)| res_id)
+        // === PASS 1: Narrow window — top 10% frustrated residues by spike count ===
+        // Top quartile (25%) was too broad — 28% of protein softened, diluting sampling.
+        // Top 10% focuses on the most dynamically frustrated residues.
+        let mut sorted_residues: Vec<(i32, usize)> = residue_spike_count.iter()
+            .map(|(&res_id, &count)| (res_id, count))
             .collect();
+        sorted_residues.sort_by(|a, b| b.1.cmp(&a.1)); // descending by count
 
-        // Map frustrated residues to atoms via residue_ids topology
-        let mut atom_lambda = vec![1.0f32; self.n_atoms];
+        let top_n = (sorted_residues.len() / 10).max(5).min(sorted_residues.len()); // top 10%, min 5
+        let top_frustrated: Vec<(i32, usize)> = sorted_residues[..top_n].to_vec();
+
+        // === PASS 2: Spatial centering — focus on residues near the spike density peak ===
+        // Compute spike-weighted centroid of the most frustrated region,
+        // then only soften residues within 12Å of that centroid.
+        // This targets the "gatekeeper" residues of the predicted pocket.
+
+        // Get atom positions for centroid computation
+        let mut positions_flat = vec![0.0f32; self.n_atoms * 3];
+        self.stream.memcpy_dtoh(&self.d_positions, &mut positions_flat)?;
         let mut residue_ids = vec![0i32; self.n_atoms];
         self.stream.memcpy_dtoh(&self.d_residue_ids, &mut residue_ids)?;
 
-        let mut n_softened = 0usize;
+        // === PASS 2: Spatial centering via per-residue CoM ===
+        // Instead of one global centroid (which lands in empty space when residues
+        // are scattered), find the DENSEST CLUSTER of frustrated residues.
+        // Strategy: for each frustrated residue, count how many other frustrated
+        // residues are within 15Å. The residue with the most neighbors is the
+        // center of the frustrated cluster = the conformational barrier region.
+
+        let top_res_set: std::collections::HashSet<i32> = top_frustrated.iter()
+            .map(|&(res_id, _)| res_id).collect();
+
+        // Compute CoM for each frustrated residue
+        let mut res_com: std::collections::HashMap<i32, [f64; 3]> = std::collections::HashMap::new();
+        let mut res_atom_count: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
         for (atom_idx, &res_id) in residue_ids.iter().enumerate() {
-            if frustrated_residues.contains(&res_id) {
-                atom_lambda[atom_idx] = self.solute_lambda;
+            if top_res_set.contains(&res_id) {
+                let com = res_com.entry(res_id).or_insert([0.0; 3]);
+                com[0] += positions_flat[atom_idx * 3] as f64;
+                com[1] += positions_flat[atom_idx * 3 + 1] as f64;
+                com[2] += positions_flat[atom_idx * 3 + 2] as f64;
+                *res_atom_count.entry(res_id).or_insert(0) += 1;
+            }
+        }
+        for (res_id, com) in res_com.iter_mut() {
+            let n = *res_atom_count.get(res_id).unwrap_or(&1) as f64;
+            com[0] /= n; com[1] /= n; com[2] /= n;
+        }
+
+        // Find densest cluster center: residue with most frustrated neighbors within 15Å
+        let cluster_radius = 15.0f64;
+        let cluster_radius_sq = cluster_radius * cluster_radius;
+        let mut best_center_res = -1i32;
+        let mut best_neighbor_count = 0usize;
+        let mut best_center_com = [0.0f64; 3];
+
+        for (&res_a, com_a) in &res_com {
+            let mut n_neighbors = 0usize;
+            for (&res_b, com_b) in &res_com {
+                if res_a == res_b { continue; }
+                let dx = com_a[0] - com_b[0];
+                let dy = com_a[1] - com_b[1];
+                let dz = com_a[2] - com_b[2];
+                if dx*dx + dy*dy + dz*dz <= cluster_radius_sq {
+                    n_neighbors += 1;
+                }
+            }
+            if n_neighbors > best_neighbor_count {
+                best_neighbor_count = n_neighbors;
+                best_center_res = res_a;
+                best_center_com = *com_a;
+            }
+        }
+
+        if best_center_res < 0 {
+            log::warn!("Focused REST2: no frustrated cluster found");
+            return Ok(());
+        }
+
+        // === APPLY: soften all atoms within 12Å of the densest frustrated cluster center ===
+        // This softens the barrier region AND its immediate neighbors (the "gatekeeper" shell)
+        let focus_radius_sq = 12.0f32 * 12.0f32;
+        let mut atom_lambda = vec![1.0f32; self.n_atoms];
+        let mut n_softened = 0usize;
+
+        for atom_idx in 0..self.n_atoms {
+            let dx = positions_flat[atom_idx * 3] - best_center_com[0] as f32;
+            let dy = positions_flat[atom_idx * 3 + 1] - best_center_com[1] as f32;
+            let dz = positions_flat[atom_idx * 3 + 2] - best_center_com[2] as f32;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
+
+            if dist_sq <= focus_radius_sq {
+                // Graduated λ: atoms closer to center get more softening
+                let dist = dist_sq.sqrt();
+                let frac = dist / 12.0; // 0 at center, 1 at edge
+                let local_lambda = self.solute_lambda + (1.0 - self.solute_lambda) * frac;
+                atom_lambda[atom_idx] = local_lambda;
                 n_softened += 1;
             }
         }
@@ -2599,9 +2675,11 @@ impl NhsAmberFusedEngine {
         // Upload to GPU
         self.stream.memcpy_htod(&atom_lambda, &mut self.d_atom_lambda)?;
 
-        log::info!("Focused REST2: {}/{} atoms softened (λ={:.2}), {} frustrated residues (threshold={})",
-            n_softened, self.n_atoms, self.solute_lambda,
-            frustrated_residues.len(), threshold);
+        let pct = if self.n_atoms > 0 { n_softened as f32 / self.n_atoms as f32 * 100.0 } else { 0.0 };
+        log::info!("Focused REST2: {}/{} atoms softened ({:.1}%, λ={:.2}→1.0 gradient), center=res{} ({:.1},{:.1},{:.1}), {} neighbors in 15Å cluster",
+            n_softened, self.n_atoms, pct, self.solute_lambda,
+            best_center_res, best_center_com[0], best_center_com[1], best_center_com[2],
+            best_neighbor_count);
 
         Ok(())
     }
