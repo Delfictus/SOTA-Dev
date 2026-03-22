@@ -2511,7 +2511,7 @@ fn run_multi_stream_pipeline(
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
     let sim_start = Instant::now();
 
-    let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>)>> =
+    let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>)>> =
         std::thread::scope(|s| {
             let handles: Vec<_> = (0..n_streams).map(|i| {
                 let ctx = context.clone();
@@ -2632,7 +2632,7 @@ fn run_multi_stream_pipeline(
                 let adaptive_protocol = args.adaptive_protocol;
                 let cold_hold_steps = prot.cold_hold_steps;
 
-                s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>)> {
+                s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
 
                     let mut engine = PersistentNhsEngine::new_on_stream(
@@ -2700,14 +2700,12 @@ fn run_multi_stream_pipeline(
                     let spikes = engine.get_accumulated_spikes();
                     let snapshots = engine.get_snapshots();
 
-                    // Signal preservation diagnostic
-                    if let Ok(_sig) = engine.download_signal_preservation() {
-                        // Summary logged inside download_signal_preservation()
-                    }
+                    // Download signal preservation grids from this stream's GPU buffers
+                    let sig_data = engine.download_signal_preservation().ok();
 
                     log::info!("    [stream {}] Complete: {} spikes, {} snapshots, T={:.1}K",
                         i, spikes.len(), snapshots.len(), summary.end_temperature);
-                    Ok((spikes, snapshots))
+                    Ok((spikes, snapshots, sig_data))
                 })
             }).collect();
 
@@ -2730,10 +2728,12 @@ fn run_multi_stream_pipeline(
     let mut all_stream_snapshots: Vec<Vec<prism_nhs::fused_engine::EnsembleSnapshot>> = Vec::new();
     let mut all_stream_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
     let mut stream_spike_offsets: Vec<usize> = Vec::new(); // offset into all_stream_spikes for each stream
+    // Merged signal preservation grids (summed across all streams)
+    let mut merged_signal: Option<prism_nhs::fused_engine::SignalPreservationData> = None;
 
     for (i, result) in stream_results.into_iter().enumerate() {
-        let (raw_spikes, stream_snapshots) = match result {
-            Ok((spikes, snaps)) => (spikes, snaps),
+        let (raw_spikes, stream_snapshots, sig_data) = match result {
+            Ok((spikes, snaps, sig)) => (spikes, snaps, sig),
             Err(e) => {
                 log::error!("    Stream {} failed: {}", i, e);
                 per_stream_stats.push(serde_json::json!({
@@ -2745,6 +2745,28 @@ fn run_multi_stream_pipeline(
                 continue;
             }
         };
+
+        // Merge signal preservation grids (element-wise sum across streams)
+        if let Some(sd) = sig_data {
+            match merged_signal.as_mut() {
+                None => { merged_signal = Some(sd); }
+                Some(ref mut m) => {
+                    for (j, v) in sd.voxel_hit_grid.iter().enumerate() {
+                        m.voxel_hit_grid[j] += v;
+                    }
+                    for (j, v) in sd.coupled_spike_grid.iter().enumerate() {
+                        m.coupled_spike_grid[j] += v;
+                    }
+                    // For residue ID: keep the one with higher count (max across streams)
+                    for j in 0..sd.primary_residue_count.len() {
+                        if sd.primary_residue_count[j] > m.primary_residue_count[j] {
+                            m.primary_residue_id[j] = sd.primary_residue_id[j];
+                            m.primary_residue_count[j] = sd.primary_residue_count[j];
+                        }
+                    }
+                }
+            }
+        }
 
         // Per-channel intensity filter: preserves EFP spikes that would be
         // drowned by high-intensity LIF/UV under a global percentile cut.
@@ -5291,8 +5313,81 @@ fn run_multi_stream_pipeline(
 
         let json_path = output_base.with_extension("binding_sites.json");
 
+        // ── Per-site signal preservation aggregation (exact voxel_idx) ──
+        // For each site, aggregate recurrence, UV→LIF causality, and residue identity
+        // from the spike events using voxel_idx as the exact grid key.
+        // ── Per-site signal preservation: aggregate GPU voxel grids per site ──
+        // Uses exact voxel_idx from spikes + merged GPU signal grids (summed across streams)
+        let site_signal_metrics: Vec<_> = reordered_sites.iter().map(|site| {
+            use std::collections::HashSet;
+
+            // Collect unique voxel indices for this site
+            let mut site_voxels: HashSet<i32> = HashSet::new();
+            for &idx in &site.spike_indices {
+                if let Some(spike) = all_stream_spikes.get(idx) {
+                    site_voxels.insert(spike.voxel_idx);
+                }
+            }
+            let n_voxels = site_voxels.len() as u32;
+
+            if let Some(ref sig) = merged_signal {
+                // Aggregate from GPU-side grids (exact voxel-level data)
+                let mut total_recurrence: i32 = 0;
+                let mut max_recurrence: i32 = 0;
+                let mut total_coupling: i32 = 0;
+                let mut coupled_voxels: u32 = 0;
+                let mut residue_counts: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+
+                for &vid in &site_voxels {
+                    let vi = vid as usize;
+                    if vi >= sig.voxel_hit_grid.len() { continue; }
+
+                    let rec = sig.voxel_hit_grid[vi];
+                    total_recurrence += rec;
+                    if rec > max_recurrence { max_recurrence = rec; }
+
+                    let coup = sig.coupled_spike_grid[vi];
+                    total_coupling += coup;
+                    if coup > 0 { coupled_voxels += 1; }
+
+                    let res_id = sig.primary_residue_id[vi];
+                    let res_count = sig.primary_residue_count[vi];
+                    if res_id >= 0 {
+                        *residue_counts.entry(res_id).or_insert(0) += res_count;
+                    }
+                }
+
+                let mean_recurrence = if n_voxels > 0 { total_recurrence as f32 / n_voxels as f32 } else { 0.0 };
+                let causality_density = if n_voxels > 0 { coupled_voxels as f32 / n_voxels as f32 } else { 0.0 };
+
+                let (primary_residue, primary_count) = residue_counts.iter()
+                    .max_by_key(|&(_, &c)| c)
+                    .map(|(&r, &c)| (r, c))
+                    .unwrap_or((-1, 0));
+                let total_residue_votes: i32 = residue_counts.values().sum();
+                let residue_concentration = if total_residue_votes > 0 {
+                    primary_count as f32 / total_residue_votes as f32
+                } else { 0.0 };
+
+                serde_json::json!({
+                    "n_voxels": n_voxels,
+                    "total_recurrence": total_recurrence,
+                    "max_recurrence": max_recurrence,
+                    "mean_recurrence": mean_recurrence,
+                    "total_coupling": total_coupling,
+                    "coupled_voxels": coupled_voxels,
+                    "causality_density": causality_density,
+                    "primary_residue_id": primary_residue,
+                    "primary_residue_count": primary_count,
+                    "residue_concentration": residue_concentration,
+                })
+            } else {
+                serde_json::json!({ "n_voxels": n_voxels, "error": "no_gpu_signal_data" })
+            }
+        }).collect();
+
         // Build per-site JSON, merging PRISM-Therm therm_class when available
-        let mut ms_sites_json: Vec<serde_json::Value> = reordered_sites.iter().map(|s| {
+        let mut ms_sites_json: Vec<serde_json::Value> = reordered_sites.iter().enumerate().map(|(site_rank, s)| {
             let cat_count = s.lining_residues.iter()
                 .filter(|r| catalytic_residues.contains(&r.resname.as_str())).count();
             let (ps_onset, ps_src_div, ps_burial, ps_burial_score) =
@@ -5320,6 +5415,8 @@ fn run_multi_stream_pipeline(
                     })
                 }).collect::<Vec<_>>(),
                 "residue_ids": s.lining_residue_ids(),
+                "signal_preservation": site_signal_metrics.get(site_rank).cloned()
+                    .unwrap_or(serde_json::json!(null)),
             })
         }).collect();
 
