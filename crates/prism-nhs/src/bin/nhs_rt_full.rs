@@ -5159,26 +5159,48 @@ fn run_multi_stream_pipeline(
             let neuro_max = all_neuro.iter().cloned().fold(f32::MIN, f32::max);
             let neuro_range = (neuro_max - neuro_min).max(1e-10);
 
-            // Blend neuromorphic score with quality_score:
-            // neuro_weight = 0.4 → 40% neuromorphic, 60% physics/geometry
-            let neuro_weight = 0.4f32;
+            // TIEBREAKER MODE: neuro score only affects sites within 15% of rank-1.
+            // If v7 clearly picks a winner (>15% gap to rank-2), trust it completely.
+            // If the top sites are clustered (within 15%), use neuro to break the tie.
+            // This prevents neuro from overriding confident v7 rankings while still
+            // leveraging temporal signatures when v7 is ambiguous.
+            {
+                let mut qs: Vec<(i32, f32)> = clustered_sites.iter()
+                    .map(|s| (s.cluster_id, s.quality_score)).collect();
+                qs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-            for site in clustered_sites.iter_mut() {
-                if let Some(&raw) = neuro_scores.get(&site.cluster_id) {
-                    let neuro_norm = (raw - neuro_min) / neuro_range; // [0, 1]
-                    let old_q = site.quality_score;
-                    site.quality_score = (1.0 - neuro_weight) * old_q + neuro_weight * neuro_norm;
-                    log::debug!("  Site {}: neuro={:.3} q={:.3}->{:.3}",
-                        site.cluster_id, neuro_norm, old_q, site.quality_score);
+                let q_rank1 = qs[0].1;
+                let tiebreak_threshold = q_rank1 * 0.85; // within 15% of rank-1
+
+                // Only rerank sites within the tiebreak zone
+                let in_zone: std::collections::HashSet<i32> = qs.iter()
+                    .filter(|&&(_, q)| q >= tiebreak_threshold)
+                    .map(|&(id, _)| id)
+                    .collect();
+
+                let n_in_zone = in_zone.len();
+
+                if n_in_zone >= 2 {
+                    // Apply neuro as tiebreaker within the zone
+                    for site in clustered_sites.iter_mut() {
+                        if in_zone.contains(&site.cluster_id) {
+                            if let Some(&raw) = neuro_scores.get(&site.cluster_id) {
+                                let neuro_norm = (raw - neuro_min) / neuro_range;
+                                let old_q = site.quality_score;
+                                // 15% neuro weight — just enough to reorder within the tie zone
+                                site.quality_score = 0.85 * old_q + 0.15 * neuro_norm * q_rank1;
+                            }
+                        }
+                    }
+
+                    // Re-sort
+                    clustered_sites.sort_by(|a, b|
+                        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
                 }
+
+                log::info!("[Neuro-rerank] Tiebreaker: {}/{} sites in zone (threshold={:.3}), reranked",
+                    n_in_zone, clustered_sites.len(), tiebreak_threshold);
             }
-
-            // Re-sort by blended score
-            clustered_sites.sort_by(|a, b|
-                b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
-
-            log::info!("[Neuro-rerank] Blended neuromorphic scores (weight={:.0}%) for {} sites",
-                neuro_weight * 100.0, neuro_scores.len());
         }
 
         // ---- Final ranking: Boltzmann thermodynamic OR quality_score ----
