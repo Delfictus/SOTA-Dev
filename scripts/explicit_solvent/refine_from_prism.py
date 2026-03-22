@@ -90,15 +90,15 @@ def find_best_snapshot(trajectory_pdbs, site_centroid):
 
 def get_pocket_lining_indices(positions, site_centroid, topology, radius=12.0):
     """Get residue indices of atoms within radius of pocket centroid."""
-    import openmm.app as app
+    import openmm.unit as u
     site_c = np.array(site_centroid) / 10.0  # Å → nm
     lining = set()
     for atom in topology.atoms():
         if atom.residue.name in ('HOH', 'WAT', 'NA', 'CL'):
             continue
-        pos = positions[atom.index].value_in_unit(app.unit.nanometers)
+        pos = positions[atom.index].value_in_unit(u.nanometers)
         dist = np.linalg.norm(np.array([pos.x, pos.y, pos.z]) - site_c)
-        if dist < radius / 10.0:  # radius in nm
+        if dist < radius / 10.0:
             lining.add(atom.residue.index)
     return sorted(lining)
 
