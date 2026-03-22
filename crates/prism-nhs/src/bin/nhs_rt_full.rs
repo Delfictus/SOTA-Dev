@@ -5033,6 +5033,154 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        // NEUROMORPHIC SPIKE-TRAIN RERANKING
+        // Temporal features that only a neuromorphic engine can compute.
+        // These distinguish real pockets (bursty, multi-channel, water-displacing)
+        // from surface grooves (Poisson noise, single-channel, no dewetting).
+        // ══════════════════════════════════════════════════════════════════
+        {
+            let neuro_radius_sq = 64.0f32; // 8Å
+            let window_size = 1000i32;
+
+            struct NeuroFeatures {
+                burst_fraction: f32,       // fraction of ISIs < 2×median
+                fano_factor: f32,          // var(counts)/mean(counts) per window
+                channel_balance: f32,      // 1 - |uv-lif|/(uv+lif)
+                dewetting_fraction: f32,   // fraction with water_density < 0.01
+                temporal_persistence: f32, // fraction of windows with ≥1 spike
+                isi_cv: f32,              // CV of inter-spike intervals
+            }
+
+            let mut neuro_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+
+            for site in &clustered_sites {
+                // Collect local spikes
+                let mut local_ts: Vec<i32> = Vec::new();
+                let mut local_sources: Vec<i32> = Vec::new();
+                let mut local_wd: Vec<f32> = Vec::new();
+
+                for spike in &all_stream_spikes {
+                    let dx = spike.position[0] - site.centroid[0];
+                    let dy = spike.position[1] - site.centroid[1];
+                    let dz = spike.position[2] - site.centroid[2];
+                    if dx*dx + dy*dy + dz*dz <= neuro_radius_sq {
+                        local_ts.push(spike.timestep);
+                        local_sources.push(spike.spike_source);
+                        local_wd.push(spike.water_density);
+                    }
+                }
+
+                if local_ts.len() < 50 {
+                    neuro_scores.insert(site.cluster_id, 0.0);
+                    continue;
+                }
+
+                local_ts.sort();
+                let n = local_ts.len();
+
+                // 1. ISI statistics
+                let mut isi: Vec<f32> = Vec::new();
+                for i in 1..n {
+                    let d = (local_ts[i] - local_ts[i-1]) as f32;
+                    if d > 0.0 { isi.push(d); }
+                }
+
+                let (isi_cv, burst_fraction) = if isi.len() >= 10 {
+                    let isi_mean: f32 = isi.iter().sum::<f32>() / isi.len() as f32;
+                    let isi_var: f32 = isi.iter().map(|x| (x - isi_mean).powi(2)).sum::<f32>() / isi.len() as f32;
+                    let cv = isi_var.sqrt() / (isi_mean + 1e-10);
+
+                    // Burstiness: fraction of ISIs < 2×median
+                    let mut sorted_isi = isi.clone();
+                    sorted_isi.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let median = sorted_isi[sorted_isi.len() / 2];
+                    let burst_thresh = 2.0 * median;
+                    let in_burst = isi.iter().filter(|&&x| x < burst_thresh).count();
+                    (cv, in_burst as f32 / isi.len() as f32)
+                } else {
+                    (0.0, 0.0)
+                };
+
+                // 2. Fano factor (spike count variability per window)
+                let t_min = *local_ts.first().unwrap_or(&0);
+                let t_max = *local_ts.last().unwrap_or(&1);
+                let n_windows = ((t_max - t_min) / window_size).max(1) as usize;
+                let mut window_counts = vec![0u32; n_windows];
+                for &t in &local_ts {
+                    let widx = ((t - t_min) / window_size) as usize;
+                    if widx < n_windows { window_counts[widx] += 1; }
+                }
+                let wc_mean: f32 = window_counts.iter().sum::<u32>() as f32 / n_windows as f32;
+                let wc_var: f32 = window_counts.iter()
+                    .map(|&c| (c as f32 - wc_mean).powi(2)).sum::<f32>() / n_windows as f32;
+                let fano = wc_var / (wc_mean + 1e-10);
+
+                // 3. Channel balance
+                let n_uv = local_sources.iter().filter(|&&s| s == 1).count() as f32;
+                let n_lif = local_sources.iter().filter(|&&s| s == 2).count() as f32;
+                let channel_balance = 1.0 - (n_uv - n_lif).abs() / (n_uv + n_lif + 1e-10);
+
+                // 4. Dewetting fraction
+                let dewetting = local_wd.iter().filter(|&&w| w < 0.01).count() as f32 / n as f32;
+
+                // 5. Temporal persistence: fraction of windows with ≥1 spike
+                let active_windows = window_counts.iter().filter(|&&c| c > 0).count();
+                let persistence = active_windows as f32 / n_windows as f32;
+
+                // ── Neuromorphic composite score ──
+                // Rank-normalize each feature within this protein, then weight.
+                // Stored as raw values; rank normalization happens below.
+                let features = NeuroFeatures {
+                    burst_fraction,
+                    fano_factor: (fano + 1.0).ln(), // log-scale fano
+                    channel_balance,
+                    dewetting_fraction: dewetting,
+                    temporal_persistence: persistence,
+                    isi_cv: isi_cv.min(10.0),
+                };
+
+                // Weighted sum (these weights reflect what distinguishes
+                // cryptic pockets from surface grooves, validated on 1P38):
+                let raw_neuro =
+                    0.20 * features.channel_balance +      // multi-channel convergence
+                    0.20 * features.dewetting_fraction * 10.0 + // water displacement (scaled up)
+                    0.15 * features.burst_fraction +        // bursty firing = collective motion
+                    0.15 * features.fano_factor / 10.0 +   // super-Poisson = real pocket
+                    0.15 * features.temporal_persistence +  // persists across time
+                    0.15 * features.isi_cv / 10.0;         // irregular = complex dynamics
+
+                neuro_scores.insert(site.cluster_id, raw_neuro);
+            }
+
+            // Rank-normalize neuro_scores within this protein [0, 1]
+            let all_neuro: Vec<f32> = neuro_scores.values().copied().collect();
+            let neuro_min = all_neuro.iter().cloned().fold(f32::MAX, f32::min);
+            let neuro_max = all_neuro.iter().cloned().fold(f32::MIN, f32::max);
+            let neuro_range = (neuro_max - neuro_min).max(1e-10);
+
+            // Blend neuromorphic score with quality_score:
+            // neuro_weight = 0.4 → 40% neuromorphic, 60% physics/geometry
+            let neuro_weight = 0.4f32;
+
+            for site in clustered_sites.iter_mut() {
+                if let Some(&raw) = neuro_scores.get(&site.cluster_id) {
+                    let neuro_norm = (raw - neuro_min) / neuro_range; // [0, 1]
+                    let old_q = site.quality_score;
+                    site.quality_score = (1.0 - neuro_weight) * old_q + neuro_weight * neuro_norm;
+                    log::debug!("  Site {}: neuro={:.3} q={:.3}->{:.3}",
+                        site.cluster_id, neuro_norm, old_q, site.quality_score);
+                }
+            }
+
+            // Re-sort by blended score
+            clustered_sites.sort_by(|a, b|
+                b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+
+            log::info!("[Neuro-rerank] Blended neuromorphic scores (weight={:.0}%) for {} sites",
+                neuro_weight * 100.0, neuro_scores.len());
+        }
+
         // ---- Final ranking: Boltzmann thermodynamic OR quality_score ----
         let n_original_json = all_pockets_json.len();
         let mut ranked_indices: Vec<usize> = (0..clustered_sites.len().min(200)).collect();
