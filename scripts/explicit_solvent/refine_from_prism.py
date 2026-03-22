@@ -382,7 +382,7 @@ def run_prism_redetect(refined_pdb, topology_json, output_dir, gt_centroid_str=N
 
     print(f"  Running: {' '.join(cmd[:6])}...")
     t0 = time.time()
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, timeout=600, encoding='utf-8', errors='replace')
     elapsed = time.time() - t0
     print(f"  PRISM4D pass 2 complete ({elapsed:.0f}s)")
 
