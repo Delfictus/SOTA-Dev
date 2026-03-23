@@ -32,8 +32,9 @@ BENCH30_DIR = ROOT / "benchmarks" / "prism4d_bench30"
 TOPO_DIR = BENCH30_DIR / "topologies"
 GT_PATH = BENCH30_DIR / "ground_truth" / "ligand_centroids.json"
 MANIFEST_PATH = BENCH30_DIR / "benchmark_manifest.json"
-RESULTS_DIR = ROOT / "benchmarks" / "bench10_results"
-RUN_DIR = Path("/tmp/prism_bench10")
+RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+RESULTS_DIR = ROOT / "benchmarks" / "bench10_results" / "runs" / RUN_ID
+SCRATCH_DIR = Path("/tmp/prism_bench10_scratch")
 
 NHS_BINARY = ROOT / "target" / "release" / "nhs_rt_full"
 VALIDATION_SCRIPT = ROOT / "scripts" / "kcc_validation_v2.py"
@@ -312,17 +313,37 @@ def main():
     log("=" * 70)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
 
     if not NHS_BINARY.exists():
         log(f"NHS binary not found: {NHS_BINARY}", "FATAL")
         log("Run: cargo build --release -p prism-nhs --features gpu --bin nhs_rt_full")
         sys.exit(1)
 
-    # Write target list
+    # Write target list and run config
     targets_path = RESULTS_DIR / "bench10_targets.json"
     with open(targets_path, "w") as f:
         json.dump(BENCH10_TARGETS, f, indent=2)
+
+    # Reproducibility metadata
+    git_hash = "unknown"
+    try:
+        import subprocess as _sp
+        git_hash = _sp.check_output(["git", "rev-parse", "HEAD"], cwd=str(ROOT), text=True).strip()[:12]
+    except Exception:
+        pass
+
+    config = {
+        "run_id": RUN_ID,
+        "git_commit": git_hash,
+        "engine": str(NHS_BINARY),
+        "parameters": {k.lstrip("-"): True for k in ENGINE_ARGS if k.startswith("--")},
+        "targets": [t["pdb"] for t in BENCH10_TARGETS],
+        "started": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(RESULTS_DIR / "config.json", "w") as f:
+        json.dump(config, f, indent=2)
+    log(f"Run ID: {RUN_ID} (git: {git_hash})")
 
     # Load ground truth
     gt, manifest = load_ground_truth()
@@ -376,7 +397,7 @@ def main():
 
             # Run engine
             log("[ENGINE] Running NHS...")
-            run_output = RUN_DIR / name
+            run_output = SCRATCH_DIR / name
             run_output.mkdir(parents=True, exist_ok=True)
             run_engine(target, topo_path, run_output)
 
