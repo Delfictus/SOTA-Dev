@@ -99,7 +99,7 @@ def compute_site_validation(site, all_residues, all_signal_strengths):
                 cos_vals.append(dot(vectors[i], vectors[j]))
         mean_cos = sum(cos_vals) / len(cos_vals)
 
-    vector_variance = max(0.0, min(1.0, 1.0 - mean_cos))
+    vector_variance = max(0.0, 1.0 - mean_cos)  # >1.0 = opposing vectors
 
     # === Signal metrics ===
     n_causal = sum(1 for r in topk if r.get("active_causal_steps", 0) > 0)
@@ -190,8 +190,12 @@ def refine_distributed_verdicts(val_sites):
             continue
         sig_ok = s["signal"]["signal_strength"] >= sig_median
         dw_ok = s["signal"]["distance_weighted_signal"] >= dw_median
-        if sig_ok and dw_ok:
+        vec_var = s["vector"]["vector_variance"]
+        if sig_ok and dw_ok and vec_var < 1.2:
             s["verdict"] = "PASS"
+        elif sig_ok and dw_ok:
+            # Strong signal but opposing vectors — flag as mechanically suspicious
+            s["verdict"] = "WARN"
         elif sig_ok or dw_ok:
             s["verdict"] = "WARN"
         else:
