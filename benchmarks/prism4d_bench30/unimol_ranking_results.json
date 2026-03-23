@@ -1,0 +1,430 @@
+{
+  "sr1": 7,
+  "n_targets": 60,
+  "sr1_pct": 11.7,
+  "dcc_threshold": 8.0,
+  "n_pockets": 1791,
+  "n_hits": 91,
+  "results": [
+    {
+      "target": "1ABF",
+      "top_site": 4000,
+      "top_dcc": 21.26,
+      "top_score": 0.7769,
+      "hit": false
+    },
+    {
+      "target": "1AQ1_APO",
+      "top_site": 506,
+      "top_dcc": 6.54,
+      "top_score": 0.261,
+      "hit": true
+    },
+    {
+      "target": "1B9V_APO",
+      "top_site": 1,
+      "top_dcc": 19.15,
+      "top_score": 0.9247,
+      "hit": false
+    },
+    {
+      "target": "1BL6_APO",
+      "top_site": 5,
+      "top_dcc": 11.15,
+      "top_score": 0.6501,
+      "hit": false
+    },
+    {
+      "target": "1BMQ_APO",
+      "top_site": 4002,
+      "top_dcc": 12.29,
+      "top_score": 0.0004,
+      "hit": false
+    },
+    {
+      "target": "1BOZ_APO",
+      "top_site": 4007,
+      "top_dcc": 7.07,
+      "top_score": 0.7759,
+      "hit": true
+    },
+    {
+      "target": "1C5Y",
+      "top_site": 1,
+      "top_dcc": 23.23,
+      "top_score": 0.9576,
+      "hit": false
+    },
+    {
+      "target": "1CBS_APO",
+      "top_site": 509,
+      "top_dcc": 7.68,
+      "top_score": 0.887,
+      "hit": true
+    },
+    {
+      "target": "1COM_APO",
+      "top_site": 4003,
+      "top_dcc": 12.82,
+      "top_score": 0.7827,
+      "hit": false
+    },
+    {
+      "target": "1CVU_APO",
+      "top_site": 3551,
+      "top_dcc": 33.21,
+      "top_score": 0.7378,
+      "hit": false
+    },
+    {
+      "target": "1D3H_APO",
+      "top_site": 3,
+      "top_dcc": 15.98,
+      "top_score": 0.3686,
+      "hit": false
+    },
+    {
+      "target": "1DWD",
+      "top_site": 4010,
+      "top_dcc": 26.05,
+      "top_score": 0.9556,
+      "hit": false
+    },
+    {
+      "target": "1EJN_APO",
+      "top_site": 3520,
+      "top_dcc": 21.17,
+      "top_score": 0.4876,
+      "hit": false
+    },
+    {
+      "target": "1F0R_APO",
+      "top_site": 512,
+      "top_dcc": 8.47,
+      "top_score": 0.9719,
+      "hit": false
+    },
+    {
+      "target": "1F0S_APO",
+      "top_site": 1514,
+      "top_dcc": 30.36,
+      "top_score": 0.7975,
+      "hit": false
+    },
+    {
+      "target": "1FKG",
+      "top_site": 504,
+      "top_dcc": 12.29,
+      "top_score": 0.9495,
+      "hit": false
+    },
+    {
+      "target": "1G2K_APO",
+      "top_site": 14,
+      "top_dcc": 10.76,
+      "top_score": 0.8444,
+      "hit": false
+    },
+    {
+      "target": "1G9V_APO",
+      "top_site": 4001,
+      "top_dcc": 21.67,
+      "top_score": 0.2691,
+      "hit": false
+    },
+    {
+      "target": "1GKC",
+      "top_site": 8,
+      "top_dcc": 15.59,
+      "top_score": 0.1652,
+      "hit": false
+    },
+    {
+      "target": "1GPK_APO",
+      "top_site": 523,
+      "top_dcc": 7.69,
+      "top_score": 0.9356,
+      "hit": true
+    },
+    {
+      "target": "1H1S_APO",
+      "top_site": 1,
+      "top_dcc": 19.14,
+      "top_score": 0.909,
+      "hit": false
+    },
+    {
+      "target": "1HCL",
+      "top_site": 9,
+      "top_dcc": 16.05,
+      "top_score": 0.3556,
+      "hit": false
+    },
+    {
+      "target": "1HNN_APO",
+      "top_site": 4007,
+      "top_dcc": 10.73,
+      "top_score": 0.9229,
+      "hit": false
+    },
+    {
+      "target": "1HP0_APO",
+      "top_site": 4005,
+      "top_dcc": 32.26,
+      "top_score": 0.5623,
+      "hit": false
+    },
+    {
+      "target": "1HPV",
+      "top_site": 4008,
+      "top_dcc": 20.28,
+      "top_score": 0.7974,
+      "hit": false
+    },
+    {
+      "target": "1HQ2_APO",
+      "top_site": 509,
+      "top_dcc": 8.26,
+      "top_score": 0.9058,
+      "hit": false
+    },
+    {
+      "target": "1HVY_APO",
+      "top_site": 4001,
+      "top_dcc": 42.05,
+      "top_score": 0.8535,
+      "hit": false
+    },
+    {
+      "target": "1IG3_APO",
+      "top_site": 4001,
+      "top_dcc": 17.43,
+      "top_score": 0.8876,
+      "hit": false
+    },
+    {
+      "target": "1J3J_APO",
+      "top_site": 20,
+      "top_dcc": 66.76,
+      "top_score": 0.4294,
+      "hit": false
+    },
+    {
+      "target": "1JLA_APO",
+      "top_site": 0,
+      "top_dcc": 60.8,
+      "top_score": 0.9949,
+      "hit": false
+    },
+    {
+      "target": "1JWP",
+      "top_site": 4009,
+      "top_dcc": 27.25,
+      "top_score": 0.6282,
+      "hit": false
+    },
+    {
+      "target": "1K1I_APO",
+      "top_site": 4004,
+      "top_dcc": 32.5,
+      "top_score": 0.8922,
+      "hit": false
+    },
+    {
+      "target": "1K3F",
+      "top_site": 2003,
+      "top_dcc": 6.1,
+      "top_score": 1.0,
+      "hit": true
+    },
+    {
+      "target": "1KE5_APO",
+      "top_site": 4002,
+      "top_dcc": 16.49,
+      "top_score": 0.4764,
+      "hit": false
+    },
+    {
+      "target": "1KV1",
+      "top_site": 11,
+      "top_dcc": 17.01,
+      "top_score": 0.2602,
+      "hit": false
+    },
+    {
+      "target": "1L2S_APO",
+      "top_site": 9,
+      "top_dcc": 27.44,
+      "top_score": 0.6723,
+      "hit": false
+    },
+    {
+      "target": "1LPZ_APO",
+      "top_site": 3014,
+      "top_dcc": 21.11,
+      "top_score": 0.7393,
+      "hit": false
+    },
+    {
+      "target": "1M47",
+      "top_site": 537,
+      "top_dcc": 30.7,
+      "top_score": 0.149,
+      "hit": false
+    },
+    {
+      "target": "1MQ6_APO",
+      "top_site": 1509,
+      "top_dcc": 4.77,
+      "top_score": 0.6276,
+      "hit": true
+    },
+    {
+      "target": "1MY0",
+      "top_site": 3568,
+      "top_dcc": 24.91,
+      "top_score": 0.4472,
+      "hit": false
+    },
+    {
+      "target": "1N46_APO",
+      "top_site": 1534,
+      "top_dcc": 29.84,
+      "top_score": 0.3858,
+      "hit": false
+    },
+    {
+      "target": "1NNA",
+      "top_site": 8,
+      "top_dcc": 20.63,
+      "top_score": 0.2834,
+      "hit": false
+    },
+    {
+      "target": "1OF1_APO",
+      "top_site": 3522,
+      "top_dcc": 17.89,
+      "top_score": 0.3027,
+      "hit": false
+    },
+    {
+      "target": "1P38",
+      "top_site": 3,
+      "top_dcc": 27.5,
+      "top_score": 0.8262,
+      "hit": false
+    },
+    {
+      "target": "1PKL",
+      "top_site": 0,
+      "top_dcc": 22.69,
+      "top_score": 0.3292,
+      "hit": false
+    },
+    {
+      "target": "1RDQ",
+      "top_site": 3009,
+      "top_dcc": 30.97,
+      "top_score": 0.9905,
+      "hit": false
+    },
+    {
+      "target": "1TPA",
+      "top_site": 4010,
+      "top_dcc": 19.95,
+      "top_score": 0.7031,
+      "hit": false
+    },
+    {
+      "target": "1TTH",
+      "top_site": 1519,
+      "top_dcc": 21.28,
+      "top_score": 0.7882,
+      "hit": false
+    },
+    {
+      "target": "1YES",
+      "top_site": 6,
+      "top_dcc": 11.01,
+      "top_score": 0.6414,
+      "hit": false
+    },
+    {
+      "target": "1YVF",
+      "top_site": 0,
+      "top_dcc": 40.45,
+      "top_score": 0.8581,
+      "hit": false
+    },
+    {
+      "target": "2CBA",
+      "top_site": 4000,
+      "top_dcc": 22.33,
+      "top_score": 0.9023,
+      "hit": false
+    },
+    {
+      "target": "2HNP",
+      "top_site": 14,
+      "top_dcc": 11.18,
+      "top_score": 0.9766,
+      "hit": false
+    },
+    {
+      "target": "2NPQ",
+      "top_site": 9,
+      "top_dcc": 13.06,
+      "top_score": 0.4568,
+      "hit": false
+    },
+    {
+      "target": "2OSS",
+      "top_site": 8,
+      "top_dcc": 10.49,
+      "top_score": 0.9439,
+      "hit": false
+    },
+    {
+      "target": "3ERT",
+      "top_site": 4003,
+      "top_dcc": 6.83,
+      "top_score": 0.8573,
+      "hit": true
+    },
+    {
+      "target": "3L3N",
+      "top_site": 4002,
+      "top_dcc": 24.45,
+      "top_score": 0.8426,
+      "hit": false
+    },
+    {
+      "target": "3TMN",
+      "top_site": 7,
+      "top_dcc": 21.46,
+      "top_score": 0.8074,
+      "hit": false
+    },
+    {
+      "target": "4DFR",
+      "top_site": 3517,
+      "top_dcc": 20.01,
+      "top_score": 0.7983,
+      "hit": false
+    },
+    {
+      "target": "4EY4",
+      "top_site": 4,
+      "top_dcc": 33.95,
+      "top_score": 0.9456,
+      "hit": false
+    },
+    {
+      "target": "4HT0",
+      "top_site": 18,
+      "top_dcc": 26.88,
+      "top_score": 0.9613,
+      "hit": false
+    }
+  ]
+}

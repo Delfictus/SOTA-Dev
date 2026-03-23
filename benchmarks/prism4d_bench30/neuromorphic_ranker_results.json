@@ -1,0 +1,358 @@
+{
+  "methods": {
+    "M11: Plackett-Luce (full, ceiling)": {
+      "SR@1": 0.15254237288135594,
+      "SR@3": 0.22033898305084745,
+      "SR@5": 0.288135593220339,
+      "SR@10": 0.3728813559322034,
+      "mean_top1": 17.060917843147177,
+      "n": 59
+    },
+    "M9: Best Pair (engine_geo+log_spike_count)": {
+      "SR@1": 0.13559322033898305,
+      "SR@3": 0.1864406779661017,
+      "SR@5": 0.22033898305084745,
+      "SR@10": 0.3050847457627119,
+      "mean_top1": 18.45759632337716,
+      "n": 59
+    },
+    "M10: Best Triple (engine_geo+log_spike_count+tide_n_residues)": {
+      "SR@1": 0.13559322033898305,
+      "SR@3": 0.1864406779661017,
+      "SR@5": 0.23728813559322035,
+      "SR@10": 0.3050847457627119,
+      "mean_top1": 19.049105466065548,
+      "n": 59
+    },
+    "M7: Rank Fusion (existing only)": {
+      "SR@1": 0.0847457627118644,
+      "SR@3": 0.1694915254237288,
+      "SR@5": 0.2033898305084746,
+      "SR@10": 0.288135593220339,
+      "mean_top1": 21.098257209338282,
+      "n": 59
+    },
+    "M6: Rank Fusion (proven, SR@1-weighted)": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.1864406779661017,
+      "SR@5": 0.2542372881355932,
+      "SR@10": 0.3728813559322034,
+      "mean_top1": 19.644114513030253,
+      "n": 59
+    },
+    "M2: Best single (engine_phys)": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.15254237288135594,
+      "SR@5": 0.1864406779661017,
+      "SR@10": 0.3389830508474576,
+      "mean_top1": 19.075430237737837,
+      "n": 59,
+      "dir": "-"
+    },
+    "M4: Best thermo (tide_coupling_score)": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.15254237288135594,
+      "SR@5": 0.15254237288135594,
+      "SR@10": 0.288135593220339,
+      "mean_top1": 20.50139062093389,
+      "n": 59,
+      "dir": "-"
+    },
+    "M1: quality_score (v7)": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.11864406779661017,
+      "SR@5": 0.1864406779661017,
+      "SR@10": 0.3389830508474576,
+      "mean_top1": 17.258287250603455,
+      "n": 59
+    },
+    "M5: Rank Fusion (proven, equal)": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.11864406779661017,
+      "SR@5": 0.2033898305084746,
+      "SR@10": 0.3559322033898305,
+      "mean_top1": 19.834863764819,
+      "n": 59
+    },
+    "M3: Best temporal (vol_persistence)": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.0847457627118644,
+      "SR@5": 0.1016949152542373,
+      "SR@10": 0.11864406779661017,
+      "mean_top1": 18.890034052129067,
+      "n": 59,
+      "dir": "+"
+    },
+    "M8: Rank Fusion (temporal+therm only)": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.0847457627118644,
+      "SR@5": 0.15254237288135594,
+      "SR@10": 0.3050847457627119,
+      "mean_top1": 21.98942897308622,
+      "n": 59
+    }
+  },
+  "winner": "M11: Plackett-Luce (full, ceiling)",
+  "proven_features": [
+    "engine_phys",
+    "tide_coupling_score",
+    "is_dynamic_therm",
+    "burial_x_lining",
+    "therm_is_soc",
+    "kinetic_accessibility",
+    "engine_geo",
+    "log_volume",
+    "log_spike_count",
+    "tide_n_residues",
+    "is_cryptic_therm",
+    "quality_score",
+    "therm_is_hysteretic",
+    "is_cryptic_cls",
+    "engine_vcs",
+    "vol_persistence",
+    "aromatic_score",
+    "tide_mean_kl",
+    "vol_cv",
+    "vol_decay_rate",
+    "vol_fano",
+    "vol_late_persistence",
+    "vol_max_streak",
+    "vol_n_peaks",
+    "vol_onset_frac",
+    "vol_stability",
+    "vol_trend_slope",
+    "sphericity",
+    "ray_escape_ratio",
+    "tide_te_entropy",
+    "source_diversity",
+    "tide_mean_te",
+    "tide_sum_te",
+    "therm_avalanche_rate",
+    "vol_mean_nonzero",
+    "log_lining",
+    "n_lining_residues",
+    "tide_causal_frac",
+    "vol_n_frames",
+    "therm_heating_frac",
+    "therm_phase_asymmetry",
+    "frustrated_solvent_score",
+    "hysteresis_asymmetry",
+    "relative_asymmetry",
+    "therm_rate_ratio",
+    "vol_early_vs_late",
+    "burial_score",
+    "mean_burial",
+    "catalytic_density",
+    "tide_max_te",
+    "uv_enrichment_score",
+    "wd_coherence",
+    "tide_causal_spikes_total",
+    "tide_max_fisher",
+    "therm_total_spikes",
+    "engine_chem",
+    "ccns_tau",
+    "therm_tau",
+    "therm_n_avalanches",
+    "breathing_score",
+    "asymmetry_offset",
+    "therm_tau_optimal"
+  ],
+  "best_pair": [
+    "engine_geo",
+    "log_spike_count"
+  ],
+  "best_triple": [
+    "engine_geo",
+    "log_spike_count",
+    "tide_n_residues"
+  ],
+  "single_feature_ranking": {
+    "engine_phys": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.15254237288135594,
+      "dir": "-"
+    },
+    "tide_coupling_score": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.15254237288135594,
+      "dir": "-"
+    },
+    "is_dynamic_therm": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.13559322033898305,
+      "dir": "-"
+    },
+    "burial_x_lining": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.13559322033898305,
+      "dir": "+"
+    },
+    "therm_is_soc": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.11864406779661017,
+      "dir": "-"
+    },
+    "kinetic_accessibility": {
+      "SR@1": 0.06779661016949153,
+      "SR@3": 0.1016949152542373,
+      "dir": "+"
+    },
+    "engine_geo": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.1864406779661017,
+      "dir": "+"
+    },
+    "log_volume": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.13559322033898305,
+      "dir": "+"
+    },
+    "log_spike_count": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.13559322033898305,
+      "dir": "+"
+    },
+    "tide_n_residues": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.11864406779661017,
+      "dir": "+"
+    },
+    "is_cryptic_therm": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.11864406779661017,
+      "dir": "-"
+    },
+    "quality_score": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.11864406779661017,
+      "dir": "+"
+    },
+    "therm_is_hysteretic": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.11864406779661017,
+      "dir": "+"
+    },
+    "is_cryptic_cls": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.1016949152542373,
+      "dir": "-"
+    },
+    "engine_vcs": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.1016949152542373,
+      "dir": "-"
+    },
+    "vol_persistence": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.0847457627118644,
+      "dir": "+"
+    },
+    "aromatic_score": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.0847457627118644,
+      "dir": "+"
+    },
+    "tide_mean_kl": {
+      "SR@1": 0.05084745762711865,
+      "SR@3": 0.0847457627118644,
+      "dir": "-"
+    },
+    "vol_cv": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "-"
+    },
+    "vol_decay_rate": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "-"
+    },
+    "vol_fano": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "-"
+    },
+    "vol_late_persistence": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "-"
+    },
+    "vol_max_streak": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "-"
+    },
+    "vol_n_peaks": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "-"
+    },
+    "vol_onset_frac": {
+      "SR@1": 0.03389830508474576,
+      "SR@3": 0.1864406779661017,
+      "dir": "+"
+    }
+  },
+  "temporal_correlations": {
+    "tide_sum_te": {
+      "r": 0.11028933679764716,
+      "p": 1.9672214837279054e-07
+    },
+    "tide_mean_te": {
+      "r": 0.10898969048904876,
+      "p": 2.7366792341520536e-07
+    },
+    "therm_avalanche_rate": {
+      "r": -0.07956762422722642,
+      "p": 0.00017843727901243017
+    },
+    "therm_total_spikes": {
+      "r": 0.06835869799508162,
+      "p": 0.0012888924321626252
+    },
+    "tide_causal_spikes_total": {
+      "r": 0.06823885320975327,
+      "p": 0.0013145426823203369
+    },
+    "tide_coupling_score": {
+      "r": -0.06423585363979056,
+      "p": 0.0024952545295868064
+    },
+    "tide_te_entropy": {
+      "r": 0.06070513650613593,
+      "p": 0.004271394710829942
+    },
+    "tide_max_fisher": {
+      "r": 0.059906994646425626,
+      "p": 0.004806043739435714
+    },
+    "therm_phase_asymmetry": {
+      "r": -0.05398169025659268,
+      "p": 0.011071716823161068
+    },
+    "tide_max_te": {
+      "r": 0.051553817785866866,
+      "p": 0.015265703843228605
+    },
+    "therm_tau": {
+      "r": -0.05152114808556129,
+      "p": 0.015330578798590665
+    },
+    "therm_heating_frac": {
+      "r": -0.04670071899518072,
+      "p": 0.027993717117290404
+    },
+    "tide_mean_kl": {
+      "r": -0.04555446978672871,
+      "p": 0.03208227450818666
+    },
+    "vol_onset_frac": {
+      "r": 0.03830443200820928,
+      "p": 0.07154728338677721
+    },
+    "therm_is_hysteretic": {
+      "r": -0.03364438798183454,
+      "p": 0.11350608912110818
+    }
+  }
+}

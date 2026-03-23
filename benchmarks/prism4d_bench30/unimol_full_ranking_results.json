@@ -1,0 +1,15 @@
+{
+  "sr1_4a": 6,
+  "sr1_8a": 13,
+  "n_targets": 60,
+  "sr1_4a_pct": 10.0,
+  "sr1_8a_pct": 21.7,
+  "n_pockets": 1791,
+  "feature_dim": 551,
+  "results": [
+    {
+      "target": "1ABF",
+      "top_site": 0,
+      "top_dcc": 19.43,
+      "top_score": 0.5323,
+      "hit_4a": 
