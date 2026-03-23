@@ -5824,15 +5824,93 @@ fn run_multi_stream_pipeline(
             (gated, g, t, c, k, l_prime, raw_localization[i])
         }).collect();
 
-        // Re-rank by rank_score (descending)
-        let mut rank_order: Vec<usize> = (0..rank_scores.len()).collect();
-        rank_order.sort_by(|&a, &b| rank_scores[b].0.partial_cmp(&rank_scores[a].0).unwrap_or(std::cmp::Ordering::Equal));
+        // CA positions for BLP/DP computation
+        let ca_pos_blp: Vec<[f32; 3]> = topology.ca_indices.iter().map(|&ci| {
+            if ci * 3 + 2 < topology.positions.len() {
+                [topology.positions[ci*3], topology.positions[ci*3+1], topology.positions[ci*3+2]]
+            } else { [0.0; 3] }
+        }).collect();
 
-        log::info!("G×T×C×K×L ranking applied. Top-3:");
-        for (rank, &idx) in rank_order.iter().take(3).enumerate() {
-            let (score, g, t, c, k, l, _) = rank_scores[idx];
-            log::info!("  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3} L={:.3}",
-                rank + 1, reordered_sites[idx].cluster_id, score, g, t, c, k, l);
+        // ── POST-GTCKL RANKING CORRECTION LAYER ──
+        // Adds BLP (Binding Locality Prior) and DP (Diffuseness Penalty)
+        // with regime-aware application and monotonicity guard
+
+        // Collect raw BLP inputs for normalization
+        let raw_ray_escape: Vec<f32> = reordered_sites.iter().map(|s| {
+            // ray_escape_ratio is computed during enclosure analysis
+            // Lower escape = more enclosed pocket
+            let escape = 1.0 - s.druggability.overall.clamp(0.0, 1.0); // proxy: inverse druggability
+            escape
+        }).collect();
+        let raw_mean_burial_vals: Vec<f32> = reordered_sites.iter().enumerate().map(|(i, _)| {
+            let sid = reordered_sites[i].cluster_id;
+            physics_signals.get(&sid).map(|p| p.2).unwrap_or(0.0) // mean_burial from physics_signals
+        }).collect();
+
+        let escape_n = percentile_normalize(&raw_ray_escape);
+        let depth_n = percentile_normalize(&raw_mean_burial_vals);
+
+        // Compute per-site mean_radius of top-K residues (for DP and regime)
+        let site_mean_radii: Vec<f32> = kcc_site_metrics.iter().map(|kcc| {
+            let cands = kcc.get("candidate_residue_ids").and_then(|v| v.as_array());
+            if let Some(cids) = cands {
+                let positions: Vec<[f32; 3]> = cids.iter().filter_map(|rid| {
+                    let r = rid.as_i64()? as usize;
+                    ca_pos_blp.get(r).copied()
+                }).collect();
+                if positions.len() < 2 { return 0.0; }
+                let cx = positions.iter().map(|p| p[0]).sum::<f32>() / positions.len() as f32;
+                let cy = positions.iter().map(|p| p[1]).sum::<f32>() / positions.len() as f32;
+                let cz = positions.iter().map(|p| p[2]).sum::<f32>() / positions.len() as f32;
+                positions.iter().map(|p| ((p[0]-cx).powi(2) + (p[1]-cy).powi(2) + (p[2]-cz).powi(2)).sqrt()).sum::<f32>() / positions.len() as f32
+            } else { 0.0 }
+        }).collect();
+
+        // Compute final scores with correction layer
+        let final_scores: Vec<(f32, f32, f32, f32, &str)> = (0..reordered_sites.len()).map(|i| {
+            let gtckl = rank_scores[i].0;
+
+            // BLP = 0.25*vol + 0.25*enclosure + 0.20*depth + 0.15*(1-sasa) + 0.15*compact
+            let enclosure_ratio = 1.0 - escape_n[i]; // lower escape = higher enclosure
+            let sasa_proxy = 1.0 - burial_n[i]; // low burial = high SASA
+            let compact = (1.0 - site_mean_radii[i] / 20.0).clamp(0.0, 1.0);
+            let blp = 0.25 * vol_n[i] + 0.25 * enclosure_ratio + 0.20 * depth_n[i]
+                    + 0.15 * (1.0 - sasa_proxy) + 0.15 * compact;
+
+            // DP = clamp((mean_radius - 6) / 14, 0, 1)
+            let dp = ((site_mean_radii[i] - 6.0) / 14.0).clamp(0.0, 1.0);
+
+            // Regime
+            let regime = if site_mean_radii[i] < 6.0 { "local" } else { "distributed" };
+
+            // Final score
+            let final_s = if regime == "local" {
+                gtckl * (1.0 + 0.20 * blp)
+            } else {
+                gtckl * (1.0 + 0.15 * blp) * (1.0 - 0.30 * dp)
+            };
+
+            (final_s, gtckl, blp, dp, regime)
+        }).collect();
+
+        // Sort with monotonicity guard
+        let mut rank_order: Vec<usize> = (0..final_scores.len()).collect();
+        rank_order.sort_by(|&a, &b| {
+            let (fs_a, gtckl_a, _, _, _) = final_scores[a];
+            let (fs_b, gtckl_b, _, _, _) = final_scores[b];
+            // Monotonicity guard: if GTCKL gap > 0.05, preserve GTCKL order
+            if (gtckl_a - gtckl_b).abs() > 0.05 {
+                gtckl_b.partial_cmp(&gtckl_a).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                fs_b.partial_cmp(&fs_a).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+
+        log::info!("G×T×C×K×L + BLP/DP correction applied. Top-5:");
+        for (rank, &idx) in rank_order.iter().take(5).enumerate() {
+            let (fs, gtckl, blp, dp, regime) = final_scores[idx];
+            log::info!("  #{}: site {} final={:.6} gtckl={:.4} blp={:.3} dp={:.3} [{}]",
+                rank + 1, reordered_sites[idx].cluster_id, fs, gtckl, blp, dp, regime);
         }
 
         // Build per-site JSON, merging PRISM-Therm therm_class when available
@@ -5868,13 +5946,22 @@ fn run_multi_stream_pipeline(
                     .unwrap_or(serde_json::json!(null)),
                 "kcc": kcc_site_metrics.get(site_rank).cloned()
                     .unwrap_or(serde_json::json!(null)),
-                "rank_score": rank_scores[site_rank].0,
+                "rank_score": final_scores[site_rank].0,
+                "gtckl_score": rank_scores[site_rank].0,
                 "rank_G": rank_scores[site_rank].1,
                 "rank_T": rank_scores[site_rank].2,
                 "rank_C": rank_scores[site_rank].3,
                 "rank_K": rank_scores[site_rank].4,
                 "rank_L": rank_scores[site_rank].5,
                 "localization_score_raw": rank_scores[site_rank].6,
+                "ranking_terms": serde_json::json!({
+                    "gtckl": final_scores[site_rank].1,
+                    "blp": final_scores[site_rank].2,
+                    "dp": final_scores[site_rank].3,
+                    "regime": final_scores[site_rank].4,
+                    "l_eff": rank_scores[site_rank].5,
+                    "final_score": final_scores[site_rank].0,
+                }),
                 "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
             })
         }).collect();
