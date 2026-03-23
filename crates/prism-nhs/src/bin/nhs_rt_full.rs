@@ -5811,8 +5811,8 @@ fn run_multi_stream_pipeline(
 
             let k = residue_valid * (0.85 + 0.15 * residue_support) * k_persist.max(k_trans);
 
-            // Localization factor L' = 0.85 + 0.15 * L_norm
-            let l_prime = 0.85 + 0.15 * loc_n[i];
+            // Localization factor L' = 0.80 + 0.20 * L_norm
+            let l_prime = 0.80 + 0.20 * loc_n[i];
 
             // Hard gates
             let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
