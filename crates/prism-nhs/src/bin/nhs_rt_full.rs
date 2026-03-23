@@ -5419,7 +5419,9 @@ fn run_multi_stream_pipeline(
         let kcc_site_metrics: Vec<serde_json::Value> = reordered_sites.iter().map(|site| {
             use std::collections::HashMap;
 
-            // Step 1: count residues across site voxels from signal preservation grid
+            // Step 1: count residues by CAUSAL contribution within this site
+            // w_i = # causally active voxels in site driven by residue i
+            let mut residue_causal_counts: HashMap<i32, u32> = HashMap::new();
             let mut residue_voxel_counts: HashMap<i32, u32> = HashMap::new();
             if let Some(ref sig) = merged_signal {
                 for &spike_idx in &site.spike_indices {
@@ -5429,6 +5431,11 @@ fn run_multi_stream_pipeline(
                             let res_id = sig.primary_residue_id[vid];
                             if res_id >= 0 {
                                 *residue_voxel_counts.entry(res_id).or_insert(0) += 1;
+                                // Causal weight: sum actual coupling magnitude (not binary)
+                                let coupling = sig.coupled_spike_grid[vid];
+                                if coupling > 0 {
+                                    *residue_causal_counts.entry(res_id).or_insert(0) += coupling as u32;
+                                }
                             }
                         }
                     }
@@ -5514,29 +5521,65 @@ fn run_multi_stream_pipeline(
             let best_res = candidate_ids[best_idx];
             let br = best_res as usize;
 
+            // Compute causal weights for weighted KCC aggregation
+            let total_causal: u32 = candidate_ids.iter()
+                .map(|&rid| residue_causal_counts.get(&rid).copied().unwrap_or(0))
+                .sum();
+            let causal_weights: Vec<f32> = candidate_ids.iter()
+                .map(|&rid| {
+                    if total_causal > 0 {
+                        residue_causal_counts.get(&rid).copied().unwrap_or(0) as f32 / total_causal as f32
+                    } else {
+                        // Fallback to voxel support if no causal data
+                        candidate_support[candidate_ids.iter().position(|&r| r == rid).unwrap_or(0)]
+                    }
+                }).collect();
+
+            // Site-level weighted KCC: K(site) = Σ w_i * K(residue_i)
+            let mut site_direction = 0.0f32;
+            let mut site_motion_eff = 0.0f32;
+            let mut site_burst = 0.0f32;
+            let mut site_lag_corr = 0.0f32;
+            let mut site_local_cov = 0.0f32;
+            let mut site_causal_lag = 0.0f32;
+            for (ci, &rid) in candidate_ids.iter().enumerate() {
+                let w = causal_weights[ci];
+                site_direction += w * candidate_direction[ci];
+                site_motion_eff += w * kcc_ref.motion_efficiency.get(rid as usize).copied().unwrap_or(0.0);
+                site_burst += w * candidate_burst[ci];
+                site_lag_corr += w * kcc_ref.lag_corr_peak.get(rid as usize).copied().unwrap_or(0.0);
+                site_local_cov += w * candidate_local_cov[ci];
+                site_causal_lag += w * candidate_lag[ci];
+            }
+
             serde_json::json!({
-                // Best candidate (populates existing site-level KCC fields)
+                // Site-level weighted KCC (for G×T×C×K formula)
                 "driver_residue_id": best_res,
+                "site_direction_score": site_direction,
+                "site_motion_efficiency": site_motion_eff,
+                "site_burst_motion": site_burst,
+                "site_lag_corr_peak": site_lag_corr,
+                "site_local_cov": site_local_cov,
+                "site_causal_lag": site_causal_lag,
+                // Best candidate (preserved for debugging)
                 "temporal_corr": kcc_ref.temporal_corr.get(br).copied().unwrap_or(0.0),
                 "direction_score": kcc_ref.direction_score.get(br).copied().unwrap_or(0.0),
                 "motion_efficiency": kcc_ref.motion_efficiency.get(br).copied().unwrap_or(0.0),
                 "burst_motion": kcc_ref.burst_motion.get(br).copied().unwrap_or(0.0),
-                "phase_shift": kcc_ref.phase_shift.get(br).copied().unwrap_or(0.0),
-                "causal_lag": kcc_ref.causal_lag.get(br).copied().unwrap_or(0.0),
                 "lag_corr_peak": kcc_ref.lag_corr_peak.get(br).copied().unwrap_or(0.0),
                 "local_cov": kcc_ref.local_cov.get(br).copied().unwrap_or(0.0),
                 "active_causal_steps": kcc_ref.active_causal.get(br).copied().unwrap_or(0),
                 "total_steps": kcc_ref.residue_count.get(br).copied().unwrap_or(0),
                 "kcc_confidence": best_confidence,
                 "best_kcc_candidate_index": best_idx,
-                // All candidates (for debugging + PyMOL)
+                // Causal weights used for site-level aggregation
+                "candidate_causal_weights": causal_weights,
+                // All candidates
                 "candidate_residue_ids": candidate_ids,
                 "candidate_residue_support": candidate_support,
                 "candidate_kcc_confidence": candidate_confidence,
-                "candidate_kcc_temporal_corr": candidate_temporal,
                 "candidate_kcc_direction_score": candidate_direction,
                 "candidate_kcc_burst_motion": candidate_burst,
-                "candidate_kcc_phase_shift": candidate_phase,
                 "candidate_kcc_causal_lag": candidate_lag,
                 "candidate_kcc_local_cov": candidate_local_cov,
             })
@@ -5616,16 +5659,16 @@ fn run_multi_stream_pipeline(
             let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
             let c = c_raw.max(0.0).sqrt();
 
-            // K(s) - two regime formulation using best KCC candidate
+            // K(s) - two regime formulation using SITE-LEVEL weighted KCC
             let kcc = &kcc_site_metrics[i];
-            let direction_n = kcc.get("direction_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let motion_eff_n = kcc.get("motion_efficiency").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let burst_n = (kcc.get("burst_motion").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32).clamp(0.0, 5.0) / 5.0;
-            let lag_corr_n = kcc.get("lag_corr_peak").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let local_cov_n = kcc.get("local_cov").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let abs_lag_n = (kcc.get("causal_lag").and_then(|v| v.as_f64()).unwrap_or(0.0).abs() as f32 / 50.0).clamp(0.0, 1.0);
+            let direction_n = kcc.get("site_direction_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let motion_eff_n = kcc.get("site_motion_efficiency").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let burst_n = (kcc.get("site_burst_motion").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32).clamp(0.0, 5.0) / 5.0;
+            let lag_corr_n = kcc.get("site_lag_corr_peak").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let local_cov_n = kcc.get("site_local_cov").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let abs_lag_n = (kcc.get("site_causal_lag").and_then(|v| v.as_f64()).unwrap_or(0.0).abs() as f32 / 50.0).clamp(0.0, 1.0);
             let residue_valid = if kcc.get("driver_residue_id").and_then(|v| v.as_i64()).unwrap_or(-1) >= 0 { 1.0f32 } else { 0.0 };
-            let residue_support = kcc.get("candidate_residue_support")
+            let residue_support = kcc.get("candidate_causal_weights")
                 .and_then(|v| v.as_array())
                 .and_then(|arr| {
                     let best_idx = kcc.get("best_kcc_candidate_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
