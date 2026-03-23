@@ -234,25 +234,23 @@ def run_nhs_engine(topo_path, output_dir, pdb_id):
 # ============================================================================
 
 def run_validation(output_dir, pdb_id):
-    """Run KCC validation v2 and verify outputs."""
+    """Run KCC validation v2. REQUIRED — fails pipeline if output missing."""
     viz_json = output_dir / f"{pdb_id.lower()}.kcc_visualization.json"
     val_json = output_dir / f"{pdb_id.lower()}.kcc_validation_v2.json"
 
     if not viz_json.exists():
-        log(f"  No kcc_visualization.json — skipping validation", "WARN")
-        return None
+        raise BenchmarkError(f"kcc_visualization.json missing — cannot run validation for {pdb_id}")
 
     log(f"  Running validation for {pdb_id}...")
     run_cmd(
         [sys.executable, str(VALIDATION_SCRIPT), str(viz_json)],
         f"Validation for {pdb_id}",
         timeout=60,
-        check=False,
+        check=True,
     )
 
     if not val_json.exists():
-        log(f"  Validation JSON not produced", "WARN")
-        return None
+        raise BenchmarkError(f"kcc_validation_v2.json not produced for {pdb_id}")
 
     with open(val_json) as f:
         val = json.load(f)
@@ -266,9 +264,9 @@ def check_required_outputs(output_dir, pdb_id):
         f"{name}.binding_sites.json",
         f"{name}.kcc_visualization.json",
         f"{name}.kcc_session.pml",
+        f"{name}.kcc_validation_v2.json",
     ]
     optional = [
-        f"{name}.kcc_validation_v2.json",
         f"{name}.kcc_pymol_verification.txt",
     ]
 
@@ -448,10 +446,10 @@ def run_pipeline():
                 if f.is_file():
                     shutil.copy2(f, target_result_dir / f.name)
 
-            # Phase 4: Validation
+            # Phase 4: Validation (must run BEFORE output check — produces kcc_validation_v2.json)
             log("[Phase 4] Automated validation")
-            check_required_outputs(target_result_dir, pdb_id)
             val_data = run_validation(target_result_dir, pdb_id)
+            check_required_outputs(target_result_dir, pdb_id)
 
             # Phase 5: Metric extraction
             log("[Phase 5] Metric extraction")
