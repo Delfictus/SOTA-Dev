@@ -1,0 +1,92 @@
+[
+  {
+    "pdb": "2NPQ",
+    "bench30_id": 2,
+    "ligand": "GK4",
+    "heavy_atoms": 26,
+    "valid": true,
+    "reason": "kinase inhibitor (GlaxoSmithKline)",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "1KV1",
+    "bench30_id": 3,
+    "ligand": "B96",
+    "heavy_atoms": 39,
+    "valid": true,
+    "reason": "BIRB-796 (type II kinase inhibitor)",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "1HCL",
+    "bench30_id": 8,
+    "ligand": "U55",
+    "heavy_atoms": 18,
+    "valid": true,
+    "reason": "CDK2/kinase inhibitor",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "3L3N",
+    "bench30_id": 22,
+    "ligand": "A92",
+    "heavy_atoms": 25,
+    "valid": true,
+    "reason": "kinase inhibitor",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "1JWP",
+    "bench30_id": 1,
+    "ligand": "CBT",
+    "heavy_atoms": 44,
+    "valid": true,
+    "reason": "beta-lactam inhibitor",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "4EY4",
+    "bench30_id": 5,
+    "ligand": "E20",
+    "heavy_atoms": 28,
+    "valid": true,
+    "reason": "esterase inhibitor",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "1NNA",
+    "bench30_id": 23,
+    "ligand": "ZMR",
+    "heavy_atoms": 23,
+    "valid": true,
+    "reason": "zanamivir (neuraminidase inhibitor)",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "2HNP",
+    "bench30_id": 6,
+    "ligand": "892",
+    "heavy_atoms": 36,
+    "valid": true,
+    "reason": "PTP1B allosteric inhibitor",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "1M47",
+    "bench30_id": 7,
+    "ligand": "FRH",
+    "heavy_atoms": 45,
+    "valid": true,
+    "reason": "IL-2 PPI inhibitor (furanyl)",
+    "method": "self_holo"
+  },
+  {
+    "pdb": "2OSS",
+    "bench30_id": 10,
+    "ligand": "JQ1",
+    "heavy_atoms": 31,
+    "valid": true,
+    "reason": "BET bromodomain inhibitor",
+    "method": "self_holo"
+  }
+]
