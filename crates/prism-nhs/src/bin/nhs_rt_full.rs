@@ -5542,6 +5542,128 @@ fn run_multi_stream_pipeline(
             })
         }).collect();
 
+        // ── G×T×C×K Unified Rank Score ──
+        // Normalize inputs per-protein using 5th-95th percentile scaling
+        fn percentile_normalize(values: &[f32]) -> Vec<f32> {
+            if values.is_empty() { return Vec::new(); }
+            let mut sorted = values.to_vec();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let p5 = sorted[(sorted.len() as f32 * 0.05) as usize];
+            let p95 = sorted[((sorted.len() as f32 * 0.95) as usize).min(sorted.len() - 1)];
+            let range = p95 - p5;
+            if range < 1e-12 {
+                return vec![0.5; values.len()];
+            }
+            values.iter().map(|&v| ((v - p5) / range).clamp(0.0, 1.0)).collect()
+        }
+
+        // Collect raw values for normalization
+        let raw_volumes: Vec<f32> = reordered_sites.iter().map(|s| s.estimated_volume).collect();
+        let raw_burial: Vec<f32> = reordered_sites.iter().enumerate().map(|(i, _)| {
+            // burial_score from physics_signals
+            let sid = reordered_sites[i].cluster_id;
+            physics_signals.get(&sid).map(|p| p.3).unwrap_or(0.5)
+        }).collect();
+        let raw_sphericity: Vec<f32> = reordered_sites.iter().map(|s| {
+            // compactness: volume / bounding_box_volume (higher = more compact)
+            let bbox_vol = s.bounding_box[0] * s.bounding_box[1] * s.bounding_box[2];
+            if bbox_vol > 0.1 { (s.estimated_volume / bbox_vol).clamp(0.0, 1.0) } else { 0.5 }
+        }).collect();
+
+        // Signal preservation raw values
+        let raw_coupling_total: Vec<f32> = site_signal_metrics.iter().map(|sp| {
+            sp.get("total_coupling").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32
+        }).collect();
+        let raw_causality_density: Vec<f32> = site_signal_metrics.iter().map(|sp| {
+            sp.get("causality_density").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32
+        }).collect();
+        let raw_coupled_voxel_frac: Vec<f32> = site_signal_metrics.iter().map(|sp| {
+            let cv = sp.get("coupled_voxels").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let nv = sp.get("n_voxels").and_then(|v| v.as_f64()).unwrap_or(1.0).max(1.0);
+            (cv / nv) as f32
+        }).collect();
+
+        // Normalize
+        let vol_n = percentile_normalize(&raw_volumes);
+        let burial_n = percentile_normalize(&raw_burial);
+        let spher_n = percentile_normalize(&raw_sphericity);
+        let ctot_n = percentile_normalize(&raw_coupling_total);
+        let cdens_n = percentile_normalize(&raw_causality_density);
+        let cvox_n = percentile_normalize(&raw_coupled_voxel_frac);
+
+        // Compute rank scores
+        let rank_scores: Vec<(f32, f32, f32, f32, f32)> = (0..reordered_sites.len()).map(|i| {
+            // G(s) = vol_n * (1 - 0.7 * hydro_n) * (0.6 + 0.4 * compact_n)
+            let hydro_n = 1.0 - burial_n[i]; // low burial = high hydrophilicity
+            let g = vol_n[i] * (1.0 - 0.7 * hydro_n) * (0.6 + 0.4 * spher_n[i]);
+
+            // T(s) = 0.5 + 0.25 * theta + 0.25 * tau
+            let therm_n = if let Some(ref analysis) = prism_therm_result {
+                let sid = reordered_sites[i].cluster_id;
+                analysis.sites.iter().find(|ts| ts.site_id == sid)
+                    .map(|ts| match ts.therm_class.to_string().as_str() {
+                        "CRYPTIC" => 1.0f32,
+                        "ALLOSTERIC" => 0.9,
+                        "SURFACE" => 0.6,
+                        _ => 0.35,
+                    })
+                    .unwrap_or(0.5)
+            } else { 0.5 };
+            let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
+            let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
+
+            // C(s) = sqrt(0.45 * ctot + 0.35 * cdens + 0.20 * cvox)
+            let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
+            let c = c_raw.max(0.0).sqrt();
+
+            // K(s) - two regime formulation using best KCC candidate
+            let kcc = &kcc_site_metrics[i];
+            let direction_n = kcc.get("direction_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let motion_eff_n = kcc.get("motion_efficiency").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let burst_n = (kcc.get("burst_motion").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32).clamp(0.0, 5.0) / 5.0;
+            let lag_corr_n = kcc.get("lag_corr_peak").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let local_cov_n = kcc.get("local_cov").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+            let abs_lag_n = (kcc.get("causal_lag").and_then(|v| v.as_f64()).unwrap_or(0.0).abs() as f32 / 50.0).clamp(0.0, 1.0);
+            let residue_valid = if kcc.get("driver_residue_id").and_then(|v| v.as_i64()).unwrap_or(-1) >= 0 { 1.0f32 } else { 0.0 };
+            let residue_support = kcc.get("candidate_residue_support")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| {
+                    let best_idx = kcc.get("best_kcc_candidate_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                    arr.get(best_idx).and_then(|v| v.as_f64())
+                })
+                .unwrap_or(0.0) as f32;
+
+            // Flatness score for persistent mode
+            let flatness = 1.0 - (burst_n + abs_lag_n + local_cov_n) / 3.0;
+
+            // K_persist (reduced causality weight to 0.25)
+            let k_persist = 0.25 * cdens_n[i] + 0.35 * direction_n + 0.25 * motion_eff_n + 0.15 * flatness;
+            // K_trans (reduced causality weight to 0.15)
+            let k_trans = 0.15 * cdens_n[i] + 0.25 * direction_n + 0.25 * burst_n + 0.20 * lag_corr_n + 0.15 * local_cov_n;
+
+            let k = residue_valid * (0.85 + 0.15 * residue_support) * k_persist.max(k_trans);
+
+            // Hard gates
+            let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
+                0.0
+            } else {
+                g * t * c * k
+            };
+
+            (gated, g, t, c, k)
+        }).collect();
+
+        // Re-rank by rank_score (descending)
+        let mut rank_order: Vec<usize> = (0..rank_scores.len()).collect();
+        rank_order.sort_by(|&a, &b| rank_scores[b].0.partial_cmp(&rank_scores[a].0).unwrap_or(std::cmp::Ordering::Equal));
+
+        log::info!("G×T×C×K ranking applied. Top-3:");
+        for (rank, &idx) in rank_order.iter().take(3).enumerate() {
+            let (score, g, t, c, k) = rank_scores[idx];
+            log::info!("  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3}",
+                rank + 1, reordered_sites[idx].cluster_id, score, g, t, c, k);
+        }
+
         // Build per-site JSON, merging PRISM-Therm therm_class when available
         let mut ms_sites_json: Vec<serde_json::Value> = reordered_sites.iter().enumerate().map(|(site_rank, s)| {
             let cat_count = s.lining_residues.iter()
@@ -5575,6 +5697,12 @@ fn run_multi_stream_pipeline(
                     .unwrap_or(serde_json::json!(null)),
                 "kcc": kcc_site_metrics.get(site_rank).cloned()
                     .unwrap_or(serde_json::json!(null)),
+                "rank_score": rank_scores[site_rank].0,
+                "rank_G": rank_scores[site_rank].1,
+                "rank_T": rank_scores[site_rank].2,
+                "rank_C": rank_scores[site_rank].3,
+                "rank_K": rank_scores[site_rank].4,
+                "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
             })
         }).collect();
 
