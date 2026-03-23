@@ -176,6 +176,9 @@ def repair_structure(clean_path, fixed_path, pdb_id):
 
     fixer = PDBFixer(filename=str(clean_path))
     fixer.findMissingResidues()
+    # Remove unresolved regions — safer than filling large gaps with unrealistic geometry
+    # Critical for kinase hinge regions and disordered loops
+    fixer.missingResidues = {}
     fixer.findNonstandardResidues()
     fixer.replaceNonstandardResidues()
     fixer.removeHeterogens(keepWater=False)
