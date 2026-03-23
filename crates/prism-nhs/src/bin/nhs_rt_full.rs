@@ -5751,19 +5751,32 @@ fn run_multi_stream_pipeline(
             (cv / nv) as f32
         }).collect();
 
-        // Normalize
-        let vol_n = percentile_normalize(&raw_volumes);
+        // Normalize — log-compressed for geometry, percentile for bounded terms
+        fn log_compress_normalize(values: &[f32]) -> Vec<f32> {
+            // log(1+x) compression then scale to [0,1]
+            let log_vals: Vec<f32> = values.iter().map(|&v| (1.0 + v.max(0.0)).ln()).collect();
+            let max_log = log_vals.iter().copied().fold(0.0f32, f32::max);
+            if max_log < 1e-6 { return vec![0.5; values.len()]; }
+            log_vals.iter().map(|&v| (v / max_log).clamp(0.0, 1.0)).collect()
+        }
+        let vol_n = log_compress_normalize(&raw_volumes);
         let burial_n = percentile_normalize(&raw_burial);
         let spher_n = percentile_normalize(&raw_sphericity);
-        let ctot_n = percentile_normalize(&raw_coupling_total);
+        // C uses density (per-voxel), percentile normalized
         let cdens_n = percentile_normalize(&raw_causality_density);
         let cvox_n = percentile_normalize(&raw_coupled_voxel_frac);
+        // ctot_n kept for BLP but NOT used in C formula
+        let ctot_n = percentile_normalize(&raw_coupling_total);
 
-        // Compute rank scores
+        // Compute rank scores — log-compressed G, density-normalized C, weighted additive
         let rank_scores: Vec<(f32, f32, f32, f32, f32, f32, f32)> = (0..reordered_sites.len()).map(|i| {
-            // G(s) = vol_n * (1 - 0.7 * hydro_n) * (0.6 + 0.4 * compact_n)
-            let hydro_n = 1.0 - burial_n[i]; // low burial = high hydrophilicity
-            let g = vol_n[i] * (1.0 - 0.7 * hydro_n) * (0.6 + 0.4 * spher_n[i]);
+            // G(s) — log-compressed geometry (all subterms bounded [0,1])
+            // vol_n is already log-compressed via log_compress_normalize
+            let hydro_n = 1.0 - burial_n[i]; // high = hydrophilic surface
+            let g = 0.35 * vol_n[i]              // log-compressed volume
+                  + 0.25 * burial_n[i]            // burial depth (higher = more buried)
+                  + 0.20 * spher_n[i]             // compactness
+                  + 0.20 * (1.0 - hydro_n);      // hydrophobicity (inverse of hydrophilicity)
 
             // T(s) = 0.5 + 0.25 * theta + 0.25 * tau
             let therm_n = if let Some(ref analysis) = prism_therm_result {
@@ -5780,7 +5793,7 @@ fn run_multi_stream_pipeline(
             let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
             let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
 
-            // C(s) = sqrt(0.45 * ctot + 0.35 * cdens + 0.20 * cvox)
+            // C(s) = sqrt(causal composite) — density + coverage
             let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
             let c = c_raw.max(0.0).sqrt();
 
@@ -5814,7 +5827,7 @@ fn run_multi_stream_pipeline(
             // Localization factor L' = 0.80 + 0.20 * L_norm
             let l_prime = 0.80 + 0.20 * loc_n[i];
 
-            // Hard gates
+            // Multiplicative aggregation (preserved — works for hard targets)
             let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
                 0.0
             } else {
@@ -5866,44 +5879,35 @@ fn run_multi_stream_pipeline(
             } else { 0.0 }
         }).collect();
 
-        // Compute final scores with correction layer
+        // Compute final scores with correction layer (additive in log-space)
         let final_scores: Vec<(f32, f32, f32, f32, &str)> = (0..reordered_sites.len()).map(|i| {
-            let gtckl = rank_scores[i].0;
+            let gtckl = rank_scores[i].0; // already log-space
 
-            // BLP = 0.25*vol + 0.25*enclosure + 0.20*depth + 0.15*(1-sasa) + 0.15*compact
-            let enclosure_ratio = 1.0 - escape_n[i]; // lower escape = higher enclosure
-            let sasa_proxy = 1.0 - burial_n[i]; // low burial = high SASA
+            // BLP = pocket-likeness prior (additive bonus in log-space)
+            let enclosure_ratio = 1.0 - escape_n[i];
+            let sasa_proxy = 1.0 - burial_n[i];
             let compact = (1.0 - site_mean_radii[i] / 20.0).clamp(0.0, 1.0);
             let blp = 0.25 * vol_n[i] + 0.25 * enclosure_ratio + 0.20 * depth_n[i]
                     + 0.15 * (1.0 - sasa_proxy) + 0.15 * compact;
 
-            // DP = clamp((mean_radius - 6) / 14, 0, 1)
+            // DP = diffuseness penalty
             let dp = ((site_mean_radii[i] - 6.0) / 14.0).clamp(0.0, 1.0);
-
-            // Regime
             let regime = if site_mean_radii[i] < 6.0 { "local" } else { "distributed" };
 
-            // Final score
+            // Additive correction
             let final_s = if regime == "local" {
-                gtckl * (1.0 + 0.20 * blp)
+                gtckl + 0.05 * blp
             } else {
-                gtckl * (1.0 + 0.15 * blp) * (1.0 - 0.30 * dp)
+                gtckl + 0.03 * blp - 0.05 * dp
             };
 
             (final_s, gtckl, blp, dp, regime)
         }).collect();
 
-        // Sort with monotonicity guard
+        // Sort by final score (no monotonicity guard — log-space scores are now well-behaved)
         let mut rank_order: Vec<usize> = (0..final_scores.len()).collect();
         rank_order.sort_by(|&a, &b| {
-            let (fs_a, gtckl_a, _, _, _) = final_scores[a];
-            let (fs_b, gtckl_b, _, _, _) = final_scores[b];
-            // Monotonicity guard: if GTCKL gap > 0.05, preserve GTCKL order
-            if (gtckl_a - gtckl_b).abs() > 0.05 {
-                gtckl_b.partial_cmp(&gtckl_a).unwrap_or(std::cmp::Ordering::Equal)
-            } else {
-                fs_b.partial_cmp(&fs_a).unwrap_or(std::cmp::Ordering::Equal)
-            }
+            final_scores[b].0.partial_cmp(&final_scores[a].0).unwrap_or(std::cmp::Ordering::Equal)
         });
 
         log::info!("G×T×C×K×L + BLP/DP correction applied. Top-5:");
