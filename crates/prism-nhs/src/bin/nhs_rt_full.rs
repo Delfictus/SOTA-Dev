@@ -5762,10 +5762,10 @@ fn run_multi_stream_pipeline(
         let vol_n = log_compress_normalize(&raw_volumes);
         let burial_n = percentile_normalize(&raw_burial);
         let spher_n = percentile_normalize(&raw_sphericity);
-        // C uses density (per-voxel), percentile normalized
+        // C uses density (per-voxel), percentile normalized (log-compress regresses hard targets)
         let cdens_n = percentile_normalize(&raw_causality_density);
         let cvox_n = percentile_normalize(&raw_coupled_voxel_frac);
-        // ctot_n kept for BLP but NOT used in C formula
+        // ctot_n kept for BLP only (NOT used in C formula)
         let ctot_n = percentile_normalize(&raw_coupling_total);
 
         // Compute rank scores — log-compressed G, density-normalized C, weighted additive
@@ -5793,7 +5793,7 @@ fn run_multi_stream_pipeline(
             let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
             let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
 
-            // C(s) = sqrt(causal composite) — density + coverage
+            // C(s) = sqrt(causal composite) — density + coverage + total
             let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
             let c = c_raw.max(0.0).sqrt();
 
