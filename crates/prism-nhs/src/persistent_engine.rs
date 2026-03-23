@@ -1284,6 +1284,15 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Compute and download KCC v2-full descriptors from GPU
+    pub fn compute_and_download_kcc(&mut self) -> anyhow::Result<crate::fused_engine::KccData> {
+        if let Some(ref mut engine) = self.engine {
+            engine.compute_and_download_kcc()
+        } else {
+            Ok(crate::fused_engine::KccData::empty())
+        }
+    }
+
     /// Get snapshots from current run
     pub fn get_snapshots(&self) -> Vec<EnsembleSnapshot> {
         if let Some(ref engine) = self.engine {

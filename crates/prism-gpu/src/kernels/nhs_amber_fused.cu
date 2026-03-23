@@ -60,6 +60,7 @@
 #define REFRACTORY_STEPS 250       // 250 steps * 0.004ps (HMR) = 1.0ps refractory period
 #define UV_WAVELENGTH 280.0f        // nm - aromatic absorption
 #define UV_LIF_WINDOW 100           // Steps within which LIF spike is causally linked to prior UV (~0.4 ps at dt=0.004ps/HMR)
+#define KCC_RING_STEPS 64           // Micro-ring-buffer depth for KCC temporal descriptors per residue
 
 // ============================================================================
 // WARP-LEVEL PRIMITIVES (for fast reductions without shared memory)
@@ -682,7 +683,8 @@ __device__ __forceinline__ void update_signal_preservation(
     unsigned int* primary_residue_count,
     const WarpEntry& entry,
     const int* residue_ids,
-    int n_atoms
+    int n_atoms,
+    int* residue_step_causal  // KCC: per-residue per-step causal counter (may be nullptr)
 ) {
     // 1. Spatial recurrence
     atomicAdd(&voxel_hit_grid[v], 1u);
@@ -696,6 +698,16 @@ __device__ __forceinline__ void update_signal_preservation(
         int last_uv = last_uv_step[v];
         if (last_uv >= 0 && (timestep - last_uv) < UV_LIF_WINDOW) {
             atomicAdd(&coupled_spike_grid[v], 1u);
+            // KCC: increment per-residue causal counter for the driving residue
+            if (residue_step_causal != nullptr && entry.n_atoms > 0) {
+                int a0 = entry.atom_indices[0];
+                if (a0 >= 0 && a0 < n_atoms) {
+                    int res_id = residue_ids[a0];
+                    if (res_id >= 0) {
+                        atomicAdd(&residue_step_causal[res_id], 1);
+                    }
+                }
+            }
         }
     }
 
@@ -894,7 +906,9 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
     unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
     int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
-    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
+    unsigned int* primary_residue_count,   // [grid_dim³] count for dominant driver
+    // === KCC: per-residue per-step causal counter ===
+    int* residue_step_causal               // [n_residues] zeroed each step by kcc_residue_update
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1494,7 +1508,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 update_signal_preservation(v, timestep, 1,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 // Extract closest aromatic metadata for enhanced spike event
                 int _arom_type = (closest_excited_idx >= 0) ? d_aromatic_type[closest_excited_idx] : -1;
@@ -1563,7 +1577,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 update_signal_preservation(v, timestep, lif_source,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 // Capture spike event with proper intensity
                 int spike_idx = atomicAdd(spike_count, 1);
@@ -1672,7 +1686,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 update_signal_preservation(efp_v, timestep, 3,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[efp_v], residue_ids, n_atoms);
+                    warp_matrix[efp_v], residue_ids, n_atoms, residue_step_causal);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
@@ -2454,7 +2468,8 @@ extern "C" __global__ void nhs_voxel_step(
     int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
     unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
     int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
-    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
+    unsigned int* primary_residue_count,   // [grid_dim³] count for dominant driver
+    int* residue_step_causal               // [n_residues] KCC per-step causal counter
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int total_voxels = grid_dim * grid_dim * grid_dim;
@@ -2655,7 +2670,7 @@ extern "C" __global__ void nhs_voxel_step(
                 update_signal_preservation(v, timestep, 1,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
@@ -2686,7 +2701,7 @@ extern "C" __global__ void nhs_voxel_step(
                 update_signal_preservation(v, timestep, lif_source2,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
@@ -2768,7 +2783,7 @@ efp_phase:
                 update_signal_preservation(v, timestep, 3,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
@@ -2906,7 +2921,9 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
     unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
     int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
-    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
+    unsigned int* primary_residue_count,   // [grid_dim³] count for dominant driver
+    // === KCC: per-residue per-step causal counter ===
+    int* residue_step_causal               // [n_residues] zeroed each step by kcc_residue_update
 ) {
     // === Shared memory layout (SOTA v2) ===
     // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
@@ -3363,7 +3380,7 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         update_signal_preservation(v, timestep, spike_source,
             voxel_hit_grid, last_uv_step, coupled_spike_grid,
             primary_residue_id, primary_residue_count,
-            entry, residue_ids, n_atoms);
+            entry, residue_ids, n_atoms, residue_step_causal);
 
         // Shared memory stencil: 26 Moore neighbors with distance weighting
         float coupling_deposit = 1.0f;
@@ -3489,7 +3506,7 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                 update_signal_preservation(v, timestep, 3,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    entry, residue_ids, n_atoms);
+                    entry, residue_ids, n_atoms, residue_step_causal);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {
@@ -3531,6 +3548,263 @@ extern "C" __global__ void init_multi_neuron(
         coupling_a[tid] = 0.0f;
         coupling_b[tid] = 0.0f;
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// KCC v2-full: PER-RESIDUE KINEMATIC-CAUSAL UPDATE KERNEL
+// ════════════════════════════════════════════════════════════════════════════
+// Launched once per outer step, after multi-LIF. One thread per residue.
+// Reads CA position, computes per-step motion, updates streaming reductions
+// and micro-ring-buffer. Zeroes residue_step_causal for next step.
+extern "C" __global__ void kcc_residue_update(
+    // Atom positions (read CA positions via index mapping)
+    const float3* __restrict__ positions,
+    const int* __restrict__ residue_ca_idx,  // [n_residues] atom index of CA per residue
+    int n_residues,
+    // Streaming reduction buffers [n_residues]
+    float* residue_prev_x,
+    float* residue_prev_y,
+    float* residue_prev_z,
+    float* residue_sum_m,      // sum of per-step motion magnitude
+    float* residue_sum_m2,     // sum of squared motion magnitude
+    float* residue_sum_c,      // sum of per-step causal activity
+    float* residue_sum_c2,     // sum of squared causal activity
+    float* residue_sum_mc,     // sum of motion * causality (covariance term)
+    float* residue_net_dx,     // net displacement x
+    float* residue_net_dy,     // net displacement y
+    float* residue_net_dz,     // net displacement z
+    unsigned int* residue_count,              // total steps tracked
+    unsigned int* residue_active_causal_steps, // steps with c_t > 0
+    // Per-residue per-step causal counter (read then zero)
+    int* residue_step_causal,  // [n_residues] accumulated during spike emission
+    // Micro-ring-buffer [n_residues * KCC_RING_STEPS]
+    float* ring_dx,
+    float* ring_dy,
+    float* ring_dz,
+    float* ring_motion,
+    float* ring_causality,
+    unsigned int* ring_head,   // [n_residues] circular write pointer
+    // Protocol phase tag
+    int current_phase          // 0=cold_hold, 1=ramp, 2=warm_hold
+) {
+    int rid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (rid >= n_residues) return;
+
+    // Read CA position
+    int ca_idx = residue_ca_idx[rid];
+    if (ca_idx < 0) return;  // no CA for this residue (e.g. water)
+    float3 pos = positions[ca_idx];
+
+    // Previous position
+    float px = residue_prev_x[rid];
+    float py = residue_prev_y[rid];
+    float pz = residue_prev_z[rid];
+
+    // Per-step displacement
+    float dx = pos.x - px;
+    float dy = pos.y - py;
+    float dz = pos.z - pz;
+    float m_t = sqrtf(dx*dx + dy*dy + dz*dz);
+
+    // Read and zero per-step causal counter
+    float c_t = (float)residue_step_causal[rid];
+    residue_step_causal[rid] = 0;
+
+    // Update streaming reductions
+    residue_sum_m[rid]  += m_t;
+    residue_sum_m2[rid] += m_t * m_t;
+    residue_sum_c[rid]  += c_t;
+    residue_sum_c2[rid] += c_t * c_t;
+    residue_sum_mc[rid] += m_t * c_t;
+    residue_net_dx[rid] += dx;
+    residue_net_dy[rid] += dy;
+    residue_net_dz[rid] += dz;
+    residue_count[rid]  += 1u;
+    if (c_t > 0.0f) residue_active_causal_steps[rid] += 1u;
+
+    // Write to micro-ring-buffer
+    unsigned int head = ring_head[rid];
+    int slot = rid * KCC_RING_STEPS + (int)(head % KCC_RING_STEPS);
+    ring_dx[slot]        = dx;
+    ring_dy[slot]        = dy;
+    ring_dz[slot]        = dz;
+    ring_motion[slot]    = m_t;
+    ring_causality[slot] = c_t;
+    ring_head[rid]       = head + 1u;
+
+    // Update previous position for next step
+    residue_prev_x[rid] = pos.x;
+    residue_prev_y[rid] = pos.y;
+    residue_prev_z[rid] = pos.z;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// KCC v2-full: COMPUTE FINAL KCC METRICS FROM RING BUFFER
+// ════════════════════════════════════════════════════════════════════════════
+// Launched once at end of simulation. Computes burst, lag, phase, local cov.
+extern "C" __global__ void kcc_compute_rich_descriptors(
+    int n_residues,
+    // Streaming reductions (read-only)
+    const float* __restrict__ residue_sum_m,
+    const float* __restrict__ residue_sum_m2,
+    const float* __restrict__ residue_sum_c,
+    const float* __restrict__ residue_sum_c2,
+    const float* __restrict__ residue_sum_mc,
+    const float* __restrict__ residue_net_dx,
+    const float* __restrict__ residue_net_dy,
+    const float* __restrict__ residue_net_dz,
+    const unsigned int* __restrict__ residue_count,
+    const unsigned int* __restrict__ residue_active_causal_steps,
+    // Ring buffer (read-only)
+    const float* __restrict__ ring_dx,
+    const float* __restrict__ ring_dy,
+    const float* __restrict__ ring_dz,
+    const float* __restrict__ ring_motion,
+    const float* __restrict__ ring_causality,
+    const unsigned int* __restrict__ ring_head,
+    // Output: per-residue KCC descriptors [n_residues]
+    float* kcc_temporal_corr,
+    float* kcc_direction_score,
+    float* kcc_motion_efficiency,
+    float* kcc_burst_motion_score,
+    float* kcc_phase_shift_score,
+    float* kcc_causal_lag,
+    float* kcc_lag_corr_peak,
+    float* kcc_local_cov_score
+) {
+    int rid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (rid >= n_residues) return;
+
+    unsigned int N = residue_count[rid];
+    if (N < 2) {
+        kcc_temporal_corr[rid] = 0.0f;
+        kcc_direction_score[rid] = 0.0f;
+        kcc_motion_efficiency[rid] = 0.0f;
+        kcc_burst_motion_score[rid] = 0.0f;
+        kcc_phase_shift_score[rid] = 0.0f;
+        kcc_causal_lag[rid] = 0.0f;
+        kcc_lag_corr_peak[rid] = 0.0f;
+        kcc_local_cov_score[rid] = 0.0f;
+        return;
+    }
+
+    float fN = (float)N;
+
+    // === Streaming temporal correlation ===
+    float mean_m = residue_sum_m[rid] / fN;
+    float mean_c = residue_sum_c[rid] / fN;
+    float cov_mc = (residue_sum_mc[rid] / fN) - mean_m * mean_c;
+    float var_m  = (residue_sum_m2[rid] / fN) - mean_m * mean_m;
+    float var_c  = (residue_sum_c2[rid] / fN) - mean_c * mean_c;
+    float denom  = sqrtf(fmaxf(var_m * var_c, 1e-12f));
+    kcc_temporal_corr[rid] = cov_mc / denom;
+
+    // === Direction score ===
+    float net_dx = residue_net_dx[rid];
+    float net_dy = residue_net_dy[rid];
+    float net_dz = residue_net_dz[rid];
+    float net_disp = sqrtf(net_dx*net_dx + net_dy*net_dy + net_dz*net_dz);
+    float sum_step = residue_sum_m[rid];
+    kcc_direction_score[rid] = net_disp / (sum_step + 1e-6f);
+
+    // === Motion efficiency ===
+    float scale = 5.0f;  // Å normalization
+    kcc_motion_efficiency[rid] = 1.0f - expf(-sum_step / (scale * fN));
+
+    // === Ring-buffer rich descriptors ===
+    unsigned int head = ring_head[rid];
+    int ring_len = (int)fminf((float)head, (float)KCC_RING_STEPS);
+    int base = rid * KCC_RING_STEPS;
+
+    if (ring_len < 4) {
+        kcc_burst_motion_score[rid] = 0.0f;
+        kcc_phase_shift_score[rid] = 0.0f;
+        kcc_causal_lag[rid] = 0.0f;
+        kcc_lag_corr_peak[rid] = 0.0f;
+        kcc_local_cov_score[rid] = 0.0f;
+        return;
+    }
+
+    // Read ring into local arrays (bounded by KCC_RING_STEPS=64)
+    float local_m[KCC_RING_STEPS];
+    float local_c[KCC_RING_STEPS];
+    for (int i = 0; i < ring_len; i++) {
+        int slot = base + (int)((head - ring_len + i) % KCC_RING_STEPS);
+        local_m[i] = ring_motion[slot];
+        local_c[i] = ring_causality[slot];
+    }
+
+    // === Burst-window motion accumulation ===
+    // Motion accumulated during high-causality steps vs low-causality
+    float burst_motion = 0.0f, quiet_motion = 0.0f;
+    int burst_count = 0, quiet_count = 0;
+    for (int i = 0; i < ring_len; i++) {
+        if (local_c[i] > 0.0f) {
+            burst_motion += local_m[i];
+            burst_count++;
+        } else {
+            quiet_motion += local_m[i];
+            quiet_count++;
+        }
+    }
+    float burst_avg = burst_count > 0 ? burst_motion / burst_count : 0.0f;
+    float quiet_avg = quiet_count > 0 ? quiet_motion / quiet_count : 0.0f;
+    kcc_burst_motion_score[rid] = burst_avg / (quiet_avg + 1e-6f);
+
+    // === Phase shift: early vs late half ===
+    int half = ring_len / 2;
+    float early_m = 0.0f, late_m = 0.0f;
+    for (int i = 0; i < half; i++) early_m += local_m[i];
+    for (int i = half; i < ring_len; i++) late_m += local_m[i];
+    early_m /= (float)half;
+    late_m /= (float)(ring_len - half);
+    kcc_phase_shift_score[rid] = (late_m - early_m) / (early_m + late_m + 1e-6f);
+
+    // === Causal lag estimate ===
+    // Cross-correlate c_t and m_t at lags -8..+8
+    float best_corr = -1.0f;
+    int best_lag = 0;
+    for (int lag = -8; lag <= 8; lag++) {
+        float sum_cm = 0.0f, sum_cc = 0.0f, sum_mm = 0.0f;
+        int cnt = 0;
+        for (int i = 0; i < ring_len; i++) {
+            int j = i + lag;
+            if (j < 0 || j >= ring_len) continue;
+            sum_cm += local_c[i] * local_m[j];
+            sum_cc += local_c[i] * local_c[i];
+            sum_mm += local_m[j] * local_m[j];
+            cnt++;
+        }
+        if (cnt > 0) {
+            float d = sqrtf(fmaxf(sum_cc * sum_mm, 1e-12f));
+            float corr = sum_cm / d;
+            if (corr > best_corr) {
+                best_corr = corr;
+                best_lag = lag;
+            }
+        }
+    }
+    kcc_causal_lag[rid] = (float)best_lag;
+    kcc_lag_corr_peak[rid] = best_corr;
+
+    // === Local covariance (sliding 16-step subwindows) ===
+    int sub_w = 16;
+    float max_local_cov = 0.0f;
+    for (int start = 0; start + sub_w <= ring_len; start += sub_w / 2) {
+        float sm = 0, sc = 0, smc = 0, sm2 = 0, sc2 = 0;
+        for (int i = start; i < start + sub_w; i++) {
+            sm += local_m[i]; sc += local_c[i];
+            smc += local_m[i] * local_c[i];
+            sm2 += local_m[i] * local_m[i];
+            sc2 += local_c[i] * local_c[i];
+        }
+        float fw = (float)sub_w;
+        float lcov = (smc / fw) - (sm / fw) * (sc / fw);
+        float lvar = sqrtf(fmaxf((sm2/fw - (sm/fw)*(sm/fw)) * (sc2/fw - (sc/fw)*(sc/fw)), 1e-12f));
+        float lcorr = lcov / lvar;
+        if (lcorr > max_local_cov) max_local_cov = lcorr;
+    }
+    kcc_local_cov_score[rid] = max_local_cov;
 }
 
 

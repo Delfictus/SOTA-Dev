@@ -63,7 +63,8 @@ extern "C" __global__ void nhs_voxel_step(
     int* last_uv_step,                     // [grid_dim³] timestep of last UV event per voxel
     unsigned int* coupled_spike_grid,      // [grid_dim³] UV→LIF causal spike counter
     int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
-    unsigned int* primary_residue_count    // [grid_dim³] count for dominant driver
+    unsigned int* primary_residue_count,   // [grid_dim³] count for dominant driver
+    int* residue_step_causal               // [n_residues] KCC per-step causal counter
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int total_voxels = grid_dim * grid_dim * grid_dim;
@@ -242,7 +243,7 @@ extern "C" __global__ void nhs_voxel_step(
                 update_signal_preservation(v, timestep, 1,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 int _arom_type = (closest_excited_idx >= 0) ? d_aromatic_type[closest_excited_idx] : -1;
                 int _arom_res = -1;
@@ -285,7 +286,7 @@ extern "C" __global__ void nhs_voxel_step(
                 update_signal_preservation(v, timestep, lif_src,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 int spike_idx = atomicAdd(spike_count, 1);
                 if (spike_idx < max_spikes) {
@@ -367,7 +368,7 @@ efp_phase:
                 update_signal_preservation(v, timestep, 3,
                     voxel_hit_grid, last_uv_step, coupled_spike_grid,
                     primary_residue_id, primary_residue_count,
-                    warp_matrix[v], residue_ids, n_atoms);
+                    warp_matrix[v], residue_ids, n_atoms, residue_step_causal);
 
                 int si = atomicAdd(spike_count, 1);
                 if (si < max_spikes) {

@@ -2511,7 +2511,7 @@ fn run_multi_stream_pipeline(
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
     let sim_start = Instant::now();
 
-    let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>)>> =
+    let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)>> =
         std::thread::scope(|s| {
             let handles: Vec<_> = (0..n_streams).map(|i| {
                 let ctx = context.clone();
@@ -2632,7 +2632,7 @@ fn run_multi_stream_pipeline(
                 let adaptive_protocol = args.adaptive_protocol;
                 let cold_hold_steps = prot.cold_hold_steps;
 
-                s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>)> {
+                s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
 
                     let mut engine = PersistentNhsEngine::new_on_stream(
@@ -2702,10 +2702,12 @@ fn run_multi_stream_pipeline(
 
                     // Download signal preservation grids from this stream's GPU buffers
                     let sig_data = engine.download_signal_preservation().ok();
+                    // Compute and download KCC v2-full descriptors
+                    let kcc_data = engine.compute_and_download_kcc().ok();
 
                     log::info!("    [stream {}] Complete: {} spikes, {} snapshots, T={:.1}K",
                         i, spikes.len(), snapshots.len(), summary.end_temperature);
-                    Ok((spikes, snapshots, sig_data))
+                    Ok((spikes, snapshots, sig_data, kcc_data))
                 })
             }).collect();
 
@@ -2730,10 +2732,12 @@ fn run_multi_stream_pipeline(
     let mut stream_spike_offsets: Vec<usize> = Vec::new(); // offset into all_stream_spikes for each stream
     // Merged signal preservation grids (summed across all streams)
     let mut merged_signal: Option<prism_nhs::fused_engine::SignalPreservationData> = None;
+    // Merged KCC data (best-stream-per-residue across all streams)
+    let mut merged_kcc: Option<prism_nhs::fused_engine::KccData> = None;
 
     for (i, result) in stream_results.into_iter().enumerate() {
-        let (raw_spikes, stream_snapshots, sig_data) = match result {
-            Ok((spikes, snaps, sig)) => (spikes, snaps, sig),
+        let (raw_spikes, stream_snapshots, sig_data, kcc_data) = match result {
+            Ok((spikes, snaps, sig, kcc)) => (spikes, snaps, sig, kcc),
             Err(e) => {
                 log::error!("    Stream {} failed: {}", i, e);
                 per_stream_stats.push(serde_json::json!({
@@ -2745,6 +2749,29 @@ fn run_multi_stream_pipeline(
                 continue;
             }
         };
+
+        // Merge KCC data: for each residue, keep the stream with most causal activity
+        if let Some(kd) = kcc_data {
+            match merged_kcc.as_mut() {
+                None => { merged_kcc = Some(kd); }
+                Some(ref mut m) => {
+                    for j in 0..kd.n_residues.min(m.n_residues) {
+                        if kd.active_causal[j] > m.active_causal[j] {
+                            m.temporal_corr[j] = kd.temporal_corr[j];
+                            m.direction_score[j] = kd.direction_score[j];
+                            m.motion_efficiency[j] = kd.motion_efficiency[j];
+                            m.burst_motion[j] = kd.burst_motion[j];
+                            m.phase_shift[j] = kd.phase_shift[j];
+                            m.causal_lag[j] = kd.causal_lag[j];
+                            m.lag_corr_peak[j] = kd.lag_corr_peak[j];
+                            m.local_cov[j] = kd.local_cov[j];
+                            m.residue_count[j] = kd.residue_count[j];
+                            m.active_causal[j] = kd.active_causal[j];
+                        }
+                    }
+                }
+            }
+        }
 
         // Merge signal preservation grids (element-wise sum across streams)
         if let Some(sd) = sig_data {
@@ -5386,6 +5413,30 @@ fn run_multi_stream_pipeline(
             }
         }).collect();
 
+        // ── Per-site KCC: map dominant residue → KCC descriptors ──
+        let kcc_site_metrics: Vec<serde_json::Value> = site_signal_metrics.iter().map(|sp| {
+            let res_id = sp.get("primary_residue_id").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+            if let Some(ref kcc) = merged_kcc {
+                if res_id >= 0 && (res_id as usize) < kcc.n_residues {
+                    let r = res_id as usize;
+                    return serde_json::json!({
+                        "driver_residue_id": res_id,
+                        "temporal_corr": kcc.temporal_corr[r],
+                        "direction_score": kcc.direction_score[r],
+                        "motion_efficiency": kcc.motion_efficiency[r],
+                        "burst_motion": kcc.burst_motion[r],
+                        "phase_shift": kcc.phase_shift[r],
+                        "causal_lag": kcc.causal_lag[r],
+                        "lag_corr_peak": kcc.lag_corr_peak[r],
+                        "local_cov": kcc.local_cov[r],
+                        "active_causal_steps": kcc.active_causal[r],
+                        "total_steps": kcc.residue_count[r],
+                    });
+                }
+            }
+            serde_json::json!(null)
+        }).collect();
+
         // Build per-site JSON, merging PRISM-Therm therm_class when available
         let mut ms_sites_json: Vec<serde_json::Value> = reordered_sites.iter().enumerate().map(|(site_rank, s)| {
             let cat_count = s.lining_residues.iter()
@@ -5416,6 +5467,8 @@ fn run_multi_stream_pipeline(
                 }).collect::<Vec<_>>(),
                 "residue_ids": s.lining_residue_ids(),
                 "signal_preservation": site_signal_metrics.get(site_rank).cloned()
+                    .unwrap_or(serde_json::json!(null)),
+                "kcc": kcc_site_metrics.get(site_rank).cloned()
                     .unwrap_or(serde_json::json!(null)),
             })
         }).collect();

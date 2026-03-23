@@ -1013,6 +1013,35 @@ pub struct SignalPreservationData {
     pub grid_dim: usize,
 }
 
+/// KCC v2-full per-residue descriptors downloaded from GPU
+#[derive(Debug, Clone)]
+pub struct KccData {
+    pub temporal_corr: Vec<f32>,
+    pub direction_score: Vec<f32>,
+    pub motion_efficiency: Vec<f32>,
+    pub burst_motion: Vec<f32>,
+    pub phase_shift: Vec<f32>,
+    pub causal_lag: Vec<f32>,
+    pub lag_corr_peak: Vec<f32>,
+    pub local_cov: Vec<f32>,
+    pub residue_count: Vec<u32>,
+    pub active_causal: Vec<u32>,
+    pub n_residues: usize,
+}
+
+impl KccData {
+    pub fn empty() -> Self {
+        Self {
+            temporal_corr: Vec::new(), direction_score: Vec::new(),
+            motion_efficiency: Vec::new(), burst_motion: Vec::new(),
+            phase_shift: Vec::new(), causal_lag: Vec::new(),
+            lag_corr_peak: Vec::new(), local_cov: Vec::new(),
+            residue_count: Vec::new(), active_causal: Vec::new(),
+            n_residues: 0,
+        }
+    }
+}
+
 /// Spike persistence tracker for computing recurrence scores
 #[derive(Debug, Clone, Default)]
 pub struct SpikePersistenceTracker {
@@ -1629,6 +1658,41 @@ pub struct NhsAmberFusedEngine {
     d_coupled_spike_grid: CudaSlice<i32>,   // [total_voxels] UV→LIF causal counter
     d_primary_residue_id: CudaSlice<i32>,   // [total_voxels] dominant residue ID
     d_primary_residue_count: CudaSlice<i32>, // [total_voxels] dominant residue count
+    // KCC v2-full: per-residue GPU-resident buffers
+    d_residue_ca_idx: CudaSlice<i32>,        // [n_residues] CA atom index per residue
+    d_residue_step_causal: CudaSlice<i32>,   // [n_residues] per-step causal counter (zeroed each step)
+    d_residue_prev_x: CudaSlice<f32>,        // [n_residues] previous CA position
+    d_residue_prev_y: CudaSlice<f32>,
+    d_residue_prev_z: CudaSlice<f32>,
+    d_residue_sum_m: CudaSlice<f32>,         // [n_residues] streaming reductions
+    d_residue_sum_m2: CudaSlice<f32>,
+    d_residue_sum_c: CudaSlice<f32>,
+    d_residue_sum_c2: CudaSlice<f32>,
+    d_residue_sum_mc: CudaSlice<f32>,
+    d_residue_net_dx: CudaSlice<f32>,
+    d_residue_net_dy: CudaSlice<f32>,
+    d_residue_net_dz: CudaSlice<f32>,
+    d_residue_count: CudaSlice<u32>,
+    d_residue_active_causal: CudaSlice<u32>,
+    // KCC ring buffer [n_residues * 64]
+    d_ring_dx: CudaSlice<f32>,
+    d_ring_dy: CudaSlice<f32>,
+    d_ring_dz: CudaSlice<f32>,
+    d_ring_motion: CudaSlice<f32>,
+    d_ring_causality: CudaSlice<f32>,
+    d_ring_head: CudaSlice<u32>,             // [n_residues]
+    // KCC output descriptors [n_residues]
+    d_kcc_temporal_corr: CudaSlice<f32>,
+    d_kcc_direction_score: CudaSlice<f32>,
+    d_kcc_motion_efficiency: CudaSlice<f32>,
+    d_kcc_burst_motion: CudaSlice<f32>,
+    d_kcc_phase_shift: CudaSlice<f32>,
+    d_kcc_causal_lag: CudaSlice<f32>,
+    d_kcc_lag_corr_peak: CudaSlice<f32>,
+    d_kcc_local_cov: CudaSlice<f32>,
+    kcc_residue_update_kernel: CudaFunction,
+    kcc_compute_descriptors_kernel: CudaFunction,
+    n_residues: usize,
     /// Focused REST2: per-atom λ values. 1.0 = physical, <1.0 = softened.
     d_atom_lambda: CudaSlice<f32>,
     /// Global λ for this stream (used to set frustrated atoms' λ).
@@ -2302,6 +2366,84 @@ impl NhsAmberFusedEngine {
         };
         log::info!("Signal preservation buffers: {} voxels x 5 grids = {:.1} MB",
             total_voxels, (total_voxels * 5 * 4) as f64 / 1048576.0);
+
+        // KCC v2-full: per-residue GPU-resident buffers
+        let n_residues = topology.n_residues;
+        let kcc_ring_steps = 64usize;
+        let ring_total = n_residues * kcc_ring_steps;
+        // Streaming reductions (zeroed)
+        let d_residue_step_causal: CudaSlice<i32> = stream.alloc_zeros(n_residues)?;
+        let mut d_residue_prev_x: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let mut d_residue_prev_y: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let mut d_residue_prev_z: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_sum_m: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_sum_m2: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_sum_c: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_sum_c2: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_sum_mc: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_net_dx: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_net_dy: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_net_dz: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_count: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
+        let d_residue_active_causal: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
+        // Ring buffer
+        let d_ring_dx: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
+        let d_ring_dy: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
+        let d_ring_dz: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
+        let d_ring_motion: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
+        let d_ring_causality: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
+        let d_ring_head: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
+        // KCC output descriptors
+        let d_kcc_temporal_corr: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_direction_score: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_motion_efficiency: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_burst_motion: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_phase_shift: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_causal_lag: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_lag_corr_peak: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        let d_kcc_local_cov: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
+        // CA index mapping (uploaded once from topology)
+        let ca_indices_i32: Vec<i32> = topology.ca_indices.iter().map(|&i| i as i32).collect();
+        let mut d_residue_ca_idx: CudaSlice<i32> = stream.alloc_zeros(n_residues)?;
+        if ca_indices_i32.len() >= n_residues {
+            stream.memcpy_htod(&ca_indices_i32[..n_residues], &mut d_residue_ca_idx)?;
+        } else {
+            // Pad with -1 for residues without CA (e.g., water)
+            let mut padded = vec![-1i32; n_residues];
+            for (i, &v) in ca_indices_i32.iter().enumerate() {
+                padded[i] = v;
+            }
+            stream.memcpy_htod(&padded, &mut d_residue_ca_idx)?;
+        }
+        // Initialize prev positions from current CA positions
+        {
+            let mut init_x = vec![0.0f32; n_residues];
+            let mut init_y = vec![0.0f32; n_residues];
+            let mut init_z = vec![0.0f32; n_residues];
+            for (r, &ca_idx) in topology.ca_indices.iter().enumerate() {
+                if r < n_residues && ca_idx * 3 + 2 < topology.positions.len() {
+                    init_x[r] = topology.positions[ca_idx * 3];
+                    init_y[r] = topology.positions[ca_idx * 3 + 1];
+                    init_z[r] = topology.positions[ca_idx * 3 + 2];
+                }
+            }
+            stream.memcpy_htod(&init_x, &mut d_residue_prev_x)?;
+            stream.memcpy_htod(&init_y, &mut d_residue_prev_y)?;
+            stream.memcpy_htod(&init_z, &mut d_residue_prev_z)?;
+        }
+        // Load KCC kernels
+        let kcc_residue_update_kernel = fused_module.load_function("kcc_residue_update")?;
+        let kcc_compute_descriptors_kernel = fused_module.load_function("kcc_compute_rich_descriptors")?;
+        let kcc_streaming_bytes = n_residues * (15 * 4 + 2 * 4); // 15 floats + 2 u32s
+        let kcc_ring_bytes = ring_total * 5 * 4 + n_residues * 4; // 5 floats per slot + head
+        let kcc_output_bytes = n_residues * 8 * 4; // 8 output descriptors
+        log::info!("KCC v2-full: {} residues, ring={} steps, streaming={:.1}KB ring={:.1}KB output={:.1}KB total={:.1}KB",
+            n_residues, kcc_ring_steps,
+            kcc_streaming_bytes as f64 / 1024.0,
+            kcc_ring_bytes as f64 / 1024.0,
+            kcc_output_bytes as f64 / 1024.0,
+            (kcc_streaming_bytes + kcc_ring_bytes + kcc_output_bytes) as f64 / 1024.0);
+
         // Focused REST2: per-atom λ (all 1.0 = physical by default)
         let max_atoms_alloc = 15000usize; // same cap as engine allocation
         let d_atom_lambda: CudaSlice<f32> = {
@@ -2401,6 +2543,20 @@ impl NhsAmberFusedEngine {
             d_coupled_spike_grid,
             d_primary_residue_id,
             d_primary_residue_count,
+            d_residue_ca_idx,
+            d_residue_step_causal,
+            d_residue_prev_x, d_residue_prev_y, d_residue_prev_z,
+            d_residue_sum_m, d_residue_sum_m2,
+            d_residue_sum_c, d_residue_sum_c2, d_residue_sum_mc,
+            d_residue_net_dx, d_residue_net_dy, d_residue_net_dz,
+            d_residue_count, d_residue_active_causal,
+            d_ring_dx, d_ring_dy, d_ring_dz, d_ring_motion, d_ring_causality, d_ring_head,
+            d_kcc_temporal_corr, d_kcc_direction_score, d_kcc_motion_efficiency,
+            d_kcc_burst_motion, d_kcc_phase_shift, d_kcc_causal_lag,
+            d_kcc_lag_corr_peak, d_kcc_local_cov,
+            kcc_residue_update_kernel,
+            kcc_compute_descriptors_kernel,
+            n_residues,
             d_atom_lambda: d_atom_lambda,
             solute_lambda: 1.0,
             d_efp_potential,
@@ -4517,6 +4673,7 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_coupled_spike_grid)
                 .arg(&mut self.d_primary_residue_id)
                 .arg(&mut self.d_primary_residue_count)
+                .arg(&mut self.d_residue_step_causal)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -4637,6 +4794,7 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_coupled_spike_grid)
                     .arg(&mut self.d_primary_residue_id)
                     .arg(&mut self.d_primary_residue_count)
+                    .arg(&mut self.d_residue_step_causal)
                     .launch(voxel_cfg)
             }
         } else {
@@ -4696,6 +4854,7 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_coupled_spike_grid)
                     .arg(&mut self.d_primary_residue_id)
                     .arg(&mut self.d_primary_residue_count)
+                    .arg(&mut self.d_residue_step_causal)
                     .launch(voxel_cfg)
             }
         }
@@ -4708,6 +4867,57 @@ impl NhsAmberFusedEngine {
             self.stream.memset_zeros(&mut self.d_coupling_a)?;
         } else {
             self.stream.memset_zeros(&mut self.d_coupling_b)?;
+        }
+
+        // ====================================================================
+        // LAUNCH 3: KCC RESIDUE UPDATE (per-step streaming + ring buffer)
+        // ====================================================================
+        if self.n_residues > 0 {
+            let n_res_i32 = self.n_residues as i32;
+            let kcc_blocks = (self.n_residues as u32).div_ceil(256);
+            let kcc_cfg = LaunchConfig {
+                grid_dim: (kcc_blocks, 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            // Determine protocol phase: 0=cold_hold, 1=ramp, 2=warm_hold
+            let phase = if self.temp_protocol.current_step < self.temp_protocol.hold_steps {
+                0i32  // cold hold
+            } else if self.temp_protocol.current_step < self.temp_protocol.hold_steps + self.temp_protocol.ramp_steps {
+                1i32  // ramp
+            } else {
+                2i32  // warm hold
+            };
+            unsafe {
+                self.stream
+                    .launch_builder(&self.kcc_residue_update_kernel)
+                    .arg(&self.d_positions)
+                    .arg(&self.d_residue_ca_idx)
+                    .arg(&n_res_i32)
+                    .arg(&mut self.d_residue_prev_x)
+                    .arg(&mut self.d_residue_prev_y)
+                    .arg(&mut self.d_residue_prev_z)
+                    .arg(&mut self.d_residue_sum_m)
+                    .arg(&mut self.d_residue_sum_m2)
+                    .arg(&mut self.d_residue_sum_c)
+                    .arg(&mut self.d_residue_sum_c2)
+                    .arg(&mut self.d_residue_sum_mc)
+                    .arg(&mut self.d_residue_net_dx)
+                    .arg(&mut self.d_residue_net_dy)
+                    .arg(&mut self.d_residue_net_dz)
+                    .arg(&mut self.d_residue_count)
+                    .arg(&mut self.d_residue_active_causal)
+                    .arg(&mut self.d_residue_step_causal)
+                    .arg(&mut self.d_ring_dx)
+                    .arg(&mut self.d_ring_dy)
+                    .arg(&mut self.d_ring_dz)
+                    .arg(&mut self.d_ring_motion)
+                    .arg(&mut self.d_ring_causality)
+                    .arg(&mut self.d_ring_head)
+                    .arg(&phase)
+                    .launch(kcc_cfg)
+            }
+            .context("Failed to launch kcc_residue_update kernel")?;
         }
 
         // Advance protocols (CPU-side, no sync needed)
@@ -5445,6 +5655,101 @@ impl NhsAmberFusedEngine {
         }
 
         Ok(events)
+    }
+
+    /// Run KCC final descriptors computation and download per-residue results.
+    /// Must be called after simulation completes (all steps done).
+    pub fn compute_and_download_kcc(&mut self) -> Result<KccData> {
+        self.stream.synchronize()?;
+
+        if self.n_residues == 0 {
+            return Ok(KccData::empty());
+        }
+
+        // Launch kcc_compute_rich_descriptors kernel
+        let n_res_i32 = self.n_residues as i32;
+        let kcc_blocks = (self.n_residues as u32).div_ceil(256);
+        let kcc_cfg = LaunchConfig {
+            grid_dim: (kcc_blocks, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            self.stream
+                .launch_builder(&self.kcc_compute_descriptors_kernel)
+                .arg(&n_res_i32)
+                .arg(&self.d_residue_sum_m)
+                .arg(&self.d_residue_sum_m2)
+                .arg(&self.d_residue_sum_c)
+                .arg(&self.d_residue_sum_c2)
+                .arg(&self.d_residue_sum_mc)
+                .arg(&self.d_residue_net_dx)
+                .arg(&self.d_residue_net_dy)
+                .arg(&self.d_residue_net_dz)
+                .arg(&self.d_residue_count)
+                .arg(&self.d_residue_active_causal)
+                .arg(&self.d_ring_dx)
+                .arg(&self.d_ring_dy)
+                .arg(&self.d_ring_dz)
+                .arg(&self.d_ring_motion)
+                .arg(&self.d_ring_causality)
+                .arg(&self.d_ring_head)
+                .arg(&mut self.d_kcc_temporal_corr)
+                .arg(&mut self.d_kcc_direction_score)
+                .arg(&mut self.d_kcc_motion_efficiency)
+                .arg(&mut self.d_kcc_burst_motion)
+                .arg(&mut self.d_kcc_phase_shift)
+                .arg(&mut self.d_kcc_causal_lag)
+                .arg(&mut self.d_kcc_lag_corr_peak)
+                .arg(&mut self.d_kcc_local_cov)
+                .launch(kcc_cfg)
+        }
+        .context("Failed to launch kcc_compute_rich_descriptors kernel")?;
+
+        self.stream.synchronize()?;
+
+        // Download all results
+        let nr = self.n_residues;
+        let mut temporal_corr = vec![0.0f32; nr];
+        let mut direction_score = vec![0.0f32; nr];
+        let mut motion_efficiency = vec![0.0f32; nr];
+        let mut burst_motion = vec![0.0f32; nr];
+        let mut phase_shift = vec![0.0f32; nr];
+        let mut causal_lag = vec![0.0f32; nr];
+        let mut lag_corr_peak = vec![0.0f32; nr];
+        let mut local_cov = vec![0.0f32; nr];
+        let mut residue_count = vec![0u32; nr];
+        let mut active_causal = vec![0u32; nr];
+
+        self.stream.memcpy_dtoh(&self.d_kcc_temporal_corr, &mut temporal_corr)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_direction_score, &mut direction_score)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_motion_efficiency, &mut motion_efficiency)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_burst_motion, &mut burst_motion)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_phase_shift, &mut phase_shift)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_causal_lag, &mut causal_lag)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_lag_corr_peak, &mut lag_corr_peak)?;
+        self.stream.memcpy_dtoh(&self.d_kcc_local_cov, &mut local_cov)?;
+        self.stream.memcpy_dtoh(&self.d_residue_count, &mut residue_count)?;
+        self.stream.memcpy_dtoh(&self.d_residue_active_causal, &mut active_causal)?;
+
+        let n_with_causal = active_causal.iter().filter(|&&v| v > 0).count();
+        let max_corr = temporal_corr.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        log::info!("KCC: {} residues tracked, {} with causal activity, max_temporal_corr={:.4}",
+            nr, n_with_causal, max_corr);
+
+        Ok(KccData {
+            temporal_corr,
+            direction_score,
+            motion_efficiency,
+            burst_motion,
+            phase_shift,
+            causal_lag,
+            lag_corr_peak,
+            local_cov,
+            residue_count,
+            active_causal,
+            n_residues: nr,
+        })
     }
 
     /// Get spike grid (binary spike map) from GPU
