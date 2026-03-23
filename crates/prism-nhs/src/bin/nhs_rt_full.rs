@@ -6042,7 +6042,67 @@ fn run_multi_stream_pipeline(
                     "kcc": sj.get("kcc"),
                 })
             }).collect();
-            let viz = serde_json::json!({"pdb_source": &topology.source_pdb, "residues": res_json, "sites": sites_viz});
+            let viz = serde_json::json!({
+                "pdb_source": &topology.source_pdb,
+                "residues": res_json,
+                "sites": sites_viz,
+                "semantics": {
+                    "vector": {
+                        "dx_dy_dz": "net residue CA displacement accumulated over all simulation steps",
+                        "length": "magnitude of displacement vector (Angstroms)",
+                        "direction": "preferred direction of residue motion relative to initial position"
+                    },
+                    "color_mapping": {
+                        "R": "lag_corr — temporal alignment between causal UV→LIF signal and residue motion",
+                        "G": "causality — fraction of simulation steps with UV→LIF coupling at this residue",
+                        "B": "burst — temporal clustering of causal events (dense vs sparse event spacing)"
+                    },
+                    "weight": {
+                        "causal_weight": "normalized contribution of residue to site based on causal coupling magnitude"
+                    },
+                    "kcc": {
+                        "lag_corr_peak": "peak cross-correlation between causal activity and motion at optimal timestep lag",
+                        "burst_motion": "ratio of motion during dense causal events vs sparse events (>1 = bursty)",
+                        "local_cov": "maximum local covariance of motion and causality in timestep-windowed subregions",
+                        "motion_efficiency": "saturating transform of total motion magnitude (0-1)",
+                        "direction_score": "ratio of net displacement to total path length (1.0 = perfectly directed, 0.0 = random walk)",
+                        "causal_lag": "timestep offset that maximizes motion-causality cross-correlation (steps)"
+                    },
+                    "site": {
+                        "G": "geometry score: volume × (1 - hydrophilicity) × compactness",
+                        "T": "thermodynamic score: PRISM-Therm classification + druggability prior",
+                        "C": "causal score: sqrt(coupling_total + causality_density + coupled_voxel_fraction)",
+                        "K": "kinematic-causal coupling: max(persistent_mode, transient_mode) weighted over top-K residues",
+                        "L": "localization: fraction of causal signal concentrated within site vs neighborhood (R=6A)"
+                    }
+                },
+                "interpretation_guidelines": {
+                    "high_value_residue": {
+                        "criteria": ["high active_causal_steps", "high lag_corr_peak", "high motion_efficiency"],
+                        "meaning": "residue motion is strongly driven by causal UV→LIF signal and likely functionally relevant to pocket mechanism"
+                    },
+                    "transient_site": {
+                        "criteria": ["burst_motion > 1.5", "causal_lag != 0", "high localization"],
+                        "meaning": "site opens dynamically through temporally localized events; may represent cryptic or induced-fit pocket"
+                    },
+                    "persistent_site": {
+                        "criteria": ["burst_motion ≈ 1.0", "high causality_density", "high direction_score"],
+                        "meaning": "site is continuously active with stable directional motion; characteristic of constitutive binding pockets"
+                    },
+                    "noise_pattern": {
+                        "criteria": ["low active_causal_steps", "low lag_corr_peak", "low localization"],
+                        "meaning": "likely non-functional surface noise or thermal fluctuation without mechanistic significance"
+                    }
+                },
+                "vector_field_definition": {
+                    "origin": "CA atom position of residue (from topology ca_indices)",
+                    "direction": "net displacement vector (net_dx, net_dy, net_dz) accumulated over full simulation",
+                    "length": "scaled motion magnitude (clamped at 8 Angstroms for visualization)",
+                    "radius": "proportional to causal_weight (0.08 + 0.12 * causality_fraction)",
+                    "color_encoding": "RGB = (lag_corr_peak, causality_fraction, burst_motion/5)",
+                    "alpha": "proportional to KCC confidence of the residue"
+                }
+            });
             let vp = output_base.with_extension("kcc_visualization.json");
             if let Ok(f) = std::fs::File::create(&vp) {
                 let _ = serde_json::to_writer_pretty(f, &viz);
