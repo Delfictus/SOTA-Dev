@@ -1026,6 +1026,11 @@ pub struct KccData {
     pub local_cov: Vec<f32>,
     pub residue_count: Vec<u32>,
     pub active_causal: Vec<u32>,
+    // Motion vectors for visualization
+    pub net_dx: Vec<f32>,
+    pub net_dy: Vec<f32>,
+    pub net_dz: Vec<f32>,
+    pub sum_m: Vec<f32>,
     pub n_residues: usize,
 }
 
@@ -1036,6 +1041,8 @@ impl KccData {
             motion_efficiency: Vec::new(), burst_motion: Vec::new(),
             phase_shift: Vec::new(), causal_lag: Vec::new(),
             lag_corr_peak: Vec::new(), local_cov: Vec::new(),
+            net_dx: Vec::new(), net_dy: Vec::new(), net_dz: Vec::new(),
+            sum_m: Vec::new(),
             residue_count: Vec::new(), active_causal: Vec::new(),
             n_residues: 0,
         }
@@ -5715,6 +5722,10 @@ impl NhsAmberFusedEngine {
         let mut local_cov = vec![0.0f32; nr];
         let mut residue_count = vec![0u32; nr];
         let mut active_causal = vec![0u32; nr];
+        let mut net_dx = vec![0.0f32; nr];
+        let mut net_dy = vec![0.0f32; nr];
+        let mut net_dz = vec![0.0f32; nr];
+        let mut sum_m = vec![0.0f32; nr];
 
         self.stream.memcpy_dtoh(&self.d_kcc_temporal_corr, &mut temporal_corr)?;
         self.stream.memcpy_dtoh(&self.d_kcc_direction_score, &mut direction_score)?;
@@ -5726,6 +5737,10 @@ impl NhsAmberFusedEngine {
         self.stream.memcpy_dtoh(&self.d_kcc_local_cov, &mut local_cov)?;
         self.stream.memcpy_dtoh(&self.d_residue_count, &mut residue_count)?;
         self.stream.memcpy_dtoh(&self.d_residue_active_causal, &mut active_causal)?;
+        self.stream.memcpy_dtoh(&self.d_residue_net_dx, &mut net_dx)?;
+        self.stream.memcpy_dtoh(&self.d_residue_net_dy, &mut net_dy)?;
+        self.stream.memcpy_dtoh(&self.d_residue_net_dz, &mut net_dz)?;
+        self.stream.memcpy_dtoh(&self.d_residue_sum_m, &mut sum_m)?;
 
         let n_with_causal = active_causal.iter().filter(|&&v| v > 0).count();
         let max_corr = temporal_corr.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -5743,6 +5758,7 @@ impl NhsAmberFusedEngine {
             local_cov,
             residue_count,
             active_causal,
+            net_dx, net_dy, net_dz, sum_m,
             n_residues: nr,
         })
     }

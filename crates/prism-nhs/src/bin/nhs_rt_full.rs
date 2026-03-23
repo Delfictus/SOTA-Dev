@@ -6006,6 +6006,102 @@ fn run_multi_stream_pipeline(
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
 
+        // ── KCC Visualization Export ──
+        if let Some(ref kcc) = merged_kcc {
+            let ca_pos: Vec<[f32; 3]> = topology.ca_indices.iter().map(|&ci| {
+                if ci * 3 + 2 < topology.positions.len() {
+                    [topology.positions[ci*3], topology.positions[ci*3+1], topology.positions[ci*3+2]]
+                } else { [0.0; 3] }
+            }).collect();
+            let mut res_json = Vec::new();
+            for r in 0..kcc.n_residues.min(ca_pos.len()) {
+                if kcc.active_causal[r] == 0 { continue; }
+                res_json.push(serde_json::json!({
+                    "residue_id": r,
+                    "residue_name": topology.residue_names.get(r).cloned().unwrap_or_default(),
+                    "ca_position": ca_pos[r],
+                    "net_dx": kcc.net_dx[r], "net_dy": kcc.net_dy[r], "net_dz": kcc.net_dz[r],
+                    "sum_motion": kcc.sum_m[r],
+                    "motion_efficiency": kcc.motion_efficiency[r],
+                    "direction_score": kcc.direction_score[r],
+                    "burst_motion": kcc.burst_motion[r],
+                    "lag_corr_peak": kcc.lag_corr_peak[r],
+                    "local_cov": kcc.local_cov[r],
+                    "causal_lag": kcc.causal_lag[r],
+                    "active_causal_steps": kcc.active_causal[r],
+                    "total_steps": kcc.residue_count[r],
+                }));
+            }
+            let sites_viz: Vec<serde_json::Value> = ms_sites_json.iter().map(|sj| {
+                serde_json::json!({
+                    "id": sj.get("id"), "centroid": sj.get("centroid"),
+                    "rank_score": sj.get("rank_score"), "gtck_rank": sj.get("gtck_rank"),
+                    "rank_G": sj.get("rank_G"), "rank_T": sj.get("rank_T"),
+                    "rank_C": sj.get("rank_C"), "rank_K": sj.get("rank_K"),
+                    "rank_L": sj.get("rank_L"), "volume": sj.get("volume"),
+                    "kcc": sj.get("kcc"),
+                })
+            }).collect();
+            let viz = serde_json::json!({"pdb_source": &topology.source_pdb, "residues": res_json, "sites": sites_viz});
+            let vp = output_base.with_extension("kcc_visualization.json");
+            if let Ok(f) = std::fs::File::create(&vp) {
+                let _ = serde_json::to_writer_pretty(f, &viz);
+                log::info!("  KCC visualization: {}", vp.display());
+            }
+
+            // PyMOL session
+            let pp = output_base.with_extension("kcc_session.pml");
+            if let Ok(mut f) = std::fs::File::create(&pp) {
+                use std::io::Write;
+                let pn = std::path::Path::new(&topology.source_pdb)
+                    .file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                writeln!(f, "# PRISM4D KCC Visualization").ok();
+                writeln!(f, "hide all\nshow cartoon\ncolor gray80, all\nset cartoon_transparency, 0.7").ok();
+                // Site spheres
+                for sj in ms_sites_json.iter() {
+                    let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let c = sj.get("centroid").and_then(|v| v.as_array());
+                    let sc = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
+                    if rk > 5 || c.is_none() { continue; }
+                    let c = c.unwrap();
+                    let cx = c[0].as_f64().unwrap_or(0.0);
+                    let cy = c[1].as_f64().unwrap_or(0.0);
+                    let cz = c[2].as_f64().unwrap_or(0.0);
+                    let vol = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(500.0);
+                    let rad = (vol * 3.0 / (4.0 * std::f64::consts::PI)).cbrt();
+                    writeln!(f, "pseudoatom site_{}, pos=[{:.2},{:.2},{:.2}], vdw={:.1}, label=\"R{} ({:.4})\"",
+                        sid, cx, cy, cz, rad, rk, sc).ok();
+                    writeln!(f, "show sphere, site_{}\nset sphere_transparency, 0.6, site_{}", sid, sid).ok();
+                }
+                writeln!(f, "group KCC_SITES, site_*").ok();
+                // Vectors via Python CGO
+                writeln!(f, "python\nfrom pymol.cgo import *\nfrom pymol import cmd\nimport json, os").ok();
+                writeln!(f, "vp = r'{}'", vp.display()).ok();
+                writeln!(f, "with open(vp) as fh: viz = json.load(fh)").ok();
+                writeln!(f, "residues = viz.get('residues', [])").ok();
+                writeln!(f, "if residues:").ok();
+                writeln!(f, "    max_ac = max(r['active_causal_steps'] for r in residues) or 1").ok();
+                writeln!(f, "    vecs = []").ok();
+                writeln!(f, "    for r in residues:").ok();
+                writeln!(f, "        ca = r['ca_position']").ok();
+                writeln!(f, "        dx,dy,dz = r['net_dx'],r['net_dy'],r['net_dz']").ok();
+                writeln!(f, "        mag = (dx**2+dy**2+dz**2)**0.5").ok();
+                writeln!(f, "        if mag < 0.01: continue").ok();
+                writeln!(f, "        sc = min(8.0, mag*2.0)/(mag+1e-6)").ok();
+                writeln!(f, "        lc = min(1.0,max(0.0,r.get('lag_corr_peak',0)))").ok();
+                writeln!(f, "        cf = r['active_causal_steps']/max_ac").ok();
+                writeln!(f, "        bn = min(1.0,max(0.0,r.get('burst_motion',0))/5.0)").ok();
+                writeln!(f, "        rad = 0.08+0.12*cf").ok();
+                writeln!(f, "        vecs.extend([CYLINDER, ca[0],ca[1],ca[2], ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, rad, lc,cf,bn, lc,cf,bn])").ok();
+                writeln!(f, "        vecs.extend([CONE, ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, ca[0]+dx*sc*1.15,ca[1]+dy*sc*1.15,ca[2]+dz*sc*1.15, rad*2,0.0, lc,cf,bn, lc,cf,bn, 1.0,1.0])").ok();
+                writeln!(f, "    cmd.load_cgo(vecs, 'KCC_VECTORS')").ok();
+                writeln!(f, "python end").ok();
+                writeln!(f, "bg_color white\nzoom all").ok();
+                log::info!("  KCC PyMOL: {}", pp.display());
+            }
+        }
+
         // ── PRISM-Therm standalone report (multi-stream) ──
         if let Some(ref analysis) = prism_therm_result {
             let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
