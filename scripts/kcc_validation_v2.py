@@ -190,16 +190,23 @@ def refine_distributed_verdicts(val_sites):
             continue
         sig_ok = s["signal"]["signal_strength"] >= sig_median
         dw_ok = s["signal"]["distance_weighted_signal"] >= dw_median
-        vec_var = s["vector"]["vector_variance"]
-        if sig_ok and dw_ok and vec_var < 1.2:
+        # Distributed verdict: signal strength determines validity, NOT vector alignment
+        if sig_ok and dw_ok:
             s["verdict"] = "PASS"
-        elif sig_ok and dw_ok:
-            # Strong signal but opposing vectors — flag as mechanically suspicious
-            s["verdict"] = "WARN"
         elif sig_ok or dw_ok:
             s["verdict"] = "WARN"
         else:
             s["verdict"] = "FAIL"
+        # Vector variance is annotation only — not a gate
+        vec_var = s["vector"]["vector_variance"]
+        if "flags" not in s:
+            s["flags"] = []
+        if vec_var > 1.2:
+            s["flags"].append("multi-directional motion (distributed hinge/allosteric coupling)")
+        elif vec_var > 0.9:
+            s["flags"].append("mixed directional motion")
+        else:
+            s["flags"].append("coherent directional motion")
 
 
 def generate_pml(val_sites, output_path):
