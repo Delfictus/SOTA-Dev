@@ -235,25 +235,41 @@ def generate_pml(val_sites, output_path):
             group_names.append(group_name)
 
             # Style for residues
-            f.write(f"color {color}, Site{sid}_KCC_Drivers\n")
+            # Reference global_kcc_drivers (created by kcc_session.pml) or per-site
+            driver_sel = "global_kcc_drivers" if regime == "distributed" else f"site_{sid}_local_drivers"
+            f.write(f"color {color}, {driver_sel}\n")
             if regime == "distributed":
-                f.write(f"set sphere_scale, 0.4, Site{sid}_KCC_Drivers\n")
+                f.write(f"set sphere_scale, 0.4, {driver_sel}\n")
 
             # Verdict label
             verdict_color = {"PASS": "green", "WARN": "yellow", "FAIL": "red"}[verdict]
             f.write(f"# Verdict: {verdict} (signal={s['signal']['signal_strength']:.4f})\n\n")
 
-        # Aliases
-        f.write("\n# === INSPECTION ALIASES ===\n")
+        # Commands via cmd.extend (reliable multi-command)
+        f.write("\n# === INSPECTION COMMANDS ===\n")
+        f.write("python\nfrom pymol import cmd\n")
         for i, gn in enumerate(group_names):
-            f.write(f"alias inspect_site{i}, disable all; enable {gn}; enable KCC_VECTORS; "
-                    f"show cartoon; set cartoon_transparency, 0.3; zoom {gn}, 10\n")
+            f.write(f"def _inspect_{i}(self=None):\n")
+            f.write(f"    cmd.disable('all')\n")
+            f.write(f"    cmd.enable('{gn}')\n")
+            f.write(f"    cmd.enable('kcc_vectors')\n")
+            f.write(f"    cmd.show('cartoon')\n")
+            f.write(f"    cmd.set('cartoon_transparency', 0.3)\n")
+            f.write(f"    cmd.zoom('{gn}', 10)\n")
+            f.write(f"cmd.extend('inspect_site{i}', _inspect_{i})\n")
 
         if len(group_names) >= 2:
-            f.write(f"alias compare_top2, disable all; enable {group_names[0]}; enable {group_names[1]}; "
-                    f"enable KCC_VECTORS; show cartoon; set cartoon_transparency, 0.3; zoom all\n")
+            f.write(f"def _compare_top2(self=None):\n")
+            f.write(f"    cmd.disable('all')\n")
+            f.write(f"    cmd.enable('{group_names[0]}')\n")
+            f.write(f"    cmd.enable('{group_names[1]}')\n")
+            f.write(f"    cmd.enable('kcc_vectors')\n")
+            f.write(f"    cmd.show('cartoon')\n")
+            f.write(f"    cmd.set('cartoon_transparency', 0.3)\n")
+            f.write(f"    cmd.zoom('all')\n")
+            f.write(f"cmd.extend('compare_top2', _compare_top2)\n")
 
-        f.write("alias show_all, enable all; zoom all\n")
+        f.write("python end\n")
 
         # Default: show top-ranked
         if group_names:
