@@ -6226,26 +6226,100 @@ fn run_multi_stream_pipeline(
                 let _ = serde_json::to_writer_pretty(vf, &val_output);
                 log::info!("  KCC validation: {}", val_path.display());
             }
-            // PyMOL session with deterministic top-K residue groups
+            // PyMOL session — regime-aware driver visualization
+            // Detects shared vs unique drivers across top sites
             let pp = output_base.with_extension("kcc_session.pml");
             if let Ok(mut f) = std::fs::File::create(&pp) {
                 use std::io::Write;
-                writeln!(f, "# PRISM4D KCC Visualization — Auto-generated (deterministic)").ok();
-                writeln!(f, "# Top-K residue groups per site for one-command inspection").ok();
+
+                // Determine driver regime: collect top-K residue sets per site
+                let mut site_driver_sets: Vec<(i64, Vec<i64>)> = Vec::new(); // (site_id, [residue_ids])
+                for sj in ms_sites_json.iter() {
+                    let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
+                    if rk > 5 { continue; }
+                    let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let cids: Vec<i64> = sj.get("kcc")
+                        .and_then(|k| k.get("candidate_residue_ids"))
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+                        .unwrap_or_default();
+                    site_driver_sets.push((sid, cids));
+                }
+
+                // Classify: identical / overlapping / unique
+                let driver_regime = if site_driver_sets.len() >= 2 {
+                    let ref_set: std::collections::HashSet<i64> = site_driver_sets[0].1.iter().copied().collect();
+                    let all_identical = site_driver_sets[1..].iter().all(|(_, s)| {
+                        let ss: std::collections::HashSet<i64> = s.iter().copied().collect();
+                        ss == ref_set
+                    });
+                    if all_identical {
+                        "global"  // all sites share exact same drivers
+                    } else {
+                        // Check overlap
+                        let min_overlap = site_driver_sets[1..].iter().map(|(_, s)| {
+                            let ss: std::collections::HashSet<i64> = s.iter().copied().collect();
+                            let intersection = ref_set.intersection(&ss).count();
+                            let union = ref_set.union(&ss).count();
+                            if union > 0 { intersection as f64 / union as f64 } else { 0.0 }
+                        }).fold(f64::MAX, f64::min);
+                        if min_overlap > 0.6 { "hybrid" } else { "local" }
+                    }
+                } else { "local" };
+
+                writeln!(f, "# PRISM4D KCC Session — {} driver regime", driver_regime.to_uppercase()).ok();
+                writeln!(f, "# Auto-generated (deterministic)").ok();
                 writeln!(f, "").ok();
-                writeln!(f, "hide all\nshow cartoon\ncolor gray80, all\nset cartoon_transparency, 0.7").ok();
+                writeln!(f, "hide all").ok();
+                writeln!(f, "show cartoon").ok();
+                writeln!(f, "color gray80, all").ok();
+                writeln!(f, "set cartoon_transparency, 0.7").ok();
                 writeln!(f, "").ok();
 
-                // Site spheres + top-K residue groups
-                writeln!(f, "# === SITES + TOP-K DRIVER RESIDUES ===").ok();
+                // Global/shared drivers (for global or hybrid regime)
+                let global_driver_ids: Vec<i64> = if driver_regime != "local" {
+                    // Shared core = intersection of all site driver sets
+                    if let Some((_, first)) = site_driver_sets.first() {
+                        let mut shared: std::collections::HashSet<i64> = first.iter().copied().collect();
+                        for (_, s) in &site_driver_sets[1..] {
+                            let ss: std::collections::HashSet<i64> = s.iter().copied().collect();
+                            shared = shared.intersection(&ss).copied().collect();
+                        }
+                        let mut v: Vec<i64> = shared.into_iter().collect();
+                        v.sort();
+                        v
+                    } else { Vec::new() }
+                } else { Vec::new() };
+
+                if !global_driver_ids.is_empty() {
+                    writeln!(f, "# === GLOBAL DISTRIBUTED DRIVERS ===").ok();
+                    writeln!(f, "select global_kcc_drivers, none").ok();
+                    for &rid in &global_driver_ids {
+                        let r = rid as usize;
+                        if r >= ca_pos.len() { continue; }
+                        let ca = ca_pos[r];
+                        let rname = topology.residue_names.get(r).map(|s| s.as_str()).unwrap_or("UNK");
+                        // 2.0Å tolerance for robust CA matching
+                        writeln!(f, "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
+                        writeln!(f, "select global_kcc_drivers, global_kcc_drivers or (byres _tmp)").ok();
+                        writeln!(f, "delete _tmp").ok();
+                        writeln!(f, "# {} {} (global driver)", rname, rid).ok();
+                    }
+                    let color = if driver_regime == "global" { "orange" } else { "yellow" };
+                    writeln!(f, "color {}, global_kcc_drivers", color).ok();
+                    writeln!(f, "show sticks, global_kcc_drivers").ok();
+                    writeln!(f, "").ok();
+                }
+
+                // Site spheres
+                writeln!(f, "# === SITE SPHERES ===").ok();
                 let mut site_group_names: Vec<String> = Vec::new();
                 for sj in ms_sites_json.iter() {
                     let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
                     let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
                     if rk > 5 { continue; }
                     let c = match sj.get("centroid").and_then(|v| v.as_array()) {
-                        Some(c) => c.clone(),
-                        None => continue,
+                        Some(c) => c.clone(), None => continue,
                     };
                     let cx = c[0].as_f64().unwrap_or(0.0);
                     let cy = c[1].as_f64().unwrap_or(0.0);
@@ -6253,62 +6327,52 @@ fn run_multi_stream_pipeline(
                     let sc = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let vol = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(500.0);
                     let rad = (vol * 3.0 / (4.0 * std::f64::consts::PI)).cbrt();
-
-                    writeln!(f, "").ok();
-                    writeln!(f, "# --- Site {} (GTCK Rank {}, Score {:.4}) ---", sid, rk, sc).ok();
                     writeln!(f, "pseudoatom site_{}, pos=[{:.2},{:.2},{:.2}], vdw={:.1}, label=\"R{} S{} ({:.4})\"",
                         sid, cx, cy, cz, rad, rk, sid, sc).ok();
-                    writeln!(f, "show sphere, site_{}", sid).ok();
+                    writeln!(f, "show sphere, site_{}",  sid).ok();
                     writeln!(f, "set sphere_transparency, 0.6, site_{}", sid).ok();
 
-                    // Top-K residue selection using CA coordinates (NOT residue IDs)
-                    let kcc_data = sj.get("kcc");
-                    if let Some(kcc) = kcc_data {
-                        let cand_ids = kcc.get("candidate_residue_ids").and_then(|v| v.as_array());
-                        let cand_weights = kcc.get("candidate_causal_weights").and_then(|v| v.as_array());
-                        if let Some(cids) = cand_ids {
-                            writeln!(f, "select site_{}_drivers, none", sid).ok();
-                            let mut vec_names: Vec<String> = Vec::new();
-                            for (ci, rid_val) in cids.iter().enumerate() {
-                                let rid = rid_val.as_i64().unwrap_or(-1) as usize;
-                                if rid >= ca_pos.len() { continue; }
-                                let ca = ca_pos[rid];
-                                let w = cand_weights.and_then(|ws| ws.get(ci))
-                                    .and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                let rname = topology.residue_names.get(rid).map(|s| s.as_str()).unwrap_or("UNK");
-                                // Select by proximity to CA position (deterministic, chain-safe)
-                                writeln!(f, "select _tmp_r{}, (name CA) within 0.5 of [{:.3},{:.3},{:.3}]",
-                                    rid, ca[0], ca[1], ca[2]).ok();
-                                writeln!(f, "select site_{}_drivers, site_{}_drivers or (byres _tmp_r{})",
-                                    sid, sid, rid).ok();
-                                writeln!(f, "delete _tmp_r{}", rid).ok();
-
-                                // Per-residue vector object name for grouping
-                                let vname = format!("vec_s{}_{}", sid, rid);
-                                vec_names.push(vname);
-
-                                // Label
-                                if ci == 0 {
-                                    writeln!(f, "# Driver {}: {} {} (w={:.3})", ci, rname, rid, w).ok();
-                                }
+                    // Per-site unique drivers (hybrid/local only)
+                    if driver_regime == "local" || driver_regime == "hybrid" {
+                        let site_cids: Vec<i64> = sj.get("kcc")
+                            .and_then(|k| k.get("candidate_residue_ids"))
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+                            .unwrap_or_default();
+                        let unique_cids: Vec<i64> = site_cids.iter()
+                            .filter(|r| !global_driver_ids.contains(r))
+                            .copied().collect();
+                        if !unique_cids.is_empty() {
+                            writeln!(f, "select site_{}_local_drivers, none", sid).ok();
+                            for &rid in &unique_cids {
+                                let r = rid as usize;
+                                if r >= ca_pos.len() { continue; }
+                                let ca = ca_pos[r];
+                                writeln!(f, "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
+                                writeln!(f, "select site_{}_local_drivers, site_{}_local_drivers or (byres _tmp)", sid, sid).ok();
+                                writeln!(f, "delete _tmp").ok();
                             }
-                            writeln!(f, "color yellow, site_{}_drivers", sid).ok();
-                            writeln!(f, "show sticks, site_{}_drivers", sid).ok();
-                            writeln!(f, "set_name site_{}_drivers, \"Site{}_KCC_Drivers\"", sid, sid).ok();
-
-                            // Group: site sphere + driver residues
-                            let gname = format!("site_{}_full", sid);
-                            writeln!(f, "group {}, site_{} Site{}_KCC_Drivers", gname, sid, sid).ok();
-                            site_group_names.push(gname);
+                            writeln!(f, "color cyan, site_{}_local_drivers", sid).ok();
+                            writeln!(f, "show sticks, site_{}_local_drivers", sid).ok();
                         }
                     }
-                }
-                writeln!(f, "").ok();
-                writeln!(f, "group KCC_SITES, site_*").ok();
 
-                // Vectors via Python CGO
+                    // Group: site sphere (+ local drivers if any, + global drivers)
+                    let gname = format!("site_{}_full", sid);
+                    if driver_regime == "global" {
+                        writeln!(f, "group {}, site_{} global_kcc_drivers", gname, sid).ok();
+                    } else if driver_regime == "hybrid" {
+                        writeln!(f, "group {}, site_{} global_kcc_drivers site_{}_local_drivers", gname, sid, sid).ok();
+                    } else {
+                        writeln!(f, "group {}, site_{} site_{}_local_drivers", gname, sid, sid).ok();
+                    }
+                    site_group_names.push(gname);
+                }
+                writeln!(f, "group kcc_sites, site_*").ok();
                 writeln!(f, "").ok();
-                writeln!(f, "# === KCC MOTION VECTORS (CGO) ===").ok();
+
+                // Vectors + commands via Python CGO + cmd.extend
+                writeln!(f, "# === KCC VECTORS + COMMANDS ===").ok();
                 writeln!(f, "python").ok();
                 writeln!(f, "from pymol.cgo import *").ok();
                 writeln!(f, "from pymol import cmd").ok();
@@ -6330,53 +6394,55 @@ fn run_multi_stream_pipeline(
                 writeln!(f, "        cf = r['active_causal_steps'] / max_ac").ok();
                 writeln!(f, "        bn = min(1.0, max(0.0, r.get('burst_motion', 0)) / 5.0)").ok();
                 writeln!(f, "        rad = 0.08 + 0.12 * cf").ok();
-                writeln!(f, "        vecs.extend([CYLINDER,").ok();
-                writeln!(f, "            ca[0], ca[1], ca[2],").ok();
-                writeln!(f, "            ca[0]+dx*sc, ca[1]+dy*sc, ca[2]+dz*sc,").ok();
-                writeln!(f, "            rad, lc, cf, bn, lc, cf, bn])").ok();
-                writeln!(f, "        vecs.extend([CONE,").ok();
-                writeln!(f, "            ca[0]+dx*sc, ca[1]+dy*sc, ca[2]+dz*sc,").ok();
-                writeln!(f, "            ca[0]+dx*sc*1.15, ca[1]+dy*sc*1.15, ca[2]+dz*sc*1.15,").ok();
-                writeln!(f, "            rad*2, 0.0, lc, cf, bn, lc, cf, bn, 1.0, 1.0])").ok();
-                writeln!(f, "    cmd.load_cgo(vecs, 'KCC_VECTORS')").ok();
+                writeln!(f, "        vecs.extend([CYLINDER, ca[0],ca[1],ca[2], ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, rad, lc,cf,bn, lc,cf,bn])").ok();
+                writeln!(f, "        vecs.extend([CONE, ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, ca[0]+dx*sc*1.15,ca[1]+dy*sc*1.15,ca[2]+dz*sc*1.15, rad*2,0.0, lc,cf,bn, lc,cf,bn, 1.0,1.0])").ok();
+                writeln!(f, "    cmd.load_cgo(vecs, 'kcc_vectors')").ok();
+                writeln!(f, "").ok();
+                // cmd.extend commands (reliable multi-command execution)
+                for (i, gname) in site_group_names.iter().enumerate() {
+                    writeln!(f, "def _show_site{}(self=None):", i).ok();
+                    writeln!(f, "    cmd.disable('all')").ok();
+                    writeln!(f, "    cmd.enable('{}')", gname).ok();
+                    writeln!(f, "    cmd.enable('kcc_vectors')").ok();
+                    writeln!(f, "    cmd.show('cartoon')").ok();
+                    writeln!(f, "    cmd.set('cartoon_transparency', 0.3)").ok();
+                    writeln!(f, "    cmd.zoom('{}', 10)", gname).ok();
+                    writeln!(f, "cmd.extend('show_site{}', _show_site{})", i, i).ok();
+                    writeln!(f, "cmd.extend('inspect_site{}', _show_site{})", i, i).ok();
+                }
+                if site_group_names.len() >= 2 {
+                    writeln!(f, "def _compare_top2(self=None):").ok();
+                    writeln!(f, "    cmd.disable('all')").ok();
+                    writeln!(f, "    cmd.enable('{}')", site_group_names[0]).ok();
+                    writeln!(f, "    cmd.enable('{}')", site_group_names[1]).ok();
+                    writeln!(f, "    cmd.enable('kcc_vectors')").ok();
+                    writeln!(f, "    cmd.show('cartoon')").ok();
+                    writeln!(f, "    cmd.set('cartoon_transparency', 0.3)").ok();
+                    writeln!(f, "    cmd.zoom('all')").ok();
+                    writeln!(f, "cmd.extend('compare_top2', _compare_top2)").ok();
+                }
+                writeln!(f, "def _show_all(self=None):").ok();
+                writeln!(f, "    cmd.enable('all')").ok();
+                writeln!(f, "    cmd.zoom('all')").ok();
+                writeln!(f, "cmd.extend('show_all', _show_all)").ok();
                 writeln!(f, "python end").ok();
                 writeln!(f, "").ok();
 
-                // Enable shortcuts (aliases)
-                writeln!(f, "# === ONE-COMMAND INSPECTION SHORTCUTS ===").ok();
-                for (i, gname) in site_group_names.iter().enumerate() {
-                    writeln!(f, "alias show_site{}, disable all; enable {}; enable KCC_VECTORS; zoom {}, 10",
-                        i, gname, gname).ok();
-                }
-                writeln!(f, "alias show_all, enable all; zoom all").ok();
-                // Compare top 2 sites side-by-side
-                if site_group_names.len() >= 2 {
-                    writeln!(f, "alias compare_top2, disable all; enable {}; enable {}; enable KCC_VECTORS; show cartoon; set cartoon_transparency, 0.3; zoom all",
-                        site_group_names[0], site_group_names[1]).ok();
-                }
-                // Inspect aliases (synonyms)
-                for i in 0..site_group_names.len() {
-                    writeln!(f, "alias inspect_site{}, show_site{}", i, i).ok();
-                }
-                writeln!(f, "").ok();
-
-                // Default view: top-ranked site
-                writeln!(f, "# Default: show top-ranked site").ok();
+                // Default view
                 writeln!(f, "bg_color white").ok();
                 writeln!(f, "set ray_opaque_background, 0").ok();
                 writeln!(f, "set depth_cue, 0").ok();
                 if let Some(top) = site_group_names.first() {
                     writeln!(f, "disable all").ok();
                     writeln!(f, "enable {}", top).ok();
-                    writeln!(f, "enable KCC_VECTORS").ok();
+                    writeln!(f, "enable kcc_vectors").ok();
                     writeln!(f, "show cartoon").ok();
                     writeln!(f, "set cartoon_transparency, 0.7").ok();
                     writeln!(f, "zoom {}, 10", top).ok();
-                } else {
-                    writeln!(f, "zoom all").ok();
                 }
 
-                log::info!("  KCC PyMOL: {} (aliases: show_site0..show_site{})", pp.display(), site_group_names.len().saturating_sub(1));
+                log::info!("  KCC PyMOL: {} (regime={}, commands: show_site0..show_site{})",
+                    pp.display(), driver_regime, site_group_names.len().saturating_sub(1));
             }
         }
 
