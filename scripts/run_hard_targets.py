@@ -157,6 +157,42 @@ def sanitize_pdb(raw_path, clean_path, pdb_id):
         raise BenchmarkError(f"Too few atoms after sanitization: {n_atoms}")
 
 
+def repair_structure(clean_path, fixed_path, pdb_id):
+    """Repair PDB structure using PDBFixer: add missing atoms, hydrogens, fix templates.
+    Required for real-world PDBs before topology generation.
+    DO NOT modify prepare_topology — fix the input instead."""
+    if fixed_path.exists():
+        log(f"  Fixed PDB already exists: {fixed_path}")
+        return
+
+    log(f"  Repairing structure for {pdb_id} (PDBFixer)...")
+    try:
+        from pdbfixer import PDBFixer
+        from openmm.app import PDBFile
+    except ImportError as e:
+        raise BenchmarkError(
+            f"PDBFixer not available: {e}. Install: conda install -c conda-forge pdbfixer openmm"
+        )
+
+    fixer = PDBFixer(filename=str(clean_path))
+    fixer.findMissingResidues()
+    fixer.findNonstandardResidues()
+    fixer.replaceNonstandardResidues()
+    fixer.removeHeterogens(keepWater=False)
+    fixer.findMissingAtoms()
+    fixer.addMissingAtoms()
+    fixer.addMissingHydrogens(pH=7.0)
+
+    with open(str(fixed_path), "w") as f:
+        PDBFile.writeFile(fixer.topology, fixer.positions, f)
+
+    # Verify
+    n_atoms = sum(1 for line in open(fixed_path) if line.startswith("ATOM"))
+    log(f"  Repaired: {n_atoms} atoms (with hydrogens + missing atoms added)")
+    if n_atoms < 200:
+        raise BenchmarkError(f"Too few atoms after repair: {n_atoms}")
+
+
 # ============================================================================
 # PHASE 2 — TOPOLOGY GENERATION
 # ============================================================================
@@ -417,7 +453,7 @@ def run_pipeline():
             raw_pdb = RAW_DIR / f"{name}.pdb"
             clean_pdb = CLEAN_DIR / f"{name}.pdb"
 
-            # Check if topology already exists in bench30
+            # Check if topology already exists in bench30 (pre-validated)
             existing_topo = ROOT / "benchmarks" / "prism4d_bench30" / "topologies" / f"{name}.topology.json"
             if existing_topo.exists():
                 log(f"  Using existing bench30 topology: {existing_topo}")
@@ -428,10 +464,14 @@ def run_pipeline():
                 download_pdb(pdb_id, raw_pdb)
                 sanitize_pdb(raw_pdb, clean_pdb, pdb_id)
 
-                # Phase 2: Topology generation
+                # Phase 1.5: Repair structure (PDBFixer — add missing atoms/hydrogens)
+                fixed_pdb = CLEAN_DIR / f"{name}_fixed.pdb"
+                repair_structure(clean_pdb, fixed_pdb, pdb_id)
+
+                # Phase 2: Topology generation (from repaired structure)
                 log("[Phase 2] Topology generation")
                 topo_path = TOPO_DIR / f"{name}.topology.json"
-                generate_topology(clean_pdb, topo_path, pdb_id)
+                generate_topology(fixed_pdb, topo_path, pdb_id)
 
             topo_path = TOPO_DIR / f"{name}.topology.json"
             if not topo_path.exists():
