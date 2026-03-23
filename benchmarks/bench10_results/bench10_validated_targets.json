@@ -10,7 +10,8 @@
     "site_valid": true,
     "site_reason": "buried (26 CAs within 10A); 16 contact residues; interior (d/r=0.29)",
     "n_contact_residues": 16,
-    "n_ca_within_10A": 26
+    "n_ca_within_10A": 26,
+    "site_type": "cryptic"
   },
   {
     "pdb": "1KV1",
@@ -23,7 +24,8 @@
     "site_valid": true,
     "site_reason": "buried (24 CAs within 10A); 19 contact residues; interior (d/r=0.24)",
     "n_contact_residues": 19,
-    "n_ca_within_10A": 24
+    "n_ca_within_10A": 24,
+    "site_type": "allosteric"
   },
   {
     "pdb": "1HCL",
@@ -36,7 +38,8 @@
     "site_valid": true,
     "site_reason": "buried (22 CAs within 10A); 11 contact residues; interior (d/r=0.44)",
     "n_contact_residues": 11,
-    "n_ca_within_10A": 22
+    "n_ca_within_10A": 22,
+    "site_type": "pocket"
   },
   {
     "pdb": "3L3N",
@@ -49,7 +52,8 @@
     "site_valid": true,
     "site_reason": "buried (17 CAs within 10A); 14 contact residues; interior (d/r=0.18)",
     "n_contact_residues": 14,
-    "n_ca_within_10A": 17
+    "n_ca_within_10A": 17,
+    "site_type": "pocket"
   },
   {
     "pdb": "1JWP",
@@ -62,7 +66,8 @@
     "site_valid": true,
     "site_reason": "buried (19 CAs within 10A); 18 contact residues; interior (d/r=0.43)",
     "n_contact_residues": 18,
-    "n_ca_within_10A": 19
+    "n_ca_within_10A": 19,
+    "site_type": "cryptic"
   },
   {
     "pdb": "4EY4",
@@ -75,7 +80,8 @@
     "site_valid": true,
     "site_reason": "buried (30 CAs within 10A); 30 contact residues; interior (d/r=0.02)",
     "n_contact_residues": 30,
-    "n_ca_within_10A": 30
+    "n_ca_within_10A": 30,
+    "site_type": "pocket"
   },
   {
     "pdb": "1NNA",
@@ -88,7 +94,8 @@
     "site_valid": true,
     "site_reason": "buried (18 CAs within 10A); 16 contact residues; interior (d/r=0.37)",
     "n_contact_residues": 16,
-    "n_ca_within_10A": 18
+    "n_ca_within_10A": 18,
+    "site_type": "pocket"
   },
   {
     "pdb": "2HNP",
@@ -101,7 +108,8 @@
     "site_valid": true,
     "site_reason": "buried (15 CAs within 10A); 12 contact residues; interior (d/r=0.68)",
     "n_contact_residues": 12,
-    "n_ca_within_10A": 15
+    "n_ca_within_10A": 15,
+    "site_type": "allosteric"
   },
   {
     "pdb": "1M47",
@@ -114,7 +122,8 @@
     "site_valid": true,
     "site_reason": "PPI site (shallow by nature); 54 contact residues confirms functional binding; accepted with PPI exception",
     "n_contact_residues": 54,
-    "n_ca_within_10A": 10
+    "n_ca_within_10A": 10,
+    "site_type": "PPI"
   },
   {
     "pdb": "2OSS",
@@ -127,6 +136,7 @@
     "site_valid": true,
     "site_reason": "buried (15 CAs within 10A); 10 contact residues; interior (d/r=0.61)",
     "n_contact_residues": 10,
-    "n_ca_within_10A": 15
+    "n_ca_within_10A": 15,
+    "site_type": "pocket"
   }
 ]
