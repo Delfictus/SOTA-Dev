@@ -21,6 +21,20 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # ============================================================================
+# TOPOLOGY PATH — LOCKED TO PRODUCTION ROUTE (DO NOT CHANGE)
+# ============================================================================
+# Add scripts/ to path so stage2_topology can be imported
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from stage2_topology import prepare_topology
+    _TOPO_ROUTE = "stage2_topology.prepare_topology (production)"
+except Exception as e:
+    print(f"FATAL: Topology pipeline unavailable: {e}")
+    print("Required: scripts/stage2_topology.py with OpenMM + AMBER ff14SB")
+    print("Install: conda install -c conda-forge openmm")
+    sys.exit(1)
+
+# ============================================================================
 # CONFIGURATION (FIXED — DO NOT MODIFY)
 # ============================================================================
 
@@ -42,7 +56,6 @@ RESULTS_DIR = BENCH_DIR / "results"
 RUN_DIR = Path("/tmp/prism_hard_targets")
 
 NHS_BINARY = ROOT / "target" / "release" / "nhs_rt_full"
-PIPELINE_SCRIPT = ROOT / "scripts" / "prism_pipeline.py"
 VALIDATION_SCRIPT = ROOT / "scripts" / "kcc_validation_v2.py"
 
 # Engine parameters (FIXED — identical for all targets)
@@ -149,7 +162,8 @@ def sanitize_pdb(raw_path, clean_path, pdb_id):
 # ============================================================================
 
 def generate_topology(clean_pdb, topo_path, pdb_id):
-    """Generate PRISM topology using the pipeline script."""
+    """Generate PRISM topology using ONLY the production path: stage2_topology.prepare_topology.
+    No fallbacks. No alternatives. Fail fast if unavailable."""
     if topo_path.exists():
         # Validate existing topology
         try:
@@ -163,46 +177,30 @@ def generate_topology(clean_pdb, topo_path, pdb_id):
         except Exception:
             pass
 
+    log(f"  [TOPOLOGY] Using {_TOPO_ROUTE}")
     log(f"  Generating topology for {pdb_id}...")
-    topo_output_dir = topo_path.parent
-    ensure_dir(topo_output_dir)
+    ensure_dir(topo_path.parent)
 
-    # Use prism_pipeline.py for topology generation (Stage 1+2)
-    result = run_cmd(
-        [sys.executable, str(PIPELINE_SCRIPT), str(clean_pdb), str(topo_output_dir),
-         "--stages", "1,2", "--name", pdb_id.lower()],
-        f"Topology generation for {pdb_id}",
-        timeout=300,
-        check=False,
+    # Production path: stage2_topology.prepare_topology (OpenMM + AMBER ff14SB)
+    # Exact same call as scripts/prism_pipeline.py line 464
+    result = prepare_topology(
+        str(clean_pdb),
+        str(topo_path),
+        solvate=False,
+        minimize=True,
+        verbose=True,
     )
 
-    # If pipeline fails, try direct topology creation
+    # Guard: verify file was created
     if not topo_path.exists():
-        log("  Pipeline topology failed, trying direct creation...", "WARN")
-        # Use the simple topology creator as fallback
-        create_script = ROOT / "scripts" / "create_prism_topology.py"
-        if create_script.exists():
-            run_cmd(
-                [sys.executable, str(create_script), str(clean_pdb), str(clean_pdb), str(topo_path)],
-                f"Direct topology creation for {pdb_id}",
-                timeout=120,
-                check=False,
-            )
+        raise BenchmarkError(f"Topology generation failed: {topo_path} not created")
 
-    # Check for topology in various possible output locations
-    possible_paths = [
-        topo_path,
-        topo_output_dir / f"{pdb_id.lower()}.topology.json",
-        topo_output_dir / f"{pdb_id.lower()}.topology.prism_therm.json",
-    ]
-    for p in possible_paths:
-        if p.exists():
-            if p != topo_path:
-                shutil.copy2(p, topo_path)
-            log(f"  Topology ready: {topo_path}")
-            return
+    n_atoms = result.get("n_atoms", 0)
+    n_residues = result.get("n_residues", 0)
+    log(f"  Topology ready: {n_atoms} atoms, {n_residues} residues")
 
-    raise BenchmarkError(f"Topology generation failed for {pdb_id}")
+    if n_atoms < 200:
+        raise BenchmarkError(f"Topology too small: {n_atoms} atoms")
 
 
 # ============================================================================
