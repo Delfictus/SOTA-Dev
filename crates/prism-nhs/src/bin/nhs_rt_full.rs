@@ -6109,56 +6109,148 @@ fn run_multi_stream_pipeline(
                 log::info!("  KCC visualization: {}", vp.display());
             }
 
-            // PyMOL session
+            // PyMOL session with deterministic top-K residue groups
             let pp = output_base.with_extension("kcc_session.pml");
             if let Ok(mut f) = std::fs::File::create(&pp) {
                 use std::io::Write;
-                let pn = std::path::Path::new(&topology.source_pdb)
-                    .file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                writeln!(f, "# PRISM4D KCC Visualization").ok();
+                writeln!(f, "# PRISM4D KCC Visualization — Auto-generated (deterministic)").ok();
+                writeln!(f, "# Top-K residue groups per site for one-command inspection").ok();
+                writeln!(f, "").ok();
                 writeln!(f, "hide all\nshow cartoon\ncolor gray80, all\nset cartoon_transparency, 0.7").ok();
-                // Site spheres
+                writeln!(f, "").ok();
+
+                // Site spheres + top-K residue groups
+                writeln!(f, "# === SITES + TOP-K DRIVER RESIDUES ===").ok();
+                let mut site_group_names: Vec<String> = Vec::new();
                 for sj in ms_sites_json.iter() {
                     let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let c = sj.get("centroid").and_then(|v| v.as_array());
-                    let sc = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
-                    if rk > 5 || c.is_none() { continue; }
-                    let c = c.unwrap();
+                    if rk > 5 { continue; }
+                    let c = match sj.get("centroid").and_then(|v| v.as_array()) {
+                        Some(c) => c.clone(),
+                        None => continue,
+                    };
                     let cx = c[0].as_f64().unwrap_or(0.0);
                     let cy = c[1].as_f64().unwrap_or(0.0);
                     let cz = c[2].as_f64().unwrap_or(0.0);
+                    let sc = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let vol = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(500.0);
                     let rad = (vol * 3.0 / (4.0 * std::f64::consts::PI)).cbrt();
-                    writeln!(f, "pseudoatom site_{}, pos=[{:.2},{:.2},{:.2}], vdw={:.1}, label=\"R{} ({:.4})\"",
-                        sid, cx, cy, cz, rad, rk, sc).ok();
-                    writeln!(f, "show sphere, site_{}\nset sphere_transparency, 0.6, site_{}", sid, sid).ok();
+
+                    writeln!(f, "").ok();
+                    writeln!(f, "# --- Site {} (GTCK Rank {}, Score {:.4}) ---", sid, rk, sc).ok();
+                    writeln!(f, "pseudoatom site_{}, pos=[{:.2},{:.2},{:.2}], vdw={:.1}, label=\"R{} S{} ({:.4})\"",
+                        sid, cx, cy, cz, rad, rk, sid, sc).ok();
+                    writeln!(f, "show sphere, site_{}", sid).ok();
+                    writeln!(f, "set sphere_transparency, 0.6, site_{}", sid).ok();
+
+                    // Top-K residue selection using CA coordinates (NOT residue IDs)
+                    let kcc_data = sj.get("kcc");
+                    if let Some(kcc) = kcc_data {
+                        let cand_ids = kcc.get("candidate_residue_ids").and_then(|v| v.as_array());
+                        let cand_weights = kcc.get("candidate_causal_weights").and_then(|v| v.as_array());
+                        if let Some(cids) = cand_ids {
+                            writeln!(f, "select site_{}_drivers, none", sid).ok();
+                            let mut vec_names: Vec<String> = Vec::new();
+                            for (ci, rid_val) in cids.iter().enumerate() {
+                                let rid = rid_val.as_i64().unwrap_or(-1) as usize;
+                                if rid >= ca_pos.len() { continue; }
+                                let ca = ca_pos[rid];
+                                let w = cand_weights.and_then(|ws| ws.get(ci))
+                                    .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let rname = topology.residue_names.get(rid).map(|s| s.as_str()).unwrap_or("UNK");
+                                // Select by proximity to CA position (deterministic, chain-safe)
+                                writeln!(f, "select _tmp_r{}, (name CA) within 0.5 of [{:.3},{:.3},{:.3}]",
+                                    rid, ca[0], ca[1], ca[2]).ok();
+                                writeln!(f, "select site_{}_drivers, site_{}_drivers or (byres _tmp_r{})",
+                                    sid, sid, rid).ok();
+                                writeln!(f, "delete _tmp_r{}", rid).ok();
+
+                                // Per-residue vector object name for grouping
+                                let vname = format!("vec_s{}_{}", sid, rid);
+                                vec_names.push(vname);
+
+                                // Label
+                                if ci == 0 {
+                                    writeln!(f, "# Driver {}: {} {} (w={:.3})", ci, rname, rid, w).ok();
+                                }
+                            }
+                            writeln!(f, "color yellow, site_{}_drivers", sid).ok();
+                            writeln!(f, "show sticks, site_{}_drivers", sid).ok();
+                            writeln!(f, "set_name site_{}_drivers, \"Site{}_KCC_Drivers\"", sid, sid).ok();
+
+                            // Group: site sphere + driver residues
+                            let gname = format!("site_{}_full", sid);
+                            writeln!(f, "group {}, site_{} Site{}_KCC_Drivers", gname, sid, sid).ok();
+                            site_group_names.push(gname);
+                        }
+                    }
                 }
+                writeln!(f, "").ok();
                 writeln!(f, "group KCC_SITES, site_*").ok();
+
                 // Vectors via Python CGO
-                writeln!(f, "python\nfrom pymol.cgo import *\nfrom pymol import cmd\nimport json, os").ok();
-                writeln!(f, "vp = r'{}'", vp.display()).ok();
-                writeln!(f, "with open(vp) as fh: viz = json.load(fh)").ok();
+                writeln!(f, "").ok();
+                writeln!(f, "# === KCC MOTION VECTORS (CGO) ===").ok();
+                writeln!(f, "python").ok();
+                writeln!(f, "from pymol.cgo import *").ok();
+                writeln!(f, "from pymol import cmd").ok();
+                writeln!(f, "import json").ok();
+                writeln!(f, "").ok();
+                writeln!(f, "with open(r'{}') as fh:", vp.display()).ok();
+                writeln!(f, "    viz = json.load(fh)").ok();
                 writeln!(f, "residues = viz.get('residues', [])").ok();
                 writeln!(f, "if residues:").ok();
                 writeln!(f, "    max_ac = max(r['active_causal_steps'] for r in residues) or 1").ok();
                 writeln!(f, "    vecs = []").ok();
                 writeln!(f, "    for r in residues:").ok();
                 writeln!(f, "        ca = r['ca_position']").ok();
-                writeln!(f, "        dx,dy,dz = r['net_dx'],r['net_dy'],r['net_dz']").ok();
-                writeln!(f, "        mag = (dx**2+dy**2+dz**2)**0.5").ok();
+                writeln!(f, "        dx, dy, dz = r['net_dx'], r['net_dy'], r['net_dz']").ok();
+                writeln!(f, "        mag = (dx**2 + dy**2 + dz**2)**0.5").ok();
                 writeln!(f, "        if mag < 0.01: continue").ok();
-                writeln!(f, "        sc = min(8.0, mag*2.0)/(mag+1e-6)").ok();
-                writeln!(f, "        lc = min(1.0,max(0.0,r.get('lag_corr_peak',0)))").ok();
-                writeln!(f, "        cf = r['active_causal_steps']/max_ac").ok();
-                writeln!(f, "        bn = min(1.0,max(0.0,r.get('burst_motion',0))/5.0)").ok();
-                writeln!(f, "        rad = 0.08+0.12*cf").ok();
-                writeln!(f, "        vecs.extend([CYLINDER, ca[0],ca[1],ca[2], ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, rad, lc,cf,bn, lc,cf,bn])").ok();
-                writeln!(f, "        vecs.extend([CONE, ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, ca[0]+dx*sc*1.15,ca[1]+dy*sc*1.15,ca[2]+dz*sc*1.15, rad*2,0.0, lc,cf,bn, lc,cf,bn, 1.0,1.0])").ok();
+                writeln!(f, "        sc = min(8.0, mag * 2.0) / (mag + 1e-6)").ok();
+                writeln!(f, "        lc = min(1.0, max(0.0, r.get('lag_corr_peak', 0)))").ok();
+                writeln!(f, "        cf = r['active_causal_steps'] / max_ac").ok();
+                writeln!(f, "        bn = min(1.0, max(0.0, r.get('burst_motion', 0)) / 5.0)").ok();
+                writeln!(f, "        rad = 0.08 + 0.12 * cf").ok();
+                writeln!(f, "        vecs.extend([CYLINDER,").ok();
+                writeln!(f, "            ca[0], ca[1], ca[2],").ok();
+                writeln!(f, "            ca[0]+dx*sc, ca[1]+dy*sc, ca[2]+dz*sc,").ok();
+                writeln!(f, "            rad, lc, cf, bn, lc, cf, bn])").ok();
+                writeln!(f, "        vecs.extend([CONE,").ok();
+                writeln!(f, "            ca[0]+dx*sc, ca[1]+dy*sc, ca[2]+dz*sc,").ok();
+                writeln!(f, "            ca[0]+dx*sc*1.15, ca[1]+dy*sc*1.15, ca[2]+dz*sc*1.15,").ok();
+                writeln!(f, "            rad*2, 0.0, lc, cf, bn, lc, cf, bn, 1.0, 1.0])").ok();
                 writeln!(f, "    cmd.load_cgo(vecs, 'KCC_VECTORS')").ok();
                 writeln!(f, "python end").ok();
-                writeln!(f, "bg_color white\nzoom all").ok();
-                log::info!("  KCC PyMOL: {}", pp.display());
+                writeln!(f, "").ok();
+
+                // Enable shortcuts (aliases)
+                writeln!(f, "# === ONE-COMMAND INSPECTION SHORTCUTS ===").ok();
+                for (i, gname) in site_group_names.iter().enumerate() {
+                    writeln!(f, "alias show_site{}, disable all; enable {}; enable KCC_VECTORS; zoom {}, 10",
+                        i, gname, gname).ok();
+                }
+                writeln!(f, "alias show_all, enable all; zoom all").ok();
+                writeln!(f, "").ok();
+
+                // Default view: top-ranked site
+                writeln!(f, "# Default: show top-ranked site").ok();
+                writeln!(f, "bg_color white").ok();
+                writeln!(f, "set ray_opaque_background, 0").ok();
+                writeln!(f, "set depth_cue, 0").ok();
+                if let Some(top) = site_group_names.first() {
+                    writeln!(f, "disable all").ok();
+                    writeln!(f, "enable {}", top).ok();
+                    writeln!(f, "enable KCC_VECTORS").ok();
+                    writeln!(f, "show cartoon").ok();
+                    writeln!(f, "set cartoon_transparency, 0.7").ok();
+                    writeln!(f, "zoom {}, 10", top).ok();
+                } else {
+                    writeln!(f, "zoom all").ok();
+                }
+
+                log::info!("  KCC PyMOL: {} (aliases: show_site0..show_site{})", pp.display(), site_group_names.len().saturating_sub(1));
             }
         }
 
