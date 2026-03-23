@@ -60,7 +60,17 @@
 #define REFRACTORY_STEPS 250       // 250 steps * 0.004ps (HMR) = 1.0ps refractory period
 #define UV_WAVELENGTH 280.0f        // nm - aromatic absorption
 #define UV_LIF_WINDOW 100           // Steps within which LIF spike is causally linked to prior UV (~0.4 ps at dt=0.004ps/HMR)
-#define KCC_RING_STEPS 64           // Micro-ring-buffer depth for KCC temporal descriptors per residue
+#define KCC_RING_STEPS 64           // Event-driven ring-buffer depth for KCC per residue
+
+// KCC event record: stored only when causal activity occurs (c_t > 0)
+struct KCCEvent {
+    float dx;           // CA displacement x since previous step
+    float dy;           // CA displacement y
+    float dz;           // CA displacement z
+    unsigned short c;   // causal count for this residue at this step
+    unsigned short flags; // bit 0: UV active, bit 1: thermal phase, bits 2+: reserved
+    unsigned int step;  // absolute simulation timestep
+};
 
 // ============================================================================
 // WARP-LEVEL PRIMITIVES (for fast reductions without shared memory)
@@ -3551,11 +3561,54 @@ extern "C" __global__ void init_multi_neuron(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// KCC: EVENT-DRIVEN RING BUFFER WRITE HELPER
+// ════════════════════════════════════════════════════════════════════════════
+__device__ __forceinline__ void kcc_record_event(
+    int residue_slot,
+    unsigned int current_step,
+    float dx, float dy, float dz,
+    unsigned short c_count,
+    unsigned short flags,
+    KCCEvent* __restrict__ kcc_ring,
+    unsigned int* __restrict__ kcc_ring_head,
+    unsigned int* __restrict__ residue_last_event_step
+) {
+    unsigned int last_step = residue_last_event_step[residue_slot];
+
+    if (last_step != current_step) {
+        // New event: advance ring head, write fresh record
+        unsigned int head = kcc_ring_head[residue_slot];
+        unsigned int next = (head + 1u) % KCC_RING_STEPS;
+        int idx = residue_slot * KCC_RING_STEPS + next;
+
+        kcc_ring[idx].dx    = dx;
+        kcc_ring[idx].dy    = dy;
+        kcc_ring[idx].dz    = dz;
+        kcc_ring[idx].c     = c_count;
+        kcc_ring[idx].flags = flags;
+        kcc_ring[idx].step  = current_step;
+
+        kcc_ring_head[residue_slot] = next;
+        residue_last_event_step[residue_slot] = current_step;
+    } else {
+        // Same step: accumulate into existing event
+        unsigned int head = kcc_ring_head[residue_slot];
+        int idx = residue_slot * KCC_RING_STEPS + head;
+
+        kcc_ring[idx].c     += c_count;
+        kcc_ring[idx].dx    += dx;
+        kcc_ring[idx].dy    += dy;
+        kcc_ring[idx].dz    += dz;
+        kcc_ring[idx].flags |= flags;
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // KCC v2-full: PER-RESIDUE KINEMATIC-CAUSAL UPDATE KERNEL
 // ════════════════════════════════════════════════════════════════════════════
 // Launched once per outer step, after multi-LIF. One thread per residue.
-// Reads CA position, computes per-step motion, updates streaming reductions
-// and micro-ring-buffer. Zeroes residue_step_causal for next step.
+// Reads CA position, computes per-step motion, updates streaming reductions.
+// Writes to event-driven ring buffer ONLY when c_t > 0.
 extern "C" __global__ void kcc_residue_update(
     // Atom positions (read CA positions via index mapping)
     const float3* __restrict__ positions,
@@ -3577,15 +3630,13 @@ extern "C" __global__ void kcc_residue_update(
     unsigned int* residue_active_causal_steps, // steps with c_t > 0
     // Per-residue per-step causal counter (read then zero)
     int* residue_step_causal,  // [n_residues] accumulated during spike emission
-    // Micro-ring-buffer [n_residues * KCC_RING_STEPS]
-    float* ring_dx,
-    float* ring_dy,
-    float* ring_dz,
-    float* ring_motion,
-    float* ring_causality,
-    unsigned int* ring_head,   // [n_residues] circular write pointer
-    // Protocol phase tag
-    int current_phase          // 0=cold_hold, 1=ramp, 2=warm_hold
+    // Event-driven ring buffer [n_residues * KCC_RING_STEPS]
+    KCCEvent* kcc_ring,
+    unsigned int* kcc_ring_head,              // [n_residues] circular write pointer
+    unsigned int* residue_last_event_step,    // [n_residues] step of last event (init 0xFFFFFFFF)
+    // Simulation state
+    unsigned int current_step,                // absolute simulation timestep
+    int current_phase                         // 0=cold_hold, 1=ramp, 2=warm_hold
 ) {
     int rid = blockIdx.x * blockDim.x + threadIdx.x;
     if (rid >= n_residues) return;
@@ -3607,10 +3658,11 @@ extern "C" __global__ void kcc_residue_update(
     float m_t = sqrtf(dx*dx + dy*dy + dz*dz);
 
     // Read and zero per-step causal counter
-    float c_t = (float)residue_step_causal[rid];
+    int c_raw = residue_step_causal[rid];
+    float c_t = (float)c_raw;
     residue_step_causal[rid] = 0;
 
-    // Update streaming reductions
+    // Update streaming reductions (ALWAYS, regardless of causal activity)
     residue_sum_m[rid]  += m_t;
     residue_sum_m2[rid] += m_t * m_t;
     residue_sum_c[rid]  += c_t;
@@ -3622,26 +3674,27 @@ extern "C" __global__ void kcc_residue_update(
     residue_count[rid]  += 1u;
     if (c_t > 0.0f) residue_active_causal_steps[rid] += 1u;
 
-    // Write to micro-ring-buffer
-    unsigned int head = ring_head[rid];
-    int slot = rid * KCC_RING_STEPS + (int)(head % KCC_RING_STEPS);
-    ring_dx[slot]        = dx;
-    ring_dy[slot]        = dy;
-    ring_dz[slot]        = dz;
-    ring_motion[slot]    = m_t;
-    ring_causality[slot] = c_t;
-    ring_head[rid]       = head + 1u;
+    // Event-driven ring buffer: write ONLY when causal activity occurred
+    if (c_raw > 0) {
+        unsigned short c_count = (unsigned short)min(c_raw, 65535);
+        unsigned short flags = 0;
+        if (current_phase == 0) flags |= 1u;  // bit 0: cold/UV phase
+        if (current_phase == 2) flags |= 2u;  // bit 1: warm/thermal phase
 
-    // Update previous position for next step
+        kcc_record_event(rid, current_step, dx, dy, dz, c_count, flags,
+                         kcc_ring, kcc_ring_head, residue_last_event_step);
+    }
+
+    // Update previous position for next step (ALWAYS)
     residue_prev_x[rid] = pos.x;
     residue_prev_y[rid] = pos.y;
     residue_prev_z[rid] = pos.z;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// KCC v2-full: COMPUTE FINAL KCC METRICS FROM RING BUFFER
+// KCC v2-full: COMPUTE FINAL KCC METRICS FROM EVENT-DRIVEN RING BUFFER
 // ════════════════════════════════════════════════════════════════════════════
-// Launched once at end of simulation. Computes burst, lag, phase, local cov.
+// All temporal metrics use real Δt spacing from stored event timesteps.
 extern "C" __global__ void kcc_compute_rich_descriptors(
     int n_residues,
     // Streaming reductions (read-only)
@@ -3655,13 +3708,9 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
     const float* __restrict__ residue_net_dz,
     const unsigned int* __restrict__ residue_count,
     const unsigned int* __restrict__ residue_active_causal_steps,
-    // Ring buffer (read-only)
-    const float* __restrict__ ring_dx,
-    const float* __restrict__ ring_dy,
-    const float* __restrict__ ring_dz,
-    const float* __restrict__ ring_motion,
-    const float* __restrict__ ring_causality,
-    const unsigned int* __restrict__ ring_head,
+    // Event-driven ring buffer (read-only)
+    const KCCEvent* __restrict__ kcc_ring,
+    const unsigned int* __restrict__ kcc_ring_head,
     // Output: per-residue KCC descriptors [n_residues]
     float* kcc_temporal_corr,
     float* kcc_direction_score,
@@ -3690,33 +3739,43 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
 
     float fN = (float)N;
 
-    // === Streaming temporal correlation ===
+    // === Streaming temporal correlation (whole-run) ===
     float mean_m = residue_sum_m[rid] / fN;
     float mean_c = residue_sum_c[rid] / fN;
     float cov_mc = (residue_sum_mc[rid] / fN) - mean_m * mean_c;
     float var_m  = (residue_sum_m2[rid] / fN) - mean_m * mean_m;
     float var_c  = (residue_sum_c2[rid] / fN) - mean_c * mean_c;
-    float denom  = sqrtf(fmaxf(var_m * var_c, 1e-12f));
-    kcc_temporal_corr[rid] = cov_mc / denom;
+    float sden   = sqrtf(fmaxf(var_m * var_c, 1e-12f));
+    kcc_temporal_corr[rid] = cov_mc / sden;
 
-    // === Direction score ===
-    float net_dx = residue_net_dx[rid];
-    float net_dy = residue_net_dy[rid];
-    float net_dz = residue_net_dz[rid];
-    float net_disp = sqrtf(net_dx*net_dx + net_dy*net_dy + net_dz*net_dz);
-    float sum_step = residue_sum_m[rid];
-    kcc_direction_score[rid] = net_disp / (sum_step + 1e-6f);
+    // === Direction score (whole-run) ===
+    float ndx = residue_net_dx[rid], ndy = residue_net_dy[rid], ndz = residue_net_dz[rid];
+    float net_disp = sqrtf(ndx*ndx + ndy*ndy + ndz*ndz);
+    kcc_direction_score[rid] = net_disp / (residue_sum_m[rid] + 1e-6f);
 
-    // === Motion efficiency ===
-    float scale = 5.0f;  // Å normalization
-    kcc_motion_efficiency[rid] = 1.0f - expf(-sum_step / (scale * fN));
+    // === Motion efficiency (whole-run) ===
+    kcc_motion_efficiency[rid] = 1.0f - expf(-residue_sum_m[rid] / (5.0f * fN));
 
-    // === Ring-buffer rich descriptors ===
-    unsigned int head = ring_head[rid];
-    int ring_len = (int)fminf((float)head, (float)KCC_RING_STEPS);
+    // === Read event-driven ring buffer (dense causal events only) ===
+    unsigned int head = kcc_ring_head[rid];
     int base = rid * KCC_RING_STEPS;
 
-    if (ring_len < 4) {
+    // Collect valid events in chronological order
+    int n_events = 0;
+    unsigned int ev_step[KCC_RING_STEPS];
+    float ev_m[KCC_RING_STEPS];
+    float ev_c[KCC_RING_STEPS];
+    for (int i = 0; i < KCC_RING_STEPS; i++) {
+        int slot = base + ((int)(head + 1 + i) % KCC_RING_STEPS);
+        KCCEvent ev = kcc_ring[slot];
+        if (ev.step == 0 && ev.c == 0) continue;  // empty slot
+        ev_step[n_events] = ev.step;
+        ev_m[n_events] = sqrtf(ev.dx*ev.dx + ev.dy*ev.dy + ev.dz*ev.dz);
+        ev_c[n_events] = (float)ev.c;
+        n_events++;
+    }
+
+    if (n_events < 4) {
         kcc_burst_motion_score[rid] = 0.0f;
         kcc_phase_shift_score[rid] = 0.0f;
         kcc_causal_lag[rid] = 0.0f;
@@ -3725,86 +3784,100 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
         return;
     }
 
-    // Read ring into local arrays (bounded by KCC_RING_STEPS=64)
-    float local_m[KCC_RING_STEPS];
-    float local_c[KCC_RING_STEPS];
-    for (int i = 0; i < ring_len; i++) {
-        int slot = base + (int)((head - ring_len + i) % KCC_RING_STEPS);
-        local_m[i] = ring_motion[slot];
-        local_c[i] = ring_causality[slot];
+    // === Burst: event density in real timestep space ===
+    // Dense events (small Δt) = bursty; sparse events (large Δt) = sporadic
+    float dt_vals[KCC_RING_STEPS];
+    int n_dt = n_events - 1;
+    for (int i = 0; i < n_dt; i++)
+        dt_vals[i] = (float)(ev_step[i+1] - ev_step[i]);
+    // Insertion sort for median
+    for (int i = 1; i < n_dt; i++) {
+        float key = dt_vals[i]; int j = i - 1;
+        while (j >= 0 && dt_vals[j] > key) { dt_vals[j+1] = dt_vals[j]; j--; }
+        dt_vals[j+1] = key;
     }
-
-    // === Burst-window motion accumulation ===
-    // Motion accumulated during high-causality steps vs low-causality
-    float burst_motion = 0.0f, quiet_motion = 0.0f;
-    int burst_count = 0, quiet_count = 0;
-    for (int i = 0; i < ring_len; i++) {
-        if (local_c[i] > 0.0f) {
-            burst_motion += local_m[i];
-            burst_count++;
-        } else {
-            quiet_motion += local_m[i];
-            quiet_count++;
-        }
+    float median_dt = n_dt > 0 ? dt_vals[n_dt / 2] : 1.0f;
+    float sum_m_dense = 0.0f, sum_m_sparse = 0.0f;
+    int n_dense = 0, n_sparse = 0;
+    for (int i = 1; i < n_events; i++) {
+        float dt = (float)(ev_step[i] - ev_step[i-1]);
+        if (dt <= median_dt) { sum_m_dense += ev_m[i]; n_dense++; }
+        else { sum_m_sparse += ev_m[i]; n_sparse++; }
     }
-    float burst_avg = burst_count > 0 ? burst_motion / burst_count : 0.0f;
-    float quiet_avg = quiet_count > 0 ? quiet_motion / quiet_count : 0.0f;
-    kcc_burst_motion_score[rid] = burst_avg / (quiet_avg + 1e-6f);
+    float da = n_dense > 0 ? sum_m_dense / n_dense : 0.0f;
+    float sa = n_sparse > 0 ? sum_m_sparse / n_sparse : da;
+    kcc_burst_motion_score[rid] = da / (sa + 1e-6f);
 
-    // === Phase shift: early vs late half ===
-    int half = ring_len / 2;
+    // === Phase shift: early vs late by real timestep range ===
+    unsigned int step_min = ev_step[0];
+    unsigned int step_max = ev_step[n_events - 1];
+    unsigned int step_mid = (step_min + step_max) / 2;
     float early_m = 0.0f, late_m = 0.0f;
-    for (int i = 0; i < half; i++) early_m += local_m[i];
-    for (int i = half; i < ring_len; i++) late_m += local_m[i];
-    early_m /= (float)half;
-    late_m /= (float)(ring_len - half);
-    kcc_phase_shift_score[rid] = (late_m - early_m) / (early_m + late_m + 1e-6f);
+    int ne = 0, nl = 0;
+    for (int i = 0; i < n_events; i++) {
+        if (ev_step[i] <= step_mid) { early_m += ev_m[i]; ne++; }
+        else { late_m += ev_m[i]; nl++; }
+    }
+    float ea = ne > 0 ? early_m / ne : 0.0f;
+    float la = nl > 0 ? late_m / nl : 0.0f;
+    kcc_phase_shift_score[rid] = (la - ea) / (ea + la + 1e-6f);
 
-    // === Causal lag estimate ===
-    // Cross-correlate c_t and m_t at lags -8..+8
+    // === Causal lag: cross-correlate c and m at real timestep offsets ===
     float best_corr = -1.0f;
     int best_lag = 0;
-    for (int lag = -8; lag <= 8; lag++) {
-        float sum_cm = 0.0f, sum_cc = 0.0f, sum_mm = 0.0f;
+    for (int lag = -50; lag <= 50; lag += 5) {
+        float scm = 0.0f, scc = 0.0f, smm = 0.0f;
         int cnt = 0;
-        for (int i = 0; i < ring_len; i++) {
-            int j = i + lag;
-            if (j < 0 || j >= ring_len) continue;
-            sum_cm += local_c[i] * local_m[j];
-            sum_cc += local_c[i] * local_c[i];
-            sum_mm += local_m[j] * local_m[j];
-            cnt++;
-        }
-        if (cnt > 0) {
-            float d = sqrtf(fmaxf(sum_cc * sum_mm, 1e-12f));
-            float corr = sum_cm / d;
-            if (corr > best_corr) {
-                best_corr = corr;
-                best_lag = lag;
+        for (int i = 0; i < n_events; i++) {
+            int target = (int)ev_step[i] + lag;
+            int bj = -1; int bd = 100000;
+            for (int j = 0; j < n_events; j++) {
+                int d = abs((int)ev_step[j] - target);
+                if (d < bd) { bd = d; bj = j; }
             }
+            if (bj >= 0 && bd <= 5) {
+                scm += ev_c[i] * ev_m[bj];
+                scc += ev_c[i] * ev_c[i];
+                smm += ev_m[bj] * ev_m[bj];
+                cnt++;
+            }
+        }
+        if (cnt > 2) {
+            float d = sqrtf(fmaxf(scc * smm, 1e-12f));
+            float corr = scm / d;
+            if (corr > best_corr) { best_corr = corr; best_lag = lag; }
         }
     }
     kcc_causal_lag[rid] = (float)best_lag;
     kcc_lag_corr_peak[rid] = best_corr;
 
-    // === Local covariance (sliding 16-step subwindows) ===
-    int sub_w = 16;
-    float max_local_cov = 0.0f;
-    for (int start = 0; start + sub_w <= ring_len; start += sub_w / 2) {
-        float sm = 0, sc = 0, smc = 0, sm2 = 0, sc2 = 0;
-        for (int i = start; i < start + sub_w; i++) {
-            sm += local_m[i]; sc += local_c[i];
-            smc += local_m[i] * local_c[i];
-            sm2 += local_m[i] * local_m[i];
-            sc2 += local_c[i] * local_c[i];
+    // === Local covariance: sliding windows in real timestep space ===
+    unsigned int span = step_max - step_min;
+    unsigned int W = span > 16 ? span / 4 : (span > 0 ? span : 4);
+    if (W < 4) W = 4;
+    float max_lcov = 0.0f;
+    for (unsigned int ws = step_min; ws + W <= step_max; ws += W / 2) {
+        unsigned int we = ws + W;
+        float lsm = 0, lsc = 0, lsmc = 0, lsm2 = 0, lsc2 = 0;
+        int wn = 0;
+        for (int i = 0; i < n_events; i++) {
+            if (ev_step[i] >= ws && ev_step[i] < we) {
+                lsm += ev_m[i]; lsc += ev_c[i];
+                lsmc += ev_m[i] * ev_c[i];
+                lsm2 += ev_m[i] * ev_m[i];
+                lsc2 += ev_c[i] * ev_c[i];
+                wn++;
+            }
         }
-        float fw = (float)sub_w;
-        float lcov = (smc / fw) - (sm / fw) * (sc / fw);
-        float lvar = sqrtf(fmaxf((sm2/fw - (sm/fw)*(sm/fw)) * (sc2/fw - (sc/fw)*(sc/fw)), 1e-12f));
-        float lcorr = lcov / lvar;
-        if (lcorr > max_local_cov) max_local_cov = lcorr;
+        if (wn >= 3) {
+            float fw = (float)wn;
+            float lcov = (lsmc/fw) - (lsm/fw)*(lsc/fw);
+            float lvar = sqrtf(fmaxf((lsm2/fw-(lsm/fw)*(lsm/fw)) * (lsc2/fw-(lsc/fw)*(lsc/fw)), 1e-12f));
+            float lc = lcov / lvar;
+            if (lc > max_lcov) max_lcov = lc;
+        }
     }
-    kcc_local_cov_score[rid] = max_local_cov;
+    kcc_local_cov_score[rid] = max_lcov;
 }
 
 

@@ -1674,13 +1674,10 @@ pub struct NhsAmberFusedEngine {
     d_residue_net_dz: CudaSlice<f32>,
     d_residue_count: CudaSlice<u32>,
     d_residue_active_causal: CudaSlice<u32>,
-    // KCC ring buffer [n_residues * 64]
-    d_ring_dx: CudaSlice<f32>,
-    d_ring_dy: CudaSlice<f32>,
-    d_ring_dz: CudaSlice<f32>,
-    d_ring_motion: CudaSlice<f32>,
-    d_ring_causality: CudaSlice<f32>,
-    d_ring_head: CudaSlice<u32>,             // [n_residues]
+    // KCC event-driven ring buffer [n_residues * 64] (20 bytes per event)
+    d_kcc_ring: CudaSlice<u8>,               // [n_residues * 64 * 20] as raw bytes (KCCEvent struct)
+    d_kcc_ring_head: CudaSlice<u32>,         // [n_residues] circular write pointer
+    d_kcc_last_event_step: CudaSlice<u32>,   // [n_residues] step of last event (init 0xFFFFFFFF)
     // KCC output descriptors [n_residues]
     d_kcc_temporal_corr: CudaSlice<f32>,
     d_kcc_direction_score: CudaSlice<f32>,
@@ -2386,13 +2383,17 @@ impl NhsAmberFusedEngine {
         let d_residue_net_dz: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
         let d_residue_count: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
         let d_residue_active_causal: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
-        // Ring buffer
-        let d_ring_dx: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
-        let d_ring_dy: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
-        let d_ring_dz: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
-        let d_ring_motion: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
-        let d_ring_causality: CudaSlice<f32> = stream.alloc_zeros(ring_total)?;
-        let d_ring_head: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
+        // Event-driven ring buffer: KCCEvent = 20 bytes per slot
+        let kcc_event_size = 20usize; // sizeof(KCCEvent): 3*f32 + u16 + u16 + u32
+        let d_kcc_ring: CudaSlice<u8> = stream.alloc_zeros(ring_total * kcc_event_size)?;
+        let d_kcc_ring_head: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
+        // Initialize last_event_step to 0xFFFFFFFF (sentinel)
+        let d_kcc_last_event_step: CudaSlice<u32> = {
+            let sentinel = vec![0xFFFFFFFFu32; n_residues];
+            let mut buf: CudaSlice<u32> = stream.alloc_zeros(n_residues)?;
+            stream.memcpy_htod(&sentinel, &mut buf)?;
+            buf
+        };
         // KCC output descriptors
         let d_kcc_temporal_corr: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
         let d_kcc_direction_score: CudaSlice<f32> = stream.alloc_zeros(n_residues)?;
@@ -2435,7 +2436,7 @@ impl NhsAmberFusedEngine {
         let kcc_residue_update_kernel = fused_module.load_function("kcc_residue_update")?;
         let kcc_compute_descriptors_kernel = fused_module.load_function("kcc_compute_rich_descriptors")?;
         let kcc_streaming_bytes = n_residues * (15 * 4 + 2 * 4); // 15 floats + 2 u32s
-        let kcc_ring_bytes = ring_total * 5 * 4 + n_residues * 4; // 5 floats per slot + head
+        let kcc_ring_bytes = ring_total * kcc_event_size + n_residues * 8; // events + head + last_step
         let kcc_output_bytes = n_residues * 8 * 4; // 8 output descriptors
         log::info!("KCC v2-full: {} residues, ring={} steps, streaming={:.1}KB ring={:.1}KB output={:.1}KB total={:.1}KB",
             n_residues, kcc_ring_steps,
@@ -2550,7 +2551,7 @@ impl NhsAmberFusedEngine {
             d_residue_sum_c, d_residue_sum_c2, d_residue_sum_mc,
             d_residue_net_dx, d_residue_net_dy, d_residue_net_dz,
             d_residue_count, d_residue_active_causal,
-            d_ring_dx, d_ring_dy, d_ring_dz, d_ring_motion, d_ring_causality, d_ring_head,
+            d_kcc_ring, d_kcc_ring_head, d_kcc_last_event_step,
             d_kcc_temporal_corr, d_kcc_direction_score, d_kcc_motion_efficiency,
             d_kcc_burst_motion, d_kcc_phase_shift, d_kcc_causal_lag,
             d_kcc_lag_corr_peak, d_kcc_local_cov,
@@ -4908,12 +4909,10 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_residue_count)
                     .arg(&mut self.d_residue_active_causal)
                     .arg(&mut self.d_residue_step_causal)
-                    .arg(&mut self.d_ring_dx)
-                    .arg(&mut self.d_ring_dy)
-                    .arg(&mut self.d_ring_dz)
-                    .arg(&mut self.d_ring_motion)
-                    .arg(&mut self.d_ring_causality)
-                    .arg(&mut self.d_ring_head)
+                    .arg(&mut self.d_kcc_ring)
+                    .arg(&mut self.d_kcc_ring_head)
+                    .arg(&mut self.d_kcc_last_event_step)
+                    .arg(&(self.timestep as u32))
                     .arg(&phase)
                     .launch(kcc_cfg)
             }
@@ -5688,12 +5687,8 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_residue_net_dz)
                 .arg(&self.d_residue_count)
                 .arg(&self.d_residue_active_causal)
-                .arg(&self.d_ring_dx)
-                .arg(&self.d_ring_dy)
-                .arg(&self.d_ring_dz)
-                .arg(&self.d_ring_motion)
-                .arg(&self.d_ring_causality)
-                .arg(&self.d_ring_head)
+                .arg(&self.d_kcc_ring)
+                .arg(&self.d_kcc_ring_head)
                 .arg(&mut self.d_kcc_temporal_corr)
                 .arg(&mut self.d_kcc_direction_score)
                 .arg(&mut self.d_kcc_motion_efficiency)
