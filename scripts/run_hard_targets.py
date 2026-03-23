@@ -191,12 +191,14 @@ def generate_topology(clean_pdb, topo_path, pdb_id):
         verbose=True,
     )
 
-    # Guard: verify file was created
+    # Guard: verify file was created and result is valid
     if not topo_path.exists():
         raise BenchmarkError(f"Topology generation failed: {topo_path} not created")
+    if not isinstance(result, dict) or "n_atoms" not in result or "n_residues" not in result:
+        raise BenchmarkError(f"Topology returned invalid result: {type(result)}")
 
-    n_atoms = result.get("n_atoms", 0)
-    n_residues = result.get("n_residues", 0)
+    n_atoms = result["n_atoms"]
+    n_residues = result["n_residues"]
     log(f"  Topology ready: {n_atoms} atoms, {n_residues} residues")
 
     if n_atoms < 200:
