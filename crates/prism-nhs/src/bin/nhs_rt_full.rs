@@ -6291,6 +6291,17 @@ fn run_multi_stream_pipeline(
                     } else { Vec::new() }
                 } else { Vec::new() };
 
+                // Stamp global_residue_id into B-factor for ALL residues (identity layer)
+                // This embeds topology identity globally before any selection
+                writeln!(f, "# === GLOBAL IDENTITY STAMPING ===").ok();
+                writeln!(f, "# Stamp topology global_residue_id into B-factor + Q-factor for ALL atoms").ok();
+                for (r, ca) in ca_pos.iter().enumerate() {
+                    writeln!(f, "select _id_tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
+                    writeln!(f, "alter (byres _id_tmp), b={}; alter (byres _id_tmp), q={}", r, r).ok();
+                    writeln!(f, "delete _id_tmp").ok();
+                }
+                writeln!(f, "").ok();
+
                 if !global_driver_ids.is_empty() {
                     writeln!(f, "# === GLOBAL DISTRIBUTED DRIVERS ===").ok();
                     writeln!(f, "select global_kcc_drivers, none").ok();
@@ -6398,6 +6409,34 @@ fn run_multi_stream_pipeline(
                 writeln!(f, "        vecs.extend([CONE, ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, ca[0]+dx*sc*1.15,ca[1]+dy*sc*1.15,ca[2]+dz*sc*1.15, rad*2,0.0, lc,cf,bn, lc,cf,bn, 1.0,1.0])").ok();
                 writeln!(f, "    cmd.load_cgo(vecs, 'kcc_vectors')").ok();
                 writeln!(f, "").ok();
+                // === Runtime verification: prove PyMOL selection matches JSON ===
+                // Inject expected driver IDs as literals (not from viz variable)
+                {
+                    // Verification: read back B-factors from global_kcc_drivers
+                    // B-factors already stamped globally — verification is independent of selection
+                    let ver_path = output_base.with_extension("kcc_pymol_verification.txt");
+                    let expected_ids: Vec<String> = global_driver_ids.iter().map(|r| r.to_string()).collect();
+                    let expected_list = expected_ids.join(", ");
+
+                    writeln!(f, "# Identity verification: read topology ID from B-factor (stamped globally)").ok();
+                    writeln!(f, "try:").ok();
+                    writeln!(f, "    _expected = sorted([{}])", expected_list).ok();
+                    writeln!(f, "    _model = cmd.get_model('global_kcc_drivers and name CA')").ok();
+                    writeln!(f, "    _n_atoms = len(cmd.get_model('global_kcc_drivers').atom)").ok();
+                    writeln!(f, "    _observed = sorted(set(int(a.b) for a in _model.atom))").ok();
+                    writeln!(f, "    _pass = (_n_atoms > 0) and (_observed == _expected)").ok();
+                    writeln!(f, "    with open(r'{}', 'w') as _vf:", ver_path.display()).ok();
+                    writeln!(f, "        _vf.write('=== KCC PyMOL Identity Verification ===\\n')").ok();
+                    writeln!(f, "        _vf.write('method: topology global_residue_id stamped into B-factor\\n')").ok();
+                    writeln!(f, "        _vf.write('expected_global_ids: %s\\n' % str(_expected))").ok();
+                    writeln!(f, "        _vf.write('observed_global_ids: %s\\n' % str(_observed))").ok();
+                    writeln!(f, "        _vf.write('total_atoms_selected: %d\\n' % _n_atoms)").ok();
+                    writeln!(f, "        _vf.write('exact_match: %s\\n' % ('PASS' if _pass else 'FAIL'))").ok();
+                    writeln!(f, "    print('KCC verify: expected=%s observed=%s atoms=%d -> %s' % (str(_expected), str(_observed), _n_atoms, 'PASS' if _pass else 'FAIL'))").ok();
+                    writeln!(f, "except Exception as e:").ok();
+                    writeln!(f, "    print('KCC verification error: %s' % str(e))").ok();
+                    writeln!(f, "").ok();
+                }
                 // cmd.extend commands (reliable multi-command execution)
                 for (i, gname) in site_group_names.iter().enumerate() {
                     writeln!(f, "def _show_site{}(self=None):", i).ok();
