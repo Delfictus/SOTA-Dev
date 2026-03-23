@@ -211,6 +211,61 @@ def grade(dcc):
 # REGRESSION CHECK
 # ============================================================================
 
+def update_aggregate_metrics(all_metrics, output_dir, dcc_threshold=8.0):
+    """Compute and write live aggregate metrics (SR@K, Top-K curve, rank histogram)."""
+    completed = [m for m in all_metrics if "error" not in m]
+    n = len(completed)
+    if n == 0:
+        return
+
+    # SR@K: fraction where best DCC ≤ threshold appears at rank ≤ K
+    def sr_at_k(k):
+        hits = sum(1 for m in completed if m.get("best_rank", 999) <= k and m.get("best_dcc", 999) <= dcc_threshold)
+        return round(hits / n, 3)
+
+    # Top-K recovery curve
+    topk_curve = {}
+    for k in [1, 2, 3, 5, 10]:
+        topk_curve[str(k)] = sr_at_k(k)
+
+    # Rank histogram (rank of best DCC site)
+    rank_hist = {}
+    for m in completed:
+        r = str(m.get("best_rank", 999))
+        rank_hist[r] = rank_hist.get(r, 0) + 1
+
+    # DCC stats
+    top1_dccs = [m["top1_dcc"] for m in completed]
+    best_dccs = [m["best_dcc"] for m in completed]
+
+    aggregate = {
+        "n_completed": n,
+        "n_total": len(all_metrics),
+        "dcc_threshold": dcc_threshold,
+        "sr_at_1": sr_at_k(1),
+        "sr_at_3": sr_at_k(3),
+        "sr_at_5": sr_at_k(5),
+        "sr_at_10": sr_at_k(10),
+        "mean_top1_dcc": round(sum(top1_dccs) / n, 2),
+        "median_top1_dcc": round(sorted(top1_dccs)[n // 2], 2),
+        "mean_best_dcc": round(sum(best_dccs) / n, 2),
+        "topk_curve": topk_curve,
+        "rank_histogram": rank_hist,
+        "grades": {
+            "EXCELLENT": sum(1 for m in completed if m["top1_grade"] == "EXCELLENT"),
+            "GOOD": sum(1 for m in completed if m["top1_grade"] == "GOOD"),
+            "MARGINAL": sum(1 for m in completed if m["top1_grade"] == "MARGINAL"),
+            "MISS": sum(1 for m in completed if m["top1_grade"] == "MISS"),
+        },
+    }
+
+    agg_path = output_dir / "aggregate_metrics.json"
+    with open(agg_path, "w") as f:
+        json.dump(aggregate, f, indent=2)
+
+    return aggregate
+
+
 def check_regressions(all_results):
     """Check hard-target baselines haven't regressed."""
     # Load hard-target results if available
@@ -368,6 +423,11 @@ def main():
             }
             all_metrics.append(metrics)
 
+            # Live aggregate update after each target
+            agg = update_aggregate_metrics(all_metrics, RESULTS_DIR)
+            if agg:
+                log(f"  [LIVE] SR@1={agg['sr_at_1']:.0%} SR@3={agg['sr_at_3']:.0%} SR@10={agg['sr_at_10']:.0%} mean_DCC={agg['mean_top1_dcc']:.1f}A ({agg['n_completed']}/{len(BENCH10_TARGETS)})")
+
         except Exception as e:
             log(f"FAILED: {e}", "ERROR")
             import traceback
@@ -447,8 +507,20 @@ def main():
             log(f"{m['target']:>6} {m['class']:>12} {m['site_type']:>12} "
                 f"{m['top1_dcc']:>6.1f}A {m['top1_grade']:>10} {m['best_dcc']:>6.1f}A {m['best_rank']:>6}")
 
-    log(f"\n  Summary: {summary_path}")
-    log(f"  CSV:     {csv_path}")
+    # Final aggregate metrics
+    final_agg = update_aggregate_metrics(all_metrics, RESULTS_DIR)
+    agg_path = RESULTS_DIR / "aggregate_metrics.json"
+    log(f"\n  Summary:   {summary_path}")
+    log(f"  CSV:       {csv_path}")
+    log(f"  Aggregate: {agg_path}")
+    if final_agg:
+        log(f"\n  === AGGREGATE METRICS ===")
+        log(f"  SR@1:  {final_agg['sr_at_1']:.0%}")
+        log(f"  SR@3:  {final_agg['sr_at_3']:.0%}")
+        log(f"  SR@5:  {final_agg['sr_at_5']:.0%}")
+        log(f"  SR@10: {final_agg['sr_at_10']:.0%}")
+        log(f"  Mean Top-1 DCC: {final_agg['mean_top1_dcc']:.1f}A")
+        log(f"  Top-K curve: {final_agg['topk_curve']}")
     log("\nBench10 complete.")
 
 if __name__ == "__main__":
