@@ -6109,6 +6109,123 @@ fn run_multi_stream_pipeline(
                 log::info!("  KCC visualization: {}", vp.display());
             }
 
+            let kcc_ref_nr = merged_kcc.as_ref().map(|k| k.n_residues).unwrap_or(0);
+
+            // ── KCC Validation JSON: synchronized human↔machine sanity checks ──
+            let val_path = output_base.with_extension("kcc_validation.json");
+            if let Ok(vf) = std::fs::File::create(&val_path) {
+                let mut val_sites = Vec::new();
+                for sj in ms_sites_json.iter() {
+                    let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
+                    if rk > 5 { continue; }
+                    let rs = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let kcc = match sj.get("kcc") { Some(k) => k, None => continue };
+                    let cids = kcc.get("candidate_residue_ids").and_then(|v| v.as_array());
+                    let cids = match cids { Some(c) => c, None => continue };
+
+                    // Build top-K residue entries with positions + KCC
+                    let mut topk_entries = Vec::new();
+                    let mut positions: Vec<[f64; 3]> = Vec::new();
+                    let mut vectors: Vec<[f64; 3]> = Vec::new();
+                    let mut signal_strengths: Vec<f64> = Vec::new();
+
+                    for (ci, rid_val) in cids.iter().enumerate() {
+                        let rid = rid_val.as_i64().unwrap_or(-1) as usize;
+                        if rid >= ca_pos.len() || rid >= kcc_ref_nr { continue; }
+                        let ca = ca_pos[rid];
+                        let kcc_ref = merged_kcc.as_ref().unwrap();
+                        let me = kcc_ref.motion_efficiency.get(rid).copied().unwrap_or(0.0) as f64;
+                        let lc = kcc_ref.lag_corr_peak.get(rid).copied().unwrap_or(0.0) as f64;
+                        let bm = kcc_ref.burst_motion.get(rid).copied().unwrap_or(0.0) as f64;
+                        let lcv = kcc_ref.local_cov.get(rid).copied().unwrap_or(0.0) as f64;
+                        let ndx = kcc_ref.net_dx.get(rid).copied().unwrap_or(0.0) as f64;
+                        let ndy = kcc_ref.net_dy.get(rid).copied().unwrap_or(0.0) as f64;
+                        let ndz = kcc_ref.net_dz.get(rid).copied().unwrap_or(0.0) as f64;
+
+                        positions.push([ca[0] as f64, ca[1] as f64, ca[2] as f64]);
+                        let mag = (ndx*ndx + ndy*ndy + ndz*ndz).sqrt();
+                        if mag > 0.01 { vectors.push([ndx/mag, ndy/mag, ndz/mag]); }
+                        signal_strengths.push(me * lc.abs().max(0.01));
+
+                        topk_entries.push(serde_json::json!({
+                            "residue_id": rid, "ca_position": [ca[0], ca[1], ca[2]],
+                            "kcc": {"motion_efficiency": me, "lag_corr": lc, "burst": bm, "local_cov": lcv}
+                        }));
+                    }
+
+                    // Structural sanity
+                    let (struct_pass, mean_rad, max_dist, centroid) = if positions.len() >= 2 {
+                        let cx = positions.iter().map(|p| p[0]).sum::<f64>() / positions.len() as f64;
+                        let cy = positions.iter().map(|p| p[1]).sum::<f64>() / positions.len() as f64;
+                        let cz = positions.iter().map(|p| p[2]).sum::<f64>() / positions.len() as f64;
+                        let mr = positions.iter().map(|p| ((p[0]-cx).powi(2)+(p[1]-cy).powi(2)+(p[2]-cz).powi(2)).sqrt()).sum::<f64>() / positions.len() as f64;
+                        let mut md = 0.0f64;
+                        for i in 0..positions.len() { for j in i+1..positions.len() {
+                            let d = ((positions[i][0]-positions[j][0]).powi(2)+(positions[i][1]-positions[j][1]).powi(2)+(positions[i][2]-positions[j][2]).powi(2)).sqrt();
+                            if d > md { md = d; }
+                        }}
+                        (mr < 6.0 && md < 12.0, mr, md, [cx, cy, cz])
+                    } else { (true, 0.0, 0.0, [0.0; 3]) };
+
+                    // Vector sanity
+                    let (vec_pass, mean_cos) = if vectors.len() >= 2 {
+                        let mut sum_cos = 0.0f64; let mut n = 0u32;
+                        for i in 0..vectors.len() { for j in i+1..vectors.len() {
+                            sum_cos += vectors[i][0]*vectors[j][0] + vectors[i][1]*vectors[j][1] + vectors[i][2]*vectors[j][2];
+                            n += 1;
+                        }}
+                        let mc = if n > 0 { sum_cos / n as f64 } else { 0.0 };
+                        (mc > 0.5, mc)
+                    } else { (true, 1.0) };
+
+                    // Signal sanity
+                    let mean_sig = if !signal_strengths.is_empty() { signal_strengths.iter().sum::<f64>() / signal_strengths.len() as f64 } else { 0.0 };
+                    let vec_density = if cids.len() > 0 { vectors.len() as f64 / cids.len() as f64 } else { 0.0 };
+                    let sig_pass = vec_density > 0.6;
+
+                    let all_pass = struct_pass && vec_pass && sig_pass;
+                    let verdict = if all_pass { "PASS" } else if struct_pass || vec_pass { "WARN" } else { "FAIL" };
+
+                    val_sites.push(serde_json::json!({
+                        "site_id": sid, "gtck_rank": rk, "rank_score": rs,
+                        "topk_residues": topk_entries,
+                        "validation": {
+                            "structural": {"centroid": centroid, "mean_radius": mean_rad, "max_distance": max_dist, "pass": struct_pass},
+                            "vector": {"mean_cosine_similarity": mean_cos, "pass": vec_pass},
+                            "signal": {"mean_signal_strength": mean_sig, "vector_density": vec_density, "pass": sig_pass}
+                        },
+                        "verdict": verdict
+                    }));
+                }
+
+                // Global checks
+                let top_scores: Vec<f64> = val_sites.iter()
+                    .filter_map(|s| s.get("rank_score").and_then(|v| v.as_f64()))
+                    .collect();
+                let sep = if top_scores.len() >= 2 { (top_scores[0] - top_scores[1]) / top_scores[0].max(1e-12) } else { 0.0 };
+
+                let val_output = serde_json::json!({
+                    "pdb_source": &topology.source_pdb,
+                    "run_id": format!("{}_{}", structure_name, chrono::Utc::now().format("%Y%m%d_%H%M%S")),
+                    "sites": val_sites,
+                    "global_checks": {
+                        "top1_vs_top2_separation": sep,
+                        "n_validated_sites": val_sites.len(),
+                    },
+                    "semantics": {
+                        "structural": "spatial clustering of driver residues — tight cluster = coherent pocket",
+                        "vector": "alignment of residue motion directions — high cosine = coordinated movement",
+                        "signal": "causal strength × temporal correlation — high = mechanistically driven",
+                    },
+                    "debug": {
+                        "n_residues_tracked": kcc.n_residues,
+                        "n_residues_with_causal": kcc.active_causal.iter().filter(|&&v| v > 0).count(),
+                    }
+                });
+                let _ = serde_json::to_writer_pretty(vf, &val_output);
+                log::info!("  KCC validation: {}", val_path.display());
+            }
             // PyMOL session with deterministic top-K residue groups
             let pp = output_base.with_extension("kcc_session.pml");
             if let Ok(mut f) = std::fs::File::create(&pp) {
@@ -6232,6 +6349,15 @@ fn run_multi_stream_pipeline(
                         i, gname, gname).ok();
                 }
                 writeln!(f, "alias show_all, enable all; zoom all").ok();
+                // Compare top 2 sites side-by-side
+                if site_group_names.len() >= 2 {
+                    writeln!(f, "alias compare_top2, disable all; enable {}; enable {}; enable KCC_VECTORS; show cartoon; set cartoon_transparency, 0.3; zoom all",
+                        site_group_names[0], site_group_names[1]).ok();
+                }
+                // Inspect aliases (synonyms)
+                for i in 0..site_group_names.len() {
+                    writeln!(f, "alias inspect_site{}, show_site{}", i, i).ok();
+                }
                 writeln!(f, "").ok();
 
                 // Default view: top-ranked site
