@@ -5413,28 +5413,133 @@ fn run_multi_stream_pipeline(
             }
         }).collect();
 
-        // ── Per-site KCC: map dominant residue → KCC descriptors ──
-        let kcc_site_metrics: Vec<serde_json::Value> = site_signal_metrics.iter().map(|sp| {
-            let res_id = sp.get("primary_residue_id").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
-            if let Some(ref kcc) = merged_kcc {
-                if res_id >= 0 && (res_id as usize) < kcc.n_residues {
-                    let r = res_id as usize;
-                    return serde_json::json!({
-                        "driver_residue_id": res_id,
-                        "temporal_corr": kcc.temporal_corr[r],
-                        "direction_score": kcc.direction_score[r],
-                        "motion_efficiency": kcc.motion_efficiency[r],
-                        "burst_motion": kcc.burst_motion[r],
-                        "phase_shift": kcc.phase_shift[r],
-                        "causal_lag": kcc.causal_lag[r],
-                        "lag_corr_peak": kcc.lag_corr_peak[r],
-                        "local_cov": kcc.local_cov[r],
-                        "active_causal_steps": kcc.active_causal[r],
-                        "total_steps": kcc.residue_count[r],
-                    });
+        // ── Per-site KCC: top-K residue candidate evaluation ──
+        // For each site, derive top-3 residues from per-voxel primary_residue_id_grid,
+        // compute KCC confidence for each, pick the best candidate.
+        let kcc_site_metrics: Vec<serde_json::Value> = reordered_sites.iter().map(|site| {
+            use std::collections::HashMap;
+
+            // Step 1: count residues across site voxels from signal preservation grid
+            let mut residue_voxel_counts: HashMap<i32, u32> = HashMap::new();
+            if let Some(ref sig) = merged_signal {
+                for &spike_idx in &site.spike_indices {
+                    if let Some(spike) = all_stream_spikes.get(spike_idx) {
+                        let vid = spike.voxel_idx as usize;
+                        if vid < sig.primary_residue_id.len() {
+                            let res_id = sig.primary_residue_id[vid];
+                            if res_id >= 0 {
+                                *residue_voxel_counts.entry(res_id).or_insert(0) += 1;
+                            }
+                        }
+                    }
                 }
             }
-            serde_json::json!(null)
+
+            if residue_voxel_counts.is_empty() {
+                return serde_json::json!(null);
+            }
+
+            // Step 2: top-K=3 by descending support, then ascending residue ID for tie-break
+            let total_voxel_support: u32 = residue_voxel_counts.values().sum();
+            let mut candidates: Vec<(i32, u32)> = residue_voxel_counts.into_iter().collect();
+            candidates.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            candidates.truncate(3);
+
+            let kcc_ref = match merged_kcc.as_ref() {
+                Some(k) => k,
+                None => return serde_json::json!(null),
+            };
+
+            // Step 3: compute KCC confidence for each candidate
+            let mut candidate_ids: Vec<i32> = Vec::new();
+            let mut candidate_support: Vec<f32> = Vec::new();
+            let mut candidate_confidence: Vec<f32> = Vec::new();
+            let mut candidate_temporal: Vec<f32> = Vec::new();
+            let mut candidate_direction: Vec<f32> = Vec::new();
+            let mut candidate_burst: Vec<f32> = Vec::new();
+            let mut candidate_phase: Vec<f32> = Vec::new();
+            let mut candidate_lag: Vec<f32> = Vec::new();
+            let mut candidate_local_cov: Vec<f32> = Vec::new();
+
+            let mut best_idx: usize = 0;
+            let mut best_confidence: f32 = f32::NEG_INFINITY;
+
+            for (ci, &(res_id, support)) in candidates.iter().enumerate() {
+                let r = res_id as usize;
+                if r >= kcc_ref.n_residues { continue; }
+
+                let sup_frac = support as f32 / total_voxel_support.max(1) as f32;
+                candidate_ids.push(res_id);
+                candidate_support.push(sup_frac);
+
+                let tc = kcc_ref.temporal_corr[r];
+                let ds = kcc_ref.direction_score[r];
+                let me = kcc_ref.motion_efficiency[r];
+                let bm = kcc_ref.burst_motion[r];
+                let ps = kcc_ref.phase_shift[r];
+                let cl = kcc_ref.causal_lag[r];
+                let lc = kcc_ref.local_cov[r];
+                let lcp = kcc_ref.lag_corr_peak[r];
+
+                candidate_temporal.push(tc);
+                candidate_direction.push(ds);
+                candidate_burst.push(bm);
+                candidate_phase.push(ps);
+                candidate_lag.push(cl);
+                candidate_local_cov.push(lc);
+
+                // KCC confidence: combines temporal + structural + causal evidence
+                // Persistent sites (high causality, low burst) score via motion_efficiency
+                // Transient sites (moderate causality, high burst) score via burst + local_cov
+                let causal_frac = kcc_ref.active_causal[r] as f32
+                    / kcc_ref.residue_count[r].max(1) as f32;
+                let persistent_score = me * causal_frac;  // rewards continuous motion + causality
+                let transient_score = bm.max(0.0).min(5.0) / 5.0 * lc.max(0.0).min(1.0);
+                let confidence = persistent_score.max(transient_score)
+                    * (1.0 + 0.1 * sup_frac);  // slight support boost, not dominant
+                candidate_confidence.push(confidence);
+
+                if confidence > best_confidence
+                    || (confidence == best_confidence && lc > candidate_local_cov.get(best_idx).copied().unwrap_or(0.0))
+                {
+                    best_confidence = confidence;
+                    best_idx = ci;
+                }
+            }
+
+            if candidate_ids.is_empty() {
+                return serde_json::json!(null);
+            }
+
+            let best_res = candidate_ids[best_idx];
+            let br = best_res as usize;
+
+            serde_json::json!({
+                // Best candidate (populates existing site-level KCC fields)
+                "driver_residue_id": best_res,
+                "temporal_corr": kcc_ref.temporal_corr.get(br).copied().unwrap_or(0.0),
+                "direction_score": kcc_ref.direction_score.get(br).copied().unwrap_or(0.0),
+                "motion_efficiency": kcc_ref.motion_efficiency.get(br).copied().unwrap_or(0.0),
+                "burst_motion": kcc_ref.burst_motion.get(br).copied().unwrap_or(0.0),
+                "phase_shift": kcc_ref.phase_shift.get(br).copied().unwrap_or(0.0),
+                "causal_lag": kcc_ref.causal_lag.get(br).copied().unwrap_or(0.0),
+                "lag_corr_peak": kcc_ref.lag_corr_peak.get(br).copied().unwrap_or(0.0),
+                "local_cov": kcc_ref.local_cov.get(br).copied().unwrap_or(0.0),
+                "active_causal_steps": kcc_ref.active_causal.get(br).copied().unwrap_or(0),
+                "total_steps": kcc_ref.residue_count.get(br).copied().unwrap_or(0),
+                "kcc_confidence": best_confidence,
+                "best_kcc_candidate_index": best_idx,
+                // All candidates (for debugging + PyMOL)
+                "candidate_residue_ids": candidate_ids,
+                "candidate_residue_support": candidate_support,
+                "candidate_kcc_confidence": candidate_confidence,
+                "candidate_kcc_temporal_corr": candidate_temporal,
+                "candidate_kcc_direction_score": candidate_direction,
+                "candidate_kcc_burst_motion": candidate_burst,
+                "candidate_kcc_phase_shift": candidate_phase,
+                "candidate_kcc_causal_lag": candidate_lag,
+                "candidate_kcc_local_cov": candidate_local_cov,
+            })
         }).collect();
 
         // Build per-site JSON, merging PRISM-Therm therm_class when available
