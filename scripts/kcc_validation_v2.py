@@ -280,10 +280,16 @@ def generate_pml(val_sites, output_path):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 kcc_validation_v2.py <kcc_visualization.json>")
+        print("Usage: python3 kcc_validation_v2.py <kcc_visualization.json> [--output-dir <dir>]")
         sys.exit(1)
 
     viz_path = sys.argv[1]
+    # Optional: explicit output directory
+    output_dir_override = None
+    if "--output-dir" in sys.argv:
+        idx = sys.argv.index("--output-dir")
+        if idx + 1 < len(sys.argv):
+            output_dir_override = sys.argv[idx + 1]
     with open(viz_path) as f:
         viz = json.load(f)
 
@@ -309,10 +315,15 @@ def main():
     sig_vals = [s["signal"]["signal_strength"] for s in val_sites]
     sig_median = sorted(sig_vals)[len(sig_vals) // 2] if sig_vals else 0
 
-    # Output paths
+    # Output paths — use --output-dir if specified, else derive from input
     base = os.path.splitext(viz_path)[0].replace(".kcc_visualization", "")
-    json_out = base + ".kcc_validation_v2.json"
-    pml_out = base + ".kcc_validation_v2.pml"
+    if output_dir_override:
+        basename = os.path.basename(base)
+        json_out = os.path.join(output_dir_override, basename + ".kcc_validation_v2.json")
+        pml_out = os.path.join(output_dir_override, basename + ".kcc_validation_v2.pml")
+    else:
+        json_out = base + ".kcc_validation_v2.json"
+        pml_out = base + ".kcc_validation_v2.pml"
 
     run_id = os.path.basename(base) + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 

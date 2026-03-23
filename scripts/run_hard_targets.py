@@ -243,7 +243,8 @@ def run_validation(output_dir, pdb_id):
 
     log(f"  Running validation for {pdb_id}...")
     run_cmd(
-        [sys.executable, str(VALIDATION_SCRIPT), str(viz_json)],
+        [sys.executable, str(VALIDATION_SCRIPT), str(viz_json),
+         "--output-dir", str(output_dir)],
         f"Validation for {pdb_id}",
         timeout=60,
         check=True,
