@@ -2899,6 +2899,83 @@ fn run_multi_stream_pipeline(
     // Dimer-aware merge: detect homodimer symmetry and merge symmetric site pairs
     merge_symmetric_sites(&mut clustered_sites, &all_stream_spikes, &topology, 12.0);
 
+    // ── Overlap-based merge: collapse duplicate sites sharing spike membership ──
+    // Composite criterion: (Jaccard ≥ 0.5 OR containment ≥ 0.7) AND centroid dist ≤ 20Å
+    {
+        let pre_merge = clustered_sites.len();
+        let mut merged = true;
+        while merged {
+            merged = false;
+            'outer: for i in 0..clustered_sites.len() {
+                for j in (i+1)..clustered_sites.len() {
+                    // Spatial guard: centroid distance ≤ 20Å
+                    let ci = clustered_sites[i].centroid;
+                    let cj = clustered_sites[j].centroid;
+                    let dist = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
+                    if dist > 20.0 { continue; }
+
+                    // Compute overlap via spike_indices (voxel_idx sets)
+                    let set_i: std::collections::HashSet<i32> = clustered_sites[i].spike_indices.iter()
+                        .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
+                        .collect();
+                    let set_j: std::collections::HashSet<i32> = clustered_sites[j].spike_indices.iter()
+                        .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
+                        .collect();
+
+                    let intersection = set_i.intersection(&set_j).count();
+                    let union = set_i.union(&set_j).count();
+                    let min_size = set_i.len().min(set_j.len()).max(1);
+
+                    let jaccard = intersection as f32 / union.max(1) as f32;
+                    let containment = intersection as f32 / min_size as f32;
+
+                    if jaccard >= 0.5 || containment >= 0.7 {
+                        // Merge j into i: keep larger spike set as winner
+                        let winner = if clustered_sites[i].spike_count >= clustered_sites[j].spike_count { i } else { j };
+                        let loser = if winner == i { j } else { i };
+
+                        // Union spike_indices
+                        let loser_spikes = clustered_sites[loser].spike_indices.clone();
+                        clustered_sites[winner].spike_indices.extend(loser_spikes);
+                        clustered_sites[winner].spike_indices.sort();
+                        clustered_sites[winner].spike_indices.dedup();
+                        clustered_sites[winner].spike_count = clustered_sites[winner].spike_indices.len();
+
+                        // Recompute centroid from merged spikes
+                        let (mut sx, mut sy, mut sz) = (0.0f64, 0.0f64, 0.0f64);
+                        let mut n = 0u32;
+                        for &idx in &clustered_sites[winner].spike_indices {
+                            if let Some(spike) = all_stream_spikes.get(idx) {
+                                sx += spike.position[0] as f64;
+                                sy += spike.position[1] as f64;
+                                sz += spike.position[2] as f64;
+                                n += 1;
+                            }
+                        }
+                        if n > 0 {
+                            clustered_sites[winner].centroid = [
+                                (sx / n as f64) as f32,
+                                (sy / n as f64) as f32,
+                                (sz / n as f64) as f32,
+                            ];
+                        }
+
+                        log::info!("  Overlap merge: site {} + site {} → site {} (J={:.2} C={:.2} d={:.1}Å)",
+                            clustered_sites[i].cluster_id, clustered_sites[j].cluster_id,
+                            clustered_sites[winner].cluster_id, jaccard, containment, dist);
+
+                        clustered_sites.remove(loser);
+                        merged = true;
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        if pre_merge != clustered_sites.len() {
+            log::info!("  Overlap merge: {} → {} sites", pre_merge, clustered_sites.len());
+        }
+    }
+
     // ========== SNDC: Spike-Native Density Clustering (PRIMARY) ==========
     // SNDC (OptiX RT clustering) — deprecated on SM120+ (RTX 5080).
     // OptiX fails with OPTIX_ERROR_PIPELINE_LINK_ERROR on every run;
