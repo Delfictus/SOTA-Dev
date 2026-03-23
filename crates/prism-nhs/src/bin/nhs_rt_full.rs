@@ -5662,6 +5662,54 @@ fn run_multi_stream_pipeline(
             })
         }).collect();
 
+        // ── Localization score L(s): causal signal concentration within site ──
+        // L_raw = C_in / (C_in + C_out + ε) where C_in/C_out are coupling within/outside site
+        let localization_data: Vec<(f32, f32)> = if let Some(ref sig) = merged_signal {
+            // Build unique voxel position map (voxel_idx → [x,y,z])
+            let mut voxel_positions: std::collections::HashMap<i32, [f32; 3]> = std::collections::HashMap::new();
+            for spike in all_stream_spikes.iter() {
+                voxel_positions.entry(spike.voxel_idx).or_insert(spike.position);
+            }
+
+            reordered_sites.iter().map(|site| {
+                // Site's own voxel set
+                let site_voxels: std::collections::HashSet<i32> = site.spike_indices.iter()
+                    .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
+                    .collect();
+
+                // C_in: coupling sum within site
+                let c_in: i64 = site_voxels.iter()
+                    .map(|&vid| sig.coupled_spike_grid.get(vid as usize).copied().unwrap_or(0) as i64)
+                    .sum();
+
+                // Neighborhood: all voxels within R=6Å of centroid, excluding site voxels
+                let r = 6.0f32;
+                let r2 = r * r;
+                let cx = site.centroid[0];
+                let cy = site.centroid[1];
+                let cz = site.centroid[2];
+
+                let mut c_out: i64 = 0;
+                for (&vid, pos) in &voxel_positions {
+                    if site_voxels.contains(&vid) { continue; }
+                    let dx = pos[0] - cx;
+                    let dy = pos[1] - cy;
+                    let dz = pos[2] - cz;
+                    if dx*dx + dy*dy + dz*dz <= r2 {
+                        c_out += sig.coupled_spike_grid.get(vid as usize).copied().unwrap_or(0) as i64;
+                    }
+                }
+
+                let l_raw = c_in as f32 / (c_in as f32 + c_out as f32 + 1e-6);
+                (l_raw, c_in as f32)
+            }).collect()
+        } else {
+            vec![(0.5, 0.0); reordered_sites.len()]
+        };
+
+        let raw_localization: Vec<f32> = localization_data.iter().map(|&(l, _)| l).collect();
+        let loc_n = percentile_normalize(&raw_localization);
+
         // ── G×T×C×K Unified Rank Score ──
         // Normalize inputs per-protein using 5th-95th percentile scaling
         fn percentile_normalize(values: &[f32]) -> Vec<f32> {
@@ -5712,7 +5760,7 @@ fn run_multi_stream_pipeline(
         let cvox_n = percentile_normalize(&raw_coupled_voxel_frac);
 
         // Compute rank scores
-        let rank_scores: Vec<(f32, f32, f32, f32, f32)> = (0..reordered_sites.len()).map(|i| {
+        let rank_scores: Vec<(f32, f32, f32, f32, f32, f32, f32)> = (0..reordered_sites.len()).map(|i| {
             // G(s) = vol_n * (1 - 0.7 * hydro_n) * (0.6 + 0.4 * compact_n)
             let hydro_n = 1.0 - burial_n[i]; // low burial = high hydrophilicity
             let g = vol_n[i] * (1.0 - 0.7 * hydro_n) * (0.6 + 0.4 * spher_n[i]);
@@ -5763,25 +5811,28 @@ fn run_multi_stream_pipeline(
 
             let k = residue_valid * (0.85 + 0.15 * residue_support) * k_persist.max(k_trans);
 
+            // Localization factor L' = 0.85 + 0.15 * L_norm
+            let l_prime = 0.85 + 0.15 * loc_n[i];
+
             // Hard gates
             let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
                 0.0
             } else {
-                g * t * c * k
+                g * t * c * k * l_prime
             };
 
-            (gated, g, t, c, k)
+            (gated, g, t, c, k, l_prime, raw_localization[i])
         }).collect();
 
         // Re-rank by rank_score (descending)
         let mut rank_order: Vec<usize> = (0..rank_scores.len()).collect();
         rank_order.sort_by(|&a, &b| rank_scores[b].0.partial_cmp(&rank_scores[a].0).unwrap_or(std::cmp::Ordering::Equal));
 
-        log::info!("G×T×C×K ranking applied. Top-3:");
+        log::info!("G×T×C×K×L ranking applied. Top-3:");
         for (rank, &idx) in rank_order.iter().take(3).enumerate() {
-            let (score, g, t, c, k) = rank_scores[idx];
-            log::info!("  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3}",
-                rank + 1, reordered_sites[idx].cluster_id, score, g, t, c, k);
+            let (score, g, t, c, k, l, _) = rank_scores[idx];
+            log::info!("  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3} L={:.3}",
+                rank + 1, reordered_sites[idx].cluster_id, score, g, t, c, k, l);
         }
 
         // Build per-site JSON, merging PRISM-Therm therm_class when available
@@ -5822,6 +5873,8 @@ fn run_multi_stream_pipeline(
                 "rank_T": rank_scores[site_rank].2,
                 "rank_C": rank_scores[site_rank].3,
                 "rank_K": rank_scores[site_rank].4,
+                "rank_L": rank_scores[site_rank].5,
+                "localization_score_raw": rank_scores[site_rank].6,
                 "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
             })
         }).collect();
