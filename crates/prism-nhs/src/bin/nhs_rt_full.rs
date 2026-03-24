@@ -6099,10 +6099,16 @@ fn run_multi_stream_pipeline(
         // ── PRISM-THERM CONDITIONAL OVERRIDE ──
         // Reads finalized per-site therm fields from ms_sites_json (same source as Python ablation).
         // Override ONLY when Therm strongly favors a different site over current top-1.
+        // CRITICAL: select Top-K by gtck_rank, NOT by array position (array may be unsorted).
         {
-            let therm_k = 10usize.min(ms_sites_json.len());
-            // Compute ThermScore from finalized JSON fields
-            let therm_scores: Vec<(usize, f32, f32, f32, f32)> = (0..therm_k).map(|i| {
+            // Build index sorted by gtck_rank
+            let mut rank_sorted: Vec<usize> = (0..ms_sites_json.len()).collect();
+            rank_sorted.sort_by_key(|&i| {
+                ms_sites_json[i].get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999) as u32
+            });
+            let therm_k = 10usize.min(rank_sorted.len());
+            // Compute ThermScore from finalized JSON fields for Top-K by gtck_rank
+            let therm_scores: Vec<(usize, f32, f32, f32, f32)> = rank_sorted[..therm_k].iter().map(|&i| {
                 let sj = &ms_sites_json[i];
                 let breathing = sj.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
                 let hysteresis = sj.get("hysteresis_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
