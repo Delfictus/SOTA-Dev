@@ -1,0 +1,105 @@
+{
+  "generated": "2026-03-23T18:35:21.481370+00:00",
+  "pipeline_version": "prism4d_v1.0_kcc_gtckl_verified",
+  "engine_args": [
+    "--fast",
+    "--hysteresis",
+    "--multi-stream",
+    "8",
+    "--spike-percentile",
+    "95",
+    "--prism-therm",
+    "--fused-steps",
+    "4",
+    "--hmr",
+    "--adaptive-dt",
+    "-v"
+  ],
+  "targets": [
+    {
+      "target": "1P38",
+      "n_sites": 13,
+      "top_site_id": 4000,
+      "top_site_rank": 1,
+      "top_site_score": 0.1293713003396988,
+      "rank_G": 0.5138939619064331,
+      "rank_T": 0.8846668004989624,
+      "rank_C": 0.7005030512809753,
+      "rank_K": 0.495629221200943,
+      "rank_L": 1.0,
+      "centroid": [
+        15.948397636413574,
+        0.8131482005119324,
+        -18.56851577758789
+      ],
+      "volume": 6385.0,
+      "causal_density": 0.07562077045440674,
+      "total_coupling": 1653054,
+      "coupled_voxels": 7705,
+      "lag_corr": 0.7915174961090088,
+      "burst_motion": 1.0337618589401245,
+      "regime": "distributed",
+      "validation_verdict": "PASS",
+      "runtime_seconds": 382.3
+    },
+    {
+      "target": "3MH1",
+      "n_sites": 31,
+      "top_site_id": 4002,
+      "top_site_rank": 1,
+      "top_site_score": 0.14655618369579315,
+      "rank_G": 0.4722878932952881,
+      "rank_T": 0.7867347002029419,
+      "rank_C": 0.7671443819999695,
+      "rank_K": 0.5032020211219788,
+      "rank_L": 0.969148576259613,
+      "centroid": [
+        38.67172622680664,
+        33.16568374633789,
+        22.6439151763916
+      ],
+      "volume": 2284.0,
+      "causal_density": 0.11971460282802582,
+      "total_coupling": 840681,
+      "coupled_voxels": 4094,
+      "lag_corr": 0.8148438930511475,
+      "burst_motion": 0.9202247858047485,
+      "regime": "distributed",
+      "validation_verdict": "PASS",
+      "runtime_seconds": 373.9
+    },
+    {
+      "target": "5LAR",
+      "n_sites": 26,
+      "top_site_id": 4001,
+      "top_site_rank": 1,
+      "top_site_score": 0.17276868224143982,
+      "rank_G": 0.5365180969238281,
+      "rank_T": 0.9009170532226562,
+      "rank_C": 0.7613402605056763,
+      "rank_K": 0.4823804199695587,
+      "rank_L": 0.9697414636611938,
+      "centroid": [
+        53.31034469604492,
+        71.63119506835938,
+        19.932361602783203
+      ],
+      "volume": 4441.0,
+      "causal_density": 0.08415984362363815,
+      "total_coupling": 1091849,
+      "coupled_voxels": 5541,
+      "lag_corr": 0.7906293272972107,
+      "burst_motion": 1.151419758796692,
+      "regime": "distributed",
+      "validation_verdict": "PASS",
+      "runtime_seconds": 397.6
+    }
+  ],
+  "summary": {
+    "n_targets": 3,
+    "n_pass": 3,
+    "n_fail": 0,
+    "n_other": 0,
+    "targets_with_sites": 3
+  }
+}

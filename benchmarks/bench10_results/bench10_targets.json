@@ -1,0 +1,62 @@
+[
+  {
+    "bench30_id": 2,
+    "pdb": "2NPQ",
+    "class": "kinase",
+    "site_type": "cryptic"
+  },
+  {
+    "bench30_id": 3,
+    "pdb": "1KV1",
+    "class": "kinase",
+    "site_type": "allosteric"
+  },
+  {
+    "bench30_id": 8,
+    "pdb": "1HCL",
+    "class": "kinase",
+    "site_type": "orthosteric"
+  },
+  {
+    "bench30_id": 22,
+    "pdb": "3L3N",
+    "class": "kinase",
+    "site_type": "orthosteric"
+  },
+  {
+    "bench30_id": 1,
+    "pdb": "1JWP",
+    "class": "enzyme",
+    "site_type": "cryptic"
+  },
+  {
+    "bench30_id": 5,
+    "pdb": "4EY4",
+    "class": "enzyme",
+    "site_type": "orthosteric"
+  },
+  {
+    "bench30_id": 23,
+    "pdb": "1NNA",
+    "class": "enzyme",
+    "site_type": "orthosteric"
+  },
+  {
+    "bench30_id": 6,
+    "pdb": "2HNP",
+    "class": "allosteric",
+    "site_type": "allosteric"
+  },
+  {
+    "bench30_id": 7,
+    "pdb": "1M47",
+    "class": "PPI",
+    "site_type": "PPI"
+  },
+  {
+    "bench30_id": 10,
+    "pdb": "2OSS",
+    "class": "epigenetic",
+    "site_type": "orthosteric"
+  }
+]
