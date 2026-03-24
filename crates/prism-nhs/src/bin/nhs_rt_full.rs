@@ -5983,6 +5983,7 @@ fn run_multi_stream_pipeline(
                     "l_eff": rank_scores[site_rank].5,
                     "final_score": final_scores[site_rank].0,
                     "c_locality_gate": localization_data[site_rank].0,
+                    // contact_reorg added in post-pass after computation
                 }),
                 "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
             })
@@ -6096,8 +6097,123 @@ fn run_multi_stream_pipeline(
             }
         }
 
-        // ── PRISM-THERM CONDITIONAL OVERRIDE ──
-        // Reads finalized per-site therm fields from ms_sites_json (same source as Python ablation).
+        // ── STAGE 5: CONTACT REORGANIZATION ──
+        // Compute per-site local contact change density from ensemble snapshots.
+        // Uses CA positions across trajectory frames. Validated offline (1.4-1.5x on 3L3N, 1NNA).
+        let contact_reorg_scores: std::collections::HashMap<i32, (f32, f32)> = {
+            let mut scores: std::collections::HashMap<i32, (f32, f32)> = std::collections::HashMap::new();
+            let contact_cutoff = 6.0f32; // Å CA-CA contact threshold
+            let site_radius = 12.0f32;
+
+            // Use stream 0 snapshots (or first available)
+            let snapshots = all_stream_snapshots.iter().find(|s| s.len() >= 5);
+            if let Some(snaps) = snapshots {
+                let n_frames = snaps.len().min(15);
+                let ca_idx = &topology.ca_indices;
+                let n_ca = ca_idx.len();
+
+                // Extract CA positions per frame
+                let mut ca_frames: Vec<Vec<[f32; 3]>> = Vec::new();
+                for fi in 0..n_frames {
+                    let pos = &snaps[fi].positions;
+                    let mut cas = Vec::with_capacity(n_ca);
+                    for &ci in ca_idx {
+                        if ci * 3 + 2 < pos.len() {
+                            cas.push([pos[ci*3], pos[ci*3+1], pos[ci*3+2]]);
+                        }
+                    }
+                    if cas.len() == n_ca {
+                        ca_frames.push(cas);
+                    }
+                }
+
+                if ca_frames.len() >= 3 {
+                    // Compute reference contacts (frame 0)
+                    let ref_contacts: std::collections::HashSet<(usize, usize)> = {
+                        let mut c = std::collections::HashSet::new();
+                        for i in 0..n_ca {
+                            for j in (i+2)..n_ca {
+                                let dx = ca_frames[0][i][0] - ca_frames[0][j][0];
+                                let dy = ca_frames[0][i][1] - ca_frames[0][j][1];
+                                let dz = ca_frames[0][i][2] - ca_frames[0][j][2];
+                                if (dx*dx + dy*dy + dz*dz) < contact_cutoff * contact_cutoff {
+                                    c.insert((i, j));
+                                }
+                            }
+                        }
+                        c
+                    };
+
+                    // For each site, compute local contact change
+                    for sj in ms_sites_json.iter() {
+                        let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+                        let centroid = sj.get("centroid").and_then(|v| v.as_array())
+                            .map(|a| [a[0].as_f64().unwrap_or(0.0) as f32,
+                                      a[1].as_f64().unwrap_or(0.0) as f32,
+                                      a[2].as_f64().unwrap_or(0.0) as f32])
+                            .unwrap_or([0.0; 3]);
+
+                        // Find local CA indices (within site_radius of centroid, using frame 0)
+                        let local_cas: std::collections::HashSet<usize> = (0..n_ca)
+                            .filter(|&i| {
+                                let dx = ca_frames[0][i][0] - centroid[0];
+                                let dy = ca_frames[0][i][1] - centroid[1];
+                                let dz = ca_frames[0][i][2] - centroid[2];
+                                (dx*dx + dy*dy + dz*dz) < site_radius * site_radius
+                            })
+                            .collect();
+
+                        if local_cas.is_empty() { continue; }
+
+                        let mut total_local_change = 0u32;
+                        let mut total_global_change = 0u32;
+
+                        for fi in 1..ca_frames.len() {
+                            let mut frame_contacts = std::collections::HashSet::new();
+                            for i in 0..n_ca {
+                                for j in (i+2)..n_ca {
+                                    let dx = ca_frames[fi][i][0] - ca_frames[fi][j][0];
+                                    let dy = ca_frames[fi][i][1] - ca_frames[fi][j][1];
+                                    let dz = ca_frames[fi][i][2] - ca_frames[fi][j][2];
+                                    if (dx*dx + dy*dy + dz*dz) < contact_cutoff * contact_cutoff {
+                                        frame_contacts.insert((i, j));
+                                    }
+                                }
+                            }
+                            // Contacts formed and broken
+                            let formed: Vec<_> = frame_contacts.difference(&ref_contacts).collect();
+                            let broken: Vec<_> = ref_contacts.difference(&frame_contacts).collect();
+                            let global_change = formed.len() + broken.len();
+                            total_global_change += global_change as u32;
+
+                            // Local: at least one residue in local_cas
+                            let local_formed = formed.iter().filter(|&&(a,b)| local_cas.contains(a) || local_cas.contains(b)).count();
+                            let local_broken = broken.iter().filter(|&&(a,b)| local_cas.contains(a) || local_cas.contains(b)).count();
+                            total_local_change += (local_formed + local_broken) as u32;
+                        }
+
+                        let n_f = (ca_frames.len() - 1) as f32;
+                        let density = total_local_change as f32 / n_f;
+                        let localization = total_local_change as f32 / total_global_change.max(1) as f32;
+                        scores.insert(sid, (density, localization));
+                    }
+                }
+            }
+            scores
+        };
+
+        // Inject contact reorg scores into site JSON
+        for sj in ms_sites_json.iter_mut() {
+            let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            if let Some(&(density, local_ratio)) = contact_reorg_scores.get(&sid) {
+                if let Some(rt) = sj.get_mut("ranking_terms").and_then(|v| v.as_object_mut()) {
+                    rt.insert("contact_reorg_density".to_string(), serde_json::json!(density));
+                    rt.insert("contact_reorg_localization".to_string(), serde_json::json!(local_ratio));
+                }
+            }
+        }
+
+        // ── PRISM-THERM CONDITIONAL OVERRIDE (with Stage 5 contact reorg gate) ──
         // Override ONLY when Therm strongly favors a different site over current top-1.
         // CRITICAL: select Top-K by gtck_rank, NOT by array position (array may be unsorted).
         {
@@ -6173,8 +6289,22 @@ fn run_multi_stream_pipeline(
                         if loc_confirms { "CONFIRM" } else { "BLOCK" },
                         loc_ratio, loc_gap);
 
-                    // Four-stage decision: ALL must confirm
-                    if therm_fires && coherence_ok && loc_confirms {
+                    // Stage 5: Contact reorganization — does the candidate show more
+                    // localized contact change than top-1?
+                    let cand_sid = ms_sites_json[best.0].get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let top1_sid_i32 = ms_sites_json[top1_idx].get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let (cand_reorg, top1_reorg) = (
+                        contact_reorg_scores.get(&cand_sid).copied().unwrap_or((0.0, 0.0)),
+                        contact_reorg_scores.get(&top1_sid_i32).copied().unwrap_or((0.0, 0.0)),
+                    );
+                    let reorg_ratio = if top1_reorg.0 > 0.1 { cand_reorg.0 / top1_reorg.0 } else { 1.0 };
+                    let reorg_confirms = reorg_ratio > 0.9; // candidate must not have dramatically LESS reorg
+                    log::info!("  Stage5(Reorg): cand={:.1} top1={:.1} ratio={:.2} → {}",
+                        cand_reorg.0, top1_reorg.0, reorg_ratio,
+                        if reorg_confirms { "CONFIRM" } else { "BLOCK" });
+
+                    // Five-stage decision: ALL must confirm
+                    if therm_fires && coherence_ok && loc_confirms && reorg_confirms {
                         let promote = ms_sites_json.remove(best.0);
                         ms_sites_json.insert(0, promote);
                         if let Some(obj) = ms_sites_json[0].as_object_mut() {
