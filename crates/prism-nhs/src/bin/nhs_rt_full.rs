@@ -5927,7 +5927,7 @@ fn run_multi_stream_pipeline(
             final_scores[b].0.partial_cmp(&final_scores[a].0).unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        log::info!("G×T×C×K×L + BLP/DP correction applied. Top-5:");
+        log::info!("G×T×C×K×L + BLP/DP ranking. Top-5:");
         for (rank, &idx) in rank_order.iter().take(5).enumerate() {
             let (fs, gtckl, blp, dp, regime) = final_scores[idx];
             log::info!("  #{}: site {} final={:.6} gtckl={:.4} blp={:.3} dp={:.3} [{}]",
@@ -6093,6 +6093,53 @@ fn run_multi_stream_pipeline(
             }
             if let Some(&uv_score) = uv_enrichment_scores.get(&site_id) {
                 site_json["uv_enrichment_score"] = serde_json::json!(uv_score);
+            }
+        }
+
+        // ── PRISM-THERM CONDITIONAL OVERRIDE ──
+        // Reads finalized per-site therm fields from ms_sites_json (same source as Python ablation).
+        // Override ONLY when Therm strongly favors a different site over current top-1.
+        {
+            let therm_k = 10usize.min(ms_sites_json.len());
+            // Compute ThermScore from finalized JSON fields
+            let therm_scores: Vec<(usize, f32, f32, f32, f32)> = (0..therm_k).map(|i| {
+                let sj = &ms_sites_json[i];
+                let breathing = sj.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let hysteresis = sj.get("hysteresis_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let onset = sj.get("onset_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let kin = sj.get("kinetic_accessibility").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let frust = sj.get("frustrated_solvent_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                let ts = 1.0 * breathing + 1.0 * hysteresis + 0.5 * onset + 0.3 * kin - 0.5 * frust;
+                (i, ts, breathing, hysteresis, onset)
+            }).collect();
+
+            if therm_scores.len() >= 2 {
+                let top1_ts = therm_scores[0].1;
+                let top1_sid = ms_sites_json[0].get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                let best = therm_scores.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
+                let best_sid = ms_sites_json[best.0].get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                log::info!("  Therm check: top1=site{} ts={:.3} (b={:.3} h={:.3} o={:.3}), best=site{} ts={:.3} (b={:.3} h={:.3} o={:.3})",
+                    top1_sid, top1_ts, therm_scores[0].2, therm_scores[0].3, therm_scores[0].4,
+                    best_sid, best.1, best.2, best.3, best.4);
+
+                if best.0 != 0 && top1_ts > 0.01 {
+                    let ratio = best.1 / top1_ts;
+                    let gap = best.1 - top1_ts;
+                    log::info!("  Therm ratio={:.2}, gap={:.3}", ratio, gap);
+
+                    if ratio > 1.5 && gap > 0.3 {
+                        let promote = ms_sites_json.remove(best.0);
+                        ms_sites_json.insert(0, promote);
+                        // Update gtck_rank in the promoted site
+                        if let Some(obj) = ms_sites_json[0].as_object_mut() {
+                            obj.insert("gtck_rank".to_string(), serde_json::json!(1));
+                            obj.insert("therm_override".to_string(), serde_json::json!(true));
+                        }
+                        log::info!("  THERM OVERRIDE: site {} promoted to #1 (ratio={:.2}, gap={:.3})",
+                            best_sid, ratio, gap);
+                    }
+                }
             }
         }
 
