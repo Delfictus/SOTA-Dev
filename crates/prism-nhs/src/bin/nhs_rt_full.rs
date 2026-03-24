@@ -5793,9 +5793,26 @@ fn run_multi_stream_pipeline(
             let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
             let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
 
-            // C(s) = sqrt(causal composite) — density + coverage + total
-            let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
-            let c = c_raw.max(0.0).sqrt();
+            // C_total = sqrt(causal composite) — preserves hard-target behavior
+            let c_total_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
+            let c_total = c_total_raw.max(0.0).sqrt();
+
+            // C_local = concentrated causal support (penalizes diffuse regions)
+            // Uses localization ratio (c_in / (c_in + c_out)) and causal density per volume
+            let loc_ratio = localization_data[i].0; // l_raw: fraction of causal signal inside site
+            let c_in_signal = localization_data[i].1; // raw c_in magnitude
+            let site_vol = reordered_sites[i].estimated_volume.max(1.0);
+            let causal_per_vol = (c_in_signal / site_vol).min(10.0) / 10.0; // normalize to ~[0,1]
+            let c_local = (0.60 * loc_ratio + 0.40 * causal_per_vol).clamp(0.0, 1.0);
+
+            // C_eff: regime-aware blend of C_total and C_local
+            // High localization → trust C_total (concentrated signal is real)
+            // Low localization → rely more on C_local (strip diffuse advantage)
+            let c_locality_gate = loc_ratio; // 0=diffuse, 1=concentrated
+            let a = 0.40 + 0.40 * c_locality_gate; // C_total weight: 0.40 (diffuse) to 0.80 (concentrated)
+            let b = 1.0 - a;                        // C_local weight: 0.60 (diffuse) to 0.20 (concentrated)
+            let c_eff = (a * c_total + b * c_local).clamp(0.0, 1.0);
+            let c = c_eff;
 
             // K(s) - two regime formulation using SITE-LEVEL weighted KCC
             let kcc = &kcc_site_metrics[i];
@@ -5965,6 +5982,7 @@ fn run_multi_stream_pipeline(
                     "regime": final_scores[site_rank].4,
                     "l_eff": rank_scores[site_rank].5,
                     "final_score": final_scores[site_rank].0,
+                    "c_locality_gate": localization_data[site_rank].0,
                 }),
                 "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
             })
