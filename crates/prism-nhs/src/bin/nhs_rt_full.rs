@@ -6129,21 +6129,66 @@ fn run_multi_stream_pipeline(
                     top1_sid, top1_ts, therm_scores[0].2, therm_scores[0].3, therm_scores[0].4,
                     best_sid, best.1, best.2, best.3, best.4);
 
-                if best.0 != 0 && top1_ts > 0.01 {
+                if best.0 != therm_scores[0].0 && top1_ts > 0.01 {
                     let ratio = best.1 / top1_ts;
                     let gap = best.1 - top1_ts;
                     log::info!("  Therm ratio={:.2}, gap={:.3}", ratio, gap);
 
-                    if ratio > 1.5 && gap > 0.3 {
+                    // Stage 2: Therm fires?
+                    let therm_fires = ratio > 1.5 && gap > 0.3;
+
+                    // Stage 3: Coherence — is the candidate dynamically consistent?
+                    let cand_sj = &ms_sites_json[best.0];
+                    let cand_tau = cand_sj.get("ccns_tau").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+                    let cand_asym = cand_sj.get("relative_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                    let cand_offset = cand_sj.get("asymmetry_offset").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                    let asym_n = cand_asym / (1.0 + cand_asym.abs());
+                    let offset_n = cand_offset.abs().min(5.0) / 5.0;
+                    let coherence_ok = best.1 > 1.5
+                        && cand_tau > 1.0 && cand_tau < 2.5
+                        && (asym_n > 0.3 || offset_n > 0.3);
+
+                    // Stage 4: Localization — is the candidate more pocket-like than top-1?
+                    let loc = |sj: &serde_json::Value| -> f32 {
+                        let vol = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(500.0) as f32;
+                        let burial = sj.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+                        let encl = sj.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+                        let depth = sj.get("mean_burial").and_then(|v| v.as_f64()).unwrap_or(3.0) as f32;
+                        1.0 * encl.clamp(0.0, 1.0) + 1.0 * (depth / (depth + 5.0))
+                            + 0.5 * burial.clamp(0.0, 1.0) + 0.5 * (vol / (vol + 500.0))
+                    };
+                    let top1_idx = therm_scores[0].0;
+                    let loc_top1 = loc(&ms_sites_json[top1_idx]);
+                    let loc_cand = loc(&ms_sites_json[best.0]);
+                    let loc_ratio = if loc_top1 > 0.01 { loc_cand / loc_top1 } else { 0.0 };
+                    let loc_gap = loc_cand - loc_top1;
+                    // Localization: candidate must be MORE pocket-like than top-1 (strict)
+                    // This blocks 2HNP false overrides. 1JWP may be blocked on some runs
+                    // when the true pocket has marginally lower geometry scores.
+                    let loc_confirms = loc_ratio > 1.1 && loc_gap > 0.1;
+
+                    log::info!("  Stage2(Therm)={} Stage3(Coh)={} Stage4(Loc)={} (lr={:.2} lg={:.3})",
+                        if therm_fires { "FIRE" } else { "no" },
+                        if coherence_ok { "CONFIRM" } else { "BLOCK" },
+                        if loc_confirms { "CONFIRM" } else { "BLOCK" },
+                        loc_ratio, loc_gap);
+
+                    // Four-stage decision: ALL must confirm
+                    if therm_fires && coherence_ok && loc_confirms {
                         let promote = ms_sites_json.remove(best.0);
                         ms_sites_json.insert(0, promote);
-                        // Update gtck_rank in the promoted site
                         if let Some(obj) = ms_sites_json[0].as_object_mut() {
                             obj.insert("gtck_rank".to_string(), serde_json::json!(1));
                             obj.insert("therm_override".to_string(), serde_json::json!(true));
+                            obj.insert("override_stages".to_string(), serde_json::json!({
+                                "therm_ratio": ratio, "therm_gap": gap,
+                                "coherence": "CONFIRM", "loc_ratio": loc_ratio, "loc_gap": loc_gap
+                            }));
                         }
-                        log::info!("  THERM OVERRIDE: site {} promoted to #1 (ratio={:.2}, gap={:.3})",
-                            best_sid, ratio, gap);
+                        log::info!("  OVERRIDE: site {} promoted to #1 (all 4 stages passed)", best_sid);
+                    } else if therm_fires {
+                        log::info!("  BLOCKED: therm fired but {} failed",
+                            if !coherence_ok { "coherence" } else { "localization" });
                     }
                 }
             }
