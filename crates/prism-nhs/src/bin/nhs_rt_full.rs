@@ -5751,32 +5751,19 @@ fn run_multi_stream_pipeline(
             (cv / nv) as f32
         }).collect();
 
-        // Normalize — log-compressed for geometry, percentile for bounded terms
-        fn log_compress_normalize(values: &[f32]) -> Vec<f32> {
-            // log(1+x) compression then scale to [0,1]
-            let log_vals: Vec<f32> = values.iter().map(|&v| (1.0 + v.max(0.0)).ln()).collect();
-            let max_log = log_vals.iter().copied().fold(0.0f32, f32::max);
-            if max_log < 1e-6 { return vec![0.5; values.len()]; }
-            log_vals.iter().map(|&v| (v / max_log).clamp(0.0, 1.0)).collect()
-        }
-        let vol_n = log_compress_normalize(&raw_volumes);
+        // Normalize
+        let vol_n = percentile_normalize(&raw_volumes);
         let burial_n = percentile_normalize(&raw_burial);
         let spher_n = percentile_normalize(&raw_sphericity);
-        // C uses density (per-voxel), percentile normalized (log-compress regresses hard targets)
+        let ctot_n = percentile_normalize(&raw_coupling_total);
         let cdens_n = percentile_normalize(&raw_causality_density);
         let cvox_n = percentile_normalize(&raw_coupled_voxel_frac);
-        // ctot_n kept for BLP only (NOT used in C formula)
-        let ctot_n = percentile_normalize(&raw_coupling_total);
 
-        // Compute rank scores — log-compressed G, density-normalized C, weighted additive
+        // Compute rank scores
         let rank_scores: Vec<(f32, f32, f32, f32, f32, f32, f32)> = (0..reordered_sites.len()).map(|i| {
-            // G(s) — log-compressed geometry (all subterms bounded [0,1])
-            // vol_n is already log-compressed via log_compress_normalize
-            let hydro_n = 1.0 - burial_n[i]; // high = hydrophilic surface
-            let g = 0.35 * vol_n[i]              // log-compressed volume
-                  + 0.25 * burial_n[i]            // burial depth (higher = more buried)
-                  + 0.20 * spher_n[i]             // compactness
-                  + 0.20 * (1.0 - hydro_n);      // hydrophobicity (inverse of hydrophilicity)
+            // G(s) = vol_n * (1 - 0.7 * hydro_n) * (0.6 + 0.4 * compact_n)
+            let hydro_n = 1.0 - burial_n[i]; // low burial = high hydrophilicity
+            let g = vol_n[i] * (1.0 - 0.7 * hydro_n) * (0.6 + 0.4 * spher_n[i]);
 
             // T(s) = 0.5 + 0.25 * theta + 0.25 * tau
             let therm_n = if let Some(ref analysis) = prism_therm_result {
@@ -5793,26 +5780,9 @@ fn run_multi_stream_pipeline(
             let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
             let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
 
-            // C_total = sqrt(causal composite) — preserves hard-target behavior
-            let c_total_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
-            let c_total = c_total_raw.max(0.0).sqrt();
-
-            // C_local = concentrated causal support (penalizes diffuse regions)
-            // Uses localization ratio (c_in / (c_in + c_out)) and causal density per volume
-            let loc_ratio = localization_data[i].0; // l_raw: fraction of causal signal inside site
-            let c_in_signal = localization_data[i].1; // raw c_in magnitude
-            let site_vol = reordered_sites[i].estimated_volume.max(1.0);
-            let causal_per_vol = (c_in_signal / site_vol).min(10.0) / 10.0; // normalize to ~[0,1]
-            let c_local = (0.60 * loc_ratio + 0.40 * causal_per_vol).clamp(0.0, 1.0);
-
-            // C_eff: regime-aware blend of C_total and C_local
-            // High localization → trust C_total (concentrated signal is real)
-            // Low localization → rely more on C_local (strip diffuse advantage)
-            let c_locality_gate = loc_ratio; // 0=diffuse, 1=concentrated
-            let a = 0.40 + 0.40 * c_locality_gate; // C_total weight: 0.40 (diffuse) to 0.80 (concentrated)
-            let b = 1.0 - a;                        // C_local weight: 0.60 (diffuse) to 0.20 (concentrated)
-            let c_eff = (a * c_total + b * c_local).clamp(0.0, 1.0);
-            let c = c_eff;
+            // C(s) = sqrt(0.45 * ctot + 0.35 * cdens + 0.20 * cvox)
+            let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
+            let c = c_raw.max(0.0).sqrt();
 
             // K(s) - two regime formulation using SITE-LEVEL weighted KCC
             let kcc = &kcc_site_metrics[i];
@@ -5844,7 +5814,7 @@ fn run_multi_stream_pipeline(
             // Localization factor L' = 0.80 + 0.20 * L_norm
             let l_prime = 0.80 + 0.20 * loc_n[i];
 
-            // Multiplicative aggregation (preserved — works for hard targets)
+            // Hard gates
             let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
                 0.0
             } else {
@@ -5854,84 +5824,15 @@ fn run_multi_stream_pipeline(
             (gated, g, t, c, k, l_prime, raw_localization[i])
         }).collect();
 
-        // CA positions for BLP/DP computation
-        let ca_pos_blp: Vec<[f32; 3]> = topology.ca_indices.iter().map(|&ci| {
-            if ci * 3 + 2 < topology.positions.len() {
-                [topology.positions[ci*3], topology.positions[ci*3+1], topology.positions[ci*3+2]]
-            } else { [0.0; 3] }
-        }).collect();
+        // Re-rank by rank_score (descending)
+        let mut rank_order: Vec<usize> = (0..rank_scores.len()).collect();
+        rank_order.sort_by(|&a, &b| rank_scores[b].0.partial_cmp(&rank_scores[a].0).unwrap_or(std::cmp::Ordering::Equal));
 
-        // ── POST-GTCKL RANKING CORRECTION LAYER ──
-        // Adds BLP (Binding Locality Prior) and DP (Diffuseness Penalty)
-        // with regime-aware application and monotonicity guard
-
-        // Collect raw BLP inputs for normalization
-        let raw_ray_escape: Vec<f32> = reordered_sites.iter().map(|s| {
-            // ray_escape_ratio is computed during enclosure analysis
-            // Lower escape = more enclosed pocket
-            let escape = 1.0 - s.druggability.overall.clamp(0.0, 1.0); // proxy: inverse druggability
-            escape
-        }).collect();
-        let raw_mean_burial_vals: Vec<f32> = reordered_sites.iter().enumerate().map(|(i, _)| {
-            let sid = reordered_sites[i].cluster_id;
-            physics_signals.get(&sid).map(|p| p.2).unwrap_or(0.0) // mean_burial from physics_signals
-        }).collect();
-
-        let escape_n = percentile_normalize(&raw_ray_escape);
-        let depth_n = percentile_normalize(&raw_mean_burial_vals);
-
-        // Compute per-site mean_radius of top-K residues (for DP and regime)
-        let site_mean_radii: Vec<f32> = kcc_site_metrics.iter().map(|kcc| {
-            let cands = kcc.get("candidate_residue_ids").and_then(|v| v.as_array());
-            if let Some(cids) = cands {
-                let positions: Vec<[f32; 3]> = cids.iter().filter_map(|rid| {
-                    let r = rid.as_i64()? as usize;
-                    ca_pos_blp.get(r).copied()
-                }).collect();
-                if positions.len() < 2 { return 0.0; }
-                let cx = positions.iter().map(|p| p[0]).sum::<f32>() / positions.len() as f32;
-                let cy = positions.iter().map(|p| p[1]).sum::<f32>() / positions.len() as f32;
-                let cz = positions.iter().map(|p| p[2]).sum::<f32>() / positions.len() as f32;
-                positions.iter().map(|p| ((p[0]-cx).powi(2) + (p[1]-cy).powi(2) + (p[2]-cz).powi(2)).sqrt()).sum::<f32>() / positions.len() as f32
-            } else { 0.0 }
-        }).collect();
-
-        // Compute final scores with correction layer (additive in log-space)
-        let final_scores: Vec<(f32, f32, f32, f32, &str)> = (0..reordered_sites.len()).map(|i| {
-            let gtckl = rank_scores[i].0; // already log-space
-
-            // BLP = pocket-likeness prior (additive bonus in log-space)
-            let enclosure_ratio = 1.0 - escape_n[i];
-            let sasa_proxy = 1.0 - burial_n[i];
-            let compact = (1.0 - site_mean_radii[i] / 20.0).clamp(0.0, 1.0);
-            let blp = 0.25 * vol_n[i] + 0.25 * enclosure_ratio + 0.20 * depth_n[i]
-                    + 0.15 * (1.0 - sasa_proxy) + 0.15 * compact;
-
-            // DP = diffuseness penalty
-            let dp = ((site_mean_radii[i] - 6.0) / 14.0).clamp(0.0, 1.0);
-            let regime = if site_mean_radii[i] < 6.0 { "local" } else { "distributed" };
-
-            // Additive correction
-            let final_s = if regime == "local" {
-                gtckl + 0.05 * blp
-            } else {
-                gtckl + 0.03 * blp - 0.05 * dp
-            };
-
-            (final_s, gtckl, blp, dp, regime)
-        }).collect();
-
-        // Sort by final score (no monotonicity guard — log-space scores are now well-behaved)
-        let mut rank_order: Vec<usize> = (0..final_scores.len()).collect();
-        rank_order.sort_by(|&a, &b| {
-            final_scores[b].0.partial_cmp(&final_scores[a].0).unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        log::info!("G×T×C×K×L + BLP/DP ranking. Top-5:");
-        for (rank, &idx) in rank_order.iter().take(5).enumerate() {
-            let (fs, gtckl, blp, dp, regime) = final_scores[idx];
-            log::info!("  #{}: site {} final={:.6} gtckl={:.4} blp={:.3} dp={:.3} [{}]",
-                rank + 1, reordered_sites[idx].cluster_id, fs, gtckl, blp, dp, regime);
+        log::info!("G×T×C×K×L ranking. Top-3:");
+        for (rank, &idx) in rank_order.iter().take(3).enumerate() {
+            let (score, g, t, c, k, l, _) = rank_scores[idx];
+            log::info!("  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3} L={:.3}",
+                rank + 1, reordered_sites[idx].cluster_id, score, g, t, c, k, l);
         }
 
         // Build per-site JSON, merging PRISM-Therm therm_class when available
@@ -5967,8 +5868,8 @@ fn run_multi_stream_pipeline(
                     .unwrap_or(serde_json::json!(null)),
                 "kcc": kcc_site_metrics.get(site_rank).cloned()
                     .unwrap_or(serde_json::json!(null)),
-                "rank_score": final_scores[site_rank].0,
-                "gtckl_score": rank_scores[site_rank].0,
+                "rank_score": rank_scores[site_rank].0,
+                "quality_score": rank_scores[site_rank].0,
                 "rank_G": rank_scores[site_rank].1,
                 "rank_T": rank_scores[site_rank].2,
                 "rank_C": rank_scores[site_rank].3,
@@ -5976,13 +5877,11 @@ fn run_multi_stream_pipeline(
                 "rank_L": rank_scores[site_rank].5,
                 "localization_score_raw": rank_scores[site_rank].6,
                 "ranking_terms": serde_json::json!({
-                    "gtckl": final_scores[site_rank].1,
-                    "blp": final_scores[site_rank].2,
-                    "dp": final_scores[site_rank].3,
-                    "regime": final_scores[site_rank].4,
-                    "l_eff": rank_scores[site_rank].5,
-                    "final_score": final_scores[site_rank].0,
-                    "c_locality_gate": localization_data[site_rank].0,
+                    "G": rank_scores[site_rank].1,
+                    "T": rank_scores[site_rank].2,
+                    "C": rank_scores[site_rank].3,
+                    "K": rank_scores[site_rank].4,
+                    "L": rank_scores[site_rank].5,
                     // contact_reorg added in post-pass after computation
                 }),
                 "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
