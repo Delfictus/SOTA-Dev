@@ -76,6 +76,9 @@ from .pocket_profile import PocketProfile
 from .site_ranking import RankedSite, SiteRanking
 from .design_brief import DesignBrief
 
+# ── V5 interfaces (consensus) ────────────────────────────────────────────
+from .consensus_site import MemberSite, ConsensusSite, ConsensusResult
+
 __all__ = [
     # spike_pharmacophore
     "PharmacophoreFeature",
@@ -141,4 +144,8 @@ __all__ = [
     "SiteRanking",
     # design_brief
     "DesignBrief",
+    # ── V5 (consensus) ──
+    "MemberSite",
+    "ConsensusSite",
+    "ConsensusResult",
 ]
