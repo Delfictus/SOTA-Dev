@@ -131,7 +131,7 @@ def merge_kcc_into_sites(
             site["kcc_lag_corr_peak"] = 0.0
             continue
 
-        kcc = ks.get("kcc", {})
+        kcc = ks.get("kcc") or {}
         candidate_ids = kcc.get("candidate_residue_ids", [])
         candidate_weights = kcc.get("candidate_causal_weights", [])
         candidate_confidence = kcc.get("candidate_kcc_confidence", [])
@@ -267,12 +267,12 @@ def run(
     # ══════════════════════════════════════════════════════════════════
     print(f"\n[6/8] Ranking passed sites (lexicographic, no blending)...")
 
-    ranking = SiteRanker().rank(gating_result, anchor_maps)
+    ranking = SiteRanker().rank(gating_result, passed_sites, anchor_maps)
     reg.mark("site_ranking")
     for rs in ranking.ranked_sites:
         print(f"      #{rs.rank}: site {rs.site_id} "
-              f"cr={rs.contact_reorg_strength:.4f} "
-              f"ad={rs.anchor_density:.3f}")
+              f"chem={rs.engine_chem:.3f} vcs={rs.engine_vcs:.3f} "
+              f"cr={rs.contact_reorg_strength:.4f}")
 
     # ══════════════════════════════════════════════════════════════════
     # PHASE 7: DesignBriefs

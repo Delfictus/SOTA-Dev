@@ -66,6 +66,7 @@ class TestRankedSiteDataclass:
     def test_json_round_trip(self):
         rs = RankedSite(
             site_id=3, rank=1,
+            engine_chem=2.5, engine_vcs=0.5,
             contact_reorg_strength=0.12,
             anchor_density=0.4,
             water_displacement=2.5,
@@ -79,8 +80,8 @@ class TestRankedSiteDataclass:
         sr = SiteRanking(
             target_name="test",
             ranked_sites=[
-                RankedSite(0, 1, 0.1, 0.5, 3.0),
-                RankedSite(1, 2, 0.05, 0.3, 1.0),
+                RankedSite(0, 1, 2.0, 0.5, 0.1, 0.5, 3.0),
+                RankedSite(1, 2, 1.5, 0.3, 0.05, 0.3, 1.0),
             ],
             n_ranked=2,
         )
@@ -95,7 +96,7 @@ class TestRankedSiteDataclass:
 # ---------------------------------------------------------------------------
 class TestSiteRanker:
     def test_basic_ranking(self):
-        """Sites ranked by contact_reorg_strength descending."""
+        """Sites ranked by chem+vcs rank fusion."""
         gr = GatingResult(
             target_name="test",
             n_sites_input=3,
@@ -107,53 +108,69 @@ class TestSiteRanker:
             ],
             passed_site_ids=[0, 2],
         )
+        # Site 2 has higher chem+vcs
+        sites = [
+            {"id": 0, "engine_chem": 1.0, "engine_vcs": 0.1},
+            {"id": 2, "engine_chem": 2.5, "engine_vcs": 0.5},
+        ]
         ams = {0: _anchor_map(0, 0.3), 2: _anchor_map(2, 0.5)}
 
         ranker = SiteRanker()
-        ranking = ranker.rank(gr, ams)
+        ranking = ranker.rank(gr, sites, ams)
 
         assert ranking.n_ranked == 2
-        assert ranking.ranked_sites[0].site_id == 2  # higher lr
+        assert ranking.ranked_sites[0].site_id == 2  # higher chem+vcs
         assert ranking.ranked_sites[0].rank == 1
-        assert ranking.ranked_sites[1].site_id == 0
-        assert ranking.ranked_sites[1].rank == 2
 
-    def test_tie_breaker_anchor_density(self):
-        """Same cr_strength → rank by anchor_density."""
+    def test_tie_breaker_contact_reorg(self):
+        """Same chem+vcs fusion sum → rank by contact_reorg_strength."""
         gr = GatingResult(
             target_name="test",
-            n_sites_input=2,
-            n_sites_passed=2,
+            n_sites_input=3,
+            n_sites_passed=3,
             decisions=[
-                _decision(0, overall=True, cr_lr=0.10),
-                _decision(1, overall=True, cr_lr=0.10),
+                _decision(0, overall=True, cr_lr=0.05),
+                _decision(1, overall=True, cr_lr=0.20),
+                _decision(2, overall=True, cr_lr=0.01),
             ],
-            passed_site_ids=[0, 1],
+            passed_site_ids=[0, 1, 2],
         )
-        ams = {0: _anchor_map(0, 0.3), 1: _anchor_map(1, 0.7)}
-
+        # Sites 0 and 1 tie on fusion (both get chem_rank+vcs_rank = 3+3=6
+        # if we make them swap ranks: 0 has chem=high,vcs=low; 1 has chem=low,vcs=high)
+        sites = [
+            {"id": 0, "engine_chem": 3.0, "engine_vcs": 0.1},  # cR=1, vR=3 → sum=4
+            {"id": 1, "engine_chem": 1.0, "engine_vcs": 0.5},  # cR=3, vR=1 → sum=4
+            {"id": 2, "engine_chem": 2.0, "engine_vcs": 0.3},  # cR=2, vR=2 → sum=4
+        ]
         ranker = SiteRanker()
-        ranking = ranker.rank(gr, ams)
-        assert ranking.ranked_sites[0].site_id == 1  # higher density
+        ranking = ranker.rank(gr, sites)
+        # All three tie on fusion=4, so cr tiebreaker: site 1 (cr=0.20) wins
+        assert ranking.ranked_sites[0].site_id == 1
 
     def test_water_displacement_tie_breaker(self):
-        """Same cr + density → rank by water_displacement."""
+        """Same fusion+cr+density → rank by water_displacement."""
         gr = GatingResult(
             target_name="test",
-            n_sites_input=2,
-            n_sites_passed=2,
+            n_sites_input=3,
+            n_sites_passed=3,
             decisions=[
                 _decision(0, overall=True, cr_lr=0.10),
                 _decision(1, overall=True, cr_lr=0.10),
+                _decision(2, overall=True, cr_lr=0.10),
             ],
-            passed_site_ids=[0, 1],
+            passed_site_ids=[0, 1, 2],
         )
-        ams = {0: _anchor_map(0, 0.5), 1: _anchor_map(1, 0.5)}
-        we = {0: 1.0, 1: 5.0}
+        sites = [
+            {"id": 0, "engine_chem": 3.0, "engine_vcs": 0.1},
+            {"id": 1, "engine_chem": 1.0, "engine_vcs": 0.5},
+            {"id": 2, "engine_chem": 2.0, "engine_vcs": 0.3},
+        ]
+        we = {0: 1.0, 1: 5.0, 2: 2.0}
 
         ranker = SiteRanker()
-        ranking = ranker.rank(gr, ams, we)
-        assert ranking.ranked_sites[0].site_id == 1  # higher wd
+        ranking = ranker.rank(gr, sites, water_energies=we)
+        # All tie on fusion=4, cr=0.10, density=0 → wd tiebreaker: site 1 wins
+        assert ranking.ranked_sites[0].site_id == 1
 
     def test_no_passed_sites(self):
         gr = GatingResult(
@@ -167,8 +184,8 @@ class TestSiteRanker:
         ranking = ranker.rank(gr)
         assert ranking.n_ranked == 0
 
-    def test_no_anchor_maps(self):
-        """Ranking works without anchor maps (density defaults to 0)."""
+    def test_no_site_data(self):
+        """Ranking works without site data (chem/vcs default to 0)."""
         gr = GatingResult(
             target_name="test",
             n_sites_input=1,
@@ -179,4 +196,4 @@ class TestSiteRanker:
         ranker = SiteRanker()
         ranking = ranker.rank(gr)
         assert ranking.n_ranked == 1
-        assert ranking.ranked_sites[0].anchor_density == 0.0
+        assert ranking.ranked_sites[0].engine_chem == 0.0

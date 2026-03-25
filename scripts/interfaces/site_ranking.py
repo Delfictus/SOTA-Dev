@@ -25,6 +25,8 @@ class RankedSite:
     Attributes:
         site_id:                 Zero-based site index.
         rank:                    1-based rank (1 = top).
+        engine_chem:             Engine chemistry score (from Rust).
+        engine_vcs:              Voxel contact score (from Rust).
         contact_reorg_strength:  localization_ratio from ContactReorgResult.
         anchor_density:          anchors per lining residue.
         water_displacement:      Total positive dG from water map (kcal/mol).
@@ -33,6 +35,8 @@ class RankedSite:
 
     site_id: int
     rank: int
+    engine_chem: float
+    engine_vcs: float
     contact_reorg_strength: float
     anchor_density: float
     water_displacement: float

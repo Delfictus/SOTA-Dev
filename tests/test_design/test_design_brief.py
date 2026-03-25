@@ -97,6 +97,7 @@ def _pocket_profile():
 def _ranked_site():
     return RankedSite(
         site_id=0, rank=1,
+        engine_chem=2.388, engine_vcs=0.5,
         contact_reorg_strength=0.12,
         anchor_density=0.125,
         water_displacement=3.5,
