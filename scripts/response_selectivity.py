@@ -58,6 +58,7 @@ class ResponseSelectivityThresholds:
     min_sharpness: float = 0.3
     min_temporal_asymmetry: float = 0.05
     min_energy_density: float = 0.005
+    min_kcc_causal_coverage: float = 0.4
     min_metrics_passing: int = 2
     contact_coupling_hard_block: float = -0.3
     spike_radius_angstrom: float = 10.0
@@ -258,7 +259,7 @@ class ResponseSelectivityGate:
             spikes, contact_changes_per_frame
         )
 
-        # Count passing primary metrics
+        # Count passing primary metrics (3 spike-based + 1 KCC if available)
         passes = []
         if sharpness >= self.t.min_sharpness:
             passes.append("sharpness")
@@ -266,6 +267,11 @@ class ResponseSelectivityGate:
             passes.append("temporal_asymmetry")
         if energy_density >= self.t.min_energy_density:
             passes.append("energy_density")
+
+        # KCC causal coverage — read from site dict if merged by pipeline
+        kcc_cc = site.get("kcc_causal_coverage")
+        if kcc_cc is not None and kcc_cc >= self.t.min_kcc_causal_coverage:
+            passes.append("kcc_causal_coverage")
 
         n_passing = len(passes)
 
@@ -283,7 +289,8 @@ class ResponseSelectivityGate:
             )
         elif n_passing >= self.t.min_metrics_passing:
             gate_pass = True
-            reason = f"pass ({n_passing}/3: {', '.join(passes)})"
+            n_avail = 4 if kcc_cc is not None else 3
+            reason = f"pass ({n_passing}/{n_avail}: {', '.join(passes)})"
         else:
             gate_pass = False
             failed = []

@@ -226,6 +226,16 @@ class AnchorPointMapper:
                     intensity * persistence * alignment / max(d_cent, 0.1)
                 )
 
+                # KCC driver boost — if residue is a KCC-validated driver,
+                # multiply confidence by (1 + driver_weight).  Read from
+                # site dict (merged by pipeline from kcc_visualization.json).
+                kcc_drivers = site.get("kcc_driver_residues", [])
+                kcc_weights = site.get("kcc_driver_weights", [])
+                if rid in kcc_drivers:
+                    idx = kcc_drivers.index(rid)
+                    driver_w = kcc_weights[idx] if idx < len(kcc_weights) else 0.5
+                    confidence *= (1.0 + driver_w)
+
                 atom_label = f"{rname}{rid}_{spike_type}"
 
                 anchors.append(
