@@ -14,6 +14,20 @@ WT-0 interfaces (this package):
     ResidueMapping, ResidueEntry
 
 WT-9 V2 interfaces (additive — no modifications to WT-0 types):
+
+V3 gating-stack interfaces:
+    ContactReorgResult
+    ResponseProfile
+    SiteGateDecision, GatingResult
+
+V4 design-layer interfaces:
+    AnchorPoint, AnchorPointMap
+    GrowthVector, SubPocket, GrowthVectorMap
+    PocketProfile
+    RankedSite, SiteRanking
+    DesignBrief
+
+
     TautomerState, TautomerEnsemble
     ExplicitSolventResult
     HydrationSite, WaterMap
@@ -49,6 +63,18 @@ from .ensemble_score import EnsembleMMGBSA, InteractionEntropy
 from .pocket_dynamics import PocketDynamics
 from .membrane_system import MembraneSystem
 from .viewer_payload import ViewerPayload
+
+# ── V3 interfaces (gating stack) ──────────────────────────────────────────
+from .contact_reorg_result import ContactReorgResult
+from .response_profile import ResponseProfile
+from .gating_result import SiteGateDecision, GatingResult
+
+# ── V4 interfaces (design layers) ────────────────────────────────────────
+from .anchor_point import AnchorPoint, AnchorPointMap, SPIKE_TYPE_TO_INTERACTION
+from .growth_vector import GrowthVector, SubPocket, GrowthVectorMap
+from .pocket_profile import PocketProfile
+from .site_ranking import RankedSite, SiteRanking
+from .design_brief import DesignBrief
 
 __all__ = [
     # spike_pharmacophore
@@ -91,4 +117,28 @@ __all__ = [
     "MembraneSystem",
     # viewer_payload
     "ViewerPayload",
+    # ── V3 (gating stack) ──
+    # contact_reorg_result
+    "ContactReorgResult",
+    # response_profile
+    "ResponseProfile",
+    # gating_result
+    "SiteGateDecision",
+    "GatingResult",
+    # ── V4 (design layers) ──
+    # anchor_point
+    "AnchorPoint",
+    "AnchorPointMap",
+    "SPIKE_TYPE_TO_INTERACTION",
+    # growth_vector
+    "GrowthVector",
+    "SubPocket",
+    "GrowthVectorMap",
+    # pocket_profile
+    "PocketProfile",
+    # site_ranking
+    "RankedSite",
+    "SiteRanking",
+    # design_brief
+    "DesignBrief",
 ]
