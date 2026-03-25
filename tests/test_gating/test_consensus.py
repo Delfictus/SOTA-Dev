@@ -19,18 +19,21 @@ from scripts.consensus import (
 # Helpers
 # ---------------------------------------------------------------------------
 def _member(run_id=0, site_id=0, centroid=(10.0, 10.0, 10.0),
-            qs=0.5, passed=True, lining=None, anchors=None):
+            qs=0.5, passed=True, lining=None, anchors=None, gv_dirs=None):
     return MemberSite(
         run_id=run_id, site_id=site_id,
         centroid=centroid, quality_score=qs,
-        volume=500.0, gate_passed=passed,
+        volume=500.0, enclosure=0.4, therm_class="BINDING",
+        gate_passed=passed,
         blocked_by=None if passed else "response_selectivity",
         contact_reorg_strength=0.1,
         response_sharpness=2.0,
         response_energy_density=0.01,
+        mean_localization=3.0,
         anchor_residue_ids=anchors or [100, 101, 102],
         n_anchors=3,
         lining_residue_ids=lining or [100, 101, 102, 103, 104],
+        growth_vector_directions=gv_dirs or [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
     )
 
 
@@ -50,7 +53,9 @@ class TestConsensusSiteSerialization:
             mean_quality_score=0.5,
             mean_contact_reorg=0.1,
             mean_response_sharpness=2.0,
+            mean_localization=3.0,
             anchor_consistency=0.8,
+            growth_vector_consistency=0.7,
             lining_consistency=0.9,
             gate_failure_reasons={},
         )
@@ -193,18 +198,18 @@ class TestConsensusRanking:
             persistence=1.0, pass_fraction=0.5,
             centroid_mean=(0, 0, 0), centroid_variance=2.0,
             mean_quality_score=0.3, mean_contact_reorg=0.1,
-            mean_response_sharpness=1.0,
-            anchor_consistency=0.5, lining_consistency=0.5,
-            gate_failure_reasons={},
+            mean_response_sharpness=1.0, mean_localization=3.0,
+            anchor_consistency=0.5, growth_vector_consistency=0.5,
+            lining_consistency=0.5, gate_failure_reasons={},
         )
         cs_low = ConsensusSite(
             cluster_id=1, member_sites=[], n_runs_total=5,
             persistence=0.4, pass_fraction=1.0,
             centroid_mean=(0, 0, 0), centroid_variance=0.5,
             mean_quality_score=0.9, mean_contact_reorg=0.5,
-            mean_response_sharpness=5.0,
-            anchor_consistency=1.0, lining_consistency=1.0,
-            gate_failure_reasons={},
+            mean_response_sharpness=5.0, mean_localization=5.0,
+            anchor_consistency=1.0, growth_vector_consistency=1.0,
+            lining_consistency=1.0, gate_failure_reasons={},
         )
         # Sort by consensus ranking keys
         sites = [cs_low, cs_high]

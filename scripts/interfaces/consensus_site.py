@@ -27,24 +27,32 @@ class MemberSite:
     centroid: Tuple[float, float, float]
     quality_score: float
     volume: float
+    enclosure: float
+    therm_class: str
     gate_passed: bool
     blocked_by: Optional[str]
     contact_reorg_strength: float
     response_sharpness: float
     response_energy_density: float
+    mean_localization: float
     anchor_residue_ids: List[int]
     n_anchors: int
     lining_residue_ids: List[int]
+    growth_vector_directions: List[Tuple[float, float, float]]
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["centroid"] = list(d["centroid"])
+        d["growth_vector_directions"] = [list(v) for v in d["growth_vector_directions"]]
         return d
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> MemberSite:
         data = copy.deepcopy(d)
         data["centroid"] = tuple(data["centroid"])
+        data["growth_vector_directions"] = [
+            tuple(v) for v in data.get("growth_vector_directions", [])
+        ]
         return cls(**data)
 
 
@@ -64,7 +72,9 @@ class ConsensusSite:
         mean_contact_reorg:      Mean contact_reorg localization_ratio.
         mean_response_sharpness: Mean response selectivity sharpness.
         anchor_consistency:      Jaccard similarity of anchor residue sets.
+        growth_vector_consistency: Cosine similarity of growth vector directions.
         lining_consistency:      Jaccard similarity of lining residue sets.
+        mean_localization:       Mean localization score across members.
         gate_failure_reasons:    Why failed members were blocked.
     """
 
@@ -78,7 +88,9 @@ class ConsensusSite:
     mean_quality_score: float
     mean_contact_reorg: float
     mean_response_sharpness: float
+    mean_localization: float
     anchor_consistency: float
+    growth_vector_consistency: float
     lining_consistency: float
     gate_failure_reasons: Dict[str, int]
 
@@ -94,7 +106,9 @@ class ConsensusSite:
             "mean_quality_score": self.mean_quality_score,
             "mean_contact_reorg": self.mean_contact_reorg,
             "mean_response_sharpness": self.mean_response_sharpness,
+            "mean_localization": self.mean_localization,
             "anchor_consistency": self.anchor_consistency,
+            "growth_vector_consistency": self.growth_vector_consistency,
             "lining_consistency": self.lining_consistency,
             "gate_failure_reasons": dict(self.gate_failure_reasons),
         }

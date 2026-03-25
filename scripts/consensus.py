@@ -99,6 +99,23 @@ def load_run_sites(run_dir: Path, run_id: int) -> List[MemberSite]:
         except (json.JSONDecodeError, KeyError):
             continue
 
+    # Load growth vector data from design briefs
+    growth_data: Dict[int, List[Tuple[float, float, float]]] = {}
+    for p in sorted((run_dir / "design").glob("*_site*.json")):
+        try:
+            with open(p) as f:
+                brief = json.load(f)
+            sid = brief.get("site_id")
+            if sid is not None:
+                vectors = brief.get("growth_map", {}).get("vectors", [])
+                dirs = [
+                    (v["direction"][0], v["direction"][1], v["direction"][2])
+                    for v in vectors if "direction" in v
+                ]
+                growth_data[sid] = dirs[:10]  # top 10 vectors
+        except (json.JSONDecodeError, KeyError):
+            continue
+
     members: List[MemberSite] = []
     for site in sites:
         sid = site.get("id", -1)
@@ -119,14 +136,19 @@ def load_run_sites(run_dir: Path, run_id: int) -> List[MemberSite]:
             quality_score=site.get("quality_score",
                                    site.get("rank_score", 0.0)),
             volume=site.get("volume", 0.0),
+            enclosure=site.get("burial_score", 0.0),
+            therm_class=site.get("therm_class", "UNKNOWN"),
             gate_passed=gd.get("overall_pass", True),
             blocked_by=gd.get("blocked_by"),
             contact_reorg_strength=cr.get("localization_ratio", 0.0),
             response_sharpness=rp.get("sharpness", 0.0),
             response_energy_density=rp.get("energy_density", 0.0),
+            mean_localization=site.get("localization_score_raw",
+                                       site.get("mean_burial", 0.0)),
             anchor_residue_ids=anchor_data.get(sid, []),
             n_anchors=len(anchor_data.get(sid, [])),
             lining_residue_ids=lining_ids,
+            growth_vector_directions=growth_data.get(sid, []),
         ))
 
     return members
@@ -245,6 +267,40 @@ def build_consensus_site(
     else:
         lining_consistency = 0.0
 
+    # Mean localization
+    mean_loc = sum(m.mean_localization for m in members) / len(members)
+
+    # Growth vector consistency: mean pairwise cosine similarity of direction sets
+    def _cosine_sim_sets(
+        dirs_a: List[Tuple[float, float, float]],
+        dirs_b: List[Tuple[float, float, float]],
+    ) -> float:
+        """Mean best-match cosine similarity between two direction sets."""
+        if not dirs_a or not dirs_b:
+            return 0.0
+        sims = []
+        for da in dirs_a:
+            best = max(
+                sum(da[k] * db[k] for k in range(3))
+                / (max(math.sqrt(sum(x**2 for x in da)), 1e-12)
+                   * max(math.sqrt(sum(x**2 for x in db)), 1e-12))
+                for db in dirs_b
+            )
+            sims.append(best)
+        return sum(sims) / len(sims) if sims else 0.0
+
+    gv_sets = [m.growth_vector_directions for m in members if m.growth_vector_directions]
+    if len(gv_sets) >= 2:
+        gv_sims = []
+        for i in range(len(gv_sets)):
+            for j in range(i + 1, len(gv_sets)):
+                gv_sims.append(_cosine_sim_sets(gv_sets[i], gv_sets[j]))
+        growth_vector_consistency = sum(gv_sims) / len(gv_sims)
+    elif len(gv_sets) == 1:
+        growth_vector_consistency = 1.0
+    else:
+        growth_vector_consistency = 0.0
+
     # Gate failure reasons
     failures: Dict[str, int] = Counter()
     for m in members:
@@ -262,7 +318,9 @@ def build_consensus_site(
         mean_quality_score=round(mean_qs, 6),
         mean_contact_reorg=round(mean_cr, 6),
         mean_response_sharpness=round(mean_sharp, 4),
+        mean_localization=round(mean_loc, 4),
         anchor_consistency=round(anchor_consistency, 4),
+        growth_vector_consistency=round(growth_vector_consistency, 4),
         lining_consistency=round(lining_consistency, 4),
         gate_failure_reasons=dict(failures),
     )
@@ -373,6 +431,50 @@ def main() -> None:
 
     with open(out / "consensus_sites.json", "w") as f:
         json.dump(result.to_dict(), f, indent=2)
+
+    # consensus_gate_summary.json — aggregate gate attribution
+    gate_summary = {
+        "target": args.target_name,
+        "n_replicates": result.n_replicates,
+        "n_consensus_sites": result.n_consensus,
+        "sites": [],
+    }
+    for cs in result.consensus_sites:
+        gate_summary["sites"].append({
+            "cluster_id": cs.cluster_id,
+            "persistence": cs.persistence,
+            "pass_fraction": cs.pass_fraction,
+            "gate_failure_reasons": cs.gate_failure_reasons,
+            "n_members": len(cs.member_sites),
+            "n_passed": sum(1 for m in cs.member_sites if m.gate_passed),
+            "n_blocked": sum(1 for m in cs.member_sites if not m.gate_passed),
+        })
+    with open(out / "consensus_gate_summary.json", "w") as f:
+        json.dump(gate_summary, f, indent=2)
+
+    # consensus_design_briefs/ — one brief per consensus site
+    briefs_dir = out / "consensus_design_briefs"
+    briefs_dir.mkdir(parents=True, exist_ok=True)
+    for cs in result.consensus_sites:
+        brief = {
+            "cluster_id": cs.cluster_id,
+            "centroid": list(cs.centroid_mean),
+            "persistence": cs.persistence,
+            "pass_fraction": cs.pass_fraction,
+            "centroid_variance": cs.centroid_variance,
+            "mean_quality_score": cs.mean_quality_score,
+            "mean_contact_reorg": cs.mean_contact_reorg,
+            "mean_response_sharpness": cs.mean_response_sharpness,
+            "mean_localization": cs.mean_localization,
+            "anchor_consistency": cs.anchor_consistency,
+            "growth_vector_consistency": cs.growth_vector_consistency,
+            "lining_consistency": cs.lining_consistency,
+            "gate_failure_reasons": cs.gate_failure_reasons,
+            "n_members": len(cs.member_sites),
+            "member_runs": [m.run_id for m in cs.member_sites],
+        }
+        with open(briefs_dir / f"consensus_site_{cs.cluster_id}.json", "w") as f:
+            json.dump(brief, f, indent=2)
 
     # Print summary
     print(f"\n{'='*60}")
