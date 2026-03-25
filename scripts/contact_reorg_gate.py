@@ -76,10 +76,13 @@ def parse_trajectory_ca(
                 chain = line[21:22].strip() or "_"
                 resi = line[22:26].strip()
                 key = f"{chain}:{resi}"
-                x = float(line[30:38])
-                y = float(line[38:46])
-                z = float(line[46:54])
-                current_cas[key] = (x, y, z)
+                try:
+                    x = float(line[30:38])
+                    y = float(line[38:46])
+                    z = float(line[46:54])
+                    current_cas[key] = (x, y, z)
+                except ValueError:
+                    continue  # skip malformed coordinate lines
 
     # Single-model PDB (no MODEL/ENDMDL)
     if not frames and current_cas:

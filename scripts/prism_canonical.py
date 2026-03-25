@@ -191,8 +191,13 @@ def run(
     print(f"      kcc_visualization: {n_kcc} KCC site records")
 
     spike_dir = find_spike_events_dir(od, target_name)
+    if spike_dir is None:
+        # Rust writes spike files alongside binding_sites.json, not in subdir
+        # Use output_dir itself so the loader globs *.site<id>.spike_events.json
+        spike_dir = str(od)
     reg.mark("spike_events_loaded")
-    print(f"      spike_events: {'found' if spike_dir else 'inline only'}")
+    has_spike_files = any(od.glob(f"{target_name}.site*.spike_events.json"))
+    print(f"      spike_events: {'found' if has_spike_files else 'inline only'}")
 
     traj_path = find_trajectory(od, target_name)
     reg.mark("trajectory_loaded")

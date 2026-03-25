@@ -70,37 +70,57 @@ class ResponseSelectivityThresholds:
 def load_spike_events(
     spike_events_dir: str, site_id: int
 ) -> Optional[Dict[str, Any]]:
-    """Load spike events for a specific site from the spike_events directory.
+    """Load spike events for a specific site.
 
-    Tries: spike_events/<site_id>.json, spike_events/site_<site_id>.json,
-    then falls back to spike_events_expanded.json with matching site_id.
+    Search order:
+        1. spike_events_dir/<site_id>.json
+        2. spike_events_dir/site_<site_id>.json
+        3. spike_events_dir/*site<site_id>*.json (glob)
+        4. Parent dir: *site<site_id>.spike_events.json (Rust output pattern)
+        5. spike_events_expanded.json with matching site_id
+        6. Glob fallback on all JSONs in spike_events_dir
     """
     d = Path(spike_events_dir)
 
-    # Direct file patterns
+    # Direct file patterns in spike_events_dir
     for pattern in [f"{site_id}.json", f"site_{site_id}.json"]:
         p = d / pattern
         if p.exists():
             with open(p) as f:
                 return json.load(f)
 
-    # Expanded file (all sites in one)
-    expanded = d.parent / "spike_events_expanded.json"
-    if not expanded.exists():
-        expanded = d / "spike_events_expanded.json"
-    if expanded.exists():
-        with open(expanded) as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            for entry in data:
-                if entry.get("site_id") == site_id:
-                    return entry
-        elif isinstance(data, dict):
-            for key, entry in data.items():
-                if isinstance(entry, dict) and entry.get("site_id") == site_id:
-                    return entry
+    # Glob for Rust naming in spike_events_dir: *site<id>*.json
+    for p in sorted(d.glob(f"*site{site_id}.spike_events.json")):
+        with open(p) as f:
+            return json.load(f)
+    for p in sorted(d.glob(f"*site{site_id}.*spike*.json")):
+        with open(p) as f:
+            return json.load(f)
 
-    # Glob fallback
+    # Parent directory — Rust writes <target>.site<id>.spike_events.json
+    # alongside binding_sites.json, not in a subdirectory
+    parent = d.parent if d.name == "spike_events" else d
+    for p in sorted(parent.glob(f"*.site{site_id}.spike_events.json")):
+        with open(p) as f:
+            return json.load(f)
+
+    # Expanded file (all sites in one)
+    for candidate in [d.parent / "spike_events_expanded.json",
+                      d / "spike_events_expanded.json",
+                      parent / "spike_events_expanded.json"]:
+        if candidate.exists():
+            with open(candidate) as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                for entry in data:
+                    if entry.get("site_id") == site_id:
+                        return entry
+            elif isinstance(data, dict):
+                for key, entry in data.items():
+                    if isinstance(entry, dict) and entry.get("site_id") == site_id:
+                        return entry
+
+    # Glob fallback — try every JSON in the directory
     for p in sorted(d.glob("*.json")):
         try:
             with open(p) as f:
