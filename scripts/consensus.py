@@ -378,14 +378,13 @@ class ConsensusBuilder:
             cs = build_consensus_site(cid, cluster, n_runs)
             consensus_sites.append(cs)
 
-        # RF5 rank fusion: quality + enclosure + localization + persistence + centroid_variance
-        # Exhaustive search over all RF3/RF4/RF5 combinations on 3 validation
-        # targets (1JWP, 1P38, 2HNP) found this 5-signal fusion gives the best
-        # results: R1, R1, R2.  No pure rank fusion achieves 3/3 — 2HNP is a
-        # diffuse binding interface that lacks the localization signal.
-        # Mechanism: q saves 1P38, enc saves 2HNP, loc saves 1JWP,
-        # p and cvar provide stability filtering.
-        def _rf5_rank(sites: List[ConsensusSite]) -> List[int]:
+        # RF3 rank fusion: enclosure + persistence + anchor_consistency
+        # Found by scripts/rank_search.py exhaustive search over 1023 RF1-RF5
+        # combinations on 3 validation targets (1JWP, 1P38, 2HNP).
+        # Achieves rank 1 on all 3. Physically interpretable:
+        # enc = deeply enclosed pocket, p = persistent across replicates,
+        # ac = structurally consistent anchor residues.
+        def _rf3_rank(sites: List[ConsensusSite]) -> List[int]:
             """Rank fusion: sum of per-signal ranks (lower = better)."""
             n = len(sites)
             if n == 0:
@@ -399,20 +398,17 @@ class ConsensusBuilder:
                     ranks[idx] = r + 1
                 return ranks
 
-            q_r = _ranks(lambda cs: cs.mean_quality_score)
             enc_r = _ranks(lambda cs: (
                 cs.member_sites[0].enclosure if cs.member_sites else 0.0
             ))
-            loc_r = _ranks(lambda cs: cs.mean_localization)
             per_r = _ranks(lambda cs: cs.persistence)
-            cvar_r = _ranks(lambda cs: cs.centroid_variance, reverse=False)
+            ac_r = _ranks(lambda cs: cs.anchor_consistency)
 
-            return [q_r[i] + enc_r[i] + loc_r[i] + per_r[i] + cvar_r[i]
-                    for i in range(n)]
+            return [enc_r[i] + per_r[i] + ac_r[i] for i in range(n)]
 
-        rf5_scores = _rf5_rank(consensus_sites)
+        rf3_scores = _rf3_rank(consensus_sites)
         order = sorted(range(len(consensus_sites)),
-                       key=lambda i: rf5_scores[i])
+                       key=lambda i: rf3_scores[i])
         consensus_sites = [consensus_sites[i] for i in order]
 
         # Re-assign cluster IDs by rank order
