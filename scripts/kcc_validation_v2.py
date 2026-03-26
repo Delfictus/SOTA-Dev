@@ -300,9 +300,9 @@ def main():
     # Sort sites by rank
     sites.sort(key=lambda s: s.get("gtck_rank", s.get("rank_score", 0)))
 
-    # Compute per-site validation (top 5 ranked)
+    # Compute per-site validation (ALL ranked sites)
     val_sites = []
-    for site in sites[:5]:
+    for site in sites:
         v = compute_site_validation(site, residues, [])
         val_sites.append(v)
 
