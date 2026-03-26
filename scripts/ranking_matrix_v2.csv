@@ -1,0 +1,13 @@
+formula,SR@1,SR@3,bSR@1,bSR@3,1jwp_rank,1nna_rank,1p38_rank,2hnp_rank,2npq_rank,3l3n_rank,5lar_rank
+RF:bur+vcs+sig+hyst,2,3,1,1,3,25,7,1,25,1,10
+geomean,1,4,1,2,2,20,2,7,2,4,1
+GTCKL,1,3,1,2,9,19,2,16,2,15,1
+bur+tau+vcs,0,1,0,0,10,13,12,2,29,6,26
+bur*tau*vcs,0,1,0,0,20,16,10,3,24,6,26
+RF:bur+vcs+tau+breath,0,1,0,0,3,8,15,4,35,13,32
+neuro_full,0,0,0,0,18,21,9,6,18,4,14
+sig*bur*tau,0,0,0,0,31,23,7,5,25,15,10
+chem*bur*vcs,0,0,0,0,21,23,11,10,26,7,33
+RF:bur+tau+vcs+chem,0,0,0,0,19,18,13,12,30,7,33
+RF:bur+tau+chem+onset,0,0,0,0,20,11,5,31,28,21,30
+RF:ALL8,0,0,0,0,7,9,7,30,28,10,35
