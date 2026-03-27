@@ -6094,7 +6094,9 @@ fn run_multi_stream_pipeline(
             }).collect();
             let mut res_json = Vec::new();
             for r in 0..kcc.n_residues.min(ca_pos.len()) {
-                if kcc.active_causal[r] == 0 { continue; }
+                // Emit ALL residues — inactive ones get zeroed causal fields.
+                // Motion fields (sum_motion, net_dx/dy/dz, etc.) are populated
+                // for every residue regardless of causal activity.
                 res_json.push(serde_json::json!({
                     "residue_id": r,
                     "residue_name": topology.residue_names.get(r).cloned().unwrap_or_default(),
