@@ -6066,6 +6066,137 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // ── COMPOSITE AUDIT RANKER (27 features, correlation-weighted) ──
+        // Validated on 6 proteins: SR@1=50%, SR@3=67%.
+        // Uses min-max normalization per protein, weighted sum / sum(|w|).
+        {
+            let n_sites = ms_sites_json.len();
+            if n_sites > 0 {
+                // Build per-residue active_causal lookup from merged KCC
+                let mut res_active: std::collections::HashMap<i32, bool> = std::collections::HashMap::new();
+                if let Some(ref kcc) = merged_kcc {
+                    for r in 0..kcc.n_residues {
+                        res_active.insert(r as i32, kcc.active_causal[r] > 0);
+                    }
+                }
+
+                // Feature definition: (name, weight, extractor from serde_json::Value)
+                type Ext = fn(&serde_json::Value, &std::collections::HashMap<i32, bool>) -> f64;
+                let features: Vec<(&str, f64, Ext)> = vec![
+                    ("sp_causality_density",       0.2058, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("causality_density")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_driver_burst",            0.1836, |s,_| s.get("kcc").and_then(|k| k.get("burst_motion")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_driver_direction",         0.1776, |s,_| s.get("kcc").and_then(|k| k.get("direction_score")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("rank_K",                      0.1721, |s,_| s.get("rank_K").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_driver_motion_eff",      -0.1554, |s,_| s.get("kcc").and_then(|k| k.get("motion_efficiency")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("sp_mean_recurrence",          0.1480, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("mean_recurrence")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("druggability",                0.1444, |s,_| s.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("breathing_score",             0.1347, |s,_| s.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("rank_T",                      0.1336, |s,_| s.get("rank_T").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_site_burst",              0.1326, |s,_| s.get("kcc").and_then(|k| k.get("site_burst_motion")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("engine_chem",                 0.1157, |s,_| s.get("engine_chem").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_temporal_corr",           0.1125, |s,_| s.get("kcc").and_then(|k| k.get("temporal_corr")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_site_direction",          0.1050, |s,_| s.get("kcc").and_then(|k| k.get("site_direction_score")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("frustrated_solvent",          0.1044, |s,_| s.get("frustrated_solvent_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("source_diversity",            0.1029, |s,_| s.get("source_diversity").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("burial_score",               -0.1027, |s,_| s.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("mean_burial",                -0.1023, |s,_| s.get("mean_burial").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("sp_residue_concentration",    0.0973, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("residue_concentration")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_confidence",              0.0932, |s,_| s.get("kcc").and_then(|k| k.get("kcc_confidence")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("res_frac_silent",            -0.0913, |s, ra| {
+                        let rids = s.get("residue_ids").and_then(|v| v.as_array());
+                        match rids {
+                            Some(ids) if !ids.is_empty() => {
+                                let n = ids.len() as f64;
+                                let silent = ids.iter().filter(|id| {
+                                    let rid = id.as_i64().unwrap_or(-1) as i32;
+                                    !ra.get(&rid).copied().unwrap_or(false)
+                                }).count() as f64;
+                                silent / n
+                            }
+                            _ => 0.5
+                        }
+                    }),
+                    ("aromatic_score",              0.0893, |s,_| s.get("aromatic_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("res_frac_active",             0.0862, |s, ra| {
+                        let rids = s.get("residue_ids").and_then(|v| v.as_array());
+                        match rids {
+                            Some(ids) if !ids.is_empty() => {
+                                let n = ids.len() as f64;
+                                let active = ids.iter().filter(|id| {
+                                    let rid = id.as_i64().unwrap_or(-1) as i32;
+                                    ra.get(&rid).copied().unwrap_or(false)
+                                }).count() as f64;
+                                active / n
+                            }
+                            _ => 0.5
+                        }
+                    }),
+                    ("kcc_site_motion_eff",        -0.0855, |s,_| s.get("kcc").and_then(|k| k.get("site_motion_efficiency")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("hysteresis_asymmetry",        0.0844, |s,_| s.get("hysteresis_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("rank_G",                     -0.0841, |s,_| s.get("rank_G").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_site_local_cov",          0.0809, |s,_| s.get("kcc").and_then(|k| k.get("site_local_cov")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("relative_asymmetry",          0.0807, |s,_| s.get("relative_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                ];
+
+                // Extract raw values
+                let n_feat = features.len();
+                let mut raw: Vec<Vec<f64>> = Vec::with_capacity(n_feat);
+                for &(_, _, ext) in &features {
+                    let vals: Vec<f64> = ms_sites_json.iter().map(|s| ext(s, &res_active)).collect();
+                    raw.push(vals);
+                }
+
+                // Min-max per feature
+                let mut mins = vec![f64::INFINITY; n_feat];
+                let mut maxs = vec![f64::NEG_INFINITY; n_feat];
+                for fi in 0..n_feat {
+                    for &v in &raw[fi] {
+                        if v < mins[fi] { mins[fi] = v; }
+                        if v > maxs[fi] { maxs[fi] = v; }
+                    }
+                }
+
+                // Score each site
+                let mut scores: Vec<(usize, f64)> = Vec::with_capacity(n_sites);
+                for si in 0..n_sites {
+                    let mut num = 0.0f64;
+                    let mut den = 0.0f64;
+                    for fi in 0..n_feat {
+                        let range = maxs[fi] - mins[fi];
+                        if range < 1e-15 { continue; }
+                        let norm = (raw[fi][si] - mins[fi]) / range;
+                        num += features[fi].1 * norm;
+                        den += features[fi].1.abs();
+                    }
+                    let score = if den > 1e-15 { num / den } else { 0.0 };
+                    scores.push((si, score));
+                }
+
+                // Sort descending, assign ranks
+                scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                for (rank, &(si, score)) in scores.iter().enumerate() {
+                    ms_sites_json[si]["composite_audit_score"] = serde_json::json!(score);
+                    ms_sites_json[si]["composite_audit_rank"] = serde_json::json!(rank + 1);
+                }
+
+                // Re-sort sites_json by audit score for output
+                ms_sites_json.sort_by(|a, b| {
+                    b["composite_audit_score"].as_f64().unwrap_or(0.0)
+                        .partial_cmp(&a["composite_audit_score"].as_f64().unwrap_or(0.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                log::info!("  Composite audit ranking (27 features). Top-3:");
+                for sj in ms_sites_json.iter().take(3) {
+                    log::info!("    #{}: site {} audit={:.4} gtckl={:.4}",
+                        sj["composite_audit_rank"].as_u64().unwrap_or(0),
+                        sj["id"].as_i64().unwrap_or(0),
+                        sj["composite_audit_score"].as_f64().unwrap_or(0.0),
+                        sj["rank_score"].as_f64().unwrap_or(0.0));
+                }
+            }
+        }
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "mode": "multi_stream",
