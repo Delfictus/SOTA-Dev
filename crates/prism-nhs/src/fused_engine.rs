@@ -1666,6 +1666,9 @@ pub struct NhsAmberFusedEngine {
     d_primary_residue_id: CudaSlice<i32>,   // [total_voxels] dominant residue ID
     d_primary_residue_count: CudaSlice<i32>, // [total_voxels] dominant residue count
     // KCC v2-full: per-residue GPU-resident buffers
+    d_reference_positions: CudaSlice<f32>,    // [n_atoms*3] initial positions for CA restraints
+    d_ca_mask: CudaSlice<i32>,                // [n_atoms] 1=CA atom, 0=other
+    ca_mask_cpu: Vec<i32>,                    // CPU copy of CA mask for position restraints
     d_residue_ca_idx: CudaSlice<i32>,        // [n_residues] CA atom index per residue
     d_residue_step_causal: CudaSlice<i32>,   // [n_residues] per-step causal counter (zeroed each step)
     d_residue_prev_x: CudaSlice<f32>,        // [n_residues] previous CA position
@@ -2038,6 +2041,16 @@ impl NhsAmberFusedEngine {
         let d_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         let d_velocities: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         let d_forces: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
+        // Reference positions for CA position restraints (prevents unfolding in vacuum)
+        let mut d_reference_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
+        stream.memcpy_htod(&topology.positions, &mut d_reference_positions)?;
+        // CA atom mask: 1 if atom is a CA, 0 otherwise
+        let mut ca_mask = vec![0i32; n_atoms];
+        for &ca_idx in &topology.ca_indices {
+            if ca_idx < n_atoms { ca_mask[ca_idx] = 1; }
+        }
+        let mut d_ca_mask: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
+        stream.memcpy_htod(&ca_mask, &mut d_ca_mask)?;
         let d_masses: CudaSlice<f32> = stream.alloc_zeros(n_atoms)?;
         let d_charges: CudaSlice<f32> = stream.alloc_zeros(n_atoms)?;
         let d_atom_types: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
@@ -2551,6 +2564,9 @@ impl NhsAmberFusedEngine {
             d_coupled_spike_grid,
             d_primary_residue_id,
             d_primary_residue_count,
+            d_reference_positions,
+            d_ca_mask,
+            ca_mask_cpu: ca_mask,
             d_residue_ca_idx,
             d_residue_step_causal,
             d_residue_prev_x, d_residue_prev_y, d_residue_prev_z,
@@ -4484,6 +4500,37 @@ impl NhsAmberFusedEngine {
         let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
 
         for inner_idx in 0..n_inner {
+
+        // ── CENTER-OF-MASS VELOCITY REMOVAL (every 500 steps) ──
+        // Langevin thermostat injects random forces that create net momentum.
+        // Without periodic COM removal, the protein drifts (especially at low T
+        // where thermal velocity is tiny but COM drift accumulates).
+        if self.timestep > 0 && self.timestep % 500 == 0 {
+            let mut masses = vec![0.0f32; self.n_atoms];
+            self.stream.memcpy_dtoh(&self.d_masses, &mut masses)?;
+            let mut velocities = vec![0.0f32; self.n_atoms * 3];
+            self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+
+            let mut com_vel = [0.0f64; 3];
+            let mut total_mass = 0.0f64;
+            for i in 0..self.n_atoms {
+                let m = masses[i] as f64;
+                com_vel[0] += m * velocities[i * 3] as f64;
+                com_vel[1] += m * velocities[i * 3 + 1] as f64;
+                com_vel[2] += m * velocities[i * 3 + 2] as f64;
+                total_mass += m;
+            }
+            if total_mass > 0.0 {
+                let inv_m = 1.0 / total_mass;
+                for i in 0..self.n_atoms {
+                    velocities[i * 3] -= (com_vel[0] * inv_m) as f32;
+                    velocities[i * 3 + 1] -= (com_vel[1] * inv_m) as f32;
+                    velocities[i * 3 + 2] -= (com_vel[2] * inv_m) as f32;
+                }
+            }
+            self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+        }
+
         // Get current temperature from protocol (simulated annealing ramp)
         current_temp = self.temp_protocol.current_temperature();
 
@@ -4685,6 +4732,40 @@ impl NhsAmberFusedEngine {
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
+
+        // ── CA POSITION RESTRAINTS (CPU-side) ──
+        // Pull CA atoms back toward reference positions every step.
+        // Applied on CPU because CUDA kernel has parameter mismatch (78 vs 102).
+        // k_restraint = k_base * (300/T) — strong at cryo, weak at warm.
+        // Applied as direct position correction: x_new = x + alpha * (x_ref - x)
+        // where alpha = k * dt² / m (small step equivalent of harmonic force).
+        if self.timestep % 1 == 0 {  // Every step
+            let mut positions = vec![0.0f32; self.n_atoms * 3];
+            self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
+
+            let k_base: f32 = 2.0;  // kcal/mol/A^2
+            let k = k_base * (300.0 / current_temp.max(10.0));
+            let k_clamped = k.min(50.0);
+            // alpha = k * dt^2 — dimensionless correction factor
+            // At 50K: k=12, dt=0.002, alpha = 12 * 0.000004 = 0.000048
+            // That's tiny. Use a larger effective alpha for position correction.
+            let alpha = (k_clamped * 0.001).min(0.1);  // Empirical: 0.001 * k, max 10%
+
+            let ref_pos = &self.reference_positions;
+            let ca_mask = &self.ca_mask_cpu;
+            let mut corrected = false;
+            for i in 0..self.n_atoms {
+                if i < ca_mask.len() && ca_mask[i] == 1 {
+                    positions[i*3]   += alpha * (ref_pos[i*3]   - positions[i*3]);
+                    positions[i*3+1] += alpha * (ref_pos[i*3+1] - positions[i*3+1]);
+                    positions[i*3+2] += alpha * (ref_pos[i*3+2] - positions[i*3+2]);
+                    corrected = true;
+                }
+            }
+            if corrected {
+                self.stream.memcpy_htod(&positions, &mut self.d_positions)?;
+            }
+        }
 
         // Save UV state for multi-LIF kernel (uses state from last inner step)
         last_uv_burst_active = uv_burst_active;
@@ -5131,12 +5212,9 @@ impl NhsAmberFusedEngine {
             let temp_hold_steps = self.temp_protocol.hold_steps;
             let temp_current_step = self.temp_protocol.current_step;
 
-            // Cryogenic scaling
-            let effective_gamma = if self.cryo_enabled && current_temp < 200.0 {
-                self.gamma_base * (current_temp / 300.0).max(0.1)
-            } else {
-                self.gamma_base
-            };
+            // Cryogenic scaling — must use sqrt scaling to match compute_cryo_friction()
+            // Linear scaling was 15% of required damping at 50K, causing instability
+            let effective_gamma = self.compute_cryo_friction(current_temp);
 
             // UV burst parameters with wavelength-specific absorption
             let uv_burst_active_i32 = if uv_burst_active { 1i32 } else { 0i32 };

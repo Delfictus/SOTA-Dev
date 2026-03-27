@@ -39,9 +39,9 @@ def find_engine_binary() -> str:
 
 
 def run_engine(
-    topology: str, output_dir: str, verbose: bool = True
+    topology: str, output_dir: str, seed: int = 42, verbose: bool = True
 ) -> bool:
-    """Run the Rust engine once."""
+    """Run the Rust engine once with an explicit seed."""
     binary = find_engine_binary()
     cmd = [
         binary,
@@ -53,6 +53,7 @@ def run_engine(
         "--prism-therm",
         "--fused-steps", "4",
         "--hmr", "--adaptive-dt",
+        "--replica-seed", str(seed),
     ]
     if verbose:
         cmd.append("-v")
@@ -139,9 +140,12 @@ def main() -> None:
         print(f"\n[Rep {i+1}/{n}] ", end="", flush=True)
 
         if not args.skip_engine:
+            # Each replicate gets a distinct seed: base + i*1000
+            # Ensures genuinely different stochastic realizations
+            seed = 42 + i * 1000
             t0 = time.time()
-            print("Engine... ", end="", flush=True)
-            ok = run_engine(args.topology, run_dir)
+            print(f"Engine (seed={seed})... ", end="", flush=True)
+            ok = run_engine(args.topology, run_dir, seed=seed)
             dt = time.time() - t0
             if not ok:
                 print(f"FAILED ({dt:.0f}s)")

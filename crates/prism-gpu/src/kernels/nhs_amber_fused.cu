@@ -440,9 +440,14 @@ __device__ void langevin_thermostat(
     float dt,
     curandState* rng_state
 ) {
+    // Boltzmann constant in kcal/(mol·K) — CRITICAL for correct noise scaling
+    const float KB_KCAL_MOL_K = 0.001987204f;
+
     // Friction coefficient
     float c1 = expf(-gamma * dt);
-    float c2 = sqrtf((1.0f - c1*c1) * target_temp / mass);
+    // Correct fluctuation-dissipation: noise amplitude = sqrt((1-c1²) * kB * T / m)
+    // Without kB, noise is ~22x too large at 50K, causing coordinate explosion
+    float c2 = sqrtf((1.0f - c1*c1) * KB_KCAL_MOL_K * target_temp / mass);
 
     // Apply Langevin dynamics
     velocity.x = c1 * velocity.x + c2 * curand_normal(rng_state);
@@ -1186,6 +1191,9 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             clamped_force.z *= scale;
         }
 
+        // NOTE: CA position restraints applied in Rust (CPU-side) after each step
+        // to avoid CUDA kernel parameter mismatch (78 args vs 102 PTX params).
+
         // Half-step velocity update with clamped forces
         velocities[tid].x += 0.5f * dt * clamped_force.x * inv_mass;
         velocities[tid].y += 0.5f * dt * clamped_force.y * inv_mass;
@@ -1194,17 +1202,23 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         // Langevin thermostat (with dynamic temperature!)
         langevin_thermostat(velocities[tid], masses[tid], target_temp, gamma, dt, &local_rng);
 
-        // VELOCITY CLAMPING: Additional safety for numerical stability
-        // Max velocity ~100 Å/ps prevents atoms from escaping
-        const float MAX_VELOCITY = 100.0f;  // Å/ps (very generous - thermal velocity at 300K is ~0.5 Å/ps)
-        float vel_mag = sqrtf(velocities[tid].x * velocities[tid].x +
-                              velocities[tid].y * velocities[tid].y +
-                              velocities[tid].z * velocities[tid].z);
-        if (vel_mag > MAX_VELOCITY) {
-            float scale = MAX_VELOCITY / vel_mag;
-            velocities[tid].x *= scale;
-            velocities[tid].y *= scale;
-            velocities[tid].z *= scale;
+        // VELOCITY CLAMPING: Temperature-dependent for numerical stability
+        // At 300K: thermal velocity ~0.5 Å/ps → clamp at 10 Å/ps (20σ)
+        // At 50K:  thermal velocity ~0.2 Å/ps → clamp at 4 Å/ps (20σ)
+        // The old fixed 100 Å/ps clamp was useless at cryogenic temperatures
+        {
+            const float KB_KCAL = 0.001987204f;
+            float thermal_vel = sqrtf(KB_KCAL * target_temp / fmaxf(masses[tid], 1.0f));
+            float max_vel = fmaxf(thermal_vel * 20.0f, 2.0f);  // 20σ cutoff, min 2 Å/ps
+            float vel_mag = sqrtf(velocities[tid].x * velocities[tid].x +
+                                  velocities[tid].y * velocities[tid].y +
+                                  velocities[tid].z * velocities[tid].z);
+            if (vel_mag > max_vel) {
+                float scale = max_vel / vel_mag;
+                velocities[tid].x *= scale;
+                velocities[tid].y *= scale;
+                velocities[tid].z *= scale;
+            }
         }
 
         // Position update

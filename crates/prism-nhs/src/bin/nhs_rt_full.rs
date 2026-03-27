@@ -5987,6 +5987,85 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // ── V3 COMPOSITE RANKER ──
+        // Additive weighted sum of 10 min-max normalized physics signals.
+        // Weights frozen from bench10 correlation analysis. No ML, no training —
+        // just physics observables weighted by their correlation with binding.
+        {
+            // Weights (sum ≈ 1.0)
+            const W_BREATHING: f64     = 0.14752;
+            const W_DIRECTION: f64     = 0.13121;
+            const W_CAUSAL_FRAC: f64   = 0.12965;
+            const W_OLD_RANK: f64      = 0.12034;
+            const W_LAG_CORR: f64      = 0.11102;
+            const W_SRC_DIV: f64       = 0.10637;
+            const W_VOLUME: f64        = 0.10054;
+            const W_BURIAL: f64        = 0.06366;
+            const W_DRUGGABILITY: f64  = 0.05279;
+            const W_WD_COHERENCE: f64  = 0.03688;
+
+            // Min-max normalization clamp
+            fn norm(val: f64, lo: f64, hi: f64) -> f64 {
+                if hi <= lo { return 0.5; }
+                ((val - lo) / (hi - lo)).clamp(0.0, 1.0)
+            }
+
+            for sj in ms_sites_json.iter_mut() {
+                let breathing   = sj.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let kcc         = sj.get("kcc").cloned().unwrap_or(serde_json::json!(null));
+                let direction   = kcc.get("site_direction_score").and_then(|v| v.as_f64()).unwrap_or(0.98);
+                let active_cs   = kcc.get("active_causal_steps").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let total_steps = kcc.get("total_steps").and_then(|v| v.as_f64()).unwrap_or(1.0).max(1.0);
+                let causal_frac = active_cs / total_steps;
+                let old_rank    = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0);
+                let lag_corr    = kcc.get("site_lag_corr_peak").and_then(|v| v.as_f64())
+                    .or_else(|| kcc.get("lag_corr_peak").and_then(|v| v.as_f64()))
+                    .unwrap_or(0.0);
+                let src_div     = sj.get("source_diversity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let volume      = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let burial      = sj.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let druggability= sj.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let wd_coh      = sj.get("wd_coherence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+                let score =
+                    W_BREATHING    * norm(breathing,   0.0, 0.75)
+                  + W_DIRECTION    * norm(direction,   0.9, 1.0)
+                  + W_CAUSAL_FRAC  * norm(causal_frac, 0.0, 0.5)
+                  + W_OLD_RANK     * norm(old_rank,    0.0, 0.25)
+                  + W_LAG_CORR     * norm(lag_corr,    0.0, 1.0)
+                  + W_SRC_DIV      * norm(src_div,     0.0, 1.0)
+                  + W_VOLUME       * norm(volume,      0.0, 3000.0)
+                  + W_BURIAL       * norm(burial,      0.0, 1.0)
+                  + W_DRUGGABILITY * norm(druggability, 0.0, 1.0)
+                  + W_WD_COHERENCE * norm(wd_coh,      0.0, 1.0);
+
+                sj["composite_v3_score"] = serde_json::json!(score);
+                // quality_score now uses v3 composite for downstream consumers
+                sj["quality_score"] = serde_json::json!(score);
+            }
+
+            // Sort by composite_v3_score descending
+            ms_sites_json.sort_by(|a, b| {
+                b["composite_v3_score"].as_f64().unwrap_or(0.0)
+                    .partial_cmp(&a["composite_v3_score"].as_f64().unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Assign v3 ranks
+            for (i, sj) in ms_sites_json.iter_mut().enumerate() {
+                sj["composite_v3_rank"] = serde_json::json!(i + 1);
+            }
+
+            log::info!("  V3 composite ranking applied. Top-3:");
+            for sj in ms_sites_json.iter().take(3) {
+                log::info!("    #{}: site {} v3={:.4} gtckl={:.4}",
+                    sj["composite_v3_rank"].as_u64().unwrap_or(0),
+                    sj["id"].as_i64().unwrap_or(0),
+                    sj["composite_v3_score"].as_f64().unwrap_or(0.0),
+                    sj["rank_score"].as_f64().unwrap_or(0.0));
+            }
+        }
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "mode": "multi_stream",
