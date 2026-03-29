@@ -220,8 +220,8 @@ pub fn write_druggability_pdb(
         let b_factor = if res_id < n_residues { res_score[res_id] } else { 0.0 };
 
         let atom_name = &topology.atom_names[i];
-        let res_name = if res_id < topology.residue_names.len() {
-            &topology.residue_names[res_id]
+        let res_name = if i < topology.residue_names.len() {
+            &topology.residue_names[i] // atom-indexed, NOT res_id-indexed
         } else {
             "UNK"
         };
@@ -307,10 +307,13 @@ pub fn print_summary_table(report: &PrismThermReport) {
 // ---------------------------------------------------------------------------
 
 /// Get a human-readable residue label like "ALA42" from topology.
+/// Uses residue_id_to_name() to correctly map residue_id → name
+/// (residue_names is atom-indexed, not residue-indexed).
 fn residue_label(topology: &PrismPrepTopology, res_id: u32) -> String {
     let rid = res_id as usize;
-    if rid < topology.residue_names.len() {
-        format!("{}{}", topology.residue_names[rid], rid + 1)
+    let res_names = topology.residue_id_to_name();
+    if rid < res_names.len() {
+        format!("{}{}", res_names[rid], rid + 1)
     } else {
         format!("?{}", rid + 1)
     }

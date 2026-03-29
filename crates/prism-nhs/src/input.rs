@@ -224,7 +224,44 @@ impl PrismPrepTopology {
             topology.n_chains
         );
 
+        topology.validate().map_err(|e| anyhow::anyhow!("Topology validation failed: {}", e))?;
         Ok(topology)
+    }
+
+    /// Validate topology data consistency.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.residue_names.len() != self.n_atoms {
+            return Err(format!(
+                "residue_names length {} != n_atoms {}",
+                self.residue_names.len(), self.n_atoms
+            ));
+        }
+        if self.residue_ids.len() != self.n_atoms {
+            return Err(format!(
+                "residue_ids length {} != n_atoms {}",
+                self.residue_ids.len(), self.n_atoms
+            ));
+        }
+        let max_res_id = self.residue_ids.iter().max().copied().unwrap_or(0);
+        if max_res_id >= self.n_residues {
+            return Err(format!(
+                "max residue_id {} >= n_residues {}",
+                max_res_id, self.n_residues
+            ));
+        }
+        Ok(())
+    }
+
+    /// Build a map from residue_id to residue name.
+    /// residue_names is atom-indexed; this gives the correct per-residue name.
+    pub fn residue_id_to_name(&self) -> Vec<String> {
+        let mut map = vec!["UNK".to_string(); self.n_residues];
+        for (atom_idx, &res_id) in self.residue_ids.iter().enumerate() {
+            if res_id < self.n_residues && map[res_id] == "UNK" {
+                map[res_id] = self.residue_names[atom_idx].clone();
+            }
+        }
+        map
     }
 
     /// Classify atoms for NHS exclusion field
@@ -247,7 +284,7 @@ impl PrismPrepTopology {
             let element = &self.elements[i];
             let atom_name = &self.atom_names[i];
             let res_id = self.residue_ids[i];
-            let res_name = &self.residue_names[res_id];
+            let res_name = &self.residue_names[i]; // atom-indexed, NOT res_id-indexed
             let charge = self.charges[i];
 
             let atom_type = if self.water_oxygens.contains(&i) {
