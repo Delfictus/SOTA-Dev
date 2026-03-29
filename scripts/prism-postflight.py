@@ -124,11 +124,68 @@ def postflight(output_dir, prefix):
     return 0
 
 
+def translate_residues(output_dir, prefix, chain_map_path):
+    """Translate top site residues back to original chain+resnum."""
+    if not os.path.exists(chain_map_path):
+        return
+
+    with open(chain_map_path) as f:
+        cm = json.load(f)
+
+    bs_path = Path(output_dir) / f"{prefix}.binding_sites.json"
+    if not bs_path.exists():
+        return
+
+    with open(bs_path) as f:
+        sites = json.load(f).get("sites", [])
+    if not sites:
+        return
+
+    top = sites[0]
+    lining = top.get("lining_residues", [])
+    if not lining:
+        return
+
+    print(f"\n  Top site residues (merged → original):")
+    chains_seen = set()
+    for r in lining[:10]:
+        rid = r.get("resid", -1)
+        translated = False
+        for chain in cm.get("chains", []):
+            ms = chain["merged_resnum_start"]
+            me = chain["merged_resnum_end"]
+            if ms <= rid <= me:
+                offset = rid - ms
+                orig = chain["original_resnum_start"] + offset
+                is_interface = len(chains_seen) > 0 and chain["original_chain"] not in chains_seen
+                chains_seen.add(chain["original_chain"])
+                tag = " ← INTERFACE RESIDUE" if is_interface else ""
+                print(f"    residue {rid} → chain {chain['original_chain']}, "
+                      f"PDB {orig}{tag}")
+                translated = True
+                break
+        if not translated:
+            print(f"    residue {rid} → NOT IN CHAIN MAP")
+
+    if len(chains_seen) > 1:
+        print(f"  INTERFACE POCKET DETECTED: residues span chains "
+              f"{' and '.join(sorted(chains_seen))}")
+
+
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: prism-postflight.py <output_dir> <prefix>", file=sys.stderr)
-        sys.exit(1)
-    sys.exit(postflight(sys.argv[1], sys.argv[2]))
+    import argparse
+    parser = argparse.ArgumentParser(description="PRISM-4D Output Postflight")
+    parser.add_argument("output_dir", help="Output directory")
+    parser.add_argument("prefix", help="Output file prefix")
+    parser.add_argument("--chain-map", default=None, help="Chain map JSON (for multichain)")
+    args = parser.parse_args()
+
+    result = postflight(args.output_dir, args.prefix)
+
+    if args.chain_map:
+        translate_residues(args.output_dir, args.prefix, args.chain_map)
+
+    sys.exit(result)
 
 
 if __name__ == "__main__":

@@ -127,11 +127,39 @@ def preflight(topo_path):
     return 0
 
 
+def validate_chain_map(chain_map_path, n_residues):
+    """Validate chain map against topology."""
+    if not os.path.exists(chain_map_path):
+        print(f"  WARN: Chain map {chain_map_path} not found")
+        return
+    with open(chain_map_path) as f:
+        cm = json.load(f)
+    total = cm.get("total_residues", 0)
+    if total != n_residues:
+        print(f"  WARN: Chain map total_residues={total} != topology n_residues={n_residues}")
+    else:
+        print(f"  Chain map: {total} residues across {len(cm.get('chains', []))} chains ✓")
+    for entry in cm.get("chains", []):
+        print(f"    {entry['source_file']} (chain {entry['original_chain']}): "
+              f"merged {entry['merged_resnum_start']}-{entry['merged_resnum_end']} "
+              f"({entry['n_residues']} residues)")
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: prism-preflight.py <topology.json>", file=sys.stderr)
-        sys.exit(1)
-    sys.exit(preflight(sys.argv[1]))
+    import argparse
+    parser = argparse.ArgumentParser(description="PRISM-4D Topology Preflight")
+    parser.add_argument("topology", help="Topology JSON file")
+    parser.add_argument("--chain-map", default=None, help="Chain map JSON (for multichain)")
+    args = parser.parse_args()
+
+    result = preflight(args.topology)
+
+    if args.chain_map and result == 0:
+        with open(args.topology) as f:
+            topo = json.load(f)
+        validate_chain_map(args.chain_map, topo.get("n_residues", 0))
+
+    sys.exit(result)
 
 
 if __name__ == "__main__":

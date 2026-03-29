@@ -141,6 +141,53 @@ python3 scripts/p2rank_rerank.py \
 2hnp: CYS REQUIRED (EphB2)
 ```
 
+### Multichain procedure
+
+Before cleaning any multichain PDB, answer:
+1. Is the cryptic/binding site at a chain interface? → merge chains
+2. Is each chain an independent target? → run separately, one chain per run
+3. Is one chain a ligand/peptide/cofactor? → keep protein chain only
+
+Full multichain pipeline:
+```bash
+# 1. Download
+curl -s "https://files.rcsb.org/download/XXXX.pdb" -o xxxx_raw.pdb
+
+# 2. Check what chains exist
+grep "^ATOM" xxxx_raw.pdb | awk '{print $5}' | sort -u
+
+# 3. Clean each chain separately
+python3 scripts/prism-clean.py xxxx_raw.pdb xxxx_chainA.pdb A
+python3 scripts/prism-clean.py xxxx_raw.pdb xxxx_chainB.pdb B
+
+# 4. Merge with chain map
+python3 scripts/prism-merge-chains.py xxxx_chainA.pdb xxxx_chainB.pdb \
+    -o xxxx_merged.pdb --chain-map xxxx_merged.chain_map.json
+
+# 5. Prep merged structure
+scripts/prism-prep xxxx_merged.pdb xxxx_merged.topology.json
+
+# 6. Run with chain map passed through
+scripts/prism-validate-and-run.sh \
+    -t xxxx_merged.topology.json \
+    -o output/xxxx \
+    --chain-map xxxx_merged.chain_map.json \
+    --fast --hysteresis --multi-stream 8 \
+    --spike-percentile 95 --prism-therm \
+    --fused-steps 4 --hmr --adaptive-dt \
+    --replica-seed 42 -v
+```
+
+### Known multichain targets in hard4 benchmark
+- **1r3m**: bovine seminal RNase, obligate dimer (chains A+B).
+  If chain-A-only run does not detect His12/Lys41/His119 active site,
+  rerun with merged AB. Interface pocket requires both chains.
+
+### Residue ID translation
+All engine output residue IDs for merged topologies are sequential merged numbers.
+Always run `prism-lookup-residue.py` before cross-referencing with literature.
+Never assume merged residue ID == PDB author residue number for multichain targets.
+
 ## TOPOLOGY RESIDUE OFFSETS (CRITICAL)
 Topology residue IDs ≠ PDB residue IDs. The topology renumbers from 1.
 Formula: `topology_resnum = pdb_author_resnum - (pdb_first_resnum - 1)`

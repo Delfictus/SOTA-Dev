@@ -18,9 +18,10 @@ ENGINE="$PROJECT_DIR/target/release/nhs_rt_full"
 PREFLIGHT="$SCRIPT_DIR/prism-preflight.py"
 POSTFLIGHT="$SCRIPT_DIR/prism-postflight.py"
 
-# Parse -t and -o, collect remaining flags
+# Parse -t, -o, --chain-map, collect remaining flags
 TOPOLOGY=""
 OUTPUT_DIR=""
+CHAIN_MAP=""
 ENGINE_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
         -o|--output)
             OUTPUT_DIR="$2"
             ENGINE_ARGS+=("$1" "$2")
+            shift 2
+            ;;
+        --chain-map)
+            CHAIN_MAP="$2"
             shift 2
             ;;
         *)
@@ -77,8 +82,12 @@ echo "╚═══════════════════════�
 echo ""
 
 # Phase 1: Preflight
+PREFLIGHT_ARGS=("$TOPOLOGY")
+if [[ -n "$CHAIN_MAP" ]]; then
+    PREFLIGHT_ARGS+=("--chain-map" "$CHAIN_MAP")
+fi
 echo "[Phase 1] Preflight validation: $TOPOLOGY"
-if ! python3 "$PREFLIGHT" "$TOPOLOGY"; then
+if ! python3 "$PREFLIGHT" "${PREFLIGHT_ARGS[@]}"; then
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
     echo "║         PREFLIGHT FAILED — RUN ABORTED                  ║"
@@ -111,7 +120,11 @@ echo "╚═══════════════════════�
 echo ""
 
 # Phase 3: Postflight
-python3 "$POSTFLIGHT" "$OUTPUT_DIR" "$PREFIX"
+POSTFLIGHT_ARGS=("$OUTPUT_DIR" "$PREFIX")
+if [[ -n "$CHAIN_MAP" ]]; then
+    POSTFLIGHT_ARGS+=("--chain-map" "$CHAIN_MAP")
+fi
+python3 "$POSTFLIGHT" "${POSTFLIGHT_ARGS[@]}"
 POST_EXIT=$?
 
 if [[ $POST_EXIT -ne 0 ]]; then
