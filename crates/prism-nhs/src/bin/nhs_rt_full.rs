@@ -6197,6 +6197,54 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // ── CRYPTIC-AWARE RERANKING ──
+        // CRYPTIC therm_class pockets are systematically underranked by GTCK
+        // because GTCK rewards persistence and spike count — properties that
+        // cryptic sites lack by definition.  This adds a thermodynamic boost
+        // to CRYPTIC sites based on hysteresis and asymmetry signals.
+        {
+            let n_sites = ms_sites_json.len();
+            let mut cryptic_scores: Vec<(usize, f64)> = Vec::with_capacity(n_sites);
+
+            for si in 0..n_sites {
+                let sj = &ms_sites_json[si];
+                let base = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let therm_class = sj.get("therm_class").and_then(|v| v.as_str()).unwrap_or("");
+                let hysteresis = sj.get("hysteresis_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let rel_asym = sj.get("relative_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+                let cryptic_boost = if therm_class == "CRYPTIC" {
+                    let hyst_factor = hysteresis.max(0.0).min(1.0);
+                    let asym_factor = (rel_asym / 3.0).max(0.0).min(1.0);
+                    0.15 * hyst_factor + 0.05 * asym_factor
+                } else {
+                    0.0
+                };
+
+                cryptic_scores.push((si, base + cryptic_boost));
+            }
+
+            // Sort descending by cryptic-aware score
+            cryptic_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            for (rank, &(si, score)) in cryptic_scores.iter().enumerate() {
+                ms_sites_json[si]["cryptic_score"] = serde_json::json!(score);
+                ms_sites_json[si]["cryptic_rank"] = serde_json::json!(rank + 1);
+            }
+
+            log::info!("  CRYPTIC-aware ranking. Top-3:");
+            let top3: Vec<_> = cryptic_scores.iter().take(3).collect();
+            for &(si, score) in &top3 {
+                let sj = &ms_sites_json[*si];
+                log::info!("    cryptic_rank={} id={} therm={} score={:.4} gtck_rank={}",
+                    sj["cryptic_rank"].as_u64().unwrap_or(0),
+                    sj["id"].as_i64().unwrap_or(0),
+                    sj.get("therm_class").and_then(|v| v.as_str()).unwrap_or("?"),
+                    score,
+                    sj["gtck_rank"].as_u64().unwrap_or(0));
+            }
+        }
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "mode": "multi_stream",
