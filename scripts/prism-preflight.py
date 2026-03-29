@@ -87,12 +87,29 @@ def preflight(topo_path):
     if len(unique_types) < 15:
         fails.append(f"Only {len(unique_types)} residue types (need >=15): {sorted(unique_types)}")
 
-    # HIS protonation check
+    # CHECK 2: HIS protonation — no bare "HIS", only HID/HIE/HIP
     his_variants = {"HID", "HIE", "HIP"} & unique_types
-    if not his_variants and "HIS" in unique_types:
-        warns.append("HIS present but no HID/HIE/HIP — AMBER protonation may not have been assigned")
+    if "HIS" in unique_types and not his_variants:
+        fails.append("Bare HIS present with no HID/HIE/HIP — AMBER protonation not assigned")
+    elif "HIS" in unique_types and his_variants:
+        warns.append("Both bare HIS and protonated variants present — partial protonation?")
 
-    # CYS check against registry
+    # CHECK 4: GB radii present and non-zero for all atoms
+    gb_radii = topo.get("gb_radii", [])
+    if not gb_radii:
+        fails.append("gb_radii array missing or empty — implicit solvent will fail")
+    elif len(gb_radii) != n_atoms:
+        fails.append(f"gb_radii length {len(gb_radii)} != n_atoms {n_atoms}")
+    else:
+        zero_radii = sum(1 for r in gb_radii if r == 0.0)
+        if zero_radii > 0:
+            pct = 100.0 * zero_radii / len(gb_radii)
+            if pct > 5.0:
+                fails.append(f"{zero_radii}/{len(gb_radii)} atoms have gb_radii=0.0 ({pct:.1f}%)")
+            else:
+                warns.append(f"{zero_radii}/{len(gb_radii)} atoms have gb_radii=0.0 ({pct:.1f}%)")
+
+    # CHECK 5: CYS check against registry
     source_pdb = topo.get("source_pdb", topo_path)
     target_key = None
     for key in CYS_REGISTRY:
@@ -108,6 +125,13 @@ def preflight(topo_path):
     elif target_key is None:
         warns.append(f"Target not in CYS registry. CYS present: {has_cys}")
 
+    # CHECK 6: Net charge within reasonable bounds
+    charges = topo.get("charges", [])
+    if charges:
+        net_charge = sum(charges)
+        if abs(net_charge) > 10:
+            warns.append(f"Net charge {net_charge:.1f} — |charge| > 10, verify protonation states")
+
     # Print results
     basename = os.path.basename(topo_path)
     print(f"Preflight: {basename}")
@@ -116,6 +140,9 @@ def preflight(topo_path):
     print(f"  residue types: {len(unique_types)}")
     print(f"  CYS: {'present' if has_cys else 'absent'}")
     print(f"  HIS variants: {sorted(his_variants) if his_variants else 'none'}")
+    print(f"  GB radii: {'present' if gb_radii else 'MISSING'} ({len(gb_radii)} values)")
+    if charges:
+        print(f"  Net charge: {sum(charges):.1f}")
 
     for w in warns:
         print(f"  WARN: {w}")

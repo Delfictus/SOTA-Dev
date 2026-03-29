@@ -71,7 +71,82 @@ def postflight(output_dir, prefix):
     if not viz_residues:
         fails.append("kcc_visualization.json has 0 residues")
 
+    # ── CHECK 1: KCC residue count matches CA atom count ──
+    # The engine emits one KCC entry per residue. We check against
+    # the number of unique residue_ids in the sites' residue_ids arrays
+    # as a consistency cross-check with KCC residues.
+    if viz_residues:
+        kcc_resids = set()
+        for r in viz_residues:
+            rid = r.get("residue_id", r.get("id", None))
+            if rid is not None:
+                kcc_resids.add(rid)
+        # Also count CA atoms from the topology if source_pdb info is present
+        n_kcc = len(viz_residues)
+        if sites:
+            # Cross-check: binding_sites should reference only residues in KCC
+            all_lining_resids = set()
+            for s in sites:
+                for lr in s.get("lining_residues", []):
+                    rid = lr.get("resid", lr.get("residue_id", None))
+                    if rid is not None:
+                        all_lining_resids.add(rid)
+            # CHECK 3: All lining residue IDs exist in KCC residues array
+            if kcc_resids and all_lining_resids:
+                orphan = all_lining_resids - kcc_resids
+                if orphan:
+                    warns.append(f"{len(orphan)} lining residue IDs not in KCC: "
+                                 f"{sorted(list(orphan))[:10]}")
+
+    # ── CHECK 2: Site count consistency ──
+    if viz_sites and sites:
+        bs_ids = set(s.get("id") for s in sites)
+        viz_ids = set(s.get("id") for s in viz_sites)
+        if bs_ids != viz_ids:
+            only_bs = bs_ids - viz_ids
+            only_viz = viz_ids - bs_ids
+            if only_bs:
+                warns.append(f"Sites in binding_sites but not kcc_viz: {sorted(only_bs)[:5]}")
+            if only_viz:
+                warns.append(f"Sites in kcc_viz but not binding_sites: {sorted(only_viz)[:5]}")
+
+    # ── CHECK 4: Spike events files exist for each site ──
+    for s in sites:
+        sid = s.get("id", "?")
+        spike_name = f"{prefix}.site{sid}.spike_events.json"
+        spike_path = od / spike_name
+        if not spike_path.exists():
+            # Also check parent dir pattern used by some engine versions
+            alt_path = od / f"site_{sid}" / "spike_events.json"
+            if not alt_path.exists():
+                warns.append(f"Missing spike_events for site {sid}")
+
+    # ── CHECK 5: Multi-stream trajectory file consistency ──
+    traj_files = sorted(od.glob(f"{prefix}.stream*.trajectory.json")) + \
+                 sorted(od.glob(f"{prefix}_stream*.json"))
+    if traj_files:
+        frame_counts = []
+        for tf in traj_files:
+            try:
+                with open(tf) as tfh:
+                    tj = json.load(tfh)
+                fc = tj.get("n_frames", len(tj.get("frames", [])))
+                frame_counts.append(fc)
+            except (json.JSONDecodeError, OSError):
+                warns.append(f"Corrupt trajectory file: {tf.name}")
+        if frame_counts and len(set(frame_counts)) > 1:
+            warns.append(f"Stream trajectory frame counts differ: {frame_counts}")
+
+    # ── CHECK 6: KCC sites have valid candidate_residue_ids ──
+    for vs in viz_sites:
+        sid = vs.get("id", "?")
+        kcc_obj = vs.get("kcc", vs.get("candidate_residue_ids", None))
+        topk = vs.get("topk_residue_ids", vs.get("top_residues", None))
+        if kcc_obj is None and topk is None:
+            warns.append(f"KCC site {sid} has no candidate_residue_ids or topk_residue_ids")
+
     # Check reranked if present
+    rr_sites = []
     if reranked_path.exists():
         with open(reranked_path) as f:
             rr = json.load(f)

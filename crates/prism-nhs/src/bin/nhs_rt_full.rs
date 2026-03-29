@@ -319,6 +319,16 @@ struct StructureRunResult {
 }
 
 fn main() -> Result<()> {
+    // ── PRISM_VALIDATED gate ─────────────────────────────────────────────
+    // Direct invocation of nhs_rt_full is prohibited.
+    // All runs MUST go through scripts/prism-validate-and-run.sh which sets
+    // PRISM_VALIDATED=1 after preflight passes.
+    if std::env::var("PRISM_VALIDATED").unwrap_or_default() != "1" {
+        eprintln!("ERROR: Direct invocation of nhs_rt_full is prohibited.");
+        eprintln!("Use: scripts/prism-validate-and-run.sh -t <topology> -o <output> [flags]");
+        std::process::exit(2);
+    }
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 

@@ -3,12 +3,32 @@
 #
 # THE ONLY PERMITTED WAY TO INVOKE THE ENGINE.
 # Direct invocation of nhs_rt_full is prohibited.
+# The engine checks for PRISM_VALIDATED=1 and exits with code 2 if unset.
 #
 # Usage:
 #   scripts/prism-validate-and-run.sh \
 #       -t <topology.json> \
 #       -o <output_dir> \
 #       [all other engine flags passed through]
+#
+# CANONICAL PRODUCTION RUN (as of 2026-03-29, Tier 1 targets confirmed):
+#
+#   scripts/prism-validate-and-run.sh \
+#       -t data/targets/<pdb>.topology.json \
+#       -o /tmp/prism_<pdb> \
+#       --fast --hysteresis \
+#       --multi-stream 20 \
+#       --spike-percentile 95 \
+#       --prism-therm \
+#       --fused-steps 4 \
+#       --hmr \
+#       --adaptive-dt \
+#       --replica-seed 42 \
+#       --boltzmann-rank \
+#       -v
+#
+# For smaller targets (<200 residues): --multi-stream 8
+# For large targets (>400 residues):   --multi-stream 20
 
 set -euo pipefail
 
@@ -104,7 +124,7 @@ echo ""
 # Phase 2: Create output dir and run engine
 mkdir -p "$OUTPUT_DIR"
 ENGINE_EXIT=0
-RUST_LOG=info "$ENGINE" "${ENGINE_ARGS[@]}" || ENGINE_EXIT=$?
+PRISM_VALIDATED=1 RUST_LOG=info "$ENGINE" "${ENGINE_ARGS[@]}" || ENGINE_EXIT=$?
 
 # Engine exit 134/139 = CUDA teardown segfault — output is valid
 if [[ $ENGINE_EXIT -ne 0 && $ENGINE_EXIT -ne 134 && $ENGINE_EXIT -ne 139 ]]; then
