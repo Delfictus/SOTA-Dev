@@ -70,7 +70,81 @@ site_ranking, design_briefs
 python3 -m pytest tests/test_gating/ tests/test_design/ tests/test_interfaces/ -v
 ```
 
+## PRISM-4D ENGINE RUN PROTOCOL — MANDATORY
+
+### Single entry point
+**`scripts/prism-validate-and-run.sh`** is the ONLY permitted way to invoke the engine.
+Direct invocation of `nhs_rt_full` is PROHIBITED in all scripts, Makefiles, and pipelines.
+
+### Canonical run command
+```bash
+scripts/prism-validate-and-run.sh \
+    -t <topology.json> \
+    -o <output_dir> \
+    --fast --hysteresis --multi-stream 8 \
+    --spike-percentile 95 --prism-therm \
+    --fused-steps 4 --hmr --adaptive-dt \
+    --replica-seed 42 -v
+```
+
+### Full prep pipeline for any new target
+```bash
+# 1. Download
+curl -s "https://files.rcsb.org/download/XXXX.pdb" -o xxxx_raw.pdb
+
+# 2. Clean (strips altconfs, keeps chain A, validates residue diversity)
+python3 scripts/prism-clean.py xxxx_raw.pdb xxxx_clean.pdb A
+
+# 3. Prep topology (ONLY valid prep tool)
+scripts/prism-prep xxxx_clean.pdb xxxx_clean.topology.json
+
+# 4. Run with validation gates
+scripts/prism-validate-and-run.sh \
+    -t xxxx_clean.topology.json \
+    -o output/xxxx \
+    --fast --hysteresis --multi-stream 8 \
+    --spike-percentile 95 --prism-therm \
+    --fused-steps 4 --hmr --adaptive-dt \
+    --replica-seed 42 -v
+
+# 5. (Optional) P2Rank reranking
+prank predict -f xxxx_clean.pdb -o output/xxxx/p2rank -threads 4
+python3 scripts/p2rank_rerank.py \
+    --prism-sites output/xxxx/xxxx_clean.binding_sites.json \
+    --prism-viz output/xxxx/xxxx_clean.kcc_visualization.json \
+    --p2rank-pred output/xxxx/p2rank/xxxx_clean.pdb_predictions.csv \
+    --input-pdb xxxx_clean.pdb \
+    --output output/xxxx/xxxx_clean.reranked.json
+```
+
+### Known failure modes (what the validation gates prevent)
+
+| Check | What it catches | Example |
+|-------|----------------|---------|
+| prism-clean: residue type diversity < 15 | Corrupted input, altconf pollution | 2iyt: altconfs collapsed 18→7 types |
+| preflight: CYS registry | Catalytic cysteine mutated by AMBER | 1bzj: Cys215→Ser during prep |
+| preflight: residue diversity < 15 | Topology corruption from bad PDB | Any target with stripped side chains |
+| preflight: HIS → HID/HIE/HIP | AMBER protonation not assigned | Missing histidine tautomers |
+| postflight: sites array empty | Engine detection failure | Large proteins with no consensus |
+| postflight: missing reranked.json | Ranking pipeline incomplete | P2Rank not run or failed |
+| postflight: top 5 identical residues | Single pocket repeated | Low-diversity detection |
+
+### CYS requirements registry
+```
+1bzj: CYS REQUIRED (PTP1B catalytic Cys215)
+1r3m: CYS REQUIRED (RNase disulfides)
+2iyt: CYS NOT REQUIRED (Shikimate Kinase)
+3uyi: CYS REQUIRED
+1nna: CYS NOT REQUIRED (Neuraminidase)
+1jwp: CYS NOT REQUIRED (TEM-1)
+1p38: CYS REQUIRED (p38 MAPK)
+2hnp: CYS REQUIRED (EphB2)
+```
+
 ## TOPOLOGY RESIDUE OFFSETS (CRITICAL)
-Topology residue IDs ≠ PDB residue IDs.  Always verify with `find_residue_by_resid_name()`.
+Topology residue IDs ≠ PDB residue IDs. The topology renumbers from 1.
+Formula: `topology_resnum = pdb_author_resnum - (pdb_first_resnum - 1)`
+Always verify offset before cross-referencing detected residues against literature.
 - **1btl**: offset -26
 - **4obe**: KRAS G12C, check topology for CYS/GLY at position 12
+- **1bzj**: topology = PDB - 1 (PDB starts at 2)
