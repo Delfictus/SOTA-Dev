@@ -195,3 +195,22 @@ Always verify offset before cross-referencing detected residues against literatu
 - **1btl**: offset -26
 - **4obe**: KRAS G12C, check topology for CYS/GLY at position 12
 - **1bzj**: topology = PDB - 1 (PDB starts at 2)
+
+### Cascade flag behavior — critical
+--cascade eliminates low-persistence sites including thermodynamically-identified
+cryptic pockets. Use cases:
+
+Active site / orthosteric detection:
+  --cascade --boltzmann-rank
+  Reduces ~25 sites to ~14 high-confidence candidates
+  Eliminates transient/cryptic sites
+
+Cryptic site detection:
+  --boltzmann-rank (no --cascade)
+  Keep all sites, filter post-hoc by therm_class=CRYPTIC
+  Use prism_therm output as primary signal
+
+For hard4 benchmark (mixed active + cryptic):
+  Run both configurations and compare
+  reranked output does not exist in current engine — use kcc_visualization.json
+  CRYPTIC therm pockets: filter topology.prism_therm.json for therm_class=CRYPTIC

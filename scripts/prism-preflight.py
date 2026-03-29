@@ -19,6 +19,9 @@ CYS_REGISTRY = {
     "1r3m": True,   # RNase disulfides
     "2iyt": False,  # Shikimate Kinase — no catalytic CYS
     "3uyi": True,   # confirmed CYS in clean PDB
+    "4epr": True,   # KRAS G12D — Cys118, Cys185 structural CYS
+    "2j1x": True,   # TP53 Y220C — Cys220 mutation site + structural CYS
+    "1zg4": True,   # TEM-1 beta-lactamase — structural CYS
     "1nna": False,  # Neuraminidase
     "1jwp": False,  # TEM-1 beta-lactamase
     "1p38": True,   # p38 MAP kinase
