@@ -463,6 +463,8 @@ def prepare_topology(
     residue_ids = []
     chain_ids = []
     gb_radii = []  # mbondi3 radii for implicit solvent
+    # Collect per-residue PDB resid mapping (index → PDB resSeq)
+    _residue_pdb_map = {}  # {residue.index: (pdb_resid, resname, chain)}
 
     for atom in topology.atoms():
         masses.append(atom.element.mass.value_in_unit(unit.dalton))
@@ -478,6 +480,14 @@ def prepare_topology(
         chain_ids.append(atom.residue.chain.id)
         # Compute GB radius
         gb_radii.append(get_mbondi3_radius(elem, atom.name, res_name))
+        # Track PDB resid for this residue (first atom wins)
+        ridx = atom.residue.index
+        if ridx not in _residue_pdb_map:
+            try:
+                pdb_resid = int(atom.residue.id)
+            except (ValueError, TypeError):
+                pdb_resid = ridx + 1  # fallback to 1-based sequential
+            _residue_pdb_map[ridx] = (pdb_resid, res_name, atom.residue.chain.id)
 
     # Extract positions (convert to Angstroms)
     pos_flat = []
@@ -655,6 +665,21 @@ def prepare_topology(
     else:
         output["recommended_timestep_fs"] = 2.0
 
+    # Build residue metadata array for engine PDB resid mapping
+    # Engine reads this at nhs_rt_full.rs lines 3194-3201:
+    #   topology.residues[i].residue_idx → topology.residues[i].residue_id
+    # The engine adds +1 to residue_id (persistent_engine.rs:2248),
+    # so we store pdb_resid - 1 as residue_id.
+    residue_metadata = []
+    for ridx in sorted(_residue_pdb_map.keys()):
+        pdb_resid, rname, chain = _residue_pdb_map[ridx]
+        residue_metadata.append({
+            "residue_idx": ridx,
+            "residue_name": rname,
+            "residue_id": pdb_resid - 1,  # engine adds +1
+        })
+    output["residues"] = residue_metadata
+
     # Detect aromatic targets for UV pump (Cryo-UV pipeline)
     aromatic_targets = detect_aromatic_targets(
         atom_names, residue_names, residue_ids, pos_flat, verbose
@@ -668,6 +693,33 @@ def prepare_topology(
 
     with open(output_path, 'w') as f:
         json.dump(output, f)  # No indent for smaller file size
+
+    # Write standalone residue_map.json alongside topology
+    residue_map_path = str(output_path).replace('.topology.json', '.residue_map.json')
+    if residue_map_path == str(output_path):
+        residue_map_path = str(output_path) + '.residue_map.json'
+    chain_ranges = {}
+    for ridx in sorted(_residue_pdb_map.keys()):
+        pdb_resid, rname, chain = _residue_pdb_map[ridx]
+        if chain not in chain_ranges:
+            chain_ranges[chain] = {"min_pdb_resid": pdb_resid, "max_pdb_resid": pdb_resid, "n_residues": 0}
+        chain_ranges[chain]["min_pdb_resid"] = min(chain_ranges[chain]["min_pdb_resid"], pdb_resid)
+        chain_ranges[chain]["max_pdb_resid"] = max(chain_ranges[chain]["max_pdb_resid"], pdb_resid)
+        chain_ranges[chain]["n_residues"] += 1
+    residue_map = {
+        "source_pdb": str(pdb_path),
+        "topology": str(output_path),
+        "residues": [
+            {"topology_index": ridx, "chain": _residue_pdb_map[ridx][2],
+             "pdb_resid": _residue_pdb_map[ridx][0], "resname": _residue_pdb_map[ridx][1]}
+            for ridx in sorted(_residue_pdb_map.keys())
+        ],
+        "chains": chain_ranges,
+    }
+    with open(residue_map_path, 'w') as f:
+        json.dump(residue_map, f, indent=2)
+    if verbose:
+        print(f"Residue map written: {residue_map_path} ({len(residue_metadata)} residues)")
 
     file_size_mb = Path(output_path).stat().st_size / (1024 * 1024)
     if verbose:
