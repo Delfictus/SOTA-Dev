@@ -1441,6 +1441,21 @@ fn run_full_pipeline_internal(
                     site_json["hysteresis_asymmetry"] = serde_json::json!(therm_site.asymmetry_score);
                     site_json["relative_asymmetry"] = serde_json::json!(therm_site.relative_asymmetry);
                     site_json["ccns_tau"] = serde_json::json!(therm_site.tau);
+                    // Phase fraction fields — expose the cold/hot spike breakdown
+                    let total_phase = therm_site.heating_spike_count + therm_site.cooling_spike_count;
+                    if total_phase > 0 {
+                        let hot_frac = therm_site.heating_spike_count as f64 / total_phase as f64;
+                        let cold_frac = therm_site.cooling_spike_count as f64 / total_phase as f64;
+                        site_json["cold_phase_fraction"] = serde_json::json!({
+                            "cold": cold_frac,
+                            "hot": hot_frac,
+                            "delta": hot_frac - cold_frac,
+                            "heating_spike_count": therm_site.heating_spike_count,
+                            "cooling_spike_count": therm_site.cooling_spike_count,
+                            "heating_spike_rate": therm_site.heating_spike_rate,
+                            "cooling_spike_rate": therm_site.cooling_spike_rate,
+                        });
+                    }
                     // Override heuristic classification if PRISM-Therm says CRYPTIC
                     if therm_site.therm_class.to_string() == "CRYPTIC" {
                         site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
@@ -5900,6 +5915,21 @@ fn run_multi_stream_pipeline(
                     site_json["hysteresis_asymmetry"] = serde_json::json!(therm_site.asymmetry_score);
                     site_json["relative_asymmetry"] = serde_json::json!(therm_site.relative_asymmetry);
                     site_json["ccns_tau"] = serde_json::json!(therm_site.tau);
+                    // Phase fraction fields — expose the cold/hot spike breakdown
+                    let total_phase = therm_site.heating_spike_count + therm_site.cooling_spike_count;
+                    if total_phase > 0 {
+                        let hot_frac = therm_site.heating_spike_count as f64 / total_phase as f64;
+                        let cold_frac = therm_site.cooling_spike_count as f64 / total_phase as f64;
+                        site_json["cold_phase_fraction"] = serde_json::json!({
+                            "cold": cold_frac,
+                            "hot": hot_frac,
+                            "delta": hot_frac - cold_frac,
+                            "heating_spike_count": therm_site.heating_spike_count,
+                            "cooling_spike_count": therm_site.cooling_spike_count,
+                            "heating_spike_rate": therm_site.heating_spike_rate,
+                            "cooling_spike_rate": therm_site.cooling_spike_rate,
+                        });
+                    }
                     if therm_site.therm_class.to_string() == "CRYPTIC" {
                         site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
                     }
@@ -6286,9 +6316,22 @@ fn run_multi_stream_pipeline(
                 // Emit ALL residues — inactive ones get zeroed causal fields.
                 // Motion fields (sum_motion, net_dx/dy/dz, etc.) are populated
                 // for every residue regardless of causal activity.
+                // Composite KCC score: weighted combination of motion metrics
+                // Higher = more causally active residue
+                let lc = kcc.lag_corr_peak[r];
+                let bm = kcc.burst_motion[r];
+                let me = kcc.motion_efficiency[r];
+                let ds = kcc.direction_score[r];
+                let causality_frac = if kcc.residue_count[r] > 0 {
+                    kcc.active_causal[r] as f32 / kcc.residue_count[r] as f32
+                } else { 0.0 };
+                let kcc_score = 0.3 * lc + 0.25 * causality_frac + 0.2 * bm.min(3.0) / 3.0
+                    + 0.15 * me.min(0.01) / 0.01 + 0.1 * ds;
+                // Use 1-based residue_id to match lining_residues convention
                 res_json.push(serde_json::json!({
-                    "residue_id": r,
+                    "residue_id": r + 1,
                     "residue_name": topology.residue_names.get(r).cloned().unwrap_or_default(),
+                    "kcc_score": kcc_score,
                     "ca_position": ca_pos[r],
                     "net_dx": kcc.net_dx[r], "net_dy": kcc.net_dy[r], "net_dz": kcc.net_dz[r],
                     "sum_motion": kcc.sum_m[r],
@@ -6768,6 +6811,27 @@ fn run_multi_stream_pipeline(
             if let Err(e) = sdst_report::write_druggability_pdb(&report, &topology, &args.output, &structure_name) {
                 log::warn!("  PRISM-Therm druggability PDB failed: {}", e);
             }
+        }
+    }
+
+    // ── Ensemble trajectory JSON summary ──
+    // Always written after multi-stream runs. Contains per-stream spike counts,
+    // consensus site list, and aggregate statistics for postflight validation.
+    {
+        let traj_json_path = output_base.with_extension("ensemble_trajectory.json");
+        let total_spikes = all_stream_spikes.len() as u64;
+        let consensus_site_ids: Vec<i32> = clustered_sites.iter().map(|s| s.cluster_id).collect();
+        let traj_json = serde_json::json!({
+            "structure": &structure_name,
+            "n_streams": n_streams,
+            "total_spikes": total_spikes,
+            "n_consensus_sites": clustered_sites.len(),
+            "consensus_site_ids": consensus_site_ids,
+            "per_stream": per_stream_stats,
+        });
+        if let Ok(f) = std::fs::File::create(&traj_json_path) {
+            let _ = serde_json::to_writer_pretty(f, &traj_json);
+            log::info!("  Ensemble trajectory JSON: {}", traj_json_path.display());
         }
     }
 
