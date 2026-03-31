@@ -1634,6 +1634,9 @@ pub struct NhsAmberFusedEngine {
     d_pairs14_list: CudaSlice<i32>,
     d_pairs14_offsets: CudaSlice<i32>,
 
+    // LADD: atom classification (8 categories, u8 per atom)
+    d_atom_categories: CudaSlice<u8>,
+
     // Struct sizes for GPU memory layout
     bond_size: usize,
     angle_size: usize,
@@ -2118,6 +2121,45 @@ impl NhsAmberFusedEngine {
         }).collect();
         let d_lj_params: CudaSlice<u8> = stream.alloc_zeros(n_atoms * lj_size)?;
 
+        // LADD: classify each atom into 8 categories
+        let atom_categories: Vec<u8> = (0..n_atoms).map(|i| {
+            let element = topology.elements.get(i).map(|s| s.trim()).unwrap_or("");
+            if element == "H" { return 255u8; } // hydrogen sentinel
+            let name = topology.atom_names.get(i).map(|s| s.trim()).unwrap_or("");
+            let resname = topology.residue_names.get(i).map(|s| s.trim()).unwrap_or("");
+            // Backbone polar: N, O, OXT
+            if name == "N" || name == "O" || name == "OXT" { return 0; }
+            // Backbone carbon: CA, C
+            if name == "CA" || name == "C" { return 1; }
+            // Sulfur
+            if element == "S" || name == "SG" || name == "SD" { return 6; }
+            // Aromatic ring atoms
+            let arom_res = ["TRP","TYR","PHE","HIS","HID","HIE","HIP"];
+            let ring_atoms = ["CG","CD1","CD2","CE1","CE2","CE3","CZ","CZ2","CZ3","CH2","NE1","ND1","NE2"];
+            if arom_res.contains(&resname) && ring_atoms.contains(&name) { return 5; }
+            // Charged sidechain
+            match (resname, name) {
+                ("ASP", "OD1") | ("ASP", "OD2") |
+                ("GLU", "OE1") | ("GLU", "OE2") |
+                ("LYS", "NZ") |
+                ("ARG", "NE") | ("ARG", "NH1") | ("ARG", "NH2") => return 4,
+                _ => {}
+            }
+            // Polar sidechain (O or N not caught above)
+            if element == "O" || element == "N" { return 3; }
+            // Hydrophobic carbon
+            if element == "C" { return 2; }
+            7 // OTHER
+        }).collect();
+        let d_atom_categories: CudaSlice<u8> = stream.alloc_zeros(n_atoms)?;
+        {
+            let mut hist = [0u32; 9]; // 0-7 + hydrogen(255)
+            for &c in &atom_categories { if c == 255 { hist[8] += 1; } else { hist[c as usize] += 1; } }
+            let cat_names = ["BB_POLAR","BB_CARBON","SC_HYDRO","SC_POLAR","SC_CHARGED","SC_AROMATIC","SULFUR","OTHER","HYDROGEN"];
+            log::info!("  LADD atom classification: {}", cat_names.iter().zip(hist.iter())
+                .map(|(n,c)| format!("{}={}", n, c)).collect::<Vec<_>>().join(", "));
+        }
+
         // Derive 1-4 pairs from dihedrals (atoms i,l at opposite ends)
         let mut pairs14_per_atom: Vec<std::collections::HashSet<usize>> = vec![std::collections::HashSet::new(); n_atoms];
         // Also build 1-2 and 1-3 sets to exclude them from 1-4
@@ -2580,6 +2622,7 @@ impl NhsAmberFusedEngine {
             d_exclusion_offsets,
             d_pairs14_list,
             d_pairs14_offsets,
+            d_atom_categories,
 
             // Struct sizes for GPU memory layout
             bond_size,
@@ -2764,6 +2807,7 @@ impl NhsAmberFusedEngine {
         engine.upload_topology_structs(topology, &bonds, &angles, &dihedrals, &lj_params,
                                         &exclusion_list, &exclusion_offsets,
                                         &pairs14_list, &pairs14_offsets,
+                                        &atom_categories,
                                         &h_clusters, &uv_targets,
                                         &atom_to_aromatic, &aromatic_types)?;
 
@@ -3116,6 +3160,7 @@ impl NhsAmberFusedEngine {
         exclusion_offsets: &[i32],
         pairs14_list: &[i32],
         pairs14_offsets: &[i32],
+        atom_categories: &[u8],
         h_clusters: &[GpuHCluster],
         uv_targets: &[GpuUVTarget],
         atom_to_aromatic: &[i32],
@@ -3191,6 +3236,11 @@ impl NhsAmberFusedEngine {
             self.stream.memcpy_htod(pairs14_list, &mut self.d_pairs14_list)?;
         }
         self.stream.memcpy_htod(pairs14_offsets, &mut self.d_pairs14_offsets)?;
+
+        // LADD atom categories
+        if !atom_categories.is_empty() {
+            self.stream.memcpy_htod(atom_categories, &mut self.d_atom_categories)?;
+        }
 
         // SHAKE H-clusters
         if !h_clusters.is_empty() {
