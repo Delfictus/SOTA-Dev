@@ -1636,6 +1636,27 @@ pub struct NhsAmberFusedEngine {
 
     // LADD: atom classification (8 categories, u8 per atom)
     d_atom_categories: CudaSlice<u8>,
+    // LADD: per-atom voxel tracking
+    d_atom_voxel_curr: CudaSlice<i32>,
+    d_atom_voxel_prev: CudaSlice<i32>,
+    // LADD: per-voxel density + reference
+    d_ladd_voxel_density: CudaSlice<f32>,
+    d_ladd_density_ref: CudaSlice<f32>,
+    d_ladd_density_m2: CudaSlice<f32>,
+    d_ladd_ref_count: CudaSlice<i32>,
+    // LADD: departure buffer (global, sparse)
+    d_departure_atoms: CudaSlice<i32>,
+    d_departure_src_voxels: CudaSlice<i32>,
+    d_departure_count: CudaSlice<i32>,
+    // LADD: refractory grid
+    d_ladd_spike_grid: CudaSlice<i32>,
+    // LADD: kernel functions
+    ladd_update_voxels_kernel: Option<CudaFunction>,
+    ladd_compute_density_kernel: Option<CudaFunction>,
+    ladd_accumulate_density_kernel: Option<CudaFunction>,
+    ladd_accumulate_reference_kernel: Option<CudaFunction>,
+    ladd_enabled: bool,
+    ladd_cold_hold_steps: i32,
 
     // Struct sizes for GPU memory layout
     bond_size: usize,
@@ -2039,6 +2060,15 @@ impl NhsAmberFusedEngine {
             log::info!("  GPU burial centroid kernel: ✓ loaded");
         }
 
+        // LADD kernel functions (optional — graceful fallback if not in PTX)
+        let ladd_update_voxels_kernel = fused_module.load_function("ladd_update_voxels").ok();
+        let ladd_compute_density_kernel = fused_module.load_function("ladd_compute_density").ok();
+        let ladd_accumulate_density_kernel = fused_module.load_function("ladd_accumulate_density").ok();
+        let ladd_accumulate_reference_kernel = fused_module.load_function("ladd_accumulate_reference").ok();
+        if ladd_update_voxels_kernel.is_some() {
+            log::info!("  LADD kernels: ✓ loaded (4 functions)");
+        }
+
         // ====================================================================
         // ALLOCATE ATOM STATE BUFFERS
         // ====================================================================
@@ -2159,6 +2189,20 @@ impl NhsAmberFusedEngine {
             log::info!("  LADD atom classification: {}", cat_names.iter().zip(hist.iter())
                 .map(|(n,c)| format!("{}={}", n, c)).collect::<Vec<_>>().join(", "));
         }
+
+        // LADD: allocate voxel tracking + density arrays
+        let total_voxels = grid_dim * grid_dim * grid_dim;
+        let max_departures: usize = 65536; // per sync interval
+        let d_atom_voxel_curr: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
+        let d_atom_voxel_prev: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
+        let d_ladd_voxel_density: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_ladd_density_ref: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_ladd_density_m2: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_ladd_ref_count: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_departure_atoms: CudaSlice<i32> = stream.alloc_zeros(max_departures)?;
+        let d_departure_src_voxels: CudaSlice<i32> = stream.alloc_zeros(max_departures)?;
+        let d_departure_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
+        let d_ladd_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
 
         // Derive 1-4 pairs from dihedrals (atoms i,l at opposite ends)
         let mut pairs14_per_atom: Vec<std::collections::HashSet<usize>> = vec![std::collections::HashSet::new(); n_atoms];
@@ -2623,6 +2667,22 @@ impl NhsAmberFusedEngine {
             d_pairs14_list,
             d_pairs14_offsets,
             d_atom_categories,
+            d_atom_voxel_curr,
+            d_atom_voxel_prev,
+            d_ladd_voxel_density,
+            d_ladd_density_ref,
+            d_ladd_density_m2,
+            d_ladd_ref_count,
+            d_departure_atoms,
+            d_departure_src_voxels,
+            d_departure_count,
+            d_ladd_spike_grid,
+            ladd_update_voxels_kernel,
+            ladd_compute_density_kernel,
+            ladd_accumulate_density_kernel,
+            ladd_accumulate_reference_kernel,
+            ladd_enabled: false, // set via set_ladd_enabled()
+            ladd_cold_hold_steps: 14000, // default, overridden by set_ladd_cold_hold()
 
             // Struct sizes for GPU memory layout
             bond_size,
@@ -3030,6 +3090,19 @@ impl NhsAmberFusedEngine {
             self.adaptive_bias_boost,
             self.adaptive_bias_decay,
             self.adaptive_bias_percentile);
+    }
+
+    /// Enable LADD (Local Atom Departure Detection) channel
+    pub fn set_ladd_enabled(&mut self, enabled: bool) {
+        self.ladd_enabled = enabled;
+        if enabled {
+            log::info!("LADD channel: ENABLED (4th neuromorphic channel)");
+        }
+    }
+
+    /// Set LADD cold_hold reference accumulation window
+    pub fn set_ladd_cold_hold(&mut self, steps: i32) {
+        self.ladd_cold_hold_steps = steps;
     }
 
     /// Set fused multi-step count: run N AMBER steps per 1 multi-LIF observation.
@@ -5057,6 +5130,89 @@ impl NhsAmberFusedEngine {
             }
         }
         .context("Failed to launch nhs_voxel_step_multi_lif kernel")?;
+
+        // ── LADD: per-step voxel tracking + density ──
+        if self.ladd_enabled {
+            if let (Some(ref k_update), Some(ref k_reset), Some(ref k_accum), Some(ref k_ref)) = (
+                &self.ladd_update_voxels_kernel,
+                &self.ladd_compute_density_kernel,
+                &self.ladd_accumulate_density_kernel,
+                &self.ladd_accumulate_reference_kernel,
+            ) {
+                let total_voxels_i32 = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+                let max_dep_i32 = 65536i32;
+                let atom_blocks = ((self.n_atoms + 255) / 256) as u32;
+                let voxel_blocks = ((total_voxels_i32 as u32 + 255) / 256) as u32;
+                let atom_cfg = cudarc::driver::LaunchConfig {
+                    grid_dim: (atom_blocks, 1, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                let voxel_cfg_ladd = cudarc::driver::LaunchConfig {
+                    grid_dim: (voxel_blocks, 1, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+
+                // Reset departure counter
+                self.stream.memset_zeros(&mut self.d_departure_count)?;
+
+                // 1. Assign atoms to voxels + detect departures
+                unsafe {
+                    self.stream.launch_builder(k_update)
+                        .arg(&self.d_positions)
+                        .arg(&self.d_atom_categories)
+                        .arg(&mut self.d_atom_voxel_curr)
+                        .arg(&mut self.d_atom_voxel_prev)
+                        .arg(&mut self.d_departure_atoms)
+                        .arg(&mut self.d_departure_src_voxels)
+                        .arg(&mut self.d_departure_count)
+                        .arg(&self.grid_origin[0])
+                        .arg(&self.grid_origin[1])
+                        .arg(&self.grid_origin[2])
+                        .arg(&self.grid_spacing)
+                        .arg(&grid_dim_i32)
+                        .arg(&n_atoms_i32)
+                        .arg(&max_dep_i32)
+                        .launch(atom_cfg)
+                }.context("LADD: ladd_update_voxels failed")?;
+
+                // 2. Reset density grid
+                unsafe {
+                    self.stream.launch_builder(k_reset)
+                        .arg(&mut self.d_ladd_voxel_density)
+                        .arg(&n_atoms_i32)
+                        .arg(&total_voxels_i32)
+                        .launch(voxel_cfg_ladd)
+                }.context("LADD: ladd_compute_density failed")?;
+
+                // 3. Accumulate density
+                unsafe {
+                    self.stream.launch_builder(k_accum)
+                        .arg(&self.d_atom_voxel_curr)
+                        .arg(&self.d_atom_categories)
+                        .arg(&mut self.d_ladd_voxel_density)
+                        .arg(&n_atoms_i32)
+                        .launch(atom_cfg)
+                }.context("LADD: ladd_accumulate_density failed")?;
+
+                // 4. During cold_hold phase, accumulate reference density
+                if self.timestep < self.ladd_cold_hold_steps {
+                    unsafe {
+                        self.stream.launch_builder(k_ref)
+                            .arg(&self.d_ladd_voxel_density)
+                            .arg(&mut self.d_ladd_density_ref)
+                            .arg(&mut self.d_ladd_density_m2)
+                            .arg(&mut self.d_ladd_ref_count)
+                            .arg(&total_voxels_i32)
+                            .launch(voxel_cfg_ladd)
+                    }.context("LADD: ladd_accumulate_reference failed")?;
+                }
+
+                // 5. Swap prev/curr voxel assignment (pointer swap)
+                std::mem::swap(&mut self.d_atom_voxel_prev, &mut self.d_atom_voxel_curr);
+            }
+        }
 
         // Swap coupling double-buffer and clear the new write buffer
         self.coupling_phase = !self.coupling_phase;

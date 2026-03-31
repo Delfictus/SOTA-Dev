@@ -4141,3 +4141,112 @@ extern "C" __global__ void burial_weighted_centroid(
         centroid_out[3] = s_w[0];
     }
 }
+
+
+// ============================================================================
+// LADD: Local Atom Departure Detection
+// ============================================================================
+
+// Assign each heavy atom to its current voxel + detect departures
+extern "C" __global__ void ladd_update_voxels(
+    const float3* __restrict__ positions,
+    const unsigned char* __restrict__ atom_categories, // 255 = hydrogen (skip)
+    int* atom_voxel_curr,
+    int* atom_voxel_prev,
+    int* departure_atoms,        // global departure buffer: atom indices
+    int* departure_src_voxels,   // global departure buffer: source voxel
+    int* departure_count,        // atomic counter
+    float grid_origin_x, float grid_origin_y, float grid_origin_z,
+    float grid_spacing,
+    int grid_dim,
+    int n_atoms,
+    int max_departures           // buffer capacity
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    // Skip hydrogens
+    if (atom_categories[tid] == 255) {
+        atom_voxel_curr[tid] = -1;
+        return;
+    }
+
+    float3 pos = positions[tid];
+    int ix = (int)((pos.x - grid_origin_x) / grid_spacing);
+    int iy = (int)((pos.y - grid_origin_y) / grid_spacing);
+    int iz = (int)((pos.z - grid_origin_z) / grid_spacing);
+
+    int new_voxel;
+    if (ix < 0 || ix >= grid_dim || iy < 0 || iy >= grid_dim ||
+        iz < 0 || iz >= grid_dim) {
+        new_voxel = -1;
+    } else {
+        new_voxel = ix + iy * grid_dim + iz * grid_dim * grid_dim;
+    }
+
+    int old_voxel = atom_voxel_prev[tid];
+    atom_voxel_curr[tid] = new_voxel;
+
+    // Detect departure: atom was in a voxel, now in a different one
+    if (old_voxel >= 0 && old_voxel != new_voxel) {
+        int slot = atomicAdd(departure_count, 1);
+        if (slot < max_departures) {
+            departure_atoms[slot] = tid;
+            departure_src_voxels[slot] = old_voxel;
+        }
+    }
+}
+
+// Accumulate per-voxel heavy-atom density from current voxel assignments
+extern "C" __global__ void ladd_compute_density(
+    const int* __restrict__ atom_voxel_curr,
+    const unsigned char* __restrict__ atom_categories,
+    float* ladd_voxel_density,
+    int n_atoms,
+    int total_voxels
+) {
+    // Phase 1: reset density (thread-per-voxel)
+    int vid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (vid < total_voxels) {
+        ladd_voxel_density[vid] = 0.0f;
+    }
+}
+
+// Separate kernel for atomic density accumulation (thread-per-atom)
+extern "C" __global__ void ladd_accumulate_density(
+    const int* __restrict__ atom_voxel_curr,
+    const unsigned char* __restrict__ atom_categories,
+    float* ladd_voxel_density,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+    if (atom_categories[tid] == 255) return; // skip H
+    int voxel = atom_voxel_curr[tid];
+    if (voxel >= 0) {
+        atomicAdd(&ladd_voxel_density[voxel], 1.0f); // count heavy atoms
+    }
+}
+
+// Accumulate reference density during cold_hold phase (Welford online mean)
+extern "C" __global__ void ladd_accumulate_reference(
+    const float* __restrict__ ladd_voxel_density,
+    float* ladd_density_ref,
+    float* ladd_density_m2,     // Welford M2 for variance
+    int* ladd_ref_count,
+    int total_voxels
+) {
+    int vid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (vid >= total_voxels) return;
+
+    float density = ladd_voxel_density[vid];
+    int count = ladd_ref_count[vid] + 1;
+    float delta = density - ladd_density_ref[vid];
+    float new_mean = ladd_density_ref[vid] + delta / (float)count;
+    float delta2 = density - new_mean;
+    float new_m2 = ladd_density_m2[vid] + delta * delta2;
+
+    ladd_density_ref[vid] = new_mean;
+    ladd_density_m2[vid] = new_m2;
+    ladd_ref_count[vid] = count;
+}
