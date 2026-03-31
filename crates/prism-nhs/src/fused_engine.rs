@@ -1648,6 +1648,10 @@ pub struct NhsAmberFusedEngine {
     d_departure_atoms: CudaSlice<i32>,
     d_departure_src_voxels: CudaSlice<i32>,
     d_departure_count: CudaSlice<i32>,
+    d_departure_count_per_voxel: CudaSlice<i32>,
+    d_departure_offsets: CudaSlice<i32>,
+    d_departure_local_slot: CudaSlice<i32>,
+    d_sorted_departure_atoms: CudaSlice<i32>,
     // LADD: refractory grid
     d_ladd_spike_grid: CudaSlice<i32>,
     // LADD: kernel functions
@@ -1655,6 +1659,10 @@ pub struct NhsAmberFusedEngine {
     ladd_compute_density_kernel: Option<CudaFunction>,
     ladd_accumulate_density_kernel: Option<CudaFunction>,
     ladd_accumulate_reference_kernel: Option<CudaFunction>,
+    ladd_detect_and_emit_kernel: Option<CudaFunction>,
+    ladd_build_offsets_kernel: Option<CudaFunction>,
+    ladd_scatter_kernel: Option<CudaFunction>,
+    d_positions_prev_ladd: CudaSlice<f32>,
     ladd_enabled: bool,
     ladd_cold_hold_steps: i32,
 
@@ -2065,8 +2073,11 @@ impl NhsAmberFusedEngine {
         let ladd_compute_density_kernel = fused_module.load_function("ladd_compute_density").ok();
         let ladd_accumulate_density_kernel = fused_module.load_function("ladd_accumulate_density").ok();
         let ladd_accumulate_reference_kernel = fused_module.load_function("ladd_accumulate_reference").ok();
-        if ladd_update_voxels_kernel.is_some() {
-            log::info!("  LADD kernels: ✓ loaded (4 functions)");
+        let ladd_detect_and_emit_kernel = fused_module.load_function("ladd_detect_and_emit").ok();
+        let ladd_build_offsets_kernel = fused_module.load_function("ladd_build_departure_offsets").ok();
+        let ladd_scatter_kernel = fused_module.load_function("ladd_scatter_departures").ok();
+        if ladd_update_voxels_kernel.is_some() && ladd_detect_and_emit_kernel.is_some() {
+            log::info!("  LADD kernels: ✓ loaded (7 functions, sorted departure scan)");
         }
 
         // ====================================================================
@@ -2202,7 +2213,12 @@ impl NhsAmberFusedEngine {
         let d_departure_atoms: CudaSlice<i32> = stream.alloc_zeros(max_departures)?;
         let d_departure_src_voxels: CudaSlice<i32> = stream.alloc_zeros(max_departures)?;
         let d_departure_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
+        let d_departure_count_per_voxel: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_departure_offsets: CudaSlice<i32> = stream.alloc_zeros(total_voxels + 1)?;
+        let d_departure_local_slot: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_sorted_departure_atoms: CudaSlice<i32> = stream.alloc_zeros(max_departures)?;
         let d_ladd_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        let d_positions_prev_ladd: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
 
         // Derive 1-4 pairs from dihedrals (atoms i,l at opposite ends)
         let mut pairs14_per_atom: Vec<std::collections::HashSet<usize>> = vec![std::collections::HashSet::new(); n_atoms];
@@ -2681,6 +2697,14 @@ impl NhsAmberFusedEngine {
             ladd_compute_density_kernel,
             ladd_accumulate_density_kernel,
             ladd_accumulate_reference_kernel,
+            ladd_detect_and_emit_kernel,
+            ladd_build_offsets_kernel,
+            ladd_scatter_kernel,
+            d_departure_count_per_voxel,
+            d_departure_offsets,
+            d_departure_local_slot,
+            d_sorted_departure_atoms,
+            d_positions_prev_ladd,
             ladd_enabled: false, // set via set_ladd_enabled()
             ladd_cold_hold_steps: 14000, // default, overridden by set_ladd_cold_hold()
 
@@ -4815,6 +4839,11 @@ impl NhsAmberFusedEngine {
         let temp_hold_steps = self.temp_protocol.hold_steps;
         let temp_current_step = self.temp_protocol.current_step;
 
+        // LADD: save positions before MD step for displacement computation
+        if self.ladd_enabled {
+            self.stream.memcpy_dtod(&self.d_positions, &mut self.d_positions_prev_ladd)?;
+        }
+
         unsafe {
             self.stream
                 .launch_builder(&self.fused_step_kernel)
@@ -5154,10 +5183,12 @@ impl NhsAmberFusedEngine {
                     shared_mem_bytes: 0,
                 };
 
-                // Reset departure counter
+                // Reset departure counters
                 self.stream.memset_zeros(&mut self.d_departure_count)?;
+                self.stream.memset_zeros(&mut self.d_departure_count_per_voxel)?;
+                self.stream.memset_zeros(&mut self.d_departure_local_slot)?;
 
-                // 1. Assign atoms to voxels + detect departures
+                // 1. Assign atoms to voxels + detect departures + per-voxel counts
                 unsafe {
                     self.stream.launch_builder(k_update)
                         .arg(&self.d_positions)
@@ -5167,6 +5198,7 @@ impl NhsAmberFusedEngine {
                         .arg(&mut self.d_departure_atoms)
                         .arg(&mut self.d_departure_src_voxels)
                         .arg(&mut self.d_departure_count)
+                        .arg(&mut self.d_departure_count_per_voxel)
                         .arg(&self.grid_origin[0])
                         .arg(&self.grid_origin[1])
                         .arg(&self.grid_origin[2])
@@ -5209,7 +5241,81 @@ impl NhsAmberFusedEngine {
                     }.context("LADD: ladd_accumulate_reference failed")?;
                 }
 
-                // 5. Swap prev/curr voxel assignment (pointer swap)
+                // 5. LADD spike detection + emission (after cold_hold phase only)
+                if self.timestep >= self.ladd_cold_hold_steps {
+                    if let (Some(ref k_offsets), Some(ref k_scatter), Some(ref k_detect)) = (
+                        &self.ladd_build_offsets_kernel,
+                        &self.ladd_scatter_kernel,
+                        &self.ladd_detect_and_emit_kernel,
+                    ) {
+                        // 5a. Build exclusive prefix sum of per-voxel departure counts
+                        let single_cfg = cudarc::driver::LaunchConfig {
+                            grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0,
+                        };
+                        unsafe {
+                            self.stream.launch_builder(k_offsets)
+                                .arg(&self.d_departure_count_per_voxel)
+                                .arg(&mut self.d_departure_offsets)
+                                .arg(&total_voxels_i32)
+                                .launch(single_cfg)
+                        }.context("LADD: ladd_build_departure_offsets failed")?;
+
+                        // 5b. Scatter departures into sorted order
+                        // Read departure_count from GPU to size the scatter launch
+                        let mut dep_count_host = [0i32];
+                        self.stream.memcpy_dtoh(&self.d_departure_count, &mut dep_count_host)?;
+                        let n_dep = dep_count_host[0].min(max_dep_i32) as u32;
+
+                        if n_dep > 0 {
+                            let dep_blocks = ((n_dep + 255) / 256) as u32;
+                            let dep_cfg = cudarc::driver::LaunchConfig {
+                                grid_dim: (dep_blocks, 1, 1), block_dim: (256, 1, 1), shared_mem_bytes: 0,
+                            };
+                            let n_dep_i32 = n_dep as i32;
+                            unsafe {
+                                self.stream.launch_builder(k_scatter)
+                                    .arg(&self.d_departure_atoms)
+                                    .arg(&self.d_departure_src_voxels)
+                                    .arg(&n_dep_i32)
+                                    .arg(&self.d_departure_offsets)
+                                    .arg(&mut self.d_departure_local_slot)
+                                    .arg(&mut self.d_sorted_departure_atoms)
+                                    .launch(dep_cfg)
+                            }.context("LADD: ladd_scatter_departures failed")?;
+                        }
+
+                        // 5c. Detect depletion + emit spikes (using sorted departure buffer)
+                        let max_spikes_i32 = 500000i32;
+                        let timestep_i32 = self.timestep;
+                        unsafe {
+                            self.stream.launch_builder(k_detect)
+                                .arg(&self.d_ladd_voxel_density)
+                                .arg(&self.d_ladd_density_ref)
+                                .arg(&self.d_ladd_density_m2)
+                                .arg(&self.d_ladd_ref_count)
+                                .arg(&mut self.d_ladd_spike_grid)
+                                .arg(&self.d_sorted_departure_atoms)
+                                .arg(&self.d_departure_offsets)
+                                .arg(&self.d_positions)
+                                .arg(&self.d_positions_prev_ladd)
+                                .arg(&self.d_atom_categories)
+                                .arg(&self.d_residue_ids)
+                                .arg(&self.grid_origin[0])
+                                .arg(&self.grid_origin[1])
+                                .arg(&self.grid_origin[2])
+                                .arg(&self.grid_spacing)
+                                .arg(&grid_dim_i32)
+                                .arg(&mut self.d_spike_events)
+                                .arg(&mut self.d_spike_count)
+                                .arg(&max_spikes_i32)
+                                .arg(&timestep_i32)
+                                .arg(&total_voxels_i32)
+                                .launch(voxel_cfg_ladd)
+                        }.context("LADD: ladd_detect_and_emit failed")?;
+                    }
+                }
+
+                // 6. Swap prev/curr voxel assignment (pointer swap)
                 std::mem::swap(&mut self.d_atom_voxel_prev, &mut self.d_atom_voxel_curr);
             }
         }

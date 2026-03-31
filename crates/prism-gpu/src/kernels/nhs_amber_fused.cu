@@ -4147,25 +4147,26 @@ extern "C" __global__ void burial_weighted_centroid(
 // LADD: Local Atom Departure Detection
 // ============================================================================
 
-// Assign each heavy atom to its current voxel + detect departures
+// Assign each heavy atom to its current voxel + detect departures.
+// Also builds per-voxel departure count for O(1) indexed lookup.
 extern "C" __global__ void ladd_update_voxels(
     const float3* __restrict__ positions,
     const unsigned char* __restrict__ atom_categories, // 255 = hydrogen (skip)
     int* atom_voxel_curr,
     int* atom_voxel_prev,
-    int* departure_atoms,        // global departure buffer: atom indices
-    int* departure_src_voxels,   // global departure buffer: source voxel
-    int* departure_count,        // atomic counter
+    int* departure_atoms,            // global departure buffer: atom indices
+    int* departure_src_voxels,       // global departure buffer: source voxel
+    int* departure_count,            // atomic counter (total departures)
+    int* departure_count_per_voxel,  // [total_voxels]: departures from each voxel
     float grid_origin_x, float grid_origin_y, float grid_origin_z,
     float grid_spacing,
     int grid_dim,
     int n_atoms,
-    int max_departures           // buffer capacity
+    int max_departures
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= n_atoms) return;
 
-    // Skip hydrogens
     if (atom_categories[tid] == 255) {
         atom_voxel_curr[tid] = -1;
         return;
@@ -4187,14 +4188,52 @@ extern "C" __global__ void ladd_update_voxels(
     int old_voxel = atom_voxel_prev[tid];
     atom_voxel_curr[tid] = new_voxel;
 
-    // Detect departure: atom was in a voxel, now in a different one
     if (old_voxel >= 0 && old_voxel != new_voxel) {
         int slot = atomicAdd(departure_count, 1);
         if (slot < max_departures) {
             departure_atoms[slot] = tid;
             departure_src_voxels[slot] = old_voxel;
         }
+        atomicAdd(&departure_count_per_voxel[old_voxel], 1);
     }
+}
+
+// Exclusive prefix sum on departure_count_per_voxel → departure_offsets.
+// Single-block scan for up to 2M voxels (sequential, but only ~10μs on GPU).
+// Runs on 1 thread — acceptable because this is O(total_voxels) simple adds,
+// dominated by memory latency, and total_voxels fits in L2 cache.
+extern "C" __global__ void ladd_build_departure_offsets(
+    const int* __restrict__ departure_count_per_voxel,
+    int* departure_offsets,   // [total_voxels + 1]
+    int total_voxels
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    int running = 0;
+    for (int v = 0; v < total_voxels; v++) {
+        departure_offsets[v] = running;
+        running += departure_count_per_voxel[v];
+    }
+    departure_offsets[total_voxels] = running;
+}
+
+// Scatter departures into per-voxel sorted order using offsets.
+// One thread per departure. Writes to sorted buffer at the voxel's offset.
+extern "C" __global__ void ladd_scatter_departures(
+    const int* __restrict__ departure_atoms,
+    const int* __restrict__ departure_src_voxels,
+    int n_departures,
+    const int* __restrict__ departure_offsets,
+    int* departure_local_slot,        // [total_voxels]: per-voxel atomic write cursor
+    int* sorted_departure_atoms       // output: departures sorted by src_voxel
+) {
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    if (d >= n_departures) return;
+
+    int src_voxel = departure_src_voxels[d];
+    int atom = departure_atoms[d];
+    int base = departure_offsets[src_voxel];
+    int local = atomicAdd(&departure_local_slot[src_voxel], 1);
+    sorted_departure_atoms[base + local] = atom;
 }
 
 // Accumulate per-voxel heavy-atom density from current voxel assignments
@@ -4249,4 +4288,172 @@ extern "C" __global__ void ladd_accumulate_reference(
     ladd_density_ref[vid] = new_mean;
     ladd_density_m2[vid] = new_m2;
     ladd_ref_count[vid] = count;
+}
+
+// LADD constants
+#define LADD_MIN_THRESHOLD 0.15f   // Minimum depletion fraction to fire
+#define LADD_REFRACTORY    500     // Steps between LADD spikes per voxel
+#define LADD_SOURCE        4       // spike_source value for LADD channel
+
+// Detect depletion + analyze departures + emit LADD spikes.
+// One thread per voxel. Uses sorted departure buffer for O(1) indexed lookup.
+extern "C" __global__ void ladd_detect_and_emit(
+    // Density data
+    const float* __restrict__ ladd_voxel_density,
+    const float* __restrict__ ladd_density_ref,
+    const float* __restrict__ ladd_density_m2,
+    const int* __restrict__ ladd_ref_count,
+    int* ladd_spike_grid,          // refractory countdown
+    // Sorted departure data (from ladd_scatter_departures)
+    const int* __restrict__ sorted_departure_atoms,
+    const int* __restrict__ departure_offsets,  // [total_voxels + 1]
+    // Atom data for departure analysis
+    const float3* __restrict__ positions,
+    const float3* __restrict__ positions_prev,
+    const unsigned char* __restrict__ atom_categories,
+    const int* __restrict__ residue_ids,
+    // Grid geometry
+    float grid_origin_x, float grid_origin_y, float grid_origin_z,
+    float grid_spacing,
+    int grid_dim,
+    // Spike output (shared with UV/LIF/EFP)
+    SpikeEvent* spike_events,
+    int* spike_count,
+    int max_spikes,
+    // Context
+    int timestep,
+    int total_voxels
+) {
+    int vid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (vid >= total_voxels) return;
+
+    // Decrement refractory
+    if (ladd_spike_grid[vid] > 0) {
+        ladd_spike_grid[vid]--;
+        return;
+    }
+
+    int ref_count = ladd_ref_count[vid];
+    if (ref_count < 10) return;
+
+    float ref_density = ladd_density_ref[vid];
+    float curr_density = ladd_voxel_density[vid];
+    if (ref_density < 0.5f) return;
+
+    float depletion = (ref_density - curr_density) / ref_density;
+
+    float variance = ladd_density_m2[vid] / fmaxf((float)(ref_count - 1), 1.0f);
+    float sigma = sqrtf(variance);
+    float threshold = fmaxf(3.0f * sigma / fmaxf(ref_density, 0.001f), LADD_MIN_THRESHOLD);
+
+    if (depletion <= threshold) return;
+
+    // ═══ DEPLETION DETECTED — direct-indexed departure lookup (O(D_local)) ═══
+
+    int dep_start = departure_offsets[vid];
+    int dep_end = departure_offsets[vid + 1];
+    int n_departed = dep_end - dep_start;
+    if (n_departed < 1) return;
+
+    int departed_categories[8] = {0};
+    float3 disp_sum = make_float3(0, 0, 0);
+    float sum_disp_mag = 0.0f;
+    float max_disp_sq = 0.0f;
+    int max_disp_residue = -1;
+    int departed_residues[8];
+    int n_departed_residues = 0;
+
+    for (int d = dep_start; d < dep_end; d++) {
+        int atom = sorted_departure_atoms[d];
+
+        unsigned char cat = atom_categories[atom];
+        if (cat < 8) departed_categories[cat]++;
+
+        float3 disp = make_float3(
+            positions[atom].x - positions_prev[atom].x,
+            positions[atom].y - positions_prev[atom].y,
+            positions[atom].z - positions_prev[atom].z
+        );
+        disp_sum.x += disp.x;
+        disp_sum.y += disp.y;
+        disp_sum.z += disp.z;
+        float d2 = disp.x*disp.x + disp.y*disp.y + disp.z*disp.z;
+        sum_disp_mag += sqrtf(d2);
+        if (d2 > max_disp_sq) {
+            max_disp_sq = d2;
+            max_disp_residue = residue_ids[atom];
+        }
+
+        int rid = residue_ids[atom];
+        bool found = false;
+        for (int r = 0; r < n_departed_residues; r++) {
+            if (departed_residues[r] == rid) { found = true; break; }
+        }
+        if (!found && n_departed_residues < 8) {
+            departed_residues[n_departed_residues++] = rid;
+        }
+    }
+
+    // Displacement coherence: |Σdi| / Σ|di|
+    // 1.0 = all atoms moved same direction (real motion)
+    // 0.0 = random (thermal noise)
+    float vec_mag = sqrtf(disp_sum.x*disp_sum.x + disp_sum.y*disp_sum.y + disp_sum.z*disp_sum.z);
+    float coherence = (sum_disp_mag > 0.001f) ? (vec_mag / sum_disp_mag) : 0.0f;
+
+    // Count adjacent depleted voxels (3x3x3 neighborhood)
+    int vz = vid / (grid_dim * grid_dim);
+    int vy = (vid / grid_dim) % grid_dim;
+    int vx = vid % grid_dim;
+    int n_adjacent_depleted = 0;
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+                int nx = vx + dx, ny = vy + dy, nz = vz + dz;
+                if (nx < 0 || nx >= grid_dim || ny < 0 || ny >= grid_dim ||
+                    nz < 0 || nz >= grid_dim) continue;
+                int nid = nx + ny * grid_dim + nz * grid_dim * grid_dim;
+                float nref = ladd_density_ref[nid];
+                if (nref > 0.5f) {
+                    float ndep = (nref - ladd_voxel_density[nid]) / nref;
+                    if (ndep > LADD_MIN_THRESHOLD) n_adjacent_depleted++;
+                }
+            }
+        }
+    }
+
+    // ═══ EMIT LADD SPIKE ═══
+    float3 voxel_center = make_float3(
+        grid_origin_x + ((float)vx + 0.5f) * grid_spacing,
+        grid_origin_y + ((float)vy + 0.5f) * grid_spacing,
+        grid_origin_z + ((float)vz + 0.5f) * grid_spacing
+    );
+
+    int spike_idx = atomicAdd(spike_count, 1);
+    if (spike_idx < max_spikes) {
+        SpikeEvent event;
+        event.timestep = timestep;
+        event.voxel_idx = vid;
+        event.position = voxel_center;
+        event.intensity = depletion;         // fractional depletion 0.0-1.0+
+        event.spike_source = LADD_SOURCE;    // 4 = LADD
+        event.wavelength_nm = 0.0f;
+        event.aromatic_type = -1;
+        event.aromatic_residue_id = max_disp_residue;
+        event.water_density = curr_density;
+        event.vibrational_energy = coherence; // repurposed: displacement coherence
+        event.n_nearby_excited = n_adjacent_depleted;
+        event.wd_change = (float)n_departed;  // repurposed: atom departure count
+
+        // Fill nearby_residues with departed residues
+        event.n_residues = n_departed_residues;
+        for (int r = 0; r < 8; r++) {
+            event.nearby_residues[r] = (r < n_departed_residues) ? departed_residues[r] : -1;
+        }
+
+        spike_events[spike_idx] = event;
+    }
+
+    // Set refractory
+    ladd_spike_grid[vid] = LADD_REFRACTORY;
 }
