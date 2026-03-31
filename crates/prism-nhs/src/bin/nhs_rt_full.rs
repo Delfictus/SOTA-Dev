@@ -2741,7 +2741,8 @@ fn run_multi_stream_pipeline(
     // ── Aggregate: per-stream filtering + clustering → consensus ──
     log::info!("\n  Aggregating results across {} streams...", n_streams);
 
-    let mut cluster_engine = PersistentNhsEngine::new(&config)?;
+    let cluster_stream = context.new_stream().context("CUDA stream for consensus")?;
+    let mut cluster_engine = PersistentNhsEngine::new_on_stream(&config, context.clone(), module.clone(), cluster_stream)?;
     cluster_engine.load_topology(&topology)?;
 
     let mut per_stream_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
