@@ -1549,8 +1549,8 @@ const UV_COLD_DISSIPATION: f32 = 0.3;
 // FUSED ENGINE
 // ============================================================================
 
-/// Maximum grid dimension (160³ needed for very large proteins >5000 atoms)
-const MAX_GRID_DIM: usize = 160;
+/// Maximum grid dimension (must match CUDA MAX_GRID_DIM=128)
+const MAX_GRID_DIM: usize = 128;  // Must match CUDA MAX_GRID_DIM in nhs_amber_fused.cu
 
 /// Block size for 1D kernels
 const BLOCK_SIZE_1D: usize = 256;
@@ -1631,6 +1631,8 @@ pub struct NhsAmberFusedEngine {
     d_lj_params: CudaSlice<u8>,
     d_exclusion_list: CudaSlice<i32>,
     d_exclusion_offsets: CudaSlice<i32>,
+    d_pairs14_list: CudaSlice<i32>,
+    d_pairs14_offsets: CudaSlice<i32>,
 
     // Struct sizes for GPU memory layout
     bond_size: usize,
@@ -2116,17 +2118,58 @@ impl NhsAmberFusedEngine {
         }).collect();
         let d_lj_params: CudaSlice<u8> = stream.alloc_zeros(n_atoms * lj_size)?;
 
-        // Build exclusion list (CSR format)
+        // Derive 1-4 pairs from dihedrals (atoms i,l at opposite ends)
+        let mut pairs14_per_atom: Vec<std::collections::HashSet<usize>> = vec![std::collections::HashSet::new(); n_atoms];
+        // Also build 1-2 and 1-3 sets to exclude them from 1-4
+        let mut bonded_12: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+        for b in &topology.bonds {
+            bonded_12.insert((b.i.min(b.j), b.i.max(b.j)));
+        }
+        let mut bonded_13: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+        for a in &topology.angles {
+            bonded_13.insert((a.i.min(a.k_idx), a.i.max(a.k_idx)));
+        }
+        for d in &topology.dihedrals {
+            let pair = (d.i.min(d.l), d.i.max(d.l));
+            // Only true 1-4: not also 1-2 or 1-3
+            if !bonded_12.contains(&pair) && !bonded_13.contains(&pair) {
+                pairs14_per_atom[d.i].insert(d.l);
+                pairs14_per_atom[d.l].insert(d.i);
+            }
+        }
+
+        // Build 1-4 pair list (CSR format)
+        let mut pairs14_list: Vec<i32> = Vec::new();
+        let mut pairs14_offsets: Vec<i32> = vec![0];
+        for atom_pairs in &pairs14_per_atom {
+            for &partner in atom_pairs {
+                pairs14_list.push(partner as i32);
+            }
+            pairs14_offsets.push(pairs14_list.len() as i32);
+        }
+
+        // Build exclusion list (CSR format) — EXCLUDING 1-4 pairs (they get scaled, not skipped)
         let mut exclusion_list: Vec<i32> = Vec::new();
         let mut exclusion_offsets: Vec<i32> = vec![0];
-        for atom_exclusions in &topology.exclusions {
+        for (atom_i, atom_exclusions) in topology.exclusions.iter().enumerate() {
             for &excl_atom in atom_exclusions {
+                // Skip if this is a 1-4 pair (handled separately with scaling)
+                if pairs14_per_atom[atom_i].contains(&excl_atom) {
+                    continue;
+                }
                 exclusion_list.push(excl_atom as i32);
             }
             exclusion_offsets.push(exclusion_list.len() as i32);
         }
+        log::info!("  1-4 pairs: {} entries ({:.1} avg/atom), exclusions: {} entries ({:.1} avg/atom, was {:.1})",
+            pairs14_list.len(), pairs14_list.len() as f32 / n_atoms as f32,
+            exclusion_list.len(), exclusion_list.len() as f32 / n_atoms as f32,
+            topology.exclusions.iter().map(|e| e.len()).sum::<usize>() as f32 / n_atoms as f32);
+
         let d_exclusion_list: CudaSlice<i32> = stream.alloc_zeros(exclusion_list.len().max(1))?;
         let d_exclusion_offsets: CudaSlice<i32> = stream.alloc_zeros(exclusion_offsets.len().max(1))?;
+        let d_pairs14_list: CudaSlice<i32> = stream.alloc_zeros(pairs14_list.len().max(1))?;
+        let d_pairs14_offsets: CudaSlice<i32> = stream.alloc_zeros(pairs14_offsets.len().max(1))?;
 
         // ====================================================================
         // BUILD SHAKE H-CLUSTERS
@@ -2535,6 +2578,8 @@ impl NhsAmberFusedEngine {
             d_lj_params,
             d_exclusion_list,
             d_exclusion_offsets,
+            d_pairs14_list,
+            d_pairs14_offsets,
 
             // Struct sizes for GPU memory layout
             bond_size,
@@ -2718,6 +2763,7 @@ impl NhsAmberFusedEngine {
         // Upload all data to GPU
         engine.upload_topology_structs(topology, &bonds, &angles, &dihedrals, &lj_params,
                                         &exclusion_list, &exclusion_offsets,
+                                        &pairs14_list, &pairs14_offsets,
                                         &h_clusters, &uv_targets,
                                         &atom_to_aromatic, &aromatic_types)?;
 
@@ -3068,6 +3114,8 @@ impl NhsAmberFusedEngine {
         lj_params: &[GpuLJParam],
         exclusion_list: &[i32],
         exclusion_offsets: &[i32],
+        pairs14_list: &[i32],
+        pairs14_offsets: &[i32],
         h_clusters: &[GpuHCluster],
         uv_targets: &[GpuUVTarget],
         atom_to_aromatic: &[i32],
@@ -3136,6 +3184,13 @@ impl NhsAmberFusedEngine {
         }
         log::info!("  upload: exclusion_offsets src={} dst={}", exclusion_offsets.len(), self.d_exclusion_offsets.len());
         self.stream.memcpy_htod(exclusion_offsets, &mut self.d_exclusion_offsets)?;
+
+        // 1-4 pair list (CSR format)
+        if !pairs14_list.is_empty() {
+            log::info!("  upload: pairs14_list src={} dst={}", pairs14_list.len(), self.d_pairs14_list.len());
+            self.stream.memcpy_htod(pairs14_list, &mut self.d_pairs14_list)?;
+        }
+        self.stream.memcpy_htod(pairs14_offsets, &mut self.d_pairs14_offsets)?;
 
         // SHAKE H-clusters
         if !h_clusters.is_empty() {
@@ -4189,6 +4244,8 @@ impl NhsAmberFusedEngine {
                         .arg(&self.d_lj_params)
                         .arg(&self.d_exclusion_list)
                         .arg(&self.d_exclusion_offsets)
+                        .arg(&self.d_pairs14_list)
+                        .arg(&self.d_pairs14_offsets)
                         .arg(&self.d_h_clusters)
                         .arg(&n_clusters_i32)
                         .arg(&self.d_exclusion_field)
@@ -4657,6 +4714,8 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_lj_params)
                 .arg(&self.d_exclusion_list)
                 .arg(&self.d_exclusion_offsets)
+                .arg(&self.d_pairs14_list)
+                .arg(&self.d_pairs14_offsets)
                 // SHAKE clusters
                 .arg(&self.d_h_clusters)
                 .arg(&n_clusters_i32)
@@ -5274,6 +5333,8 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_lj_params)
                     .arg(&self.d_exclusion_list)
                     .arg(&self.d_exclusion_offsets)
+                    .arg(&self.d_pairs14_list)
+                    .arg(&self.d_pairs14_offsets)
                     .arg(&self.d_h_clusters).arg(&n_clusters_i32)
                     .arg(&mut self.d_exclusion_field)
                     .arg(&mut self.d_water_density)

@@ -609,15 +609,13 @@ fn run_full_pipeline_internal(
     // Small proteins (<500 atoms): 64³
     // Medium (500-2000): 96³
     // Large (2000-5000): 128³
-    // Very large (>5000): 160³
+    // Very large (>5000): 128³ (capped to match CUDA MAX_GRID_DIM)
     let adaptive_grid_dim = if topology.n_atoms < 500 {
         64
     } else if topology.n_atoms < 2000 {
         96
-    } else if topology.n_atoms < 5000 {
-        128
     } else {
-        160
+        128
     };
     log::info!("  Adaptive grid: {}³ for {} atoms", adaptive_grid_dim, topology.n_atoms);
     let config = PersistentBatchConfig {
@@ -1780,10 +1778,8 @@ fn run_batch_gpu_concurrent(
         64
     } else if max_atoms < 2000 {
         96
-    } else if max_atoms < 5000 {
-        128
     } else {
-        160
+        128
     };
     log::info!("  Adaptive grid: {}³ for batch (max {} atoms)", batch_grid_dim, max_atoms);
     let config = PersistentBatchConfig {
@@ -2467,10 +2463,8 @@ fn run_multi_stream_pipeline(
         64
     } else if topology.n_atoms < 2000 {
         96
-    } else if topology.n_atoms < 5000 {
-        128
     } else {
-        160
+        128
     };
     log::info!("  Adaptive grid: {}³ for {} atoms", ms_grid_dim, topology.n_atoms);
     let config = PersistentBatchConfig {
@@ -5442,6 +5436,15 @@ fn run_multi_stream_pipeline(
 
         let json_path = output_base.with_extension("binding_sites.json");
 
+        // Helper: map internal residue index → PDB resid
+        let map_resid = |idx: i32| -> i32 {
+            if idx >= 0 && (idx as usize) < pdb_id_map.len() {
+                pdb_id_map[idx as usize] + 1
+            } else {
+                idx + 1
+            }
+        };
+
         // ── Per-site signal preservation aggregation (exact voxel_idx) ──
         // For each site, aggregate recurrence, UV→LIF causality, and residue identity
         // from the spike events using voxel_idx as the exact grid key.
@@ -5506,7 +5509,7 @@ fn run_multi_stream_pipeline(
                     "total_coupling": total_coupling,
                     "coupled_voxels": coupled_voxels,
                     "causality_density": causality_density,
-                    "primary_residue_id": primary_residue,
+                    "primary_residue_id": map_resid(primary_residue),
                     "primary_residue_count": primary_count,
                     "residue_concentration": residue_concentration,
                 })
@@ -5656,7 +5659,7 @@ fn run_multi_stream_pipeline(
 
             serde_json::json!({
                 // Site-level weighted KCC (for G×T×C×K formula)
-                "driver_residue_id": best_res,
+                "driver_residue_id": map_resid(best_res),
                 "site_direction_score": site_direction,
                 "site_motion_efficiency": site_motion_eff,
                 "site_burst_motion": site_burst,
@@ -5677,7 +5680,7 @@ fn run_multi_stream_pipeline(
                 // Causal weights used for site-level aggregation
                 "candidate_causal_weights": causal_weights,
                 // All candidates
-                "candidate_residue_ids": candidate_ids,
+                "candidate_residue_ids": candidate_ids.iter().map(|&r| map_resid(r)).collect::<Vec<i32>>(),
                 "candidate_residue_support": candidate_support,
                 "candidate_kcc_confidence": candidate_confidence,
                 "candidate_kcc_direction_score": candidate_direction,
@@ -6327,9 +6330,9 @@ fn run_multi_stream_pipeline(
                 } else { 0.0 };
                 let kcc_score = 0.3 * lc + 0.25 * causality_frac + 0.2 * bm.min(3.0) / 3.0
                     + 0.15 * me.min(0.01) / 0.01 + 0.1 * ds;
-                // Use 1-based residue_id to match lining_residues convention
+                // Map internal index → PDB resid via pdb_id_map
                 res_json.push(serde_json::json!({
-                    "residue_id": r + 1,
+                    "residue_id": map_resid(r as i32),
                     "residue_name": topology.residue_names.get(r).cloned().unwrap_or_default(),
                     "kcc_score": kcc_score,
                     "ca_position": ca_pos[r],

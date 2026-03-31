@@ -275,8 +275,8 @@ __device__ void compute_bond_force(
     float force_mag = -2.0f * k * dr / r;
 
     float3 f = make_float3(force_mag * rij.x, force_mag * rij.y, force_mag * rij.z);
-    fi.x += f.x; fi.y += f.y; fi.z += f.z;
-    fj.x -= f.x; fj.y -= f.y; fj.z -= f.z;
+    fi.x -= f.x; fi.y -= f.y; fi.z -= f.z;
+    fj.x += f.x; fj.y += f.y; fj.z += f.z;
 }
 
 // Angle force: E = k(theta - theta0)^2
@@ -321,11 +321,11 @@ __device__ void compute_angle_force(
         (rij.z * inv_rij - cos_theta * rkj.z * inv_rkj) * inv_rkj
     );
 
-    fi.x += force_mag * di.x; fi.y += force_mag * di.y; fi.z += force_mag * di.z;
-    fk.x += force_mag * dk.x; fk.y += force_mag * dk.y; fk.z += force_mag * dk.z;
-    fj.x -= force_mag * (di.x + dk.x);
-    fj.y -= force_mag * (di.y + dk.y);
-    fj.z -= force_mag * (di.z + dk.z);
+    fi.x -= force_mag * di.x; fi.y -= force_mag * di.y; fi.z -= force_mag * di.z;
+    fk.x -= force_mag * dk.x; fk.y -= force_mag * dk.y; fk.z -= force_mag * dk.z;
+    fj.x += force_mag * (di.x + dk.x);
+    fj.y += force_mag * (di.y + dk.y);
+    fj.z += force_mag * (di.z + dk.z);
 }
 
 // Dihedral force: E = k[1 + cos(n*phi - gamma)]
@@ -382,10 +382,10 @@ __device__ void compute_dihedral_force(
         -force_mag * c2.z / (c2_len * c2_len) * b2_len
     );
 
-    fi.x += f1.x; fi.y += f1.y; fi.z += f1.z;
-    fl.x += f4.x; fl.y += f4.y; fl.z += f4.z;
-    fj.x -= f1.x * 0.5f; fj.y -= f1.y * 0.5f; fj.z -= f1.z * 0.5f;
-    fk.x -= f4.x * 0.5f; fk.y -= f4.y * 0.5f; fk.z -= f4.z * 0.5f;
+    fi.x -= f1.x; fi.y -= f1.y; fi.z -= f1.z;
+    fl.x -= f4.x; fl.y -= f4.y; fl.z -= f4.z;
+    fj.x += f1.x * 0.5f; fj.y += f1.y * 0.5f; fj.z += f1.z * 0.5f;
+    fk.x += f4.x * 0.5f; fk.y += f4.y * 0.5f; fk.z += f4.z * 0.5f;
 }
 
 // LJ + Electrostatic nonbonded force (OPTIMIZED with fast math)
@@ -840,8 +840,10 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     const AngleParam* __restrict__ angles, int n_angles,
     const DihedralParam* __restrict__ dihedrals, int n_dihedrals,
     const LJParam* __restrict__ lj_params,
-    const int* __restrict__ exclusion_list,  // CSR format
+    const int* __restrict__ exclusion_list,  // CSR format: 1-2/1-3 fully excluded
     const int* __restrict__ exclusion_offsets,
+    const int* __restrict__ pairs14_list,     // CSR format: 1-4 scaled pairs
+    const int* __restrict__ pairs14_offsets,
 
     // SHAKE clusters
     const HCluster* h_clusters, int n_clusters,
@@ -1125,25 +1127,48 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                     }
 
                     if (!excluded) {
-                        float3 fi = make_float3(0, 0, 0);
-                        float3 fj = make_float3(0, 0, 0);
+                        // Check 1-4 pair list (short scan, avg ~4 entries)
+                        bool is_14 = false;
+                        int s14 = pairs14_offsets[tid];
+                        int e14 = pairs14_offsets[tid + 1];
+                        for (int p = s14; p < e14; p++) {
+                            if (pairs14_list[p] == j) { is_14 = true; break; }
+                        }
 
-                        compute_nonbonded_force(
-                            my_pos, other_pos,
-                            my_charge, charges[j],
-                            my_lj.sigma, my_lj.epsilon,
-                            lj_params[j].sigma, lj_params[j].epsilon,
-                            fi, fj, cutoff_sq
+                        float3 rij = make_float3(
+                            other_pos.x - my_pos.x,
+                            other_pos.y - my_pos.y,
+                            other_pos.z - my_pos.z
                         );
+                        float inv_r = rsqrtf(r2);
+                        float inv_r2 = inv_r * inv_r;
 
-                        my_force.x += fi.x;
-                        my_force.y += fi.y;
-                        my_force.z += fi.z;
+                        // LJ force (Lorentz-Berthelot combining)
+                        float sigma = 0.5f * (my_lj.sigma + lj_params[j].sigma);
+                        float epsilon = sqrtf(my_lj.epsilon * lj_params[j].epsilon);
+                        float sigma_r = sigma * inv_r;
+                        float sr2 = sigma_r * sigma_r;
+                        float sr6 = sr2 * sr2 * sr2;
+                        float sr12 = sr6 * sr6;
+                        float lj_f = 24.0f * epsilon * inv_r2 * (2.0f * sr12 - sr6);
+
+                        // Coulomb force
+                        float elec_f = COULOMB_CONSTANT * my_charge * charges[j] * inv_r2 * inv_r;
+
+                        // Apply 1-4 AMBER scaling (branchless select)
+                        float scale_lj = is_14 ? FUDGE_LJ : 1.0f;
+                        float scale_qq = is_14 ? FUDGE_QQ : 1.0f;
+                        float total = scale_lj * lj_f + scale_qq * elec_f;
+
+                        float3 f = make_float3(total * rij.x, total * rij.y, total * rij.z);
+                        my_force.x -= f.x;
+                        my_force.y -= f.y;
+                        my_force.z -= f.z;
 
                         // Newton's 3rd law
-                        atomicAdd(&forces[j].x, fj.x);
-                        atomicAdd(&forces[j].y, fj.y);
-                        atomicAdd(&forces[j].z, fj.z);
+                        atomicAdd(&forces[j].x, f.x);
+                        atomicAdd(&forces[j].y, f.y);
+                        atomicAdd(&forces[j].z, f.z);
                     }
                 }
             }
