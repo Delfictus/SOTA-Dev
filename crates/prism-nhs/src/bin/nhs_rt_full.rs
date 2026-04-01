@@ -6334,7 +6334,7 @@ fn run_multi_stream_pipeline(
                 // Map internal index → PDB resid via pdb_id_map
                 res_json.push(serde_json::json!({
                     "residue_id": map_resid(r as i32),
-                    "residue_name": topology.residue_names.get(r).cloned().unwrap_or_default(),
+                    "residue_name": topology.residues.get(r).map(|res| res.residue_name.clone()).unwrap_or_default(),
                     "kcc_score": kcc_score,
                     "ca_position": ca_pos[r],
                     "net_dx": kcc.net_dx[r], "net_dy": kcc.net_dy[r], "net_dz": kcc.net_dz[r],
@@ -6626,7 +6626,7 @@ fn run_multi_stream_pipeline(
                         let r = rid as usize;
                         if r >= ca_pos.len() { continue; }
                         let ca = ca_pos[r];
-                        let rname = topology.residue_names.get(r).map(|s| s.as_str()).unwrap_or("UNK");
+                        let rname = topology.residues.get(r).map(|res| res.residue_name.as_str()).unwrap_or("UNK");
                         // 2.0Å tolerance for robust CA matching
                         writeln!(f, "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
                         writeln!(f, "select global_kcc_drivers, global_kcc_drivers or (byres _tmp)").ok();
