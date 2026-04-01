@@ -6857,15 +6857,19 @@ fn run_multi_stream_pipeline(
             else if ts < p4 { "cooling" }
             else { "cold_return" }
         };
+        // Compute stream_id for each spike from stream_spike_offsets (binary search)
+        let spike_stream_id = |flat_idx: usize| -> usize {
+            stream_spike_offsets.partition_point(|&off| off <= flat_idx).saturating_sub(1)
+        };
         let lining_cutoff = args.lining_cutoff;
         for site in &clustered_sites {
             let site_radius = lining_cutoff + 2.0;
             let cx = site.centroid[0];
             let cy = site.centroid[1];
             let cz = site.centroid[2];
-            // Collect raw spikes for this site
-            let raw_site_spikes: Vec<_> = all_stream_spikes.iter()
-                .filter(|s| {
+            // Collect raw spikes for this site (with flat index for stream_id lookup)
+            let raw_site_spikes: Vec<_> = all_stream_spikes.iter().enumerate()
+                .filter(|(_, s)| {
                     let dx = s.position[0] - cx;
                     let dy = s.position[1] - cy;
                     let dz = s.position[2] - cz;
@@ -6875,13 +6879,13 @@ fn run_multi_stream_pipeline(
             // Compute open_frequency: fraction of simulation frames with spike activity
             // Use frame_index (timestep / 1000) from actual spike data
             let unique_frames: std::collections::HashSet<i32> = raw_site_spikes.iter()
-                .map(|s| s.timestep / 1000)
+                .map(|(_, s)| s.timestep / 1000)
                 .collect();
-            let max_frame = raw_site_spikes.iter().map(|s| s.timestep / 1000).max().unwrap_or(0);
+            let max_frame = raw_site_spikes.iter().map(|(_, s)| s.timestep / 1000).max().unwrap_or(0);
             let total_frames = (max_frame + 1).max(1) as f32;
             let open_frequency = unique_frames.len() as f32 / total_frames;
             let site_spikes: Vec<serde_json::Value> = raw_site_spikes.iter()
-                .map(|s| {
+                .map(|(idx, s)| {
                     let pos = s.position;
                     let intensity = s.intensity;
                     let atype = s.aromatic_type;
@@ -6907,6 +6911,7 @@ fn run_multi_stream_pipeline(
                         "timestep": ts,
                         "frame_index": ts / 1000,
                         "ccns_phase": phase_label(ts),
+                        "stream_id": spike_stream_id(*idx),
                     })
                 })
                 .collect();
