@@ -187,6 +187,10 @@ struct Args {
     #[arg(long, default_value = "true")]
     emit_spike_json: bool,
 
+    /// Enable LADD (Local Atom Departure Detection) — 4th neuromorphic channel.
+    #[arg(long, default_value = "false")]
+    ladd: bool,
+
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
     /// temporal persistence, persistent homology, and Boltzmann gap gates.
@@ -655,6 +659,11 @@ fn run_full_pipeline_internal(
         engine.set_spike_accumulation(true);
     }
 
+    // Enable LADD channel if requested
+    if args.ladd {
+        engine.set_ladd_enabled(true);
+    }
+
     // Check RT clustering availability
     let has_rt = engine.has_rt_clustering();
     log::info!("  RT-core clustering: {}", if has_rt { "✓ Available" } else { "✗ Fallback mode" });
@@ -868,10 +877,12 @@ fn run_full_pipeline_internal(
         let mut uv_spikes: Vec<_> = Vec::new();
         let mut lif_spikes: Vec<_> = Vec::new();
         let mut efp_spikes: Vec<_> = Vec::new();
+        let mut ladd_spikes: Vec<_> = Vec::new();
         for s in all_spikes {
             match s.spike_source {
                 1 => uv_spikes.push(s),
                 3 => efp_spikes.push(s),
+                4 | 5 => ladd_spikes.push(s), // LADD + COFIRE: preserve all (rare channel)
                 _ => lif_spikes.push(s),
             }
         }
@@ -891,24 +902,73 @@ fn run_full_pipeline_internal(
         let n_uv_pre = uv_spikes.len();
         let n_lif_pre = lif_spikes.len();
         let n_efp_pre = efp_spikes.len();
+        let n_ladd_pre = ladd_spikes.len();
 
         let uv_filtered = filter_channel(uv_spikes);
         let lif_filtered = filter_channel(lif_spikes);
         let efp_filtered = filter_channel(efp_spikes);
+        // LADD/COFIRE: keep all (rare, high-value channel — no percentile filtering)
 
         log::info!("  Intensity filter (per-channel, top {}%):", 100 - args.spike_percentile);
         log::info!("    UV:  {} → {}", n_uv_pre, uv_filtered.len());
         log::info!("    LIF: {} → {}", n_lif_pre, lif_filtered.len());
         log::info!("    EFP: {} → {} (preserved)", n_efp_pre, efp_filtered.len());
+        log::info!("    LADD/COFIRE: {} (all preserved)", n_ladd_pre);
 
         let mut filtered = uv_filtered;
         filtered.extend(lif_filtered);
         filtered.extend(efp_filtered);
+        filtered.extend(ladd_spikes);
         log::info!("    Total: {} spikes retained", filtered.len());
         filtered
     } else {
         all_spikes
     };
+
+    // Write LADD/COFIRE spike summary (before clustering, so it survives any crash)
+    {
+        let ladd_count = accumulated_spikes.iter().filter(|s| s.spike_source == 4).count();
+        let cofire_count = accumulated_spikes.iter().filter(|s| s.spike_source == 5).count();
+        if ladd_count + cofire_count > 0 {
+            std::fs::create_dir_all(&output_dir).ok();
+            let ladd_json: Vec<serde_json::Value> = accumulated_spikes.iter()
+                .filter(|s| s.spike_source == 4 || s.spike_source == 5)
+                .map(|s| {
+                    let pos = s.position;
+                    let int = s.intensity;
+                    let ts = s.timestep;
+                    let src = s.spike_source;
+                    let wd = s.water_density;
+                    let ve = s.vibrational_energy;
+                    let wdc = s.wd_change;
+                    let n_res = s.n_residues as usize;
+                    let residues: Vec<i32> = (0..n_res.min(8)).map(|r| s.nearby_residues[r]).collect();
+                    serde_json::json!({
+                        "x": pos[0], "y": pos[1], "z": pos[2],
+                        "intensity": int, "timestep": ts,
+                        "spike_source": src,
+                        "water_density": wd,
+                        "vibrational_energy": ve,
+                        "wd_change": wdc,
+                        "nearby_residues": residues,
+                    })
+                })
+                .collect();
+            let summary = serde_json::json!({
+                "ladd_count": ladd_count,
+                "cofire_count": cofire_count,
+                "total_spikes": accumulated_spikes.len(),
+                "ladd_fraction": ladd_count as f64 / accumulated_spikes.len() as f64,
+                "cofire_fraction": cofire_count as f64 / accumulated_spikes.len() as f64,
+                "spikes": ladd_json,
+            });
+            let ladd_path = output_dir.join(&structure_name).with_extension("ladd_spikes.json");
+            if let Ok(f) = std::fs::File::create(&ladd_path) {
+                let _ = serde_json::to_writer(f, &summary);
+                log::info!("  LADD/COFIRE spikes: {} (LADD={}, COFIRE={})", ladd_path.display(), ladd_count, cofire_count);
+            }
+        }
+    }
 
     // RT-accelerated spike clustering
     let cluster_mode = if args.multi_scale { "multi-scale" } else { "single-scale" };
@@ -2649,6 +2709,7 @@ fn run_multi_stream_pipeline(
                 let adaptive_dt = args.adaptive_dt;
                 let adaptive_bias = args.adaptive_bias;
                 let adaptive_protocol = args.adaptive_protocol;
+                let ladd_enabled = args.ladd;
                 let cold_hold_steps = prot.cold_hold_steps;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
@@ -2672,6 +2733,9 @@ fn run_multi_stream_pipeline(
                     }
                     if adaptive_bias {
                         engine.set_adaptive_bias(true)?;
+                    }
+                    if ladd_enabled {
+                        engine.set_ladd_enabled(true);
                     }
                     engine.set_cryo_uv_protocol(prot)?;
                     engine.set_spike_accumulation(true);
@@ -2822,10 +2886,12 @@ fn run_multi_stream_pipeline(
             let mut uv_s: Vec<_> = Vec::new();
             let mut lif_s: Vec<_> = Vec::new();
             let mut efp_s: Vec<_> = Vec::new();
+            let mut ladd_s: Vec<_> = Vec::new();
             for s in raw_spikes {
                 match s.spike_source {
                     1 => uv_s.push(s),
                     3 => efp_s.push(s),
+                    4 | 5 => ladd_s.push(s),
                     _ => lif_s.push(s),
                 }
             }
@@ -2840,6 +2906,7 @@ fn run_multi_stream_pipeline(
             let mut result = filter_ch(uv_s);
             result.extend(filter_ch(lif_s));
             result.extend(filter_ch(efp_s));
+            result.extend(ladd_s); // LADD/COFIRE: preserve all
             result
         } else {
             raw_spikes
@@ -2891,6 +2958,51 @@ fn run_multi_stream_pipeline(
         }));
         per_stream_sites.push(sites);
         all_stream_snapshots.push(stream_snapshots);
+    }
+
+    // Write LADD/COFIRE spike summary (multi-stream, before consensus — survives any crash)
+    {
+        let ladd_count = all_stream_spikes.iter().filter(|s| s.spike_source == 4).count();
+        let cofire_count = all_stream_spikes.iter().filter(|s| s.spike_source == 5).count();
+        if ladd_count + cofire_count > 0 {
+            std::fs::create_dir_all(&args.output).ok();
+            let ladd_json: Vec<serde_json::Value> = all_stream_spikes.iter()
+                .filter(|s| s.spike_source == 4 || s.spike_source == 5)
+                .map(|s| {
+                    let pos = s.position;
+                    let int = s.intensity;
+                    let ts = s.timestep;
+                    let src = s.spike_source;
+                    let wd = s.water_density;
+                    let ve = s.vibrational_energy;
+                    let wdc = s.wd_change;
+                    let n_res = s.n_residues as usize;
+                    let residues: Vec<i32> = (0..n_res.min(8)).map(|r| s.nearby_residues[r]).collect();
+                    serde_json::json!({
+                        "x": pos[0], "y": pos[1], "z": pos[2],
+                        "intensity": int, "timestep": ts,
+                        "spike_source": src,
+                        "water_density": wd,
+                        "vibrational_energy": ve,
+                        "wd_change": wdc,
+                        "nearby_residues": residues,
+                    })
+                })
+                .collect();
+            let summary = serde_json::json!({
+                "ladd_count": ladd_count,
+                "cofire_count": cofire_count,
+                "total_spikes": all_stream_spikes.len(),
+                "ladd_fraction": ladd_count as f64 / all_stream_spikes.len().max(1) as f64,
+                "cofire_fraction": cofire_count as f64 / all_stream_spikes.len().max(1) as f64,
+                "spikes": ladd_json,
+            });
+            let ladd_path = args.output.join(&structure_name).with_extension("ladd_spikes.json");
+            if let Ok(f) = std::fs::File::create(&ladd_path) {
+                let _ = serde_json::to_writer(f, &summary);
+                log::info!("  LADD/COFIRE spikes: {} (LADD={}, COFIRE={})", ladd_path.display(), ladd_count, cofire_count);
+            }
+        }
     }
 
     let consensus_threshold = if n_streams >= 3 {

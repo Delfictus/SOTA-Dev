@@ -3034,7 +3034,13 @@ impl NhsAmberFusedEngine {
     /// Enable LADD (Local Atom Departure Detection) neuromorphic channel
     pub fn set_ladd_enabled(&mut self, enabled: bool) {
         self.ladd_enabled = enabled;
-        if enabled { log::info!("LADD channel: ENABLED (neuromorphic K=10)"); }
+        if enabled {
+            // Note: self.timestep counts AMBER steps (incremented fused_inner_steps times
+            // per step() call), so ladd_cold_hold_steps stays in AMBER step units — no
+            // division needed.
+            log::info!("LADD channel: ENABLED (K=2 separate, cold_hold={} AMBER steps, fused={})",
+                self.ladd_cold_hold_steps, self.fused_inner_steps);
+        }
     }
 
     /// Set LADD cold_hold reference accumulation window
@@ -6579,10 +6585,12 @@ impl NhsAmberFusedEngine {
                 let src1 = recent_spikes.iter().filter(|s| s.spike_source == 1).count();
                 let src2 = recent_spikes.iter().filter(|s| s.spike_source == 2).count();
                 let src3 = recent_spikes.iter().filter(|s| s.spike_source == 3).count();
-                log::info!("Step {}: T={:.1}K, spikes={} (UV={} RAF={} EFP={})",
+                let src4 = recent_spikes.iter().filter(|s| s.spike_source == 4).count();
+                let src5 = recent_spikes.iter().filter(|s| s.spike_source == 5).count();
+                log::info!("Step {}: T={:.1}K, spikes={} (UV={} RAF={} EFP={} LADD={} COFIRE={})",
                     self.timestep,
                     self.temp_protocol.current_temperature(),
-                    result.spike_count, src1, src2, src3);
+                    result.spike_count, src1, src2, src3, src4, src5);
             }
         }
 

@@ -1091,6 +1091,13 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Enable LADD observation kernel
+    pub fn set_ladd_enabled(&mut self, enabled: bool) {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_ladd_enabled(enabled);
+        }
+    }
+
     /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
     pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

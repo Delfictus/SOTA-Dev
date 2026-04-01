@@ -4197,7 +4197,7 @@ extern "C" __global__ void burial_weighted_centroid(
 // ============================================================================
 
 #define K_LADD 2
-#define LADD_THRESHOLD 0.25f
+#define LADD_THRESHOLD 0.01f   // Low threshold: oscillator accumulation provides selectivity
 #define LADD_REFRACTORY_STEPS 250
 #define LADD_SOURCE 4
 #define COFIRE_SOURCE 5
@@ -4264,10 +4264,11 @@ extern "C" __global__ __launch_bounds__(64, 16) void ladd_observation_step(
     }
 
     float ref = ladd_density_ref[vid];
-    if (ref < 0.5f) return;
     float depletion = 0.0f;
-    if (timestep >= cold_hold_steps) {
-        depletion = fmaxf((ref - pd) / ref, 0.0f);
+    if (timestep >= cold_hold_steps && ref > 0.001f) {
+        float raw_depletion = (ref - pd) / fmaxf(ref, 0.001f);
+        // Amplify: raw depletion is typically 1-10%, scale to meaningful oscillator input
+        depletion = fmaxf(raw_depletion, 0.0f) * 10.0f;
     }
 
     float ladd_taus[2] = {2.0f, 32.0f};
@@ -4354,7 +4355,7 @@ extern "C" __global__ void init_ladd_neurons(
 ) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= total_elements) return;
-    x[i] = 0.01f;
+    x[i] = 0.001f;  // Below threshold to prevent immediate firing
     y[i] = 0.0f;
     threshold[i] = LADD_THRESHOLD;
     refractory[i] = 0;
