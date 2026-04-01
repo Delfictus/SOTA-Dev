@@ -2972,7 +2972,13 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
     unsigned int* primary_residue_count,   // [grid_dim³] count for dominant driver
     // === KCC: per-residue per-step causal counter ===
-    int* residue_step_causal               // [n_residues] zeroed each step by kcc_residue_update
+    int* residue_step_causal,              // [n_residues] zeroed each step by kcc_residue_update
+    // === LADD: protein density reference (appended, backward-safe) ===
+    float* ladd_density_ref,               // [total_voxels] cold-phase mean protein density
+    float* ladd_density_m2,                // [total_voxels] Welford M2 for variance
+    int* ladd_ref_count,                   // [total_voxels] reference sample count
+    int ladd_enabled,                      // 0 or 1
+    int ladd_cold_hold_steps               // steps for reference accumulation
 ) {
     // === Shared memory layout (SOTA v2) ===
     // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
@@ -3115,6 +3121,7 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     // ────────────────────────────────────────────────────────────────
     float total_exclusion = 0.0f;
     float polar_field = 0.0f;
+    float my_protein_density = 0.0f;  // LADD: heavy-atom density (wider scope for reference block)
 
     if (is_valid && has_atoms) {
         // All 8 neurons cooperatively process atoms: each neuron handles
@@ -3131,6 +3138,18 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                 positions[a], voxel_center,
                 atom_types[a], charges[a]
             );
+
+            // LADD: accumulate protein heavy-atom density (Gaussian, sigma from LJ)
+            {
+                float3 apos = positions[a];
+                float dx = apos.x - voxel_center.x;
+                float dy = apos.y - voxel_center.y;
+                float dz = apos.z - voxel_center.z;
+                float r2 = dx*dx + dy*dy + dz*dz;
+                if (r2 < 25.0f) {  // 5Å cutoff
+                    my_protein_density += expf(-r2 * 0.5f);  // unit Gaussian, σ≈1Å
+                }
+            }
 
             // Aromatic exclusion modifier: read from shared memory cache
             if (n_arom > 0) {
@@ -3170,10 +3189,11 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
             }
         }
 
-        // Warp shuffle reduction across 8 neurons within voxel
+        // Warp shuffle reduction across K neurons within voxel
         for (int off = K_NEURONS / 2; off > 0; off >>= 1) {
             my_exclusion += __shfl_xor_sync(voxel_mask, my_exclusion, off);
             my_polar     += __shfl_xor_sync(voxel_mask, my_polar, off);
+            my_protein_density += __shfl_xor_sync(voxel_mask, my_protein_density, off);
         }
         total_exclusion = fminf(1.0f, my_exclusion);
         polar_field = my_polar;
@@ -3185,7 +3205,34 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         }
     }
 
-    // All neurons already have total_exclusion from the shuffle reduction
+    // All neurons already have total_exclusion and my_protein_density from shuffle
+
+    // ====================================================================
+    // LADD: Reference accumulation (cold_hold) + depletion computation
+    // ====================================================================
+    float ladd_input = 0.0f;  // protein density depletion signal for LADD neurons
+    if (is_valid && has_atoms && ladd_enabled && k == 0) {
+        float pd = my_protein_density;  // after warp reduce, all neurons have the sum
+        if (timestep < ladd_cold_hold_steps) {
+            // Cold-hold: accumulate Welford reference
+            int count = ladd_ref_count[v] + 1;
+            float delta = pd - ladd_density_ref[v];
+            float new_mean = ladd_density_ref[v] + delta / (float)count;
+            float delta2 = pd - new_mean;
+            ladd_density_m2[v] += delta * delta2;
+            ladd_density_ref[v] = new_mean;
+            ladd_ref_count[v] = count;
+        } else {
+            // Post cold-hold: compute depletion signal
+            float ref = ladd_density_ref[v];
+            if (ref > 0.5f) {
+                float depletion = (ref - pd) / ref;
+                ladd_input = fmaxf(depletion, 0.0f);  // only positive (void forming)
+            }
+        }
+    }
+    // Broadcast ladd_input from neuron 0 to all neurons in the voxel
+    ladd_input = __shfl_sync(warp_mask, ladd_input, src_lane);
 
     // ====================================================================
     // UV SIGNAL COMPUTATION (neuron 0 only, broadcast to all)

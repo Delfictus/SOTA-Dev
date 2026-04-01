@@ -1634,6 +1634,13 @@ pub struct NhsAmberFusedEngine {
     d_pairs14_list: CudaSlice<i32>,
     d_pairs14_offsets: CudaSlice<i32>,
 
+    // LADD neuromorphic: protein density reference
+    d_ladd_density_ref: CudaSlice<f32>,
+    d_ladd_density_m2: CudaSlice<f32>,
+    d_ladd_ref_count: CudaSlice<i32>,
+    ladd_enabled: bool,
+    ladd_cold_hold_steps: i32,
+
     // Struct sizes for GPU memory layout
     bond_size: usize,
     angle_size: usize,
@@ -2408,6 +2415,10 @@ impl NhsAmberFusedEngine {
         let d_lif_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         let d_spike_grid_efp: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        // LADD: protein density reference arrays
+        let d_ladd_density_ref: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_ladd_density_m2: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
+        let d_ladd_ref_count: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         // Signal preservation buffers
         let d_voxel_hit_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         let d_coupled_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
@@ -2604,6 +2615,11 @@ impl NhsAmberFusedEngine {
             d_lif_potential,
             d_spike_grid,
             d_spike_grid_efp,
+            d_ladd_density_ref,
+            d_ladd_density_m2,
+            d_ladd_ref_count,
+            ladd_enabled: false,
+            ladd_cold_hold_steps: 14000,
             d_voxel_hit_grid,
             d_last_uv_step,
             d_coupled_spike_grid,
@@ -2986,6 +3002,17 @@ impl NhsAmberFusedEngine {
             self.adaptive_bias_boost,
             self.adaptive_bias_decay,
             self.adaptive_bias_percentile);
+    }
+
+    /// Enable LADD (Local Atom Departure Detection) neuromorphic channel
+    pub fn set_ladd_enabled(&mut self, enabled: bool) {
+        self.ladd_enabled = enabled;
+        if enabled { log::info!("LADD channel: ENABLED (neuromorphic K=10)"); }
+    }
+
+    /// Set LADD cold_hold reference accumulation window
+    pub fn set_ladd_cold_hold(&mut self, steps: i32) {
+        self.ladd_cold_hold_steps = steps;
     }
 
     /// Set fused multi-step count: run N AMBER steps per 1 multi-LIF observation.
@@ -4943,6 +4970,12 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_primary_residue_id)
                     .arg(&mut self.d_primary_residue_count)
                     .arg(&mut self.d_residue_step_causal)
+                    // LADD params (appended)
+                    .arg(&mut self.d_ladd_density_ref)
+                    .arg(&mut self.d_ladd_density_m2)
+                    .arg(&mut self.d_ladd_ref_count)
+                    .arg(&(self.ladd_enabled as i32))
+                    .arg(&self.ladd_cold_hold_steps)
                     .launch(voxel_cfg)
             }
         } else {
@@ -5003,6 +5036,12 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_primary_residue_id)
                     .arg(&mut self.d_primary_residue_count)
                     .arg(&mut self.d_residue_step_causal)
+                    // LADD params (appended)
+                    .arg(&mut self.d_ladd_density_ref)
+                    .arg(&mut self.d_ladd_density_m2)
+                    .arg(&mut self.d_ladd_ref_count)
+                    .arg(&(self.ladd_enabled as i32))
+                    .arg(&self.ladd_cold_hold_steps)
                     .launch(voxel_cfg)
             }
         }
