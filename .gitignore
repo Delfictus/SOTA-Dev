@@ -114,3 +114,15 @@ training_features.csv
 
 # Shell history artifacts
 h\ history*
+# Large data — never commit
+benchmarks/prism4d_bench30/results/
+benchmarks/prism4d_bench30/topologies/
+e2e_validation_test/
+*.parquet
+*.spike_events.json
+*.ensemble_trajectory.pdb
+*.npy
+*.pt
+*.joblib
+*.pkl
+__pycache__/
