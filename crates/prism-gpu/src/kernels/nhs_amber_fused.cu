@@ -4188,3 +4188,174 @@ extern "C" __global__ void burial_weighted_centroid(
         centroid_out[3] = s_w[0];
     }
 }
+
+
+// ============================================================================
+// LADD OBSERVATION KERNEL (separate from main K=8 multi-LIF kernel)
+// K=2 damped harmonic oscillator neurons fed by protein density depletion.
+// Runs AFTER the main voxel step when ladd_enabled=1.
+// ============================================================================
+
+#define K_LADD 2
+#define LADD_THRESHOLD 0.25f
+#define LADD_REFRACTORY_STEPS 250
+#define LADD_SOURCE 4
+#define COFIRE_SOURCE 5
+
+extern "C" __global__ __launch_bounds__(64, 16) void ladd_observation_step(
+    int grid_dim,
+    float grid_spacing,
+    float grid_origin_x, float grid_origin_y, float grid_origin_z,
+    const float* __restrict__ ladd_density_ref,
+    const float* __restrict__ ladd_density_m2,
+    const int* __restrict__ ladd_ref_count,
+    const float3* __restrict__ positions,
+    int n_atoms,
+    const WarpEntry* __restrict__ warp_matrix,
+    float* ladd_neuron_x,
+    float* ladd_neuron_y,
+    float* ladd_neuron_threshold,
+    int* ladd_neuron_refractory,
+    int* spike_grid_ladd,
+    const int* __restrict__ main_spike_grid,
+    SpikeEvent* spike_events,
+    int* spike_count,
+    int max_spikes,
+    int timestep,
+    int cold_hold_steps,
+    int total_voxels
+) {
+    int vid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (vid >= total_voxels) return;
+
+    if (spike_grid_ladd[vid] > 0) {
+        spike_grid_ladd[vid]--;
+        for (int k = 0; k < K_LADD; k++) {
+            int nidx = vid * K_LADD + k;
+            if (ladd_neuron_refractory[nidx] > 0) ladd_neuron_refractory[nidx]--;
+            ladd_neuron_x[nidx] *= 0.95f;
+            ladd_neuron_y[nidx] *= 0.95f;
+        }
+        return;
+    }
+
+    int ref_count = ladd_ref_count[vid];
+    if (ref_count < 10) return;
+
+    WarpEntry entry = warp_matrix[vid];
+    if (entry.n_atoms == 0) return;
+
+    int vz = vid / (grid_dim * grid_dim);
+    int vy = (vid / grid_dim) % grid_dim;
+    int vx = vid % grid_dim;
+    float3 vc = make_float3(
+        grid_origin_x + (vx + 0.5f) * grid_spacing,
+        grid_origin_y + (vy + 0.5f) * grid_spacing,
+        grid_origin_z + (vz + 0.5f) * grid_spacing
+    );
+
+    float pd = 0.0f;
+    for (int i = 0; i < entry.n_atoms; i++) {
+        int a = entry.atom_indices[i];
+        if (a < 0 || a >= n_atoms) continue;
+        float3 ap = positions[a];
+        float r2 = (ap.x-vc.x)*(ap.x-vc.x) + (ap.y-vc.y)*(ap.y-vc.y) + (ap.z-vc.z)*(ap.z-vc.z);
+        if (r2 < 25.0f) pd += expf(-r2 * 0.5f);
+    }
+
+    float ref = ladd_density_ref[vid];
+    if (ref < 0.5f) return;
+    float depletion = 0.0f;
+    if (timestep >= cold_hold_steps) {
+        depletion = fmaxf((ref - pd) / ref, 0.0f);
+    }
+
+    float ladd_taus[2] = {2.0f, 32.0f};
+    bool any_fired = false;
+    float max_tau_fired = 0.0f;
+
+    for (int k = 0; k < K_LADD; k++) {
+        int nidx = vid * K_LADD + k;
+        if (ladd_neuron_refractory[nidx] > 0) {
+            ladd_neuron_refractory[nidx]--;
+            ladd_neuron_x[nidx] *= 0.95f;
+            ladd_neuron_y[nidx] *= 0.95f;
+            continue;
+        }
+
+        float x = ladd_neuron_x[nidx];
+        float y = ladd_neuron_y[nidx];
+        float threshold = ladd_neuron_threshold[nidx];
+        float tau = ladd_taus[k];
+        float omega = 2.0f * 3.14159265f / tau;
+        float dt = 0.004f;
+        float cos_wt = cosf(omega * dt);
+        float sin_wt = sinf(omega * dt);
+        float decay = expf(-dt / tau);
+
+        float x_new = decay * (x * cos_wt + y * sin_wt) + depletion;
+        float y_new = decay * (-x * sin_wt + y * cos_wt);
+
+        float r2 = x_new*x_new + y_new*y_new;
+        if (r2 > 4.0f) {
+            float sc = 2.0f * rsqrtf(fmaxf(r2, 1e-12f));
+            x_new *= sc; y_new *= sc; r2 = 4.0f;
+        }
+
+        float amp = sqrtf(r2);
+        if (amp >= threshold) {
+            any_fired = true;
+            if (tau > max_tau_fired) max_tau_fired = tau;
+            x_new = 0.01f; y_new = 0.0f;
+            ladd_neuron_refractory[nidx] = LADD_REFRACTORY_STEPS;
+            threshold = fminf(threshold + 0.02f, 2.0f * LADD_THRESHOLD);
+        } else {
+            threshold = fmaxf(threshold - 0.001f * dt, LADD_THRESHOLD * 0.5f);
+        }
+
+        ladd_neuron_x[nidx] = x_new;
+        ladd_neuron_y[nidx] = y_new;
+        ladd_neuron_threshold[nidx] = threshold;
+    }
+
+    if (!any_fired) return;
+
+    int source = LADD_SOURCE;
+    if (main_spike_grid[vid] > 0 && main_spike_grid[vid] < LADD_REFRACTORY_STEPS) {
+        source = COFIRE_SOURCE;
+    }
+
+    int idx = atomicAdd(spike_count, 1);
+    if (idx < max_spikes) {
+        SpikeEvent ev;
+        ev.timestep = timestep;
+        ev.voxel_idx = vid;
+        ev.position = vc;
+        ev.intensity = depletion + 0.1f * max_tau_fired;
+        ev.spike_source = source;
+        ev.wavelength_nm = 0.0f;
+        ev.aromatic_type = -1;
+        ev.aromatic_residue_id = -1;
+        ev.water_density = pd;
+        ev.vibrational_energy = ref;
+        ev.n_nearby_excited = 0;
+        ev.wd_change = depletion;
+        ev.n_residues = 0;
+        for (int r = 0; r < 8; r++) ev.nearby_residues[r] = -1;
+        spike_events[idx] = ev;
+    }
+
+    spike_grid_ladd[vid] = LADD_REFRACTORY_STEPS;
+}
+
+extern "C" __global__ void init_ladd_neurons(
+    float* x, float* y, float* threshold, int* refractory,
+    int total_elements
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= total_elements) return;
+    x[i] = 0.01f;
+    y[i] = 0.0f;
+    threshold[i] = LADD_THRESHOLD;
+    refractory[i] = 0;
+}

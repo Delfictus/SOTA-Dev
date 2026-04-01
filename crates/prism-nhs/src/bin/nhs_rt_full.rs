@@ -6903,7 +6903,7 @@ fn run_multi_stream_pipeline(
                         "intensity": intensity,
                         "type": arom_type_name(atype),
                         "wavelength_nm": wl,
-                        "spike_source": match src { 1 => "UV", 3 => "EFP", _ => "LIF" },
+                        "spike_source": match src { 1 => "UV", 3 => "EFP", 4 => "LADD", 5 => "COFIRE", _ => "LIF" },
                         "aromatic_residue_id": arom_res,
                         "water_density": wd,
                         "vibrational_energy": ve,

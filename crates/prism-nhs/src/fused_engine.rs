@@ -1638,6 +1638,14 @@ pub struct NhsAmberFusedEngine {
     d_ladd_density_ref: CudaSlice<f32>,
     d_ladd_density_m2: CudaSlice<f32>,
     d_ladd_ref_count: CudaSlice<i32>,
+    // LADD observation kernel state (K=2 per voxel)
+    d_ladd_neuron_x: CudaSlice<f32>,
+    d_ladd_neuron_y: CudaSlice<f32>,
+    d_ladd_neuron_threshold: CudaSlice<f32>,
+    d_ladd_neuron_refractory: CudaSlice<i32>,
+    d_spike_grid_ladd: CudaSlice<i32>,
+    ladd_observation_kernel: Option<CudaFunction>,
+    init_ladd_neurons_kernel: Option<CudaFunction>,
     ladd_enabled: bool,
     ladd_cold_hold_steps: i32,
 
@@ -2042,6 +2050,11 @@ impl NhsAmberFusedEngine {
         if burial_centroid_kernel.is_some() {
             log::info!("  GPU burial centroid kernel: ✓ loaded");
         }
+        let ladd_observation_kernel = fused_module.load_function("ladd_observation_step").ok();
+        let init_ladd_neurons_kernel = fused_module.load_function("init_ladd_neurons").ok();
+        if ladd_observation_kernel.is_some() {
+            log::info!("  LADD observation kernel: ✓ loaded (K=2 separate)");
+        }
 
         // ====================================================================
         // ALLOCATE ATOM STATE BUFFERS
@@ -2419,6 +2432,13 @@ impl NhsAmberFusedEngine {
         let d_ladd_density_ref: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_ladd_density_m2: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         let d_ladd_ref_count: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
+        // LADD observation kernel state (K=2 per voxel)
+        let k_ladd = 2usize;
+        let d_ladd_neuron_x: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_ladd)?;
+        let d_ladd_neuron_y: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_ladd)?;
+        let d_ladd_neuron_threshold: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_ladd)?;
+        let d_ladd_neuron_refractory: CudaSlice<i32> = stream.alloc_zeros(total_voxels * k_ladd)?;
+        let d_spike_grid_ladd: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         // Signal preservation buffers
         let d_voxel_hit_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
         let d_coupled_spike_grid: CudaSlice<i32> = stream.alloc_zeros(total_voxels)?;
@@ -2618,6 +2638,13 @@ impl NhsAmberFusedEngine {
             d_ladd_density_ref,
             d_ladd_density_m2,
             d_ladd_ref_count,
+            d_ladd_neuron_x,
+            d_ladd_neuron_y,
+            d_ladd_neuron_threshold,
+            d_ladd_neuron_refractory,
+            d_spike_grid_ladd,
+            ladd_observation_kernel,
+            init_ladd_neurons_kernel,
             ladd_enabled: false,
             ladd_cold_hold_steps: 14000,
             d_voxel_hit_grid,
@@ -5046,6 +5073,47 @@ impl NhsAmberFusedEngine {
             }
         }
         .context("Failed to launch nhs_voxel_step_multi_lif kernel")?;
+
+        // LADD observation pass (separate K=2 kernel, after main K=8)
+        if self.ladd_enabled {
+            if let Some(ref k_ladd_obs) = &self.ladd_observation_kernel {
+                let total_voxels_i32 = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+                let voxel_blocks = ((total_voxels_i32 as u32 + 63) / 64) as u32;
+                let ladd_cfg = cudarc::driver::LaunchConfig {
+                    grid_dim: (voxel_blocks, 1, 1),
+                    block_dim: (64, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                let max_spikes_i32 = 500000i32;
+                unsafe {
+                    self.stream.launch_builder(k_ladd_obs)
+                        .arg(&grid_dim_i32)
+                        .arg(&self.grid_spacing)
+                        .arg(&self.grid_origin[0])
+                        .arg(&self.grid_origin[1])
+                        .arg(&self.grid_origin[2])
+                        .arg(&self.d_ladd_density_ref)
+                        .arg(&self.d_ladd_density_m2)
+                        .arg(&self.d_ladd_ref_count)
+                        .arg(&self.d_positions)
+                        .arg(&n_atoms_i32)
+                        .arg(&self.d_warp_matrix)
+                        .arg(&mut self.d_ladd_neuron_x)
+                        .arg(&mut self.d_ladd_neuron_y)
+                        .arg(&mut self.d_ladd_neuron_threshold)
+                        .arg(&mut self.d_ladd_neuron_refractory)
+                        .arg(&mut self.d_spike_grid_ladd)
+                        .arg(&self.d_spike_grid)
+                        .arg(&mut self.d_spike_events)
+                        .arg(&mut self.d_spike_count)
+                        .arg(&max_spikes_i32)
+                        .arg(&self.timestep)
+                        .arg(&self.ladd_cold_hold_steps)
+                        .arg(&total_voxels_i32)
+                        .launch(ladd_cfg)
+                }.context("LADD: ladd_observation_step failed")?;
+            }
+        }
 
         // Swap coupling double-buffer and clear the new write buffer
         self.coupling_phase = !self.coupling_phase;
