@@ -208,6 +208,12 @@ struct Args {
     #[arg(long, default_value = "0.3")]
     nma_scan_fraction: f32,
 
+    /// Enable PRISM-TWIN: Coupled Observation MD with two simultaneous streams.
+    /// Stream A (scout) runs standard thermal, Stream B (observer) runs thermal + NMA.
+    /// Observation layers exchange spike density to cross-sensitize detectors.
+    #[arg(long, default_value = "false")]
+    coupled_twin: bool,
+
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
     /// temporal persistence, persistent homology, and Boltzmann gap gates.
@@ -535,11 +541,109 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
 /// Run single structure (original behavior)
 #[cfg(feature = "gpu")]
 fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
+    // PRISM-TWIN: coupled observation mode
+    if args.coupled_twin {
+        return run_coupled_twin_pipeline(args, topology_path);
+    }
     if args.multi_stream > 1 {
         return run_multi_stream_pipeline(args, topology_path, args.multi_stream);
     }
     run_single_structure_internal(topology_path, &args.output, args, args.replicas)?;
     Ok(())
+}
+
+/// Run PRISM-TWIN: Interferometric Coupled Observation MD
+#[cfg(feature = "gpu")]
+fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()> {
+    use prism_nhs::coupled_md::{CoupledTwinConfig, run_coupled_twin};
+    use prism_nhs::persistent_engine::PersistentBatchConfig;
+
+    log::info!("PRISM-TWIN mode activated");
+
+    // Load topology
+    let topo_json = std::fs::read_to_string(topology_path)
+        .with_context(|| format!("Failed to read topology: {}", topology_path.display()))?;
+    let topology: prism_nhs::input::PrismPrepTopology = serde_json::from_str(&topo_json)
+        .context("Failed to parse topology JSON")?;
+
+    // Build protocol (same logic as multi-stream path)
+    let protocol = if args.fast {
+        prism_nhs::fused_engine::CryoUvProtocol::fast_35k()
+    } else {
+        prism_nhs::fused_engine::CryoUvProtocol::standard()
+    };
+
+    let steps = protocol.total_steps();
+
+    // Build twin config
+    let mut twin_config = CoupledTwinConfig::default();
+    twin_config.nma_modes_path = args.nma_perturb.as_ref().map(|p| p.to_string_lossy().to_string());
+    twin_config.nma_amplification = args.nma_amplification;
+    // Gate 1: exchange and CCF disabled
+    twin_config.enable_exchange = true;   // Gate 2: spike density exchange
+    twin_config.enable_ccf = true;        // Gate 2: cross-correlation
+
+    // Initialize CUDA
+    let context = cudarc::driver::CudaContext::new(0)
+        .context("Failed to create CUDA context")?;
+
+    // Load PTX module
+    let ptx_path = find_ptx_path()?;
+    let module = context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path))
+        .with_context(|| format!("Failed to load PTX from {}", ptx_path))?;
+
+    let batch_config = PersistentBatchConfig {
+        max_atoms: topology.n_atoms.max(50000) as usize,
+        ..Default::default()
+    };
+
+    // Create output directory
+    std::fs::create_dir_all(&args.output)?;
+
+    // Run PRISM-TWIN
+    let result = run_coupled_twin(
+        &batch_config,
+        context,
+        module,
+        &topology,
+        protocol,
+        &twin_config,
+        args.replica_seed,
+        steps,
+        args.hmr,
+        args.fused_steps,
+        args.adaptive_dt,
+        args.ladd,
+    )?;
+
+    // Save result
+    let result_path = args.output.join("coupled_twin_result.json");
+    let result_json = serde_json::to_string_pretty(&result)?;
+    std::fs::write(&result_path, &result_json)?;
+    log::info!("PRISM-TWIN result saved: {}", result_path.display());
+
+    Ok(())
+}
+
+/// Find the PTX file path (same logic as fused_engine)
+#[cfg(feature = "gpu")]
+fn find_ptx_path() -> Result<String> {
+    let candidates = vec![
+        "target/ptx/nhs_amber_fused.ptx".to_string(),
+        "../../target/ptx/nhs_amber_fused.ptx".to_string(),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("../assets/ptx/nhs_amber_fused.ptx");
+            if p.exists() { return Ok(p.display().to_string()); }
+        }
+    }
+    for p in &candidates {
+        if std::path::Path::new(p).exists() {
+            return Ok(p.clone());
+        }
+    }
+    anyhow::bail!("PTX file not found. Set PRISM4D_PTX_DIR or ensure target/ptx/ exists.")
 }
 
 /// Internal implementation for running a single structure

@@ -117,6 +117,8 @@ pub mod rt_analysis;
 #[cfg(feature = "gpu")]
 pub mod persistent_engine;
 #[cfg(feature = "gpu")]
+pub mod coupled_md;
+#[cfg(feature = "gpu")]
 pub mod active_sensing;
 #[cfg(feature = "gpu")]
 pub mod ultimate_engine;
