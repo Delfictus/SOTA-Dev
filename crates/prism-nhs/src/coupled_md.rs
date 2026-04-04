@@ -131,6 +131,14 @@ pub struct CoupledTwinResult {
     pub total_density_b_to_a: f64,
     /// Number of coarse regions that had non-zero spike activity in at least one stream.
     pub n_nonzero_regions: u32,
+
+    // Gate 3 phase offset
+    /// Number of extra cold_hold steps B runs before A's schedule
+    pub phase_offset_steps: i32,
+    /// Total steps for stream A
+    pub steps_a: i32,
+    /// Total steps for stream B (steps_a + offset)
+    pub steps_b: i32,
 }
 
 /// Per-stream result data.
@@ -373,9 +381,26 @@ pub fn run_coupled_twin(
         log::info!("  Stream B: NMA loaded (amplification={:.1})", twin_config.nma_amplification);
     }
 
-    engine_b.set_cryo_uv_protocol(protocol.clone())?;
+    // Gate 3: Phase-offset scheduling
+    // B gets extra cold_hold steps so it starts heating AFTER A.
+    // Offset = cold_hold_steps × phase_offset_fraction
+    let offset_steps = (protocol.cold_hold_steps as f32 * twin_config.phase_offset_fraction) as i32;
+    let mut protocol_b = protocol.clone();
+    protocol_b.cold_hold_steps += offset_steps;
+    let steps_b = steps + offset_steps;  // B runs longer
+
+    engine_b.set_cryo_uv_protocol(protocol_b)?;
     engine_b.set_spike_accumulation(true);
+
     log::info!("  Stream B: ✓");
+    log::info!("  Gate 3 phase offset: {} steps ({:.0}% of cold_hold={})",
+        offset_steps, twin_config.phase_offset_fraction * 100.0, protocol.cold_hold_steps);
+    log::info!("  Stream A schedule: cold_hold={}, ramp={}, warm_hold={}, total={}",
+        protocol.cold_hold_steps, protocol.ramp_steps, protocol.warm_hold_steps, steps);
+    log::info!("  Stream B schedule: cold_hold={}, ramp={}, warm_hold={}, total={}",
+        protocol.cold_hold_steps + offset_steps, protocol.ramp_steps, protocol.warm_hold_steps, steps_b);
+    log::info!("  A enters heating at step {}, B enters heating at step {}",
+        protocol.cold_hold_steps, protocol.cold_hold_steps + offset_steps);
 
     // VRAM after allocation
     let (vram_after, _) = cudarc::driver::result::mem_get_info()
@@ -386,10 +411,12 @@ pub fn run_coupled_twin(
 
     // ── INTERLEAVED EXECUTION ──
     let inner = fused_steps.max(1) as i32;
-    let outer_steps = (steps + inner - 1) / inner;
+    let outer_steps_a = (steps + inner - 1) / inner;
+    let outer_steps_b = (steps_b + inner - 1) / inner;
+    let outer_steps = outer_steps_a.max(outer_steps_b);  // run until B finishes
 
-    log::info!("  Running {} interleaved outer steps ({}×{} AMBER steps each)...",
-        outer_steps, 2, inner);
+    log::info!("  Running {} interleaved outer steps (A={}, B={} fused steps)...",
+        outer_steps, outer_steps_a, outer_steps_b);
 
     let start = std::time::Instant::now();
     let mut spikes_a_total = 0usize;
@@ -401,13 +428,20 @@ pub fn run_coupled_twin(
     let mut total_density_b_to_a: f64 = 0.0;
     let mut max_nonzero_regions: u32 = 0;
 
-    for step in 0..outer_steps {
-        // Step both engines by one outer step (fused_steps inner AMBER steps each)
-        // Using run(inner) for a single fused iteration on each stream
-        let summary_a = engine_a.run(inner)?;
-        let summary_b = engine_b.run(inner)?;
+    let mut a_finished = false;
 
-        spikes_a_total += summary_a.total_spikes;
+    for step in 0..outer_steps {
+        // Step both engines. A stops after outer_steps_a, B continues to outer_steps_b.
+        if step < outer_steps_a {
+            let summary_a = engine_a.run(inner)?;
+            spikes_a_total += summary_a.total_spikes;
+        } else if !a_finished {
+            a_finished = true;
+            log::info!("  Stream A finished at step {} (B continues for {} more)",
+                step, outer_steps_b - step);
+        }
+
+        let summary_b = engine_b.run(inner)?;
         spikes_b_total += summary_b.total_spikes;
 
         // ── Gate 2: Spike density exchange ────────────────────────────────────
@@ -594,6 +628,9 @@ pub fn run_coupled_twin(
         total_density_a_to_b,
         total_density_b_to_a,
         n_nonzero_regions: max_nonzero_regions,
+        phase_offset_steps: offset_steps,
+        steps_a: steps,
+        steps_b: steps_b,
     };
 
     log::info!("╔══════════════════════════════════════════════════════════╗");
