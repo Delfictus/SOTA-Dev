@@ -1649,6 +1649,30 @@ pub struct NhsAmberFusedEngine {
     ladd_enabled: bool,
     ladd_cold_hold_steps: i32,
 
+    // NMA-biased perturbation state
+    /// Per-mode displacement vectors on device: [n_modes * n_residues * 3] float32
+    d_nma_displacements: Option<CudaSlice<f32>>,
+    /// Per-mode force scale factors: [n_modes] float32
+    d_nma_force_scales: Option<CudaSlice<f32>>,
+    /// CA atom indices in topology: [n_residues] int32
+    d_nma_ca_indices: Option<CudaSlice<i32>>,
+    /// Per-mode spike counts for adaptive scheduling: [n_modes] int32
+    d_nma_spike_counts: Option<CudaSlice<i32>>,
+    /// NMA mode count
+    nma_n_modes: usize,
+    /// NMA residue count
+    nma_n_residues: usize,
+    /// NMA amplification factor
+    nma_amplification: f32,
+    /// NMA scan fraction (of warm_hold)
+    nma_scan_fraction: f32,
+    /// NMA enabled flag
+    nma_enabled: bool,
+    /// NMA work accumulator per mode (host-side)
+    nma_work_per_mode: Vec<f64>,
+    /// NMA perturbation CUDA kernel function
+    nma_perturbation_kernel: Option<CudaFunction>,
+
     // Struct sizes for GPU memory layout
     bond_size: usize,
     angle_size: usize,
@@ -2054,6 +2078,10 @@ impl NhsAmberFusedEngine {
         let init_ladd_neurons_kernel = fused_module.load_function("init_ladd_neurons").ok();
         if ladd_observation_kernel.is_some() {
             log::info!("  LADD observation kernel: ✓ loaded (K=2 separate)");
+        }
+        let nma_perturbation_kernel = fused_module.load_function("nma_perturbation_kernel").ok();
+        if nma_perturbation_kernel.is_some() {
+            log::info!("  NMA perturbation kernel: ✓ loaded");
         }
 
         // ====================================================================
@@ -2647,6 +2675,19 @@ impl NhsAmberFusedEngine {
             init_ladd_neurons_kernel,
             ladd_enabled: false,
             ladd_cold_hold_steps: 14000,
+
+            // NMA perturbation (disabled until load_nma_modes() called)
+            d_nma_displacements: None,
+            d_nma_force_scales: None,
+            d_nma_ca_indices: None,
+            d_nma_spike_counts: None,
+            nma_n_modes: 0,
+            nma_n_residues: 0,
+            nma_amplification: 3.0,
+            nma_scan_fraction: 0.3,
+            nma_enabled: false,
+            nma_work_per_mode: Vec::new(),
+            nma_perturbation_kernel,
             d_voxel_hit_grid,
             d_last_uv_step,
             d_coupled_spike_grid,
@@ -3046,6 +3087,125 @@ impl NhsAmberFusedEngine {
     /// Set LADD cold_hold reference accumulation window
     pub fn set_ladd_cold_hold(&mut self, steps: i32) {
         self.ladd_cold_hold_steps = steps;
+    }
+
+    /// Set NMA amplification factor
+    pub fn set_nma_amplification(&mut self, amp: f32) {
+        self.nma_amplification = amp;
+    }
+
+    /// Set NMA scan fraction (portion of warm_hold spent scanning all modes)
+    pub fn set_nma_scan_fraction(&mut self, frac: f32) {
+        self.nma_scan_fraction = frac.clamp(0.05, 0.95);
+    }
+
+    /// Load NMA modes from JSON file and upload to GPU.
+    ///
+    /// JSON format:
+    /// ```json
+    /// {
+    ///   "n_modes": 10,
+    ///   "n_residues": 200,
+    ///   "modes": [
+    ///     {"mode_index": 0, "eigenvalue": 0.5, "force_scale": 1.2,
+    ///      "displacements": [[dx,dy,dz], ...]},
+    ///     ...
+    ///   ],
+    ///   "ca_indices": [4, 11, 25, ...]
+    /// }
+    /// ```
+    pub fn load_nma_modes(&mut self, nma_json_path: &str) -> Result<()> {
+        if self.nma_perturbation_kernel.is_none() {
+            log::warn!("NMA perturbation kernel not found in PTX — NMA will be disabled");
+            return Ok(());
+        }
+
+        let raw = std::fs::read_to_string(nma_json_path)
+            .with_context(|| format!("Failed to read NMA modes from {}", nma_json_path))?;
+        let json: serde_json::Value = serde_json::from_str(&raw)
+            .with_context(|| format!("Failed to parse NMA JSON from {}", nma_json_path))?;
+
+        let n_modes = json["n_modes"].as_u64()
+            .context("NMA JSON missing 'n_modes'")? as usize;
+        let n_residues = json["n_residues"].as_u64()
+            .context("NMA JSON missing 'n_residues'")? as usize;
+
+        if n_modes == 0 || n_residues == 0 {
+            bail!("NMA JSON has zero modes ({}) or residues ({})", n_modes, n_residues);
+        }
+
+        let modes = json["modes"].as_array()
+            .context("NMA JSON missing 'modes' array")?;
+        if modes.len() != n_modes {
+            bail!("NMA JSON: n_modes={} but modes array has {} entries", n_modes, modes.len());
+        }
+
+        // Flatten all mode displacements: [n_modes * n_residues * 3]
+        let mut displacements = Vec::with_capacity(n_modes * n_residues * 3);
+        let mut force_scales = Vec::with_capacity(n_modes);
+
+        for (i, mode) in modes.iter().enumerate() {
+            let fs = mode["force_scale"].as_f64()
+                .with_context(|| format!("Mode {} missing 'force_scale'", i))? as f32;
+            force_scales.push(fs);
+
+            let disp = mode["displacements"].as_array()
+                .with_context(|| format!("Mode {} missing 'displacements'", i))?;
+            if disp.len() != n_residues {
+                bail!("Mode {}: expected {} displacement vectors, got {}", i, n_residues, disp.len());
+            }
+            for (j, vec3) in disp.iter().enumerate() {
+                let arr = vec3.as_array()
+                    .with_context(|| format!("Mode {} residue {}: displacement not an array", i, j))?;
+                if arr.len() != 3 {
+                    bail!("Mode {} residue {}: expected [dx,dy,dz], got {} elements", i, j, arr.len());
+                }
+                for k in 0..3 {
+                    displacements.push(arr[k].as_f64().unwrap_or(0.0) as f32);
+                }
+            }
+        }
+
+        // Parse CA indices
+        let ca_indices_json = json["ca_indices"].as_array()
+            .context("NMA JSON missing 'ca_indices'")?;
+        if ca_indices_json.len() != n_residues {
+            bail!("NMA JSON: n_residues={} but ca_indices has {} entries", n_residues, ca_indices_json.len());
+        }
+        let ca_indices: Vec<i32> = ca_indices_json.iter()
+            .map(|v| v.as_i64().unwrap_or(0) as i32)
+            .collect();
+
+        // Upload to GPU
+        let mut d_disp: CudaSlice<f32> = self.stream.alloc_zeros(displacements.len())?;
+        self.stream.memcpy_htod(&displacements, &mut d_disp)?;
+
+        let mut d_scales: CudaSlice<f32> = self.stream.alloc_zeros(force_scales.len())?;
+        self.stream.memcpy_htod(&force_scales, &mut d_scales)?;
+
+        let mut d_ca: CudaSlice<i32> = self.stream.alloc_zeros(ca_indices.len())?;
+        self.stream.memcpy_htod(&ca_indices, &mut d_ca)?;
+
+        let d_spike_counts: CudaSlice<i32> = self.stream.alloc_zeros(n_modes)?;
+
+        self.d_nma_displacements = Some(d_disp);
+        self.d_nma_force_scales = Some(d_scales);
+        self.d_nma_ca_indices = Some(d_ca);
+        self.d_nma_spike_counts = Some(d_spike_counts);
+        self.nma_n_modes = n_modes;
+        self.nma_n_residues = n_residues;
+        self.nma_enabled = true;
+        self.nma_work_per_mode = vec![0.0f64; n_modes];
+
+        log::info!("NMA perturbation loaded: {} modes × {} residues from {}",
+            n_modes, n_residues, nma_json_path);
+        log::info!("  Amplification: {:.1}x, scan fraction: {:.0}%",
+            self.nma_amplification, self.nma_scan_fraction * 100.0);
+        for (i, &s) in force_scales.iter().enumerate() {
+            log::debug!("  Mode {}: force_scale={:.4}", i, s);
+        }
+
+        Ok(())
     }
 
     /// Set fused multi-step count: run N AMBER steps per 1 multi-LIF observation.
@@ -5177,6 +5337,80 @@ impl NhsAmberFusedEngine {
                     .launch(kcc_cfg)
             }
             .context("Failed to launch kcc_residue_update kernel")?;
+        }
+
+        // NMA perturbation (warm_hold phase only)
+        // In TemperatureProtocol: cold_hold_steps (phase 1) → ramp_steps (phase 2) → hold_steps (phase 3 = warm hold)
+        if self.nma_enabled {
+            let warm_hold_start = self.temp_protocol.cold_hold_steps + self.temp_protocol.ramp_steps;
+            let warm_hold_end = warm_hold_start + self.temp_protocol.hold_steps;
+            let step = self.temp_protocol.current_step;
+
+            if step >= warm_hold_start && step < warm_hold_end {
+                let steps_into_warm = step - warm_hold_start;
+                let total_warm = self.temp_protocol.hold_steps;
+                let scan_steps = (total_warm as f32 * self.nma_scan_fraction) as i32;
+
+                // Determine active mode
+                let active_mode = if steps_into_warm < scan_steps {
+                    // SCAN phase: cycle through all modes equally
+                    let steps_per_mode = scan_steps / self.nma_n_modes.max(1) as i32;
+                    ((steps_into_warm / steps_per_mode.max(1)) as usize).min(self.nma_n_modes - 1)
+                } else {
+                    // FOCUS phase: use mode 0 (softest) as default
+                    // TODO: implement spike-responsive scheduling
+                    0usize
+                };
+
+                // Temporal gate: smooth cosine ramp (100-step ramp in/out)
+                let ramp = 100i32;
+                let steps_per_mode_scan = scan_steps / self.nma_n_modes.max(1) as i32;
+                let mode_start = warm_hold_start + (active_mode as i32 * steps_per_mode_scan);
+                let mode_end = mode_start + steps_per_mode_scan;
+                let gate = if step < mode_start + ramp {
+                    0.5 * (1.0 - ((step - mode_start) as f32 * std::f32::consts::PI / ramp as f32).cos())
+                } else if step > mode_end - ramp {
+                    0.5 * (1.0 + ((step - (mode_end - ramp)) as f32 * std::f32::consts::PI / ramp as f32).cos())
+                } else {
+                    1.0f32
+                };
+
+                let amplitude = self.nma_amplification * gate;
+                let dt = self.dt;
+
+                // Launch NMA kernel
+                let nma_blocks = (self.nma_n_residues as u32).div_ceil(256);
+                let nma_cfg = LaunchConfig {
+                    grid_dim: (nma_blocks, 1, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+
+                if let (Some(ref d_disp), Some(ref d_scales), Some(ref d_ca), Some(ref mut d_counts), Some(ref nma_kern)) =
+                    (&self.d_nma_displacements, &self.d_nma_force_scales, &self.d_nma_ca_indices,
+                     &mut self.d_nma_spike_counts, &self.nma_perturbation_kernel) {
+                    let n_res = self.nma_n_residues as i32;
+                    let mode = active_mode as i32;
+                    let force_cap = 10.0f32;
+
+                    unsafe {
+                        self.stream
+                            .launch_builder(nma_kern)
+                            .arg(&mut self.d_forces)
+                            .arg(&self.d_velocities)
+                            .arg(d_disp)
+                            .arg(d_scales)
+                            .arg(d_ca)
+                            .arg(d_counts)
+                            .arg(&n_res)
+                            .arg(&mode)
+                            .arg(&amplitude)
+                            .arg(&dt)
+                            .arg(&force_cap)
+                            .launch(nma_cfg)
+                    }.ok(); // Don't fail the whole step if NMA kernel fails
+                }
+            }
         }
 
         // Advance protocols (CPU-side, no sync needed)

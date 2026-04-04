@@ -1098,6 +1098,29 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Load NMA modes from JSON and upload to GPU for NMA-biased perturbation.
+    pub fn load_nma_modes(&mut self, path: &str) -> Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.load_nma_modes(path)
+        } else {
+            bail!("No topology loaded")
+        }
+    }
+
+    /// Set NMA amplification factor.
+    pub fn set_nma_amplification(&mut self, amp: f32) {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_nma_amplification(amp);
+        }
+    }
+
+    /// Set NMA scan fraction.
+    pub fn set_nma_scan_fraction(&mut self, frac: f32) {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_nma_scan_fraction(frac);
+        }
+    }
+
     /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
     pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

@@ -732,6 +732,149 @@ def print_batch_summary(results: Dict[str, Any]):
 
 
 # =============================================================================
+# NMA MODE COMPUTATION
+# =============================================================================
+
+def compute_nma_modes(input_pdb, output_topology, n_modes=10, amplification=3.0, verbose=True):
+    """Compute NMA modes using ProDy ANM and save _nma_modes.json.
+
+    Args:
+        input_pdb: Path to clean PDB file
+        output_topology: Path to topology JSON (used to find CA atom indices)
+        n_modes: Number of normal modes to compute
+        amplification: Target amplitude = thermal_amplitude × amplification
+        verbose: Print progress
+
+    Returns:
+        Path to nma_modes.json or None on failure
+    """
+    import warnings
+    warnings.filterwarnings("ignore")
+
+    try:
+        import prody
+        import numpy as np
+    except ImportError:
+        if verbose:
+            print("  ⚠ ProDy not installed — skipping NMA computation")
+        return None
+
+    prody.confProDy(verbosity='none')
+
+    input_pdb = Path(input_pdb)
+    output_topology = Path(output_topology)
+    nma_path = output_topology.with_name(
+        output_topology.stem.replace('.topology', '') + '_nma_modes.json'
+    )
+
+    if verbose:
+        print(f"\n  NMA: Computing {n_modes} modes (ANM, cutoff=15Å)...")
+
+    try:
+        protein = prody.parsePDB(str(input_pdb))
+    except Exception as e:
+        if verbose:
+            print(f"  ✗ NMA: PDB parse failed: {e}")
+        return None
+
+    calphas = protein.select('calpha')
+    if calphas is None or calphas.numAtoms() < 20:
+        if verbose:
+            print(f"  ✗ NMA: Too few CA atoms ({calphas.numAtoms() if calphas else 0})")
+        return None
+
+    n_ca = calphas.numAtoms()
+
+    # Build ANM with fallback cutoffs
+    anm = None
+    used_cutoff = None
+    for cutoff in [15.0, 20.0, 25.0]:
+        try:
+            anm = prody.ANM("target")
+            anm.buildHessian(calphas, cutoff=cutoff)
+            anm.calcModes(n_modes=n_modes)
+            used_cutoff = cutoff
+            break
+        except Exception:
+            anm = None
+
+    if anm is None:
+        if verbose:
+            print(f"  ✗ NMA: ANM failed at all cutoffs")
+        return None
+
+    eigenvalues = anm.getEigvals()
+    eigenvectors = anm.getEigvecs()
+    actual_modes = min(len(eigenvalues), n_modes)
+
+    if eigenvalues[0] <= 0:
+        if verbose:
+            print(f"  ✗ NMA: Negative eigenvalue ({eigenvalues[0]:.6f})")
+        return None
+
+    # Build per-mode displacement vectors (n_ca, 3)
+    kT = 0.596  # kcal/mol at 300K
+    modes_data = []
+    for k in range(actual_modes):
+        displacements = []
+        for i in range(n_ca):
+            vec = eigenvectors[i*3:(i+1)*3, k]
+            displacements.append([float(vec[0]), float(vec[1]), float(vec[2])])
+
+        # Normalize mode vector
+        disp_arr = np.array(displacements)
+        norm = np.linalg.norm(disp_arr)
+        if norm > 1e-10:
+            disp_arr /= norm
+            displacements = disp_arr.tolist()
+
+        thermal_amp = float(np.sqrt(kT / eigenvalues[k]))
+        target_amp = thermal_amp * amplification
+        force_scale = float(1.0 / np.sqrt(eigenvalues[k]))
+
+        modes_data.append({
+            "mode_index": k,
+            "eigenvalue": float(eigenvalues[k]),
+            "thermal_amplitude": round(thermal_amp, 4),
+            "target_amplitude": round(target_amp, 4),
+            "force_scale": round(force_scale, 4),
+            "displacements": displacements,
+        })
+
+    # Get CA atom indices from topology
+    ca_indices = []
+    if output_topology.exists():
+        try:
+            topo = json.load(open(output_topology))
+            atom_names = topo.get("atom_names", [])
+            ca_indices = [i for i, name in enumerate(atom_names) if name == "CA"]
+        except Exception:
+            pass
+
+    residue_ids = calphas.getResnums().tolist()
+
+    nma_output = {
+        "n_modes": actual_modes,
+        "n_residues": n_ca,
+        "cutoff_angstrom": used_cutoff,
+        "amplification_factor": amplification,
+        "modes": modes_data,
+        "residue_ids": residue_ids,
+        "ca_indices": ca_indices,
+    }
+
+    with open(nma_path, 'w') as f:
+        json.dump(nma_output, f, indent=2)
+
+    if verbose:
+        print(f"  ✓ NMA: {actual_modes} modes, cutoff={used_cutoff}Å, {n_ca} residues")
+        print(f"    Eigenvalues: [{eigenvalues[0]:.4f}, ..., {eigenvalues[actual_modes-1]:.4f}]")
+        print(f"    Saved: {nma_path.name}")
+
+    return nma_path
+
+
+# =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
@@ -781,6 +924,10 @@ for production use with PRISM4D GPU kernels.
                         help='Keep work directory for debugging')
 
     # Utility
+    parser.add_argument('--nma-modes', type=int, default=0, metavar='N',
+                        help='Compute N NMA modes (ProDy ANM) and save _nma_modes.json (default: 0 = disabled)')
+    parser.add_argument('--nma-amplification', type=float, default=3.0,
+                        help='NMA amplification factor (default: 3.0)')
     parser.add_argument('--check-deps', action='store_true',
                         help='Check dependencies and exit')
     parser.add_argument('--version', action='version', version=f'prism-prep {VERSION}')
@@ -851,6 +998,16 @@ for production use with PRISM4D GPU kernels.
     )
 
     print_result(result, verbose=verbose)
+
+    # NMA mode computation (after successful topology generation)
+    if result['success'] and args.nma_modes > 0:
+        compute_nma_modes(
+            input_pdb,
+            output_topology,
+            n_modes=args.nma_modes,
+            amplification=args.nma_amplification,
+            verbose=verbose,
+        )
 
     if result['success']:
         return 0

@@ -4360,3 +4360,63 @@ extern "C" __global__ void init_ladd_neurons(
     threshold[i] = LADD_THRESHOLD;
     refractory[i] = 0;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// NMA-BIASED PERTURBATION KERNEL
+// Applies eigenvalue-scaled forces along normal mode directions to CA atoms.
+// Called AFTER the main fused step, during warm_hold phase ONLY.
+// ═══════════════════════════════════════════════════════════════════════
+
+extern "C" __global__ void nma_perturbation_kernel(
+    float* __restrict__ forces,          // [n_atoms * 3] — add perturbation force here
+    const float* __restrict__ velocities, // [n_atoms * 3] — for work calculation
+    const float* __restrict__ nma_displacements, // [n_modes * n_residues * 3]
+    const float* __restrict__ nma_force_scales,   // [n_modes]
+    const int* __restrict__ ca_indices,   // [n_residues] — atom index of each CA
+    float* __restrict__ nma_work,         // [n_modes] — accumulated work per mode
+    int n_residues,
+    int active_mode,                      // which mode is currently active
+    float amplitude,                      // current amplitude (includes gate)
+    float dt,                             // timestep for work calculation
+    float force_cap                       // max force per atom (safety)
+) {
+    int rid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (rid >= n_residues) return;
+    
+    int atom_idx = ca_indices[rid];
+    
+    // Get displacement vector for this residue in the active mode
+    int disp_offset = active_mode * n_residues * 3 + rid * 3;
+    float dx = nma_displacements[disp_offset + 0];
+    float dy = nma_displacements[disp_offset + 1];
+    float dz = nma_displacements[disp_offset + 2];
+    
+    // Eigenvalue-scaled force
+    float scale = nma_force_scales[active_mode];
+    float fx = amplitude * scale * dx;
+    float fy = amplitude * scale * dy;
+    float fz = amplitude * scale * dz;
+    
+    // Force cap (safety)
+    float f_mag = sqrtf(fx*fx + fy*fy + fz*fz);
+    if (f_mag > force_cap) {
+        float clamp = force_cap / f_mag;
+        fx *= clamp;
+        fy *= clamp;
+        fz *= clamp;
+    }
+    
+    // Apply force to CA atom
+    int f_offset = atom_idx * 3;
+    atomicAdd(&forces[f_offset + 0], fx);
+    atomicAdd(&forces[f_offset + 1], fy);
+    atomicAdd(&forces[f_offset + 2], fz);
+    
+    // Track work: W += F · v × dt
+    float vx = velocities[f_offset + 0];
+    float vy = velocities[f_offset + 1];
+    float vz = velocities[f_offset + 2];
+    float work = (fx * vx + fy * vy + fz * vz) * dt;
+    atomicAdd(&nma_work[active_mode], work);
+}
+
