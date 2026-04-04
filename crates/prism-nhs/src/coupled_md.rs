@@ -506,6 +506,64 @@ pub fn run_coupled_twin(
     log::info!("  Stream A accumulated: {} spikes", spikes_a.len());
     log::info!("  Stream B accumulated: {} spikes", spikes_b.len());
 
+    // ── SPIKE PERSISTENCE: Write ALL raw spikes to JSON with stream_id ────────
+    // This is the TRAINING SIGNAL — raw spike records must be preserved.
+    {
+        use std::io::Write;
+
+        let spike_output_dir = std::env::var("PRISM_TWIN_OUTPUT")
+            .unwrap_or_else(|_| "/tmp/prism_twin_spikes".to_string());
+        let spike_output_path = std::path::Path::new(&spike_output_dir);
+        let _ = std::fs::create_dir_all(spike_output_path);
+
+        // Write combined spike file with stream_id
+        let combined_path = spike_output_path.join("coupled_spikes.json");
+        log::info!("  Writing {} + {} = {} raw spikes to {}",
+            spikes_a.len(), spikes_b.len(), spikes_a.len() + spikes_b.len(),
+            combined_path.display());
+
+        if let Ok(mut f) = std::fs::File::create(&combined_path) {
+            let _ = writeln!(f, "{{\"n_spikes_a\": {}, \"n_spikes_b\": {}, \"spikes\": [",
+                spikes_a.len(), spikes_b.len());
+
+            let write_spike = |f: &mut std::fs::File, s: &crate::fused_engine::GpuSpikeEvent, stream_id: u8, last: bool| {
+                // Copy fields to locals to avoid unaligned packed struct access
+                let ts = s.timestep;
+                let pos = s.position;
+                let int = s.intensity;
+                let ve = s.vibrational_energy;
+                let wd = s.water_density;
+                let src = s.spike_source;
+                let vi = s.voxel_idx;
+                let wl = s.wavelength_nm;
+                let ne = s.n_nearby_excited;
+                let _ = writeln!(f, "  {{\"stream_id\": {}, \"timestep\": {}, \"x\": {:.3}, \"y\": {:.3}, \"z\": {:.3}, \
+                    \"intensity\": {:.4}, \"vib_energy\": {:.6}, \"water_density\": {:.4}, \
+                    \"spike_source\": {}, \"voxel_idx\": {}, \"wavelength_nm\": {:.1}, \
+                    \"n_nearby_excited\": {}}}{}",
+                    stream_id, ts, pos[0], pos[1], pos[2],
+                    int, ve, wd, src, vi, wl, ne,
+                    if last { "" } else { "," });
+            };
+
+            let total = spikes_a.len() + spikes_b.len();
+            let mut count = 0;
+            for s in &spikes_a {
+                count += 1;
+                write_spike(&mut f, s, 0, count == total);
+            }
+            for s in &spikes_b {
+                count += 1;
+                write_spike(&mut f, s, 1, count == total);
+            }
+            let _ = writeln!(f, "]}}");
+            log::info!("  ✓ Wrote {} spike records ({:.1} MB)",
+                total, combined_path.metadata().map(|m| m.len() as f64 / 1e6).unwrap_or(0.0));
+        } else {
+            log::warn!("  ✗ Failed to write coupled spikes to {}", combined_path.display());
+        }
+    }
+
     // ── Gate 2: CPU cross-correlation + per-residue feature assembly ──────────
     let (n_ccf_matches, per_res_map) = if twin_config.enable_ccf {
         log::info!("  Computing CPU cross-correlation (spatial=5Å, temporal=500 steps)...");
