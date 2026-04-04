@@ -3099,6 +3099,13 @@ impl NhsAmberFusedEngine {
         self.nma_scan_fraction = frac.clamp(0.05, 0.95);
     }
 
+    /// Get the current spike count (host-side read from device).
+    pub fn get_spike_count(&self) -> Result<u32> {
+        let mut count = [0i32];
+        self.stream.memcpy_dtoh(&self.d_spike_count, &mut count)?;
+        Ok(count[0] as u32)
+    }
+
     /// Load NMA modes from JSON file and upload to GPU.
     ///
     /// JSON format:

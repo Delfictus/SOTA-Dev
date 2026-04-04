@@ -1121,6 +1121,15 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Get the current spike count from the device.
+    pub fn get_spike_count(&self) -> Result<u32> {
+        if let Some(ref engine) = self.engine {
+            engine.get_spike_count()
+        } else {
+            Ok(0)
+        }
+    }
+
     /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
     pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

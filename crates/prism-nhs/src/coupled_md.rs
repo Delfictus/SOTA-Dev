@@ -133,6 +133,10 @@ pub struct CoupledTwinResult {
     pub n_nonzero_regions: u32,
 
     // Gate 3 phase offset
+    /// Total spikes tracked for ring buffer exchange (both directions)
+    pub ring_spikes_tracked: u64,
+
+    // Gate 3 phase offset
     /// Number of extra cold_hold steps B runs before A's schedule
     pub phase_offset_steps: i32,
     /// Total steps for stream A
@@ -428,6 +432,11 @@ pub fn run_coupled_twin(
     let mut total_density_b_to_a: f64 = 0.0;
     let mut max_nonzero_regions: u32 = 0;
 
+    // Ring buffer tracking (Step 2: per-step spike count delta)
+    let mut prev_spike_count_a: u32 = 0;
+    let mut prev_spike_count_b: u32 = 0;
+    let mut ring_spikes_exchanged: u64 = 0;
+
     let mut a_finished = false;
 
     for step in 0..outer_steps {
@@ -443,6 +452,20 @@ pub fn run_coupled_twin(
 
         let summary_b = engine_b.run(inner)?;
         spikes_b_total += summary_b.total_spikes;
+
+        // ── Ring buffer: track per-step spike deltas ────────────────────────
+        // This tracks how many NEW spikes each step produces.
+        // In production, these would be pushed to the ring buffer CUDA kernel.
+        // For Step 2, we just count and log.
+        if twin_config.enable_exchange {
+            let curr_a = engine_a.get_spike_count().unwrap_or(0);
+            let curr_b = engine_b.get_spike_count().unwrap_or(0);
+            let new_a = curr_a.saturating_sub(prev_spike_count_a);
+            let new_b = curr_b.saturating_sub(prev_spike_count_b);
+            ring_spikes_exchanged += (new_a + new_b) as u64;
+            prev_spike_count_a = curr_a;
+            prev_spike_count_b = curr_b;
+        }
 
         // ── Gate 2: Spike density exchange ────────────────────────────────────
         if twin_config.enable_exchange && step as u32 % twin_config.exchange_interval == 0 {
@@ -686,6 +709,7 @@ pub fn run_coupled_twin(
         total_density_a_to_b,
         total_density_b_to_a,
         n_nonzero_regions: max_nonzero_regions,
+        ring_spikes_tracked: ring_spikes_exchanged,
         phase_offset_steps: offset_steps,
         steps_a: steps,
         steps_b: steps_b,
