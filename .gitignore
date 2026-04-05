@@ -126,3 +126,7 @@ e2e_validation_test/
 *.joblib
 *.pkl
 __pycache__/
+
+# Confidential SOP files — NEVER commit
+docs/sops/credentials/CREDENTIAL_REGISTRY.md
+docs/sops/ip/TRADE_SECRET_REGISTRY.md
