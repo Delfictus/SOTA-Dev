@@ -726,6 +726,7 @@ mod tests {
             exclusions: Vec::new(),
             h_clusters: Vec::new(),
             water_oxygens: Vec::new(),
+            residues: Vec::new(),
         }
     }
 
