@@ -214,3 +214,27 @@ For hard4 benchmark (mixed active + cryptic):
   Run both configurations and compare
   reranked output does not exist in current engine — use kcc_visualization.json
   CRYPTIC therm pockets: filter topology.prism_therm.json for therm_class=CRYPTIC
+
+## SCRIPT EXECUTION POLICY (MANDATORY)
+
+Full text: `docs/PRISM4D_DEV_OPS_FRAMEWORK.md` §1.
+
+**Rule — NO SCRIPT EXECUTION WITHOUT PRODUCTION PATH TAG**
+
+- `scripts/production/` — executable freely.
+- **All other scripts require explicit permission before execution.**
+  This includes `scripts/` (non-production), `benchmarks/`,
+  `prism-ai-inference/scripts/`, `scripts/quarantine/`, `/tmp`, and
+  any untracked location.
+- **Inline `python3` heredocs that WRITE anything require permission.**
+  Writing = file creation, file modification, DB mutation, network
+  POST/PUT/DELETE, or any side effect outside stdout/stderr.
+- **Inline `python3` that only READS is allowed only if tagged
+  `[DIAGNOSTIC]`** in the invocation.
+- **Multi-line `python3` heredocs are not allowed inline.** Write to
+  `scripts/quarantine/` first, then ask for permission to run.
+- **No production script may reference `/tmp`.** Enforcement:
+  `grep -r "/tmp/" scripts/production/` must return zero results.
+
+Also see `docs/PRISM4D_DEV_OPS_FRAMEWORK.md` §2 for the SOP rule
+(documentation is written as part of the procedure, not after).
