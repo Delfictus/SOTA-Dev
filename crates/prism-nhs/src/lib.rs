@@ -119,6 +119,8 @@ pub mod persistent_engine;
 #[cfg(feature = "gpu")]
 pub mod coupled_md;
 #[cfg(feature = "gpu")]
+pub mod twin_detection;
+#[cfg(feature = "gpu")]
 pub mod active_sensing;
 #[cfg(feature = "gpu")]
 pub mod ultimate_engine;

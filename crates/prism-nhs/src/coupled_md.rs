@@ -587,6 +587,47 @@ pub fn run_coupled_twin(
         }
     }
 
+    // ── TWIN-aware site detection ────────────────────────────────────────────
+    // Runs inline here because this is the only place with access to
+    // spikes_a/spikes_b as Vec<GpuSpikeEvent> before they leave scope. Writes
+    // binding_sites.json, kcc_visualization.json, prism_therm.json,
+    // ensemble_trajectory.json (stub), twin_per_residue.json, twin_ccf_matrix.json
+    // into the output directory. Single-pass replacement for the non-twin
+    // detection pass. Failure is logged but does not abort the twin run.
+    {
+        let twin_output_dir = std::env::var("PRISM_TWIN_OUTPUT")
+            .unwrap_or_else(|_| "/tmp/prism_twin_spikes".to_string());
+        let twin_output_path = std::path::Path::new(&twin_output_dir);
+        let prefix = std::path::Path::new(&topology.source_pdb)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.replace("_sanitized", "").replace("_clean", ""))
+            .unwrap_or_else(|| "prism_twin".to_string());
+        log::info!("  Running TWIN-aware site detection (prefix={})", prefix);
+        match crate::twin_detection::detect_and_write_twin_sites(
+            &spikes_a,
+            &spikes_b,
+            topology,
+            twin_output_path,
+            &prefix,
+            twin_config.nma_modes_path.as_deref(),
+        ) {
+            Ok(summary) => {
+                log::info!(
+                    "  ✓ TWIN detection: {} sites ({} consensus, {} barrier-gated, {} allo-hub) in {:.1}s",
+                    summary.n_sites,
+                    summary.n_consensus_sites,
+                    summary.n_barrier_gated_sites,
+                    summary.n_allosteric_hub_sites,
+                    summary.elapsed_seconds,
+                );
+            }
+            Err(e) => {
+                log::warn!("  ✗ TWIN detection failed: {} — spike JSON still written", e);
+            }
+        }
+    }
+
     // ── Gate 2: CPU cross-correlation + per-residue feature assembly ──────────
     let (n_ccf_matches, per_res_map) = if twin_config.enable_ccf {
         log::info!("  Computing CPU cross-correlation (spatial=5Å, temporal=500 steps)...");
