@@ -1240,6 +1240,7 @@ fn write_binding_sites_json(
         serde_json::json!({
             "id": s.id,
             "rank": s.rank,
+            "rank_score": s.twin_rank_score,   // alias expected by prism-postflight.py
             "centroid": s.centroid,
             "volume": s.volume_angstrom3,
             "classification": s.classification_engine,
@@ -1271,6 +1272,17 @@ fn write_binding_sites_json(
         })
     }).collect();
 
+    // cryptic_sites and all_pockets MUST be lists (not ints) — prism-postflight.py
+    // iterates over them and takes len(), so emitting counts here crashes the wrapper.
+    let cryptic_sites_list: Vec<serde_json::Value> = sites.iter()
+        .filter(|s| s.therm_class == "CRYPTIC" || s.therm_class == "DYNAMIC")
+        .map(|s| serde_json::json!({
+            "id": s.id,
+            "centroid": s.centroid,
+            "classification": s.classification_engine,
+            "twin_site_class": s.twin_site_class,
+        })).collect();
+
     let root = serde_json::json!({
         "mode": "prism-twin",
         "detection_method": "twin-aware: consensus + differential + CCF + phase",
@@ -1282,7 +1294,11 @@ fn write_binding_sites_json(
         "sites": sites_json,
         "binding_sites": sites.len(),
         "druggable_sites": sites.iter().filter(|s| s.druggability_score > 0.4).count(),
-        "cryptic_sites": sites.iter().filter(|s| s.therm_class == "CRYPTIC" || s.therm_class == "DYNAMIC").count(),
+        "cryptic_sites": cryptic_sites_list,
+        "all_pockets": sites_json.iter().map(|s| serde_json::json!({
+            "id": s.get("id"),
+            "centroid": s.get("centroid"),
+        })).collect::<Vec<_>>(),
     });
 
     std::fs::write(path, serde_json::to_string_pretty(&root)?)?;
