@@ -386,6 +386,42 @@ fn main() {
         &target_ptx_dir.join("pharmacophore_splat.ptx"),
     );
 
+    // =========================================================================
+    // PRISM-TWIN Kernels
+    // =========================================================================
+
+    // Ring Buffer (standard kernel — no cooperative groups)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/ring_buffer.cu",
+        &ptx_dir.join("ring_buffer.ptx"),
+        &target_ptx_dir.join("ring_buffer.ptx"),
+    );
+
+    // Tensor Core CCF (standard kernel — WMMA, no cooperative groups)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/tensor_ccf.cu",
+        &ptx_dir.join("tensor_ccf.ptx"),
+        &target_ptx_dir.join("tensor_ccf.ptx"),
+    );
+
+    // TWIN Persistent Skeleton (cooperative groups — requires -rdc=true)
+    compile_cooperative_kernel(
+        &nvcc,
+        "src/kernels/twin_persistent.cu",
+        &ptx_dir.join("twin_persistent.ptx"),
+        &target_ptx_dir.join("twin_persistent.ptx"),
+    );
+
+    // TWIN Persistent Physics (cooperative groups — requires -rdc=true)
+    compile_cooperative_kernel(
+        &nvcc,
+        "src/kernels/twin_persistent_physics.cu",
+        &ptx_dir.join("twin_persistent_physics.ptx"),
+        &target_ptx_dir.join("twin_persistent_physics.ptx"),
+    );
+
     println!("cargo:info=PTX compilation completed successfully");
 }
 
@@ -462,6 +498,35 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
     generate_ptx_signature(target_output);
 
     println!("cargo:info=PTX compiled: {}", target_output.display());
+}
+
+/// Compiles a CUDA cooperative kernel to PTX (requires -rdc=true for grid.sync())
+fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &PathBuf) {
+    println!("cargo:info=Compiling (cooperative) {} -> {}", source, output.display());
+
+    let status = Command::new(nvcc)
+        .arg("--ptx")
+        .arg("-o")
+        .arg(output)
+        .arg(source)
+        .arg("-arch=sm_120")
+        .arg("-rdc=true")           // relocatable device code for grid.sync()
+        .arg("-O3")
+        .arg("--use_fast_math")
+        .arg("--restrict")
+        .arg("-I/usr/local/cuda/include")
+        .arg("-Xptxas=-v")
+        .arg("--expt-relaxed-constexpr")
+        .status()
+        .expect("Failed to execute nvcc");
+
+    if !status.success() {
+        panic!("nvcc cooperative compilation failed for {}", source);
+    }
+
+    std::fs::copy(output, target_output).expect("Failed to copy cooperative PTX to target/ptx");
+    generate_ptx_signature(target_output);
+    println!("cargo:info=PTX compiled (cooperative): {}", target_output.display());
 }
 
 /// Generates SHA-256 signature for PTX file
