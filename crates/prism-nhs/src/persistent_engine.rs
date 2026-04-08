@@ -3059,7 +3059,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = PersistentBatchConfig::default();
-        assert_eq!(config.max_atoms, 15000);
+        assert_eq!(config.max_atoms, 20000);
         assert_eq!(config.temperature, 300.0);
     }
 }

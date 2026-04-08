@@ -4191,232 +4191,370 @@ extern "C" __global__ void burial_weighted_centroid(
 
 
 // ============================================================================
-// LADD OBSERVATION KERNEL (separate from main K=8 multi-LIF kernel)
-// K=2 damped harmonic oscillator neurons fed by protein density depletion.
-// Runs AFTER the main voxel step when ladd_enabled=1.
+// LADD: Local Atom Departure Detection (7-kernel pipeline)
+// Merged from ladd-channel-20260331. Replaces the oscillator-based
+// ladd_observation_step with departure-tracking + sorted scatter + depletion.
 // ============================================================================
 
-#define K_LADD 2
-#define LADD_THRESHOLD 0.01f   // Low threshold: oscillator accumulation provides selectivity
-#define LADD_REFRACTORY_STEPS 250
-#define LADD_SOURCE 4
-#define COFIRE_SOURCE 5
-
-extern "C" __global__ __launch_bounds__(64, 16) void ladd_observation_step(
-    int grid_dim,
-    float grid_spacing,
-    float grid_origin_x, float grid_origin_y, float grid_origin_z,
-    const float* __restrict__ ladd_density_ref,
-    const float* __restrict__ ladd_density_m2,
-    const int* __restrict__ ladd_ref_count,
+// Assign each heavy atom to its current voxel + detect departures.
+// Also builds per-voxel departure count for O(1) indexed lookup.
+extern "C" __global__ void ladd_update_voxels(
     const float3* __restrict__ positions,
+    const unsigned char* __restrict__ atom_categories, // 255 = hydrogen (skip)
+    int* atom_voxel_curr,
+    int* atom_voxel_prev,
+    int* departure_atoms,            // global departure buffer: atom indices
+    int* departure_src_voxels,       // global departure buffer: source voxel
+    int* departure_count,            // atomic counter (total departures)
+    int* departure_count_per_voxel,  // [total_voxels]: departures from each voxel
+    float grid_origin_x, float grid_origin_y, float grid_origin_z,
+    float grid_spacing,
+    int grid_dim,
     int n_atoms,
-    const WarpEntry* __restrict__ warp_matrix,
-    float* ladd_neuron_x,
-    float* ladd_neuron_y,
-    float* ladd_neuron_threshold,
-    int* ladd_neuron_refractory,
-    int* spike_grid_ladd,
-    const int* __restrict__ main_spike_grid,
-    SpikeEvent* spike_events,
-    int* spike_count,
-    int max_spikes,
-    int timestep,
-    int cold_hold_steps,
+    int max_departures
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    if (atom_categories[tid] == 255) {
+        atom_voxel_curr[tid] = -1;
+        return;
+    }
+
+    float3 pos = positions[tid];
+    int ix = (int)((pos.x - grid_origin_x) / grid_spacing);
+    int iy = (int)((pos.y - grid_origin_y) / grid_spacing);
+    int iz = (int)((pos.z - grid_origin_z) / grid_spacing);
+
+    int new_voxel;
+    if (ix < 0 || ix >= grid_dim || iy < 0 || iy >= grid_dim ||
+        iz < 0 || iz >= grid_dim) {
+        new_voxel = -1;
+    } else {
+        new_voxel = ix + iy * grid_dim + iz * grid_dim * grid_dim;
+    }
+
+    int old_voxel = atom_voxel_prev[tid];
+    atom_voxel_curr[tid] = new_voxel;
+
+    if (old_voxel >= 0 && old_voxel != new_voxel) {
+        int slot = atomicAdd(departure_count, 1);
+        if (slot < max_departures) {
+            departure_atoms[slot] = tid;
+            departure_src_voxels[slot] = old_voxel;
+        }
+        atomicAdd(&departure_count_per_voxel[old_voxel], 1);
+    }
+}
+
+// Exclusive prefix sum on departure_count_per_voxel → departure_offsets.
+extern "C" __global__ void ladd_build_departure_offsets(
+    const int* __restrict__ departure_count_per_voxel,
+    int* departure_offsets,   // [total_voxels + 1]
+    int total_voxels
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    int running = 0;
+    for (int v = 0; v < total_voxels; v++) {
+        departure_offsets[v] = running;
+        running += departure_count_per_voxel[v];
+    }
+    departure_offsets[total_voxels] = running;
+}
+
+// Scatter departures into per-voxel sorted order using offsets.
+extern "C" __global__ void ladd_scatter_departures(
+    const int* __restrict__ departure_atoms,
+    const int* __restrict__ departure_src_voxels,
+    int n_departures,
+    const int* __restrict__ departure_offsets,
+    int* departure_local_slot,
+    int* sorted_departure_atoms
+) {
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+    if (d >= n_departures) return;
+
+    int src_voxel = departure_src_voxels[d];
+    int atom = departure_atoms[d];
+    int base = departure_offsets[src_voxel];
+    int local = atomicAdd(&departure_local_slot[src_voxel], 1);
+    sorted_departure_atoms[base + local] = atom;
+}
+
+// Reset per-voxel density grid (thread-per-voxel)
+extern "C" __global__ void ladd_compute_density(
+    const int* __restrict__ atom_voxel_curr,
+    const unsigned char* __restrict__ atom_categories,
+    float* ladd_voxel_density,
+    int n_atoms,
+    int total_voxels
+) {
+    int vid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (vid < total_voxels) {
+        ladd_voxel_density[vid] = 0.0f;
+    }
+}
+
+// Accumulate heavy-atom density (thread-per-atom)
+extern "C" __global__ void ladd_accumulate_density(
+    const int* __restrict__ atom_voxel_curr,
+    const unsigned char* __restrict__ atom_categories,
+    float* ladd_voxel_density,
+    int n_atoms
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+    if (atom_categories[tid] == 255) return;
+    int voxel = atom_voxel_curr[tid];
+    if (voxel >= 0) {
+        atomicAdd(&ladd_voxel_density[voxel], 1.0f);
+    }
+}
+
+// Welford online mean during cold_hold phase
+extern "C" __global__ void ladd_accumulate_reference(
+    const float* __restrict__ ladd_voxel_density,
+    float* ladd_density_ref,
+    float* ladd_density_m2,
+    int* ladd_ref_count,
     int total_voxels
 ) {
     int vid = blockIdx.x * blockDim.x + threadIdx.x;
     if (vid >= total_voxels) return;
 
-    if (spike_grid_ladd[vid] > 0) {
-        spike_grid_ladd[vid]--;
-        for (int k = 0; k < K_LADD; k++) {
-            int nidx = vid * K_LADD + k;
-            if (ladd_neuron_refractory[nidx] > 0) ladd_neuron_refractory[nidx]--;
-            ladd_neuron_x[nidx] *= 0.95f;
-            ladd_neuron_y[nidx] *= 0.95f;
-        }
+    float density = ladd_voxel_density[vid];
+    int count = ladd_ref_count[vid] + 1;
+    float delta = density - ladd_density_ref[vid];
+    float new_mean = ladd_density_ref[vid] + delta / (float)count;
+    float delta2 = density - new_mean;
+    float new_m2 = ladd_density_m2[vid] + delta * delta2;
+
+    ladd_density_ref[vid] = new_mean;
+    ladd_density_m2[vid] = new_m2;
+    ladd_ref_count[vid] = count;
+}
+
+// LADD constants
+#define LADD_MIN_THRESHOLD 0.15f   // Minimum depletion fraction to fire
+#define LADD_REFRACTORY    500     // Steps between LADD spikes per voxel
+#define LADD_SOURCE        4       // spike_source value for LADD channel
+#define COFIRE_SOURCE      5       // LADD+LIF co-fire (from HEAD)
+
+// Detect depletion + analyze departures + emit LADD spikes.
+// One thread per voxel. Uses sorted departure buffer for O(1) indexed lookup.
+extern "C" __global__ void ladd_detect_and_emit(
+    // Density data
+    const float* __restrict__ ladd_voxel_density,
+    const float* __restrict__ ladd_density_ref,
+    const float* __restrict__ ladd_density_m2,
+    const int* __restrict__ ladd_ref_count,
+    int* ladd_spike_grid,          // refractory countdown
+    // Sorted departure data (from ladd_scatter_departures)
+    const int* __restrict__ sorted_departure_atoms,
+    const int* __restrict__ departure_offsets,  // [total_voxels + 1]
+    // Atom data for departure analysis
+    const float3* __restrict__ positions,
+    const float3* __restrict__ positions_prev,
+    const unsigned char* __restrict__ atom_categories,
+    const int* __restrict__ residue_ids,
+    // Grid geometry
+    float grid_origin_x, float grid_origin_y, float grid_origin_z,
+    float grid_spacing,
+    int grid_dim,
+    // Spike output (shared with UV/LIF/EFP)
+    SpikeEvent* spike_events,
+    int* spike_count,
+    int max_spikes,
+    // Co-fire detection (from HEAD)
+    const int* __restrict__ main_spike_grid,
+    // Context
+    int timestep,
+    int total_voxels
+) {
+    int vid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (vid >= total_voxels) return;
+
+    // Decrement refractory
+    if (ladd_spike_grid[vid] > 0) {
+        ladd_spike_grid[vid]--;
         return;
     }
 
     int ref_count = ladd_ref_count[vid];
     if (ref_count < 10) return;
 
-    WarpEntry entry = warp_matrix[vid];
-    if (entry.n_atoms == 0) return;
+    // Branch's departure-based detection body (replaces HEAD's oscillator)
+    float ref_density = ladd_density_ref[vid];
+    float curr_density = ladd_voxel_density[vid];
+    if (ref_density < 0.5f) return;
 
+    float depletion = (ref_density - curr_density) / ref_density;
+
+    float variance = ladd_density_m2[vid] / fmaxf((float)(ref_count - 1), 1.0f);
+    float sigma = sqrtf(variance);
+    float threshold = fmaxf(3.0f * sigma / fmaxf(ref_density, 0.001f), LADD_MIN_THRESHOLD);
+
+    if (depletion <= threshold) return;
+
+    // ═══ DEPLETION DETECTED — direct-indexed departure lookup (O(D_local)) ═══
+
+    int dep_start = departure_offsets[vid];
+    int dep_end = departure_offsets[vid + 1];
+    int n_departed = dep_end - dep_start;
+    if (n_departed < 1) return;
+
+    int departed_categories[8] = {0};
+    float3 disp_sum = make_float3(0, 0, 0);
+    float sum_disp_mag = 0.0f;
+    float max_disp_sq = 0.0f;
+    int max_disp_residue = -1;
+    int departed_residues[8];
+    int n_departed_residues = 0;
+
+    for (int d = dep_start; d < dep_end; d++) {
+        int atom = sorted_departure_atoms[d];
+
+        unsigned char cat = atom_categories[atom];
+        if (cat < 8) departed_categories[cat]++;
+
+        float3 disp = make_float3(
+            positions[atom].x - positions_prev[atom].x,
+            positions[atom].y - positions_prev[atom].y,
+            positions[atom].z - positions_prev[atom].z
+        );
+        disp_sum.x += disp.x;
+        disp_sum.y += disp.y;
+        disp_sum.z += disp.z;
+        float d2 = disp.x*disp.x + disp.y*disp.y + disp.z*disp.z;
+        sum_disp_mag += sqrtf(d2);
+        if (d2 > max_disp_sq) {
+            max_disp_sq = d2;
+            max_disp_residue = residue_ids[atom];
+        }
+
+        int rid = residue_ids[atom];
+        bool found = false;
+        for (int r = 0; r < n_departed_residues; r++) {
+            if (departed_residues[r] == rid) { found = true; break; }
+        }
+        if (!found && n_departed_residues < 8) {
+            departed_residues[n_departed_residues++] = rid;
+        }
+    }
+
+    // Displacement coherence: |Σdi| / Σ|di|
+    float vec_mag = sqrtf(disp_sum.x*disp_sum.x + disp_sum.y*disp_sum.y + disp_sum.z*disp_sum.z);
+    float coherence = (sum_disp_mag > 0.001f) ? (vec_mag / sum_disp_mag) : 0.0f;
+
+    // Count adjacent depleted voxels (3x3x3 neighborhood)
     int vz = vid / (grid_dim * grid_dim);
     int vy = (vid / grid_dim) % grid_dim;
     int vx = vid % grid_dim;
-    float3 vc = make_float3(
-        grid_origin_x + (vx + 0.5f) * grid_spacing,
-        grid_origin_y + (vy + 0.5f) * grid_spacing,
-        grid_origin_z + (vz + 0.5f) * grid_spacing
+    int n_adjacent_depleted = 0;
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+                int nx = vx + dx, ny = vy + dy, nz = vz + dz;
+                if (nx < 0 || nx >= grid_dim || ny < 0 || ny >= grid_dim ||
+                    nz < 0 || nz >= grid_dim) continue;
+                int nid = nx + ny * grid_dim + nz * grid_dim * grid_dim;
+                float nref = ladd_density_ref[nid];
+                if (nref > 0.5f) {
+                    float ndep = (nref - ladd_voxel_density[nid]) / nref;
+                    if (ndep > LADD_MIN_THRESHOLD) n_adjacent_depleted++;
+                }
+            }
+        }
+    }
+
+    // ═══ EMIT LADD SPIKE (with co-fire detection from HEAD) ═══
+    float3 voxel_center = make_float3(
+        grid_origin_x + ((float)vx + 0.5f) * grid_spacing,
+        grid_origin_y + ((float)vy + 0.5f) * grid_spacing,
+        grid_origin_z + ((float)vz + 0.5f) * grid_spacing
     );
 
-    float pd = 0.0f;
-    for (int i = 0; i < entry.n_atoms; i++) {
-        int a = entry.atom_indices[i];
-        if (a < 0 || a >= n_atoms) continue;
-        float3 ap = positions[a];
-        float r2 = (ap.x-vc.x)*(ap.x-vc.x) + (ap.y-vc.y)*(ap.y-vc.y) + (ap.z-vc.z)*(ap.z-vc.z);
-        if (r2 < 25.0f) pd += expf(-r2 * 0.5f);
-    }
-
-    float ref = ladd_density_ref[vid];
-    float depletion = 0.0f;
-    if (timestep >= cold_hold_steps && ref > 0.001f) {
-        float raw_depletion = (ref - pd) / fmaxf(ref, 0.001f);
-        // Amplify: raw depletion is typically 1-10%, scale to meaningful oscillator input
-        depletion = fmaxf(raw_depletion, 0.0f) * 10.0f;
-    }
-
-    float ladd_taus[2] = {2.0f, 32.0f};
-    bool any_fired = false;
-    float max_tau_fired = 0.0f;
-
-    for (int k = 0; k < K_LADD; k++) {
-        int nidx = vid * K_LADD + k;
-        if (ladd_neuron_refractory[nidx] > 0) {
-            ladd_neuron_refractory[nidx]--;
-            ladd_neuron_x[nidx] *= 0.95f;
-            ladd_neuron_y[nidx] *= 0.95f;
-            continue;
-        }
-
-        float x = ladd_neuron_x[nidx];
-        float y = ladd_neuron_y[nidx];
-        float threshold = ladd_neuron_threshold[nidx];
-        float tau = ladd_taus[k];
-        float omega = 2.0f * 3.14159265f / tau;
-        float dt = 0.004f;
-        float cos_wt = cosf(omega * dt);
-        float sin_wt = sinf(omega * dt);
-        float decay = expf(-dt / tau);
-
-        float x_new = decay * (x * cos_wt + y * sin_wt) + depletion;
-        float y_new = decay * (-x * sin_wt + y * cos_wt);
-
-        float r2 = x_new*x_new + y_new*y_new;
-        if (r2 > 4.0f) {
-            float sc = 2.0f * rsqrtf(fmaxf(r2, 1e-12f));
-            x_new *= sc; y_new *= sc; r2 = 4.0f;
-        }
-
-        float amp = sqrtf(r2);
-        if (amp >= threshold) {
-            any_fired = true;
-            if (tau > max_tau_fired) max_tau_fired = tau;
-            x_new = 0.01f; y_new = 0.0f;
-            ladd_neuron_refractory[nidx] = LADD_REFRACTORY_STEPS;
-            threshold = fminf(threshold + 0.02f, 2.0f * LADD_THRESHOLD);
-        } else {
-            threshold = fmaxf(threshold - 0.001f * dt, LADD_THRESHOLD * 0.5f);
-        }
-
-        ladd_neuron_x[nidx] = x_new;
-        ladd_neuron_y[nidx] = y_new;
-        ladd_neuron_threshold[nidx] = threshold;
-    }
-
-    if (!any_fired) return;
-
+    // Co-fire detection: if LIF also spiked recently at this voxel, mark as COFIRE
     int source = LADD_SOURCE;
-    if (main_spike_grid[vid] > 0 && main_spike_grid[vid] < LADD_REFRACTORY_STEPS) {
+    if (main_spike_grid[vid] > 0 && main_spike_grid[vid] < LADD_REFRACTORY) {
         source = COFIRE_SOURCE;
     }
 
-    int idx = atomicAdd(spike_count, 1);
-    if (idx < max_spikes) {
-        SpikeEvent ev;
-        ev.timestep = timestep;
-        ev.voxel_idx = vid;
-        ev.position = vc;
-        ev.intensity = depletion + 0.1f * max_tau_fired;
-        ev.spike_source = source;
-        ev.wavelength_nm = 0.0f;
-        ev.aromatic_type = -1;
-        ev.aromatic_residue_id = -1;
-        ev.water_density = pd;
-        ev.vibrational_energy = ref;
-        ev.n_nearby_excited = 0;
-        ev.wd_change = depletion;
-        ev.n_residues = 0;
-        for (int r = 0; r < 8; r++) ev.nearby_residues[r] = -1;
-        spike_events[idx] = ev;
+    int spike_idx = atomicAdd(spike_count, 1);
+    if (spike_idx < max_spikes) {
+        SpikeEvent event;
+        event.timestep = timestep;
+        event.voxel_idx = vid;
+        event.position = voxel_center;
+        event.intensity = depletion;
+        event.spike_source = source;        // 4=LADD or 5=COFIRE
+        event.wavelength_nm = 0.0f;
+        event.aromatic_type = -1;
+        event.aromatic_residue_id = max_disp_residue;
+        event.water_density = curr_density;
+        event.vibrational_energy = coherence;
+        event.n_nearby_excited = n_adjacent_depleted;
+        event.wd_change = (float)n_departed;
+
+        event.n_residues = n_departed_residues;
+        for (int r = 0; r < 8; r++) {
+            event.nearby_residues[r] = (r < n_departed_residues) ? departed_residues[r] : -1;
+        }
+
+        spike_events[spike_idx] = event;
     }
 
-    spike_grid_ladd[vid] = LADD_REFRACTORY_STEPS;
-}
-
-extern "C" __global__ void init_ladd_neurons(
-    float* x, float* y, float* threshold, int* refractory,
-    int total_elements
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= total_elements) return;
-    x[i] = 0.001f;  // Below threshold to prevent immediate firing
-    y[i] = 0.0f;
-    threshold[i] = LADD_THRESHOLD;
-    refractory[i] = 0;
+    ladd_spike_grid[vid] = LADD_REFRACTORY;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// NMA-BIASED PERTURBATION KERNEL
+// NMA-BIASED PERTURBATION KERNEL (from HEAD — preserved across LADD merge)
 // Applies eigenvalue-scaled forces along normal mode directions to CA atoms.
 // Called AFTER the main fused step, during warm_hold phase ONLY.
 // ═══════════════════════════════════════════════════════════════════════
 
 extern "C" __global__ void nma_perturbation_kernel(
-    float* __restrict__ forces,          // [n_atoms * 3] — add perturbation force here
-    const float* __restrict__ velocities, // [n_atoms * 3] — for work calculation
-    const float* __restrict__ nma_displacements, // [n_modes * n_residues * 3]
-    const float* __restrict__ nma_force_scales,   // [n_modes]
-    const int* __restrict__ ca_indices,   // [n_residues] — atom index of each CA
-    float* __restrict__ nma_work,         // [n_modes] — accumulated work per mode
+    float* __restrict__ forces,
+    const float* __restrict__ velocities,
+    const float* __restrict__ nma_displacements,
+    const float* __restrict__ nma_force_scales,
+    const int* __restrict__ ca_indices,
+    float* __restrict__ nma_work,
     int n_residues,
-    int active_mode,                      // which mode is currently active
-    float amplitude,                      // current amplitude (includes gate)
-    float dt,                             // timestep for work calculation
-    float force_cap                       // max force per atom (safety)
+    int active_mode,
+    float amplitude,
+    float dt,
+    float force_cap
 ) {
     int rid = blockIdx.x * blockDim.x + threadIdx.x;
     if (rid >= n_residues) return;
-    
+
     int atom_idx = ca_indices[rid];
-    
-    // Get displacement vector for this residue in the active mode
     int disp_offset = active_mode * n_residues * 3 + rid * 3;
     float dx = nma_displacements[disp_offset + 0];
     float dy = nma_displacements[disp_offset + 1];
     float dz = nma_displacements[disp_offset + 2];
-    
-    // Eigenvalue-scaled force
+
     float scale = nma_force_scales[active_mode];
     float fx = amplitude * scale * dx;
     float fy = amplitude * scale * dy;
     float fz = amplitude * scale * dz;
-    
-    // Force cap (safety)
+
     float f_mag = sqrtf(fx*fx + fy*fy + fz*fz);
     if (f_mag > force_cap) {
         float clamp = force_cap / f_mag;
-        fx *= clamp;
-        fy *= clamp;
-        fz *= clamp;
+        fx *= clamp; fy *= clamp; fz *= clamp;
     }
-    
-    // Apply force to CA atom
+
     int f_offset = atom_idx * 3;
     atomicAdd(&forces[f_offset + 0], fx);
     atomicAdd(&forces[f_offset + 1], fy);
     atomicAdd(&forces[f_offset + 2], fz);
-    
-    // Track work: W += F · v × dt
+
     float vx = velocities[f_offset + 0];
     float vy = velocities[f_offset + 1];
     float vz = velocities[f_offset + 2];
     float work = (fx * vx + fy * vy + fz * vz) * dt;
     atomicAdd(&nma_work[active_mode], work);
 }
-
