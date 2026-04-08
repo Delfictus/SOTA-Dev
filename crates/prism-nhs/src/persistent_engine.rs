@@ -1130,6 +1130,33 @@ impl PersistentNhsEngine {
         }
     }
 
+    // ── PRISM-TWIN threshold access (Step 2) ──
+
+    /// Get mutable reference to per-voxel neuron threshold buffer.
+    pub fn threshold_buffer_mut(&mut self) -> Option<&mut CudaSlice<f32>> {
+        self.engine.as_mut().map(|e| e.threshold_buffer_mut())
+    }
+
+    /// Get reference to base (initial) threshold buffer.
+    pub fn base_threshold_buffer(&self) -> Option<&CudaSlice<f32>> {
+        self.engine.as_ref().map(|e| e.base_threshold_buffer())
+    }
+
+    /// Get grid geometry (dim_x, dim_y, dim_z, origin_x, origin_y, origin_z, spacing).
+    pub fn grid_info(&self) -> Option<(i32, i32, i32, f32, f32, f32, f32)> {
+        self.engine.as_ref().map(|e| e.grid_info())
+    }
+
+    /// Total voxels (dim³).
+    pub fn total_voxels(&self) -> usize {
+        self.engine.as_ref().map(|e| e.total_voxels()).unwrap_or(0)
+    }
+
+    /// Get reference to raw spike buffer on GPU.
+    pub fn spike_buffer_gpu(&self) -> Option<&CudaSlice<u8>> {
+        self.engine.as_ref().map(|e| e.spike_buffer_gpu())
+    }
+
     /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
     pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

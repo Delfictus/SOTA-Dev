@@ -1770,6 +1770,7 @@ pub struct NhsAmberFusedEngine {
     // Multi-neuron LIF buffers (K=8 neurons per voxel)
     d_neuron_potential: CudaSlice<f32>,   // [total_voxels * 8]
     d_neuron_threshold: CudaSlice<f32>,   // [total_voxels * 8]
+    d_base_threshold: CudaSlice<f32>,    // [total_voxels * 8] snapshot for TWIN floor
     d_neuron_mean: CudaSlice<f32>,        // [total_voxels * 8]
     d_neuron_refractory: CudaSlice<i32>,  // [total_voxels * 8]
     d_coupling_a: CudaSlice<f32>,         // [total_voxels] double-buffer A
@@ -2670,6 +2671,8 @@ impl NhsAmberFusedEngine {
         let k_neurons = 8usize;
         let d_neuron_potential: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
         let d_neuron_threshold: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
+        // TWIN base threshold: snapshot taken after init_multi_neuron_state() in init_neuron_state()
+        let d_base_threshold: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
         let d_neuron_mean: CudaSlice<f32> = stream.alloc_zeros(total_voxels * k_neurons)?;
         let d_neuron_refractory: CudaSlice<i32> = stream.alloc_zeros(total_voxels * k_neurons)?;
         let d_coupling_a: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
@@ -2818,6 +2821,7 @@ impl NhsAmberFusedEngine {
 
             d_neuron_potential,
             d_neuron_threshold,
+            d_base_threshold,
             d_neuron_mean,
             d_neuron_refractory,
             d_coupling_a,
@@ -2960,6 +2964,9 @@ impl NhsAmberFusedEngine {
 
         // Initialize multi-neuron LIF bank
         engine.init_multi_neuron_state()?;
+
+        // TWIN: snapshot initialized thresholds as base reference for ring buffer
+        engine.stream.memcpy_dtod(&engine.d_neuron_threshold, &mut engine.d_base_threshold)?;
 
         // Build warp matrix
         engine.build_warp_matrix()?;
@@ -3201,6 +3208,42 @@ impl NhsAmberFusedEngine {
         let mut count = [0i32];
         self.stream.memcpy_dtoh(&self.d_spike_count, &mut count)?;
         Ok(count[0] as u32)
+    }
+
+    // ── PRISM-TWIN threshold access (Step 2) ──
+
+    /// Get a mutable reference to the per-voxel neuron threshold buffer.
+    /// Used by TWIN ring buffer to modify detection sensitivity between kernel launches.
+    /// SAFETY: caller must synchronize the engine's stream before writing.
+    pub fn threshold_buffer_mut(&mut self) -> &mut CudaSlice<f32> {
+        &mut self.d_neuron_threshold
+    }
+
+    /// Get a reference to the base (initial) threshold buffer.
+    /// Used by ring_buffer_read_and_adapt as the floor reference.
+    pub fn base_threshold_buffer(&self) -> &CudaSlice<f32> {
+        &self.d_base_threshold
+    }
+
+    /// Get grid geometry for voxel-to-world coordinate mapping.
+    /// Returns (dim_x, dim_y, dim_z, origin_x, origin_y, origin_z, spacing).
+    pub fn grid_info(&self) -> (i32, i32, i32, f32, f32, f32, f32) {
+        let dim = self.grid_dim as i32;
+        (dim, dim, dim,
+         self.grid_origin[0], self.grid_origin[1], self.grid_origin[2],
+         self.grid_spacing)
+    }
+
+    /// Total number of voxels (dim³).
+    pub fn total_voxels(&self) -> usize {
+        let d = self.grid_dim as usize;
+        d * d * d
+    }
+
+    /// Get a reference to the raw spike output buffer on GPU.
+    /// Used by TWIN ring buffer to read new spikes after each run().
+    pub fn spike_buffer_gpu(&self) -> &CudaSlice<u8> {
+        &self.d_spike_events
     }
 
     /// Load NMA modes from JSON file and upload to GPU.
