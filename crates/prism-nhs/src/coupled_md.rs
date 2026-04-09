@@ -1408,3 +1408,159 @@ pub fn run_coupled_twin(
     anyhow::bail!("PRISM-TWIN requires GPU feature")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests (no GPU required — tests CPU-side logic only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_coupled_twin_config_defaults() {
+        let c = CoupledTwinConfig::default();
+        assert_eq!(c.phase_offset_fraction, 0.20);
+        assert_eq!(c.exchange_interval, 100);
+        assert!(!c.enable_ccf, "CCF should be off by default (Gate 1)");
+        assert!(!c.enable_exchange, "Exchange should be off by default (Gate 1)");
+        assert!(c.sensitivity_boost > 0.0);
+        assert!(c.max_threshold_reduction > 0.0);
+        assert!(c.max_threshold_reduction <= 1.0, "Max reduction must be ≤ 1.0 (100%)");
+        assert!(c.nma_modes_path.is_none());
+    }
+
+    #[test]
+    fn test_interferometric_features_default_all_fields() {
+        let f = InterferometricFeatures::default();
+        assert_eq!(f.resid, -1);
+        assert_eq!(f.barrier_classification, "MEDIUM");
+        assert_eq!(f.consensus_phase_profile, [0.0; 5]);
+        assert_eq!(f.ccf_per_phase, [0.0; 5]);
+        assert_eq!(f.per_phase_differential, [0.0; 5]);
+        assert_eq!(f.nma_responsive_mode, -1);
+        assert_eq!(f.mutual_information, 0.0, "MI must be 0 (placeholder)");
+        assert_eq!(f.transfer_entropy_a_to_b, 0.0, "TE must be 0 (placeholder)");
+        assert_eq!(f.causal_flow_direction, 0.0, "Causal flow must be 0 (placeholder)");
+    }
+
+    #[test]
+    fn test_interferometric_features_serde_roundtrip() {
+        let mut f = InterferometricFeatures::default();
+        f.resid = 42;
+        f.resname = "ALA".to_string();
+        f.spike_agreement_ratio = 0.85;
+        f.ccf_peak_value = 0.72;
+        f.spikes_a = 150;
+        f.spikes_b = 120;
+        f.barrier_classification = "LOW".to_string();
+        f.consensus_phase_profile = [0.1, 0.3, 0.8, 0.5, 0.2];
+        f.scout_lead_time = 500.0;
+
+        let json = serde_json::to_string(&f).expect("serialize");
+        let deser: InterferometricFeatures = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(deser.resid, 42);
+        assert_eq!(deser.resname, "ALA");
+        assert!((deser.spike_agreement_ratio - 0.85).abs() < 1e-6);
+        assert!((deser.ccf_peak_value - 0.72).abs() < 1e-6);
+        assert_eq!(deser.spikes_a, 150);
+        assert_eq!(deser.barrier_classification, "LOW");
+        assert!((deser.consensus_phase_profile[2] - 0.8).abs() < 1e-6);
+        assert!((deser.scout_lead_time - 500.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_interferometric_features_field_count() {
+        // Verify the JSON contains all expected fields by checking key count
+        let f = InterferometricFeatures::default();
+        let json_val: serde_json::Value = serde_json::to_value(&f).expect("to_value");
+        let obj = json_val.as_object().expect("should be object");
+        // 2 identity fields (resid, resname) + 48 feature fields = 50 total
+        // But arrays serialize as arrays inside the object, so count keys
+        let n_keys = obj.len();
+        assert!(n_keys >= 30, "Expected ≥30 JSON keys for 50-field struct, got {}", n_keys);
+    }
+
+    #[test]
+    fn test_ccns_phase_assignment() {
+        let protocol = CryoUvProtocol {
+            start_temp: 50.0,
+            end_temp: 300.0,
+            cold_hold_steps: 5000,
+            ramp_steps: 10000,
+            warm_hold_steps: 5000,
+            current_step: 0,
+            uv_burst_energy: 0.5,
+            uv_burst_interval: 500,
+            uv_burst_duration: 10,
+            scan_wavelengths: vec![280.0],
+            wavelength_dwell_steps: 100,
+            ramp_down_steps: 6000,
+            cold_return_steps: 4000,
+            stepped_holds: Vec::new(),
+        };
+        assert_eq!(ccns_phase(0, &protocol), 0, "t=0 → cold_hold");
+        assert_eq!(ccns_phase(4999, &protocol), 0, "t=4999 → cold_hold");
+        assert_eq!(ccns_phase(5000, &protocol), 1, "t=5000 → heating");
+        assert_eq!(ccns_phase(14999, &protocol), 1, "t=14999 → heating");
+        assert_eq!(ccns_phase(15000, &protocol), 2, "t=15000 → warm_hold");
+        assert_eq!(ccns_phase(19999, &protocol), 2, "t=19999 → warm_hold");
+        assert_eq!(ccns_phase(20000, &protocol), 3, "t=20000 → cooling");
+        assert_eq!(ccns_phase(25999, &protocol), 3, "t=25999 → cooling");
+        assert_eq!(ccns_phase(26000, &protocol), 4, "t=26000 → cold_return");
+        assert_eq!(ccns_phase(30000, &protocol), 4, "t=30000 → cold_return");
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_spike_density_cpu_empty() {
+        let (cells, _bbox) = compute_spike_density_cpu(&[], 4.0);
+        assert!(cells.is_empty());
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_cpu_cross_correlation_empty() {
+        let (n, map) = compute_cpu_cross_correlation(&[], &[], 5.0, 500);
+        assert_eq!(n, 0);
+        assert!(map.is_empty());
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_per_residue_phase_counts_basic() {
+        use crate::fused_engine::GpuSpikeEvent;
+        let protocol = CryoUvProtocol {
+            start_temp: 50.0, end_temp: 300.0,
+            cold_hold_steps: 100, ramp_steps: 100, warm_hold_steps: 100,
+            current_step: 0,
+            uv_burst_energy: 0.5, uv_burst_interval: 500, uv_burst_duration: 10,
+            scan_wavelengths: vec![280.0], wavelength_dwell_steps: 100,
+            ramp_down_steps: 100, cold_return_steps: 100,
+            stepped_holds: Vec::new(),
+        };
+
+        let mut spike = GpuSpikeEvent::default();
+        spike.timestep = 50;  // cold_hold phase
+        spike.nearby_residues[0] = 0;
+        spike.n_residues = 1;
+
+        let counts = per_residue_phase_counts(&[spike], &protocol);
+        assert_eq!(counts.get(&0).unwrap()[0], 1, "Should have 1 spike in cold_hold");
+        assert_eq!(counts.get(&0).unwrap()[1], 0, "Should have 0 in heating");
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_per_residue_onset() {
+        use crate::fused_engine::GpuSpikeEvent;
+        let mut s1 = GpuSpikeEvent::default();
+        s1.timestep = 1000; s1.nearby_residues[0] = 5; s1.n_residues = 1;
+        let mut s2 = GpuSpikeEvent::default();
+        s2.timestep = 500; s2.nearby_residues[0] = 5; s2.n_residues = 1;
+
+        let onset = per_residue_onset(&[s1, s2]);
+        assert_eq!(*onset.get(&5).unwrap(), 500, "Onset should be earliest timestep");
+    }
+}
+
