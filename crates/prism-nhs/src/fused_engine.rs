@@ -5459,8 +5459,9 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_neuron_threshold)
                     .arg(&mut self.d_neuron_mean)
                     .arg(&mut self.d_neuron_refractory)
-                    .arg(&self.d_coupling_b)
+                    // Coupling buffers: kernel self-selects read/write via ProtocolState.coupling_phase
                     .arg(&mut self.d_coupling_a)
+                    .arg(&mut self.d_coupling_b)
                     .arg(&self.d_active_tiles)
                     .arg(&n_active_tiles_i32)
                     .arg(&mut self.d_spike_grid_efp)
@@ -5522,7 +5523,8 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_neuron_threshold)
                     .arg(&mut self.d_neuron_mean)
                     .arg(&mut self.d_neuron_refractory)
-                    .arg(&self.d_coupling_a)
+                    // Coupling buffers: kernel self-selects via ProtocolState.coupling_phase
+                    .arg(&mut self.d_coupling_a)
                     .arg(&mut self.d_coupling_b)
                     .arg(&self.d_active_tiles)
                     .arg(&n_active_tiles_i32)

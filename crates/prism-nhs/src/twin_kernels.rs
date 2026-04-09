@@ -290,6 +290,11 @@ impl TwinRingBuffer {
         Ok(())
     }
 
+    /// Check if device-side compact_and_push is available.
+    pub fn has_device_push(&self) -> bool {
+        self.compact_push_fn.is_some()
+    }
+
     /// GPU-direct spike compaction and push — zero CPU memcpy (Gate 3).
     ///
     /// Reads GpuSpikeEvent (92 bytes) directly from device memory,

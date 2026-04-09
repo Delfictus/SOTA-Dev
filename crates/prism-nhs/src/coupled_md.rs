@@ -854,28 +854,14 @@ pub fn run_coupled_twin(
         (None, None, None)
     };
 
-    // ── DEVICE-SIDE COMPACTOR (for graph capture) ──
-    let mut device_compactor = if twin_config.graph_coupling && twin_config.enable_exchange {
-        if let Some(ref se) = stream_exchange {
-            match (|| -> Result<prism_cuda_ext::compact::DeviceCompactor> {
-                let compact_module = context.load_module(
-                    cudarc::nvrtc::Ptx::from_file(
-                        &crate::twin_kernels::find_twin_ptx("device_compact.ptx")?
-                    )
-                ).context("Failed to load device_compact.ptx")?;
-                prism_cuda_ext::compact::DeviceCompactor::new(se, &compact_module)
-            })() {
-                Ok(dc) => {
-                    log::info!("  DeviceCompactor: loaded ✓ (GPU-side spike compaction)");
-                    Some(dc)
-                }
-                Err(e) => {
-                    log::warn!("  DeviceCompactor: failed to load ({}), graph capture will use CPU fallback", e);
-                    None
-                }
-            }
-        } else { None }
-    } else { None };
+    // ── GATE 3: Device-side compaction via compact_and_push (ring_buffer.cu) ──
+    // When graph_coupling is enabled, push_device() replaces push_compacted().
+    // No separate DeviceCompactor needed — compact_and_push is in the ring buffer PTX.
+    let use_device_compaction = twin_config.graph_coupling && twin_config.enable_exchange
+        && ring_a.as_ref().map(|r| r.has_device_push()).unwrap_or(false);
+    if use_device_compaction {
+        log::info!("  Gate 3: Device-side spike compaction ACTIVE (compact_and_push kernel)");
+    }
 
     // ── PERSISTENT COUPLING KERNEL (optional, --persistent-coupling) ──
     let mut twin_signal: Option<crate::twin_kernels::TwinSignal> = None;
@@ -1060,7 +1046,7 @@ pub fn run_coupled_twin(
     let mut a_finished = false;
 
     // Graph-based coupling: captured on step 1, replayed on step 2+
-    let mut coupling_replay: Option<prism_cuda_ext::coupling_graph::CouplingReplayGraph> = None;
+    let mut coupling_replay: Option<cudarc::driver::safe::CudaGraph> = None;
     let use_graph_coupling = twin_config.graph_coupling && twin_config.enable_exchange;
 
     for step in 0..outer_steps {
@@ -1174,43 +1160,29 @@ pub fn run_coupled_twin(
         // On step 2+: replay the graph with cuGraphLaunch.
         // ════════════════════════════════════════════════════════════════════
         if use_graph_coupling && step > 0 {
-            if let Some(ref graph) = coupling_replay {
+            if let Some(ref coupling_graph) = coupling_replay {
                 // Replay the captured coupling graph — zero host kernel launches
-                graph.launch()?;
-                // Skip host-mediated phases 1, 3, 4
-                // (graph contains: compact A/B → adapt B→A/A→B → recovery)
+                coupling_graph.launch()
+                    .map_err(|e| anyhow::anyhow!("Coupling graph launch failed: {:?}", e))?;
 
-                // Still need to track spike counts for post-processing
-                if twin_config.enable_exchange {
-                    let se = stream_exchange.as_ref().unwrap();
-                    let curr_len_a = engine_a.accumulated_spike_count();
-                    let curr_len_b = engine_b.accumulated_spike_count();
-                    ring_spikes_exchanged += (curr_len_a - prev_accum_len_a + curr_len_b - prev_accum_len_b) as u64;
-                    prev_accum_len_a = curr_len_a;
-                    prev_accum_len_b = curr_len_b;
-                }
-
-                // Progress logging (same as host-mediated)
+                // Progress logging
                 if (step + 1) % 5000 == 0 || step == outer_steps - 1 {
                     let elapsed = start.elapsed().as_secs_f64();
                     let steps_per_sec = (step + 1) as f64 / elapsed;
-                    log::info!("  [GRAPH] Step {}/{}: exchanged={} ({:.0} steps/s)",
-                        step + 1, outer_steps, ring_spikes_exchanged, steps_per_sec);
+                    log::info!("  [GRAPH] Step {}/{}: ({:.0} steps/s)",
+                        step + 1, outer_steps, steps_per_sec);
                 }
-                continue;  // Skip to next iteration — graph handled everything
+                continue;  // Graph handled all coupling — skip to physics
             } else if step == 1 {
-                // Step 1: capture the coupling sequence
-                // Run the host-mediated coupling AND capture it as a graph
+                // Step 1: capture the coupling sequence as a CUDA Graph.
+                // Uses Gate 3 push_device() (compact_and_push kernel) — fully capturable.
                 if let Some(ref se) = stream_exchange {
                     log::info!("  [GRAPH] Capturing coupling kernel sequence on step 1...");
-                    // Capture might fail due to cross-stream dependencies or
-                    // unsupported operations. If it fails, we MUST NOT leave
-                    // the stream in capture mode — that would invalidate ALL
-                    // subsequent kernel launches on this stream.
-                    match prism_cuda_ext::coupling_graph::CouplingReplayGraph::capture(se, || {
-                        // This closure launches ALL coupling kernels on the exchange stream.
-                        // During capture, they're recorded, not executed.
-                        // After capture, this exact sequence replays each step.
+                    use cudarc::driver::sys::CUstreamCaptureMode;
+
+                    let capture_result: Result<()> = (|| {
+                        se.begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+                            .map_err(|e| anyhow::anyhow!("Capture begin failed: {:?}", e))?;
 
                         // Phase 1: threshold adaptation (B→A, A→B)
                         if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
@@ -1238,30 +1210,20 @@ pub fn run_coupled_twin(
                             }
                         }
 
-                        // Phase 3: device-side spike compaction (fully capturable)
-                        // Uses DeviceCompactor which launches PURE GPU KERNELS —
-                        // no host readback, no H2D memcpy, fully capturable.
-                        if let Some(ref mut dc) = device_compactor {
-                            if let (Some(sbuf_a), Some(sc_a), Some(sbuf_b), Some(sc_b)) = (
-                                engine_a.spike_buffer_gpu(),
-                                engine_a.spike_count_gpu(),
-                                engine_b.spike_buffer_gpu(),
-                                engine_b.spike_count_gpu(),
-                            ) {
-                                if let Some(ref mut ra) = ring_a {
-                                    dc.compact_a_capturable(
-                                        se, sbuf_a, sc_a,
-                                        &mut ra.buffer, &mut ra.head, &mut ra.overflow,
-                                        ra.capacity,
-                                    )?;
-                                }
-                                if let Some(ref mut rb) = ring_b {
-                                    dc.compact_b_capturable(
-                                        se, sbuf_b, sc_b,
-                                        &mut rb.buffer, &mut rb.head, &mut rb.overflow,
-                                        rb.capacity,
-                                    )?;
-                                }
+                        // Phase 3: device-side spike compaction via compact_and_push (Gate 3)
+                        // push_device() launches the compact_and_push kernel — fully capturable.
+                        if let (Some(sbuf_a), Some(sc_a)) = (
+                            engine_a.spike_buffer_gpu(), engine_a.spike_count_gpu(),
+                        ) {
+                            if let Some(ref mut ra) = ring_a {
+                                ra.push_device(se, sbuf_a, sc_a)?;
+                            }
+                        }
+                        if let (Some(sbuf_b), Some(sc_b)) = (
+                            engine_b.spike_buffer_gpu(), engine_b.spike_count_gpu(),
+                        ) {
+                            if let Some(ref mut rb) = ring_b {
+                                rb.push_device(se, sbuf_b, sc_b)?;
                             }
                         }
 
@@ -1279,19 +1241,31 @@ pub fn run_coupled_twin(
                         }
 
                         Ok(())
-                    }) {
-                        Ok(graph) => {
-                            log::info!("  [GRAPH] Coupling graph captured: {} kernel nodes", graph.node_count());
-                            log::info!("  [GRAPH] Steps 2+ will use cuGraphLaunch (zero host kernel launches)");
-                            coupling_replay = Some(graph);
+                    })();
+
+                    match capture_result {
+                        Ok(()) => {
+                            use cudarc::driver::sys::CUgraphInstantiate_flags;
+                            match se.end_capture(CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH) {
+                                Ok(Some(graph)) => {
+                                    log::info!("  [GRAPH] Coupling graph captured and instantiated");
+                                    log::info!("  [GRAPH] Steps 2+ will use cuGraphLaunch (zero host coupling overhead)");
+                                    coupling_replay = Some(graph);
+                                }
+                                Ok(None) => {
+                                    log::warn!("  [GRAPH] Capture produced null graph — continuing host-mediated");
+                                }
+                                Err(e) => {
+                                    log::warn!("  [GRAPH] Instantiation failed: {:?} — continuing host-mediated", e);
+                                }
+                            }
                         }
                         Err(e) => {
-                            log::warn!("  [GRAPH] Capture failed: {}", e);
-                            log::warn!("  [GRAPH] Root cause: push_compacted() uses CPU-side H2D memcpy");
-                            log::warn!("  [GRAPH] which is not capturable. Need device-side compact kernel.");
-                            log::warn!("  [GRAPH] Continuing with host-mediated coupling (correct science).");
-                            // The capture was already cleaned up by CouplingReplayGraph::capture's
-                            // error handling. The stream is restored to normal mode.
+                            log::warn!("  [GRAPH] Capture failed: {} — continuing host-mediated", e);
+                            // Attempt to end capture to restore stream to normal mode
+                            let _ = se.end_capture(
+                                cudarc::driver::sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
+                            );
                         }
                     }
                 }
@@ -1331,29 +1305,40 @@ pub fn run_coupled_twin(
         if twin_config.enable_exchange {
             let se = stream_exchange.as_ref().unwrap();
 
-            // A's new spikes → ring_a (for B to read)
-            let curr_len_a = engine_a.accumulated_spike_count();
-            if curr_len_a > prev_accum_len_a {
-                // Only clone+compact when there are actually new spikes
-                let accum_a = engine_a.get_accumulated_spikes();
-                let delta_spikes_a = &accum_a[prev_accum_len_a..];
-                if let Some(ref mut ra) = ring_a {
-                    ra.push_compacted(se, delta_spikes_a)?;
+            if use_device_compaction {
+                // Gate 3: device-side compaction — spikes never leave GPU
+                if let (Some(sbuf_a), Some(sc_a)) = (engine_a.spike_buffer_gpu(), engine_a.spike_count_gpu()) {
+                    if let Some(ref mut ra) = ring_a {
+                        ra.push_device(se, sbuf_a, sc_a)?;
+                    }
                 }
-                ring_spikes_exchanged += delta_spikes_a.len() as u64;
-                prev_accum_len_a = curr_len_a;
-            }
-
-            // B's new spikes → ring_b (for A to read)
-            let curr_len_b = engine_b.accumulated_spike_count();
-            if curr_len_b > prev_accum_len_b {
-                let accum_b = engine_b.get_accumulated_spikes();
-                let delta_spikes_b = &accum_b[prev_accum_len_b..];
-                if let Some(ref mut rb) = ring_b {
-                    rb.push_compacted(se, delta_spikes_b)?;
+                if let (Some(sbuf_b), Some(sc_b)) = (engine_b.spike_buffer_gpu(), engine_b.spike_count_gpu()) {
+                    if let Some(ref mut rb) = ring_b {
+                        rb.push_device(se, sbuf_b, sc_b)?;
+                    }
                 }
-                ring_spikes_exchanged += delta_spikes_b.len() as u64;
-                prev_accum_len_b = curr_len_b;
+            } else {
+                // Host-mediated: CPU-side compaction (92→48 bytes) + upload
+                let curr_len_a = engine_a.accumulated_spike_count();
+                if curr_len_a > prev_accum_len_a {
+                    let accum_a = engine_a.get_accumulated_spikes();
+                    let delta_spikes_a = &accum_a[prev_accum_len_a..];
+                    if let Some(ref mut ra) = ring_a {
+                        ra.push_compacted(se, delta_spikes_a)?;
+                    }
+                    ring_spikes_exchanged += delta_spikes_a.len() as u64;
+                    prev_accum_len_a = curr_len_a;
+                }
+                let curr_len_b = engine_b.accumulated_spike_count();
+                if curr_len_b > prev_accum_len_b {
+                    let accum_b = engine_b.get_accumulated_spikes();
+                    let delta_spikes_b = &accum_b[prev_accum_len_b..];
+                    if let Some(ref mut rb) = ring_b {
+                        rb.push_compacted(se, delta_spikes_b)?;
+                    }
+                    ring_spikes_exchanged += delta_spikes_b.len() as u64;
+                    prev_accum_len_b = curr_len_b;
+                }
             }
         }
 

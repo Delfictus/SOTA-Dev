@@ -1193,6 +1193,60 @@ impl PersistentNhsEngine {
         self.engine.as_mut().map(|e| e.twin_coupling_gpu_state())
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRISM-TWIN v3.0 Gate 3: Autonomous GPU execution delegation
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Launch one complete step's GPU kernels with zero CPU memcpy.
+    /// Director → Physics → CA restraints → multi_lif → heartbeat → coupling clear.
+    /// This is the graph-capturable step function.
+    pub fn step_autonomous_kernels(&mut self) -> Result<()> {
+        let stream = self.stream.clone();
+        if let Some(ref mut engine) = self.engine {
+            engine.step_autonomous_kernels(&stream)
+        } else {
+            bail!("No topology loaded — call load_topology() first")
+        }
+    }
+
+    /// Get reference to GPU-resident ProtocolState (148 bytes).
+    /// Used for heartbeat polling and graph capture.
+    pub fn protocol_state_buffer(&self) -> Option<&CudaSlice<u8>> {
+        self.engine.as_ref().map(|e| &e.d_protocol_state)
+    }
+
+    /// Device-side spike events buffer (for GPU-direct ring buffer push).
+    /// Returns the raw d_spike_events allocation — no CPU download.
+    pub fn spike_events_device(&self) -> Option<&CudaSlice<u8>> {
+        self.engine.as_ref().map(|e| e.spike_events_buffer())
+    }
+
+    /// Device-side spike count buffer (for GPU-direct ring buffer push).
+    pub fn spike_count_device(&self) -> Option<&CudaSlice<i32>> {
+        self.engine.as_ref().map(|e| e.spike_count_buffer())
+    }
+
+    /// Rebuild neighbor lists if the rebuild interval has elapsed.
+    /// Returns Ok(true) if rebuilt, Ok(false) if not needed.
+    pub fn rebuild_neighbor_lists_if_needed(&mut self) -> Result<bool> {
+        if let Some(ref mut engine) = self.engine {
+            engine.rebuild_neighbor_lists_if_needed()
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Get mutable reference to the inner NhsAmberFusedEngine.
+    /// Used when the caller needs direct access (e.g., autonomous TWIN coupling).
+    pub fn fused_engine_mut(&mut self) -> Option<&mut crate::fused_engine::NhsAmberFusedEngine> {
+        self.engine.as_mut()
+    }
+
+    /// Get immutable reference to the inner NhsAmberFusedEngine.
+    pub fn fused_engine(&self) -> Option<&crate::fused_engine::NhsAmberFusedEngine> {
+        self.engine.as_ref()
+    }
+
     /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
     pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

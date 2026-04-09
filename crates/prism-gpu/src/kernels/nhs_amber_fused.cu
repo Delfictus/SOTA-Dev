@@ -2955,8 +2955,10 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     float* neuron_threshold,     // [total_voxels * K_NEURONS]
     float* neuron_mean,          // [total_voxels * K_NEURONS] = y (imaginary)
     int*   neuron_refractory,    // [total_voxels * K_NEURONS]
-    const float* coupling_read,  // [total_voxels] read buffer (from previous step)
-    float* coupling_write,       // [total_voxels] write buffer (for next step)
+    float* coupling_a,           // [total_voxels] double-buffer A
+    float* coupling_b,           // [total_voxels] double-buffer B
+    // Director toggles coupling_phase in ProtocolState each step.
+    // phase=0: read A, write B.  phase=1: read B, write A.
     // === Sparse tile index ===
     const int* active_tiles,     // [n_active_tiles * 3] packed (bx, by, bz) triplets
     int n_active_tiles,          // number of active tiles (0 = fallback to full grid)
@@ -2983,6 +2985,11 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     const float target_temp = d_protocol->current_temperature;
     const float dt = d_protocol->dt;
     const int timestep = (int)d_protocol->current_step;
+
+    // Coupling buffer self-selection: Director already toggled coupling_phase.
+    // Both buffer pointers are baked in the graph — the kernel picks read/write.
+    const float* coupling_read = (d_protocol->coupling_phase == 0) ? coupling_a : coupling_b;
+    float* coupling_write = (d_protocol->coupling_phase == 0) ? coupling_b : coupling_a;
 
     // === Shared memory layout (SOTA v2) ===
     // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
