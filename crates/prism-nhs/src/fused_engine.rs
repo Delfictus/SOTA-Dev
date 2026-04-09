@@ -3225,6 +3225,15 @@ impl NhsAmberFusedEngine {
         &self.d_base_threshold
     }
 
+    /// Get both threshold buffers together (avoids double-borrow).
+    /// SAFETY: the two fields are distinct allocations, so simultaneous
+    /// &mut and & is memory-safe.
+    pub fn threshold_buffers_mut(&mut self) -> (&mut CudaSlice<f32>, &CudaSlice<f32>) {
+        let thresh = &mut self.d_neuron_threshold as *mut CudaSlice<f32>;
+        let base = &self.d_base_threshold as *const CudaSlice<f32>;
+        unsafe { (&mut *thresh, &*base) }
+    }
+
     /// Get grid geometry for voxel-to-world coordinate mapping.
     /// Returns (dim_x, dim_y, dim_z, origin_x, origin_y, origin_z, spacing).
     pub fn grid_info(&self) -> (i32, i32, i32, f32, f32, f32, f32) {

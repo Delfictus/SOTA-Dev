@@ -40,6 +40,8 @@ use cudarc::driver::{CudaContext, CudaStream, CudaModule};
 use crate::persistent_engine::PersistentNhsEngine;
 use crate::input::PrismPrepTopology;
 use crate::fused_engine::CryoUvProtocol;
+#[cfg(feature = "gpu")]
+use crate::twin_kernels::{TwinRingBuffer, find_twin_ptx};
 
 /// Ring buffer size for per-voxel spike history (for CCF computation).
 /// 256 entries captures ~500 steps of spike history at typical rates.
@@ -413,11 +415,47 @@ pub fn run_coupled_twin(
     log::info!("  VRAM used by twin engines: {:.2} GB ({:.1} GB remaining)",
         vram_used, vram_after as f64 / 1e9);
 
+    // ── RING BUFFER ALLOCATION (TWIN interferometric coupling) ──
+    //
+    // Two ring buffers carry spike evidence between streams:
+    //   ring_a: holds A's spikes → read by B's threshold adapter
+    //   ring_b: holds B's spikes → read by A's threshold adapter
+    //
+    // The coupling flow per step:
+    //   1. read_and_adapt: ring_b → lower A's thresholds where B saw spikes
+    //   2. read_and_adapt: ring_a → lower B's thresholds where A saw spikes
+    //   3. sync exchange stream
+    //   4. run both engines (they pick up modified thresholds)
+    //   5. compact new spikes → push to ring buffers
+    //   6. periodic threshold recovery (prevent permanent suppression)
+
+    let (mut ring_a, mut ring_b, stream_exchange) = if twin_config.enable_exchange {
+        let ring_module = context.load_module(
+            cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("ring_buffer.ptx")?)
+        ).context("Failed to load ring_buffer.ptx")?;
+        let stream_ex = context.new_stream().context("CUDA exchange stream")?;
+
+        let mut ra = TwinRingBuffer::new(&context, &stream_ex, &ring_module, 8192)?;
+        let mut rb = TwinRingBuffer::new(&context, &stream_ex, &ring_module, 8192)?;
+        ra.reset(&stream_ex)?;
+        rb.reset(&stream_ex)?;
+
+        log::info!("  Ring buffers: A ✓, B ✓ (capacity=8192 each)");
+        (Some(ra), Some(rb), Some(stream_ex))
+    } else {
+        (None, None, None)
+    };
+
+    let diag_enabled = std::env::var("PRISM_TWIN_DIAG").is_ok();
+    if diag_enabled {
+        log::info!("  PRISM_TWIN_DIAG: threshold coupling diagnostics ENABLED");
+    }
+
     // ── INTERLEAVED EXECUTION ──
     let inner = fused_steps.max(1) as i32;
     let outer_steps_a = (steps + inner - 1) / inner;
     let outer_steps_b = (steps_b + inner - 1) / inner;
-    let outer_steps = outer_steps_a.max(outer_steps_b);  // run until B finishes
+    let outer_steps = outer_steps_a.max(outer_steps_b);
 
     log::info!("  Running {} interleaved outer steps (A={}, B={} fused steps)...",
         outer_steps, outer_steps_a, outer_steps_b);
@@ -426,21 +464,107 @@ pub fn run_coupled_twin(
     let mut spikes_a_total = 0usize;
     let mut spikes_b_total = 0usize;
 
-    // Gate 2 exchange accumulators
+    // Gate 2 exchange accumulators (CPU density telemetry — kept for logging)
     let mut n_exchanges: u32 = 0;
     let mut total_density_a_to_b: f64 = 0.0;
     let mut total_density_b_to_a: f64 = 0.0;
     let mut max_nonzero_regions: u32 = 0;
 
-    // Ring buffer tracking (Step 2: per-step spike count delta)
-    let mut prev_spike_count_a: u32 = 0;
-    let mut prev_spike_count_b: u32 = 0;
+    // Ring buffer spike tracking
+    let mut prev_accum_len_a: usize = 0;  // index into accumulated_spikes for delta
+    let mut prev_accum_len_b: usize = 0;
     let mut ring_spikes_exchanged: u64 = 0;
+    let mut coupling_active_steps: u32 = 0;
 
     let mut a_finished = false;
 
     for step in 0..outer_steps {
-        // Step both engines. A stops after outer_steps_a, B continues to outer_steps_b.
+
+        // ════════════════════════════════════════════════════════════════════
+        // PHASE 1: Cross-stream threshold adaptation (BEFORE engine.run)
+        //
+        // B's recent spikes → lower A's thresholds (make A more sensitive
+        //   in regions where B found activity)
+        // A's recent spikes → lower B's thresholds (symmetric)
+        //
+        // This is the interferometric coupling — detector sensitivity in
+        // one stream is steered by evidence from the other stream.
+        // ════════════════════════════════════════════════════════════════════
+        if let (Some(ref mut rb), Some(ref se)) = (&mut ring_b, &stream_exchange) {
+            if step > 0 {
+                // Get grid geometry from engine A (both engines share the same grid)
+                if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
+                    // B's evidence → adapt A's thresholds
+                    if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
+                        rb.read_and_adapt(
+                            se, thresh_a, base_a,
+                            (gx, gy, gz), (ox, oy, oz), vs,
+                            twin_config.sensitivity_boost,
+                            twin_config.max_threshold_reduction,
+                            step as u32,
+                            500.0,  // decay_constant: spikes > 500 steps old lose influence
+                        )?;
+                    }
+                }
+            }
+        }
+        if let (Some(ref mut ra), Some(ref se)) = (&mut ring_a, &stream_exchange) {
+            if step > 0 {
+                if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_b.grid_info() {
+                    // A's evidence → adapt B's thresholds
+                    if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
+                        ra.read_and_adapt(
+                            se, thresh_b, base_b,
+                            (gx, gy, gz), (ox, oy, oz), vs,
+                            twin_config.sensitivity_boost,
+                            twin_config.max_threshold_reduction,
+                            step as u32,
+                            500.0,
+                        )?;
+                    }
+                }
+            }
+        }
+        // Sync exchange stream BEFORE launching fused kernels so threshold
+        // modifications are visible to both engines' next run().
+        if let Some(ref se) = stream_exchange {
+            if step > 0 {
+                se.synchronize()?;
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // PHASE 1.5: Diagnostic — measure coupling effectiveness
+        // ════════════════════════════════════════════════════════════════════
+        if diag_enabled && step > 0 && step % 100 == 0 {
+            // Measure coupling effectiveness: L2 norm of (threshold - base_threshold)
+            // over a sample of voxels. Non-zero delta means coupling is modifying thresholds.
+            let delta_l2 = if ring_spikes_exchanged > 0 {
+                // Use the ring buffer overflow count as a proxy — if spikes are
+                // being exchanged and read, coupling is active. Full threshold
+                // download would be expensive, so we use the spike count as signal.
+                let overflow_a = ring_b.as_ref().and_then(|r| {
+                    stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
+                }).unwrap_or(0);
+                let overflow_b = ring_a.as_ref().and_then(|r| {
+                    stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
+                }).unwrap_or(0);
+                // Coupling is active if spikes were exchanged without 100% overflow
+                if overflow_a + overflow_b < ring_spikes_exchanged as u32 {
+                    coupling_active_steps += 1;
+                }
+                ring_spikes_exchanged as f32 / (step as f32 + 1.0)
+            } else {
+                0.0
+            };
+            log::info!("  [DIAG] step={} spikes_per_step={:.1} ring_total={} active={}/{}",
+                step, delta_l2, ring_spikes_exchanged,
+                coupling_active_steps, step / 100);
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // PHASE 2: Run both engines (concurrent on separate CUDA streams)
+        // ════════════════════════════════════════════════════════════════════
         if step < outer_steps_a {
             let summary_a = engine_a.run(inner)?;
             spikes_a_total += summary_a.total_spikes;
@@ -453,69 +577,112 @@ pub fn run_coupled_twin(
         let summary_b = engine_b.run(inner)?;
         spikes_b_total += summary_b.total_spikes;
 
-        // ── Ring buffer: track per-step spike deltas ────────────────────────
-        // This tracks how many NEW spikes each step produces.
-        // In production, these would be pushed to the ring buffer CUDA kernel.
-        // For Step 2, we just count and log.
+        // ════════════════════════════════════════════════════════════════════
+        // PHASE 3: Compact new spikes and push to ring buffers
+        //
+        // After engine.run(), new spikes have been downloaded to CPU and
+        // appended to accumulated_spikes. We slice the delta (new since
+        // last push), compact GpuSpikeEvent (92B) → RingSpikeEvent (48B),
+        // upload, and push to the ring buffer.
+        // ════════════════════════════════════════════════════════════════════
         if twin_config.enable_exchange {
-            let curr_a = engine_a.get_spike_count().unwrap_or(0);
-            let curr_b = engine_b.get_spike_count().unwrap_or(0);
-            let new_a = curr_a.saturating_sub(prev_spike_count_a);
-            let new_b = curr_b.saturating_sub(prev_spike_count_b);
-            ring_spikes_exchanged += (new_a + new_b) as u64;
-            prev_spike_count_a = curr_a;
-            prev_spike_count_b = curr_b;
+            let se = stream_exchange.as_ref().unwrap();
+
+            // A's new spikes → ring_a (for B to read)
+            let curr_len_a = engine_a.accumulated_spike_count();
+            if curr_len_a > prev_accum_len_a {
+                // Only clone+compact when there are actually new spikes
+                let accum_a = engine_a.get_accumulated_spikes();
+                let delta_spikes_a = &accum_a[prev_accum_len_a..];
+                if let Some(ref mut ra) = ring_a {
+                    ra.push_compacted(se, delta_spikes_a)?;
+                }
+                ring_spikes_exchanged += delta_spikes_a.len() as u64;
+                prev_accum_len_a = curr_len_a;
+            }
+
+            // B's new spikes → ring_b (for A to read)
+            let curr_len_b = engine_b.accumulated_spike_count();
+            if curr_len_b > prev_accum_len_b {
+                let accum_b = engine_b.get_accumulated_spikes();
+                let delta_spikes_b = &accum_b[prev_accum_len_b..];
+                if let Some(ref mut rb) = ring_b {
+                    rb.push_compacted(se, delta_spikes_b)?;
+                }
+                ring_spikes_exchanged += delta_spikes_b.len() as u64;
+                prev_accum_len_b = curr_len_b;
+            }
         }
 
-        // ── Gate 2: Spike density exchange ────────────────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        // PHASE 4: Periodic threshold recovery (every 1000 steps)
+        //
+        // Without recovery, thresholds drift permanently downward as more
+        // spikes accumulate. Recovery gently pushes thresholds back toward
+        // baseline at 1% per call. This means:
+        //   - Recently active voxels: stay suppressed (new spikes keep pushing down)
+        //   - Inactive voxels: recover to baseline over ~100K steps
+        //   - Net effect: coupling is recency-weighted
+        // ════════════════════════════════════════════════════════════════════
+        if twin_config.enable_exchange && step as u32 % 1000 == 0 && step > 0 {
+            let n_voxels = engine_a.total_voxels() as u32;
+            if let Some(ref se) = stream_exchange {
+                if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
+                    if let Some(ref rb) = ring_b {
+                        rb.threshold_recovery(se, thresh_a, base_a, n_voxels, 0.01)?;
+                    }
+                }
+                if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
+                    if let Some(ref ra) = ring_a {
+                        ra.threshold_recovery(se, thresh_b, base_b, n_voxels, 0.01)?;
+                    }
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // CPU density exchange telemetry (kept for logging, no longer drives coupling)
+        // ════════════════════════════════════════════════════════════════════
         if twin_config.enable_exchange && step as u32 % twin_config.exchange_interval == 0 {
-            // Snapshot accumulated spikes from both engines mid-run.
-            // These are *cumulative* from the start, so the density represents
-            // the history up to this exchange point.
             let snap_a = engine_a.get_accumulated_spikes();
             let snap_b = engine_b.get_accumulated_spikes();
 
-            // Compute coarse 4Å density grids on CPU
-            let cell_ang = twin_config.region_size as f32; // region_size is in Å
-            let (cells_a, _bbox_a) = compute_spike_density_cpu(&snap_a, cell_ang);
-            let (cells_b, _bbox_b) = compute_spike_density_cpu(&snap_b, cell_ang);
+            let cell_ang = twin_config.region_size as f32;
+            let (cells_a, _) = compute_spike_density_cpu(&snap_a, cell_ang);
+            let (cells_b, _) = compute_spike_density_cpu(&snap_b, cell_ang);
 
-            // Summarise: total intensity and non-zero region count
             let density_a: f64 = cells_a.iter().map(|c| c.total_intensity).sum();
             let density_b: f64 = cells_b.iter().map(|c| c.total_intensity).sum();
-            let nonzero_a = cells_a.len() as u32;
-            let nonzero_b = cells_b.len() as u32;
             let nonzero_union = {
-                // Union of active regions: use a HashSet on the grid keys
                 use std::collections::HashSet;
                 let keys_a: HashSet<_> = cells_a.iter().map(|c| c.idx).collect();
                 let keys_b: HashSet<_> = cells_b.iter().map(|c| c.idx).collect();
-                (keys_a.union(&keys_b).count()) as u32
+                keys_a.union(&keys_b).count() as u32
             };
 
-            // Accumulate exchange statistics
             n_exchanges += 1;
             total_density_a_to_b += density_a;
             total_density_b_to_a += density_b;
-            if nonzero_union > max_nonzero_regions {
-                max_nonzero_regions = nonzero_union;
-            }
+            if nonzero_union > max_nonzero_regions { max_nonzero_regions = nonzero_union; }
 
             log::debug!(
-                "  [exchange #{n_exchanges}] step={step}: \
-                 A regions={nonzero_a} density={density_a:.3e} | \
-                 B regions={nonzero_b} density={density_b:.3e} | \
-                 union={nonzero_union}"
+                "  [exchange #{n_exchanges}] step={step}: density A={density_a:.3e} B={density_b:.3e} union={nonzero_union}"
             );
         }
-        // ─────────────────────────────────────────────────────────────────────
 
         // Progress logging
-        if (step + 1) % 5000 == 0 {
+        if (step + 1) % 5000 == 0 || step == outer_steps - 1 {
             let elapsed = start.elapsed().as_secs_f64();
             let steps_per_sec = (step + 1) as f64 / elapsed;
-            log::info!("  Step {}/{}: A={} B={} spikes  exchanges={n_exchanges} ({:.0} steps/s)",
-                step + 1, outer_steps, spikes_a_total, spikes_b_total, steps_per_sec);
+            let overflow_a = ring_a.as_ref().and_then(|r| {
+                stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
+            }).unwrap_or(0);
+            let overflow_b = ring_b.as_ref().and_then(|r| {
+                stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
+            }).unwrap_or(0);
+            log::info!("  Step {}/{}: A={} B={} spikes  ring_spikes_exchanged={} overflow_a={} overflow_b={} ({:.0} steps/s)",
+                step + 1, outer_steps, spikes_a_total, spikes_b_total,
+                ring_spikes_exchanged, overflow_a, overflow_b, steps_per_sec);
         }
     }
 

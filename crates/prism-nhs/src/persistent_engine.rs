@@ -1130,6 +1130,15 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Get the number of accumulated spikes without cloning the vector.
+    pub fn accumulated_spike_count(&self) -> usize {
+        if let Some(ref engine) = self.engine {
+            engine.get_accumulated_spikes().len()
+        } else {
+            0
+        }
+    }
+
     // ── PRISM-TWIN threshold access (Step 2) ──
 
     /// Get mutable reference to per-voxel neuron threshold buffer.
@@ -1140,6 +1149,12 @@ impl PersistentNhsEngine {
     /// Get reference to base (initial) threshold buffer.
     pub fn base_threshold_buffer(&self) -> Option<&CudaSlice<f32>> {
         self.engine.as_ref().map(|e| e.base_threshold_buffer())
+    }
+
+    /// Get both threshold buffers together (avoids double-borrow).
+    /// Returns (mutable_threshold, base_threshold) if engine is loaded.
+    pub fn threshold_buffers_mut(&mut self) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>)> {
+        self.engine.as_mut().map(|e| e.threshold_buffers_mut())
     }
 
     /// Get grid geometry (dim_x, dim_y, dim_z, origin_x, origin_y, origin_z, spacing).
