@@ -864,9 +864,13 @@ impl TwinCouplingPersistent {
         // Config
         config: &TwinCouplingConfig,
     ) -> Result<()> {
-        // 168 blocks × 256 threads = full SM occupancy on RTX 5080 (84 SMs × 2 blocks)
+        // 2 blocks × 256 threads — minimal SM footprint.
+        // The persistent kernel only needs 2 blocks (one per stream direction).
+        // Using 168 blocks would occupy ALL SMs and starve the physics kernels.
+        // With 2 blocks: grid.sync() across 2 blocks is near-instant, and
+        // the remaining 82 SMs are free for the fused physics kernel.
         let launch_cfg = LaunchConfig {
-            grid_dim: (168, 1, 1),
+            grid_dim: (2, 1, 1),
             block_dim: (256, 1, 1),
             shared_mem_bytes: 0,
         };
@@ -917,7 +921,7 @@ impl TwinCouplingPersistent {
                 .launch_cooperative(launch_cfg)?;
         }
 
-        log::info!("  Persistent coupling kernel launched: 168 blocks × 256 threads, {} steps",
+        log::info!("  Persistent coupling kernel launched: 2 blocks × 256 threads (minimal SM footprint), {} steps",
             config.total_steps);
         Ok(())
     }

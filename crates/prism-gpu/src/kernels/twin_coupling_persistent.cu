@@ -38,9 +38,14 @@
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 
+// IMPORTANT: Only 2 blocks launched (1 per stream direction).
+// This leaves 82+ SMs free for the physics kernels which run concurrently.
+// The original design used 168 blocks (full SM occupancy) which STARVED
+// the physics kernels — 100% SM util but 1% MBW because all SMs were
+// spinning in the coupling kernel's wait loop, not doing physics.
 #define COUPLING_BLOCK_SIZE 256
-#define NUM_BLOCKS_TOTAL 168
-#define NUM_BLOCKS_PER_STREAM 84
+#define NUM_BLOCKS_TOTAL 2
+#define NUM_BLOCKS_PER_STREAM 1
 
 // ─────────────────────────────────────────────────────────────────────
 // Inline ring buffer operations (from ring_buffer.cu, inlined to avoid
@@ -144,9 +149,9 @@ twin_coupling_persistent(
 ) {
     cg::grid_group grid = cg::this_grid();
 
+    // Block 0 = stream A coupling, Block 1 = stream B coupling
     const bool is_stream_b_block = (blockIdx.x >= NUM_BLOCKS_PER_STREAM);
-    const int stream_block = is_stream_b_block ?
-        (blockIdx.x - NUM_BLOCKS_PER_STREAM) : blockIdx.x;
+    const int stream_block = 0;  // Only 1 block per stream
     const int n_voxels_total = n_voxels_x * n_voxels_y * n_voxels_z;
 
     // Track previous spike counts to compute deltas
@@ -201,12 +206,8 @@ twin_coupling_persistent(
             int start_idx = (n_new > (int)ring_capacity) ? (curr_count - (int)ring_capacity) : prev_count;
             n_new = curr_count - start_idx;
 
-            // Distribute new spikes across blocks in this stream group
-            int spikes_per_block = (n_new + NUM_BLOCKS_PER_STREAM - 1) / NUM_BLOCKS_PER_STREAM;
-            int my_start = stream_block * spikes_per_block;
-            int my_end = min(my_start + spikes_per_block, n_new);
-
-            for (int i = my_start + (int)threadIdx.x; i < my_end; i += COUPLING_BLOCK_SIZE) {
+            // Single block handles all new spikes (256 threads stride across them)
+            for (int i = (int)threadIdx.x; i < n_new; i += COUPLING_BLOCK_SIZE) {
                 RingSpikeEvent compacted;
                 compact_spike(spike_buf, start_idx + i, &compacted);
 
@@ -309,11 +310,8 @@ twin_coupling_persistent(
             float* my_thresh = is_stream_b_block ? thresh_b : thresh_a;
             const float* my_base = is_stream_b_block ? base_b : base_a;
 
-            int voxels_per_block = (n_voxels_total + NUM_BLOCKS_PER_STREAM - 1) / NUM_BLOCKS_PER_STREAM;
-            int v_start = stream_block * voxels_per_block;
-            int v_end = min(v_start + voxels_per_block, n_voxels_total);
-
-            for (int v = v_start + (int)threadIdx.x; v < v_end; v += COUPLING_BLOCK_SIZE) {
+            // Single block strides across all voxels
+            for (int v = (int)threadIdx.x; v < n_voxels_total; v += COUPLING_BLOCK_SIZE) {
                 float current = my_thresh[v];
                 float base = my_base[v];
                 my_thresh[v] = current + recovery_rate * (base - current);
