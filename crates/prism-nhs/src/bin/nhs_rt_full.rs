@@ -614,6 +614,7 @@ fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()>
         args.fused_steps,
         args.adaptive_dt,
         args.ladd,
+        &args.output,
     )?;
 
     // Save result

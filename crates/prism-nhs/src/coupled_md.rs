@@ -532,6 +532,7 @@ pub fn run_coupled_twin(
     fused_steps: u32,
     adaptive_dt: bool,
     ladd_enabled: bool,
+    output_dir: &std::path::Path,
 ) -> Result<CoupledTwinResult> {
     let seed_b = seed_a + 1000;
 
@@ -905,9 +906,7 @@ pub fn run_coupled_twin(
     {
         use std::io::Write;
 
-        let spike_output_dir = std::env::var("PRISM_TWIN_OUTPUT")
-            .unwrap_or_else(|_| "/tmp/prism_twin_spikes".to_string());
-        let spike_output_path = std::path::Path::new(&spike_output_dir);
+        let spike_output_path = output_dir;
         let _ = std::fs::create_dir_all(spike_output_path);
 
         // Write combined spike file with stream_id
@@ -966,9 +965,7 @@ pub fn run_coupled_twin(
     // into the output directory. Single-pass replacement for the non-twin
     // detection pass. Failure is logged but does not abort the twin run.
     {
-        let twin_output_dir = std::env::var("PRISM_TWIN_OUTPUT")
-            .unwrap_or_else(|_| "/tmp/prism_twin_spikes".to_string());
-        let twin_output_path = std::path::Path::new(&twin_output_dir);
+        let twin_output_path = output_dir;
         let prefix = std::path::Path::new(&topology.source_pdb)
             .file_stem()
             .and_then(|s| s.to_str())
