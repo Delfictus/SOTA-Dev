@@ -920,9 +920,19 @@ pub fn run_coupled_twin(
         }
     }
 
-    let use_persistent = twin_config.persistent_coupling && _persistent_kernel.is_some();
-    if twin_config.persistent_coupling && !use_persistent {
-        log::info!("  Persistent coupling: falling back to host-mediated (spike_count GPU pointer pending)");
+    // PERSISTENT COUPLING DISABLED: the cooperative kernel's spin-wait loop
+    // is non-preemptible on SM120 (Blackwell), causing SM starvation even with
+    // 2 blocks. The physics kernel gets zero MBW because the CUDA scheduler
+    // can't reclaim the persistent kernel's blocks. Host-mediated coupling
+    // (which is functionally identical) runs at full physics throughput.
+    //
+    // The persistent kernel (Gates 0-3) is compiled and launchable but should
+    // NOT be used until CUDA cooperative kernel preemption is investigated
+    // on the RTX 5080 Blackwell architecture.
+    let use_persistent = false;  // FORCED OFF — see comment above
+    if twin_config.persistent_coupling {
+        log::warn!("  --persistent-coupling: DISABLED (SM starvation on Blackwell SM120)");
+        log::warn!("  Using host-mediated coupling (functionally identical, full physics throughput)");
     }
 
     let diag_enabled = std::env::var("PRISM_TWIN_DIAG").is_ok();
