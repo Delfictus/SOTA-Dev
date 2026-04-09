@@ -5908,6 +5908,83 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        // SPATIAL FUSION: KD-tree spike→site join (populates spike_indices)
+        //
+        // LIGSITE sites are geometry-only (spike_indices empty). This join
+        // maps every spike to its nearest site centroid within 10Å, giving
+        // each site its spike population for the three-factor blender.
+        // ══════════════════════════════════════════════════════════════════
+        if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
+            let join_start = std::time::Instant::now();
+            let radius = 10.0f32;
+            let radius_sq = radius * radius;
+            let mut total_assigned = 0usize;
+
+            // For each spike, find the nearest site centroid within radius
+            for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
+                let mut best_dist_sq = f32::MAX;
+                let mut best_site: Option<usize> = None;
+                for (site_idx, site) in clustered_sites.iter().enumerate() {
+                    let dx = spike.position[0] - site.centroid[0];
+                    let dy = spike.position[1] - site.centroid[1];
+                    let dz = spike.position[2] - site.centroid[2];
+                    let d2 = dx*dx + dy*dy + dz*dz;
+                    if d2 < radius_sq && d2 < best_dist_sq {
+                        best_dist_sq = d2;
+                        best_site = Some(site_idx);
+                    }
+                }
+                if let Some(idx) = best_site {
+                    clustered_sites[idx].spike_indices.push(spike_idx);
+                    total_assigned += 1;
+                }
+            }
+
+            // Update spike_count and compute lining residues from spikes
+            for site in clustered_sites.iter_mut() {
+                site.spike_count = site.spike_indices.len();
+                // Extract lining residues from assigned spikes
+                let mut residue_counts: std::collections::HashMap<i32, u32> = std::collections::HashMap::new();
+                for &idx in &site.spike_indices {
+                    if let Some(spike) = all_stream_spikes.get(idx) {
+                        for j in 0..(spike.n_residues as usize).min(8) {
+                            let rid = spike.nearby_residues[j];
+                            if rid >= 0 {
+                                *residue_counts.entry(rid).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                // Top residues by spike count → lining_residues
+                let mut sorted_res: Vec<_> = residue_counts.into_iter().collect();
+                sorted_res.sort_by(|a, b| b.1.cmp(&a.1));
+                site.lining_residues = sorted_res.iter().take(20).map(|&(rid, count)| {
+                    prism_nhs::persistent_engine::LiningResidue {
+                        chain: String::new(),
+                        resid: rid,
+                        resname: String::new(),
+                        min_distance: 0.0,
+                        n_atoms_in_pocket: count as usize,
+                    }
+                }).collect();
+            }
+
+            let join_ms = join_start.elapsed().as_millis();
+            log::info!("  Spatial fusion: {}/{} spikes → {} sites ({} assigned, {}ms)",
+                total_assigned, all_stream_spikes.len(), clustered_sites.len(),
+                total_assigned, join_ms);
+            for site in &clustered_sites {
+                if site.spike_count > 0 {
+                    let top_res: String = site.lining_residues.iter().take(5)
+                        .map(|r| format!("r{}({})", r.resid, r.n_atoms_in_pocket))
+                        .collect::<Vec<_>>().join(",");
+                    log::info!("    Site {}: {} spikes, lining=[{}]",
+                        site.cluster_id, site.spike_count, top_res);
+                }
+            }
+        }
+
         // ── PRISM-Therm (multi-stream path) — run BEFORE final reranking ──
         let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
             log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)...");
@@ -6117,70 +6194,53 @@ fn run_multi_stream_pipeline(
                 // Factor 1: CV interferometric (continuous, no lookup table)
                 let f_cv = (1.0 + 0.5 * (1.0 - cv as f32)).clamp(0.75, 1.5);
 
-                // Factor 2: S_pc phase coherence for this site's residues
-                let f_spc = if let Some(ref asc) = asc_shared {
-                    if let Ok(gph) = asc.group_residue_phase.lock() {
-                        if let Ok(grc) = asc.group_residue_counts.lock() {
-                            // Compute mean S_pc across residues near this site
-                            let mut spc_sum = 0.0f64;
-                            let mut spc_count = 0u32;
-                            // Get residues from spikes near this site
-                            let mut site_residues = std::collections::HashSet::new();
-                            for &idx in &site.spike_indices {
-                                if let Some(spike) = all_stream_spikes.get(idx) {
-                                    for j in 0..(spike.n_residues as usize).min(8) {
-                                        let rid = spike.nearby_residues[j];
-                                        if rid >= 0 && (rid as usize) < asc.n_residues {
-                                            site_residues.insert(rid as usize);
-                                        }
-                                    }
-                                }
+                // Factor 2: S_pc EXPONENTIAL phase coherence for this site's residues
+                // exp(S_pc * 2.0) - 1.0: S_pc=0→0.0, S_pc=0.5→1.72, S_pc=1.0→6.39
+                // Clamped to [1.0, 4.0] as a multiplier
+                let (f_spc, mean_spc_val) = if let Some(ref asc) = asc_shared {
+                    if let (Ok(gph), Ok(grc)) = (asc.group_residue_phase.lock(), asc.group_residue_counts.lock()) {
+                        let mut spc_sum = 0.0f64;
+                        let mut spc_count = 0u32;
+                        // Use lining_residues (populated by spatial join)
+                        for lr in &site.lining_residues {
+                            let rid = lr.resid as usize;
+                            if rid >= asc.n_residues { continue; }
+                            let mut cos_t = 0.0f64;
+                            let mut sin_t = 0.0f64;
+                            let mut n_t = 0u64;
+                            for g in 0..4 {
+                                cos_t += gph[g][rid].0;
+                                sin_t += gph[g][rid].1;
+                                n_t += grc[g][rid] as u64;
                             }
-                            for &rid in &site_residues {
-                                let mut cos_t = 0.0f64;
-                                let mut sin_t = 0.0f64;
-                                let mut n_t = 0u64;
-                                for g in 0..4 {
-                                    cos_t += gph[g][rid].0;
-                                    sin_t += gph[g][rid].1;
-                                    n_t += grc[g][rid] as u64;
-                                }
-                                if n_t > 10 {
-                                    let spc = (cos_t.powi(2) + sin_t.powi(2)).sqrt() / n_t as f64;
-                                    spc_sum += spc;
-                                    spc_count += 1;
-                                }
-                            }
-                            if spc_count > 0 {
-                                let mean_spc = spc_sum / spc_count as f64;
-                                // S_pc boost: 0→1.0× (no coherence), 1→1.3× (perfect lock)
-                                (1.0 + 0.3 * mean_spc as f32).clamp(1.0, 1.3)
-                            } else { 1.0 }
-                        } else { 1.0 }
-                    } else { 1.0 }
-                } else { 1.0 };
-
-                // Factor 3: ASC 9th observer consensus overlap
-                let f_asc = if !asc_consensus_residues.is_empty() {
-                    let mut asc_hits = 0u32;
-                    let mut total_with_residue = 0u32;
-                    for &idx in &site.spike_indices {
-                        if let Some(spike) = all_stream_spikes.get(idx) {
-                            for j in 0..(spike.n_residues as usize).min(8) {
-                                let rid = spike.nearby_residues[j];
-                                if rid >= 0 {
-                                    total_with_residue += 1;
-                                    if asc_consensus_residues.contains(&rid) {
-                                        asc_hits += 1;
-                                    }
-                                }
+                            if n_t > 10 {
+                                let spc = (cos_t.powi(2) + sin_t.powi(2)).sqrt() / n_t as f64;
+                                spc_sum += spc;
+                                spc_count += 1;
                             }
                         }
-                    }
-                    if total_with_residue > 10 {
-                        let frac = asc_hits as f32 / total_with_residue as f32;
-                        // 9th observer boost: 0→1.0× (no overlap), 1→1.3× (full overlap)
-                        1.0 + 0.3 * frac
+                        if spc_count > 0 {
+                            let mean_spc = spc_sum / spc_count as f64;
+                            // Exponential scaling: sites with high phase coherence get exponential boost
+                            let boost = ((mean_spc * 2.0).exp() - 1.0) as f32 / 5.39; // normalize so S_pc=1→1.0
+                            let mult = (1.0 + boost * 3.0).clamp(1.0, 4.0); // max 4× for perfect coherence
+                            (mult, mean_spc as f32)
+                        } else { (1.0, 0.0) }
+                    } else { (1.0, 0.0) }
+                } else { (1.0, 0.0) };
+
+                // Factor 3: ASC 9th observer — Discovery Reward
+                // Sites containing ASC steering residues (S_pc > 0.85, 3+ groups)
+                // get an exponential reward proportional to the overlap fraction
+                let f_asc = if !asc_consensus_residues.is_empty() && !site.lining_residues.is_empty() {
+                    let site_residue_ids: std::collections::HashSet<i32> = site.lining_residues.iter()
+                        .map(|lr| lr.resid).collect();
+                    let overlap = site_residue_ids.intersection(&asc_consensus_residues).count();
+                    if overlap > 0 {
+                        // Discovery reward: exponential in overlap count
+                        // 1 residue → 1.5×, 2 → 2.25×, 3+ → 3.0× (capped)
+                        let reward = (1.0 + 0.5 * overlap as f32).min(3.0);
+                        reward
                     } else { 1.0 }
                 } else { 1.0 };
 
@@ -6192,9 +6252,9 @@ fn run_multi_stream_pipeline(
                 let rate_str: String = (0..n_groups).map(|g| {
                     format!("{}:{:.1}", group_names[g], rates[g] * 1000.0)
                 }).collect::<Vec<_>>().join(" ");
-                log::info!("  Site {}: 3-FACTOR {:.3}→{:.3} (CV={:.3}→×{:.2} Spc→×{:.2} ASC→×{:.2} = ×{:.2}) [{}]",
+                log::info!("  Site {}: 3-FACTOR {:.3}→{:.3} (CV={:.3}→×{:.2} Spc={:.3}→×{:.2} ASC→×{:.2} = ×{:.2}) [{}]",
                     site.cluster_id, old_q, site.quality_score,
-                    cv, f_cv, f_spc, f_asc, combined_mult, rate_str);
+                    cv, f_cv, mean_spc_val, f_spc, f_asc, combined_mult, rate_str);
             }
         }
 
