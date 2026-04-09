@@ -874,49 +874,79 @@ fn run_coupled_twin_multi_pipeline(
 
     let wall_time = start.elapsed();
 
-    // ── Collect per-group spikes ──
+    // ── Collect per-group spikes + snapshots ──
     let mut group_a_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
     let mut group_b_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
-    let mut total_a = 0usize;
-    let mut total_b = 0usize;
+    let mut group_a_snapshots: Vec<prism_nhs::fused_engine::EnsembleSnapshot> = Vec::new();
+    let mut group_b_snapshots: Vec<prism_nhs::fused_engine::EnsembleSnapshot> = Vec::new();
 
     for i in 0..total_engines {
         let spikes = engines[i].get_accumulated_spikes();
+        let snapshots = engines[i].get_snapshots();
         if i < n {
-            total_a += spikes.len();
             group_a_spikes.extend(spikes);
+            group_a_snapshots.extend(snapshots);
         } else {
-            total_b += spikes.len();
             group_b_spikes.extend(spikes);
+            group_b_snapshots.extend(snapshots);
         }
     }
 
-    log::info!("  Group A: {} spikes ({} engines)", total_a, n);
-    log::info!("  Group B: {} spikes ({} engines)", total_b, n);
+    log::info!("  Group A: {} spikes, {} snapshots ({} engines)",
+        group_a_spikes.len(), group_a_snapshots.len(), n);
+    log::info!("  Group B: {} spikes, {} snapshots ({} engines)",
+        group_b_spikes.len(), group_b_snapshots.len(), n);
 
-    // ── Delegate post-simulation to Phase A run_coupled_twin ──
-    // The Phase A function handles: spike persistence, TWIN detection,
-    // GPU CCF, 50-field features, site aggregation, result construction.
-    // We call it with the aggregated group spikes.
-    //
-    // For now, use the 2-engine Phase A pipeline with aggregated data.
-    // The coupling already happened during the interleaved loop above.
-    // Phase A's run_coupled_twin produces the final output files.
-    log::info!("  Delegating post-processing to Phase A pipeline...");
+    // ── Post-process with REAL aggregated N-engine data ──
+    // Uses the shared twin_post_process function (extracted from Phase A).
+    // This produces ALL output files: binding_sites, CCF matrix, per-residue
+    // features (50 fields), per-site features, ensemble trajectory, coupled_spikes.
+    use prism_nhs::coupled_md::{twin_post_process, TwinSimulationMetadata};
 
-    // Run Phase A for output generation (engines already ran, just need post-processing)
-    // We call the existing pipeline which re-runs the simulation — this is suboptimal
-    // but correct. Proper fix: extract post-processing into a separate function.
-    //
-    // TODO: Factor out the post-simulation section of run_coupled_twin into
-    // a standalone function that takes spikes as input instead of re-running engines.
-    // For now, the multi-engine coupling DID happen in the loop above, and the
-    // Phase A 2-engine run produces valid output files.
-    run_coupled_twin_pipeline(args, topology_path)?;
+    let meta = TwinSimulationMetadata {
+        seed_a: args.replica_seed,
+        seed_b: args.replica_seed + 1000,
+        steps,
+        steps_b: steps + offset_steps,
+        offset_steps,
+        wall_time_secs: wall_time.as_secs_f64(),
+        vram_used_gb: 0.0, // TODO: compute from nvidia-smi or mem_get_info delta
+        n_exchanges: 0,    // multi-engine doesn't track CPU density exchanges
+        total_density_a_to_b: 0.0,
+        total_density_b_to_a: 0.0,
+        max_nonzero_regions: 0,
+        ring_spikes_exchanged,
+    };
+
+    let se_ref = Some(&stream_exchange);
+    let result = twin_post_process(
+        group_a_spikes,
+        group_b_spikes,
+        group_a_snapshots,
+        group_b_snapshots,
+        &topology,
+        &protocol,
+        &twin_config,
+        &context,
+        se_ref,
+        &args.output,
+        &meta,
+    )?;
+
+    // Save result JSON
+    let result_path = args.output.join("coupled_twin_result.json");
+    std::fs::write(&result_path, serde_json::to_string_pretty(&result)?)?;
+    log::info!("PRISM-TWIN multi-engine result saved: {}", result_path.display());
 
     log::info!("╔══════════════════════════════════════════════════════════╗");
-    log::info!("║  TWIN MULTI-ENGINE COMPLETE ({} engines, {:.1}s)         ║", total_engines, wall_time.as_secs_f64());
-    log::info!("║  Ring spikes exchanged: {:>12}                   ║", ring_spikes_exchanged);
+    log::info!("║  TWIN MULTI-ENGINE COMPLETE                             ║");
+    log::info!("║  Engines: {} ({} × 2 groups)                            ║", total_engines, n);
+    log::info!("║  Spikes A: {:>10}  B: {:>10}                  ║",
+        result.stream_a.total_spikes, result.stream_b.total_spikes);
+    log::info!("║  Sites:  {:>4}  Residues: {:>4}                         ║",
+        result.per_site_features.len(), result.per_residue_features.len());
+    log::info!("║  Ring exchanged: {:>12}                         ║", ring_spikes_exchanged);
+    log::info!("║  Wall time: {:.1}s                                     ║", wall_time.as_secs_f64());
     log::info!("╚══════════════════════════════════════════════════════════╝");
 
     Ok(())

@@ -404,6 +404,23 @@ pub fn aggregate_site_features(
     }).collect()
 }
 
+/// Metadata from the simulation loop, passed to twin_post_process.
+#[cfg(feature = "gpu")]
+pub struct TwinSimulationMetadata {
+    pub seed_a: u64,
+    pub seed_b: u64,
+    pub steps: i32,
+    pub steps_b: i32,
+    pub offset_steps: i32,
+    pub wall_time_secs: f64,
+    pub vram_used_gb: f64,
+    pub n_exchanges: u32,
+    pub total_density_a_to_b: f64,
+    pub total_density_b_to_a: f64,
+    pub max_nonzero_regions: u32,
+    pub ring_spikes_exchanged: u64,
+}
+
 /// Full result from a PRISM-TWIN coupled observation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoupledTwinResult {
@@ -1061,17 +1078,79 @@ pub fn run_coupled_twin(
     let wall_time = start.elapsed();
     log::info!("  Simulation complete: {:.1}s wall time", wall_time.as_secs_f64());
 
-    // ── Collect accumulated spikes ──
+    // ── Collect accumulated spikes + snapshots ──
     let spikes_a = engine_a.get_accumulated_spikes();
     let spikes_b = engine_b.get_accumulated_spikes();
-
-    log::info!("  Stream A accumulated: {} spikes", spikes_a.len());
-    log::info!("  Stream B accumulated: {} spikes", spikes_b.len());
-
-    // ── Collect ensemble snapshots (conformational trajectory) ──
     let snapshots_a = engine_a.get_snapshots();
     let snapshots_b = engine_b.get_snapshots();
-    log::info!("  Ensemble snapshots: A={}, B={}", snapshots_a.len(), snapshots_b.len());
+
+    log::info!("  Stream A: {} spikes, {} snapshots", spikes_a.len(), snapshots_a.len());
+    log::info!("  Stream B: {} spikes, {} snapshots", spikes_b.len(), snapshots_b.len());
+
+    // ── Delegate to shared post-processing ──
+    let meta = TwinSimulationMetadata {
+        seed_a,
+        seed_b,
+        steps,
+        steps_b,
+        offset_steps,
+        wall_time_secs: wall_time.as_secs_f64(),
+        vram_used_gb: vram_used,
+        n_exchanges,
+        total_density_a_to_b,
+        total_density_b_to_a,
+        max_nonzero_regions,
+        ring_spikes_exchanged,
+    };
+
+    twin_post_process(
+        spikes_a, spikes_b,
+        snapshots_a, snapshots_b,
+        topology, &protocol, twin_config,
+        &context, stream_exchange.as_ref(),
+        output_dir, &meta,
+    )
+}
+
+/// Shared post-processing for PRISM-TWIN: takes aggregated spikes from
+/// either Phase A (2 engines) or Phase B (2N engines) and produces all
+/// output files + the CoupledTwinResult.
+///
+/// This function handles:
+///   1. Ensemble trajectory metadata (JSON)
+///   2. Spike persistence (coupled_spikes.json)
+///   3. TWIN-aware site detection (binding_sites, kcc, therm, per_residue)
+///   4. GPU Tensor Core CCF (WMMA kernel)
+///   5. Per-residue feature assembly (50 fields, 39 populated, 11 placeholders)
+///   6. Site-level feature aggregation from lining residues
+///   7. Result struct construction + summary banner
+#[cfg(feature = "gpu")]
+pub fn twin_post_process(
+    spikes_a: Vec<crate::fused_engine::GpuSpikeEvent>,
+    spikes_b: Vec<crate::fused_engine::GpuSpikeEvent>,
+    snapshots_a: Vec<crate::fused_engine::EnsembleSnapshot>,
+    snapshots_b: Vec<crate::fused_engine::EnsembleSnapshot>,
+    topology: &PrismPrepTopology,
+    protocol: &CryoUvProtocol,
+    twin_config: &CoupledTwinConfig,
+    context: &Arc<CudaContext>,
+    stream_exchange: Option<&Arc<CudaStream>>,
+    output_dir: &std::path::Path,
+    meta: &TwinSimulationMetadata,
+) -> Result<CoupledTwinResult> {
+
+    let seed_a = meta.seed_a;
+    let seed_b = meta.seed_b;
+    let steps = meta.steps;
+    let steps_b = meta.steps_b;
+    let offset_steps = meta.offset_steps;
+    let n_exchanges = meta.n_exchanges;
+    let total_density_a_to_b = meta.total_density_a_to_b;
+    let total_density_b_to_a = meta.total_density_b_to_a;
+    let max_nonzero_regions = meta.max_nonzero_regions;
+    let ring_spikes_exchanged = meta.ring_spikes_exchanged;
+
+    std::fs::create_dir_all(output_dir)?;
 
     // Write ensemble_trajectory.json with both streams' snapshots tagged
     {
@@ -1692,8 +1771,8 @@ pub fn run_coupled_twin(
     log::info!("║  Exchanges:    {:>6}                                   ║", n_exchanges);
     log::info!("║  CCF matches:  {:>6}                                   ║", n_consensus_events);
     log::info!("║  Residues:     {:>6}                                   ║", result.per_residue_features.len());
-    log::info!("║  Wall time: {:.1}s                                     ║", wall_time.as_secs_f64());
-    log::info!("║  VRAM: {:.2} GB used                                   ║", vram_used);
+    log::info!("║  Wall time: {:.1}s                                     ║", meta.wall_time_secs);
+    log::info!("║  VRAM: {:.2} GB used                                   ║", meta.vram_used_gb);
     log::info!("╚══════════════════════════════════════════════════════════╝");
 
     Ok(result)
