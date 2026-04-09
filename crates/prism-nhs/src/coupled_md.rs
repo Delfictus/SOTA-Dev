@@ -1010,9 +1010,9 @@ pub fn run_coupled_twin(
         // This requires adding a stream() accessor to the engine.
         //
         // For now, fall back to host-mediated with a clear message.
-        log::warn!("  Graph coupling: architecture compiled and ready");
-        log::warn!("  Blocked on: engine stream accessor for stream capture");
-        log::warn!("  Falling back to host-mediated coupling (same science, host launch overhead)");
+        log::info!("  Graph coupling: will capture coupling kernels on first step");
+        log::info!("  Then replay via cuGraphLaunch each subsequent step");
+        log::info!("  Physics remains host-managed (all flags respected)");
     }
 
     log::info!("  Running {} interleaved outer steps (A={}, B={} fused steps)...",
@@ -1035,6 +1035,10 @@ pub fn run_coupled_twin(
     let mut coupling_active_steps: u32 = 0;
 
     let mut a_finished = false;
+
+    // Graph-based coupling: captured on step 1, replayed on step 2+
+    let mut coupling_replay: Option<prism_cuda_ext::coupling_graph::CouplingReplayGraph> = None;
+    let use_graph_coupling = twin_config.graph_coupling && twin_config.enable_exchange;
 
     for step in 0..outer_steps {
 
@@ -1139,6 +1143,118 @@ pub fn run_coupled_twin(
 
         let summary_b = engine_b.run(inner)?;
         spikes_b_total += summary_b.total_spikes;
+
+        // ════════════════════════════════════════════════════════════════════
+        // GRAPH COUPLING: if we have a captured graph, replay it and skip
+        // all host-mediated coupling phases (1, 3, 4).
+        // On step 1: capture the coupling sequence into a graph.
+        // On step 2+: replay the graph with cuGraphLaunch.
+        // ════════════════════════════════════════════════════════════════════
+        if use_graph_coupling && step > 0 {
+            if let Some(ref graph) = coupling_replay {
+                // Replay the captured coupling graph — zero host kernel launches
+                graph.launch()?;
+                // Skip host-mediated phases 1, 3, 4
+                // (graph contains: compact A/B → adapt B→A/A→B → recovery)
+
+                // Still need to track spike counts for post-processing
+                if twin_config.enable_exchange {
+                    let se = stream_exchange.as_ref().unwrap();
+                    let curr_len_a = engine_a.accumulated_spike_count();
+                    let curr_len_b = engine_b.accumulated_spike_count();
+                    ring_spikes_exchanged += (curr_len_a - prev_accum_len_a + curr_len_b - prev_accum_len_b) as u64;
+                    prev_accum_len_a = curr_len_a;
+                    prev_accum_len_b = curr_len_b;
+                }
+
+                // Progress logging (same as host-mediated)
+                if (step + 1) % 5000 == 0 || step == outer_steps - 1 {
+                    let elapsed = start.elapsed().as_secs_f64();
+                    let steps_per_sec = (step + 1) as f64 / elapsed;
+                    log::info!("  [GRAPH] Step {}/{}: exchanged={} ({:.0} steps/s)",
+                        step + 1, outer_steps, ring_spikes_exchanged, steps_per_sec);
+                }
+                continue;  // Skip to next iteration — graph handled everything
+            } else if step == 1 {
+                // Step 1: capture the coupling sequence
+                // Run the host-mediated coupling AND capture it as a graph
+                if let Some(ref se) = stream_exchange {
+                    log::info!("  [GRAPH] Capturing coupling kernel sequence on step 1...");
+                    match prism_cuda_ext::coupling_graph::CouplingReplayGraph::capture(se, || {
+                        // This closure launches ALL coupling kernels on the exchange stream.
+                        // During capture, they're recorded, not executed.
+                        // After capture, this exact sequence replays each step.
+
+                        // Phase 1: threshold adaptation (B→A, A→B)
+                        if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
+                            if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
+                                if let Some(ref mut rb) = ring_b {
+                                    rb.read_and_adapt(
+                                        se, thresh_a, base_a,
+                                        (gx,gy,gz), (ox,oy,oz), vs,
+                                        twin_config.sensitivity_boost,
+                                        twin_config.max_threshold_reduction,
+                                        1, 500.0,
+                                    )?;
+                                }
+                            }
+                            if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
+                                if let Some(ref mut ra) = ring_a {
+                                    ra.read_and_adapt(
+                                        se, thresh_b, base_b,
+                                        (gx,gy,gz), (ox,oy,oz), vs,
+                                        twin_config.sensitivity_boost,
+                                        twin_config.max_threshold_reduction,
+                                        1, 500.0,
+                                    )?;
+                                }
+                            }
+                        }
+
+                        // Phase 3: spike compaction + push (host path for capture)
+                        let curr_len_a = engine_a.accumulated_spike_count();
+                        if curr_len_a > 0 {
+                            let accum_a = engine_a.get_accumulated_spikes();
+                            if let Some(ref mut ra) = ring_a {
+                                ra.push_compacted(se, &accum_a)?;
+                            }
+                        }
+                        let curr_len_b = engine_b.accumulated_spike_count();
+                        if curr_len_b > 0 {
+                            let accum_b = engine_b.get_accumulated_spikes();
+                            if let Some(ref mut rb) = ring_b {
+                                rb.push_compacted(se, &accum_b)?;
+                            }
+                        }
+
+                        // Phase 4: recovery
+                        let n_voxels = engine_a.total_voxels() as u32;
+                        if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
+                            if let Some(ref rb) = ring_b {
+                                rb.threshold_recovery(se, thresh_a, base_a, n_voxels, 0.01)?;
+                            }
+                        }
+                        if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
+                            if let Some(ref ra) = ring_a {
+                                ra.threshold_recovery(se, thresh_b, base_b, n_voxels, 0.01)?;
+                            }
+                        }
+
+                        Ok(())
+                    }) {
+                        Ok(graph) => {
+                            log::info!("  [GRAPH] Coupling graph captured: {} kernel nodes", graph.node_count());
+                            log::info!("  [GRAPH] Steps 2+ will use cuGraphLaunch (zero host kernel launches)");
+                            coupling_replay = Some(graph);
+                        }
+                        Err(e) => {
+                            log::warn!("  [GRAPH] Capture failed ({}), continuing with host-mediated", e);
+                        }
+                    }
+                }
+                // Fall through to host-mediated for this step (capture recorded but didn't execute)
+            }
+        }
 
         // ════════════════════════════════════════════════════════════════════
         // PHASE 2.5: Signal stream completion (persistent coupling mode only)

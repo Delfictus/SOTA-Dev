@@ -22,6 +22,7 @@
 
 pub mod capture;
 pub mod compact;
+pub mod coupling_graph;
 pub mod exhaust;
 pub mod graph;
 pub mod graph_builder;
