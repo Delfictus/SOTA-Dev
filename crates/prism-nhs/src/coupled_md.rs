@@ -854,6 +854,29 @@ pub fn run_coupled_twin(
         (None, None, None)
     };
 
+    // ── DEVICE-SIDE COMPACTOR (for graph capture) ──
+    let mut device_compactor = if twin_config.graph_coupling && twin_config.enable_exchange {
+        if let Some(ref se) = stream_exchange {
+            match (|| -> Result<prism_cuda_ext::compact::DeviceCompactor> {
+                let compact_module = context.load_module(
+                    cudarc::nvrtc::Ptx::from_file(
+                        &crate::twin_kernels::find_twin_ptx("device_compact.ptx")?
+                    )
+                ).context("Failed to load device_compact.ptx")?;
+                prism_cuda_ext::compact::DeviceCompactor::new(se, &compact_module)
+            })() {
+                Ok(dc) => {
+                    log::info!("  DeviceCompactor: loaded ✓ (GPU-side spike compaction)");
+                    Some(dc)
+                }
+                Err(e) => {
+                    log::warn!("  DeviceCompactor: failed to load ({}), graph capture will use CPU fallback", e);
+                    None
+                }
+            }
+        } else { None }
+    } else { None };
+
     // ── PERSISTENT COUPLING KERNEL (optional, --persistent-coupling) ──
     let mut twin_signal: Option<crate::twin_kernels::TwinSignal> = None;
     let mut _persistent_kernel: Option<crate::twin_kernels::TwinCouplingPersistent> = None;
@@ -1215,19 +1238,30 @@ pub fn run_coupled_twin(
                             }
                         }
 
-                        // Phase 3: spike compaction + push (host path for capture)
-                        let curr_len_a = engine_a.accumulated_spike_count();
-                        if curr_len_a > 0 {
-                            let accum_a = engine_a.get_accumulated_spikes();
-                            if let Some(ref mut ra) = ring_a {
-                                ra.push_compacted(se, &accum_a)?;
-                            }
-                        }
-                        let curr_len_b = engine_b.accumulated_spike_count();
-                        if curr_len_b > 0 {
-                            let accum_b = engine_b.get_accumulated_spikes();
-                            if let Some(ref mut rb) = ring_b {
-                                rb.push_compacted(se, &accum_b)?;
+                        // Phase 3: device-side spike compaction (fully capturable)
+                        // Uses DeviceCompactor which launches PURE GPU KERNELS —
+                        // no host readback, no H2D memcpy, fully capturable.
+                        if let Some(ref mut dc) = device_compactor {
+                            if let (Some(sbuf_a), Some(sc_a), Some(sbuf_b), Some(sc_b)) = (
+                                engine_a.spike_buffer_gpu(),
+                                engine_a.spike_count_gpu(),
+                                engine_b.spike_buffer_gpu(),
+                                engine_b.spike_count_gpu(),
+                            ) {
+                                if let Some(ref mut ra) = ring_a {
+                                    dc.compact_a_capturable(
+                                        se, sbuf_a, sc_a,
+                                        &mut ra.buffer, &mut ra.head, &mut ra.overflow,
+                                        ra.capacity,
+                                    )?;
+                                }
+                                if let Some(ref mut rb) = ring_b {
+                                    dc.compact_b_capturable(
+                                        se, sbuf_b, sc_b,
+                                        &mut rb.buffer, &mut rb.head, &mut rb.overflow,
+                                        rb.capacity,
+                                    )?;
+                                }
                             }
                         }
 

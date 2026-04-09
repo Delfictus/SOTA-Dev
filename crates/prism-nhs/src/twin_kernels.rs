@@ -146,11 +146,12 @@ pub struct RingSpikeEvent {
 
 /// GPU-side ring buffer for spike exchange between twin observation groups.
 pub struct TwinRingBuffer {
-    buffer: CudaSlice<u8>,
-    head: CudaSlice<u32>,
-    tail: CudaSlice<u32>,
-    overflow: CudaSlice<u32>,
-    capacity: u32,
+    // Public for cross-crate access (prism-cuda-ext device compactor)
+    pub buffer: CudaSlice<u8>,
+    pub head: CudaSlice<u32>,
+    pub tail: CudaSlice<u32>,
+    pub overflow: CudaSlice<u32>,
+    pub capacity: u32,
     /// CPU-side staging for spike compaction (GpuSpikeEvent → RingSpikeEvent)
     staging: Vec<RingSpikeEvent>,
     /// GPU staging buffer for compacted spikes
