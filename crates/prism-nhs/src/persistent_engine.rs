@@ -1172,6 +1172,21 @@ impl PersistentNhsEngine {
         self.engine.as_ref().map(|e| e.spike_buffer_gpu())
     }
 
+    /// Get reference to spike count buffer on GPU (for persistent coupling kernel).
+    pub fn spike_count_gpu(&self) -> Option<&CudaSlice<i32>> {
+        self.engine.as_ref().map(|e| e.spike_count_gpu())
+    }
+
+    /// Get ALL GPU buffer references needed by the persistent coupling kernel.
+    pub fn twin_coupling_gpu_state(&mut self) -> Option<(
+        &mut CudaSlice<f32>,
+        &CudaSlice<f32>,
+        &CudaSlice<u8>,
+        &CudaSlice<i32>,
+    )> {
+        self.engine.as_mut().map(|e| e.twin_coupling_gpu_state())
+    }
+
     /// Set REST2 solute tempering λ. λ=1.0 = physical, λ<1.0 = softened potential.
     pub fn set_solute_lambda(&mut self, lambda: f32) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

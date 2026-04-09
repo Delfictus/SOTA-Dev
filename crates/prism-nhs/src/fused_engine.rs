@@ -3255,6 +3255,31 @@ impl NhsAmberFusedEngine {
         &self.d_spike_events
     }
 
+    /// Get a reference to the spike count buffer on GPU.
+    /// Used by the persistent coupling kernel to read how many spikes
+    /// the engine has produced without a host round-trip.
+    pub fn spike_count_gpu(&self) -> &CudaSlice<i32> {
+        &self.d_spike_count
+    }
+
+    /// Get ALL GPU buffer references needed by the persistent coupling kernel
+    /// in a single call, avoiding the mutable/immutable borrow split.
+    ///
+    /// Returns: (thresh_mut, base, spike_buf, spike_count)
+    /// SAFETY: the returned references point to distinct GPU allocations.
+    pub fn twin_coupling_gpu_state(&mut self) -> (
+        &mut CudaSlice<f32>,  // d_neuron_threshold
+        &CudaSlice<f32>,      // d_base_threshold
+        &CudaSlice<u8>,       // d_spike_events
+        &CudaSlice<i32>,      // d_spike_count
+    ) {
+        let thresh = &mut self.d_neuron_threshold as *mut CudaSlice<f32>;
+        let base = &self.d_base_threshold as *const CudaSlice<f32>;
+        let spike_buf = &self.d_spike_events as *const CudaSlice<u8>;
+        let spike_count = &self.d_spike_count as *const CudaSlice<i32>;
+        unsafe { (&mut *thresh, &*base, &*spike_buf, &*spike_count) }
+    }
+
     /// Load NMA modes from JSON file and upload to GPU.
     ///
     /// JSON format:

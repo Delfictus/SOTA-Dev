@@ -869,26 +869,37 @@ pub fn run_coupled_twin(
                     total_steps: outer_total,
                 };
 
-                if let (Some((thresh_a, base_a_ref)), Some((thresh_b, base_b_ref))) = (
-                    engine_a.threshold_buffers_mut(),
-                    engine_b.threshold_buffers_mut(),
-                ) {
-                    if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
-                        if let (Some(spike_buf_a), Some(spike_buf_b)) = (
-                            engine_a.spike_buffer_gpu(),
-                            engine_b.spike_buffer_gpu(),
-                        ) {
-                            // Get spike count buffers
-                            // NOTE: engine.get_spike_count() reads from d_spike_count.
-                            // We need the GPU pointer directly for the persistent kernel.
-                            // For now, use the host-mediated path. The persistent kernel
-                            // will be fully wired when spike_count_gpu() is exposed.
-                            log::warn!("  Persistent coupling: kernel compiled but spike_count GPU pointer not yet exposed");
-                            log::warn!("  Falling back to host-mediated coupling for this run");
-                            // TODO Gate 3: expose d_spike_count as a CudaSlice reference
-                            // then call persistent.launch() here
-                        }
+                // The persistent kernel needs simultaneous immutable refs (spike buffers,
+                // grid info) and mutable refs (thresholds) to the same engines. The borrow
+                // checker prevents this, but the GPU buffers are distinct allocations with
+                // no aliasing. Use threshold_buffers_mut() which returns both in one call.
+                let grid_info = engine_a.grid_info();
+
+                if let Some((gx, gy, gz, ox, oy, oz, vs)) = grid_info {
+                    // Use combined accessor to get all GPU state in one borrow
+                    let state_a = engine_a.twin_coupling_gpu_state();
+                    let state_b = engine_b.twin_coupling_gpu_state();
+
+                    if let (Some((thresh_a, base_a, sbuf_a, sc_a)),
+                            Some((thresh_b, base_b, sbuf_b, sc_b))) = (state_a, state_b) {
+                        persistent.launch(
+                            se,
+                            &mut signal,
+                            ra, rb,
+                            8192,
+                            sbuf_a, sc_a,
+                            sbuf_b, sc_b,
+                            thresh_a, base_a,
+                            thresh_b, base_b,
+                            (gx, gy, gz), (ox, oy, oz), vs,
+                            &coupling_config,
+                        )?;
+                        log::info!("  ✓ Persistent coupling kernel LAUNCHED ({} steps)", outer_total);
+                    } else {
+                        log::warn!("  Persistent coupling: engine GPU state not available");
                     }
+                } else {
+                    log::warn!("  Persistent coupling: grid info not available");
                 }
 
                 _persistent_kernel = Some(persistent);
@@ -940,6 +951,9 @@ pub fn run_coupled_twin(
 
         // ════════════════════════════════════════════════════════════════════
         // PHASE 1: Cross-stream threshold adaptation (BEFORE engine.run)
+        // SKIPPED when persistent coupling is active — the persistent kernel
+        // handles threshold adaptation on-device between signal flags.
+        if !use_persistent {
         //
         // B's recent spikes → lower A's thresholds (make A more sensitive
         //   in regions where B found activity)
@@ -991,6 +1005,8 @@ pub fn run_coupled_twin(
             }
         }
 
+        } // end if !use_persistent (Phase 1)
+
         // ════════════════════════════════════════════════════════════════════
         // PHASE 1.5: Diagnostic — measure coupling effectiveness
         // ════════════════════════════════════════════════════════════════════
@@ -1036,7 +1052,28 @@ pub fn run_coupled_twin(
         spikes_b_total += summary_b.total_spikes;
 
         // ════════════════════════════════════════════════════════════════════
+        // PHASE 2.5: Signal stream completion (persistent coupling mode only)
+        // The persistent kernel spin-waits on these flags to begin exchange.
+        // ════════════════════════════════════════════════════════════════════
+        if use_persistent {
+            if let Some(ref mut sig) = twin_signal {
+                // Signal on the engine's own CUDA stream so the signal is
+                // ordered AFTER all physics + detection kernels complete.
+                // The persistent kernel sees the flag only after engine work is done.
+                // NOTE: we use stream_exchange for now since engine streams are internal.
+                // Production: should signal on engine's stream for proper ordering.
+                if let Some(ref se) = stream_exchange {
+                    sig.signal_a(se, (step + 1) as u32)?;
+                    sig.signal_b(se, (step + 1) as u32)?;
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
         // PHASE 3: Compact new spikes and push to ring buffers
+        // SKIPPED when persistent coupling is active — the persistent kernel
+        // handles spike compaction + ring push on-device.
+        if !use_persistent {
         //
         // After engine.run(), new spikes have been downloaded to CPU and
         // appended to accumulated_spikes. We slice the delta (new since
@@ -1097,6 +1134,8 @@ pub fn run_coupled_twin(
                 }
             }
         }
+
+        } // end if !use_persistent (Phases 3+4)
 
         // ════════════════════════════════════════════════════════════════════
         // CPU density exchange telemetry (kept for logging, no longer drives coupling)
