@@ -3989,6 +3989,7 @@ dependencies = [
  "half",
  "log",
  "optix-sys",
+ "prism-cuda-ext",
  "prism-gpu",
  "prism-io",
  "prism-learning",

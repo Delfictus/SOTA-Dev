@@ -159,6 +159,82 @@ extern "C" __global__ void ring_buffer_threshold_recovery(
 // KERNEL 4: Reset ring buffer state (for initialization)
 // ─────────────────────────────────────────────────────────────────────
 
+// ═══════════════════════════════════════════════════════════════════════
+// GATE 3: Device-side spike compaction + push
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Reads GpuSpikeEvent (92 bytes) directly from d_spike_events on GPU,
+// extracts the 12 fields that RingSpikeEvent needs (48 bytes), and pushes
+// directly into the ring buffer — ALL on GPU, zero CPU memcpy.
+//
+// This kernel replaces the CPU-side push_compacted() path:
+//   Old: GPU spikes → memcpy_dtoh → CPU field extraction → memcpy_htod → push kernel
+//   New: GPU spikes → this kernel → ring buffer (never leaves VRAM)
+
+// GpuSpikeEvent layout — must match SpikeEvent in nhs_amber_fused.cu (92 bytes)
+struct GpuSpikeEvent {
+    int timestep;               // 0
+    int voxel_idx;              // 4
+    float pos_x, pos_y, pos_z;  // 8, 12, 16 (float3 = 3 contiguous floats)
+    float intensity;            // 20
+    int nearby_residues[8];     // 24-55
+    int n_residues;             // 56
+    int spike_source;           // 60
+    float wavelength_nm;        // 64
+    int aromatic_type;          // 68
+    int aromatic_residue_id;    // 72
+    float water_density;        // 76
+    float vibrational_energy;   // 80
+    int n_nearby_excited;       // 84
+    float wd_change;            // 88
+};  // total = 92 bytes
+
+extern "C" __global__ void compact_and_push(
+    const GpuSpikeEvent* __restrict__ spike_events, // [max_spikes] source (92 bytes each)
+    const int* __restrict__ spike_count,              // [1] number of valid spikes
+    unsigned char* __restrict__ ring_buffer,           // ring buffer storage
+    unsigned int* __restrict__ head_ptr,               // monotonic write counter
+    unsigned int* __restrict__ overflow_ptr,            // overflow counter
+    unsigned int capacity                              // ring buffer capacity
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int n_spikes = *spike_count;
+    if (tid >= n_spikes) return;
+
+    // Read from the fat GpuSpikeEvent
+    const GpuSpikeEvent* src = &spike_events[tid];
+
+    // Compact into RingSpikeEvent (48 bytes)
+    RingSpikeEvent compact;
+    compact.timestep          = src->timestep;
+    compact.voxel_idx         = src->voxel_idx;
+    compact.x                 = src->pos_x;
+    compact.y                 = src->pos_y;
+    compact.z                 = src->pos_z;
+    compact.intensity         = src->intensity;
+    compact.vibrational_energy = src->vibrational_energy;
+    compact.water_density     = src->water_density;
+    compact.n_nearby_excited  = src->n_nearby_excited;
+    compact.spike_source      = src->spike_source;
+    compact.wavelength_nm     = src->wavelength_nm;
+    compact.pad               = 0;
+
+    // Atomic increment head to claim a slot
+    unsigned int slot = atomicAdd(head_ptr, 1);
+    unsigned int ring_idx = slot % capacity;
+
+    // Write compact event to ring buffer
+    RingSpikeEvent* dst = (RingSpikeEvent*)ring_buffer + ring_idx;
+    *dst = compact;
+
+    // Track overflow (informational — ring overwrites old data, which is correct)
+    if (slot >= capacity) {
+        atomicAdd(overflow_ptr, 1);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+
 extern "C" __global__ void ring_buffer_reset(
     unsigned int* __restrict__ head_ptr,
     unsigned int* __restrict__ tail_ptr,

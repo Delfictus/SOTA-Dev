@@ -2437,3 +2437,181 @@ mod tests {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRISM-TWIN v3.0 Gate 3: Autonomous Graph-Coupled Dual-Engine Pipeline
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The true TWIN interferometric platform:
+// - Both engines run inside a SINGLE CudaGraphExec
+// - Spike data flows through GPU-resident ring buffers (zero PCIe)
+// - A's discoveries modulate B's thresholds, and vice versa
+// - CPU only wakes for neighbor list rebuild every 500 steps
+//
+// Call graph (per graph launch = one coupled MD step):
+//   Director_A → Physics_A → multi_lif_A → compact_push(A→ring_a)
+//   read_adapt(ring_a → thresholds_B)
+//   Director_B → Physics_B → multi_lif_B → compact_push(B→ring_b)
+//   read_adapt(ring_b → thresholds_A)
+//   recovery_A, recovery_B (periodic threshold decay)
+//   heartbeat_A, heartbeat_B
+//   CA_restraints_A, CA_restraints_B
+//   coupling_clear_A, coupling_clear_B
+
+/// Configuration for autonomous TWIN execution.
+pub struct AutonomousTwinConfig {
+    /// Steps per graph replay chunk (host breaks for NL rebuild)
+    pub chunk_size: u32,
+    /// Total steps to run
+    pub total_steps: u32,
+    /// Sensitivity boost for threshold adaptation (default 2.0)
+    pub sensitivity_boost: f32,
+    /// Maximum threshold reduction fraction (default 0.3 = 30%)
+    pub max_reduction: f32,
+    /// Threshold recovery rate per call (default 0.01 = 1%)
+    pub recovery_rate: f32,
+    /// Steps between threshold recovery calls (default 1000)
+    pub recovery_interval: u32,
+}
+
+impl Default for AutonomousTwinConfig {
+    fn default() -> Self {
+        Self {
+            chunk_size: 500,
+            total_steps: 35000,
+            sensitivity_boost: 2.0,
+            max_reduction: 0.3,
+            recovery_rate: 0.01,
+            recovery_interval: 1000,
+        }
+    }
+}
+
+/// Run autonomous TWIN dual-engine simulation with GPU-graph coupling.
+///
+/// Both engines execute inside a single CUDA Graph. Spike coupling flows
+/// through device-resident ring buffers with zero CPU intervention.
+///
+/// Host only wakes every `chunk_size` steps for neighbor list rebuild.
+/// Heartbeat polling between chunks aborts on NaN/divergence.
+///
+/// # Returns
+/// Total steps completed (may be < total_steps if heartbeat aborts)
+#[cfg(feature = "gpu")]
+pub fn run_coupled_twin_autonomous(
+    engine_a: &mut crate::fused_engine::NhsAmberFusedEngine,
+    engine_b: &mut crate::fused_engine::NhsAmberFusedEngine,
+    ring_a: &mut crate::twin_kernels::TwinRingBuffer,
+    ring_b: &mut crate::twin_kernels::TwinRingBuffer,
+    config: &AutonomousTwinConfig,
+) -> anyhow::Result<u32> {
+    use cudarc::driver::sys;
+
+    let stream = engine_a.stream().clone();
+
+    log::info!("╔═══════════════════════════════════════════════════════════════╗");
+    log::info!("║  PRISM-TWIN AUTONOMOUS INTERFEROMETRIC COUPLING              ║");
+    log::info!("║  GPU-Resident Dual-Engine Graph Execution                    ║");
+    log::info!("╚═══════════════════════════════════════════════════════════════╝");
+    log::info!("  Chunk size: {} steps", config.chunk_size);
+    log::info!("  Total steps: {}", config.total_steps);
+    log::info!("  Coupling: device-side compact_and_push → ring buffer → read_adapt");
+    log::info!("  CPU involvement: NL rebuild only (every {} steps)", config.chunk_size);
+
+    // ── Helper: launch one complete coupled TWIN step ──
+    let launch_one_coupled_step = |
+        ea: &mut crate::fused_engine::NhsAmberFusedEngine,
+        eb: &mut crate::fused_engine::NhsAmberFusedEngine,
+        ra: &mut crate::twin_kernels::TwinRingBuffer,
+        rb: &mut crate::twin_kernels::TwinRingBuffer,
+        s: &std::sync::Arc<cudarc::driver::CudaStream>,
+        cfg: &AutonomousTwinConfig,
+    | -> anyhow::Result<()> {
+        // Group A: Director → Physics → multi_lif → housekeeping
+        ea.step_autonomous_kernels(s)?;
+
+        // A→B: compact A's spikes on GPU, push to ring_a
+        ra.push_device(s, ea.spike_events_buffer(), ea.spike_count_buffer())?;
+
+        // Interferometric bridge: ring_a → B's thresholds
+        {
+            let g = eb.grid_info();  // immutable borrow first
+            let (thresh_b, base_b) = eb.threshold_buffers_mut();  // then mutable
+            ra.read_and_adapt(s, thresh_b, base_b,
+                (g.0,g.1,g.2), (g.3,g.4,g.5), g.6,
+                cfg.sensitivity_boost, cfg.max_reduction, 0, 0.001)?;
+        }
+
+        // Group B: Director → Physics → multi_lif → housekeeping
+        eb.step_autonomous_kernels(s)?;
+
+        // B→A: compact B's spikes on GPU, push to ring_b
+        rb.push_device(s, eb.spike_events_buffer(), eb.spike_count_buffer())?;
+
+        // Interferometric bridge: ring_b → A's thresholds
+        {
+            let g = ea.grid_info();
+            let (thresh_a, base_a) = ea.threshold_buffers_mut();
+            rb.read_and_adapt(s, thresh_a, base_a,
+                (g.0,g.1,g.2), (g.3,g.4,g.5), g.6,
+                cfg.sensitivity_boost, cfg.max_reduction, 0, 0.001)?;
+        }
+
+        Ok(())
+    };
+
+    // ── Capture one coupled step as a CUDA Graph ──
+    log::info!("Capturing TWIN dual-engine step as CUDA Graph...");
+    stream.begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+        .map_err(|e| anyhow::anyhow!("TWIN graph capture begin failed: {:?}", e))?;
+
+    launch_one_coupled_step(engine_a, engine_b, ring_a, ring_b, &stream, config)?;
+
+    let graph = stream.end_capture(
+        sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
+    )
+        .map_err(|e| anyhow::anyhow!("TWIN graph capture end failed: {:?}", e))?
+        .ok_or_else(|| anyhow::anyhow!("TWIN graph capture produced null graph"))?;
+
+    log::info!("TWIN CUDA Graph captured and instantiated");
+
+    // ── Replay loop ──
+    let mut steps_completed = 0u32;
+    let n_chunks = (config.total_steps + config.chunk_size - 1) / config.chunk_size;
+
+    for chunk_idx in 0..n_chunks {
+        let steps_this_chunk = config.chunk_size.min(config.total_steps - steps_completed);
+
+        // Replay the dual-engine graph (zero CPU involvement per step)
+        for _ in 0..steps_this_chunk {
+            graph.launch()
+                .map_err(|e| anyhow::anyhow!("TWIN graph launch failed: {:?}", e))?;
+        }
+        steps_completed += steps_this_chunk;
+
+        // Synchronize
+        stream.synchronize()
+            .map_err(|e| anyhow::anyhow!("TWIN sync failed: {:?}", e))?;
+
+        // Poll heartbeats (both engines)
+        let status_a = crate::graph_capture::poll_heartbeat_async(&stream, &engine_a.d_protocol_state)?;
+        let status_b = crate::graph_capture::poll_heartbeat_async(&stream, &engine_b.d_protocol_state)?;
+        if status_a != 0 || status_b != 0 {
+            let (label, code) = if status_a != 0 { ("Group A", status_a) } else { ("Group B", status_b) };
+            log::error!("TWIN HEARTBEAT ABORT ({}) at step {}: status={}",
+                label, steps_completed, code);
+            return Ok(steps_completed);
+        }
+
+        // CPU-side neighbor list rebuild (the ONLY host wakeup)
+        engine_a.rebuild_neighbor_lists_if_needed()?;
+        engine_b.rebuild_neighbor_lists_if_needed()?;
+
+        if chunk_idx % 10 == 0 {
+            log::info!("  TWIN chunk {}/{}: {} coupled steps", chunk_idx+1, n_chunks, steps_completed);
+        }
+    }
+
+    log::info!("TWIN autonomous loop complete: {} coupled steps", steps_completed);
+    Ok(steps_completed)
+}
+

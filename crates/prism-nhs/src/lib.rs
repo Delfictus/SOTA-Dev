@@ -123,6 +123,10 @@ pub mod twin_detection;
 #[cfg(feature = "gpu")]
 pub mod twin_kernels;
 #[cfg(feature = "gpu")]
+pub mod protocol_state;
+#[cfg(feature = "gpu")]
+pub mod graph_capture;
+#[cfg(feature = "gpu")]
 pub mod active_sensing;
 #[cfg(feature = "gpu")]
 pub mod ultimate_engine;

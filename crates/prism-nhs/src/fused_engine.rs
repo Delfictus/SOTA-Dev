@@ -1791,6 +1791,23 @@ pub struct NhsAmberFusedEngine {
     adaptive_dt_enabled: bool,
     base_dt: f32,  // stores the base dt for adaptive scaling
 
+    // PRISM-TWIN v3.0: GPU-resident protocol state (148 bytes in VRAM)
+    // The Director kernel updates this each step BEFORE physics kernels read from it.
+    // All three physics kernels (fused_step, voxel_step, multi_lif) read from this pointer.
+    pub d_protocol_state: CudaSlice<u8>,
+    director_fn: CudaFunction,
+
+    // PRISM-TWIN v3.0 Gate 2: GPU-side housekeeping (replaces CPU memcpy round-trips)
+    // Uses existing d_reference_positions + d_ca_mask fields for CA restraints
+    director_graph_fn: Option<CudaFunction>,  // conditional-handle-aware Director variant
+    heartbeat_fn: Option<CudaFunction>,
+    ca_restraint_fn: Option<CudaFunction>,
+    coupling_clear_fn: Option<CudaFunction>,
+    com_reduce_fn: Option<CudaFunction>,
+    com_correct_fn: Option<CudaFunction>,
+    com_accum_clear_fn: Option<CudaFunction>,
+    d_com_accumulator: CudaSlice<f32>,   // [4] COM reduction accumulator
+
     // Spike output (events as raw bytes)
     d_spike_events: CudaSlice<u8>,
     spike_event_size: usize,
@@ -2082,6 +2099,88 @@ impl NhsAmberFusedEngine {
             });
         let init_multi_neuron_kernel = fused_module.load_function("init_multi_neuron")
             .unwrap_or_else(|_| fused_step_kernel.clone());
+
+        // PRISM-TWIN v3.0: Protocol Director kernel (GPU-resident state machine)
+        let director_fn = {
+            use crate::twin_kernels::find_twin_ptx;
+            match find_twin_ptx("protocol_director.ptx") {
+                Ok(ptx_path) => {
+                    match context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path)) {
+                        Ok(director_module) => {
+                            match director_module.load_function("protocol_director") {
+                                Ok(f) => {
+                                    log::info!("  Protocol Director kernel: ✓ loaded from {}", ptx_path);
+                                    let d_protocol_state = stream.alloc_zeros::<u8>(
+                                        std::mem::size_of::<crate::protocol_state::ProtocolState>()
+                                    )?;
+                                    // Graph-conditional variant (optional — CUDA 12.4+)
+                                    let graph_fn = director_module.load_function("protocol_director_graph").ok();
+                                    if graph_fn.is_some() {
+                                        log::info!("  Protocol Director (graph variant): ✓ loaded");
+                                    }
+                                    (f, d_protocol_state, graph_fn)
+                                }
+                                Err(e) => {
+                                    log::warn!("protocol_director function not found: {}", e);
+                                    let d_protocol_state = stream.alloc_zeros::<u8>(
+                                        std::mem::size_of::<crate::protocol_state::ProtocolState>()
+                                    )?;
+                                    (fused_step_kernel.clone(), d_protocol_state, None)
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load protocol_director.ptx: {}", e);
+                            let d_protocol_state = stream.alloc_zeros::<u8>(
+                                std::mem::size_of::<crate::protocol_state::ProtocolState>()
+                            )?;
+                            (fused_step_kernel.clone(), d_protocol_state, None)
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("protocol_director.ptx not found: {}", e);
+                    let d_protocol_state = stream.alloc_zeros::<u8>(
+                        std::mem::size_of::<crate::protocol_state::ProtocolState>()
+                    )?;
+                    (fused_step_kernel.clone(), d_protocol_state, None)
+                }
+            }
+        };
+        let (director_fn, d_protocol_state, director_graph_fn) = director_fn;
+
+        // Gate 2: Housekeeping kernels (GPU-side COM removal, CA restraints, heartbeat)
+        let (heartbeat_fn, ca_restraint_fn, coupling_clear_fn,
+             com_reduce_fn, com_correct_fn, com_accum_clear_fn) = {
+            match crate::twin_kernels::find_twin_ptx("housekeeping.ptx") {
+                Ok(ptx_path) => {
+                    match context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path)) {
+                        Ok(hk_module) => {
+                            log::info!("  Housekeeping kernels: loaded from {}", ptx_path);
+                            (
+                                hk_module.load_function("heartbeat_check").ok(),
+                                hk_module.load_function("apply_ca_restraints").ok(),
+                                hk_module.load_function("coupling_buffer_clear").ok(),
+                                hk_module.load_function("com_reduce").ok(),
+                                hk_module.load_function("com_correct").ok(),
+                                hk_module.load_function("com_accumulator_clear").ok(),
+                            )
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load housekeeping.ptx: {} — falling back to CPU", e);
+                            (None, None, None, None, None, None)
+                        }
+                    }
+                }
+                Err(_) => {
+                    log::warn!("housekeeping.ptx not found — falling back to CPU housekeeping");
+                    (None, None, None, None, None, None)
+                }
+            }
+        };
+
+        // Gate 2: COM accumulator for GPU-side reduction
+        let d_com_accumulator = stream.alloc_zeros::<f32>(4)?;
 
         // KDE density peak + burial centroid kernels (optional, graceful fallback to CPU)
         let kde_density_peak_kernel = fused_module.load_function("kde_density_peak").ok();
@@ -2842,6 +2941,20 @@ impl NhsAmberFusedEngine {
             // Adaptive dt (disabled by default)
             adaptive_dt_enabled: false,
             base_dt: 0.002,
+
+            // PRISM-TWIN v3.0: GPU-resident protocol state
+            d_protocol_state,
+            director_fn,
+
+            // Gate 2: GPU-side housekeeping
+            director_graph_fn,
+            heartbeat_fn,
+            ca_restraint_fn,
+            coupling_clear_fn,
+            com_reduce_fn,
+            com_correct_fn,
+            com_accum_clear_fn,
+            d_com_accumulator,
 
             d_spike_events,
             spike_event_size,
@@ -4668,10 +4781,8 @@ impl NhsAmberFusedEngine {
                         .arg(&self.d_warp_matrix)
                         .arg(&self.d_uv_targets)
                         .arg(&n_uv_targets_i32)
-                        .arg(&uv_burst_active_i32)
-                        .arg(&uv_target_idx)
-                        .arg(&uv_burst_energy)
-                        .arg(&uv_wavelength_nm)
+                        // PRISM-TWIN v3.0: GPU-resident protocol state
+                        .arg(&self.d_protocol_state)
                         .arg(&self.d_is_excited)
                         .arg(&self.d_time_since_excitation)
                         .arg(&self.d_electronic_population)
@@ -4688,15 +4799,7 @@ impl NhsAmberFusedEngine {
                         .arg(&mut replica.d_spike_events)
                         .arg(&mut replica.d_spike_count)
                         .arg(&max_spikes_i32)
-                        .arg(&temp_start)
-                        .arg(&temp_end)
-                        .arg(&temp_ramp_steps)
-                        .arg(&temp_hold_steps)
-                        .arg(&temp_current_step)
-                        .arg(&dt)
-                        .arg(&effective_gamma)
                         .arg(&cutoff)
-                        .arg(&replica.timestep)
                         .arg(&replica.d_rng_states)
                         .arg(&self.d_neighbor_list)
                         .arg(&self.d_n_neighbors)
@@ -4883,6 +4986,33 @@ impl NhsAmberFusedEngine {
         self.temp_protocol = temp_protocol;
         self.uv_config = uv_config;
 
+        // PRISM-TWIN v3.0: Initialize GPU-resident ProtocolState
+        // The Director kernel will update this each step before physics kernels read it.
+        {
+            let total_steps = (protocol.cold_hold_steps + protocol.ramp_steps
+                + protocol.warm_hold_steps + protocol.ramp_down_steps
+                + protocol.cold_return_steps) as u32;
+            let ps = crate::protocol_state::ProtocolState::from_cryo_uv(
+                &protocol,
+                total_steps,
+                self.dt,
+                self.gamma_base,
+                self.cutoff,
+                self.fused_inner_steps as i32,
+                self.cryo_enabled,
+                self.adaptive_dt_enabled,
+            );
+            // Upload ProtocolState to GPU via raw memcpy (simpler than init kernel for host-side setup)
+            let ps_bytes: &[u8] = unsafe {
+                std::slice::from_raw_parts(
+                    &ps as *const crate::protocol_state::ProtocolState as *const u8,
+                    std::mem::size_of::<crate::protocol_state::ProtocolState>(),
+                )
+            };
+            self.stream.memcpy_htod(ps_bytes, &mut self.d_protocol_state)?;
+            log::info!("  ProtocolState uploaded to GPU ({} bytes)", ps_bytes.len());
+        }
+
         log::info!("╔═══════════════════════════════════════════════════════════════╗");
         log::info!("║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║");
         log::info!("╚═══════════════════════════════════════════════════════════════╝");
@@ -4956,7 +5086,6 @@ impl NhsAmberFusedEngine {
         // Track UV state from last inner step (used by multi-LIF)
         let mut last_uv_burst_active = false;
         let mut last_uv_wavelength_nm = 0.0f32;
-        let mut last_uv_burst_active_i32 = 0i32;
 
         // Constants used by both AMBER and multi-LIF kernels (loop-invariant)
         let n_atoms_i32 = self.n_atoms as i32;
@@ -4965,34 +5094,43 @@ impl NhsAmberFusedEngine {
 
         for inner_idx in 0..n_inner {
 
-        // ── CENTER-OF-MASS VELOCITY REMOVAL (every 500 steps) ──
+        // ── CENTER-OF-MASS VELOCITY REMOVAL (every 100 steps, GPU-side Gate 2) ──
         // Langevin thermostat injects random forces that create net momentum.
-        // Without periodic COM removal, the protein drifts (especially at low T
-        // where thermal velocity is tiny but COM drift accumulates).
-        if self.timestep > 0 && self.timestep % 500 == 0 {
-            let mut masses = vec![0.0f32; self.n_atoms];
-            self.stream.memcpy_dtoh(&self.d_masses, &mut masses)?;
-            let mut velocities = vec![0.0f32; self.n_atoms * 3];
-            self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
-
-            let mut com_vel = [0.0f64; 3];
-            let mut total_mass = 0.0f64;
-            for i in 0..self.n_atoms {
-                let m = masses[i] as f64;
-                com_vel[0] += m * velocities[i * 3] as f64;
-                com_vel[1] += m * velocities[i * 3 + 1] as f64;
-                com_vel[2] += m * velocities[i * 3 + 2] as f64;
-                total_mass += m;
+        // GPU-side warp-shuffle reduction + broadcast correction — zero CPU memcpy.
+        if self.timestep > 0 && self.timestep % 100 == 0 {
+            if let (Some(ref clear_fn), Some(ref reduce_fn), Some(ref correct_fn)) =
+                (&self.com_accum_clear_fn, &self.com_reduce_fn, &self.com_correct_fn)
+            {
+                let one_cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+                let atom_cfg = LaunchConfig {
+                    grid_dim: ((self.n_atoms as u32).div_ceil(256), 1, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                // 1. Clear accumulator
+                unsafe {
+                    self.stream.launch_builder(clear_fn)
+                        .arg(&mut self.d_com_accumulator)
+                        .launch(one_cfg)
+                }.context("Failed to launch com_accumulator_clear")?;
+                // 2. Reduce: warp-shuffle mass-weighted velocity sums → atomicAdd to accumulator
+                unsafe {
+                    self.stream.launch_builder(reduce_fn)
+                        .arg(&self.d_velocities)
+                        .arg(&self.d_masses)
+                        .arg(&n_atoms_i32)
+                        .arg(&mut self.d_com_accumulator)
+                        .launch(atom_cfg)
+                }.context("Failed to launch com_reduce")?;
+                // 3. Correct: subtract COM velocity from all atoms
+                unsafe {
+                    self.stream.launch_builder(correct_fn)
+                        .arg(&mut self.d_velocities)
+                        .arg(&n_atoms_i32)
+                        .arg(&self.d_com_accumulator)
+                        .launch(atom_cfg)
+                }.context("Failed to launch com_correct")?;
             }
-            if total_mass > 0.0 {
-                let inv_m = 1.0 / total_mass;
-                for i in 0..self.n_atoms {
-                    velocities[i * 3] -= (com_vel[0] * inv_m) as f32;
-                    velocities[i * 3 + 1] -= (com_vel[1] * inv_m) as f32;
-                    velocities[i * 3 + 2] -= (com_vel[2] * inv_m) as f32;
-                }
-            }
-            self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
         }
 
         // Get current temperature from protocol (simulated annealing ramp)
@@ -5070,6 +5208,20 @@ impl NhsAmberFusedEngine {
         // This preserves spike timestamps across the sync interval for proper UV correlation analysis.
 
         // ====================================================================
+        // LAUNCH DIRECTOR KERNEL (same stream — ordering guarantees visibility)
+        // ====================================================================
+        {
+            let director_cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+            unsafe {
+                self.stream
+                    .launch_builder(&self.director_fn)
+                    .arg(&mut self.d_protocol_state)
+                    .launch(director_cfg)
+            }
+            .context("Failed to launch protocol_director kernel")?;
+        }
+
+        // ====================================================================
         // LAUNCH FUSED KERNEL
         // ====================================================================
 
@@ -5089,15 +5241,7 @@ impl NhsAmberFusedEngine {
         let n_clusters_i32 = self.n_clusters as i32;
         let grid_dim_i32 = self.grid_dim as i32;
         let n_uv_targets_i32 = self.n_uv_targets as i32;
-        let uv_burst_active_i32 = if uv_burst_active { 1i32 } else { 0i32 };
         let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
-
-        // Temperature protocol values
-        let temp_start = self.temp_protocol.start_temp;
-        let temp_end = self.temp_protocol.end_temp;
-        let temp_ramp_steps = self.temp_protocol.ramp_steps;
-        let temp_hold_steps = self.temp_protocol.hold_steps;
-        let temp_current_step = self.temp_protocol.current_step;
 
         // LADD: save positions before MD step for displacement computation
         if self.ladd_enabled {
@@ -5148,10 +5292,8 @@ impl NhsAmberFusedEngine {
                 // UV targets
                 .arg(&self.d_uv_targets)
                 .arg(&n_uv_targets_i32)
-                .arg(&uv_burst_active_i32)
-                .arg(&uv_target_idx)
-                .arg(&uv_burst_energy)
-                .arg(&uv_wavelength_nm)  // Wavelength for σ(λ) calculation on GPU
+                // PRISM-TWIN v3.0: GPU-resident protocol state (replaces temp/UV/dt/gamma/timestep scalars)
+                .arg(&self.d_protocol_state)
                 // Excited state dynamics (true photophysics)
                 .arg(&mut self.d_is_excited)
                 .arg(&mut self.d_time_since_excitation)
@@ -5170,17 +5312,8 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_spike_events)
                 .arg(&mut self.d_spike_count)
                 .arg(&max_spikes_i32)
-                // Temperature protocol (individual values)
-                .arg(&temp_start)
-                .arg(&temp_end)
-                .arg(&temp_ramp_steps)
-                .arg(&temp_hold_steps)
-                .arg(&temp_current_step)
-                // Simulation parameters
-                .arg(&self.dt)
-                .arg(&effective_gamma)
+                // Static simulation parameters
                 .arg(&self.cutoff)
-                .arg(&self.timestep)
                 // RNG state
                 .arg(&mut self.d_rng_states)
                 // O(N) neighbor list (optional)
@@ -5204,44 +5337,31 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
 
-        // ── CA POSITION RESTRAINTS (CPU-side) ──
-        // Pull CA atoms back toward reference positions every step.
-        // Applied on CPU because CUDA kernel has parameter mismatch (78 vs 102).
-        // k_restraint = k_base * (300/T) — strong at cryo, weak at warm.
-        // Applied as direct position correction: x_new = x + alpha * (x_ref - x)
-        // where alpha = k * dt² / m (small step equivalent of harmonic force).
-        if self.timestep % 1 == 0 {  // Every step
-            let mut positions = vec![0.0f32; self.n_atoms * 3];
-            self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
-
-            let k_base: f32 = 2.0;  // kcal/mol/A^2
-            let k = k_base * (300.0 / current_temp.max(10.0));
-            let k_clamped = k.min(50.0);
-            // alpha = k * dt^2 — dimensionless correction factor
-            // At 50K: k=12, dt=0.002, alpha = 12 * 0.000004 = 0.000048
-            // That's tiny. Use a larger effective alpha for position correction.
-            let alpha = (k_clamped * 0.001).min(0.1);  // Empirical: 0.001 * k, max 10%
-
-            let ref_pos = &self.reference_positions;
-            let ca_mask = &self.ca_mask_cpu;
-            let mut corrected = false;
-            for i in 0..self.n_atoms {
-                if i < ca_mask.len() && ca_mask[i] == 1 {
-                    positions[i*3]   += alpha * (ref_pos[i*3]   - positions[i*3]);
-                    positions[i*3+1] += alpha * (ref_pos[i*3+1] - positions[i*3+1]);
-                    positions[i*3+2] += alpha * (ref_pos[i*3+2] - positions[i*3+2]);
-                    corrected = true;
-                }
+        // ── CA POSITION RESTRAINTS (GPU-side, Gate 2) ──
+        // Replaces CPU memcpy_dtoh→correct→memcpy_htod with a single GPU kernel.
+        // Reads temperature from ProtocolState to compute k and alpha.
+        if let Some(ref ca_fn) = self.ca_restraint_fn {
+            let ca_cfg = LaunchConfig {
+                grid_dim: ((self.n_atoms as u32).div_ceil(256), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            unsafe {
+                self.stream
+                    .launch_builder(ca_fn)
+                    .arg(&mut self.d_positions)
+                    .arg(&self.d_reference_positions)
+                    .arg(&self.d_ca_mask)
+                    .arg(&n_atoms_i32)
+                    .arg(&self.d_protocol_state)
+                    .launch(ca_cfg)
             }
-            if corrected {
-                self.stream.memcpy_htod(&positions, &mut self.d_positions)?;
-            }
+            .context("Failed to launch apply_ca_restraints kernel")?;
         }
 
-        // Save UV state for multi-LIF kernel (uses state from last inner step)
+        // Save UV state for StepResult reporting (uses state from last inner step)
         last_uv_burst_active = uv_burst_active;
         last_uv_wavelength_nm = uv_wavelength_nm;
-        last_uv_burst_active_i32 = uv_burst_active_i32;
 
         // Advance protocols for inner substeps (all except the last — that's done after multi-LIF)
         if inner_idx < n_inner - 1 {
@@ -5262,9 +5382,8 @@ impl NhsAmberFusedEngine {
         // ====================================================================
         // LAUNCH 2: MULTI-NEURON VOXEL KERNEL (K=8 neurons per voxel)
         // ====================================================================
-        // Use UV state from the last AMBER substep
-        let uv_wavelength_nm = last_uv_wavelength_nm;
-        let uv_burst_active_i32 = last_uv_burst_active_i32;
+        // UV state now read from ProtocolState by the multi_lif kernel directly
+        let _ = last_uv_wavelength_nm; // consumed above
         let _ = last_uv_burst_active; // used below for snapshot triggering
         let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
         // Sparse tile launch: 1D grid over active tiles only (tiles with ≥1 atom voxel)
@@ -5325,15 +5444,12 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_aromatic_type)
                     .arg(&self.d_atom_to_aromatic)
                     .arg(&n_aromatics_i32)
-                    .arg(&uv_wavelength_nm)
-                    .arg(&uv_burst_active_i32)
+                    // PRISM-TWIN v3.0: GPU-resident protocol state
+                    .arg(&self.d_protocol_state)
                     .arg(&mut self.d_uv_signal_prev)
                     .arg(&mut self.d_spike_events)
                     .arg(&mut self.d_spike_count)
                     .arg(&max_spikes_i32)
-                    .arg(&current_temp)
-                    .arg(&self.dt)
-                    .arg(&self.timestep)
                     .arg(&self.d_efp_potential)
                     .arg(&self.d_efp_potential_prev)
                     .arg(&self.d_efp_lif_potential)
@@ -5391,15 +5507,12 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_aromatic_type)
                     .arg(&self.d_atom_to_aromatic)
                     .arg(&n_aromatics_i32)
-                    .arg(&uv_wavelength_nm)
-                    .arg(&uv_burst_active_i32)
+                    // PRISM-TWIN v3.0: GPU-resident protocol state
+                    .arg(&self.d_protocol_state)
                     .arg(&mut self.d_uv_signal_prev)
                     .arg(&mut self.d_spike_events)
                     .arg(&mut self.d_spike_count)
                     .arg(&max_spikes_i32)
-                    .arg(&current_temp)
-                    .arg(&self.dt)
-                    .arg(&self.timestep)
                     .arg(&self.d_efp_potential)
                     .arg(&self.d_efp_potential_prev)
                     .arg(&self.d_efp_lif_potential)
@@ -5592,13 +5705,46 @@ impl NhsAmberFusedEngine {
             }
         }
 
-        // Swap coupling double-buffer and clear the new write buffer
+        // Swap coupling double-buffer — Director already toggled coupling_phase in ProtocolState.
+        // CPU-side tracking kept in sync for non-graph paths.
         self.coupling_phase = !self.coupling_phase;
-        // Clear the buffer that will be written to next step (now the "write" side)
-        if self.coupling_phase {
-            self.stream.memset_zeros(&mut self.d_coupling_a)?;
+        // Clear the write-side buffer (GPU kernel reads coupling_phase from ProtocolState)
+        if let Some(ref clear_fn) = self.coupling_clear_fn {
+            let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+            let clear_cfg = LaunchConfig {
+                grid_dim: ((total_voxels as u32).div_ceil(256), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            unsafe {
+                self.stream.launch_builder(clear_fn)
+                    .arg(&mut self.d_coupling_a)
+                    .arg(&mut self.d_coupling_b)
+                    .arg(&total_voxels)
+                    .arg(&self.d_protocol_state)
+                    .launch(clear_cfg)
+            }.context("Failed to launch coupling_buffer_clear")?;
         } else {
-            self.stream.memset_zeros(&mut self.d_coupling_b)?;
+            // Fallback: CPU-conditional memset
+            if self.coupling_phase {
+                self.stream.memset_zeros(&mut self.d_coupling_a)?;
+            } else {
+                self.stream.memset_zeros(&mut self.d_coupling_b)?;
+            }
+        }
+
+        // ── HEARTBEAT CHECK (GPU-side, Gate 2) ──
+        // Sample every 32nd atom for NaN/divergence. Runs on same stream — negligible cost.
+        if let Some(ref hb_fn) = self.heartbeat_fn {
+            let hb_n = ((self.n_atoms / 32) as u32).div_ceil(256).max(1);
+            let hb_cfg = LaunchConfig { grid_dim: (hb_n, 1, 1), block_dim: (256, 1, 1), shared_mem_bytes: 0 };
+            unsafe {
+                self.stream.launch_builder(hb_fn)
+                    .arg(&self.d_positions)
+                    .arg(&n_atoms_i32)
+                    .arg(&mut self.d_protocol_state)
+                    .launch(hb_cfg)
+            }.context("Failed to launch heartbeat_check")?;
         }
 
         // ====================================================================
@@ -5966,6 +6112,18 @@ impl NhsAmberFusedEngine {
             let n_uv_targets_i32 = self.n_uv_targets as i32;
             let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
 
+            // Launch Director kernel (same stream — ordering guarantees visibility)
+            {
+                let director_cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+                unsafe {
+                    self.stream
+                        .launch_builder(&self.director_fn)
+                        .arg(&mut self.d_protocol_state)
+                        .launch(director_cfg)
+                }
+                .context("Failed to launch protocol_director kernel in step_batch")?;
+            }
+
             // Launch kernel (no sync)
             let n_blocks = (self.n_atoms as u32).div_ceil(BLOCK_SIZE_1D as u32);
             let cfg = LaunchConfig {
@@ -6006,10 +6164,8 @@ impl NhsAmberFusedEngine {
                     .arg(&grid_dim_i32)
                     .arg(&mut self.d_warp_matrix)
                     .arg(&self.d_uv_targets).arg(&n_uv_targets_i32)
-                    .arg(&uv_burst_active_i32)
-                    .arg(&uv_target_idx)
-                    .arg(&uv_burst_energy)
-                    .arg(&uv_wavelength_nm)  // Wavelength for σ(λ) calculation on GPU
+                    // PRISM-TWIN v3.0: GPU-resident protocol state
+                    .arg(&self.d_protocol_state)
                     // Excited state dynamics
                     .arg(&mut self.d_is_excited)
                     .arg(&mut self.d_time_since_excitation)
@@ -6027,11 +6183,7 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_spike_events)
                     .arg(&mut self.d_spike_count)
                     .arg(&max_spikes_i32)
-                    .arg(&temp_start).arg(&temp_end)
-                    .arg(&temp_ramp_steps).arg(&temp_hold_steps)
-                    .arg(&temp_current_step)
-                    .arg(&self.dt).arg(&effective_gamma)
-                    .arg(&self.cutoff).arg(&self.timestep)
+                    .arg(&self.cutoff)
                     .arg(&mut self.d_rng_states)
                     // O(N) neighbor list (optional)
                     .arg(&self.d_neighbor_list)
@@ -6339,6 +6491,264 @@ impl NhsAmberFusedEngine {
     /// Get number of atoms
     pub fn n_atoms(&self) -> usize {
         self.n_atoms
+    }
+
+    /// Get the CUDA stream this engine runs on.
+    pub fn stream(&self) -> &Arc<CudaStream> {
+        &self.stream
+    }
+
+    /// Get device spike events buffer (for GPU-direct ring buffer push).
+    pub fn spike_events_buffer(&self) -> &CudaSlice<u8> {
+        &self.d_spike_events
+    }
+
+    /// Get device spike count buffer (for GPU-direct ring buffer push).
+    pub fn spike_count_buffer(&self) -> &CudaSlice<i32> {
+        &self.d_spike_count
+    }
+
+    /// Rebuild neighbor lists if the rebuild interval has been reached.
+    /// Returns Ok(true) if rebuilt, Ok(false) if not needed.
+    pub fn rebuild_neighbor_lists_if_needed(&mut self) -> Result<bool> {
+        if self.use_neighbor_list {
+            self.steps_since_rebuild += 1;
+            if self.steps_since_rebuild >= self.neighbor_list_rebuild_interval {
+                self.rebuild_neighbor_lists()?;
+                self.compute_aromatic_centroids()?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Launch one step's GPU kernels WITHOUT any CPU-side memcpy operations.
+    /// This is the graph-capturable step: Director → Physics → multi_lif → housekeeping.
+    /// The CPU does not touch positions, velocities, or spike data.
+    pub fn step_autonomous_kernels(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
+        let n_atoms_i32 = self.n_atoms as i32;
+
+        // Director kernel (updates ProtocolState in VRAM)
+        {
+            let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+            unsafe {
+                stream.launch_builder(&self.director_fn)
+                    .arg(&mut self.d_protocol_state)
+                    .launch(cfg)
+            }.context("step_autonomous: Director failed")?;
+        }
+
+        // Physics kernel (reads from ProtocolState)
+        let n_blocks = (self.n_atoms as u32).div_ceil(256);
+        let physics_cfg = LaunchConfig {
+            grid_dim: (n_blocks, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let n_bonds_i32 = self.n_bonds as i32;
+        let n_angles_i32 = self.n_angles as i32;
+        let n_dihedrals_i32 = self.n_dihedrals as i32;
+        let n_clusters_i32 = self.n_clusters as i32;
+        let grid_dim_i32 = self.grid_dim as i32;
+        let n_uv_targets_i32 = self.n_uv_targets as i32;
+        let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
+
+        unsafe {
+            stream.launch_builder(&self.fused_step_kernel)
+                .arg(&mut self.d_positions)
+                .arg(&mut self.d_velocities)
+                .arg(&mut self.d_forces)
+                .arg(&self.d_masses)
+                .arg(&self.d_charges)
+                .arg(&self.d_atom_types)
+                .arg(&self.d_residue_ids)
+                .arg(&n_atoms_i32)
+                .arg(&self.d_bonds).arg(&n_bonds_i32)
+                .arg(&self.d_angles).arg(&n_angles_i32)
+                .arg(&self.d_dihedrals).arg(&n_dihedrals_i32)
+                .arg(&self.d_lj_params)
+                .arg(&self.d_exclusion_list)
+                .arg(&self.d_exclusion_offsets)
+                .arg(&self.d_pairs14_list)
+                .arg(&self.d_pairs14_offsets)
+                .arg(&self.d_h_clusters).arg(&n_clusters_i32)
+                .arg(&mut self.d_exclusion_field)
+                .arg(&mut self.d_water_density)
+                .arg(&mut self.d_water_density_prev)
+                .arg(&mut self.d_lif_potential)
+                .arg(&mut self.d_spike_grid)
+                .arg(&self.grid_origin[0])
+                .arg(&self.grid_origin[1])
+                .arg(&self.grid_origin[2])
+                .arg(&self.grid_spacing)
+                .arg(&grid_dim_i32)
+                .arg(&mut self.d_warp_matrix)
+                .arg(&self.d_uv_targets).arg(&n_uv_targets_i32)
+                .arg(&self.d_protocol_state)
+                .arg(&mut self.d_is_excited)
+                .arg(&mut self.d_time_since_excitation)
+                .arg(&mut self.d_electronic_population)
+                .arg(&mut self.d_vibrational_energy)
+                .arg(&mut self.d_franck_condon_progress)
+                .arg(&self.d_ground_state_charges)
+                .arg(&self.d_atom_to_aromatic)
+                .arg(&self.d_aromatic_type)
+                .arg(&self.d_ring_normals)
+                .arg(&self.d_aromatic_centroids)
+                .arg(&mut self.d_uv_signal_prev)
+                .arg(&self.d_aromatic_neighbors)
+                .arg(&(self.n_aromatics as i32))
+                .arg(&mut self.d_spike_events)
+                .arg(&mut self.d_spike_count)
+                .arg(&max_spikes_i32)
+                .arg(&self.cutoff)
+                .arg(&mut self.d_rng_states)
+                .arg(&self.d_neighbor_list)
+                .arg(&self.d_n_neighbors)
+                .arg(&(if self.use_neighbor_list { 1i32 } else { 0i32 }))
+                .arg(&self.d_efp_potential)
+                .arg(&self.d_efp_potential_prev)
+                .arg(&self.d_efp_lif_potential)
+                .arg(&mut self.d_spike_grid_efp)
+                .arg(&self.d_atom_lambda)
+                .arg(&mut self.d_voxel_hit_grid)
+                .arg(&mut self.d_last_uv_step)
+                .arg(&mut self.d_coupled_spike_grid)
+                .arg(&mut self.d_primary_residue_id)
+                .arg(&mut self.d_primary_residue_count)
+                .arg(&mut self.d_residue_step_causal)
+                .launch(physics_cfg)
+        }.context("step_autonomous: Physics kernel failed")?;
+
+        // CA restraints (GPU-side)
+        if let Some(ref ca_fn) = self.ca_restraint_fn {
+            let ca_cfg = LaunchConfig {
+                grid_dim: ((self.n_atoms as u32).div_ceil(256), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            unsafe {
+                stream.launch_builder(ca_fn)
+                    .arg(&mut self.d_positions)
+                    .arg(&self.d_reference_positions)
+                    .arg(&self.d_ca_mask)
+                    .arg(&n_atoms_i32)
+                    .arg(&self.d_protocol_state)
+                    .launch(ca_cfg)
+            }.context("step_autonomous: CA restraints failed")?;
+        }
+
+        // Multi-LIF kernel (uses coupling_phase from ProtocolState)
+        let n_aromatics_i32 = self.n_aromatics as i32;
+        let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
+        let tile_x = 4u32; let tile_y = 2u32; let tile_z = 2u32;
+        let threads_per_block = tile_x * tile_y * tile_z * 8;
+        let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);
+        let max_arom_cached = 64u32;
+        let shared_mem = (halo_size + 26 + max_arom_cached * 10) * 4;
+        let n_tiles = if self.n_active_tiles > 0 {
+            self.n_active_tiles
+        } else {
+            let gx = (self.grid_dim as u32 + tile_x - 1) / tile_x;
+            let gy = (self.grid_dim as u32 + tile_y - 1) / tile_y;
+            let gz = (self.grid_dim as u32 + tile_z - 1) / tile_z;
+            gx * gy * gz
+        };
+        let voxel_cfg = LaunchConfig {
+            grid_dim: (n_tiles, 1, 1),
+            block_dim: (threads_per_block, 1, 1),
+            shared_mem_bytes: shared_mem,
+        };
+        let n_active_tiles_i32 = self.n_active_tiles as i32;
+
+        // For autonomous path, always pass both coupling buffers (kernel reads phase from ProtocolState)
+        unsafe {
+            stream.launch_builder(&self.multi_lif_kernel)
+                .arg(&self.d_positions)
+                .arg(&n_atoms_i32)
+                .arg(&grid_dim_i32)
+                .arg(&self.grid_spacing)
+                .arg(&self.grid_origin[0])
+                .arg(&self.grid_origin[1])
+                .arg(&self.grid_origin[2])
+                .arg(&mut self.d_exclusion_field)
+                .arg(&mut self.d_water_density)
+                .arg(&mut self.d_water_density_prev)
+                .arg(&mut self.d_spike_grid)
+                .arg(&mut self.d_warp_matrix)
+                .arg(&self.d_atom_types)
+                .arg(&self.d_charges)
+                .arg(&self.d_residue_ids)
+                .arg(&self.d_aromatic_centroids)
+                .arg(&self.d_ring_normals)
+                .arg(&self.d_is_excited)
+                .arg(&self.d_electronic_population)
+                .arg(&self.d_vibrational_energy)
+                .arg(&self.d_time_since_excitation)
+                .arg(&self.d_aromatic_type)
+                .arg(&self.d_atom_to_aromatic)
+                .arg(&n_aromatics_i32)
+                .arg(&self.d_protocol_state)
+                .arg(&mut self.d_uv_signal_prev)
+                .arg(&mut self.d_spike_events)
+                .arg(&mut self.d_spike_count)
+                .arg(&max_spikes_i32)
+                .arg(&self.d_efp_potential)
+                .arg(&self.d_efp_potential_prev)
+                .arg(&self.d_efp_lif_potential)
+                .arg(&self.d_aromatic_neighbors)
+                .arg(&self.d_franck_condon_progress)
+                .arg(&mut self.d_neuron_potential)
+                .arg(&mut self.d_neuron_threshold)
+                .arg(&mut self.d_neuron_mean)
+                .arg(&mut self.d_neuron_refractory)
+                .arg(&self.d_coupling_a)
+                .arg(&mut self.d_coupling_b)
+                .arg(&self.d_active_tiles)
+                .arg(&n_active_tiles_i32)
+                .arg(&mut self.d_spike_grid_efp)
+                .arg(&mut self.d_voxel_hit_grid)
+                .arg(&mut self.d_last_uv_step)
+                .arg(&mut self.d_coupled_spike_grid)
+                .arg(&mut self.d_primary_residue_id)
+                .arg(&mut self.d_primary_residue_count)
+                .arg(&mut self.d_residue_step_causal)
+                .arg(&mut self.d_ladd_density_ref)
+                .arg(&mut self.d_ladd_density_m2)
+                .arg(&mut self.d_ladd_ref_count)
+                .arg(&(self.ladd_enabled as i32))
+                .arg(&self.ladd_cold_hold_steps)
+                .launch(voxel_cfg)
+        }.context("step_autonomous: multi_lif failed")?;
+
+        // Heartbeat check
+        if let Some(ref hb_fn) = self.heartbeat_fn {
+            let hb_n = ((self.n_atoms / 32) as u32).div_ceil(256).max(1);
+            let hb_cfg = LaunchConfig { grid_dim: (hb_n,1,1), block_dim: (256,1,1), shared_mem_bytes: 0 };
+            unsafe {
+                stream.launch_builder(hb_fn)
+                    .arg(&self.d_positions)
+                    .arg(&n_atoms_i32)
+                    .arg(&mut self.d_protocol_state)
+                    .launch(hb_cfg)
+            }.context("step_autonomous: heartbeat failed")?;
+        }
+
+        // Coupling buffer clear (GPU kernel reads phase from ProtocolState)
+        if let Some(ref clear_fn) = self.coupling_clear_fn {
+            let tv = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+            let cfg = LaunchConfig { grid_dim: ((tv as u32).div_ceil(256),1,1), block_dim: (256,1,1), shared_mem_bytes: 0 };
+            unsafe {
+                stream.launch_builder(clear_fn)
+                    .arg(&mut self.d_coupling_a)
+                    .arg(&mut self.d_coupling_b)
+                    .arg(&tv)
+                    .arg(&self.d_protocol_state)
+                    .launch(cfg)
+            }.context("step_autonomous: coupling clear failed")?;
+        }
+
+        Ok(())
     }
 
     /// Download spike events from GPU

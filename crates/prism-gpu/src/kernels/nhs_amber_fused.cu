@@ -29,6 +29,9 @@
 // Cryo-thermal detection physics (UV absorption → thermal signatures)
 #include "cryo_thermal_detection.cuh"
 
+// PRISM-TWIN v3.0: GPU-resident protocol state (shared with protocol_director.cu)
+#include "protocol_state.cuh"
+
 // Ultra-sensitive multi-modal neuromorphic detector
 // Channels: thermal spike, gradient, melt wave, correlation
 #include "sensitive_detector.cuh"
@@ -865,10 +868,9 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
 
     // UV targets
     const UVTarget* uv_targets, int n_uv_targets,
-    int uv_burst_active,
-    int uv_target_idx,
-    float uv_burst_energy,
-    float uv_wavelength_nm,      // Current UV wavelength for frequency hopping
+
+    // PRISM-TWIN v3.0: GPU-resident protocol state (replaces temperature, UV, dt, gamma, timestep scalars)
+    const ProtocolState* __restrict__ d_protocol,
 
     // Excited state dynamics (true photophysics)
     int* d_is_excited,                  // [n_aromatics] - excitation flag
@@ -890,18 +892,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     int* spike_count,
     int max_spikes,
 
-    // Temperature protocol (individual values for cudarc compatibility)
-    float temp_start,
-    float temp_end,
-    int temp_ramp_steps,
-    int temp_hold_steps,
-    int temp_current_step,
-
-    // Simulation parameters
-    float dt,
-    float gamma,  // Langevin friction
+    // Static simulation parameters (safe to bake in CUDA Graph)
     float cutoff,
-    int timestep,
 
     // RNG state
     curandState* rng_states,
@@ -932,14 +924,20 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // Reconstruct grid_origin from individual values
     float3 grid_origin = make_float3(grid_origin_x, grid_origin_y, grid_origin_z);
 
-    // Calculate dynamic temperature from protocol values
-    float target_temp;
-    if (temp_current_step < temp_ramp_steps) {
-        float t = (float)temp_current_step / (float)temp_ramp_steps;
-        target_temp = temp_start + t * (temp_end - temp_start);
-    } else {
-        target_temp = temp_end;
-    }
+    // ════════════════════════════════════════════════════════════════════════
+    // Load dynamic state from ProtocolState into registers (ONCE per thread).
+    // The Director kernel wrote these values on the SAME stream before this
+    // kernel launched — CUDA stream ordering guarantees visibility.
+    //
+    // After this block, all local variables are in registers — identical
+    // performance to the original scalar parameter path.
+    // ════════════════════════════════════════════════════════════════════════
+    const float target_temp = d_protocol->current_temperature;
+    const int uv_burst_active = d_protocol->uv_burst_active;
+    const float uv_wavelength_nm = d_protocol->uv_wavelength_nm;
+    const float dt = d_protocol->dt;
+    const float gamma = d_protocol->effective_gamma;
+    const int timestep = (int)d_protocol->current_step;
 
     // ========================================================================
     // PHASE 1: AMBER FORCE COMPUTATION
@@ -2492,18 +2490,13 @@ extern "C" __global__ void nhs_voxel_step(
     const int* __restrict__ d_aromatic_type,
     const int* __restrict__ d_atom_to_aromatic,
     int n_aromatics,
-    // UV params
-    float uv_wavelength_nm,
-    int uv_burst_active,
+    // PRISM-TWIN v3.0: GPU-resident protocol state
+    const ProtocolState* __restrict__ d_protocol,
     float* d_uv_signal_prev,
     // Spike output
     SpikeEvent* spike_events,
     int* spike_count,
     int max_spikes,
-    // Temperature
-    float target_temp,
-    float dt,
-    int timestep,
     // EFP arrays
     float* efp_potential,
     float* efp_potential_prev,
@@ -2524,7 +2517,14 @@ extern "C" __global__ void nhs_voxel_step(
     int total_voxels = grid_dim * grid_dim * grid_dim;
     if (tid >= total_voxels) return;
 
-    int v = tid;  // One thread per voxel — no grid-stride loop needed
+    int v = tid;
+
+    // Load dynamic state from ProtocolState into registers
+    const float uv_wavelength_nm = d_protocol->uv_wavelength_nm;
+    const int uv_burst_active = d_protocol->uv_burst_active;
+    const float target_temp = d_protocol->current_temperature;
+    const float dt = d_protocol->dt;
+    const int timestep = (int)d_protocol->current_step;
 
     float3 grid_origin = make_float3(grid_origin_x, grid_origin_y, grid_origin_z);
 
@@ -2939,15 +2939,12 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     const int* __restrict__ d_aromatic_type,
     const int* __restrict__ d_atom_to_aromatic,
     int n_aromatics,
-    float uv_wavelength_nm,
-    int uv_burst_active,
+    // PRISM-TWIN v3.0: GPU-resident protocol state
+    const ProtocolState* __restrict__ d_protocol,
     float* d_uv_signal_prev,
     SpikeEvent* spike_events,
     int* spike_count,
     int max_spikes,
-    float target_temp,
-    float dt,
-    int timestep,
     float* efp_potential,
     float* efp_potential_prev,
     float* efp_lif_potential,
@@ -2980,6 +2977,13 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     int ladd_enabled,                      // 0 or 1
     int ladd_cold_hold_steps               // steps for reference accumulation
 ) {
+    // Load dynamic state from ProtocolState into registers
+    const float uv_wavelength_nm = d_protocol->uv_wavelength_nm;
+    const int uv_burst_active = d_protocol->uv_burst_active;
+    const float target_temp = d_protocol->current_temperature;
+    const float dt = d_protocol->dt;
+    const int timestep = (int)d_protocol->current_step;
+
     // === Shared memory layout (SOTA v2) ===
     // [0..HALO_SIZE-1]:  coupling stencil halo tile (96 floats)
     // [HALO_SIZE..+7]:   cos(omega*dt) LUT per neuron k (8 floats)

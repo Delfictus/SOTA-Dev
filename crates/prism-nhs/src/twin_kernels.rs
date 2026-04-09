@@ -158,6 +158,7 @@ pub struct TwinRingBuffer {
     d_staging: CudaSlice<u8>,
     // Kernel functions
     push_batch_fn: CudaFunction,
+    compact_push_fn: Option<CudaFunction>,  // Gate 3: device-side compact+push (zero CPU memcpy)
     read_adapt_fn: CudaFunction,
     recovery_fn: CudaFunction,
     reset_fn: CudaFunction,
@@ -184,6 +185,10 @@ impl TwinRingBuffer {
 
         let push_batch_fn = module.load_function("ring_buffer_push_batch")
             .context("ring_buffer_push_batch not found in PTX")?;
+        let compact_push_fn = module.load_function("compact_and_push").ok();
+        if compact_push_fn.is_some() {
+            log::info!("  Ring buffer compact_and_push (device-side): loaded");
+        }
         let read_adapt_fn = module.load_function("ring_buffer_read_and_adapt")
             .context("ring_buffer_read_and_adapt not found in PTX")?;
         let recovery_fn = module.load_function("ring_buffer_threshold_recovery")
@@ -195,7 +200,7 @@ impl TwinRingBuffer {
             buffer, head, tail, overflow, capacity,
             staging: Vec::with_capacity(staging_capacity),
             d_staging,
-            push_batch_fn, read_adapt_fn, recovery_fn, reset_fn,
+            push_batch_fn, compact_push_fn, read_adapt_fn, recovery_fn, reset_fn,
         })
     }
 
@@ -282,6 +287,48 @@ impl TwinRingBuffer {
                 .arg(&curr_count)
                 .launch(cfg)?;
         }
+        Ok(())
+    }
+
+    /// GPU-direct spike compaction and push — zero CPU memcpy (Gate 3).
+    ///
+    /// Reads GpuSpikeEvent (92 bytes) directly from device memory,
+    /// extracts 12 fields into RingSpikeEvent (48 bytes), and pushes
+    /// to ring buffer. All on GPU, never touches CPU or PCIe bus.
+    ///
+    /// This replaces push_compacted() for the autonomous graph path.
+    pub fn push_device(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        d_spike_events: &CudaSlice<u8>,   // engine's d_spike_events buffer
+        d_spike_count: &CudaSlice<i32>,    // engine's d_spike_count
+    ) -> Result<()> {
+        let compact_fn = match &self.compact_push_fn {
+            Some(f) => f,
+            None => anyhow::bail!("compact_and_push kernel not loaded — cannot use device path"),
+        };
+
+        // Launch compact_and_push: one thread per spike, reads spike_count from device
+        // We launch max_spikes threads — the kernel checks spike_count internally
+        let max_spikes = 65536u32; // upper bound, kernel exits early for tid >= *spike_count
+        let n_blocks = (max_spikes + 255) / 256;
+        let cfg = LaunchConfig {
+            grid_dim: (n_blocks, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            stream.launch_builder(compact_fn)
+                .arg(d_spike_events)     // const GpuSpikeEvent*
+                .arg(d_spike_count)       // const int*
+                .arg(&mut self.buffer)    // ring buffer storage
+                .arg(&mut self.head)      // monotonic head counter
+                .arg(&mut self.overflow)  // overflow counter
+                .arg(&self.capacity)      // ring capacity
+                .launch(cfg)?;
+        }
+
         Ok(())
     }
 

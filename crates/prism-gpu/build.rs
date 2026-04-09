@@ -390,6 +390,22 @@ fn main() {
     // PRISM-TWIN Kernels
     // =========================================================================
 
+    // Protocol Director (TWIN v3.0 Gate 0: VRAM-resident protocol state machine)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/protocol_director.cu",
+        &ptx_dir.join("protocol_director.ptx"),
+        &target_ptx_dir.join("protocol_director.ptx"),
+    );
+
+    // Housekeeping kernels (TWIN v3.0 Gate 2: GPU-side COM removal, CA restraints, heartbeat)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/housekeeping.cu",
+        &ptx_dir.join("housekeeping.ptx"),
+        &target_ptx_dir.join("housekeeping.ptx"),
+    );
+
     // Stream completion signaling (standard kernel — no cooperative groups)
     compile_kernel(
         &nvcc,
@@ -503,8 +519,9 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
         .arg("-O3") // Maximum optimization
         .arg("--use_fast_math") // Fast math operations
         .arg("--restrict") // Enable restrict keyword optimization
-        // Include paths (if needed)
+        // Include paths
         .arg("-I/usr/local/cuda/include")
+        .arg("-Isrc/kernels")  // For shared headers (protocol_state.cuh)
         // Warning flags
         .arg("-Xptxas=-v") // Verbose PTX assembly info (shows register usage)
         .arg("--expt-relaxed-constexpr") // Allow constexpr in device code
@@ -539,6 +556,7 @@ fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target
         .arg("--use_fast_math")
         .arg("--restrict")
         .arg("-I/usr/local/cuda/include")
+        .arg("-Isrc/kernels")  // For shared headers (protocol_state.cuh)
         .arg("-Xptxas=-v")
         .arg("--expt-relaxed-constexpr")
         .status()
