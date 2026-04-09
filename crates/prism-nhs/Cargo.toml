@@ -28,6 +28,9 @@ tokio = { version = "1.0", features = ["sync", "macros", "rt-multi-thread"] }
 # GPU acceleration - CUDA 12.x for NHS compute kernels
 cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"], optional = true }
 
+# FP16 for TWIN Tensor Core CCF (WMMA input format)
+half = "2"
+
 # File pattern matching for trajectory discovery
 glob = "0.3"
 
