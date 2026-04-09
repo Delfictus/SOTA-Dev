@@ -3125,18 +3125,34 @@ fn run_multi_stream_pipeline(
         group_residue_counts: std::sync::Mutex<Vec<Vec<u32>>>,
         /// Known residues: set of residues already seen in 2+ groups (for onset detection)
         known_multi_group_residues: std::sync::Mutex<std::collections::HashSet<i32>>,
-        /// ASC output: consensus residues with interferometric contrast
-        consensus_residues: std::sync::Mutex<Vec<(i32, usize, f32)>>,
+        /// ASC output: consensus residues with phase coherence + surprise
+        consensus_residues: std::sync::Mutex<Vec<(i32, usize, f32)>>, // (rid, n_groups, S_pc)
         /// Event log: timestamped ASC events for telemetry
-        event_log: std::sync::Mutex<Vec<(u32, String)>>, // (chunk_idx, event description)
+        event_log: std::sync::Mutex<Vec<(u32, String)>>,
         /// ACL contrast log
         acl_contrast_log: std::sync::Mutex<Vec<(u32, f32)>>,
         /// Running spike rate statistics per engine: (sum, sum_sq, count) for mean/σ
         rate_stats: Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU32)>,
         n_residues: usize,
+        // ── PCMI v3.0: Phase Coherence + Bayesian Surprise ──
+        /// Per-group × per-residue phase accumulators: (cos_sum, sin_sum) for S_pc
+        /// Phase angle φ = 2π × (spike_timestep / group_total_steps)
+        /// S_pc = |Σ exp(iφ)| / N = sqrt(cos_sum² + sin_sum²) / N
+        group_residue_phase: std::sync::Mutex<Vec<Vec<(f64, f64)>>>, // [group][residue] = (cos_sum, sin_sum)
+        /// Bayesian prior: running per-residue spike density baseline (first 20 chunks)
+        prior_residue_density: std::sync::Mutex<Vec<f64>>, // [residue] = avg spikes/chunk during baseline
+        /// Baseline collection complete flag
+        baseline_ready: std::sync::atomic::AtomicBool,
+        /// Per-group total CCNS steps (for phase angle computation)
+        group_total_steps: Vec<i32>,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
+    let diff_total_steps: Vec<i32> = if is_multi_diff {
+        CryoUvProtocol::twin_differential_set().iter().map(|p| p.total_steps()).collect()
+    } else {
+        vec![35000; 4]
+    };
     let asc_shared: Option<std::sync::Arc<AscSharedState>> = if is_multi_diff && n_streams >= 4 {
         Some(std::sync::Arc::new(AscSharedState {
             barrier: std::sync::Barrier::new(n_streams),
@@ -3153,6 +3169,11 @@ fn run_multi_stream_pipeline(
                 std::sync::atomic::AtomicU32::new(0),
             )).collect(),
             n_residues: n_residues_est,
+            // PCMI v3.0
+            group_residue_phase: std::sync::Mutex::new(vec![vec![(0.0f64, 0.0f64); n_residues_est + 1]; 4]),
+            prior_residue_density: std::sync::Mutex::new(vec![0.0f64; n_residues_est + 1]),
+            baseline_ready: std::sync::atomic::AtomicBool::new(false),
+            group_total_steps: diff_total_steps,
         }))
     } else {
         None
@@ -3401,17 +3422,32 @@ fn run_multi_stream_pipeline(
                                 let sigma = variance.sqrt();
                                 let is_burst = n_samples > 5.0 && delta as f64 > mean_rate + 2.0 * sigma;
 
-                                // ── Residue-level analysis (every chunk, not periodic) ──
+                                // ── Residue-level analysis + phase angle accumulation ──
                                 // Use the spike DELTA (recent spikes only) for freshness
                                 if delta > 0 {
                                     let spikes = engine.get_accumulated_spikes();
                                     let recent_start = spikes.len().saturating_sub(delta as usize);
-                                    if let Ok(mut grc) = asc_state.group_residue_counts.lock() {
+                                    let total_steps_g = asc_state.group_total_steps[group_idx] as f64;
+                                    let two_pi = 2.0 * std::f64::consts::PI;
+
+                                    if let (Ok(mut grc), Ok(mut gph)) = (
+                                        asc_state.group_residue_counts.lock(),
+                                        asc_state.group_residue_phase.lock(),
+                                    ) {
                                         for spike in &spikes[recent_start..] {
+                                            // Phase angle: where in the CCNS cycle did this spike fire?
+                                            let phi = two_pi * (spike.timestep as f64 / total_steps_g);
+                                            let cos_phi = phi.cos();
+                                            let sin_phi = phi.sin();
+
                                             for j in 0..(spike.n_residues as usize).min(8) {
                                                 let rid = spike.nearby_residues[j];
                                                 if rid >= 0 && (rid as usize) < asc_state.n_residues {
-                                                    grc[group_idx][rid as usize] += 1;
+                                                    let r = rid as usize;
+                                                    grc[group_idx][r] += 1;
+                                                    // Accumulate phasor components for S_pc
+                                                    gph[group_idx][r].0 += cos_phi;
+                                                    gph[group_idx][r].1 += sin_phi;
                                                 }
                                             }
                                         }
@@ -3421,33 +3457,94 @@ fn run_multi_stream_pipeline(
                                 // Barrier: all engines have written their residue data
                                 asc_state.barrier.wait();
 
-                                // ── ASC Controller (thread 0): event detection + steering ──
+                                // ══════════════════════════════════════════════════════
+                                // ASC v3.0 CONTROLLER (thread 0): PCMI Gated Fusion
+                                //
+                                // Phase Coherence S_pc: |Σ exp(iφ)| / N across groups
+                                // Bayesian Surprise: KL(P_current || P_baseline)
+                                // Gate: (S_pc > 0.85) AND (surprise > 3σ)
+                                // ══════════════════════════════════════════════════════
                                 if i == 0 {
-                                    // Check for burst events across any engine
                                     let any_burst = (0..n_streams).any(|s| {
                                         asc_state.spike_deltas[s].load(std::sync::atomic::Ordering::Relaxed) as f64
                                             > mean_rate + 2.0 * sigma && n_samples > 5.0
                                     });
 
-                                    if let Ok(grc) = asc_state.group_residue_counts.lock() {
-                                        // Find multi-group residues
-                                        let mut hotspots: Vec<(i32, usize, f32)> = Vec::new();
+                                    if let (Ok(grc), Ok(gph)) = (
+                                        asc_state.group_residue_counts.lock(),
+                                        asc_state.group_residue_phase.lock(),
+                                    ) {
+                                        let mut hotspots: Vec<(i32, usize, f32)> = Vec::new(); // (rid, n_groups, S_pc)
+                                        let scout_groups = [0usize, 2]; // TS, UV
+                                        let observer_groups = [1usize, 3]; // EQ, HY
+
                                         for rid in 0..asc_state.n_residues {
                                             let counts: Vec<u32> = (0..4).map(|g| grc[g][rid]).collect();
                                             let active_groups = counts.iter().filter(|&&c| c > 5).count();
-                                            if active_groups >= 2 {
-                                                let mean = counts.iter().sum::<u32>() as f32 / 4.0;
-                                                let var = counts.iter().map(|&c| (c as f32 - mean).powi(2)).sum::<f32>() / 4.0;
-                                                let cv = if mean > 0.1 { var.sqrt() / mean } else { 1.0 };
-                                                let contrast = 1.0 - cv;
-                                                if contrast > 0.0 {
-                                                    hotspots.push((rid as i32, active_groups, contrast));
-                                                }
+                                            if active_groups < 2 { continue; }
+
+                                            // ── Phase Coherence S_pc ──
+                                            // Sum phasors across ALL groups for this residue
+                                            let mut cos_total = 0.0f64;
+                                            let mut sin_total = 0.0f64;
+                                            let mut n_total = 0u64;
+                                            for g in 0..4 {
+                                                cos_total += gph[g][rid].0;
+                                                sin_total += gph[g][rid].1;
+                                                n_total += counts[g] as u64;
+                                            }
+                                            let s_pc = if n_total > 10 {
+                                                (cos_total.powi(2) + sin_total.powi(2)).sqrt() / n_total as f64
+                                            } else {
+                                                0.0
+                                            };
+
+                                            if s_pc > 0.01 { // minimum coherence to even consider
+                                                hotspots.push((rid as i32, active_groups, s_pc as f32));
                                             }
                                         }
                                         hotspots.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-                                        // Event 2: NEW ONSET — check for residues newly appearing in 2+ groups
+                                        // ── Bayesian Surprise: build baseline for first 20 chunks, then compare ──
+                                        let baseline_window = 20u32;
+                                        if chunk_idx as u32 == baseline_window {
+                                            // Lock in the baseline from accumulated residue counts
+                                            if let Ok(mut prior) = asc_state.prior_residue_density.lock() {
+                                                let chunk_f = baseline_window as f64;
+                                                for rid in 0..asc_state.n_residues {
+                                                    let total: u32 = (0..4).map(|g| grc[g][rid]).sum();
+                                                    prior[rid] = total as f64 / chunk_f;
+                                                }
+                                            }
+                                            asc_state.baseline_ready.store(true, std::sync::atomic::Ordering::Relaxed);
+                                            log::info!("    [ASC] Bayesian baseline locked at chunk {}", chunk_idx);
+                                        }
+
+                                        // Compute KL-divergence surprise for top hotspots
+                                        let is_baseline_ready = asc_state.baseline_ready.load(std::sync::atomic::Ordering::Relaxed);
+                                        let mut surprised_residues: Vec<(i32, f64)> = Vec::new();
+                                        if is_baseline_ready {
+                                            if let Ok(prior) = asc_state.prior_residue_density.lock() {
+                                                for &(rid, _, s_pc) in hotspots.iter().take(30) {
+                                                    let r = rid as usize;
+                                                    if r >= asc_state.n_residues { continue; }
+                                                    let expected = prior[r].max(0.1); // avoid div-by-zero
+                                                    let observed: u32 = (0..4).map(|g| grc[g][r]).sum();
+                                                    let obs_rate = observed as f64 / (chunk_idx as f64).max(1.0);
+                                                    // Simplified KL: obs * ln(obs/expected) — scalar surprise
+                                                    let kl = if obs_rate > 0.01 {
+                                                        obs_rate * (obs_rate / expected).ln()
+                                                    } else {
+                                                        0.0
+                                                    };
+                                                    if kl > 0.0 && s_pc > 0.1 {
+                                                        surprised_residues.push((rid, kl));
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Event 2: NEW ONSET
                                         let mut new_onsets: Vec<i32> = Vec::new();
                                         if let Ok(mut known) = asc_state.known_multi_group_residues.lock() {
                                             for &(rid, ng, _) in &hotspots {
@@ -3458,21 +3555,19 @@ fn run_multi_stream_pipeline(
                                             }
                                         }
 
-                                        // Event 3: INTERFEROMETRIC MATCH — scout (TS+UV) AND observer (EQ+HY) agree
-                                        let scout_groups = [0usize, 2]; // TS, UV
-                                        let observer_groups = [1usize, 3]; // EQ, HY
-                                        let matches: Vec<i32> = hotspots.iter()
-                                            .filter(|&&(rid, _, _)| {
+                                        // Event 3: INTERFEROMETRIC MATCH with phase coherence
+                                        let matches: Vec<(i32, f32)> = hotspots.iter()
+                                            .filter(|&&(rid, _, s_pc)| {
                                                 let r = rid as usize;
-                                                if r >= asc_state.n_residues { return false; }
+                                                if r >= asc_state.n_residues || s_pc < 0.85 { return false; }
                                                 let scout_active = scout_groups.iter().any(|&g| grc[g][r] > 5);
                                                 let observer_active = observer_groups.iter().any(|&g| grc[g][r] > 5);
                                                 scout_active && observer_active
                                             })
-                                            .map(|&(rid, _, _)| rid)
+                                            .map(|&(rid, _, s_pc)| (rid, s_pc))
                                             .collect();
 
-                                        // Store consensus
+                                        // Store consensus (now with S_pc instead of contrast)
                                         if let Ok(mut cr) = asc_state.consensus_residues.lock() {
                                             *cr = hotspots.iter().take(10).cloned().collect();
                                         }
@@ -3487,12 +3582,19 @@ fn run_multi_stream_pipeline(
                                             }
                                             if !matches.is_empty() {
                                                 let match_str: String = matches.iter().take(3)
-                                                    .map(|r| format!("r{}", r)).collect::<Vec<_>>().join(",");
-                                                events.push(format!("MATCH[{}]", match_str));
+                                                    .map(|(r, spc)| format!("r{}(Spc={:.2})", r, spc))
+                                                    .collect::<Vec<_>>().join(",");
+                                                events.push(format!("PCMI[{}]", match_str));
+                                            }
+                                            if !surprised_residues.is_empty() {
+                                                let s_str: String = surprised_residues.iter().take(3)
+                                                    .map(|(r, kl)| format!("r{}(KL={:.2})", r, kl))
+                                                    .collect::<Vec<_>>().join(",");
+                                                events.push(format!("SURP[{}]", s_str));
                                             }
                                             let event_str = if events.is_empty() { "monitor".into() } else { events.join("+") };
-                                            let top_str = hotspots.iter().take(3).map(|(rid, ng, c)| {
-                                                format!("res{}({}/4,c={:.2})", rid, ng, c)
+                                            let top_str = hotspots.iter().take(3).map(|(rid, ng, spc)| {
+                                                format!("res{}({}/4,Spc={:.3})", rid, ng, spc)
                                             }).collect::<Vec<_>>().join(" ");
                                             log::info!("    [ASC] chunk {}: {} [{}] top=[{}]",
                                                 chunk_idx, event_str, hotspots.len(), top_str);
@@ -3521,24 +3623,26 @@ fn run_multi_stream_pipeline(
                                 // Second barrier: ASC decisions ready
                                 asc_state.barrier.wait();
 
-                                // ── OMNIDIRECTIONAL: every engine reads ASC → apply steering ──
-                                // Gated steering: ONLY when interferometric match + signal purity
-                                // - Contrast ≥ 0.90 (same residue in ≥3 groups)
-                                // - Information handshake: boost engines that HAVEN'T seen the signal
+                                // ══════════════════════════════════════════════════════
+                                // OMNIDIRECTIONAL PCMI-GATED STEERING
+                                //
+                                // Gate: (S_pc > 0.85) AND (≥3 groups active)
+                                // Action: Information handshake — boost engines that
+                                //         HAVEN'T seen the phase-coherent signal
+                                // ══════════════════════════════════════════════════════
                                 if let Ok(cr) = asc_state.consensus_residues.lock() {
-                                    if let Some(&(top_residue, n_groups, contrast)) = cr.first() {
-                                        if n_groups >= 3 && contrast >= 0.90 {
-                                            // Check if THIS engine's group already has strong signal at this residue
+                                    if let Some(&(top_residue, n_groups, s_pc)) = cr.first() {
+                                        // PCMI gate: only steer when phase-coherent AND multi-group
+                                        if n_groups >= 3 && s_pc >= 0.85 {
+                                            // Information handshake: only boost engines missing the signal
                                             let my_group_has_it = if let Ok(grc) = asc_state.group_residue_counts.lock() {
                                                 let rid = top_residue as usize;
                                                 rid < asc_state.n_residues && grc[group_idx][rid] > 20
                                             } else { false };
 
                                             if !my_group_has_it {
-                                                // Information handshake: steer toward consensus (this group needs it)
                                                 engine.set_steering_focus_residue(top_residue);
                                             }
-                                            // All groups get the focus residue logged even if they already have signal
                                         }
                                     }
                                 }
