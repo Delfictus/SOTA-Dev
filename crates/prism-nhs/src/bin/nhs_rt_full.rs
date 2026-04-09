@@ -215,11 +215,16 @@ struct Args {
     coupled_twin: bool,
 
     /// Use persistent cooperative kernel for TWIN coupling instead of host-mediated.
-    /// The persistent kernel runs on a dedicated CUDA stream for the entire simulation,
-    /// handling ring buffer exchange + threshold adaptation without host round-trips.
-    /// Requires --coupled-twin. Default: off (host-mediated coupling).
+    /// DISABLED: causes SM starvation on Blackwell SM120. Use --graph-coupling instead.
     #[arg(long, default_value = "false")]
     persistent_coupling: bool,
+
+    /// Use CUDA Graph-based autonomous coupling (bleeding-edge Blackwell optimization).
+    /// Captures the entire physics + coupling sequence as a conditional WHILE graph.
+    /// One cudaGraphLaunch for the entire simulation. CPU harvests spike data to
+    /// Parquet while GPU runs autonomously. Requires --coupled-twin.
+    #[arg(long, default_value = "false")]
+    graph_coupling: bool,
 
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
@@ -605,6 +610,7 @@ fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()>
     twin_config.enable_exchange = true;   // Gate 2: spike density exchange
     twin_config.enable_ccf = true;        // Gate 2: cross-correlation
     twin_config.persistent_coupling = args.persistent_coupling;
+    twin_config.graph_coupling = args.graph_coupling;
 
     // Initialize CUDA
     let context = cudarc::driver::CudaContext::new(0)

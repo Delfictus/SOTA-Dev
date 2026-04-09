@@ -20,6 +20,7 @@
 //! - SM 120 (Blackwell, RTX 5080)
 //! - cudarc 0.18.2 (sys-level bindings for the driver API)
 
+pub mod capture;
 pub mod compact;
 pub mod exhaust;
 pub mod graph;

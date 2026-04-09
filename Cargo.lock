@@ -3731,6 +3731,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prism-cuda-ext"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "cudarc",
+ "log",
+]
+
+[[package]]
 name = "prism-escape-extract"
 version = "0.1.0"
 dependencies = [
@@ -3976,6 +3986,7 @@ dependencies = [
  "cudarc",
  "env_logger 0.10.2",
  "glob",
+ "half",
  "log",
  "optix-sys",
  "prism-gpu",

@@ -1177,6 +1177,12 @@ impl PersistentNhsEngine {
         self.engine.as_ref().map(|e| e.spike_count_gpu())
     }
 
+    /// Get a reference to the engine's CUDA stream.
+    /// Used by CUDA Graph stream capture to record kernel launches.
+    pub fn cuda_stream(&self) -> &Arc<CudaStream> {
+        &self.stream
+    }
+
     /// Get ALL GPU buffer references needed by the persistent coupling kernel.
     pub fn twin_coupling_gpu_state(&mut self) -> Option<(
         &mut CudaSlice<f32>,

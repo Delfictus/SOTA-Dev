@@ -23,7 +23,7 @@ use std::ptr;
 use std::ffi::CString;
 
 /// Check CUDA result and return anyhow error.
-fn check(result: sys::CUresult, ctx: &str) -> Result<()> {
+pub fn check(result: sys::CUresult, ctx: &str) -> Result<()> {
     if result == sys::CUresult::CUDA_SUCCESS {
         Ok(())
     } else {

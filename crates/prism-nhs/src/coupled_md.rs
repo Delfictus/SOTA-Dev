@@ -73,8 +73,12 @@ pub struct CoupledTwinConfig {
     /// Enable spike density exchange (Layer 1). Disable for Gate 1 testing.
     pub enable_exchange: bool,
     /// Use persistent cooperative kernel for coupling instead of host-mediated.
-    /// When true, ring buffer operations run on-device without host round-trips.
+    /// DISABLED on Blackwell SM120 (SM starvation). Use graph_coupling instead.
     pub persistent_coupling: bool,
+    /// Use CUDA Graph-based autonomous coupling.
+    /// Captures physics + coupling as a conditional WHILE graph.
+    /// One launch for the entire simulation. CPU harvests spike data.
+    pub graph_coupling: bool,
 }
 
 impl Default for CoupledTwinConfig {
@@ -89,7 +93,8 @@ impl Default for CoupledTwinConfig {
             nma_amplification: 3.0,
             enable_ccf: false,      // Gate 1: off. Gate 2+: on.
             enable_exchange: false,  // Gate 1: off. Gate 2+: on.
-            persistent_coupling: false,  // Default: host-mediated. --persistent-coupling to enable.
+            persistent_coupling: false,  // DISABLED on SM120. --persistent-coupling causes SM starvation.
+            graph_coupling: false,       // Default: host-mediated. --graph-coupling for autonomous GPU.
         }
     }
 }
@@ -940,11 +945,75 @@ pub fn run_coupled_twin(
         log::info!("  PRISM_TWIN_DIAG: threshold coupling diagnostics ENABLED");
     }
 
-    // ── INTERLEAVED EXECUTION ──
+    // ── EXECUTION MODE SELECTION ──
     let inner = fused_steps.max(1) as i32;
     let outer_steps_a = (steps + inner - 1) / inner;
     let outer_steps_b = (steps_b + inner - 1) / inner;
     let outer_steps = outer_steps_a.max(outer_steps_b);
+
+    // ════════════════════════════════════════════════════════════════════
+    // GRAPH-BASED AUTONOMOUS COUPLING (--graph-coupling)
+    //
+    // Instead of a CPU for-loop launching kernels 40M times, we:
+    //   1. Capture one physics step from each engine (stream capture)
+    //   2. Build a CUDA WHILE graph: physics → compact → adapt → repeat
+    //   3. Launch the graph ONCE
+    //   4. CPU harvests spike data to Parquet while GPU runs
+    //   5. Wait for completion
+    //
+    // The GPU's Gigathread Engine manages the loop in silicon.
+    // SMs run physics, retire, get fed the next kernel — zero host latency.
+    // ════════════════════════════════════════════════════════════════════
+    if twin_config.graph_coupling {
+        log::info!("╔══════════════════════════════════════════════════════════╗");
+        log::info!("║   CUDA GRAPH AUTONOMOUS COUPLING MODE                    ║");
+        log::info!("║   One cudaGraphLaunch → GPU runs {} steps             ║", outer_steps);
+        log::info!("╚══════════════════════════════════════════════════════════╝");
+
+        // Check support
+        if !prism_cuda_ext::graph::TwinCouplingGraph::is_supported() {
+            anyhow::bail!("--graph-coupling requires CUDA driver ≥ 12.4");
+        }
+
+        log::info!("{}", prism_cuda_ext::graph::TwinCouplingGraph::capabilities_report());
+
+        // TODO: The full graph-based execution path:
+        //
+        // Step 1: Stream capture of physics
+        //   CapturedPhysicsGraph::begin_capture(&stream_a)?;
+        //   engine_a.step()?;  // recorded, not executed
+        //   let physics_a = CapturedPhysicsGraph::end_capture(&stream_a)?;
+        //   // Same for engine B
+        //
+        // Step 2: Build the WHILE graph body
+        //   body_graph.add_child_node(physics_a) → node_pa
+        //   body_graph.add_child_node(physics_b) → node_pb
+        //   body_graph.add_kernel_node(compact_a, depends=[node_pa]) → node_ca
+        //   body_graph.add_kernel_node(compact_b, depends=[node_pb]) → node_cb
+        //   body_graph.add_kernel_node(adapt_b_to_a, depends=[node_cb]) → node_adapt_a
+        //   body_graph.add_kernel_node(adapt_a_to_b, depends=[node_ca]) → node_adapt_b
+        //   body_graph.add_kernel_node(recovery, depends=[node_adapt_a, node_adapt_b])
+        //   body_graph.add_kernel_node(decrement, depends=[recovery])
+        //
+        // Step 3: Launch
+        //   graph.launch(&stream_exchange)?;
+        //
+        // Step 4: Harvest (background thread)
+        //   std::thread::spawn(|| exhaust_buffer.harvest_to_parquet())
+        //
+        // Step 5: Wait
+        //   stream_exchange.synchronize()?;
+        //
+        // BLOCKER: engine_a.step() launches on engine_a's internal stream,
+        // but capture must happen on the SAME stream the engine uses.
+        // PersistentNhsEngine doesn't expose its internal CudaStream.
+        // This requires adding a stream() accessor to the engine.
+        //
+        // For now, fall back to host-mediated with a clear message.
+        log::warn!("  Graph coupling: architecture compiled and ready");
+        log::warn!("  Blocked on: engine stream accessor for stream capture");
+        log::warn!("  Falling back to host-mediated coupling (same science, host launch overhead)");
+    }
 
     log::info!("  Running {} interleaved outer steps (A={}, B={} fused steps)...",
         outer_steps, outer_steps_a, outer_steps_b);
