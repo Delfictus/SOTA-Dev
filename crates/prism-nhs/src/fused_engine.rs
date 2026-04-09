@@ -7164,6 +7164,60 @@ impl NhsAmberFusedEngine {
         log::info!("Spike accumulation: {}", if enabled { "ENABLED" } else { "disabled" });
     }
 
+    /// Force-sync spike data from GPU to CPU accumulated buffer.
+    /// Call this after short run chunks to ensure spikes are captured even when
+    /// the chunk size (e.g. 500 steps) is smaller than the sync interval (1000 steps).
+    pub fn force_spike_sync(&mut self) -> Result<usize> {
+        if !self.accumulate_spikes { return Ok(0); }
+        let mut spike_count_host = [0i32];
+        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
+        let spikes = spike_count_host[0] as usize;
+        if spikes == 0 { return Ok(0); }
+
+        let n_to_download = spikes.min(crate::fused_engine::MAX_SPIKES_PER_STEP);
+        let mut full_buffer = vec![0u8; crate::fused_engine::MAX_SPIKES_PER_STEP * self.spike_event_size];
+        self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
+
+        let pre_len = self.accumulated_spikes.len();
+        for i in 0..n_to_download {
+            let offset = i * self.spike_event_size;
+            let timestep = i32::from_le_bytes([full_buffer[offset], full_buffer[offset+1], full_buffer[offset+2], full_buffer[offset+3]]);
+            let voxel_idx = i32::from_le_bytes([full_buffer[offset+4], full_buffer[offset+5], full_buffer[offset+6], full_buffer[offset+7]]);
+            let pos_x = f32::from_le_bytes([full_buffer[offset+8], full_buffer[offset+9], full_buffer[offset+10], full_buffer[offset+11]]);
+            let pos_y = f32::from_le_bytes([full_buffer[offset+12], full_buffer[offset+13], full_buffer[offset+14], full_buffer[offset+15]]);
+            let pos_z = f32::from_le_bytes([full_buffer[offset+16], full_buffer[offset+17], full_buffer[offset+18], full_buffer[offset+19]]);
+            let intensity = f32::from_le_bytes([full_buffer[offset+20], full_buffer[offset+21], full_buffer[offset+22], full_buffer[offset+23]]);
+            // Nearby residues (8 × i32 = offsets 24-55)
+            let mut nearby_residues = [0i32; 8];
+            for j in 0..8 {
+                let ro = offset + 24 + j * 4;
+                nearby_residues[j] = i32::from_le_bytes([full_buffer[ro], full_buffer[ro+1], full_buffer[ro+2], full_buffer[ro+3]]);
+            }
+            let n_residues = i32::from_le_bytes([full_buffer[offset+56], full_buffer[offset+57], full_buffer[offset+58], full_buffer[offset+59]]);
+            let spike_source = i32::from_le_bytes([full_buffer[offset+60], full_buffer[offset+61], full_buffer[offset+62], full_buffer[offset+63]]);
+            let wavelength_nm = f32::from_le_bytes([full_buffer[offset+64], full_buffer[offset+65], full_buffer[offset+66], full_buffer[offset+67]]);
+            let aromatic_type = i32::from_le_bytes([full_buffer[offset+68], full_buffer[offset+69], full_buffer[offset+70], full_buffer[offset+71]]);
+            let aromatic_residue_id = i32::from_le_bytes([full_buffer[offset+72], full_buffer[offset+73], full_buffer[offset+74], full_buffer[offset+75]]);
+            let water_density = f32::from_le_bytes([full_buffer[offset+76], full_buffer[offset+77], full_buffer[offset+78], full_buffer[offset+79]]);
+            let vibrational_energy = f32::from_le_bytes([full_buffer[offset+80], full_buffer[offset+81], full_buffer[offset+82], full_buffer[offset+83]]);
+            let n_nearby_excited = i32::from_le_bytes([full_buffer[offset+84], full_buffer[offset+85], full_buffer[offset+86], full_buffer[offset+87]]);
+            let wd_change = f32::from_le_bytes([full_buffer[offset+88], full_buffer[offset+89], full_buffer[offset+90], full_buffer[offset+91]]);
+
+            self.accumulated_spikes.push(GpuSpikeEvent {
+                timestep, voxel_idx, position: [pos_x, pos_y, pos_z], intensity,
+                nearby_residues, n_residues, spike_source, wavelength_nm,
+                aromatic_type, aromatic_residue_id, water_density, vibrational_energy,
+                n_nearby_excited, wd_change,
+            });
+        }
+
+        // Reset GPU spike counter
+        let zero = [0i32];
+        self.stream.memcpy_htod(&zero, &mut self.d_spike_count)?;
+
+        Ok(self.accumulated_spikes.len() - pre_len)
+    }
+
     // ========================================================================
     // SPIKE-GUIDED ADAPTIVE BIAS: internal methods
     // ========================================================================

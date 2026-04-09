@@ -1106,6 +1106,16 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Force-sync spike data from GPU after short run chunks.
+    /// Returns number of new spikes downloaded.
+    pub fn force_spike_sync(&mut self) -> anyhow::Result<usize> {
+        if let Some(ref mut engine) = self.engine {
+            engine.force_spike_sync()
+        } else {
+            Ok(0)
+        }
+    }
+
     /// Load NMA modes from JSON and upload to GPU for NMA-biased perturbation.
     pub fn load_nma_modes(&mut self, path: &str) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

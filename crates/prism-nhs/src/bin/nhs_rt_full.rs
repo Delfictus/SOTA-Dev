@@ -3104,21 +3104,35 @@ fn run_multi_stream_pipeline(
         args.steps
     };
 
-    // ── ASC Fusion Controller shared state (multi-differential only) ──
-    // The ASC uses a GATED TRIGGER: only fires when 2+ groups show spatial
-    // consensus at the SAME residue ID. This prevents naive max-count steering.
+    // ══════════════════════════════════════════════════════════════════════
+    // ASC FUSION CONTROLLER — EVENT-DRIVEN INTERFEROMETRIC STEERING
+    //
+    // The ASC fires on PHYSICS EVENTS, not periodic timers:
+    //   Event 1: NEW RESIDUE ONSET — a residue appears in 2+ groups for the first time
+    //   Event 2: BURST DETECTION — spike rate exceeds 2σ above running mean
+    //   Event 3: INTERFEROMETRIC MATCH — same residue in scout + observer simultaneously
+    //   Event 4: PHASE TRANSITION — an engine crosses a protocol phase boundary
+    //
+    // Each event triggers specific steering actions appropriate to the physics.
+    // ══════════════════════════════════════════════════════════════════════
     struct AscSharedState {
         barrier: std::sync::Barrier,
-        /// Per-engine spike count (for monitoring)
+        /// Per-engine spike count (atomically updated each chunk)
         spike_counts: Vec<std::sync::atomic::AtomicU64>,
-        /// Per-group × per-residue spike counts for interferometric contrast.
-        /// Layout: [group][residue] = count. Written by each engine after chunk.
-        /// Protected by the barrier (all writes before barrier, all reads after).
+        /// Per-engine spike DELTA this chunk (for burst detection)
+        spike_deltas: Vec<std::sync::atomic::AtomicU64>,
+        /// Per-group × per-residue cumulative spike counts [group][residue]
         group_residue_counts: std::sync::Mutex<Vec<Vec<u32>>>,
-        /// ASC output: residue IDs where 2+ groups show consensus (gated trigger).
-        consensus_residues: std::sync::Mutex<Vec<(i32, usize, f32)>>, // (residue_id, n_groups, contrast)
-        /// ACL telemetry: signal contrast between scout (TS+UV) and observer (EQ+HY)
-        acl_contrast_log: std::sync::Mutex<Vec<(u32, f32)>>, // (chunk_idx, scout/observer ratio)
+        /// Known residues: set of residues already seen in 2+ groups (for onset detection)
+        known_multi_group_residues: std::sync::Mutex<std::collections::HashSet<i32>>,
+        /// ASC output: consensus residues with interferometric contrast
+        consensus_residues: std::sync::Mutex<Vec<(i32, usize, f32)>>,
+        /// Event log: timestamped ASC events for telemetry
+        event_log: std::sync::Mutex<Vec<(u32, String)>>, // (chunk_idx, event description)
+        /// ACL contrast log
+        acl_contrast_log: std::sync::Mutex<Vec<(u32, f32)>>,
+        /// Running spike rate statistics per engine: (sum, sum_sq, count) for mean/σ
+        rate_stats: Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU32)>,
         n_residues: usize,
     }
     let is_multi_diff = args.multi_differential;
@@ -3127,9 +3141,17 @@ fn run_multi_stream_pipeline(
         Some(std::sync::Arc::new(AscSharedState {
             barrier: std::sync::Barrier::new(n_streams),
             spike_counts: (0..n_streams).map(|_| std::sync::atomic::AtomicU64::new(0)).collect(),
+            spike_deltas: (0..n_streams).map(|_| std::sync::atomic::AtomicU64::new(0)).collect(),
             group_residue_counts: std::sync::Mutex::new(vec![vec![0u32; n_residues_est + 1]; 4]),
+            known_multi_group_residues: std::sync::Mutex::new(std::collections::HashSet::new()),
             consensus_residues: std::sync::Mutex::new(Vec::new()),
+            event_log: std::sync::Mutex::new(Vec::new()),
             acl_contrast_log: std::sync::Mutex::new(Vec::new()),
+            rate_stats: (0..n_streams).map(|_| (
+                std::sync::atomic::AtomicU64::new(0),
+                std::sync::atomic::AtomicU64::new(0),
+                std::sync::atomic::AtomicU32::new(0),
+            )).collect(),
             n_residues: n_residues_est,
         }))
     } else {
@@ -3340,25 +3362,51 @@ fn run_multi_stream_pipeline(
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
                                 let s = engine.run(this_chunk)?;
+                                // Force-sync spikes from GPU — chunk_size < sync_interval so
+                                // spikes wouldn't be downloaded otherwise
+                                let _ = engine.force_spike_sync();
                                 last_summary = Some(s);
                                 steps_run += this_chunk;
                             }
 
-                            // ── ASC Gated Trigger: residue-level cross-group consensus ──
+                            // ══════════════════════════════════════════════════════════
+                            // ASC EVENT-DRIVEN INTERFEROMETRIC CONTROLLER
+                            //
+                            // Fires on PHYSICS EVENTS, not periodic timers:
+                            //   Event 1: BURST — spike delta > 2σ above running mean
+                            //   Event 2: ONSET — new residue appears in 2+ groups
+                            //   Event 3: MATCH — scout + observer agree on residue
+                            // ══════════════════════════════════════════════════════════
                             if let Some(ref asc_state) = asc_shared {
-                                let spike_count = engine.get_spike_count().unwrap_or(0);
                                 let group_idx = i / epg_val;
-                                asc_state.spike_counts[i].store(spike_count as u64, std::sync::atomic::Ordering::Relaxed);
 
-                                // Every 20 chunks (10K steps): download recent spikes for residue-level analysis
-                                if chunk_idx > 0 && chunk_idx % 20 == 0 {
-                                    // Get accumulated spikes and extract residue hits for this group
+                                // ── Per-engine spike delta (burst detection) ──
+                                let current_total = engine.get_accumulated_spikes().len() as u64;
+                                let prev_total = asc_state.spike_counts[i].load(std::sync::atomic::Ordering::Relaxed);
+                                let delta = current_total.saturating_sub(prev_total);
+                                asc_state.spike_counts[i].store(current_total, std::sync::atomic::Ordering::Relaxed);
+                                asc_state.spike_deltas[i].store(delta, std::sync::atomic::Ordering::Relaxed);
+
+                                // Update running rate statistics for burst detection
+                                let (ref sum_atom, ref sum_sq_atom, ref count_atom) = asc_state.rate_stats[i];
+                                sum_atom.fetch_add(delta, std::sync::atomic::Ordering::Relaxed);
+                                sum_sq_atom.fetch_add(delta * delta, std::sync::atomic::Ordering::Relaxed);
+                                count_atom.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                                // Detect burst: delta > mean + 2σ
+                                let n_samples = count_atom.load(std::sync::atomic::Ordering::Relaxed).max(1) as f64;
+                                let mean_rate = sum_atom.load(std::sync::atomic::Ordering::Relaxed) as f64 / n_samples;
+                                let mean_sq = sum_sq_atom.load(std::sync::atomic::Ordering::Relaxed) as f64 / n_samples;
+                                let variance = (mean_sq - mean_rate * mean_rate).max(0.0);
+                                let sigma = variance.sqrt();
+                                let is_burst = n_samples > 5.0 && delta as f64 > mean_rate + 2.0 * sigma;
+
+                                // ── Residue-level analysis (every chunk, not periodic) ──
+                                // Use the spike DELTA (recent spikes only) for freshness
+                                if delta > 0 {
                                     let spikes = engine.get_accumulated_spikes();
-                                    // Only look at recent spikes (last ~10K steps worth)
-                                    let recent_start = spikes.len().saturating_sub(50000);
+                                    let recent_start = spikes.len().saturating_sub(delta as usize);
                                     if let Ok(mut grc) = asc_state.group_residue_counts.lock() {
-                                        // Reset this group's counts (accumulate fresh per exchange)
-                                        for r in grc[group_idx].iter_mut() { *r = 0; }
                                         for spike in &spikes[recent_start..] {
                                             for j in 0..(spike.n_residues as usize).min(8) {
                                                 let rid = spike.nearby_residues[j];
@@ -3370,23 +3418,28 @@ fn run_multi_stream_pipeline(
                                     }
                                 }
 
-                                // Barrier: all engines have written their residue counts
+                                // Barrier: all engines have written their residue data
                                 asc_state.barrier.wait();
 
-                                // ASC Gated Trigger: stream 0 computes interferometric consensus
-                                if i == 0 && chunk_idx > 0 && chunk_idx % 20 == 0 {
+                                // ── ASC Controller (thread 0): event detection + steering ──
+                                if i == 0 {
+                                    // Check for burst events across any engine
+                                    let any_burst = (0..n_streams).any(|s| {
+                                        asc_state.spike_deltas[s].load(std::sync::atomic::Ordering::Relaxed) as f64
+                                            > mean_rate + 2.0 * sigma && n_samples > 5.0
+                                    });
+
                                     if let Ok(grc) = asc_state.group_residue_counts.lock() {
-                                        // Find residues where 2+ groups have significant spikes
+                                        // Find multi-group residues
                                         let mut hotspots: Vec<(i32, usize, f32)> = Vec::new();
                                         for rid in 0..asc_state.n_residues {
                                             let counts: Vec<u32> = (0..4).map(|g| grc[g][rid]).collect();
                                             let active_groups = counts.iter().filter(|&&c| c > 5).count();
                                             if active_groups >= 2 {
-                                                // Interferometric contrast: std/mean of per-group counts
                                                 let mean = counts.iter().sum::<u32>() as f32 / 4.0;
                                                 let var = counts.iter().map(|&c| (c as f32 - mean).powi(2)).sum::<f32>() / 4.0;
                                                 let cv = if mean > 0.1 { var.sqrt() / mean } else { 1.0 };
-                                                let contrast = 1.0 - cv; // high = consistent across groups
+                                                let contrast = 1.0 - cv;
                                                 if contrast > 0.0 {
                                                     hotspots.push((rid as i32, active_groups, contrast));
                                                 }
@@ -3394,55 +3447,98 @@ fn run_multi_stream_pipeline(
                                         }
                                         hotspots.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-                                        // Store consensus residues for other threads + telemetry
+                                        // Event 2: NEW ONSET — check for residues newly appearing in 2+ groups
+                                        let mut new_onsets: Vec<i32> = Vec::new();
+                                        if let Ok(mut known) = asc_state.known_multi_group_residues.lock() {
+                                            for &(rid, ng, _) in &hotspots {
+                                                if ng >= 2 && !known.contains(&rid) {
+                                                    known.insert(rid);
+                                                    new_onsets.push(rid);
+                                                }
+                                            }
+                                        }
+
+                                        // Event 3: INTERFEROMETRIC MATCH — scout (TS+UV) AND observer (EQ+HY) agree
+                                        let scout_groups = [0usize, 2]; // TS, UV
+                                        let observer_groups = [1usize, 3]; // EQ, HY
+                                        let matches: Vec<i32> = hotspots.iter()
+                                            .filter(|&&(rid, _, _)| {
+                                                let r = rid as usize;
+                                                if r >= asc_state.n_residues { return false; }
+                                                let scout_active = scout_groups.iter().any(|&g| grc[g][r] > 5);
+                                                let observer_active = observer_groups.iter().any(|&g| grc[g][r] > 5);
+                                                scout_active && observer_active
+                                            })
+                                            .map(|&(rid, _, _)| rid)
+                                            .collect();
+
+                                        // Store consensus
                                         if let Ok(mut cr) = asc_state.consensus_residues.lock() {
                                             *cr = hotspots.iter().take(10).cloned().collect();
                                         }
 
-                                        // ACL telemetry: scout (TS+UV) vs observer (EQ+HY) contrast
-                                        let scout_total: u64 = [0usize, 2].iter().map(|&g| {
-                                            (0..epg_val).map(|e| asc_state.spike_counts[g * epg_val + e]
-                                                .load(std::sync::atomic::Ordering::Relaxed)).sum::<u64>()
-                                        }).sum();
-                                        let observer_total: u64 = [1usize, 3].iter().map(|&g| {
-                                            (0..epg_val).map(|e| asc_state.spike_counts[g * epg_val + e]
-                                                .load(std::sync::atomic::Ordering::Relaxed)).sum::<u64>()
-                                        }).sum();
-                                        let so_ratio = if observer_total > 0 {
-                                            scout_total as f32 / observer_total as f32
-                                        } else { 1.0 };
-                                        if let Ok(mut log) = asc_state.acl_contrast_log.lock() {
-                                            log.push((chunk_idx as u32, so_ratio));
-                                        }
-
-                                        if !hotspots.is_empty() && chunk_idx % 40 == 0 {
-                                            let top = &hotspots[..hotspots.len().min(5)];
-                                            let res_str: String = top.iter().map(|(rid, ng, c)| {
+                                        // Log events
+                                        let has_event = any_burst || !new_onsets.is_empty() || !matches.is_empty();
+                                        if has_event || chunk_idx % 40 == 0 {
+                                            let mut events = Vec::new();
+                                            if any_burst { events.push("BURST".to_string()); }
+                                            if !new_onsets.is_empty() {
+                                                events.push(format!("ONSET({}res)", new_onsets.len()));
+                                            }
+                                            if !matches.is_empty() {
+                                                let match_str: String = matches.iter().take(3)
+                                                    .map(|r| format!("r{}", r)).collect::<Vec<_>>().join(",");
+                                                events.push(format!("MATCH[{}]", match_str));
+                                            }
+                                            let event_str = if events.is_empty() { "monitor".into() } else { events.join("+") };
+                                            let top_str = hotspots.iter().take(3).map(|(rid, ng, c)| {
                                                 format!("res{}({}/4,c={:.2})", rid, ng, c)
                                             }).collect::<Vec<_>>().join(" ");
-                                            log::info!("    [ASC] chunk {}: {} hotspot residues, S/O={:.2} [{}]",
-                                                chunk_idx, hotspots.len(), so_ratio, res_str);
+                                            log::info!("    [ASC] chunk {}: {} [{}] top=[{}]",
+                                                chunk_idx, event_str, hotspots.len(), top_str);
+
+                                            if let Ok(mut el) = asc_state.event_log.lock() {
+                                                el.push((chunk_idx as u32, event_str));
+                                            }
+                                        }
+
+                                        // ACL telemetry
+                                        let scout_total: u64 = scout_groups.iter().map(|&g| {
+                                            (0..epg_val).map(|e| asc_state.spike_counts[g * epg_val + e]
+                                                .load(std::sync::atomic::Ordering::Relaxed)).sum::<u64>()
+                                        }).sum();
+                                        let observer_total: u64 = observer_groups.iter().map(|&g| {
+                                            (0..epg_val).map(|e| asc_state.spike_counts[g * epg_val + e]
+                                                .load(std::sync::atomic::Ordering::Relaxed)).sum::<u64>()
+                                        }).sum();
+                                        let so_ratio = if observer_total > 0 { scout_total as f32 / observer_total as f32 } else { 1.0 };
+                                        if let Ok(mut log) = asc_state.acl_contrast_log.lock() {
+                                            log.push((chunk_idx as u32, so_ratio));
                                         }
                                     }
                                 }
 
-                                // Second barrier: ASC decisions written, all threads can read
+                                // Second barrier: ASC decisions ready
                                 asc_state.barrier.wait();
 
-                                // ── OMNIDIRECTIONAL: Engine reads ASC consensus → apply steering ──
-                                // Every engine reads the consensus residues and updates its own
-                                // ProtocolState steering fields via CPU memcpy.
-                                if chunk_idx > 0 && chunk_idx % 20 == 0 {
-                                    if let Ok(cr) = asc_state.consensus_residues.lock() {
-                                        if let Some(&(top_residue, n_groups, contrast)) = cr.first() {
-                                            if n_groups >= 3 && contrast > 0.5 {
-                                                // ASC → Engine: steer UV toward consensus residue
+                                // ── OMNIDIRECTIONAL: every engine reads ASC → apply steering ──
+                                // Gated steering: ONLY when interferometric match + signal purity
+                                // - Contrast ≥ 0.90 (same residue in ≥3 groups)
+                                // - Information handshake: boost engines that HAVEN'T seen the signal
+                                if let Ok(cr) = asc_state.consensus_residues.lock() {
+                                    if let Some(&(top_residue, n_groups, contrast)) = cr.first() {
+                                        if n_groups >= 3 && contrast >= 0.90 {
+                                            // Check if THIS engine's group already has strong signal at this residue
+                                            let my_group_has_it = if let Ok(grc) = asc_state.group_residue_counts.lock() {
+                                                let rid = top_residue as usize;
+                                                rid < asc_state.n_residues && grc[group_idx][rid] > 20
+                                            } else { false };
+
+                                            if !my_group_has_it {
+                                                // Information handshake: steer toward consensus (this group needs it)
                                                 engine.set_steering_focus_residue(top_residue);
-                                                if chunk_idx % 100 == 0 {
-                                                    log::info!("    [ASC→E{}] Steering UV to res{} ({}/4 groups, contrast={:.2})",
-                                                        i, top_residue, n_groups, contrast);
-                                                }
                                             }
+                                            // All groups get the focus residue logged even if they already have signal
                                         }
                                     }
                                 }
@@ -3477,6 +3573,8 @@ fn run_multi_stream_pipeline(
                     };
 
                     let spikes = engine.get_accumulated_spikes();
+                    log::info!("    [stream {}] Accumulated spikes: {} (steps_run={})",
+                        i, spikes.len(), if is_multi_diff { steps } else { steps_per_stream });
                     let snapshots = engine.get_snapshots();
 
                     // Download signal preservation grids from this stream's GPU buffers
