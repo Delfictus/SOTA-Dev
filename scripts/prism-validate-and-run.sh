@@ -115,6 +115,55 @@ if ! python3 "$PREFLIGHT" "${PREFLIGHT_ARGS[@]}"; then
     exit 1
 fi
 
+# Phase 1.5: Auto-generate NMA modes for TWIN (Layer 4 differential perturbation)
+# When --coupled-twin is set, Group B needs NMA modes for barrier measurement.
+# If no --nma-perturb was explicitly provided and no modes file exists, generate one.
+COUPLED_TWIN_ACTIVE=false
+NMA_PROVIDED=false
+for arg in "${ENGINE_ARGS[@]}"; do
+    if [[ "$arg" == "--coupled-twin" ]]; then COUPLED_TWIN_ACTIVE=true; fi
+    if [[ "$arg" == "--nma-perturb" ]]; then NMA_PROVIDED=true; fi
+done
+
+if [[ "$COUPLED_TWIN_ACTIVE" == "true" && "$NMA_PROVIDED" == "false" ]]; then
+    TOPO_DIR=$(dirname "$TOPOLOGY")
+    NMA_FILE="${TOPO_DIR}/${PREFIX}_nma_modes.json"
+    if [[ -f "$NMA_FILE" ]]; then
+        echo "[Phase 1.5] NMA modes found: $NMA_FILE"
+        ENGINE_ARGS+=("--nma-perturb" "$NMA_FILE")
+    else
+        echo "[Phase 1.5] Auto-generating NMA modes for TWIN Layer 4..."
+        # Find the source PDB for this topology
+        CLEAN_PDB="${TOPO_DIR}/${PREFIX}_clean.pdb"
+        RAW_PDB="${TOPO_DIR}/${PREFIX}.pdb"
+        SOURCE_PDB=""
+        if [[ -f "$CLEAN_PDB" ]]; then
+            SOURCE_PDB="$CLEAN_PDB"
+        elif [[ -f "$RAW_PDB" ]]; then
+            SOURCE_PDB="$RAW_PDB"
+        fi
+
+        if [[ -n "$SOURCE_PDB" ]]; then
+            if python3 scripts/prism-prep "$SOURCE_PDB" "$TOPOLOGY" --nma-modes 10 2>&1 | tail -5; then
+                if [[ -f "$NMA_FILE" ]]; then
+                    echo "  ✓ NMA modes generated: $NMA_FILE"
+                    ENGINE_ARGS+=("--nma-perturb" "$NMA_FILE")
+                else
+                    echo "  ✗ NMA generation completed but modes file not found"
+                    echo "    TWIN will run without NMA (Layer 4 differential features = zero)"
+                fi
+            else
+                echo "  ✗ NMA generation failed (ProDy error?)"
+                echo "    TWIN will run without NMA (Layer 4 differential features = zero)"
+            fi
+        else
+            echo "  ✗ Source PDB not found for NMA generation"
+            echo "    Looked for: $CLEAN_PDB and $RAW_PDB"
+            echo "    TWIN will run without NMA (Layer 4 differential features = zero)"
+        fi
+    fi
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║         RUNNING PRISM-4D ENGINE                         ║"
