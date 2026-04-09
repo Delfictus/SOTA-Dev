@@ -133,9 +133,22 @@ impl TwinRingBuffer {
             return Ok(());
         }
 
-        // Compact on CPU: extract the 10 fields RingSpikeEvent needs
+        // Compact on CPU: extract the 10 fields RingSpikeEvent needs.
+        // Only push the most recent spikes up to ring capacity to avoid
+        // overwhelming the ring buffer. The ring is for RECENT evidence —
+        // if we push 1M spikes into a 8192 ring, 99.9% overflow and the
+        // adapter only sees the last 8192 anyway. Better to truncate here.
+        let max_to_push = self.capacity as usize;
+        let spikes_to_push = if gpu_spikes.len() > max_to_push {
+            // Take the MOST RECENT spikes (tail of the vector, which are
+            // the latest timesteps since accumulated_spikes is append-only)
+            &gpu_spikes[gpu_spikes.len() - max_to_push..]
+        } else {
+            gpu_spikes
+        };
+
         self.staging.clear();
-        for s in gpu_spikes {
+        for s in spikes_to_push {
             self.staging.push(RingSpikeEvent {
                 timestep: s.timestep,
                 voxel_idx: s.voxel_idx,
@@ -427,39 +440,58 @@ pub struct CcfResidueFeatures {
     pub ccf_reproducibility: f32,
 }
 
+/// Sanitize a float: replace NaN/Inf with 0.0.
+/// GPU kernels can produce NaN from 0/0 or Inf from overflow.
+fn sanitize(v: f32) -> f32 {
+    if v.is_finite() { v } else { 0.0 }
+}
+
 /// Extract per-residue CCF features from n_res × n_res CCF matrix.
+/// Handles NaN values from GPU computation (norm division by zero when
+/// a residue has zero spikes → zero norm → NaN in CCF output).
 pub fn extract_ccf_features(ccf_matrix: &[f32], n_res: usize) -> Vec<CcfResidueFeatures> {
+    if ccf_matrix.len() != n_res * n_res {
+        log::warn!("CCF matrix size {} != expected {}×{}, returning empty features",
+            ccf_matrix.len(), n_res, n_res);
+        return vec![CcfResidueFeatures::default(); n_res];
+    }
+
     (0..n_res).map(|r| {
         let row = &ccf_matrix[r * n_res..(r + 1) * n_res];
 
-        // Peak value and column (max off-diagonal)
-        let (peak_col, peak_val) = row.iter().enumerate()
+        // Filter out NaN/Inf values before any computation
+        let clean_row: Vec<f32> = row.iter().map(|&v| sanitize(v)).collect();
+
+        // Peak value and column (max off-diagonal, excluding self-correlation)
+        let (peak_col, peak_val) = clean_row.iter().enumerate()
             .filter(|(j, _)| *j != r)
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(j, &v)| (j as i32, v))
             .unwrap_or((0, 0.0));
 
-        // Width: columns with CCF > peak_val * 0.5
+        // Width: count of columns with CCF > peak_val * 0.5 (FWHM proxy)
         let half_max = peak_val * 0.5;
-        let width = row.iter().filter(|&&v| v > half_max).count() as f32;
+        let width = clean_row.iter().filter(|&&v| v > half_max).count() as f32;
 
-        // Asymmetry: upper triangle mean vs lower triangle mean
-        let upper: f32 = if r + 1 < n_res { row[r+1..].iter().sum() } else { 0.0 };
-        let lower: f32 = row[..r].iter().sum();
+        // Asymmetry: (sum upper triangle - sum lower triangle) / total
+        // Positive asymmetry = more correlation with higher-index residues
+        let upper: f32 = if r + 1 < n_res { clean_row[r+1..].iter().sum() } else { 0.0 };
+        let lower: f32 = clean_row[..r].iter().sum();
         let denom = (upper.abs() + lower.abs()).max(1e-8);
         let asymmetry = (upper - lower) / denom;
 
         // Reproducibility: fraction of residues with CCF > 0.1
-        let reproducibility = row.iter()
+        // High reproducibility = this residue correlates with many others
+        let reproducibility = clean_row.iter()
             .filter(|&&v| v > 0.1)
             .count() as f32 / n_res.max(1) as f32;
 
         CcfResidueFeatures {
             ccf_peak_lag: peak_col - r as i32,
-            ccf_peak_value: peak_val,
+            ccf_peak_value: sanitize(peak_val),
             ccf_width: width,
-            ccf_asymmetry: asymmetry,
-            ccf_reproducibility: reproducibility,
+            ccf_asymmetry: sanitize(asymmetry),
+            ccf_reproducibility: sanitize(reproducibility),
         }
     }).collect()
 }
@@ -500,14 +532,24 @@ pub fn build_ccf_matrices(
     accumulate(&mut mat_a, spikes_a);
     accumulate(&mut mat_b, spikes_b);
 
-    // Mean-center each row (critical for WMMA — raw counts saturate FP16)
+    // Mean-center each row (critical for WMMA — raw counts saturate FP16).
+    // Also clamp to FP16 representable range [-65504, 65504] to prevent
+    // NaN propagation in the WMMA kernel.
+    let fp16_max = 65504.0f32;
     for r in 0..n_residues {
         let start = r * n_bins_padded;
-        let mean: f32 = mat_a[start..start + n_bins].iter().sum::<f32>() / n_bins.max(1) as f32;
-        for v in mat_a[start..start + n_bins].iter_mut() { *v -= mean; }
 
-        let mean: f32 = mat_b[start..start + n_bins].iter().sum::<f32>() / n_bins.max(1) as f32;
-        for v in mat_b[start..start + n_bins].iter_mut() { *v -= mean; }
+        let sum_a: f32 = mat_a[start..start + n_bins].iter().sum();
+        let mean_a = sum_a / n_bins.max(1) as f32;
+        for v in mat_a[start..start + n_bins].iter_mut() {
+            *v = (*v - mean_a).clamp(-fp16_max, fp16_max);
+        }
+
+        let sum_b: f32 = mat_b[start..start + n_bins].iter().sum();
+        let mean_b = sum_b / n_bins.max(1) as f32;
+        for v in mat_b[start..start + n_bins].iter_mut() {
+            *v = (*v - mean_b).clamp(-fp16_max, fp16_max);
+        }
     }
 
     (mat_a, mat_b, n_res_padded as i32, n_bins_padded as i32)

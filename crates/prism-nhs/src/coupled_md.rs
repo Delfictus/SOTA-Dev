@@ -240,6 +240,170 @@ impl Default for InterferometricFeatures {
     }
 }
 
+/// Per-SITE interferometric features aggregated from lining residues.
+///
+/// Sites are spatial clusters detected by twin_detection.rs.
+/// Each site's TWIN features are aggregated from the InterferometricFeatures
+/// of its lining residues — this is what drives pocket ranking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteInterferometricFeatures {
+    pub site_id: usize,
+    pub n_lining_residues: usize,
+    pub n_lining_with_data: usize,  // how many lining residues had TWIN features
+
+    // ── Consensus aggregates ──
+    pub mean_agreement: f32,
+    pub min_agreement: f32,
+    pub max_agreement: f32,
+    pub mean_spatial_coherence: f32,
+    pub mean_consensus_onset: f32,
+
+    // ── CCF aggregates ──
+    pub mean_ccf_peak: f32,
+    pub max_ccf_peak: f32,
+    /// Mean intra-site CCF: mean CCF between all pairs of lining residues.
+    /// High value = lining residues co-fire (pocket opens as a unit).
+    pub mean_intra_site_ccf: f32,
+    pub mean_ccf_reproducibility: f32,
+
+    // ── Differential aggregates ──
+    pub mean_b_over_a: f32,
+    pub barrier_composition_low: f32,   // fraction of lining residues classified LOW
+    pub barrier_composition_medium: f32,
+    pub barrier_composition_high: f32,
+    pub total_nma_exclusive: u32,
+    pub total_thermal_exclusive: u32,
+
+    // ── Scout aggregates ──
+    pub mean_scout_lead_time: f32,
+    pub mean_predictive_value: f32,
+    pub mean_phase_offset_enrichment: f32,
+}
+
+/// Aggregate per-residue InterferometricFeatures into per-site features.
+///
+/// `site_lining_residues`: for each site, the list of residue IDs that line the pocket.
+/// `per_residue`: the full per-residue feature vector (indexed by array position, keyed by resid).
+/// `ccf_matrix`: optional n_res×n_res CCF matrix for intra-site CCF computation.
+#[cfg(feature = "gpu")]
+pub fn aggregate_site_features(
+    site_lining_residues: &[Vec<i32>],
+    per_residue: &[InterferometricFeatures],
+    ccf_matrix: Option<&[f32]>,
+    n_residues: usize,
+) -> Vec<SiteInterferometricFeatures> {
+    // Build resid → feature index lookup
+    let resid_to_idx: std::collections::HashMap<i32, usize> = per_residue.iter()
+        .enumerate()
+        .map(|(i, f)| (f.resid, i))
+        .collect();
+
+    site_lining_residues.iter().enumerate().map(|(site_id, lining)| {
+        // Collect features for lining residues that have TWIN data
+        let lining_features: Vec<&InterferometricFeatures> = lining.iter()
+            .filter_map(|&resid| resid_to_idx.get(&resid).map(|&idx| &per_residue[idx]))
+            .collect();
+
+        let n_lining = lining.len();
+        let n_with_data = lining_features.len();
+
+        if n_with_data == 0 {
+            return SiteInterferometricFeatures {
+                site_id, n_lining_residues: n_lining, n_lining_with_data: 0,
+                mean_agreement: 0.0, min_agreement: 0.0, max_agreement: 0.0,
+                mean_spatial_coherence: 0.0, mean_consensus_onset: 0.0,
+                mean_ccf_peak: 0.0, max_ccf_peak: 0.0, mean_intra_site_ccf: 0.0,
+                mean_ccf_reproducibility: 0.0,
+                mean_b_over_a: 0.0,
+                barrier_composition_low: 0.0, barrier_composition_medium: 1.0,
+                barrier_composition_high: 0.0,
+                total_nma_exclusive: 0, total_thermal_exclusive: 0,
+                mean_scout_lead_time: 0.0, mean_predictive_value: 0.0,
+                mean_phase_offset_enrichment: 0.0,
+            };
+        }
+
+        let inv_n = 1.0 / n_with_data as f32;
+
+        // Consensus
+        let agreements: Vec<f32> = lining_features.iter().map(|f| f.spike_agreement_ratio).collect();
+        let mean_agreement = agreements.iter().sum::<f32>() * inv_n;
+        let min_agreement = agreements.iter().copied().fold(f32::INFINITY, f32::min);
+        let max_agreement = agreements.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mean_spatial_coherence = lining_features.iter()
+            .map(|f| f.consensus_spatial_coherence).sum::<f32>() * inv_n;
+        let mean_consensus_onset = lining_features.iter()
+            .map(|f| f.consensus_temporal_onset).sum::<f32>() * inv_n;
+
+        // CCF
+        let ccf_peaks: Vec<f32> = lining_features.iter().map(|f| f.ccf_peak_value).collect();
+        let mean_ccf_peak = ccf_peaks.iter().sum::<f32>() * inv_n;
+        let max_ccf_peak = ccf_peaks.iter().copied().fold(0.0f32, f32::max);
+        let mean_ccf_reproducibility = lining_features.iter()
+            .map(|f| f.ccf_reproducibility).sum::<f32>() * inv_n;
+
+        // Intra-site CCF: mean CCF between all pairs of lining residues
+        let mean_intra_site_ccf = if let Some(ccf) = ccf_matrix {
+            if n_residues > 0 && n_with_data >= 2 {
+                let lining_indices: Vec<usize> = lining.iter()
+                    .filter_map(|&r| if (r as usize) < n_residues { Some(r as usize) } else { None })
+                    .collect();
+                let mut sum = 0.0f32;
+                let mut count = 0u32;
+                for i in 0..lining_indices.len() {
+                    for j in (i+1)..lining_indices.len() {
+                        let ri = lining_indices[i];
+                        let rj = lining_indices[j];
+                        if ri < n_residues && rj < n_residues {
+                            let val = ccf[ri * n_residues + rj];
+                            if val.is_finite() {
+                                sum += val;
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+                if count > 0 { sum / count as f32 } else { 0.0 }
+            } else { 0.0 }
+        } else { 0.0 };
+
+        // Differential
+        let mean_b_over_a = lining_features.iter()
+            .map(|f| if f.b_over_a_ratio.is_finite() { f.b_over_a_ratio } else { 1.0 })
+            .sum::<f32>() * inv_n;
+        let n_low = lining_features.iter().filter(|f| f.barrier_classification == "LOW").count();
+        let n_high = lining_features.iter().filter(|f| f.barrier_classification == "HIGH").count();
+        let n_med = n_with_data - n_low - n_high;
+        let total_nma_exclusive: u32 = lining_features.iter().map(|f| f.nma_exclusive_count).sum();
+        let total_thermal_exclusive: u32 = lining_features.iter().map(|f| f.thermal_exclusive_count).sum();
+
+        // Scout
+        let mean_scout_lead_time = lining_features.iter()
+            .map(|f| f.scout_lead_time).sum::<f32>() * inv_n;
+        let mean_predictive_value = lining_features.iter()
+            .map(|f| f.scout_predictive_value).sum::<f32>() * inv_n;
+        let mean_phase_offset_enrichment = lining_features.iter()
+            .map(|f| f.phase_offset_enrichment).sum::<f32>() * inv_n;
+
+        SiteInterferometricFeatures {
+            site_id,
+            n_lining_residues: n_lining,
+            n_lining_with_data: n_with_data,
+            mean_agreement, min_agreement, max_agreement,
+            mean_spatial_coherence, mean_consensus_onset,
+            mean_ccf_peak, max_ccf_peak, mean_intra_site_ccf,
+            mean_ccf_reproducibility,
+            mean_b_over_a,
+            barrier_composition_low: n_low as f32 / n_with_data as f32,
+            barrier_composition_medium: n_med as f32 / n_with_data as f32,
+            barrier_composition_high: n_high as f32 / n_with_data as f32,
+            total_nma_exclusive, total_thermal_exclusive,
+            mean_scout_lead_time, mean_predictive_value,
+            mean_phase_offset_enrichment,
+        }
+    }).collect()
+}
+
 /// Full result from a PRISM-TWIN coupled observation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoupledTwinResult {
@@ -247,6 +411,9 @@ pub struct CoupledTwinResult {
     pub stream_b: StreamResult,
     pub config: CoupledTwinConfig,
     pub per_residue_features: Vec<InterferometricFeatures>,
+    /// Per-site aggregated features (from lining residues of each detected site).
+    #[serde(default)]
+    pub per_site_features: Vec<SiteInterferometricFeatures>,
     pub n_consensus_events: u64,
     pub n_differential_events: u64,
 
@@ -1016,7 +1183,9 @@ pub fn run_coupled_twin(
     };
 
     // Stage 2: GPU WMMA CCF
-    let n_residues = topology.residues.len();
+    // Use n_residues from topology (not topology.residues.len() which may be 0
+    // in old topology files that predate the ResidueMetadata field)
+    let n_residues = topology.n_residues;
     let bin_size = 100i32; // 100 steps per time bin
     let ccf_features_vec = if twin_config.enable_ccf && n_residues > 0 && !spikes_a.is_empty() && !spikes_b.is_empty() {
         log::info!("  Building CCF matrices: {} residues, {} steps, bin_size={}...",
@@ -1084,9 +1253,21 @@ pub fn run_coupled_twin(
     let intensity_sum_b = per_residue_intensity(&spikes_b);
 
     let per_residue_features: Vec<InterferometricFeatures> = {
+        // Build resid→name lookup. Prefer topology.residues (ResidueMetadata) if
+        // populated; fall back to topology.residue_names + residue_ids (atom-indexed
+        // arrays) for old topology files where the residues array is empty.
         let mut resid_to_name: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
-        for r in &topology.residues {
-            resid_to_name.insert(r.residue_id, r.residue_name.clone());
+        if !topology.residues.is_empty() {
+            for r in &topology.residues {
+                resid_to_name.insert(r.residue_id, r.residue_name.clone());
+            }
+        } else {
+            // Fall back: residue_names is atom-indexed, residue_ids maps atom→resid
+            for (i, &resid) in topology.residue_ids.iter().enumerate() {
+                if i < topology.residue_names.len() && !resid_to_name.contains_key(&(resid as i32)) {
+                    resid_to_name.insert(resid as i32, topology.residue_names[i].clone());
+                }
+            }
         }
 
         let ccf_by_idx: Vec<crate::twin_kernels::CcfResidueFeatures> = ccf_features_vec
@@ -1246,7 +1427,7 @@ pub fn run_coupled_twin(
 
         // Second pass: compute spatial coherence using topology residue positions
         // For each residue with agreement > 0.5, count neighbors within 8Å that also agree
-        if topology.residues.len() > 0 {
+        if !topology.residues.is_empty() {
             // Build CA position lookup: resid → (x, y, z)
             let mut ca_pos: std::collections::HashMap<i32, [f32; 3]> = std::collections::HashMap::new();
             for r in &topology.residues {
@@ -1331,6 +1512,67 @@ pub fn run_coupled_twin(
         features
     };
 
+    // ── Site-level feature aggregation ────────────────────────────────────
+    //
+    // Read binding_sites.json produced by twin_detection, extract lining
+    // residue IDs for each site, aggregate per-residue features to per-site.
+    let per_site_features: Vec<SiteInterferometricFeatures> = {
+        let prefix = std::path::Path::new(&topology.source_pdb)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.replace("_sanitized", "").replace("_clean", ""))
+            .unwrap_or_else(|| "prism_twin".to_string());
+        let sites_path = output_dir.join(format!("{}.binding_sites.json", prefix));
+
+        if sites_path.exists() {
+            match std::fs::read_to_string(&sites_path)
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)))
+            {
+                Ok(sites_json) => {
+                    let sites = sites_json["sites"].as_array();
+                    if let Some(sites) = sites {
+                        // Extract lining residue IDs from each site
+                        let site_lining: Vec<Vec<i32>> = sites.iter().map(|site| {
+                            site["lining_residues"].as_array()
+                                .map(|arr| arr.iter()
+                                    .filter_map(|v| v.as_i64().map(|id| id as i32))
+                                    .collect())
+                                .unwrap_or_else(Vec::new)
+                        }).collect();
+
+                        let result = aggregate_site_features(
+                            &site_lining,
+                            &per_residue_features,
+                            None, // CCF matrix not retained in scope — TODO: pass it through
+                            n_residues,
+                        );
+                        log::info!("  Site features: {} sites aggregated from {} per-residue features",
+                            result.len(), per_residue_features.len());
+                        for (i, sf) in result.iter().enumerate() {
+                            log::info!("    Site {}: {}/{} lining residues, agree={:.3} ccf={:.3} barrier=L{:.0}%/M{:.0}%/H{:.0}%",
+                                i, sf.n_lining_with_data, sf.n_lining_residues,
+                                sf.mean_agreement, sf.mean_ccf_peak,
+                                sf.barrier_composition_low * 100.0,
+                                sf.barrier_composition_medium * 100.0,
+                                sf.barrier_composition_high * 100.0);
+                        }
+                        result
+                    } else {
+                        log::warn!("  binding_sites.json has no 'sites' array");
+                        Vec::new()
+                    }
+                }
+                Err(e) => {
+                    log::warn!("  Could not read binding_sites.json for site aggregation: {}", e);
+                    Vec::new()
+                }
+            }
+        } else {
+            log::warn!("  binding_sites.json not found at {} — skipping site aggregation", sites_path.display());
+            Vec::new()
+        }
+    };
+
     let n_consensus_events = per_residue_features.iter()
         .filter(|f| f.ccf_peak_value > 0.1)
         .count() as u64;
@@ -1369,6 +1611,7 @@ pub fn run_coupled_twin(
         },
         config: twin_config.clone(),
         per_residue_features,
+        per_site_features,
         n_consensus_events,
         n_differential_events,
         n_exchanges,
