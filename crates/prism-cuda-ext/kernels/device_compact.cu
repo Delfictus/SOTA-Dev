@@ -1,16 +1,20 @@
 // ═══════════════════════════════════════════════════════════════════════
-// PRISM-TWIN: Device-Side Spike Compaction + Ring Buffer Push
+// PRISM-TWIN: Device-Side Spike Compaction + Dual-Destination Write
 //
 // Eliminates the CPU round-trip that was the #1 coupling latency source:
 //   OLD: GPU spike_events → CPU download → CPU repack → CPU upload → GPU ring
-//   NEW: GPU spike_events → GPU compact kernel → GPU ring (zero PCIe traffic)
+//   NEW: GPU spike_events → GPU compact → GPU ring + mapped host RAM (zero PCIe CPU involvement)
 //
-// Reads d_spike_count and d_spike_events directly from the physics engine's
-// GPU buffers. Compacts GpuSpikeEvent (92B) → RingSpikeEvent (48B) and
-// pushes directly into the ring buffer.
+// DUAL DESTINATION:
+//   1. Ring buffer (VRAM) — for real-time threshold coupling between twins
+//   2. Exhaust buffer (mapped pinned host RAM) — for training data preservation
 //
-// Grid sizing: launched with gridDim read from d_spike_count via
-// device-updated graph parameters (the GPU sizes its own kernel).
+// The exhaust write goes through PCIe Gen 5 DMA (32 GB/s) without using
+// SM ALUs. The ring write stays in VRAM. Both happen in the same kernel.
+//
+// Every spike is preserved with its channel tag (spike_source):
+//   0=LIF, 1=UV, 2=RAF, 3=EFP, 4=LADD, 5=COFIRE
+// This is the proprietary training signal for the 109-model ensemble teacher.
 //
 // Compiled with: nvcc -arch=sm_120 -O3 --use_fast_math
 // ═══════════════════════════════════════════════════════════════════════
@@ -32,9 +36,6 @@ struct RingSpikeEvent {
 };
 
 // GpuSpikeEvent byte offsets (verified against fused_engine.rs:225-241)
-// These are the byte positions within each 92-byte GpuSpikeEvent record.
-// NOTE: Rust struct layout is NOT repr(C), but empirically these offsets
-// are stable because all fields are i32/f32 (4-byte aligned, no padding).
 #define GPU_SPIKE_SIZE 92
 #define OFF_TIMESTEP           0
 #define OFF_VOXEL_IDX          4
@@ -49,27 +50,63 @@ struct RingSpikeEvent {
 #define OFF_N_NEARBY_EXCITED  84
 
 // ─────────────────────────────────────────────────────────────────────
-// KERNEL: Compact + Push
+// HELPER: Extract RingSpikeEvent from raw GpuSpikeEvent bytes
+// ─────────────────────────────────────────────────────────────────────
+
+__device__ __forceinline__ void extract_spike(
+    const unsigned char* __restrict__ src,
+    int spike_idx,
+    RingSpikeEvent* __restrict__ out
+) {
+    int offset = spike_idx * GPU_SPIKE_SIZE;
+    const unsigned char* s = &src[offset];
+    memcpy(&out->timestep,           s + OFF_TIMESTEP,          4);
+    memcpy(&out->voxel_idx,          s + OFF_VOXEL_IDX,         4);
+    memcpy(&out->x,                  s + OFF_POSITION_X,        4);
+    memcpy(&out->y,                  s + OFF_POSITION_Y,        4);
+    memcpy(&out->z,                  s + OFF_POSITION_Z,        4);
+    memcpy(&out->intensity,          s + OFF_INTENSITY,          4);
+    memcpy(&out->vibrational_energy, s + OFF_VIB_ENERGY,        4);
+    memcpy(&out->water_density,      s + OFF_WATER_DENSITY,     4);
+    memcpy(&out->n_nearby_excited,   s + OFF_N_NEARBY_EXCITED,  4);
+    memcpy(&out->spike_source,       s + OFF_SPIKE_SOURCE,      4);
+    memcpy(&out->wavelength_nm,      s + OFF_WAVELENGTH_NM,     4);
+    out->pad = 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// KERNEL: Compact + Dual Push (ring buffer + exhaust)
 //
-// Each thread handles one spike. Reads from the physics engine's raw
-// spike buffer, extracts the 10 fields needed for the ring buffer,
-// and atomically pushes into the ring.
+// Each thread handles one spike:
+//   1. Reads from physics engine's raw spike buffer (VRAM)
+//   2. Extracts 10 fields into compact 48-byte format
+//   3. Atomically pushes into VRAM ring buffer (for coupling)
+//   4. Atomically pushes into mapped host RAM exhaust buffer (for training)
 //
-// This kernel is designed to be captured in a CUDA graph with
-// device-updated grid dimensions read from d_new_spike_count.
+// The exhaust write goes through PCIe DMA automatically —
+// the GPU writes to a device pointer that's physically backed
+// by system RAM. No cudaMemcpy, no stream sync, no CPU involvement.
 // ─────────────────────────────────────────────────────────────────────
 
 extern "C" __global__ void device_compact_and_push(
-    // Source: physics engine spike buffer (read-only)
-    const unsigned char* __restrict__ gpu_spike_buf,  // d_spike_events, 92B stride
-    const int* __restrict__ d_prev_count,              // [1] — start index (exclusive)
-    const int* __restrict__ d_curr_count,              // [1] — end index (from d_spike_count)
+    // Source: physics engine spike buffer (read-only, VRAM)
+    const unsigned char* __restrict__ gpu_spike_buf,
+    const int* __restrict__ d_prev_count,
+    const int* __restrict__ d_curr_count,
 
-    // Destination: ring buffer (write)
-    RingSpikeEvent* __restrict__ ring_buffer,          // [ring_capacity]
-    unsigned int* __restrict__ ring_head,               // [1] — atomic write position
-    unsigned int* __restrict__ ring_overflow,            // [1] — overflow counter
-    unsigned int ring_capacity
+    // Destination 1: VRAM ring buffer (for real-time coupling)
+    RingSpikeEvent* __restrict__ ring_buffer,
+    unsigned int* __restrict__ ring_head,
+    unsigned int* __restrict__ ring_overflow,
+    unsigned int ring_capacity,
+
+    // Destination 2: mapped host RAM exhaust buffer (for training data)
+    // These pointers are device-accessible but physically in system DDR5.
+    // Writes go through PCIe Gen 5 DMA engine (32 GB/s, zero SM cost).
+    RingSpikeEvent* __restrict__ exhaust_buffer,   // mapped host RAM
+    unsigned int* __restrict__ exhaust_head,         // mapped host RAM (atomicAdd)
+    unsigned int exhaust_capacity,                   // total spike slots
+    int exhaust_enabled                              // 0 = skip exhaust writes
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -83,45 +120,38 @@ extern "C" __global__ void device_compact_and_push(
 
     if (tid >= n_new) return;
 
-    int spike_idx = start_idx + tid;
-    int offset = spike_idx * GPU_SPIKE_SIZE;
-    const unsigned char* src = &gpu_spike_buf[offset];
+    // Extract spike into compact format (one per thread)
+    RingSpikeEvent compacted;
+    extract_spike(gpu_spike_buf, start_idx + tid, &compacted);
 
-    // Extract fields by byte offset (type-punned via memcpy)
-    RingSpikeEvent ev;
-    memcpy(&ev.timestep,           src + OFF_TIMESTEP,          4);
-    memcpy(&ev.voxel_idx,          src + OFF_VOXEL_IDX,         4);
-    memcpy(&ev.x,                  src + OFF_POSITION_X,        4);
-    memcpy(&ev.y,                  src + OFF_POSITION_Y,        4);
-    memcpy(&ev.z,                  src + OFF_POSITION_Z,        4);
-    memcpy(&ev.intensity,          src + OFF_INTENSITY,          4);
-    memcpy(&ev.vibrational_energy, src + OFF_VIB_ENERGY,        4);
-    memcpy(&ev.water_density,      src + OFF_WATER_DENSITY,     4);
-    memcpy(&ev.n_nearby_excited,   src + OFF_N_NEARBY_EXCITED,  4);
-    memcpy(&ev.spike_source,       src + OFF_SPIKE_SOURCE,      4);
-    memcpy(&ev.wavelength_nm,      src + OFF_WAVELENGTH_NM,     4);
-    ev.pad = 0;
-
-    // Atomic push into ring buffer
-    unsigned int write_pos = atomicAdd(ring_head, 1);
-    if (write_pos >= ring_capacity) {
-        // Overflow: ring is full, count it but still write (circular)
-        atomicAdd(ring_overflow, 1);
+    // ── Write 1: VRAM ring buffer (for coupling) ──
+    {
+        unsigned int write_pos = atomicAdd(ring_head, 1);
+        if (write_pos - *ring_head >= ring_capacity) {
+            atomicAdd(ring_overflow, 1);
+        }
+        ring_buffer[write_pos % ring_capacity] = compacted;
     }
-    ring_buffer[write_pos % ring_capacity] = ev;
+
+    // ── Write 2: Mapped host RAM exhaust buffer (for training data) ──
+    // This write goes through PCIe DMA. The GPU's DMA controller handles
+    // the transfer asynchronously. SM ALUs are NOT involved in the data
+    // movement — they just issue the store and move on.
+    if (exhaust_enabled) {
+        unsigned int exhaust_pos = atomicAdd(exhaust_head, 1);
+        // Circular write — if buffer is full, overwrite oldest data.
+        // The CPU harvester thread should read fast enough to keep up.
+        exhaust_buffer[exhaust_pos % exhaust_capacity] = compacted;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // KERNEL: Update prev_count after compaction
-//
-// After device_compact_and_push completes, update d_prev_count to
-// d_curr_count so the next step knows where to start.
-// Single-thread kernel, launched as a graph node after compact.
 // ─────────────────────────────────────────────────────────────────────
 
 extern "C" __global__ void update_prev_spike_count(
-    int* __restrict__ d_prev_count,       // [1] — updated to curr
-    const int* __restrict__ d_curr_count  // [1] — current spike count
+    int* __restrict__ d_prev_count,
+    const int* __restrict__ d_curr_count
 ) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *d_prev_count = *d_curr_count;
@@ -129,29 +159,39 @@ extern "C" __global__ void update_prev_spike_count(
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// KERNEL: Compute grid size for compact kernel
-//
-// Reads d_spike_count and d_prev_count, computes ceil(delta/256),
-// writes to d_grid_dim. This grid_dim is used by the CUDA graph's
-// device-updated kernel parameters to dynamically size the compact
-// kernel's grid.
+// KERNEL: Compute grid size for compact kernel (device-side sizing)
 // ─────────────────────────────────────────────────────────────────────
 
 extern "C" __global__ void compute_compact_grid_size(
-    const int* __restrict__ d_curr_count,   // [1]
-    const int* __restrict__ d_prev_count,   // [1]
-    unsigned int* __restrict__ d_grid_dim_x, // [1] — output grid dim
+    const int* __restrict__ d_curr_count,
+    const int* __restrict__ d_prev_count,
+    unsigned int* __restrict__ d_grid_dim_x,
     unsigned int ring_capacity
 ) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         int n_new = *d_curr_count - *d_prev_count;
         if (n_new <= 0) {
-            *d_grid_dim_x = 1;  // minimum 1 block (kernel will early-exit)
+            *d_grid_dim_x = 1;
             return;
         }
-        // Clamp to ring capacity
         if (n_new > (int)ring_capacity) n_new = (int)ring_capacity;
-        // ceil(n_new / 256)
         *d_grid_dim_x = ((unsigned int)n_new + 255) / 256;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// KERNEL: Decrement step counter (for CUDA Graph WHILE condition)
+//
+// This is the LAST kernel in the graph's WHILE body. After all coupling
+// work is done for this step, decrement the counter. When it reaches 0,
+// the GPU's hardware command processor exits the WHILE loop.
+// ─────────────────────────────────────────────────────────────────────
+
+extern "C" __global__ void decrement_step_counter(
+    unsigned int* __restrict__ counter
+) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        unsigned int val = *counter;
+        if (val > 0) *counter = val - 1;
     }
 }
