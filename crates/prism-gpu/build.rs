@@ -390,6 +390,14 @@ fn main() {
     // PRISM-TWIN Kernels
     // =========================================================================
 
+    // Stream completion signaling (standard kernel — no cooperative groups)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/twin_signal.cu",
+        &ptx_dir.join("twin_signal.ptx"),
+        &target_ptx_dir.join("twin_signal.ptx"),
+    );
+
     // Ring Buffer (standard kernel — no cooperative groups)
     compile_kernel(
         &nvcc,

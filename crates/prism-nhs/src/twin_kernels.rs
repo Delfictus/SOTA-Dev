@@ -43,6 +43,84 @@ pub fn find_twin_ptx(name: &str) -> Result<String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Stream Completion Signaling
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Device-side stream completion flags for persistent coupling kernel.
+///
+/// Each physics stream appends `signal_stream_done(flag, step)` after its
+/// LADD kernels. The persistent coupling kernel spin-waits on both flags.
+/// Step-numbered flags prevent ABA race conditions.
+pub struct TwinSignal {
+    pub flag_a: CudaSlice<u32>,    // [1] — stream A completion flag
+    pub flag_b: CudaSlice<u32>,    // [1] — stream B completion flag
+    signal_fn: CudaFunction,
+    clear_fn: CudaFunction,
+}
+
+impl TwinSignal {
+    pub fn new(
+        stream: &Arc<CudaStream>,
+        module: &Arc<CudaModule>,
+    ) -> Result<Self> {
+        let flag_a = stream.alloc_zeros::<u32>(1)?;
+        let flag_b = stream.alloc_zeros::<u32>(1)?;
+        let signal_fn = module.load_function("signal_stream_done")
+            .context("signal_stream_done not found in PTX")?;
+        let clear_fn = module.load_function("clear_signals")
+            .context("clear_signals not found in PTX")?;
+        Ok(Self { flag_a, flag_b, signal_fn, clear_fn })
+    }
+
+    /// Signal that stream A has completed step `step_number`.
+    /// Must be launched on stream A's CUDA stream.
+    pub fn signal_a(&mut self, stream: &Arc<CudaStream>, step_number: u32) -> Result<()> {
+        let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+        unsafe {
+            stream.launch_builder(&self.signal_fn)
+                .arg(&mut self.flag_a)
+                .arg(&step_number)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Signal that stream B has completed step `step_number`.
+    /// Must be launched on stream B's CUDA stream.
+    pub fn signal_b(&mut self, stream: &Arc<CudaStream>, step_number: u32) -> Result<()> {
+        let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+        unsafe {
+            stream.launch_builder(&self.signal_fn)
+                .arg(&mut self.flag_b)
+                .arg(&step_number)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Clear both flags (called from host or coupling kernel after exchange).
+    pub fn clear(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
+        let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+        unsafe {
+            stream.launch_builder(&self.clear_fn)
+                .arg(&mut self.flag_a)
+                .arg(&mut self.flag_b)
+                .launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Read flag values from GPU (for diagnostics).
+    pub fn read_flags(&self, stream: &Arc<CudaStream>) -> Result<(u32, u32)> {
+        let mut a = [0u32; 1];
+        let mut b = [0u32; 1];
+        stream.memcpy_dtoh(&self.flag_a, &mut a)?;
+        stream.memcpy_dtoh(&self.flag_b, &mut b)?;
+        Ok((a[0], b[0]))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Ring Buffer
 // ─────────────────────────────────────────────────────────────────────────────
 
