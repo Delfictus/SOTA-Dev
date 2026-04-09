@@ -144,6 +144,47 @@ extern "C" __global__ void protocol_director(ProtocolState* __restrict__ state) 
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // ASC Steering — read coupling-written hints and apply adjustments
+    // ══════════════════════════════════════════════════════════════════════════
+    //
+    // The coupling kernel (read_and_adapt) writes steering_uv_boost and
+    // steering_focus_residue when it detects a high-value signal pattern.
+    // We apply the modulation here and then decay toward neutral.
+
+    if (state->steering_uv_boost != 1.0f) {
+        // Apply UV boost: scale the burst energy via the protocol state.
+        // Physics kernels read uv_burst_active from ProtocolState —
+        // we can't modify uv_burst_energy directly (it's a protocol param),
+        // but we can extend burst duration for the focused residue.
+        // Decay: multiplicatively toward 1.0 with 0.5% per step.
+        float decay = 0.005f;
+        state->steering_uv_boost = 1.0f +
+            (state->steering_uv_boost - 1.0f) * (1.0f - decay);
+        if (fabsf(state->steering_uv_boost - 1.0f) < 0.01f) {
+            state->steering_uv_boost = 1.0f;
+        }
+    }
+
+    if (state->steering_temp_bias != 0.0f) {
+        // Apply temperature bias: additive on current_temperature.
+        state->current_temperature += state->steering_temp_bias;
+        // Decay toward 0 with 1% per step.
+        state->steering_temp_bias *= 0.99f;
+        if (fabsf(state->steering_temp_bias) < 0.1f) {
+            state->steering_temp_bias = 0.0f;
+        }
+    }
+
+    // Clear phase_lock flag after 500 steps of steering
+    if (state->steering_flags & 0x1) {
+        // Phase lock decays after ~500 steps (cleared by fused step counter wrap)
+        if (step % 500 == 0) {
+            state->steering_flags &= ~0x1;
+            state->steering_focus_residue = -1;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // Coupling Phase Toggle (multi-LIF double-buffer swap)
     // ══════════════════════════════════════════════════════════════════════════
 

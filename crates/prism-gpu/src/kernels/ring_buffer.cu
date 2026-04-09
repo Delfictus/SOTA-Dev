@@ -14,6 +14,8 @@
 #ifndef RING_BUFFER_CU
 #define RING_BUFFER_CU
 
+#include "protocol_state.cuh"
+
 #define RING_DEFAULT_CAPACITY 8192
 
 // Must match GpuSpikeEvent in fused_engine.rs
@@ -91,7 +93,9 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
     float sensitivity_boost,
     float max_reduction_fraction,
     unsigned int current_step,
-    float decay_constant
+    float decay_constant,
+    // ASC steering: coupling kernel writes when it detects hotspots
+    ProtocolState* __restrict__ d_protocol  // nullable: pass nullptr to skip ASC
 ) {
     if (blockIdx.x != 0 || threadIdx.x != 0) return;
 
@@ -103,6 +107,10 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
         tail = head - capacity;
         n_to_process = capacity;
     }
+
+    // ASC: track max threshold reduction for hotspot detection
+    float max_reduction = 0.0f;
+    int hotspot_residue = -1;
 
     for (unsigned int i = 0; i < n_to_process; i++) {
         unsigned int ring_idx = (tail + i) % capacity;
@@ -129,9 +137,25 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
         float current = osc_thresholds[voxel_idx];
         float new_val = fmaxf(floor_val, current - boost);
         osc_thresholds[voxel_idx] = new_val;
+
+        // ASC: track largest threshold reduction (hotspot candidate)
+        float reduction = (base - new_val) / fmaxf(base, 1e-6f);
+        if (reduction > max_reduction) {
+            max_reduction = reduction;
+            hotspot_residue = spike.primary_residue_id;
+        }
     }
 
     *tail_ptr = head;
+
+    // ── ASC Steering Hook ──
+    // When coupling detects a hotspot (>20% threshold reduction at a voxel),
+    // write steering fields. Director reads these next step and adjusts UV/temp.
+    if (d_protocol != nullptr && max_reduction > 0.20f) {
+        d_protocol->steering_uv_boost = 1.5f;          // 50% UV boost at hotspot
+        d_protocol->steering_focus_residue = hotspot_residue;
+        d_protocol->steering_flags |= 0x1;              // phase_lock flag
+    }
 }
 
 

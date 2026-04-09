@@ -3403,6 +3403,23 @@ impl NhsAmberFusedEngine {
         }
     }
 
+    /// ASC steering: write focus residue + UV boost to GPU ProtocolState.
+    /// Downloads full 164-byte struct, modifies steering fields, re-uploads.
+    pub fn set_steering_focus_residue(&mut self, residue_id: i32) {
+        let size = std::mem::size_of::<crate::protocol_state::ProtocolState>();
+        let mut buf = vec![0u8; size];
+        if self.stream.memcpy_dtoh(&self.d_protocol_state, &mut buf).is_ok() {
+            // steering_uv_boost at offset 148
+            buf[148..152].copy_from_slice(&1.5f32.to_ne_bytes());
+            // steering_focus_residue at offset 156
+            buf[156..160].copy_from_slice(&residue_id.to_ne_bytes());
+            // steering_flags: set phase_lock (0x1)
+            let flags = i32::from_ne_bytes([buf[160], buf[161], buf[162], buf[163]]) | 0x1;
+            buf[160..164].copy_from_slice(&flags.to_ne_bytes());
+            let _ = self.stream.memcpy_htod(&buf, &mut self.d_protocol_state);
+        }
+    }
+
     /// Set LADD cold_hold reference accumulation window
     pub fn set_ladd_cold_hold(&mut self, steps: i32) {
         self.ladd_cold_hold_steps = steps;
@@ -6297,6 +6314,15 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_efp_potential)
                     .arg(&self.d_efp_potential_prev)
                     .arg(&self.d_efp_lif_potential)
+                    .arg(&mut self.d_spike_grid_efp)
+                    .arg(&self.d_atom_lambda)
+                    // Signal preservation buffers
+                    .arg(&mut self.d_voxel_hit_grid)
+                    .arg(&mut self.d_last_uv_step)
+                    .arg(&mut self.d_coupled_spike_grid)
+                    .arg(&mut self.d_primary_residue_id)
+                    .arg(&mut self.d_primary_residue_count)
+                    .arg(&mut self.d_residue_step_causal)
                     .launch(cfg)
             }
             .context("Failed to launch nhs_amber_fused_step kernel")?;

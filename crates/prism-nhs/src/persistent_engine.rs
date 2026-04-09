@@ -1098,6 +1098,14 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// ASC steering: write focus residue to GPU ProtocolState.
+    /// The Director kernel will read this and modulate UV targeting.
+    pub fn set_steering_focus_residue(&mut self, residue_id: i32) {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_steering_focus_residue(residue_id);
+        }
+    }
+
     /// Load NMA modes from JSON and upload to GPU for NMA-biased perturbation.
     pub fn load_nma_modes(&mut self, path: &str) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

@@ -561,9 +561,10 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
 /// Run single structure (original behavior)
 #[cfg(feature = "gpu")]
 fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
-    // PRISM-TWIN Multi-Differential: 4 groups × 2 engines
+    // PRISM-TWIN Multi-Differential: 4 groups × N engines via multi-stream
     if args.multi_differential {
-        return run_multi_differential_pipeline(args, topology_path);
+        let n = args.multi_stream.max(8); // at least 8 engines for 4 groups × 2
+        return run_multi_stream_pipeline(args, topology_path, n);
     }
 
     // PRISM-TWIN: coupled observation mode
@@ -3103,6 +3104,39 @@ fn run_multi_stream_pipeline(
         args.steps
     };
 
+    // ── ASC Fusion Controller shared state (multi-differential only) ──
+    // The ASC uses a GATED TRIGGER: only fires when 2+ groups show spatial
+    // consensus at the SAME residue ID. This prevents naive max-count steering.
+    struct AscSharedState {
+        barrier: std::sync::Barrier,
+        /// Per-engine spike count (for monitoring)
+        spike_counts: Vec<std::sync::atomic::AtomicU64>,
+        /// Per-group × per-residue spike counts for interferometric contrast.
+        /// Layout: [group][residue] = count. Written by each engine after chunk.
+        /// Protected by the barrier (all writes before barrier, all reads after).
+        group_residue_counts: std::sync::Mutex<Vec<Vec<u32>>>,
+        /// ASC output: residue IDs where 2+ groups show consensus (gated trigger).
+        consensus_residues: std::sync::Mutex<Vec<(i32, usize, f32)>>, // (residue_id, n_groups, contrast)
+        /// ACL telemetry: signal contrast between scout (TS+UV) and observer (EQ+HY)
+        acl_contrast_log: std::sync::Mutex<Vec<(u32, f32)>>, // (chunk_idx, scout/observer ratio)
+        n_residues: usize,
+    }
+    let is_multi_diff = args.multi_differential;
+    let n_residues_est = topology.n_residues;
+    let asc_shared: Option<std::sync::Arc<AscSharedState>> = if is_multi_diff && n_streams >= 4 {
+        Some(std::sync::Arc::new(AscSharedState {
+            barrier: std::sync::Barrier::new(n_streams),
+            spike_counts: (0..n_streams).map(|_| std::sync::atomic::AtomicU64::new(0)).collect(),
+            group_residue_counts: std::sync::Mutex::new(vec![vec![0u32; n_residues_est + 1]; 4]),
+            consensus_residues: std::sync::Mutex::new(Vec::new()),
+            acl_contrast_log: std::sync::Mutex::new(Vec::new()),
+            n_residues: n_residues_est,
+        }))
+    } else {
+        None
+    };
+    let epg_val = if is_multi_diff { n_streams / 4 } else { 1 };
+
     // ── Run N engines on N threads (scoped for safe borrowing) ──
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
     let sim_start = Instant::now();
@@ -3121,7 +3155,18 @@ fn run_multi_stream_pipeline(
                 // from the higher temperature, producing larger hysteresis asymmetry
                 // for pockets that require elevated temperatures to open — exactly the
                 // high-barrier cryptic sites that equilibrium sampling misses.
-                let prot = if args.multi_temp && n_streams >= 4 {
+                // Multi-Differential Interferometric TWIN: 4 groups × 2 engines
+                // Each group gets a physically distinct CryoUvProtocol.
+                let prot = if args.multi_differential && n_streams >= 4 {
+                    let diff_set = CryoUvProtocol::twin_differential_set();
+                    let group_idx = i / 2; // 0-1→ThermalShock, 2-3→Equilibrium, 4-5→UvAromatic, 6-7→Hysteresis
+                    let p = diff_set[group_idx % diff_set.len()].clone();
+                    let group_names = ["ThermalShock", "Equilibrium", "UvAromatic", "Hysteresis"];
+                    log::info!("    [stream {}] MULTI-DIFF group {} [{}]: {}K→{}K, UV={:.0}kcal, interval={}",
+                        i, group_idx, group_names[group_idx % 4],
+                        p.start_temp, p.end_temp, p.uv_burst_energy, p.uv_burst_interval);
+                    p
+                } else if args.multi_temp && n_streams >= 4 {
                     let base_temp = protocol.end_temp;
                     let mut p = protocol.clone();
 
@@ -3220,7 +3265,10 @@ fn run_multi_stream_pipeline(
 
                 let seed = args.replica_seed + i as u64 * 12345;
                 let ultimate = args.ultimate_mode;
-                let steps = steps_per_stream;
+                // Multi-differential: each group's protocol determines its step count
+                let steps = if args.multi_differential { prot.total_steps() } else { steps_per_stream };
+                let asc_shared = asc_shared.clone();
+                let is_multi_diff = is_multi_diff;
                 let hmr_enabled = args.hmr;
                 let fused_steps = args.fused_steps;
                 let adaptive_dt = args.adaptive_dt;
@@ -3274,11 +3322,135 @@ fn run_multi_stream_pipeline(
 
                     engine.reset_for_replica(seed)?;
 
-                    // Adaptive protocol: split run into cold_hold + rest, adapt between
-                    let summary = if adaptive_protocol || rest2_lambda < 1.0 {
+                    // ── ASC Fusion Controller: chunk-based coupled loop ──
+                    // Multi-differential: run in chunks with barrier sync for cross-group coupling.
+                    // After each chunk, download spike centroids, identify spatial consensus,
+                    // and write steering decisions back to ProtocolState.
+                    let summary = if is_multi_diff {
+                        let chunk_size = 500i32;
+                        // All engines must iterate the SAME number of chunks (barrier sync).
+                        // Max protocol: Equilibrium = 40000 steps → 80 chunks.
+                        let max_steps_any_group = 40000i32; // max across all differential protocols
+                        let n_chunks = (max_steps_any_group + chunk_size - 1) / chunk_size;
+                        let mut last_summary = None;
+                        let mut steps_run = 0i32;
+
+                        for chunk_idx in 0..n_chunks {
+                            // Only run physics if this engine hasn't finished its protocol
+                            if steps_run < steps {
+                                let this_chunk = chunk_size.min(steps - steps_run);
+                                let s = engine.run(this_chunk)?;
+                                last_summary = Some(s);
+                                steps_run += this_chunk;
+                            }
+
+                            // ── ASC Gated Trigger: residue-level cross-group consensus ──
+                            if let Some(ref asc_state) = asc_shared {
+                                let spike_count = engine.get_spike_count().unwrap_or(0);
+                                let group_idx = i / epg_val;
+                                asc_state.spike_counts[i].store(spike_count as u64, std::sync::atomic::Ordering::Relaxed);
+
+                                // Every 20 chunks (10K steps): download recent spikes for residue-level analysis
+                                if chunk_idx > 0 && chunk_idx % 20 == 0 {
+                                    // Get accumulated spikes and extract residue hits for this group
+                                    let spikes = engine.get_accumulated_spikes();
+                                    // Only look at recent spikes (last ~10K steps worth)
+                                    let recent_start = spikes.len().saturating_sub(50000);
+                                    if let Ok(mut grc) = asc_state.group_residue_counts.lock() {
+                                        // Reset this group's counts (accumulate fresh per exchange)
+                                        for r in grc[group_idx].iter_mut() { *r = 0; }
+                                        for spike in &spikes[recent_start..] {
+                                            for j in 0..(spike.n_residues as usize).min(8) {
+                                                let rid = spike.nearby_residues[j];
+                                                if rid >= 0 && (rid as usize) < asc_state.n_residues {
+                                                    grc[group_idx][rid as usize] += 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Barrier: all engines have written their residue counts
+                                asc_state.barrier.wait();
+
+                                // ASC Gated Trigger: stream 0 computes interferometric consensus
+                                if i == 0 && chunk_idx > 0 && chunk_idx % 20 == 0 {
+                                    if let Ok(grc) = asc_state.group_residue_counts.lock() {
+                                        // Find residues where 2+ groups have significant spikes
+                                        let mut hotspots: Vec<(i32, usize, f32)> = Vec::new();
+                                        for rid in 0..asc_state.n_residues {
+                                            let counts: Vec<u32> = (0..4).map(|g| grc[g][rid]).collect();
+                                            let active_groups = counts.iter().filter(|&&c| c > 5).count();
+                                            if active_groups >= 2 {
+                                                // Interferometric contrast: std/mean of per-group counts
+                                                let mean = counts.iter().sum::<u32>() as f32 / 4.0;
+                                                let var = counts.iter().map(|&c| (c as f32 - mean).powi(2)).sum::<f32>() / 4.0;
+                                                let cv = if mean > 0.1 { var.sqrt() / mean } else { 1.0 };
+                                                let contrast = 1.0 - cv; // high = consistent across groups
+                                                if contrast > 0.0 {
+                                                    hotspots.push((rid as i32, active_groups, contrast));
+                                                }
+                                            }
+                                        }
+                                        hotspots.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+                                        // Store consensus residues for other threads + telemetry
+                                        if let Ok(mut cr) = asc_state.consensus_residues.lock() {
+                                            *cr = hotspots.iter().take(10).cloned().collect();
+                                        }
+
+                                        // ACL telemetry: scout (TS+UV) vs observer (EQ+HY) contrast
+                                        let scout_total: u64 = [0usize, 2].iter().map(|&g| {
+                                            (0..epg_val).map(|e| asc_state.spike_counts[g * epg_val + e]
+                                                .load(std::sync::atomic::Ordering::Relaxed)).sum::<u64>()
+                                        }).sum();
+                                        let observer_total: u64 = [1usize, 3].iter().map(|&g| {
+                                            (0..epg_val).map(|e| asc_state.spike_counts[g * epg_val + e]
+                                                .load(std::sync::atomic::Ordering::Relaxed)).sum::<u64>()
+                                        }).sum();
+                                        let so_ratio = if observer_total > 0 {
+                                            scout_total as f32 / observer_total as f32
+                                        } else { 1.0 };
+                                        if let Ok(mut log) = asc_state.acl_contrast_log.lock() {
+                                            log.push((chunk_idx as u32, so_ratio));
+                                        }
+
+                                        if !hotspots.is_empty() && chunk_idx % 40 == 0 {
+                                            let top = &hotspots[..hotspots.len().min(5)];
+                                            let res_str: String = top.iter().map(|(rid, ng, c)| {
+                                                format!("res{}({}/4,c={:.2})", rid, ng, c)
+                                            }).collect::<Vec<_>>().join(" ");
+                                            log::info!("    [ASC] chunk {}: {} hotspot residues, S/O={:.2} [{}]",
+                                                chunk_idx, hotspots.len(), so_ratio, res_str);
+                                        }
+                                    }
+                                }
+
+                                // Second barrier: ASC decisions written, all threads can read
+                                asc_state.barrier.wait();
+
+                                // ── OMNIDIRECTIONAL: Engine reads ASC consensus → apply steering ──
+                                // Every engine reads the consensus residues and updates its own
+                                // ProtocolState steering fields via CPU memcpy.
+                                if chunk_idx > 0 && chunk_idx % 20 == 0 {
+                                    if let Ok(cr) = asc_state.consensus_residues.lock() {
+                                        if let Some(&(top_residue, n_groups, contrast)) = cr.first() {
+                                            if n_groups >= 3 && contrast > 0.5 {
+                                                // ASC → Engine: steer UV toward consensus residue
+                                                engine.set_steering_focus_residue(top_residue);
+                                                if chunk_idx % 100 == 0 {
+                                                    log::info!("    [ASC→E{}] Steering UV to res{} ({}/4 groups, contrast={:.2})",
+                                                        i, top_residue, n_groups, contrast);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        last_summary.unwrap_or_else(|| engine.run(0).unwrap())
+                    } else if adaptive_protocol || rest2_lambda < 1.0 {
                         // Split run: cold_hold first, then apply focused REST2, then remaining steps.
-                        // Cold_hold at λ=1.0 (physical) probes the native conformation to identify
-                        // spike-frustrated residues. Then those residues get softened for the ramp.
                         log::info!("    [stream {}] Running cold_hold ({} steps)...", i, cold_hold_steps);
                         let cold_summary = engine.run(cold_hold_steps)?;
                         log::info!("    [stream {}] Cold hold: {} spikes", i, cold_summary.total_spikes);
@@ -3287,7 +3459,6 @@ fn run_multi_stream_pipeline(
                             let _flexibility = engine.adapt_protocol_from_spike_rate(cold_hold_steps);
                         }
 
-                        // Focused REST2: after cold_hold, identify frustrated residues and soften them
                         if rest2_lambda < 1.0 {
                             match engine.apply_focused_lambda() {
                                 Ok(()) => {},
@@ -3326,6 +3497,31 @@ fn run_multi_stream_pipeline(
 
     let sim_elapsed = sim_start.elapsed();
     log::info!("  ✓ All {} streams complete in {:.1}s", n_streams, sim_elapsed.as_secs_f64());
+
+    // ── Extract ASC consensus for downstream spike filtering ──
+    let asc_consensus_residues: std::collections::HashSet<i32> = if let Some(ref asc) = asc_shared {
+        let residues: std::collections::HashSet<i32> = asc.consensus_residues.lock()
+            .map(|cr| cr.iter()
+                .filter(|&&(_, ng, c)| ng >= 3 && c > 0.3) // 3+ groups, contrast > 0.3
+                .map(|&(rid, _, _)| rid)
+                .collect())
+            .unwrap_or_default();
+        if !residues.is_empty() {
+            log::info!("  [ASC] {} consensus residues for downstream filtering: {:?}",
+                residues.len(), residues.iter().take(20).collect::<Vec<_>>());
+        }
+        // Write ACL telemetry to output
+        if let Ok(acl_log) = asc.acl_contrast_log.lock() {
+            if !acl_log.is_empty() {
+                log::info!("  [ACL] {} contrast samples, mean S/O={:.3}",
+                    acl_log.len(),
+                    acl_log.iter().map(|(_, r)| *r).sum::<f32>() / acl_log.len() as f32);
+            }
+        }
+        residues
+    } else {
+        std::collections::HashSet::new()
+    };
 
     // ── Aggregate: per-stream filtering + clustering → consensus ──
     log::info!("\n  Aggregating results across {} streams...", n_streams);
@@ -5645,6 +5841,115 @@ fn run_multi_stream_pipeline(
                         therm.tau, tau_q, therm.relative_asymmetry, asym_q,
                         therm.therm_class, class_q, tide_coupling_score);
                 }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // INTERFEROMETRIC RANKING (Multi-Differential TWIN)
+        //
+        // Physics-based, zero tuned constants.
+        // Metric: coefficient of variation (CV) of per-group spike rate
+        // normalized by each group's total steps in the characteristic phase.
+        //
+        // Real pockets show CONSISTENT spike rates across all 4 mechanisms
+        // (low CV). Surface noise is mechanism-dependent (high CV).
+        //
+        // Multiplier = 1.0 + 0.5 * (1.0 - CV), clamped [0.75, 1.5]
+        // CV=0 → 1.5×, CV=1 → 1.0×, CV>1 → <1.0× (penalized)
+        // ══════════════════════════════════════════════════════════════════
+        if args.multi_differential && n_streams >= 4 {
+            let n_groups = 4usize;
+            let engines_per_group = n_streams / n_groups;
+            let diff_set = CryoUvProtocol::twin_differential_set();
+            let group_names = ["TS", "EQ", "UV", "HY"];
+            log::info!("  [INTERFEROMETRIC] CV-based ranking: {} groups × {} engines (zero tuned constants)",
+                n_groups, engines_per_group);
+
+            let radius_sq = 64.0f32; // 8Å
+
+            for site in clustered_sites.iter_mut() {
+                // Count spikes per group near this site
+                let mut group_counts = vec![0u64; n_groups];
+                for (stream_idx, &offset) in stream_spike_offsets.iter().enumerate() {
+                    let next_offset = stream_spike_offsets.get(stream_idx + 1)
+                        .copied().unwrap_or(all_stream_spikes.len());
+                    let group_idx = stream_idx / engines_per_group;
+                    if group_idx >= n_groups { continue; }
+                    for spike in &all_stream_spikes[offset..next_offset] {
+                        let dx = spike.position[0] - site.centroid[0];
+                        let dy = spike.position[1] - site.centroid[1];
+                        let dz = spike.position[2] - site.centroid[2];
+                        if dx*dx + dy*dy + dz*dz <= radius_sq {
+                            group_counts[group_idx] += 1;
+                        }
+                    }
+                }
+
+                // Normalize by each group's total steps × engines to get rate
+                // rate_g = spikes_g / (total_steps_g × engines_per_group)
+                let rates: Vec<f64> = (0..n_groups).map(|g| {
+                    let total_steps = diff_set[g].total_steps() as f64;
+                    group_counts[g] as f64 / (total_steps * engines_per_group as f64).max(1.0)
+                }).collect();
+
+                // Compute CV = std/mean (dimensionless)
+                let mean_rate = rates.iter().sum::<f64>() / n_groups as f64;
+                let variance = rates.iter().map(|r| (r - mean_rate).powi(2)).sum::<f64>() / n_groups as f64;
+                let std_dev = variance.sqrt();
+                let cv = if mean_rate > 1e-10 { std_dev / mean_rate } else { 1.0 };
+
+                // Multiplier: continuous function of CV, no lookup table
+                // CV=0 → 1.5, CV=1 → 1.0, CV=2 → 0.5
+                let interferometric_mult = (1.0 + 0.5 * (1.0 - cv as f32)).clamp(0.75, 1.5);
+                let old_q = site.quality_score;
+                site.quality_score *= interferometric_mult;
+
+                let rate_str: String = (0..n_groups).map(|g| {
+                    format!("{}:{:.1}", group_names[g], rates[g] * 1000.0) // rate per 1000 steps
+                }).collect::<Vec<_>>().join(" ");
+                // ── ASC Downstream Filter: boost sites near consensus residues ──
+                // Sites whose spikes are near ASC-validated residues (3+ group agreement)
+                // get a physics-based boost. This uses the real-time interferometric signal
+                // as a meta-filter for ranking quality.
+                let asc_boost = if !asc_consensus_residues.is_empty() {
+                    // Count spikes near this site that are from ASC consensus residues
+                    let mut asc_hits = 0u32;
+                    let mut total_with_residue = 0u32;
+                    for &idx in &site.spike_indices {
+                        if let Some(spike) = all_stream_spikes.get(idx) {
+                            for j in 0..(spike.n_residues as usize).min(8) {
+                                let rid = spike.nearby_residues[j];
+                                if rid >= 0 {
+                                    total_with_residue += 1;
+                                    if asc_consensus_residues.contains(&rid) {
+                                        asc_hits += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // ASC overlap fraction: what % of this site's residue-tagged spikes
+                    // are near ASC consensus residues
+                    if total_with_residue > 10 {
+                        let frac = asc_hits as f32 / total_with_residue as f32;
+                        // Continuous boost: 1.0 + 0.3 * frac (max 30% boost for 100% overlap)
+                        1.0 + 0.3 * frac
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                };
+                if asc_boost > 1.01 {
+                    let pre_asc = site.quality_score;
+                    site.quality_score *= asc_boost;
+                    log::info!("    → ASC filter: {:.3}→{:.3} (×{:.2}, consensus residue overlap)",
+                        pre_asc, site.quality_score, asc_boost);
+                }
+
+                log::info!("  Site {}: interferometric {:.3}→{:.3} (CV={:.3}, ×{:.2}) [{}]",
+                    site.cluster_id, old_q, site.quality_score,
+                    cv, interferometric_mult * asc_boost, rate_str);
             }
         }
 

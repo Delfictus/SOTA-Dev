@@ -338,6 +338,7 @@ impl TwinRingBuffer {
     }
 
     /// Read spikes from ring buffer and modify target engine's thresholds.
+    /// If `d_protocol_state` is provided, writes ASC steering fields on hotspot detection.
     pub fn read_and_adapt(
         &mut self,
         stream: &Arc<CudaStream>,
@@ -351,27 +352,59 @@ impl TwinRingBuffer {
         current_step: u32,
         decay_constant: f32,
     ) -> Result<()> {
+        self.read_and_adapt_with_steering(
+            stream, osc_thresholds, base_thresholds,
+            grid_dims, grid_origin, voxel_size,
+            sensitivity_boost, max_reduction, current_step, decay_constant,
+            None,
+        )
+    }
+
+    /// Read spikes from ring buffer with optional ASC steering.
+    pub fn read_and_adapt_with_steering(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        osc_thresholds: &mut CudaSlice<f32>,
+        base_thresholds: &CudaSlice<f32>,
+        grid_dims: (i32, i32, i32),
+        grid_origin: (f32, f32, f32),
+        voxel_size: f32,
+        sensitivity_boost: f32,
+        max_reduction: f32,
+        current_step: u32,
+        decay_constant: f32,
+        d_protocol_state: Option<&mut CudaSlice<u8>>,
+    ) -> Result<()> {
         let cfg = LaunchConfig {
             grid_dim: (1, 1, 1),
             block_dim: (1, 1, 1),
             shared_mem_bytes: 0,
         };
-        unsafe {
-            stream.launch_builder(&self.read_adapt_fn)
-                .arg(&self.buffer)
-                .arg(&mut self.head)
-                .arg(&mut self.tail)
-                .arg(&self.capacity)
-                .arg(osc_thresholds)
-                .arg(base_thresholds)
-                .arg(&grid_dims.0).arg(&grid_dims.1).arg(&grid_dims.2)
-                .arg(&grid_origin.0).arg(&grid_origin.1).arg(&grid_origin.2)
-                .arg(&voxel_size)
-                .arg(&sensitivity_boost)
-                .arg(&max_reduction)
-                .arg(&current_step)
-                .arg(&decay_constant)
-                .launch(cfg)?;
+        let null_ptr = 0u64; // nullptr for ASC when no protocol state
+        if let Some(ps) = d_protocol_state {
+            unsafe {
+                stream.launch_builder(&self.read_adapt_fn)
+                    .arg(&self.buffer).arg(&mut self.head).arg(&mut self.tail)
+                    .arg(&self.capacity).arg(osc_thresholds).arg(base_thresholds)
+                    .arg(&grid_dims.0).arg(&grid_dims.1).arg(&grid_dims.2)
+                    .arg(&grid_origin.0).arg(&grid_origin.1).arg(&grid_origin.2)
+                    .arg(&voxel_size).arg(&sensitivity_boost).arg(&max_reduction)
+                    .arg(&current_step).arg(&decay_constant)
+                    .arg(ps) // ASC: ProtocolState*
+                    .launch(cfg)?;
+            }
+        } else {
+            unsafe {
+                stream.launch_builder(&self.read_adapt_fn)
+                    .arg(&self.buffer).arg(&mut self.head).arg(&mut self.tail)
+                    .arg(&self.capacity).arg(osc_thresholds).arg(base_thresholds)
+                    .arg(&grid_dims.0).arg(&grid_dims.1).arg(&grid_dims.2)
+                    .arg(&grid_origin.0).arg(&grid_origin.1).arg(&grid_origin.2)
+                    .arg(&voxel_size).arg(&sensitivity_boost).arg(&max_reduction)
+                    .arg(&current_step).arg(&decay_constant)
+                    .arg(&null_ptr) // ASC: nullptr
+                    .launch(cfg)?;
+            }
         }
         Ok(())
     }
