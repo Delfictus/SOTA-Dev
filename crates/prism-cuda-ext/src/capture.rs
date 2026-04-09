@@ -40,7 +40,7 @@ impl CapturedPhysicsGraph {
             check(
                 sys::cuStreamBeginCapture_v2(
                     raw_stream,
-                    sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_GLOBAL,
+                    sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED,
                 ),
                 "cuStreamBeginCapture",
             )?;

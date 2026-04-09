@@ -64,14 +64,31 @@ impl CouplingReplayGraph {
             check(
                 sys::cuStreamBeginCapture_v2(
                     raw_stream,
-                    sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_GLOBAL,
+                    // RELAXED mode: allows cross-stream dependencies (the coupling
+                    // kernels read buffers modified by physics engines on other streams).
+                    // GLOBAL mode would require ALL streams to be captured simultaneously.
+                    sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED,
                 ),
                 "cuStreamBeginCapture (coupling)",
             )?;
         }
 
         // Run the coupling kernels — recorded, not executed
-        run_coupling_step()?;
+        let step_result = run_coupling_step();
+
+        // If the coupling step failed, abort the capture to restore the stream
+        if let Err(e) = step_result {
+            log::warn!("  Coupling step failed during capture: {}", e);
+            // Abort capture to restore stream to normal mode
+            let mut dummy_graph: sys::CUgraph = std::ptr::null_mut();
+            unsafe {
+                let _ = sys::cuStreamEndCapture(raw_stream, &mut dummy_graph);
+                if !dummy_graph.is_null() {
+                    sys::cuGraphDestroy(dummy_graph);
+                }
+            }
+            anyhow::bail!("Coupling step failed during capture: {}", e);
+        }
 
         // End capture
         let mut cu_graph: sys::CUgraph = std::ptr::null_mut();

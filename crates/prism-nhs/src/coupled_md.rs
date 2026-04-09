@@ -1180,6 +1180,10 @@ pub fn run_coupled_twin(
                 // Run the host-mediated coupling AND capture it as a graph
                 if let Some(ref se) = stream_exchange {
                     log::info!("  [GRAPH] Capturing coupling kernel sequence on step 1...");
+                    // Capture might fail due to cross-stream dependencies or
+                    // unsupported operations. If it fails, we MUST NOT leave
+                    // the stream in capture mode — that would invalidate ALL
+                    // subsequent kernel launches on this stream.
                     match prism_cuda_ext::coupling_graph::CouplingReplayGraph::capture(se, || {
                         // This closure launches ALL coupling kernels on the exchange stream.
                         // During capture, they're recorded, not executed.
@@ -1248,7 +1252,12 @@ pub fn run_coupled_twin(
                             coupling_replay = Some(graph);
                         }
                         Err(e) => {
-                            log::warn!("  [GRAPH] Capture failed ({}), continuing with host-mediated", e);
+                            log::warn!("  [GRAPH] Capture failed: {}", e);
+                            log::warn!("  [GRAPH] Root cause: push_compacted() uses CPU-side H2D memcpy");
+                            log::warn!("  [GRAPH] which is not capturable. Need device-side compact kernel.");
+                            log::warn!("  [GRAPH] Continuing with host-mediated coupling (correct science).");
+                            // The capture was already cleaned up by CouplingReplayGraph::capture's
+                            // error handling. The stream is restored to normal mode.
                         }
                     }
                 }
