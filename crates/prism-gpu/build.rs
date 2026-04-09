@@ -414,6 +414,14 @@ fn main() {
         &target_ptx_dir.join("tensor_ccf.ptx"),
     );
 
+    // TWIN Persistent Coupling (cooperative groups — the production coupling kernel)
+    compile_cooperative_kernel(
+        &nvcc,
+        "src/kernels/twin_coupling_persistent.cu",
+        &ptx_dir.join("twin_coupling_persistent.ptx"),
+        &target_ptx_dir.join("twin_coupling_persistent.ptx"),
+    );
+
     // TWIN Persistent Skeleton (cooperative groups — requires -rdc=true)
     compile_cooperative_kernel(
         &nvcc,
