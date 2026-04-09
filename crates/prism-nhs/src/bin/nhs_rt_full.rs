@@ -612,7 +612,7 @@ fn run_multi_differential_pipeline(args: &Args, topology_path: &PathBuf) -> Resu
 
     std::fs::create_dir_all(&args.output)?;
 
-    let config = MultiDifferentialConfig::standard_4x2(args.replica_seed);
+    let config = MultiDifferentialConfig::standard_4x1(args.replica_seed);
 
     let result = run_multi_differential_twin(
         &config, context, module, &topology, &args.output,

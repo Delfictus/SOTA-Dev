@@ -1,0 +1,38 @@
+[Unit]
+Description=PRISM Spike File Watcher — auto-sync spike data to Cloudflare R2
+Documentation=https://github.com/Delfictus/SOTA-Dev
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=diddy
+Group=diddy
+
+# Run with retroactive scan on startup (catches anything missed while down)
+ExecStart=/usr/bin/python3 /home/diddy/Desktop/Prism4D-bio/scripts/prism_spike_watcher.py --foreground --retroactive
+
+# Restart on failure, but wait 30s to avoid thrashing
+Restart=on-failure
+RestartSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prism-spike-watcher
+
+# Environment — credential vault + standard paths
+EnvironmentFile=/home/diddy/.config/prism/credentials.env
+Environment=HOME=/home/diddy
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/diddy/.local/bin
+WorkingDirectory=/home/diddy/Desktop/Prism4D-bio
+
+# Resource limits
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

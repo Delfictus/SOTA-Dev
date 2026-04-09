@@ -2642,7 +2642,36 @@ pub struct MultiDifferentialConfig {
 }
 
 impl MultiDifferentialConfig {
-    /// Standard 4-group × 2-engine configuration for RTX 5080 (16GB).
+    /// Standard 4-group × 1-engine configuration (conservative VRAM, ~4GB).
+    /// Use standard_4x2 for 16GB+ GPUs.
+    pub fn standard_4x1(base_seed: u64) -> Self {
+        let protocols = crate::fused_engine::CryoUvProtocol::twin_differential_set();
+        Self {
+            group_protocols: protocols.to_vec(),
+            group_labels: vec![
+                "ThermalShock".into(),
+                "Equilibrium".into(),
+                "UvAromatic".into(),
+                "Hysteresis".into(),
+            ],
+            engines_per_group: 1,
+            base_seed,
+            chunk_size: 500,
+            coupling: {
+                let mut c = CoupledTwinConfig::default();
+                c.enable_exchange = true;
+                c.enable_ccf = true;
+                c.graph_coupling = true;
+                c
+            },
+            hmr: true,
+            fused_steps: 4,
+            adaptive_dt: true,
+            ladd_enabled: true,
+        }
+    }
+
+    /// 4-group × 2-engine configuration for 16GB+ GPUs.
     /// Total: 8 engines, ~8GB VRAM.
     pub fn standard_4x2(base_seed: u64) -> Self {
         let protocols = crate::fused_engine::CryoUvProtocol::twin_differential_set();
