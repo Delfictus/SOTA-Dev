@@ -91,20 +91,17 @@ pub fn poll_heartbeat_async(
     stream: &Arc<CudaStream>,
     d_protocol_state: &CudaSlice<u8>,
 ) -> Result<i32> {
-    // status_code is at byte offset 144 in ProtocolState (148 - 4)
-    // We read just the last 4 bytes (the status_code i32)
-    let mut status = [0i32; 1];
-    // For async polling, we'd use cuMemcpyAsync + mapped memory.
-    // For now, use synchronous read — still zero PCIe traffic during graph execution
-    // since we only poll between chunks.
     let mut full_state = vec![0u8; std::mem::size_of::<crate::protocol_state::ProtocolState>()];
     stream.memcpy_dtoh(d_protocol_state, &mut full_state)?;
-    // status_code is the last i32 field
-    let offset = std::mem::size_of::<crate::protocol_state::ProtocolState>() - 4;
-    status[0] = i32::from_ne_bytes([
+    // Read status_code at its actual byte offset (use memoffset logic)
+    let dummy = unsafe { std::mem::zeroed::<crate::protocol_state::ProtocolState>() };
+    let base = &dummy as *const _ as usize;
+    let field = &dummy.status_code as *const _ as usize;
+    let offset = field - base;
+    let status = i32::from_ne_bytes([
         full_state[offset], full_state[offset+1], full_state[offset+2], full_state[offset+3]
     ]);
-    Ok(status[0])
+    Ok(status)
 }
 
 /// The main autonomous run loop: captures a graph, replays it in chunks,
@@ -293,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_poll_heartbeat_offset() {
-        // Verify status_code is at the expected byte offset
+        // Verify poll_heartbeat_async reads status_code correctly
         let ps = crate::protocol_state::ProtocolState {
             status_code: 42,
             ..unsafe { std::mem::zeroed() }
@@ -304,8 +301,12 @@ mod tests {
                 std::mem::size_of_val(&ps),
             )
         };
-        let offset = std::mem::size_of::<crate::protocol_state::ProtocolState>() - 4;
+        // Compute actual field offset
+        let base = &ps as *const _ as usize;
+        let field = &ps.status_code as *const _ as usize;
+        let offset = field - base;
         let val = i32::from_ne_bytes([bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3]]);
         assert_eq!(val, 42, "status_code not at expected offset {}", offset);
+        assert_eq!(std::mem::size_of::<crate::protocol_state::ProtocolState>(), 164);
     }
 }

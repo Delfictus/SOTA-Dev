@@ -141,7 +141,7 @@ pub struct RingSpikeEvent {
     pub n_nearby_excited: i32,
     pub spike_source: i32,
     pub wavelength_nm: f32,
-    pub pad: i32,
+    pub primary_residue_id: i32,  // lossless residue attribution (was: pad)
 }
 
 /// GPU-side ring buffer for spike exchange between twin observation groups.
@@ -245,7 +245,7 @@ impl TwinRingBuffer {
                 n_nearby_excited: s.n_nearby_excited,
                 spike_source: s.spike_source,
                 wavelength_nm: s.wavelength_nm,
-                pad: 0,
+                primary_residue_id: if s.n_residues > 0 { s.nearby_residues[0] } else { -1 },
             });
         }
 

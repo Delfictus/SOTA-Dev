@@ -93,12 +93,25 @@ pub struct ProtocolState {
     pub nl_rebuild_interval: i32,    // Immutable: steps between NL rebuilds (default 20)
     pub com_removal_interval: i32,   // Immutable: steps between COM removal (default 100)
     pub status_code: i32,            // DYNAMIC: 0=OK, 1=NaN, 2=diverged (written by heartbeat)
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ASC Fusion Controller hooks (+16 bytes)
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Multiplicative UV energy adjustment (1.0 = neutral). Written by coupling kernel.
+    pub steering_uv_boost: f32,
+    /// Additive temperature offset in K (0.0 = neutral). Written by coupling kernel.
+    pub steering_temp_bias: f32,
+    /// Residue ID to focus UV on (-1 = no focus). Written by coupling kernel.
+    pub steering_focus_residue: i32,
+    /// Bit flags: 0x1=phase_lock, 0x2=cryo_stabilize, 0x4=adaptive_slow
+    pub steering_flags: i32,
 }
 
 const _: () = {
     // Compile-time size check: must match CUDA struct
-    // Gate 0+1 (136) + Gate 2 (12) = 148 bytes
-    assert!(std::mem::size_of::<ProtocolState>() == 148);
+    // Gates 0-2 (148) + ASC hooks (16) = 164 bytes
+    assert!(std::mem::size_of::<ProtocolState>() == 164);
 };
 
 impl ProtocolState {
@@ -168,6 +181,11 @@ impl ProtocolState {
             nl_rebuild_interval: 20,
             com_removal_interval: 100,
             status_code: 0,
+            // ASC hooks (neutral defaults)
+            steering_uv_boost: 1.0,
+            steering_temp_bias: 0.0,
+            steering_focus_residue: -1,
+            steering_flags: 0,
         }
     }
 
@@ -354,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_protocol_state_size() {
-        assert_eq!(std::mem::size_of::<ProtocolState>(), 148);
+        assert_eq!(std::mem::size_of::<ProtocolState>(), 164);
     }
 
     #[test]

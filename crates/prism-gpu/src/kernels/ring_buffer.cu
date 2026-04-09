@@ -27,7 +27,7 @@ struct RingSpikeEvent {
     int n_nearby_excited;
     int spike_source;
     float wavelength_nm;
-    int pad;  // alignment to 48 bytes
+    int primary_residue_id;  // lossless residue attribution (was: pad)
 };
 
 struct RingBufferState {
@@ -217,7 +217,8 @@ extern "C" __global__ void compact_and_push(
     compact.n_nearby_excited  = src->n_nearby_excited;
     compact.spike_source      = src->spike_source;
     compact.wavelength_nm     = src->wavelength_nm;
-    compact.pad               = 0;
+    // Lossless residue attribution: carry the primary (nearest) residue ID
+    compact.primary_residue_id = (src->n_residues > 0) ? src->nearby_residues[0] : -1;
 
     // Atomic increment head to claim a slot
     unsigned int slot = atomicAdd(head_ptr, 1);

@@ -75,8 +75,20 @@ struct ProtocolState {
     int nl_rebuild_interval;         // steps between neighbor list rebuilds (immutable, default 20)
     int com_removal_interval;        // steps between COM velocity removal (immutable, default 100)
     int status_code;                 // 0=OK, 1=NaN detected, 2=system diverged (written by heartbeat)
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ASC Fusion Controller hooks (16 bytes)
+    // ════════════════════════════════════════════════════════════════════════
+
+    // Steering command block — written by the interferometric bridge (read_and_adapt)
+    // when the coupling kernel detects a high-value signal pattern.
+    // Read by the Director to modulate UV energy, temperature bias, or dt.
+    float steering_uv_boost;         // multiplicative UV energy adjustment (1.0 = neutral)
+    float steering_temp_bias;        // additive temperature offset (K, 0.0 = neutral)
+    int steering_focus_residue;      // residue ID to focus UV on (-1 = no focus)
+    int steering_flags;              // bit flags: 0x1=phase_lock, 0x2=cryo_stabilize, 0x4=adaptive_slow
 };
 
-// Struct size: 136 (Gate 0+1) + 12 (Gate 2) = 148 bytes
+// Struct size: 148 (Gates 0-2) + 16 (ASC hooks) = 164 bytes
 
 #endif // PROTOCOL_STATE_CUH
