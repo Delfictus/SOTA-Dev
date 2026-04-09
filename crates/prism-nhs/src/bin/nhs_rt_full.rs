@@ -226,6 +226,14 @@ struct Args {
     #[arg(long, default_value = "false")]
     graph_coupling: bool,
 
+    /// Multi-Differential Interferometric TWIN: 4 groups × 2 engines each.
+    /// Group A: Thermal Shock, Group B: Equilibrium Observer,
+    /// Group C: UV Aromatic Probe, Group D: Hysteresis Probe.
+    /// N-way cross-correlation reveals multi-mechanism binding site evidence.
+    /// Requires ~8GB VRAM (8 engines). Overrides --coupled-twin.
+    #[arg(long, default_value = "false")]
+    multi_differential: bool,
+
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
     /// temporal persistence, persistent homology, and Boltzmann gap gates.
@@ -553,6 +561,11 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
 /// Run single structure (original behavior)
 #[cfg(feature = "gpu")]
 fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
+    // PRISM-TWIN Multi-Differential: 4 groups × 2 engines
+    if args.multi_differential {
+        return run_multi_differential_pipeline(args, topology_path);
+    }
+
     // PRISM-TWIN: coupled observation mode
     if args.coupled_twin {
         if args.multi_stream > 1 {
@@ -576,6 +589,40 @@ fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
         return run_multi_stream_pipeline(args, topology_path, args.multi_stream);
     }
     run_single_structure_internal(topology_path, &args.output, args, args.replicas)?;
+    Ok(())
+}
+
+/// Run Multi-Differential Interferometric TWIN (4 groups × 2 engines)
+#[cfg(feature = "gpu")]
+fn run_multi_differential_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()> {
+    use prism_nhs::coupled_md::{MultiDifferentialConfig, run_multi_differential_twin};
+
+    log::info!("PRISM-TWIN Multi-Differential Interferometric mode activated");
+
+    let topo_json = std::fs::read_to_string(topology_path)
+        .with_context(|| format!("Failed to read topology: {}", topology_path.display()))?;
+    let topology: prism_nhs::input::PrismPrepTopology = serde_json::from_str(&topo_json)
+        .context("Failed to parse topology JSON")?;
+
+    let context = cudarc::driver::CudaContext::new(0)
+        .context("Failed to create CUDA context")?;
+    let ptx_path = find_ptx_path()?;
+    let module = context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path))
+        .with_context(|| format!("Failed to load PTX from {}", ptx_path))?;
+
+    std::fs::create_dir_all(&args.output)?;
+
+    let config = MultiDifferentialConfig::standard_4x2(args.replica_seed);
+
+    let result = run_multi_differential_twin(
+        &config, context, module, &topology, &args.output,
+    )?;
+
+    // Write result summary
+    let result_path = args.output.join("multi_differential_result.json");
+    std::fs::write(&result_path, serde_json::to_string_pretty(&result)?)?;
+    log::info!("Result saved: {}", result_path.display());
+
     Ok(())
 }
 

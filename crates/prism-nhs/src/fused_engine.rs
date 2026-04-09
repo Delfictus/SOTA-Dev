@@ -494,6 +494,108 @@ impl CryoUvProtocol {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRISM-TWIN Multi-Differential Interferometric Protocols
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Each protocol probes a different physical mechanism. The N-way
+    // correlation across groups is the interferometric signal.
+
+    /// Group A: Thermal Shock Scout — aggressive cryo, fast ramp, high UV.
+    /// Purpose: crack open transient/cryptic pockets with thermal perturbation.
+    pub fn twin_thermal_shock() -> Self {
+        Self {
+            start_temp: 50.0,
+            end_temp: 310.0,
+            cold_hold_steps: 10000,
+            ramp_steps: 4000,           // Fast ramp — rapid thermal shock
+            warm_hold_steps: 12000,
+            current_step: 0,
+            uv_burst_energy: 48.0,      // High UV — aggressive probing
+            uv_burst_interval: 200,     // Frequent bursts
+            uv_burst_duration: 60,
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            wavelength_dwell_steps: 250,
+            ramp_down_steps: 5000,
+            cold_return_steps: 4000,
+            stepped_holds: vec![],
+        }
+    }
+
+    /// Group B: Equilibrium Observer — gentle thermal, slow ramp, moderate UV.
+    /// Purpose: observe which pockets persist under near-physiological conditions.
+    pub fn twin_equilibrium_observer() -> Self {
+        Self {
+            start_temp: 150.0,          // Warm start — no extreme cryo
+            end_temp: 310.0,
+            cold_hold_steps: 6000,
+            ramp_steps: 10000,          // Slow ramp — gentle equilibration
+            warm_hold_steps: 16000,     // Extended warm hold — persistence test
+            current_step: 0,
+            uv_burst_energy: 25.0,      // Moderate UV — observation, not perturbation
+            uv_burst_interval: 400,     // Less frequent
+            uv_burst_duration: 40,
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            wavelength_dwell_steps: 400,
+            ramp_down_steps: 5000,
+            cold_return_steps: 3000,
+            stepped_holds: vec![],
+        }
+    }
+
+    /// Group C: UV-Focused Aromatic Probe — constant moderate temp, max UV power.
+    /// Purpose: detect aromatic-driven conformational changes (TRP/TYR/PHE gates).
+    pub fn twin_uv_aromatic_probe() -> Self {
+        Self {
+            start_temp: 200.0,          // Moderate constant temperature
+            end_temp: 280.0,            // Narrow range — minimize thermal noise
+            cold_hold_steps: 8000,
+            ramp_steps: 4000,           // Minimal ramp
+            warm_hold_steps: 20000,     // Long observation at ~constant T
+            current_step: 0,
+            uv_burst_energy: 60.0,      // Maximum UV — aromatic excitation focus
+            uv_burst_interval: 150,     // Very frequent
+            uv_burst_duration: 80,      // Long bursts
+            scan_wavelengths: vec![280.0, 274.0],  // TRP + TYR only (strongest absorbers)
+            wavelength_dwell_steps: 200,
+            ramp_down_steps: 3000,
+            cold_return_steps: 2000,
+            stepped_holds: vec![],
+        }
+    }
+
+    /// Group D: Hysteresis Probe — full cycle with emphasis on re-closure detection.
+    /// Purpose: identify pockets that resist re-closure (true cryptic signature).
+    pub fn twin_hysteresis_probe() -> Self {
+        Self {
+            start_temp: 50.0,
+            end_temp: 300.0,
+            cold_hold_steps: 6000,
+            ramp_steps: 6000,
+            warm_hold_steps: 6000,      // Balanced warm hold
+            current_step: 0,
+            uv_burst_energy: 35.0,      // Moderate UV
+            uv_burst_interval: 300,
+            uv_burst_duration: 50,
+            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            wavelength_dwell_steps: 300,
+            ramp_down_steps: 8000,      // SLOW cooldown — key for hysteresis detection
+            cold_return_steps: 8000,    // EXTENDED cold return — watch for re-closure
+            stepped_holds: vec![],
+        }
+    }
+
+    /// Get the 4 differential protocols for multi-group TWIN.
+    /// Returns (thermal_shock, equilibrium, uv_probe, hysteresis) protocols.
+    pub fn twin_differential_set() -> [Self; 4] {
+        [
+            Self::twin_thermal_shock(),
+            Self::twin_equilibrium_observer(),
+            Self::twin_uv_aromatic_probe(),
+            Self::twin_hysteresis_probe(),
+        ]
+    }
+
     /// Get current temperature (supports 5-phase hysteresis + stepped holds)
     ///
     /// When `stepped_holds` is non-empty, the ramp phase (Phase 2) is replaced

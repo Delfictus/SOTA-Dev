@@ -2600,3 +2600,360 @@ pub fn run_coupled_twin_autonomous(
     Ok(steps_completed)
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRISM-TWIN Multi-Differential Interferometric Observation
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// N groups × M engines/group, each group running a different CryoUvProtocol.
+// The interferometric signal is the N-way cross-correlation tensor.
+//
+// Standard configuration (8 engines on RTX 5080, 16GB):
+//   Group A (2 engines): Thermal Shock — aggressive cryo, fast ramp, high UV
+//   Group B (2 engines): Equilibrium — gentle thermal, slow ramp, moderate UV
+//   Group C (2 engines): UV Aromatic — constant T, max UV on TRP/TYR
+//   Group D (2 engines): Hysteresis — full cycle, extended cooldown
+//
+// A site that correlates across ALL 4 groups has multi-mechanism evidence.
+// Surface noise appears in 1-2 groups but not all 4.
+
+/// Configuration for a multi-differential interferometric TWIN run.
+#[derive(Debug, Clone)]
+pub struct MultiDifferentialConfig {
+    /// Protocol per group. Length determines number of groups.
+    pub group_protocols: Vec<crate::fused_engine::CryoUvProtocol>,
+    /// Group labels for logging/output.
+    pub group_labels: Vec<String>,
+    /// Engines per group (all groups get the same count).
+    pub engines_per_group: usize,
+    /// Base seed (each engine gets base + group_idx*1000 + engine_idx).
+    pub base_seed: u64,
+    /// Steps per graph replay chunk (host breaks for NL rebuild).
+    pub chunk_size: u32,
+    /// Coupling config (sensitivity, exchange interval, etc.)
+    pub coupling: CoupledTwinConfig,
+    /// HMR enabled
+    pub hmr: bool,
+    /// Fused inner steps
+    pub fused_steps: u32,
+    /// Adaptive dt
+    pub adaptive_dt: bool,
+    /// LADD enabled
+    pub ladd_enabled: bool,
+}
+
+impl MultiDifferentialConfig {
+    /// Standard 4-group × 2-engine configuration for RTX 5080 (16GB).
+    /// Total: 8 engines, ~8GB VRAM.
+    pub fn standard_4x2(base_seed: u64) -> Self {
+        let protocols = crate::fused_engine::CryoUvProtocol::twin_differential_set();
+        Self {
+            group_protocols: protocols.to_vec(),
+            group_labels: vec![
+                "ThermalShock".into(),
+                "Equilibrium".into(),
+                "UvAromatic".into(),
+                "Hysteresis".into(),
+            ],
+            engines_per_group: 2,
+            base_seed,
+            chunk_size: 500,
+            coupling: {
+                let mut c = CoupledTwinConfig::default();
+                c.enable_exchange = true;
+                c.enable_ccf = true;
+                c.graph_coupling = true;
+                c
+            },
+            hmr: true,
+            fused_steps: 4,
+            adaptive_dt: true,
+            ladd_enabled: true,
+        }
+    }
+
+    /// Total number of engines.
+    pub fn total_engines(&self) -> usize {
+        self.group_protocols.len() * self.engines_per_group
+    }
+
+    /// Number of groups.
+    pub fn n_groups(&self) -> usize {
+        self.group_protocols.len()
+    }
+}
+
+/// Result from a multi-differential TWIN run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiDifferentialResult {
+    /// Per-group spike counts.
+    pub group_spikes: Vec<u64>,
+    /// Per-group labels.
+    pub group_labels: Vec<String>,
+    /// Total spikes across all groups.
+    pub total_spikes: u64,
+    /// Number of groups.
+    pub n_groups: usize,
+    /// Engines per group.
+    pub engines_per_group: usize,
+    /// Wall time in seconds.
+    pub wall_time_seconds: f64,
+    /// Steps run per group (may differ due to protocol length).
+    pub steps_per_group: Vec<i32>,
+}
+
+/// Run multi-differential interferometric TWIN.
+///
+/// Creates N groups of M engines, each group with a distinct CryoUvProtocol.
+/// All groups share ring-buffer coupling: every group's spikes modulate
+/// every other group's detection thresholds.
+///
+/// The N-way cross-correlation tensor reveals sites with multi-mechanism evidence.
+#[cfg(feature = "gpu")]
+pub fn run_multi_differential_twin(
+    config: &MultiDifferentialConfig,
+    context: Arc<CudaContext>,
+    fused_module: Arc<CudaModule>,
+    topology: &PrismPrepTopology,
+    output_dir: &std::path::Path,
+) -> anyhow::Result<MultiDifferentialResult> {
+    let start = std::time::Instant::now();
+    let n_groups = config.n_groups();
+    let epg = config.engines_per_group;
+    let total = config.total_engines();
+
+    log::info!("╔═══════════════════════════════════════════════════════════════╗");
+    log::info!("║  PRISM-TWIN MULTI-DIFFERENTIAL INTERFEROMETRIC OBSERVATION     ║");
+    log::info!("╠═══════════════════════════════════════════════════════════════╣");
+    log::info!("║  Groups: {}                                                    ║", n_groups);
+    log::info!("║  Engines/group: {}                                             ║", epg);
+    log::info!("║  Total engines: {}                                             ║", total);
+    log::info!("╚═══════════════════════════════════════════════════════════════╝");
+    for (i, (proto, label)) in config.group_protocols.iter().zip(&config.group_labels).enumerate() {
+        log::info!("  Group {} [{}]: {}K→{}K, UV={:.0}kcal, interval={}, ramp={}",
+            i, label, proto.start_temp, proto.end_temp,
+            proto.uv_burst_energy, proto.uv_burst_interval, proto.ramp_steps);
+    }
+
+    // Check VRAM
+    let (vram_free, _vram_total) = cudarc::driver::result::mem_get_info().unwrap_or((0, 0));
+    let estimated_per_engine = 1_200_000_000u64; // ~1.2GB per engine
+    let estimated_total = estimated_per_engine * total as u64;
+    if estimated_total > vram_free as u64 {
+        log::warn!("  VRAM: {:.1}GB free, need ~{:.1}GB for {} engines — may OOM",
+            vram_free as f64 / 1e9, estimated_total as f64 / 1e9, total);
+    }
+
+    std::fs::create_dir_all(output_dir)?;
+
+    // Create one CUDA stream per engine
+    let streams: Vec<Arc<CudaStream>> = (0..total)
+        .map(|_| context.new_stream().expect("CUDA stream"))
+        .collect();
+
+    let batch_config = crate::persistent_engine::PersistentBatchConfig {
+        max_atoms: topology.n_atoms.max(50000) as usize,
+        ..Default::default()
+    };
+
+    // Initialize engines: group_idx * epg + engine_idx
+    let mut engines: Vec<PersistentNhsEngine> = Vec::with_capacity(total);
+    for group_idx in 0..n_groups {
+        let proto = &config.group_protocols[group_idx];
+        let label = &config.group_labels[group_idx];
+        for engine_idx in 0..epg {
+            let flat_idx = group_idx * epg + engine_idx;
+            let seed = config.base_seed + (group_idx as u64) * 1000 + (engine_idx as u64);
+            let stream = streams[flat_idx].clone();
+
+            log::info!("  Initializing engine {}/{} (group={} [{}], seed={})...",
+                flat_idx + 1, total, group_idx, label, seed);
+
+            let mut engine = PersistentNhsEngine::new_on_stream(
+                &batch_config, context.clone(), fused_module.clone(), stream,
+            )?;
+            engine.load_topology(topology)?;
+            if config.hmr { engine.set_dt(0.004)?; }
+            if config.fused_steps > 1 { engine.set_fused_inner_steps(config.fused_steps)?; }
+            if config.adaptive_dt { engine.set_adaptive_dt(true)?; }
+            if config.ladd_enabled { engine.set_ladd_enabled(true); }
+            engine.set_cryo_uv_protocol(proto.clone())?;
+            engine.set_spike_accumulation(true);
+
+            engines.push(engine);
+        }
+    }
+    log::info!("  All {} engines initialized", total);
+
+    // Create a shared ring buffer for N-way coupling
+    // Each group pushes its spikes; all groups read from the shared ring
+    let exchange_stream = context.new_stream()?;
+    let rb_module = context.load_module(
+        cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("ring_buffer.ptx")?)
+    )?;
+    let mut ring_buffers: Vec<TwinRingBuffer> = (0..n_groups)
+        .map(|_| TwinRingBuffer::new(&context, &exchange_stream, &rb_module, 16384).unwrap())
+        .collect();
+    log::info!("  Ring buffers: {} (one per group, capacity=16384)", n_groups);
+
+    // Determine steps per group (each protocol may have different total_steps)
+    let steps_per_group: Vec<i32> = config.group_protocols.iter()
+        .map(|p| p.total_steps())
+        .collect();
+    let max_steps = *steps_per_group.iter().max().unwrap_or(&35000);
+    log::info!("  Steps per group: {:?} (max={})", steps_per_group, max_steps);
+
+    // ── Main simulation loop ──
+    let mut group_spikes = vec![0u64; n_groups];
+
+    for step in 0..max_steps {
+        // Run one step on each engine (sequential — each on its own stream)
+        for (flat_idx, engine) in engines.iter_mut().enumerate() {
+            let group_idx = flat_idx / epg;
+            if step < steps_per_group[group_idx] {
+                engine.run(1)?;
+            }
+        }
+
+        // Spike exchange: every exchange_interval steps
+        if config.coupling.enable_exchange && step > 0
+            && step as u32 % config.coupling.exchange_interval == 0
+        {
+            // Each group pushes its new spikes to its ring buffer
+            for group_idx in 0..n_groups {
+                for engine_idx in 0..epg {
+                    let flat_idx = group_idx * epg + engine_idx;
+                    if let (Some(sbuf), Some(sc)) = (
+                        engines[flat_idx].spike_buffer_gpu(),
+                        engines[flat_idx].spike_count_gpu(),
+                    ) {
+                        if ring_buffers[group_idx].has_device_push() {
+                            ring_buffers[group_idx].push_device(&exchange_stream, sbuf, sc)?;
+                        }
+                    }
+                }
+            }
+
+            // N-way coupling: each group reads from ALL OTHER groups' ring buffers
+            for target_group in 0..n_groups {
+                for source_group in 0..n_groups {
+                    if source_group == target_group { continue; }
+                    // Source group's ring buffer → target group's thresholds
+                    for engine_idx in 0..epg {
+                        let flat_idx = target_group * epg + engine_idx;
+                        if let Some((gx, gy, gz, ox, oy, oz, vs)) = engines[flat_idx].grid_info() {
+                            if let Some((thresh, base)) = engines[flat_idx].threshold_buffers_mut() {
+                                ring_buffers[source_group].read_and_adapt(
+                                    &exchange_stream, thresh, base,
+                                    (gx, gy, gz), (ox, oy, oz), vs,
+                                    config.coupling.sensitivity_boost,
+                                    config.coupling.max_threshold_reduction,
+                                    step as u32, 500.0,
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Periodic threshold recovery
+        if config.coupling.enable_exchange && step > 0 && step % 1000 == 0 {
+            let n_voxels = engines[0].total_voxels() as u32;
+            for group_idx in 0..n_groups {
+                for engine_idx in 0..epg {
+                    let flat_idx = group_idx * epg + engine_idx;
+                    if let Some((thresh, base)) = engines[flat_idx].threshold_buffers_mut() {
+                        // Recovery from ALL source ring buffers
+                        for src in 0..n_groups {
+                            if src != group_idx {
+                                ring_buffers[src].threshold_recovery(
+                                    &exchange_stream, thresh, base, n_voxels, 0.01,
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Progress logging
+        if (step + 1) % 5000 == 0 || step == max_steps - 1 {
+            let elapsed = start.elapsed().as_secs_f64();
+            let sps = (step + 1) as f64 / elapsed;
+            log::info!("  Step {}/{}: {:.0} steps/s, {:.1}s elapsed",
+                step + 1, max_steps, sps, elapsed);
+        }
+    }
+
+    // Synchronize all streams
+    for stream in &streams {
+        stream.synchronize().unwrap_or_default();
+    }
+    exchange_stream.synchronize().unwrap_or_default();
+
+    // Collect spike counts per group
+    for group_idx in 0..n_groups {
+        for engine_idx in 0..epg {
+            let flat_idx = group_idx * epg + engine_idx;
+            group_spikes[group_idx] += engines[flat_idx].accumulated_spike_count() as u64;
+        }
+    }
+    let total_spikes: u64 = group_spikes.iter().sum();
+
+    let wall_time = start.elapsed().as_secs_f64();
+
+    log::info!("╔═══════════════════════════════════════════════════════════════╗");
+    log::info!("║  MULTI-DIFFERENTIAL TWIN COMPLETE                              ║");
+    log::info!("╠═══════════════════════════════════════════════════════════════╣");
+    for (i, (label, spikes)) in config.group_labels.iter().zip(&group_spikes).enumerate() {
+        log::info!("║  Group {} [{}]: {:>12} spikes                     ║", i, label, spikes);
+    }
+    log::info!("║  Total: {:>12} spikes                                    ║", total_spikes);
+    log::info!("║  Wall time: {:.1}s                                           ║", wall_time);
+    log::info!("╚═══════════════════════════════════════════════════════════════╝");
+
+    // Post-process: aggregate spikes from all engines and run TWIN detection
+    let mut all_spikes_a = Vec::new(); // groups 0+2 (shock + UV probe)
+    let mut all_spikes_b = Vec::new(); // groups 1+3 (equilibrium + hysteresis)
+    for group_idx in 0..n_groups {
+        for engine_idx in 0..epg {
+            let flat_idx = group_idx * epg + engine_idx;
+            let spikes = engines[flat_idx].get_accumulated_spikes().to_vec();
+            // Odd groups → "observer" stream, Even groups → "scout" stream
+            if group_idx % 2 == 0 {
+                all_spikes_a.extend(spikes);
+            } else {
+                all_spikes_b.extend(spikes);
+            }
+        }
+    }
+
+    log::info!("  Post-processing: {} scout spikes + {} observer spikes",
+        all_spikes_a.len(), all_spikes_b.len());
+
+    // Run TWIN detection on the aggregated streams
+    let prefix = std::path::Path::new(&topology.source_pdb)
+        .file_stem().and_then(|s| s.to_str())
+        .map(|s| s.replace("_sanitized", "").replace("_clean", ""))
+        .unwrap_or_else(|| "prism_multi_twin".to_string());
+
+    match crate::twin_detection::detect_and_write_twin_sites(
+        &all_spikes_a, &all_spikes_b, topology, output_dir, &prefix, None,
+    ) {
+        Ok(summary) => {
+            log::info!("  TWIN detection: {} sites ({} consensus, {} barrier-gated)",
+                summary.n_sites, summary.n_consensus_sites, summary.n_barrier_gated_sites);
+        }
+        Err(e) => log::warn!("  TWIN detection failed: {}", e),
+    }
+
+    Ok(MultiDifferentialResult {
+        group_spikes,
+        group_labels: config.group_labels.clone(),
+        total_spikes,
+        n_groups,
+        engines_per_group: epg,
+        wall_time_seconds: wall_time,
+        steps_per_group,
+    })
+}
