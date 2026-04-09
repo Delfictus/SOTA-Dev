@@ -214,6 +214,13 @@ struct Args {
     #[arg(long, default_value = "false")]
     coupled_twin: bool,
 
+    /// Use persistent cooperative kernel for TWIN coupling instead of host-mediated.
+    /// The persistent kernel runs on a dedicated CUDA stream for the entire simulation,
+    /// handling ring buffer exchange + threshold adaptation without host round-trips.
+    /// Requires --coupled-twin. Default: off (host-mediated coupling).
+    #[arg(long, default_value = "false")]
+    persistent_coupling: bool,
+
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
     /// temporal persistence, persistent homology, and Boltzmann gap gates.
@@ -597,6 +604,7 @@ fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()>
     // Gate 1: exchange and CCF disabled
     twin_config.enable_exchange = true;   // Gate 2: spike density exchange
     twin_config.enable_ccf = true;        // Gate 2: cross-correlation
+    twin_config.persistent_coupling = args.persistent_coupling;
 
     // Initialize CUDA
     let context = cudarc::driver::CudaContext::new(0)
@@ -696,6 +704,7 @@ fn run_coupled_twin_multi_pipeline(
     twin_config.nma_amplification = args.nma_amplification;
     twin_config.enable_exchange = true;
     twin_config.enable_ccf = true;
+    twin_config.persistent_coupling = args.persistent_coupling;
 
     let offset_steps = (protocol.cold_hold_steps as f32 * twin_config.phase_offset_fraction) as i32;
 

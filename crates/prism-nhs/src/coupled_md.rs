@@ -72,6 +72,9 @@ pub struct CoupledTwinConfig {
     pub enable_ccf: bool,
     /// Enable spike density exchange (Layer 1). Disable for Gate 1 testing.
     pub enable_exchange: bool,
+    /// Use persistent cooperative kernel for coupling instead of host-mediated.
+    /// When true, ring buffer operations run on-device without host round-trips.
+    pub persistent_coupling: bool,
 }
 
 impl Default for CoupledTwinConfig {
@@ -86,6 +89,7 @@ impl Default for CoupledTwinConfig {
             nma_amplification: 3.0,
             enable_ccf: false,      // Gate 1: off. Gate 2+: on.
             enable_exchange: false,  // Gate 1: off. Gate 2+: on.
+            persistent_coupling: false,  // Default: host-mediated. --persistent-coupling to enable.
         }
     }
 }
@@ -834,6 +838,71 @@ pub fn run_coupled_twin(
     } else {
         (None, None, None)
     };
+
+    // ── PERSISTENT COUPLING KERNEL (optional, --persistent-coupling) ──
+    let mut twin_signal: Option<crate::twin_kernels::TwinSignal> = None;
+    let mut _persistent_kernel: Option<crate::twin_kernels::TwinCouplingPersistent> = None;
+
+    if twin_config.persistent_coupling {
+        if let Some(ref se) = stream_exchange {
+            // Load signal + coupling PTX modules
+            let signal_module = context.load_module(
+                cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("twin_signal.ptx")?)
+            ).context("Failed to load twin_signal.ptx")?;
+            let coupling_module = context.load_module(
+                cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("twin_coupling_persistent.ptx")?)
+            ).context("Failed to load twin_coupling_persistent.ptx")?;
+
+            let mut signal = crate::twin_kernels::TwinSignal::new(se, &signal_module)?;
+
+            // Launch persistent coupling kernel — runs for the ENTIRE simulation
+            if let (Some(ref mut ra), Some(ref mut rb)) = (&mut ring_a, &mut ring_b) {
+                let persistent = crate::twin_kernels::TwinCouplingPersistent::new(&coupling_module)?;
+
+                let outer_total = ((steps + fused_steps.max(1) as i32 - 1) / fused_steps.max(1) as i32) as u32;
+                let coupling_config = crate::twin_kernels::TwinCouplingConfig {
+                    sensitivity_boost: twin_config.sensitivity_boost,
+                    max_reduction_fraction: twin_config.max_threshold_reduction,
+                    decay_constant: 500.0,
+                    recovery_rate: 0.01,
+                    recovery_interval: 1000,
+                    total_steps: outer_total,
+                };
+
+                if let (Some((thresh_a, base_a_ref)), Some((thresh_b, base_b_ref))) = (
+                    engine_a.threshold_buffers_mut(),
+                    engine_b.threshold_buffers_mut(),
+                ) {
+                    if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
+                        if let (Some(spike_buf_a), Some(spike_buf_b)) = (
+                            engine_a.spike_buffer_gpu(),
+                            engine_b.spike_buffer_gpu(),
+                        ) {
+                            // Get spike count buffers
+                            // NOTE: engine.get_spike_count() reads from d_spike_count.
+                            // We need the GPU pointer directly for the persistent kernel.
+                            // For now, use the host-mediated path. The persistent kernel
+                            // will be fully wired when spike_count_gpu() is exposed.
+                            log::warn!("  Persistent coupling: kernel compiled but spike_count GPU pointer not yet exposed");
+                            log::warn!("  Falling back to host-mediated coupling for this run");
+                            // TODO Gate 3: expose d_spike_count as a CudaSlice reference
+                            // then call persistent.launch() here
+                        }
+                    }
+                }
+
+                _persistent_kernel = Some(persistent);
+            }
+
+            twin_signal = Some(signal);
+            log::info!("  Persistent coupling: signal kernels loaded ✓");
+        }
+    }
+
+    let use_persistent = twin_config.persistent_coupling && _persistent_kernel.is_some();
+    if twin_config.persistent_coupling && !use_persistent {
+        log::info!("  Persistent coupling: falling back to host-mediated (spike_count GPU pointer pending)");
+    }
 
     let diag_enabled = std::env::var("PRISM_TWIN_DIAG").is_ok();
     if diag_enabled {

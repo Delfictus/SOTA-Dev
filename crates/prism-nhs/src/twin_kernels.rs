@@ -634,6 +634,132 @@ pub fn build_ccf_matrices(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Persistent Cooperative Coupling Kernel
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Configuration for the persistent coupling kernel launch.
+pub struct TwinCouplingConfig {
+    pub sensitivity_boost: f32,
+    pub max_reduction_fraction: f32,
+    pub decay_constant: f32,
+    pub recovery_rate: f32,
+    pub recovery_interval: u32,
+    pub total_steps: u32,
+}
+
+/// GPU state for the persistent cooperative coupling kernel.
+///
+/// This kernel runs for the ENTIRE simulation on a dedicated CUDA stream.
+/// It handles ring buffer exchange + threshold adaptation without returning
+/// to host. Physics kernels signal completion via TwinSignal atomic flags.
+pub struct TwinCouplingPersistent {
+    kernel_fn: CudaFunction,
+}
+
+impl TwinCouplingPersistent {
+    /// Load the persistent coupling kernel from PTX.
+    pub fn new(module: &Arc<CudaModule>) -> Result<Self> {
+        let kernel_fn = module.load_function("twin_coupling_persistent")
+            .context("twin_coupling_persistent not found in PTX")?;
+        Ok(Self { kernel_fn })
+    }
+
+    /// Launch the persistent coupling kernel. This call returns immediately —
+    /// the kernel runs asynchronously for `config.total_steps` steps.
+    ///
+    /// The kernel spin-waits on signal flags, so the physics streams must
+    /// call `TwinSignal::signal_a/b()` after each step's LADD kernels.
+    ///
+    /// # Safety
+    /// All buffer references must remain valid for the duration of the
+    /// simulation (the kernel doesn't return until total_steps complete).
+    #[allow(clippy::too_many_arguments)]
+    pub fn launch(
+        &self,
+        stream: &Arc<CudaStream>,
+        // Signal flags
+        signal: &mut TwinSignal,
+        // Ring buffers
+        ring_a: &mut TwinRingBuffer,
+        ring_b: &mut TwinRingBuffer,
+        ring_capacity: u32,
+        // Spike buffers (from physics engines)
+        spike_buf_a: &CudaSlice<u8>,
+        spike_count_a: &CudaSlice<i32>,
+        spike_buf_b: &CudaSlice<u8>,
+        spike_count_b: &CudaSlice<i32>,
+        // Threshold buffers
+        thresh_a: &mut CudaSlice<f32>,
+        base_a: &CudaSlice<f32>,
+        thresh_b: &mut CudaSlice<f32>,
+        base_b: &CudaSlice<f32>,
+        // Grid geometry
+        grid_dims: (i32, i32, i32),
+        grid_origin: (f32, f32, f32),
+        voxel_size: f32,
+        // Config
+        config: &TwinCouplingConfig,
+    ) -> Result<()> {
+        // 168 blocks × 256 threads = full SM occupancy on RTX 5080 (84 SMs × 2 blocks)
+        let launch_cfg = LaunchConfig {
+            grid_dim: (168, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            stream.launch_builder(&self.kernel_fn)
+                // Signal flags (params 0-1)
+                .arg(&mut signal.flag_a)
+                .arg(&mut signal.flag_b)
+                // Ring A: buffer, head, tail, overflow (params 2-5)
+                .arg(&mut ring_a.buffer)
+                .arg(&mut ring_a.head)
+                .arg(&mut ring_a.tail)
+                .arg(&mut ring_a.overflow)
+                // Ring B: buffer, head, tail, overflow (params 6-9)
+                .arg(&mut ring_b.buffer)
+                .arg(&mut ring_b.head)
+                .arg(&mut ring_b.tail)
+                .arg(&mut ring_b.overflow)
+                // Ring capacity (param 10)
+                .arg(&ring_capacity)
+                // Spike buffers (params 11-14)
+                .arg(spike_buf_a)
+                .arg(spike_count_a)
+                .arg(spike_buf_b)
+                .arg(spike_count_b)
+                // Threshold buffers (params 15-18)
+                .arg(thresh_a)
+                .arg(base_a)
+                .arg(thresh_b)
+                .arg(base_b)
+                // Grid geometry (params 19-25)
+                .arg(&grid_dims.0)
+                .arg(&grid_dims.1)
+                .arg(&grid_dims.2)
+                .arg(&grid_origin.0)
+                .arg(&grid_origin.1)
+                .arg(&grid_origin.2)
+                .arg(&voxel_size)
+                // Coupling parameters (params 26-30)
+                .arg(&config.sensitivity_boost)
+                .arg(&config.max_reduction_fraction)
+                .arg(&config.decay_constant)
+                .arg(&config.recovery_rate)
+                .arg(&config.recovery_interval)
+                // Total steps (param 31)
+                .arg(&config.total_steps)
+                .launch_cooperative(launch_cfg)?;
+        }
+
+        log::info!("  Persistent coupling kernel launched: 168 blocks × 256 threads, {} steps",
+            config.total_steps);
+        Ok(())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
