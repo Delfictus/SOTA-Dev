@@ -406,6 +406,14 @@ fn main() {
         &target_ptx_dir.join("ring_buffer.ptx"),
     );
 
+    // Transfer Entropy (standard kernel — binned TE, no cooperative groups)
+    compile_kernel(
+        &nvcc,
+        "src/kernels/twin_transfer_entropy.cu",
+        &ptx_dir.join("twin_transfer_entropy.ptx"),
+        &target_ptx_dir.join("twin_transfer_entropy.ptx"),
+    );
+
     // Tensor Core CCF (standard kernel — WMMA, no cooperative groups)
     compile_kernel(
         &nvcc,

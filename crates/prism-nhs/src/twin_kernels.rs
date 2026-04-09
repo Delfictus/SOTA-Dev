@@ -634,6 +634,170 @@ pub fn build_ccf_matrices(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GPU Transfer Entropy
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// GPU-side binned Transfer Entropy computation.
+///
+/// Uses the same time-binned spike matrices as the CCF kernel.
+/// Produces [n_res × n_res] TE matrices (A→B and B→A) plus
+/// per-residue mutual information and causal flow direction.
+pub struct TwinTeCompute {
+    te_a_to_b: CudaSlice<f32>,     // [n_res × n_res]
+    te_b_to_a: CudaSlice<f32>,     // [n_res × n_res]
+    mean_a: CudaSlice<f32>,         // [n_res]
+    mean_b: CudaSlice<f32>,         // [n_res]
+    mutual_info: CudaSlice<f32>,    // [n_res]
+    causal_flow: CudaSlice<f32>,    // [n_res]
+    n_res: i32,
+    n_bins: i32,
+    n_res_padded: i32,
+    n_bins_padded: i32,
+    mean_fn: CudaFunction,
+    te_fn: CudaFunction,
+    mi_fn: CudaFunction,
+}
+
+impl TwinTeCompute {
+    pub fn new(
+        stream: &Arc<CudaStream>,
+        module: &Arc<CudaModule>,
+        n_res: i32,
+        n_bins: i32,
+        n_res_padded: i32,
+        n_bins_padded: i32,
+    ) -> Result<Self> {
+        let te_a_to_b = stream.alloc_zeros::<f32>((n_res * n_res) as usize)?;
+        let te_b_to_a = stream.alloc_zeros::<f32>((n_res * n_res) as usize)?;
+        let mean_a = stream.alloc_zeros::<f32>(n_res as usize)?;
+        let mean_b = stream.alloc_zeros::<f32>(n_res as usize)?;
+        let mutual_info = stream.alloc_zeros::<f32>(n_res as usize)?;
+        let causal_flow = stream.alloc_zeros::<f32>(n_res as usize)?;
+
+        let mean_fn = module.load_function("twin_compute_row_means")
+            .context("twin_compute_row_means not found in PTX")?;
+        let te_fn = module.load_function("twin_binned_te")
+            .context("twin_binned_te not found in PTX")?;
+        let mi_fn = module.load_function("twin_compute_mutual_info")
+            .context("twin_compute_mutual_info not found in PTX")?;
+
+        Ok(Self {
+            te_a_to_b, te_b_to_a, mean_a, mean_b,
+            mutual_info, causal_flow,
+            n_res, n_bins, n_res_padded, n_bins_padded,
+            mean_fn, te_fn, mi_fn,
+        })
+    }
+
+    /// Compute means, TE matrices, MI, and causal flow.
+    /// Spike matrices must already be uploaded to GPU (same as CCF input).
+    pub fn compute(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        spike_matrix_a: &CudaSlice<u16>,  // FP16 as u16, same as CCF
+        spike_matrix_b: &CudaSlice<u16>,
+    ) -> Result<()> {
+        // Step 1: compute per-row means for binarization
+        let mean_blocks = ((self.n_res as u32) + 255) / 256;
+        let mean_cfg = LaunchConfig {
+            grid_dim: (mean_blocks.max(1), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            stream.launch_builder(&self.mean_fn)
+                .arg(spike_matrix_a)
+                .arg(&mut self.mean_a)
+                .arg(&self.n_res)
+                .arg(&self.n_bins)
+                .arg(&self.n_bins_padded)
+                .launch(mean_cfg)?;
+            stream.launch_builder(&self.mean_fn)
+                .arg(spike_matrix_b)
+                .arg(&mut self.mean_b)
+                .arg(&self.n_res)
+                .arg(&self.n_bins)
+                .arg(&self.n_bins_padded)
+                .launch(mean_cfg)?;
+        }
+
+        // Step 2: compute TE matrices
+        let tile = 16u32;
+        let grid_x = ((self.n_res as u32) + tile - 1) / tile;
+        let grid_y = ((self.n_res as u32) + tile - 1) / tile;
+        let te_cfg = LaunchConfig {
+            grid_dim: (grid_x.max(1), grid_y.max(1), 1),
+            block_dim: (tile, tile, 1),
+            shared_mem_bytes: 0,
+        };
+        let lag = 1i32;
+        unsafe {
+            stream.launch_builder(&self.te_fn)
+                .arg(spike_matrix_a)
+                .arg(spike_matrix_b)
+                .arg(&mut self.te_a_to_b)
+                .arg(&mut self.te_b_to_a)
+                .arg(&self.mean_a)
+                .arg(&self.mean_b)
+                .arg(&self.n_res)
+                .arg(&self.n_res_padded)
+                .arg(&self.n_bins)
+                .arg(&self.n_bins_padded)
+                .arg(&lag)
+                .launch(te_cfg)?;
+        }
+
+        // Step 3: compute per-residue MI and causal flow from TE matrices
+        let mi_blocks = ((self.n_res as u32) + 255) / 256;
+        let mi_cfg = LaunchConfig {
+            grid_dim: (mi_blocks.max(1), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            stream.launch_builder(&self.mi_fn)
+                .arg(&self.te_a_to_b)
+                .arg(&self.te_b_to_a)
+                .arg(&mut self.mutual_info)
+                .arg(&mut self.causal_flow)
+                .arg(&self.n_res)
+                .launch(mi_cfg)?;
+        }
+
+        Ok(())
+    }
+
+    /// Download per-residue MI and causal flow to CPU.
+    pub fn download_per_residue(
+        &self,
+        stream: &Arc<CudaStream>,
+    ) -> Result<(Vec<f32>, Vec<f32>)> {
+        let mut mi = vec![0.0f32; self.n_res as usize];
+        let mut cf = vec![0.0f32; self.n_res as usize];
+        stream.memcpy_dtoh(&self.mutual_info, &mut mi)?;
+        stream.memcpy_dtoh(&self.causal_flow, &mut cf)?;
+        Ok((mi, cf))
+    }
+
+    /// Download per-residue TE(A→B) sum (total outgoing TE from each residue).
+    pub fn download_te_per_residue(
+        &self,
+        stream: &Arc<CudaStream>,
+    ) -> Result<Vec<f32>> {
+        let n = self.n_res as usize;
+        let mut te_ab = vec![0.0f32; n * n];
+        stream.memcpy_dtoh(&self.te_a_to_b, &mut te_ab)?;
+        // Sum across columns for each row: total outgoing TE from residue i
+        let per_res: Vec<f32> = (0..n).map(|i| {
+            te_ab[i * n..(i + 1) * n].iter()
+                .filter(|&&v| v > 0.001)
+                .sum()
+        }).collect();
+        Ok(per_res)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Persistent Cooperative Coupling Kernel
 // ─────────────────────────────────────────────────────────────────────────────
 

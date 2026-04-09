@@ -1483,11 +1483,77 @@ pub fn twin_post_process(
         None
     };
 
+    // ── GPU Transfer Entropy (Layer 5: causal spike propagation) ──────────
+    //
+    // Uses the same time-binned spike matrices as CCF. Produces per-residue:
+    //   mutual_information: MI(A,B) from TE matrices
+    //   transfer_entropy_a_to_b: total outgoing TE from each residue
+    //   causal_flow_direction: net TE direction (positive = information source)
+    let (te_mi, te_causal, te_per_res) = if twin_config.enable_ccf && n_residues > 0
+        && !spikes_a.is_empty() && !spikes_b.is_empty()
+    {
+        log::info!("  Computing GPU Transfer Entropy ({} residues)...", n_residues);
+        let te_start = std::time::Instant::now();
+
+        // Rebuild matrices (same as CCF — fast, O(n_spikes))
+        let (mat_a_f32, mat_b_f32, n_res_padded, n_bins_padded) =
+            crate::twin_kernels::build_ccf_matrices(&spikes_a, &spikes_b, n_residues, steps, bin_size);
+        let n_bins = (steps / bin_size) as i32;
+
+        let te_result = (|| -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+            let te_module = context.load_module(
+                cudarc::nvrtc::Ptx::from_file(&crate::twin_kernels::find_twin_ptx("twin_transfer_entropy.ptx")?)
+            ).context("Failed to load twin_transfer_entropy.ptx")?;
+
+            let se = stream_exchange
+                .ok_or_else(|| anyhow::anyhow!("Exchange stream not available for TE"))?;
+
+            // Upload matrices (reuse CCF's format: f32 → u16/FP16)
+            let to_u16 = |vals: &[f32]| -> Vec<u16> {
+                vals.iter().map(|&v| half::f16::from_f32(v).to_bits()).collect()
+            };
+            let a_u16 = to_u16(&mat_a_f32);
+            let b_u16 = to_u16(&mat_b_f32);
+            let mut d_mat_a = se.alloc_zeros::<u16>(a_u16.len())?;
+            let mut d_mat_b = se.alloc_zeros::<u16>(b_u16.len())?;
+            se.memcpy_htod(&a_u16, &mut d_mat_a)?;
+            se.memcpy_htod(&b_u16, &mut d_mat_b)?;
+
+            let mut te = crate::twin_kernels::TwinTeCompute::new(
+                se, &te_module, n_residues as i32, n_bins,
+                n_res_padded, n_bins_padded,
+            )?;
+            te.compute(se, &d_mat_a, &d_mat_b)?;
+
+            let (mi, cf) = te.download_per_residue(se)?;
+            let te_per_res = te.download_te_per_residue(se)?;
+
+            let nonzero_mi = mi.iter().filter(|&&v| v > 0.001).count();
+            let nonzero_cf = cf.iter().filter(|&&v| v.abs() > 0.001).count();
+            log::info!("  ✓ GPU TE: {} residues, MI non-zero={}, causal_flow non-zero={}, {:.1}ms",
+                n_residues, nonzero_mi, nonzero_cf,
+                te_start.elapsed().as_secs_f64() * 1000.0);
+
+            Ok((mi, cf, te_per_res))
+        })();
+
+        match te_result {
+            Ok((mi, cf, te)) => (Some(mi), Some(cf), Some(te)),
+            Err(e) => {
+                log::warn!("  GPU TE failed ({}), MI/TE/causal_flow will be zero", e);
+                (None, None, None)
+            }
+        }
+    } else {
+        (None, None, None)
+    };
+
     // ── Build per-residue InterferometricFeatures (50 fields) ──────────────
     //
     // Data sources:
     //   per_res_map: HashMap<resid, (count_a, count_b, intensity_a, intensity_b)> from CPU co-occurrence
     //   ccf_features_vec: Option<Vec<CcfResidueFeatures>> from GPU WMMA CCF
+    //   te_mi, te_causal, te_per_res: from GPU Transfer Entropy
     //   phase_counts_a, phase_counts_b: per-residue per-phase spike counts
     //   onset_a, onset_b: earliest spike timestep per residue
     //   intensity_a, intensity_b: total intensity per residue
@@ -1665,9 +1731,16 @@ pub fn twin_post_process(
                     phase_offset_enrichment: offset_enrich,
                     scout_intensity_at_onset: scout_intensity,
                     scout_spatial_propagation: 0.0,  // PLACEHOLDER: requires spatial wave-front analysis
-                    mutual_information: 0.0,         // PLACEHOLDER: Phase C Step 15 (GPU TE kernel)
-                    transfer_entropy_a_to_b: 0.0,    // PLACEHOLDER: Phase C Step 15 (GPU TE kernel)
-                    causal_flow_direction: 0.0,      // PLACEHOLDER: Phase C Step 15 (GPU TE kernel)
+                    // GPU Transfer Entropy (computed by twin_binned_te kernel)
+                    mutual_information: te_mi.as_ref()
+                        .and_then(|v| if (resid as usize) < v.len() { Some(v[resid as usize]) } else { None })
+                        .unwrap_or(0.0),
+                    transfer_entropy_a_to_b: te_per_res.as_ref()
+                        .and_then(|v| if (resid as usize) < v.len() { Some(v[resid as usize]) } else { None })
+                        .unwrap_or(0.0),
+                    causal_flow_direction: te_causal.as_ref()
+                        .and_then(|v| if (resid as usize) < v.len() { Some(v[resid as usize]) } else { None })
+                        .unwrap_or(0.0),
                 })
             })
             .collect();
@@ -1729,31 +1802,24 @@ pub fn twin_post_process(
         });
 
         // ════════════════════════════════════════════════════════════════
-        // PLACEHOLDER AUDIT: 11 of 50 fields are currently 0.0
+        // FIELD STATUS: 42/50 populated, 8 placeholders
         //
-        // Populated (39): spike_agreement_ratio, consensus_intensity_mean,
-        //   consensus_phase_profile[5], consensus_spatial_coherence,
-        //   consensus_temporal_onset, n_consensus_neighbors,
-        //   ccf_peak_lag, ccf_peak_value, ccf_width, ccf_asymmetry,
-        //   ccf_per_phase[5], ccf_reproducibility,
-        //   spikes_a, spikes_b, b_over_a_ratio, nma_exclusive_count,
-        //   thermal_exclusive_count, b_over_a_intensity_ratio,
-        //   barrier_classification, per_phase_differential[5],
-        //   differential_onset_lag, scout_lead_time, scout_predictive_value,
-        //   phase_offset_enrichment, scout_intensity_at_onset
+        // Populated (42): all consensus(12), all CCF(10 of 12), all differential(13 of 18),
+        //   scout(5 of 8), TE(3): mutual_information, transfer_entropy_a_to_b, causal_flow_direction
         //
-        // PLACEHOLDER (11): ccf_frequency_peak, ccf_lag_consistency,
+        // PLACEHOLDER (8): ccf_frequency_peak, ccf_lag_consistency,
         //   nma_responsive_mode, nma_mode_eigenvalue, nma_work_at_residue,
         //   mechanical_sensitivity, susceptibility_magnitude,
-        //   scout_spatial_propagation, mutual_information,
-        //   transfer_entropy_a_to_b, causal_flow_direction
+        //   scout_spatial_propagation
         //
-        // These 11 fields MUST NOT be used for ranking or model training
-        // until their Phase C implementations are complete.
+        // NMA placeholders require NMA mode file (auto-generated in wrapper).
+        // ccf_frequency_peak requires FFT on CCF row.
+        // ccf_lag_consistency requires per-phase CCF recomputation.
+        // scout_spatial_propagation requires spatial wave-front analysis.
         // ════════════════════════════════════════════════════════════════
-        let n_populated = 39;
-        let n_placeholder = 11;
-        log::info!("  Per-residue features: {}/{} fields populated, {} placeholders (Phase C pending)",
+        let n_populated = 42;
+        let n_placeholder = 8;
+        log::info!("  Per-residue features: {}/{} fields populated, {} placeholders",
             n_populated, n_populated + n_placeholder, n_placeholder);
 
         features
