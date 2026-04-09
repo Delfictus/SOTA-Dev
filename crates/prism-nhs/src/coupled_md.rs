@@ -277,6 +277,12 @@ pub struct SiteInterferometricFeatures {
     pub total_nma_exclusive: u32,
     pub total_thermal_exclusive: u32,
 
+    // ── Geometry (from binding_sites.json) ──
+    pub volume: f32,
+    pub druggability: f32,
+    pub is_druggable: bool,
+    pub centroid: [f32; 3],
+
     // ── Scout aggregates ──
     pub mean_scout_lead_time: f32,
     pub mean_predictive_value: f32,
@@ -317,6 +323,8 @@ pub fn aggregate_site_features(
                 mean_spatial_coherence: 0.0, mean_consensus_onset: 0.0,
                 mean_ccf_peak: 0.0, max_ccf_peak: 0.0, mean_intra_site_ccf: 0.0,
                 mean_ccf_reproducibility: 0.0,
+                volume: 0.0, druggability: 0.0, is_druggable: false,
+                centroid: [0.0; 3],
                 mean_b_over_a: 0.0,
                 barrier_composition_low: 0.0, barrier_composition_medium: 1.0,
                 barrier_composition_high: 0.0,
@@ -396,6 +404,9 @@ pub fn aggregate_site_features(
             mean_spatial_coherence, mean_consensus_onset,
             mean_ccf_peak, max_ccf_peak, mean_intra_site_ccf,
             mean_ccf_reproducibility,
+            // Geometry: populated from binding_sites.json in the caller
+            volume: 0.0, druggability: 0.0, is_druggable: false,
+            centroid: [0.0; 3],
             mean_b_over_a,
             barrier_composition_low: n_low as f32 / n_with_data as f32,
             barrier_composition_medium: n_med as f32 / n_with_data as f32,
@@ -1901,12 +1912,32 @@ pub fn twin_post_process(
                                 .unwrap_or_else(Vec::new)
                         }).collect();
 
-                        let result = aggregate_site_features(
+                        let mut result = aggregate_site_features(
                             &site_lining,
                             &per_residue_features,
                             None, // CCF matrix not retained in scope — TODO: pass it through
                             n_residues,
                         );
+
+                        // Populate geometry fields from binding_sites.json
+                        for (i, sf) in result.iter_mut().enumerate() {
+                            if i < sites.len() {
+                                let site = &sites[i];
+                                sf.volume = site["volume"].as_f64().unwrap_or(0.0) as f32;
+                                sf.druggability = site["druggability"].as_f64().unwrap_or(0.0) as f32;
+                                sf.is_druggable = site["is_druggable"].as_bool().unwrap_or(false);
+                                if let Some(centroid) = site["centroid"].as_array() {
+                                    if centroid.len() >= 3 {
+                                        sf.centroid = [
+                                            centroid[0].as_f64().unwrap_or(0.0) as f32,
+                                            centroid[1].as_f64().unwrap_or(0.0) as f32,
+                                            centroid[2].as_f64().unwrap_or(0.0) as f32,
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+
                         log::info!("  Site features: {} sites aggregated from {} per-residue features",
                             result.len(), per_residue_features.len());
                         for (i, sf) in result.iter().enumerate() {
