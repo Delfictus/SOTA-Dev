@@ -159,6 +159,42 @@ extern "C" __global__ void nhs_amber_fused_step(
 The Langevin thermostat, force computation, SHAKE, GBSA — all identical.
 Only the mechanism for delivering temperature/UV values to the kernel changes.
 
+**CRITICAL PERFORMANCE NOTE**: Global memory reads (from ProtocolState*)
+are slower than constant memory parameter reads. To avoid L2 cache round-trips
+on every thread, read the struct into LOCAL REGISTERS once at kernel entry:
+
+```cuda
+extern "C" __global__ void nhs_amber_fused_step(
+    ...,
+    const ProtocolState* __restrict__ d_protocol,
+    ...
+) {
+    // Load protocol state into registers ONCE (all threads read same values)
+    // The __restrict__ hint + L1 cache means this is a single broadcast read
+    // across all threads in the warp — effectively free after the first thread.
+    const float target_temp = d_protocol->current_temperature;
+    const int uv_active = d_protocol->uv_burst_active;
+    const float uv_energy = d_protocol->uv_burst_energy;
+    const float uv_wl = d_protocol->uv_wavelength_nm;
+    const float dt = d_protocol->dt;
+    const float gamma = d_protocol->gamma;
+    const int timestep = d_protocol->current_step;
+
+    // From this point forward, target_temp etc. are in registers — 
+    // identical performance to the original scalar parameter path.
+    // The compiler treats them the same way as __constant__ parameters
+    // once they're in registers.
+
+    // ... rest of kernel uses target_temp, uv_active, etc. from registers ...
+}
+```
+
+This ensures ZERO performance regression from the parameter delivery change.
+The first thread in each warp loads from L1/L2 (one cache line, ~80 bytes).
+All subsequent threads in the warp get the same values via warp broadcast.
+After the initial load, the register-based values are indistinguishable
+from the original scalar parameter path in terms of ALU throughput.
+
 ---
 
 ## Gated Implementation Plan
