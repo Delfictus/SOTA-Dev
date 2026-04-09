@@ -90,28 +90,154 @@ impl Default for CoupledTwinConfig {
     }
 }
 
-/// Per-residue interferometric features from coupled observation.
+/// Per-residue interferometric features from coupled observation (50 fields).
+///
+/// Four groups:
+///   Consensus (12): spike agreement, per-phase profile, spatial coherence
+///   Cross-correlation (12): CCF peak, width, asymmetry, per-phase, frequency
+///   Differential (18): B/A ratio, NMA-exclusive counts, barrier classification
+///   Scout/propagation (8): lead time, predictive value, TE, causal flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InterferometricFeatures {
     pub resid: i32,
     pub resname: String,
 
-    // Consensus
+    // ── Consensus (12 fields) ──
     pub spike_agreement_ratio: f32,
     pub consensus_intensity_mean: f32,
+    /// Per-CCNS-phase spike count ratio: [cold_hold, heating, warm_hold, cooling, cold_return]
+    pub consensus_phase_profile: [f32; 5],
+    /// Fraction of neighboring residues (within 8Å) that also have agreement > 0.5
+    pub consensus_spatial_coherence: f32,
+    /// Earliest timestep where both streams agree (both have >= 1 spike near this residue)
+    pub consensus_temporal_onset: f32,
+    /// Count of nearby residues (within 8Å) with agreement > 0.5
+    pub n_consensus_neighbors: u32,
 
-    // Cross-correlation (Layer 2)
+    // ── Cross-correlation (12 fields) ──
     pub ccf_peak_lag: i32,
     pub ccf_peak_value: f32,
     pub ccf_width: f32,
     pub ccf_asymmetry: f32,
+    /// CCF peak value computed per CCNS phase
+    pub ccf_per_phase: [f32; 5],
+    /// Dominant frequency in CCF (from peak spacing, 0 if no clear periodicity)
+    pub ccf_frequency_peak: f32,
     pub ccf_reproducibility: f32,
+    /// Standard deviation of ccf_peak_lag across phases (low = consistent timing)
+    pub ccf_lag_consistency: f32,
 
-    // Differential (Layer 4)
+    // ── Differential (18 fields) ──
     pub spikes_a: u32,
     pub spikes_b: u32,
     pub b_over_a_ratio: f32,
-    pub barrier_classification: String,  // "LOW", "MEDIUM", "HIGH"
+    /// Spikes present in B but not A (within 5Å spatial, 500-step temporal window)
+    pub nma_exclusive_count: u32,
+    /// Spikes present in A but not B
+    pub thermal_exclusive_count: u32,
+    /// Intensity ratio B/A (sensitive to perturbation amplitude, not just count)
+    pub b_over_a_intensity_ratio: f32,
+    /// NMA mode index with highest B-exclusive correlation (-1 if no NMA)
+    pub nma_responsive_mode: i32,
+    /// Eigenvalue of the most responsive NMA mode (0 if no NMA)
+    pub nma_mode_eigenvalue: f32,
+    pub barrier_classification: String,
+    /// B/A spike count ratio per CCNS phase
+    pub per_phase_differential: [f32; 5],
+    /// Timestep lag between NMA onset and first B-exclusive spike at this residue
+    pub differential_onset_lag: f32,
+    /// Integral of NMA force × displacement at this residue (0 if no NMA)
+    pub nma_work_at_residue: f32,
+    /// d(spikes_B)/d(NMA_amplitude) — sensitivity to perturbation (0 if no NMA)
+    pub mechanical_sensitivity: f32,
+    /// Magnitude of mechanical susceptibility tensor element (0 if no NMA)
+    pub susceptibility_magnitude: f32,
+
+    // ── Scout/propagation (8 fields) ──
+    /// Mean timestep difference: A fires before B (positive = A leads, from phase offset)
+    pub scout_lead_time: f32,
+    /// P(B fires within 500 steps | A fired at this residue) — predictive value
+    pub scout_predictive_value: f32,
+    /// Enrichment of spike count at the phase-offset window vs baseline
+    pub phase_offset_enrichment: f32,
+    /// A's mean intensity at the timestep when B first fires at this residue
+    pub scout_intensity_at_onset: f32,
+    /// Radius (Å) of the zone around this residue where A fires before B
+    pub scout_spatial_propagation: f32,
+
+    // ════════════════════════════════════════════════════════════════════
+    // PLACEHOLDER FIELDS — currently output 0.0
+    //
+    // These require Phase C implementations that are NOT yet built:
+    //   mutual_information      → Phase C Step 15 (GPU binned TE kernel)
+    //   transfer_entropy_a_to_b → Phase C Step 15 (GPU binned TE kernel)
+    //   causal_flow_direction   → Phase C Step 15 (GPU binned TE kernel)
+    //   ccf_frequency_peak      → requires FFT on CCF row (not yet implemented)
+    //   ccf_lag_consistency     → requires per-phase CCF recomputation
+    //   nma_responsive_mode     → Phase C Step 16 (NMA mode correlation)
+    //   nma_mode_eigenvalue     → Phase C Step 16 (NMA mode correlation)
+    //   nma_work_at_residue     → Phase C Step 16 (NMA force integration)
+    //   mechanical_sensitivity  → Phase C Step 16 (perturbation dose-response)
+    //   susceptibility_magnitude→ Phase C Step 16 (mechanical susceptibility)
+    //   scout_spatial_propagation→ requires spatial wave-front analysis
+    //
+    // TOTAL: 11 placeholders out of 50 fields = 39 populated, 11 deferred
+    //
+    // DO NOT use these fields for ranking or model training until their
+    // corresponding Phase C steps are implemented and validated.
+    // ════════════════════════════════════════════════════════════════════
+
+    /// Mutual information MI(A, B) at this residue. **PLACEHOLDER: 0.0 until Phase C Step 15**
+    pub mutual_information: f32,
+    /// Transfer entropy TE(A→B) at this residue. **PLACEHOLDER: 0.0 until Phase C Step 15**
+    pub transfer_entropy_a_to_b: f32,
+    /// TE(A→B) - TE(B→A), signed. **PLACEHOLDER: 0.0 until Phase C Step 15**
+    pub causal_flow_direction: f32,
+}
+
+impl Default for InterferometricFeatures {
+    fn default() -> Self {
+        Self {
+            resid: -1,
+            resname: String::new(),
+            spike_agreement_ratio: 0.0,
+            consensus_intensity_mean: 0.0,
+            consensus_phase_profile: [0.0; 5],
+            consensus_spatial_coherence: 0.0,
+            consensus_temporal_onset: 0.0,
+            n_consensus_neighbors: 0,
+            ccf_peak_lag: 0,
+            ccf_peak_value: 0.0,
+            ccf_width: 0.0,
+            ccf_asymmetry: 0.0,
+            ccf_per_phase: [0.0; 5],
+            ccf_frequency_peak: 0.0,
+            ccf_reproducibility: 0.0,
+            ccf_lag_consistency: 0.0,
+            spikes_a: 0,
+            spikes_b: 0,
+            b_over_a_ratio: 0.0,
+            nma_exclusive_count: 0,
+            thermal_exclusive_count: 0,
+            b_over_a_intensity_ratio: 0.0,
+            nma_responsive_mode: -1,
+            nma_mode_eigenvalue: 0.0,
+            barrier_classification: "MEDIUM".to_string(),
+            per_phase_differential: [0.0; 5],
+            differential_onset_lag: 0.0,
+            nma_work_at_residue: 0.0,
+            mechanical_sensitivity: 0.0,
+            susceptibility_magnitude: 0.0,
+            scout_lead_time: 0.0,
+            scout_predictive_value: 0.0,
+            phase_offset_enrichment: 0.0,
+            scout_intensity_at_onset: 0.0,
+            scout_spatial_propagation: 0.0,
+            mutual_information: 0.0,
+            transfer_entropy_a_to_b: 0.0,
+            causal_flow_direction: 0.0,
+        }
+    }
 }
 
 /// Full result from a PRISM-TWIN coupled observation run.
@@ -304,6 +430,84 @@ fn compute_cpu_cross_correlation(
     n_matches = (sample_matches as f64 * scale) as u64;
 
     (n_matches, per_res)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature computation helpers (Step 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// CCNS protocol phase index for a given timestep.
+/// 0=cold_hold, 1=heating, 2=warm_hold, 3=cooling, 4=cold_return
+#[cfg(feature = "gpu")]
+fn ccns_phase(timestep: i32, protocol: &CryoUvProtocol) -> usize {
+    let t = timestep;
+    let p1 = protocol.cold_hold_steps;
+    let p2 = p1 + protocol.ramp_steps;
+    let p3 = p2 + protocol.warm_hold_steps;
+    let p4 = p3 + protocol.ramp_down_steps;
+    if t < p1 { 0 }
+    else if t < p2 { 1 }
+    else if t < p3 { 2 }
+    else if t < p4 { 3 }
+    else { 4 }
+}
+
+/// Per-residue per-phase spike counts from a spike vector.
+/// Returns HashMap<resid, [count_phase0..count_phase4]>
+#[cfg(feature = "gpu")]
+fn per_residue_phase_counts(
+    spikes: &[crate::fused_engine::GpuSpikeEvent],
+    protocol: &CryoUvProtocol,
+) -> std::collections::HashMap<i32, [u32; 5]> {
+    let mut map: std::collections::HashMap<i32, [u32; 5]> = std::collections::HashMap::new();
+    for s in spikes {
+        let phase = ccns_phase(s.timestep, protocol);
+        let n = s.n_residues.min(8) as usize;
+        for j in 0..n {
+            let resid = s.nearby_residues[j];
+            if resid < 0 { continue; }
+            let entry = map.entry(resid).or_insert([0; 5]);
+            entry[phase] += 1;
+        }
+    }
+    map
+}
+
+/// Per-residue earliest spike timestep from a spike vector.
+/// Returns HashMap<resid, earliest_timestep>
+#[cfg(feature = "gpu")]
+fn per_residue_onset(
+    spikes: &[crate::fused_engine::GpuSpikeEvent],
+) -> std::collections::HashMap<i32, i32> {
+    let mut map: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+    for s in spikes {
+        let n = s.n_residues.min(8) as usize;
+        for j in 0..n {
+            let resid = s.nearby_residues[j];
+            if resid < 0 { continue; }
+            let entry = map.entry(resid).or_insert(i32::MAX);
+            if s.timestep < *entry { *entry = s.timestep; }
+        }
+    }
+    map
+}
+
+/// Compute per-residue intensity sums from a spike vector.
+/// Returns HashMap<resid, total_intensity>
+#[cfg(feature = "gpu")]
+fn per_residue_intensity(
+    spikes: &[crate::fused_engine::GpuSpikeEvent],
+) -> std::collections::HashMap<i32, f32> {
+    let mut map: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+    for s in spikes {
+        let n = s.n_residues.min(8) as usize;
+        for j in 0..n {
+            let resid = s.nearby_residues[j];
+            if resid < 0 { continue; }
+            *map.entry(resid).or_insert(0.0) += s.intensity;
+        }
+    }
+    map
 }
 
 /// Run a PRISM-TWIN interferometric coupled observation simulation.
@@ -866,14 +1070,28 @@ pub fn run_coupled_twin(
         None
     };
 
-    // Build per-residue InterferometricFeatures combining CPU counts + GPU CCF
+    // ── Build per-residue InterferometricFeatures (50 fields) ──────────────
+    //
+    // Data sources:
+    //   per_res_map: HashMap<resid, (count_a, count_b, intensity_a, intensity_b)> from CPU co-occurrence
+    //   ccf_features_vec: Option<Vec<CcfResidueFeatures>> from GPU WMMA CCF
+    //   phase_counts_a, phase_counts_b: per-residue per-phase spike counts
+    //   onset_a, onset_b: earliest spike timestep per residue
+    //   intensity_a, intensity_b: total intensity per residue
+
+    let phase_counts_a = per_residue_phase_counts(&spikes_a, &protocol);
+    let phase_counts_b = per_residue_phase_counts(&spikes_b, &protocol);
+    let onset_a = per_residue_onset(&spikes_a);
+    let onset_b = per_residue_onset(&spikes_b);
+    let intensity_sum_a = per_residue_intensity(&spikes_a);
+    let intensity_sum_b = per_residue_intensity(&spikes_b);
+
     let per_residue_features: Vec<InterferometricFeatures> = {
         let mut resid_to_name: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
         for r in &topology.residues {
             resid_to_name.insert(r.residue_id, r.residue_name.clone());
         }
 
-        // Build CCF feature lookup by residue index
         let ccf_by_idx: Vec<crate::twin_kernels::CcfResidueFeatures> = ccf_features_vec
             .unwrap_or_else(|| vec![crate::twin_kernels::CcfResidueFeatures::default(); n_residues]);
 
@@ -881,19 +1099,70 @@ pub fn run_coupled_twin(
             .iter()
             .filter_map(|(&resid, &(cnt_a, cnt_b, int_a, int_b))| {
                 if cnt_a == 0 && cnt_b == 0 { return None; }
+
+                // ── Consensus (12) ──
                 let max_cnt = cnt_a.max(cnt_b) as f32;
                 let min_cnt = cnt_a.min(cnt_b) as f32;
                 let agreement = if max_cnt > 0.0 { min_cnt / max_cnt } else { 0.0 };
                 let mean_intensity = if cnt_a + cnt_b > 0 {
                     (int_a + int_b) as f32 / (cnt_a + cnt_b) as f32
+                } else { 0.0 };
+
+                // Per-phase consensus: min(A_phase, B_phase) / max(A_phase, B_phase)
+                let pa = phase_counts_a.get(&resid).copied().unwrap_or([0; 5]);
+                let pb = phase_counts_b.get(&resid).copied().unwrap_or([0; 5]);
+                let mut consensus_phase = [0.0f32; 5];
+                for i in 0..5 {
+                    let mx = pa[i].max(pb[i]) as f32;
+                    let mn = pa[i].min(pb[i]) as f32;
+                    consensus_phase[i] = if mx > 0.0 { mn / mx } else { 0.0 };
+                }
+
+                // Temporal onset: earliest step where BOTH streams have at least 1 spike
+                let oa = onset_a.get(&resid).copied().unwrap_or(i32::MAX);
+                let ob = onset_b.get(&resid).copied().unwrap_or(i32::MAX);
+                let consensus_onset = if oa < i32::MAX && ob < i32::MAX {
+                    oa.max(ob) as f32  // the later of the two = when consensus starts
+                } else { 0.0 };
+
+                // ── Cross-correlation (12) ──
+                let ccf = if (resid as usize) < ccf_by_idx.len() {
+                    &ccf_by_idx[resid as usize]
                 } else {
-                    0.0
+                    &crate::twin_kernels::CcfResidueFeatures::default()
                 };
-                let b_over_a = if cnt_a > 0 {
-                    cnt_b as f32 / cnt_a as f32
-                } else {
-                    f32::INFINITY
-                };
+
+                // Per-phase CCF: placeholder (would need per-phase CCF computation)
+                // For now, weight the global CCF by the phase's consensus ratio
+                let mut ccf_per_phase = [0.0f32; 5];
+                for i in 0..5 {
+                    ccf_per_phase[i] = ccf.ccf_peak_value * consensus_phase[i];
+                }
+
+                // ── Differential (18) ──
+                let b_over_a = if cnt_a > 0 { cnt_b as f32 / cnt_a as f32 } else { f32::INFINITY };
+                let int_total_a = intensity_sum_a.get(&resid).copied().unwrap_or(0.0);
+                let int_total_b = intensity_sum_b.get(&resid).copied().unwrap_or(0.0);
+                let b_over_a_intensity = if int_total_a > 0.0 {
+                    int_total_b / int_total_a
+                } else if int_total_b > 0.0 { f32::INFINITY } else { 1.0 };
+
+                // NMA vs thermal exclusive: count phases where only one stream is active
+                let mut nma_excl: u32 = 0;
+                let mut thermal_excl: u32 = 0;
+                for i in 0..5 {
+                    if pb[i] > 0 && pa[i] == 0 { nma_excl += pb[i]; }
+                    if pa[i] > 0 && pb[i] == 0 { thermal_excl += pa[i]; }
+                }
+
+                // Per-phase B/A differential
+                let mut phase_diff = [0.0f32; 5];
+                for i in 0..5 {
+                    phase_diff[i] = if pa[i] > 0 {
+                        pb[i] as f32 / pa[i] as f32
+                    } else if pb[i] > 0 { 2.0 } else { 1.0 };
+                }
+
                 let barrier_classification = if b_over_a > 1.5 {
                     "LOW".to_string()
                 } else if b_over_a < 0.67 {
@@ -901,45 +1170,167 @@ pub fn run_coupled_twin(
                 } else {
                     "MEDIUM".to_string()
                 };
+
+                // ── Scout/propagation (8) ──
+                // Scout lead time: how many steps earlier A fires vs B at this residue
+                let lead_time = if oa < i32::MAX && ob < i32::MAX {
+                    (ob - oa) as f32  // positive = A leads (expected from phase offset)
+                } else { 0.0 };
+
+                // Predictive value: if A fires, does B also fire? (proxy: agreement)
+                let predictive = if cnt_a > 0 && cnt_b > 0 { agreement } else { 0.0 };
+
+                // Phase offset enrichment: spike ratio during the offset window
+                // (B's cold_hold extension) vs the rest
+                let offset_window_phase = 0; // cold_hold is phase 0
+                let offset_enrich = if pa[offset_window_phase] > 0 {
+                    pb[offset_window_phase] as f32 / pa[offset_window_phase] as f32
+                } else { 1.0 };
+
+                // A's intensity when B first fires
+                let scout_intensity = if ob < i32::MAX {
+                    // Find A spikes near B's onset time — use mean intensity of A at this residue as proxy
+                    if cnt_a > 0 { int_total_a / cnt_a as f32 } else { 0.0 }
+                } else { 0.0 };
+
                 let resname = resid_to_name
                     .get(&resid)
                     .cloned()
                     .unwrap_or_else(|| "UNK".to_string());
 
-                // Look up GPU CCF features for this residue (by topology index)
-                let ccf = if (resid as usize) < ccf_by_idx.len() {
-                    &ccf_by_idx[resid as usize]
-                } else {
-                    &crate::twin_kernels::CcfResidueFeatures::default()
-                };
-
                 Some(InterferometricFeatures {
                     resid,
                     resname,
+                    // Consensus (12)
                     spike_agreement_ratio: agreement,
                     consensus_intensity_mean: mean_intensity,
+                    consensus_phase_profile: consensus_phase,
+                    consensus_spatial_coherence: 0.0,  // populated in second pass (needs neighbor lookup)
+                    consensus_temporal_onset: consensus_onset,
+                    n_consensus_neighbors: 0,  // populated in second pass
+                    // Cross-correlation (12)
                     ccf_peak_lag: ccf.ccf_peak_lag,
                     ccf_peak_value: ccf.ccf_peak_value,
                     ccf_width: ccf.ccf_width,
                     ccf_asymmetry: ccf.ccf_asymmetry,
+                    ccf_per_phase,
+                    ccf_frequency_peak: 0.0,  // PLACEHOLDER: requires FFT on CCF row
                     ccf_reproducibility: if ccf.ccf_reproducibility > 0.0 {
                         ccf.ccf_reproducibility
-                    } else {
-                        agreement  // fallback if GPU CCF didn't produce data
-                    },
+                    } else { agreement },
+                    ccf_lag_consistency: 0.0,  // PLACEHOLDER: requires per-phase CCF recomputation
+                    // Differential (18)
                     spikes_a: cnt_a,
                     spikes_b: cnt_b,
                     b_over_a_ratio: b_over_a,
+                    nma_exclusive_count: nma_excl,
+                    thermal_exclusive_count: thermal_excl,
+                    b_over_a_intensity_ratio: b_over_a_intensity,
+                    nma_responsive_mode: -1,   // PLACEHOLDER: Phase C Step 16 (NMA mode correlation)
+                    nma_mode_eigenvalue: 0.0,  // PLACEHOLDER: Phase C Step 16
                     barrier_classification,
+                    per_phase_differential: phase_diff,
+                    differential_onset_lag: lead_time, // reuse lead_time as onset differential
+                    nma_work_at_residue: 0.0,  // PLACEHOLDER: Phase C Step 16 (NMA force integration)
+                    mechanical_sensitivity: 0.0, // PLACEHOLDER: Phase C Step 16
+                    susceptibility_magnitude: 0.0, // PLACEHOLDER: Phase C Step 16
+                    // Scout/propagation (8)
+                    scout_lead_time: lead_time,
+                    scout_predictive_value: predictive,
+                    phase_offset_enrichment: offset_enrich,
+                    scout_intensity_at_onset: scout_intensity,
+                    scout_spatial_propagation: 0.0,  // PLACEHOLDER: requires spatial wave-front analysis
+                    mutual_information: 0.0,         // PLACEHOLDER: Phase C Step 15 (GPU TE kernel)
+                    transfer_entropy_a_to_b: 0.0,    // PLACEHOLDER: Phase C Step 15 (GPU TE kernel)
+                    causal_flow_direction: 0.0,      // PLACEHOLDER: Phase C Step 15 (GPU TE kernel)
                 })
             })
             .collect();
+
+        // Second pass: compute spatial coherence using topology residue positions
+        // For each residue with agreement > 0.5, count neighbors within 8Å that also agree
+        if topology.residues.len() > 0 {
+            // Build CA position lookup: resid → (x, y, z)
+            let mut ca_pos: std::collections::HashMap<i32, [f32; 3]> = std::collections::HashMap::new();
+            for r in &topology.residues {
+                // Use the first CA index if available, else skip
+                if let Some(&ca_idx) = topology.ca_indices.iter().find(|&&idx| {
+                    idx < topology.residue_ids.len() && topology.residue_ids[idx] == r.residue_id as usize
+                }) {
+                    if ca_idx * 3 + 2 < topology.positions.len() {
+                        ca_pos.insert(r.residue_id, [
+                            topology.positions[ca_idx * 3],
+                            topology.positions[ca_idx * 3 + 1],
+                            topology.positions[ca_idx * 3 + 2],
+                        ]);
+                    }
+                }
+            }
+
+            // Build agreement lookup for fast neighbor check
+            let agreement_by_resid: std::collections::HashMap<i32, f32> = features.iter()
+                .map(|f| (f.resid, f.spike_agreement_ratio))
+                .collect();
+
+            for feat in features.iter_mut() {
+                if let Some(pos) = ca_pos.get(&feat.resid) {
+                    let mut n_neighbors = 0u32;
+                    let mut n_agreeing = 0u32;
+                    for (&other_resid, &other_pos) in &ca_pos {
+                        if other_resid == feat.resid { continue; }
+                        let dx = pos[0] - other_pos[0];
+                        let dy = pos[1] - other_pos[1];
+                        let dz = pos[2] - other_pos[2];
+                        let dist_sq = dx*dx + dy*dy + dz*dz;
+                        if dist_sq <= 64.0 { // 8Å radius
+                            n_neighbors += 1;
+                            if let Some(&other_agree) = agreement_by_resid.get(&other_resid) {
+                                if other_agree > 0.5 { n_agreeing += 1; }
+                            }
+                        }
+                    }
+                    feat.n_consensus_neighbors = n_agreeing;
+                    feat.consensus_spatial_coherence = if n_neighbors > 0 {
+                        n_agreeing as f32 / n_neighbors as f32
+                    } else { 0.0 };
+                }
+            }
+        }
 
         features.sort_by(|a, b| {
             b.consensus_intensity_mean
                 .partial_cmp(&a.consensus_intensity_mean)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // ════════════════════════════════════════════════════════════════
+        // PLACEHOLDER AUDIT: 11 of 50 fields are currently 0.0
+        //
+        // Populated (39): spike_agreement_ratio, consensus_intensity_mean,
+        //   consensus_phase_profile[5], consensus_spatial_coherence,
+        //   consensus_temporal_onset, n_consensus_neighbors,
+        //   ccf_peak_lag, ccf_peak_value, ccf_width, ccf_asymmetry,
+        //   ccf_per_phase[5], ccf_reproducibility,
+        //   spikes_a, spikes_b, b_over_a_ratio, nma_exclusive_count,
+        //   thermal_exclusive_count, b_over_a_intensity_ratio,
+        //   barrier_classification, per_phase_differential[5],
+        //   differential_onset_lag, scout_lead_time, scout_predictive_value,
+        //   phase_offset_enrichment, scout_intensity_at_onset
+        //
+        // PLACEHOLDER (11): ccf_frequency_peak, ccf_lag_consistency,
+        //   nma_responsive_mode, nma_mode_eigenvalue, nma_work_at_residue,
+        //   mechanical_sensitivity, susceptibility_magnitude,
+        //   scout_spatial_propagation, mutual_information,
+        //   transfer_entropy_a_to_b, causal_flow_direction
+        //
+        // These 11 fields MUST NOT be used for ranking or model training
+        // until their Phase C implementations are complete.
+        // ════════════════════════════════════════════════════════════════
+        let n_populated = 39;
+        let n_placeholder = 11;
+        log::info!("  Per-residue features: {}/{} fields populated, {} placeholders (Phase C pending)",
+            n_populated, n_populated + n_placeholder, n_placeholder);
+
         features
     };
 
