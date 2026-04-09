@@ -6100,21 +6100,68 @@ fn run_multi_stream_pipeline(
                 let std_dev = variance.sqrt();
                 let cv = if mean_rate > 1e-10 { std_dev / mean_rate } else { 1.0 };
 
-                // Multiplier: continuous function of CV, no lookup table
-                // CV=0 → 1.5, CV=1 → 1.0, CV=2 → 0.5
-                let interferometric_mult = (1.0 + 0.5 * (1.0 - cv as f32)).clamp(0.75, 1.5);
-                let old_q = site.quality_score;
-                site.quality_score *= interferometric_mult;
+                // ══════════════════════════════════════════════════════════
+                // THREE-FACTOR BLENDER: LIGSITE × CV × S_pc
+                //
+                // Factor 1: CV interferometric (cross-group consistency of spike RATE)
+                //   CV=0 → 1.5×, CV=1 → 1.0×
+                // Factor 2: S_pc phase coherence (timing lock across groups)
+                //   Uses ASC-computed phasor data for residues near this site
+                // Factor 3: ASC consensus overlap (9th observer validation)
+                //   Fraction of site's residues validated by multi-group ASC
+                //
+                // LIGSITE geometry is already the base quality_score.
+                // The three factors multiply on top.
+                // ══════════════════════════════════════════════════════════
 
-                let rate_str: String = (0..n_groups).map(|g| {
-                    format!("{}:{:.1}", group_names[g], rates[g] * 1000.0) // rate per 1000 steps
-                }).collect::<Vec<_>>().join(" ");
-                // ── ASC Downstream Filter: boost sites near consensus residues ──
-                // Sites whose spikes are near ASC-validated residues (3+ group agreement)
-                // get a physics-based boost. This uses the real-time interferometric signal
-                // as a meta-filter for ranking quality.
-                let asc_boost = if !asc_consensus_residues.is_empty() {
-                    // Count spikes near this site that are from ASC consensus residues
+                // Factor 1: CV interferometric (continuous, no lookup table)
+                let f_cv = (1.0 + 0.5 * (1.0 - cv as f32)).clamp(0.75, 1.5);
+
+                // Factor 2: S_pc phase coherence for this site's residues
+                let f_spc = if let Some(ref asc) = asc_shared {
+                    if let Ok(gph) = asc.group_residue_phase.lock() {
+                        if let Ok(grc) = asc.group_residue_counts.lock() {
+                            // Compute mean S_pc across residues near this site
+                            let mut spc_sum = 0.0f64;
+                            let mut spc_count = 0u32;
+                            // Get residues from spikes near this site
+                            let mut site_residues = std::collections::HashSet::new();
+                            for &idx in &site.spike_indices {
+                                if let Some(spike) = all_stream_spikes.get(idx) {
+                                    for j in 0..(spike.n_residues as usize).min(8) {
+                                        let rid = spike.nearby_residues[j];
+                                        if rid >= 0 && (rid as usize) < asc.n_residues {
+                                            site_residues.insert(rid as usize);
+                                        }
+                                    }
+                                }
+                            }
+                            for &rid in &site_residues {
+                                let mut cos_t = 0.0f64;
+                                let mut sin_t = 0.0f64;
+                                let mut n_t = 0u64;
+                                for g in 0..4 {
+                                    cos_t += gph[g][rid].0;
+                                    sin_t += gph[g][rid].1;
+                                    n_t += grc[g][rid] as u64;
+                                }
+                                if n_t > 10 {
+                                    let spc = (cos_t.powi(2) + sin_t.powi(2)).sqrt() / n_t as f64;
+                                    spc_sum += spc;
+                                    spc_count += 1;
+                                }
+                            }
+                            if spc_count > 0 {
+                                let mean_spc = spc_sum / spc_count as f64;
+                                // S_pc boost: 0→1.0× (no coherence), 1→1.3× (perfect lock)
+                                (1.0 + 0.3 * mean_spc as f32).clamp(1.0, 1.3)
+                            } else { 1.0 }
+                        } else { 1.0 }
+                    } else { 1.0 }
+                } else { 1.0 };
+
+                // Factor 3: ASC 9th observer consensus overlap
+                let f_asc = if !asc_consensus_residues.is_empty() {
                     let mut asc_hits = 0u32;
                     let mut total_with_residue = 0u32;
                     for &idx in &site.spike_indices {
@@ -6130,28 +6177,24 @@ fn run_multi_stream_pipeline(
                             }
                         }
                     }
-                    // ASC overlap fraction: what % of this site's residue-tagged spikes
-                    // are near ASC consensus residues
                     if total_with_residue > 10 {
                         let frac = asc_hits as f32 / total_with_residue as f32;
-                        // Continuous boost: 1.0 + 0.3 * frac (max 30% boost for 100% overlap)
+                        // 9th observer boost: 0→1.0× (no overlap), 1→1.3× (full overlap)
                         1.0 + 0.3 * frac
-                    } else {
-                        1.0
-                    }
-                } else {
-                    1.0
-                };
-                if asc_boost > 1.01 {
-                    let pre_asc = site.quality_score;
-                    site.quality_score *= asc_boost;
-                    log::info!("    → ASC filter: {:.3}→{:.3} (×{:.2}, consensus residue overlap)",
-                        pre_asc, site.quality_score, asc_boost);
-                }
+                    } else { 1.0 }
+                } else { 1.0 };
 
-                log::info!("  Site {}: interferometric {:.3}→{:.3} (CV={:.3}, ×{:.2}) [{}]",
+                // Apply three-factor blender
+                let combined_mult = f_cv * f_spc * f_asc;
+                let old_q = site.quality_score;
+                site.quality_score *= combined_mult;
+
+                let rate_str: String = (0..n_groups).map(|g| {
+                    format!("{}:{:.1}", group_names[g], rates[g] * 1000.0)
+                }).collect::<Vec<_>>().join(" ");
+                log::info!("  Site {}: 3-FACTOR {:.3}→{:.3} (CV={:.3}→×{:.2} Spc→×{:.2} ASC→×{:.2} = ×{:.2}) [{}]",
                     site.cluster_id, old_q, site.quality_score,
-                    cv, interferometric_mult * asc_boost, rate_str);
+                    cv, f_cv, f_spc, f_asc, combined_mult, rate_str);
             }
         }
 
