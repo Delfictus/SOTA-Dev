@@ -23,3 +23,4 @@
 pub mod compact;
 pub mod exhaust;
 pub mod graph;
+pub mod graph_builder;
