@@ -795,32 +795,91 @@ pub fn run_coupled_twin(
         }
     }
 
-    // ── Gate 2: CPU cross-correlation + per-residue feature assembly ──────────
-    let (n_ccf_matches, per_res_map) = if twin_config.enable_ccf {
-        log::info!("  Computing CPU cross-correlation (spatial=5Å, temporal=500 steps)...");
+    // ── GPU Tensor Core CCF + per-residue feature assembly ────────────────
+    //
+    // Two-stage computation:
+    //   Stage 1: Per-residue spike counting (CPU) — agreement ratio, B/A ratio
+    //   Stage 2: GPU WMMA CCF — cross-correlation matrix, CCF features
+    //
+    // The CPU counting gives us per-residue spike counts from both streams.
+    // The GPU CCF gives us the residue×residue correlation structure.
+    // Together they populate the InterferometricFeatures struct.
+
+    // Stage 1: CPU per-residue spike counting (same as before, still needed)
+    let per_res_map = if twin_config.enable_ccf {
         let result = compute_cpu_cross_correlation(&spikes_a, &spikes_b, 5.0, 500);
-        log::info!("  CCF matches (A∩B within 5Å / 500 steps): {}", result.0);
-        result
+        log::info!("  CPU co-occurrence matches (A∩B within 5Å / 500 steps): {}", result.0);
+        result.1
     } else {
-        (0u64, std::collections::HashMap::new())
+        std::collections::HashMap::new()
     };
 
-    // Build per-residue features from consensus spike counts.
-    // For Gate 2 we populate the residue list using topology residue metadata,
-    // with spike_agreement_ratio = min(count_a, count_b) / max(count_a, count_b),
-    // and consensus_intensity_mean from the averaged intensity.
-    // CCF fields are left at 0 until the GPU CCF kernel is integrated (Gate 3).
+    // Stage 2: GPU WMMA CCF
+    let n_residues = topology.residues.len();
+    let bin_size = 100i32; // 100 steps per time bin
+    let ccf_features_vec = if twin_config.enable_ccf && n_residues > 0 && !spikes_a.is_empty() && !spikes_b.is_empty() {
+        log::info!("  Building CCF matrices: {} residues, {} steps, bin_size={}...",
+            n_residues, steps, bin_size);
+        let ccf_start = std::time::Instant::now();
+
+        // Build mean-centered time-binned spike matrices
+        let (mat_a_f32, mat_b_f32, n_res_padded, n_bins_padded) =
+            crate::twin_kernels::build_ccf_matrices(&spikes_a, &spikes_b, n_residues, steps, bin_size);
+
+        // Attempt GPU CCF
+        let gpu_ccf_result = (|| -> Result<(Vec<f32>, Vec<crate::twin_kernels::CcfResidueFeatures>)> {
+            let ccf_module = context.load_module(
+                cudarc::nvrtc::Ptx::from_file(&crate::twin_kernels::find_twin_ptx("tensor_ccf.ptx")?)
+            ).context("Failed to load tensor_ccf.ptx")?;
+
+            let se = stream_exchange.as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Exchange stream not available for CCF"))?;
+
+            let mut ccf = crate::twin_kernels::TwinCcfCompute::new(
+                se, &ccf_module, n_residues as i32, (steps / bin_size) as i32,
+            )?;
+            ccf.upload_matrices(se, &mat_a_f32, &mat_b_f32)?;
+            ccf.compute(se)?;
+            let ccf_matrix = ccf.download_ccf(se)?;
+
+            let nonzero = ccf_matrix.iter().filter(|&&v| v.abs() > 0.01).count();
+            log::info!("  ✓ GPU CCF: {}×{} matrix, {} non-zero entries ({:.1}%), {:.1}ms",
+                n_residues, n_residues, nonzero,
+                nonzero as f64 / (n_residues * n_residues).max(1) as f64 * 100.0,
+                ccf_start.elapsed().as_secs_f64() * 1000.0);
+
+            let features = crate::twin_kernels::extract_ccf_features(&ccf_matrix, n_residues);
+            Ok((ccf_matrix, features))
+        })();
+
+        match gpu_ccf_result {
+            Ok((_ccf_matrix, features)) => {
+                // TODO: write ccf_matrix to output in Step 13
+                Some(features)
+            }
+            Err(e) => {
+                log::warn!("  GPU CCF failed ({}), falling back to zero CCF features", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Build per-residue InterferometricFeatures combining CPU counts + GPU CCF
     let per_residue_features: Vec<InterferometricFeatures> = {
-        // Build a lookup: resid → (resname) from topology
         let mut resid_to_name: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
         for r in &topology.residues {
             resid_to_name.insert(r.residue_id, r.residue_name.clone());
         }
 
+        // Build CCF feature lookup by residue index
+        let ccf_by_idx: Vec<crate::twin_kernels::CcfResidueFeatures> = ccf_features_vec
+            .unwrap_or_else(|| vec![crate::twin_kernels::CcfResidueFeatures::default(); n_residues]);
+
         let mut features: Vec<InterferometricFeatures> = per_res_map
             .iter()
             .filter_map(|(&resid, &(cnt_a, cnt_b, int_a, int_b))| {
-                // Only emit residues that appeared in at least one stream
                 if cnt_a == 0 && cnt_b == 0 { return None; }
                 let max_cnt = cnt_a.max(cnt_b) as f32;
                 let min_cnt = cnt_a.min(cnt_b) as f32;
@@ -835,11 +894,10 @@ pub fn run_coupled_twin(
                 } else {
                     f32::INFINITY
                 };
-                // Simple barrier classification by B/A ratio (Layer 4 placeholder)
                 let barrier_classification = if b_over_a > 1.5 {
-                    "LOW".to_string()      // NMA-enhanced B sees more → low barrier
+                    "LOW".to_string()
                 } else if b_over_a < 0.67 {
-                    "HIGH".to_string()     // B sees fewer spikes → high barrier
+                    "HIGH".to_string()
                 } else {
                     "MEDIUM".to_string()
                 };
@@ -847,17 +905,28 @@ pub fn run_coupled_twin(
                     .get(&resid)
                     .cloned()
                     .unwrap_or_else(|| "UNK".to_string());
+
+                // Look up GPU CCF features for this residue (by topology index)
+                let ccf = if (resid as usize) < ccf_by_idx.len() {
+                    &ccf_by_idx[resid as usize]
+                } else {
+                    &crate::twin_kernels::CcfResidueFeatures::default()
+                };
+
                 Some(InterferometricFeatures {
                     resid,
                     resname,
                     spike_agreement_ratio: agreement,
                     consensus_intensity_mean: mean_intensity,
-                    // CCF fields: Gate 3+ (GPU kernel integration)
-                    ccf_peak_lag: 0,
-                    ccf_peak_value: 0.0,
-                    ccf_width: 0.0,
-                    ccf_asymmetry: 0.0,
-                    ccf_reproducibility: agreement,  // proxy until real CCF
+                    ccf_peak_lag: ccf.ccf_peak_lag,
+                    ccf_peak_value: ccf.ccf_peak_value,
+                    ccf_width: ccf.ccf_width,
+                    ccf_asymmetry: ccf.ccf_asymmetry,
+                    ccf_reproducibility: if ccf.ccf_reproducibility > 0.0 {
+                        ccf.ccf_reproducibility
+                    } else {
+                        agreement  // fallback if GPU CCF didn't produce data
+                    },
                     spikes_a: cnt_a,
                     spikes_b: cnt_b,
                     b_over_a_ratio: b_over_a,
@@ -866,7 +935,6 @@ pub fn run_coupled_twin(
             })
             .collect();
 
-        // Sort by consensus intensity descending for deterministic output
         features.sort_by(|a, b| {
             b.consensus_intensity_mean
                 .partial_cmp(&a.consensus_intensity_mean)
@@ -875,7 +943,9 @@ pub fn run_coupled_twin(
         features
     };
 
-    let n_consensus_events = n_ccf_matches;
+    let n_consensus_events = per_residue_features.iter()
+        .filter(|f| f.ccf_peak_value > 0.1)
+        .count() as u64;
     let n_differential_events = per_residue_features
         .iter()
         .filter(|f| f.barrier_classification != "MEDIUM")
