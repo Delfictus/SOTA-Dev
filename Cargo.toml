@@ -37,6 +37,7 @@ members = [
     # Neuromorphic Holographic Stream (NHS) - Revolutionary Cryptic Site Detection
     # ═══════════════════════════════════════════════════════════════════════════
     "crates/prism-nhs",             # NHS: 30,000× faster than explicit solvent with UV bias
+    "crates/prism-cuda-ext",        # PRISM-TWIN: Advanced CUDA — device-side compaction, conditional graphs, TMA
     "crates/sdst",                  # PRISM-Therm: Spike-Driven Sparse Temporal Hash (SDST) FFI
 
     # ═══════════════════════════════════════════════════════════════════════════
