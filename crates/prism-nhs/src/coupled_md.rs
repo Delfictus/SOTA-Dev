@@ -1068,6 +1068,66 @@ pub fn run_coupled_twin(
     log::info!("  Stream A accumulated: {} spikes", spikes_a.len());
     log::info!("  Stream B accumulated: {} spikes", spikes_b.len());
 
+    // ── Collect ensemble snapshots (conformational trajectory) ──
+    let snapshots_a = engine_a.get_snapshots();
+    let snapshots_b = engine_b.get_snapshots();
+    log::info!("  Ensemble snapshots: A={}, B={}", snapshots_a.len(), snapshots_b.len());
+
+    // Write ensemble_trajectory.json with both streams' snapshots tagged
+    {
+        let prefix = std::path::Path::new(&topology.source_pdb)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.replace("_sanitized", "").replace("_clean", ""))
+            .unwrap_or_else(|| "prism_twin".to_string());
+        let ens_path = output_dir.join(format!("{}.ensemble_trajectory.json", prefix));
+
+        let ens_json = serde_json::json!({
+            "stream_a": {
+                "role": "scout",
+                "seed": seed_a,
+                "n_snapshots": snapshots_a.len(),
+                "snapshots": snapshots_a.iter().map(|s| serde_json::json!({
+                    "timestep": s.timestep,
+                    "temperature": s.temperature,
+                    "time_ps": s.time_ps,
+                    "alignment_quality": s.alignment_quality,
+                    "spike_region_rmsd": s.spike_region_rmsd,
+                    "n_trigger_spikes": s.trigger_spikes.len(),
+                    "trigger_reason": format!("{:?}", s.trigger_reason),
+                    "delta_sasa": s.delta_sasa,
+                    // positions/velocities NOT serialized (too large for JSON)
+                    // use get_snapshots() API for programmatic access
+                    "n_atoms": s.positions.len() / 3,
+                })).collect::<Vec<_>>(),
+            },
+            "stream_b": {
+                "role": if twin_config.nma_modes_path.is_some() { "observer_nma" } else { "observer" },
+                "seed": seed_b,
+                "n_snapshots": snapshots_b.len(),
+                "snapshots": snapshots_b.iter().map(|s| serde_json::json!({
+                    "timestep": s.timestep,
+                    "temperature": s.temperature,
+                    "time_ps": s.time_ps,
+                    "alignment_quality": s.alignment_quality,
+                    "spike_region_rmsd": s.spike_region_rmsd,
+                    "n_trigger_spikes": s.trigger_spikes.len(),
+                    "trigger_reason": format!("{:?}", s.trigger_reason),
+                    "delta_sasa": s.delta_sasa,
+                    "n_atoms": s.positions.len() / 3,
+                })).collect::<Vec<_>>(),
+            },
+            "total_snapshots": snapshots_a.len() + snapshots_b.len(),
+            "note": "Atomic positions/velocities available via engine.get_snapshots() API. JSON contains metadata only for size efficiency."
+        });
+        if let Err(e) = std::fs::write(&ens_path, serde_json::to_string_pretty(&ens_json).unwrap_or_default()) {
+            log::warn!("  Failed to write ensemble trajectory: {}", e);
+        } else {
+            log::info!("  Wrote ensemble trajectory: {} ({} A + {} B snapshots)",
+                ens_path.display(), snapshots_a.len(), snapshots_b.len());
+        }
+    }
+
     // ── SPIKE PERSISTENCE: Write ALL raw spikes to JSON with stream_id ────────
     // This is the TRAINING SIGNAL — raw spike records must be preserved.
     {
