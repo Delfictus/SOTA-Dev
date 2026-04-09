@@ -93,13 +93,15 @@ const PHASE_BOUNDS_FAST_HYSTERESIS: [(f32, f32, &str); 5] = [
     (0.889, 1.000, "cold_return"),
 ];
 
-/// TWIN rank score weights. All must sum to 1.0.
-const RANK_W_CONSENSUS:      f32 = 0.30;
-const RANK_W_DIFFERENTIAL:   f32 = 0.20;
+/// TWIN rank score weights. Base components sum to 1.0.
+/// The interferometric multiplier is applied AFTER the base score.
+const RANK_W_CONSENSUS:      f32 = 0.25;
+const RANK_W_DIFFERENTIAL:   f32 = 0.15;
 const RANK_W_ALLOSTERIC:     f32 = 0.15;
 const RANK_W_DRUGGABILITY:   f32 = 0.15;
 const RANK_W_HYSTERESIS:     f32 = 0.10;
 const RANK_W_SPIKE_DENSITY:  f32 = 0.10;
+const RANK_W_PHASE_QUALITY:  f32 = 0.10;  // warm_hold spike enrichment
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -390,6 +392,10 @@ pub struct RankComponents {
     pub druggability_component: f32,
     pub hysteresis_component: f32,
     pub spike_density_component: f32,
+    pub phase_quality_component: f32,
+    /// Multiplicative boost (1.0-2.0) for twin-validated sites.
+    /// High when BOTH streams agree AND the signal is phase-enriched.
+    pub interferometric_multiplier: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -979,6 +985,8 @@ fn build_twin_sites(
                 druggability_component: 0.0,
                 hysteresis_component: 0.0,
                 spike_density_component: 0.0,
+                phase_quality_component: 0.0,
+                interferometric_multiplier: 1.0,
             },
         };
         sites.push(site);
@@ -1076,6 +1084,9 @@ fn classify_twin_site(site: &mut TwinSite) {
 }
 
 fn compute_twin_ranks(sites: &mut [TwinSite]) {
+    // Compute max spike count across all sites for normalization
+    let max_spikes = sites.iter().map(|s| s.spike_count).max().unwrap_or(1).max(1) as f32;
+
     for site in sites.iter_mut() {
         let c = RANK_W_CONSENSUS     * site.consensus_fraction;
         let d = RANK_W_DIFFERENTIAL  * site.differential_signal;
@@ -1083,9 +1094,40 @@ fn compute_twin_ranks(sites: &mut [TwinSite]) {
         let dr = RANK_W_DRUGGABILITY * site.druggability;
         let h = RANK_W_HYSTERESIS    * site.hysteresis_asymmetry.min(1.0);
         let sd = RANK_W_SPIKE_DENSITY * site.spike_density;
-        let total = c + d + a + dr + h + sd;
-        site.twin_rank_score = total;
-        site.quality_score = total;  // alias for compat
+
+        // Phase quality: reward sites enriched during warm_hold + heating
+        // (where cryptic pockets open). Penalize cold-only signals.
+        let warm_enrichment = (site.warm_hold_fraction + site.heating_fraction)
+            - (site.cold_hold_fraction + site.cold_return_fraction);
+        let pq = RANK_W_PHASE_QUALITY * (0.5 + warm_enrichment).clamp(0.0, 1.0);
+
+        let base_score = c + d + a + dr + h + sd + pq;
+
+        // ── Interferometric Multiplier ──
+        // Boosts sites where BOTH twin streams independently produce strong,
+        // correlated signal. Three factors:
+        //
+        // 1. Twin agreement: min(A,B)/max(A,B) — 1.0 when perfectly balanced
+        // 2. Absolute evidence: spike_count/max_spikes — rewards high total signal
+        // 3. CCF validation: ccf_centrality — rewards correlated dynamics
+        //
+        // Multiplier range: 1.0 (no boost) to 2.0 (maximum twin validation)
+        let twin_agreement = if site.spikes_a.max(site.spikes_b) > 0 {
+            site.spikes_a.min(site.spikes_b) as f32 / site.spikes_a.max(site.spikes_b) as f32
+        } else {
+            0.0
+        };
+        let evidence_strength = (site.spike_count as f32 / max_spikes).sqrt(); // sqrt to compress
+        let ccf_validation = site.ccf_centrality.min(1.0);
+
+        // Geometric mean of the three factors, scaled to [1.0, 2.0]
+        let raw_multiplier = (twin_agreement * evidence_strength * ccf_validation).cbrt();
+        let interferometric_multiplier = 1.0 + raw_multiplier.clamp(0.0, 1.0);
+
+        let final_score = base_score * interferometric_multiplier;
+        site.twin_rank_score = final_score;
+        site.quality_score = final_score;
+
         site.rank_components = RankComponents {
             consensus_component: c,
             differential_component: d,
@@ -1093,6 +1135,8 @@ fn compute_twin_ranks(sites: &mut [TwinSite]) {
             druggability_component: dr,
             hysteresis_component: h,
             spike_density_component: sd,
+            phase_quality_component: pq,
+            interferometric_multiplier,
         };
     }
 }
