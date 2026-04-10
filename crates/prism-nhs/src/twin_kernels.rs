@@ -32,11 +32,14 @@ pub fn find_twin_ptx(name: &str) -> Result<String> {
             return Ok(c.clone());
         }
     }
-    // Search in build output directories
-    let build_glob = format!("target/debug/build/prism-gpu-*/out/ptx/{}", name);
-    if let Ok(entries) = glob::glob(&build_glob) {
-        for entry in entries.flatten() {
-            return Ok(entry.to_string_lossy().to_string());
+    // Search in build output directories (release first, then debug — covers both
+    // build profiles when running from a fresh clone where target/ptx/ doesn't exist)
+    for profile in &["release", "debug"] {
+        let build_glob = format!("target/{}/build/prism-gpu-*/out/ptx/{}", profile, name);
+        if let Ok(entries) = glob::glob(&build_glob) {
+            for entry in entries.flatten() {
+                return Ok(entry.to_string_lossy().to_string());
+            }
         }
     }
     anyhow::bail!("TWIN PTX '{}' not found in any search path", name)

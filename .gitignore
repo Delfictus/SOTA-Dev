@@ -23,6 +23,9 @@ e2e_validation_test/results_*/
 *.pdbqt
 *.sdf
 *.mol2
+# Exception: bundled test targets for fresh-clone smoke tests
+!vendor/test_targets/**/*.pdb
+!vendor/test_targets/**/*.cif
 
 # Python cache
 __pycache__/

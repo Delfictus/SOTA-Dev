@@ -38,6 +38,23 @@ ENGINE="$PROJECT_DIR/target/release/nhs_rt_full"
 PREFLIGHT="$SCRIPT_DIR/prism-preflight.py"
 POSTFLIGHT="$SCRIPT_DIR/prism-postflight.py"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TWIN PTX bootstrap — fresh clones won't have target/ptx/ populated.
+# find_twin_ptx (in twin_kernels.rs) searches target/ptx/ FIRST, so seeding it
+# from the vendored bundle takes precedence over anything cargo build produces.
+#
+# IMPORTANT: this is conditional. If you're iterating on .cu files and your
+# freshly-built target/ptx/protocol_director.ptx is already present, it is
+# NOT touched. Only seeds when target/ptx/protocol_director.ptx is missing.
+# ─────────────────────────────────────────────────────────────────────────────
+PTX_BUNDLE="$PROJECT_DIR/vendor/working_ptx_2026-04-10"
+PTX_TARGET="$PROJECT_DIR/target/ptx"
+if [[ -d "$PTX_BUNDLE" && ! -f "$PTX_TARGET/protocol_director.ptx" ]]; then
+    mkdir -p "$PTX_TARGET"
+    cp "$PTX_BUNDLE"/*.ptx "$PTX_TARGET/" 2>/dev/null || true
+    echo "[PTX bootstrap] Seeded $PTX_TARGET from $PTX_BUNDLE (vendored TWIN bundle)"
+fi
+
 # Parse -t, -o, --chain-map, collect remaining flags
 TOPOLOGY=""
 OUTPUT_DIR=""
