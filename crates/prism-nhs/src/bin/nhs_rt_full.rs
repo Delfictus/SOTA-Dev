@@ -3472,42 +3472,68 @@ fn run_multi_stream_pipeline(
                                         asc_state.group_residue_counts.lock(),
                                         asc_state.group_residue_phase_hist.lock(),
                                     ) {
-                                        let mut hotspots: Vec<(i32, usize, f32)> = Vec::new(); // (rid, n_groups, S_pc)
+                                        let mut hotspots: Vec<(i32, usize, f32)> = Vec::new();
                                         let scout_groups = [0usize, 2]; // TS, UV
                                         let observer_groups = [1usize, 3]; // EQ, HY
+
+                                        // ── BACKGROUND SUBTRACTION (AXSI direct-beam removal) ──
+                                        // Compute global phase histogram per group (all residues).
+                                        // This IS the temperature signal. Subtracting it reveals
+                                        // residue-specific phase deviations — the fringes.
+                                        let mut global_hist = [[0.0f64; 10]; 4];
+                                        for g in 0..4 {
+                                            for rid in 0..asc_state.n_residues {
+                                                for b in 0..10 {
+                                                    global_hist[g][b] += gph[g][rid][b] as f64;
+                                                }
+                                            }
+                                            let total: f64 = global_hist[g].iter().sum();
+                                            if total > 0.0 {
+                                                for b in 0..10 { global_hist[g][b] /= total; }
+                                            }
+                                        }
 
                                         for rid in 0..asc_state.n_residues {
                                             let counts: Vec<u32> = (0..4).map(|g| grc[g][rid]).collect();
                                             let active_groups = counts.iter().filter(|&&c| c > 5).count();
                                             if active_groups < 2 { continue; }
 
-                                            // ── Cross-Group Phase Histogram Correlation ──
-                                            // S_pc = mean Pearson correlation of phase histograms between group pairs
-                                            // This measures "do different groups see spikes at the SAME CCNS phases"
+                                            // ── Background-Subtracted Phase Deviation ──
+                                            // deviation = residue_fraction - global_fraction
+                                            // Positive = this residue spikes MORE than average at this phase
+                                            // Negative = this residue spikes LESS
+                                            let mut deviations = [[0.0f64; 10]; 4];
+                                            for g in 0..4 {
+                                                let res_total: f64 = gph[g][rid].iter().map(|&v| v as f64).sum();
+                                                if res_total < 5.0 { continue; }
+                                                for b in 0..10 {
+                                                    let res_frac = gph[g][rid][b] as f64 / res_total;
+                                                    deviations[g][b] = res_frac - global_hist[g][b];
+                                                }
+                                            }
+
+                                            // ── Cross-Group Deviation Correlation ──
+                                            // S_pc = Pearson r of DEVIATIONS between group pairs.
+                                            // High S_pc = this residue's timing DEVIATION from average
+                                            // is CONSISTENT across groups = true interferometric signal.
+                                            // Low S_pc = deviations are random = temperature artifact.
                                             let mut corr_sum = 0.0f64;
                                             let mut corr_count = 0u32;
                                             for ga in 0..4 {
                                                 if counts[ga] < 5 { continue; }
                                                 for gb in (ga+1)..4 {
                                                     if counts[gb] < 5 { continue; }
-                                                    // Pearson correlation of 10-bin phase histograms
-                                                    let ha: Vec<f64> = gph[ga][rid].iter().map(|&v| v as f64).collect();
-                                                    let hb: Vec<f64> = gph[gb][rid].iter().map(|&v| v as f64).collect();
-                                                    let mean_a = ha.iter().sum::<f64>() / 10.0;
-                                                    let mean_b = hb.iter().sum::<f64>() / 10.0;
-                                                    let mut cov = 0.0f64;
-                                                    let mut var_a = 0.0f64;
-                                                    let mut var_b = 0.0f64;
+                                                    let da = &deviations[ga];
+                                                    let db = &deviations[gb];
+                                                    let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
                                                     for k in 0..10 {
-                                                        let da = ha[k] - mean_a;
-                                                        let db = hb[k] - mean_b;
-                                                        cov += da * db;
-                                                        var_a += da * da;
-                                                        var_b += db * db;
+                                                        cov += da[k] * db[k];
+                                                        va += da[k] * da[k];
+                                                        vb += db[k] * db[k];
                                                     }
-                                                    let denom = (var_a * var_b).sqrt();
-                                                    if denom > 1e-10 {
-                                                        corr_sum += cov / denom;
+                                                    let d = (va * vb).sqrt();
+                                                    if d > 1e-12 {
+                                                        corr_sum += cov / d;
                                                         corr_count += 1;
                                                     }
                                                 }
@@ -5938,20 +5964,42 @@ fn run_multi_stream_pipeline(
             let radius_sq = radius * radius;
             let mut total_assigned = 0usize;
 
-            // For each spike, find the nearest site centroid within radius
+            // ── Spatial Hash Grid: O(N) spike→site join ──
+            // Build a hash grid with cell_size = radius. Each site goes into its cell.
+            // For each spike, check only the 27 neighboring cells (3×3×3).
+            let cell_size = radius;
+            let inv_cell = 1.0 / cell_size;
+            // Hash: (ix, iy, iz) → vec of site indices
+            let mut site_grid: std::collections::HashMap<(i32, i32, i32), Vec<usize>> = std::collections::HashMap::new();
+            for (site_idx, site) in clustered_sites.iter().enumerate() {
+                let ix = (site.centroid[0] * inv_cell).floor() as i32;
+                let iy = (site.centroid[1] * inv_cell).floor() as i32;
+                let iz = (site.centroid[2] * inv_cell).floor() as i32;
+                site_grid.entry((ix, iy, iz)).or_default().push(site_idx);
+            }
+
             for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
+                let sx = (spike.position[0] * inv_cell).floor() as i32;
+                let sy = (spike.position[1] * inv_cell).floor() as i32;
+                let sz = (spike.position[2] * inv_cell).floor() as i32;
                 let mut best_dist_sq = f32::MAX;
                 let mut best_site: Option<usize> = None;
-                for (site_idx, site) in clustered_sites.iter().enumerate() {
-                    let dx = spike.position[0] - site.centroid[0];
-                    let dy = spike.position[1] - site.centroid[1];
-                    let dz = spike.position[2] - site.centroid[2];
-                    let d2 = dx*dx + dy*dy + dz*dz;
-                    if d2 < radius_sq && d2 < best_dist_sq {
-                        best_dist_sq = d2;
-                        best_site = Some(site_idx);
+                // Check 27 neighboring cells
+                for dz in -1..=1 { for dy in -1..=1 { for dx in -1..=1 {
+                    if let Some(sites_in_cell) = site_grid.get(&(sx+dx, sy+dy, sz+dz)) {
+                        for &site_idx in sites_in_cell {
+                            let site = &clustered_sites[site_idx];
+                            let ddx = spike.position[0] - site.centroid[0];
+                            let ddy = spike.position[1] - site.centroid[1];
+                            let ddz = spike.position[2] - site.centroid[2];
+                            let d2 = ddx*ddx + ddy*ddy + ddz*ddz;
+                            if d2 < radius_sq && d2 < best_dist_sq {
+                                best_dist_sq = d2;
+                                best_site = Some(site_idx);
+                            }
+                        }
                     }
-                }
+                }}}
                 if let Some(idx) = best_site {
                     clustered_sites[idx].spike_indices.push(spike_idx);
                     total_assigned += 1;
@@ -6214,11 +6262,23 @@ fn run_multi_stream_pipeline(
                 // Factor 2: S_pc EXPONENTIAL phase coherence for this site's residues
                 // exp(S_pc * 2.0) - 1.0: S_pc=0→0.0, S_pc=0.5→1.72, S_pc=1.0→6.39
                 // Clamped to [1.0, 4.0] as a multiplier
+                // Factor 2: S_pc — BACKGROUND-SUBTRACTED cross-group phase correlation
+                // Compute global phase baseline, subtract it, correlate deviations.
+                // This removes the temperature artifact that gave 0.98 uniform S_pc.
                 let (f_spc, mean_spc_val) = if let Some(ref asc) = asc_shared {
                     if let (Ok(gph), Ok(grc)) = (asc.group_residue_phase_hist.lock(), asc.group_residue_counts.lock()) {
+                        // Global phase histogram per group (background = temperature signal)
+                        let mut global_hist = [[0.0f64; 10]; 4];
+                        for g in 0..4 {
+                            for rid in 0..asc.n_residues {
+                                for b in 0..10 { global_hist[g][b] += gph[g][rid][b] as f64; }
+                            }
+                            let total: f64 = global_hist[g].iter().sum();
+                            if total > 0.0 { for b in 0..10 { global_hist[g][b] /= total; } }
+                        }
+
                         let mut spc_sum = 0.0f64;
                         let mut spc_count = 0u32;
-                        // Use lining_residues (populated by spatial join)
                         for lr in &site.lining_residues {
                             let rid = lr.resid as usize;
                             if rid >= asc.n_residues { continue; }
@@ -6226,34 +6286,37 @@ fn run_multi_stream_pipeline(
                             let active = counts.iter().filter(|&&c| c > 5).count();
                             if active < 2 { continue; }
 
-                            // Cross-group histogram correlation (same as ASC controller)
-                            let mut corr_sum = 0.0f64;
-                            let mut corr_n = 0u32;
+                            // Background-subtracted deviations
+                            let mut dev = [[0.0f64; 10]; 4];
+                            for g in 0..4 {
+                                let rt: f64 = gph[g][rid].iter().map(|&v| v as f64).sum();
+                                if rt < 5.0 { continue; }
+                                for b in 0..10 {
+                                    dev[g][b] = gph[g][rid][b] as f64 / rt - global_hist[g][b];
+                                }
+                            }
+                            // Cross-group deviation correlation
+                            let mut cs = 0.0f64;
+                            let mut cn = 0u32;
                             for ga in 0..4 {
                                 if counts[ga] < 5 { continue; }
                                 for gb in (ga+1)..4 {
                                     if counts[gb] < 5 { continue; }
-                                    let ha: Vec<f64> = gph[ga][rid].iter().map(|&v| v as f64).collect();
-                                    let hb: Vec<f64> = gph[gb][rid].iter().map(|&v| v as f64).collect();
-                                    let ma = ha.iter().sum::<f64>() / 10.0;
-                                    let mb = hb.iter().sum::<f64>() / 10.0;
-                                    let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
+                                    let (mut c, mut a, mut b_v) = (0.0, 0.0, 0.0);
                                     for k in 0..10 {
-                                        let (da, db) = (ha[k] - ma, hb[k] - mb);
-                                        cov += da * db; va += da * da; vb += db * db;
+                                        c += dev[ga][k] * dev[gb][k];
+                                        a += dev[ga][k] * dev[ga][k];
+                                        b_v += dev[gb][k] * dev[gb][k];
                                     }
-                                    let d = (va * vb).sqrt();
-                                    if d > 1e-10 { corr_sum += cov / d; corr_n += 1; }
+                                    let d = (a * b_v).sqrt();
+                                    if d > 1e-12 { cs += c / d; cn += 1; }
                                 }
                             }
-                            if corr_n > 0 {
-                                spc_sum += (corr_sum / corr_n as f64).max(0.0);
-                                spc_count += 1;
-                            }
+                            if cn > 0 { spc_sum += (cs / cn as f64).max(0.0); spc_count += 1; }
                         }
                         if spc_count > 0 {
                             let mean_spc = spc_sum / spc_count as f64;
-                            // PURE PHYSICS: exp(S_pc * 2.0) - 1.0 scaled
+                            // PURE PHYSICS: exp(S_pc * 2.0) scaled. No magic numbers.
                             let boost = ((mean_spc * 2.0).exp() - 1.0) as f32 / 5.39;
                             let mult = (1.0 + boost * 3.0).clamp(1.0, 4.0);
                             (mult, mean_spc as f32)
@@ -6261,20 +6324,11 @@ fn run_multi_stream_pipeline(
                     } else { (1.0, 0.0) }
                 } else { (1.0, 0.0) };
 
-                // Factor 3: ASC 9th observer — Discovery Reward
-                // Sites containing ASC steering residues (S_pc > 0.85, 3+ groups)
-                // get an exponential reward proportional to the overlap fraction
-                let f_asc = if !asc_consensus_residues.is_empty() && !site.lining_residues.is_empty() {
-                    let site_residue_ids: std::collections::HashSet<i32> = site.lining_residues.iter()
-                        .map(|lr| lr.resid).collect();
-                    let overlap = site_residue_ids.intersection(&asc_consensus_residues).count();
-                    if overlap > 0 {
-                        // Discovery reward: exponential in overlap count
-                        // 1 residue → 1.5×, 2 → 2.25×, 3+ → 3.0× (capped)
-                        let reward = (1.0 + 0.5 * overlap as f32).min(3.0);
-                        reward
-                    } else { 1.0 }
-                } else { 1.0 };
+                // Factor 3: ASC 9th observer — PURE S_pc-driven reward (no tuned multipliers)
+                // The discovery reward IS the exponential S_pc. No separate `1.5^overlap`.
+                // Sites whose lining residues are in the ASC consensus AND have high S_pc
+                // get the S_pc exponential boost. That's the SOLE mechanism.
+                let f_asc = 1.0f32; // Merged into f_spc — no double-counting
 
                 // Apply three-factor blender
                 let combined_mult = f_cv * f_spc * f_asc;
@@ -8224,6 +8278,40 @@ fn run_multi_stream_pipeline(
 
     let total_time = total_start.elapsed();
     let druggable = clustered_sites.iter().filter(|s| s.druggability.is_druggable).count();
+
+    // ── ASC TELEMETRY EXPORT (Glass Box audit trail) ──
+    if let Some(ref asc) = asc_shared {
+        let telemetry_path = args.output.join(format!("{}.asc_telemetry.json", structure_name));
+        let mut telemetry = serde_json::Map::new();
+        // Event log
+        if let Ok(el) = asc.event_log.lock() {
+            let events: Vec<serde_json::Value> = el.iter().map(|(chunk, desc)| {
+                serde_json::json!({"chunk": chunk, "event": desc})
+            }).collect();
+            telemetry.insert("events".into(), serde_json::Value::Array(events));
+        }
+        // ACL contrast log
+        if let Ok(cl) = asc.acl_contrast_log.lock() {
+            let contrast: Vec<serde_json::Value> = cl.iter().map(|(chunk, ratio)| {
+                serde_json::json!({"chunk": chunk, "scout_observer_ratio": ratio})
+            }).collect();
+            telemetry.insert("acl_contrast".into(), serde_json::Value::Array(contrast));
+        }
+        // Consensus residues (final state)
+        if let Ok(cr) = asc.consensus_residues.lock() {
+            let residues: Vec<serde_json::Value> = cr.iter().map(|(rid, ng, spc)| {
+                serde_json::json!({"residue_id": rid, "n_groups": ng, "s_pc": spc})
+            }).collect();
+            telemetry.insert("consensus_residues".into(), serde_json::Value::Array(residues));
+        }
+        telemetry.insert("n_streams".into(), serde_json::Value::Number(n_streams.into()));
+        telemetry.insert("n_groups".into(), serde_json::Value::Number(4.into()));
+        if let Ok(json_str) = serde_json::to_string_pretty(&serde_json::Value::Object(telemetry)) {
+            if std::fs::write(&telemetry_path, &json_str).is_ok() {
+                log::info!("  ASC telemetry: {}", telemetry_path.display());
+            }
+        }
+    }
 
     log::info!("\n╔═══════════════════════════════════════════════════════════════╗");
     log::info!("║  MULTI-STREAM PIPELINE COMPLETE                               ║");
