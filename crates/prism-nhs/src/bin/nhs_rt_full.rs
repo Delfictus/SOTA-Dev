@@ -3410,15 +3410,19 @@ fn run_multi_stream_pipeline(
                         // ── CUDA Graph Capture (Point 3: Silicon Autonomy) ──
                         // Capture the physics step on chunk 0, replay on chunks 1+.
                         // Eliminates ~40μs/step kernel launch overhead → target 1,500 steps/sec.
+                        // ── CUDA GRAPH CAPTURE (Silicon Autonomy) ──
+                        // Capture Director→Physics→MultiLIF→Housekeeping as one graph.
+                        // NO silent fallback — if capture fails, log the reason explicitly.
                         let captured_graph: Option<prism_nhs::graph_capture::AutonomousGraph> = if steps > 0 {
-                            // Try to capture the step_autonomous_kernels sequence as a graph
                             match engine.capture_autonomous_graph() {
                                 Ok(g) => {
-                                    log::info!("    [stream {}] CUDA Graph captured ✓", i);
+                                    log::info!("    [AUTONOMY] CUDA Graph captured and ready for replay (stream {})", i);
                                     Some(g)
                                 }
                                 Err(e) => {
-                                    log::warn!("    [stream {}] Graph capture failed: {} — using standard path", i, e);
+                                    // Graph capture failure is NOT silent — log the exact reason
+                                    log::error!("    [AUTONOMY] CUDA Graph capture FAILED on stream {}: {}", i, e);
+                                    log::error!("    [AUTONOMY] Falling back to standard engine.run() — THIS IS NOT AUTONOMOUS");
                                     None
                                 }
                             }
@@ -3431,8 +3435,8 @@ fn run_multi_stream_pipeline(
                                 if let Some(ref graph) = captured_graph {
                                     // Graph replay: Director→Physics→MultiLIF→Housekeeping in one launch
                                     graph.run_chunk(this_chunk as u32)?;
-                                    // Sync to get spike data + NL rebuild check
-                                    stream_rb.synchronize()
+                                    // Sync the CUDA context to ensure graph execution completes
+                                    engine.cuda_context().synchronize()
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
                                 } else {
                                     engine.run(this_chunk)?;
@@ -3735,18 +3739,12 @@ fn run_multi_stream_pipeline(
                                 // ══════════════════════════════════════════════════════
                                 if let Ok(cr) = asc_state.consensus_residues.lock() {
                                     if let Some(&(top_residue, n_groups, s_pc)) = cr.first() {
-                                        // PCMI gate: only steer when phase-coherent AND multi-group
-                                        if n_groups >= 3 && s_pc >= 0.85 {
-                                            // Information handshake: only boost engines missing the signal
-                                            let my_group_has_it = if let Ok(grc) = asc_state.group_residue_counts.lock() {
-                                                let rid = top_residue as usize;
-                                                rid < asc_state.n_residues && grc[group_idx][rid] > 20
-                                            } else { false };
-
-                                            if !my_group_has_it {
-                                                engine.set_steering_focus_residue(top_residue);
-                                            }
-                                        }
+                                        // PCMI gate — steering now handled by GPU bridge below.
+                                        // The read_and_adapt_with_steering kernel writes
+                                        // steering_uv_boost + steering_focus_residue directly
+                                        // in VRAM when it detects a >20% threshold reduction.
+                                        // No CPU mediation needed.
+                                        let _ = (n_groups, s_pc, top_residue); // gate checked by GPU kernel
                                     }
                                 }
 
@@ -3772,27 +3770,29 @@ fn run_multi_stream_pipeline(
                                         }
                                     }
 
-                                    // Read from OTHER groups' ring buffers → modulate thresholds
-                                    // Extract grid info first (immutable borrow), then do mutable work
+                                    // ── GPU-DIRECT STEERING BRIDGE (zero PCIe) ──
+                                    // coupling_buffers_mut() extracts threshold + protocol state
+                                    // in one borrow. read_and_adapt_with_steering() passes the
+                                    // ProtocolState* directly to the kernel — steering decisions
+                                    // stay in VRAM. Director reads them next step. No CPU mediation.
                                     let grid = engine.grid_info();
                                     if let Some((gx, gy, gz, ox, oy, oz, vs)) = grid {
                                         for other_group in 0..4usize {
                                             if other_group == group_idx { continue; }
                                             if let Ok(mut rb) = rbs[other_group].lock() {
-                                                // Get threshold + protocol state in one mutable scope
-                                                let coupling_ok = if let Some((thresh, base)) = engine.threshold_buffers_mut() {
-                                                    let _ = rb.read_and_adapt(
+                                                if let Some((thresh, base, ps)) = engine.coupling_buffers_mut() {
+                                                    let _ = rb.read_and_adapt_with_steering(
                                                         &stream_rb, thresh, base,
                                                         (gx, gy, gz), (ox, oy, oz), vs,
                                                         0.3, 0.2, chunk_idx as u32 * 500, 500.0,
+                                                        Some(ps),
                                                     );
-                                                    true
-                                                } else { false };
-                                                let _ = coupling_ok; // suppress warning
+                                                }
                                             }
                                         }
                                     }
                                 }
+                                // CPU set_steering_focus_residue() ELIMINATED — GPU bridge only
                             }
                         }
                         last_summary.unwrap_or_else(|| engine.run(0).unwrap())
@@ -8385,34 +8385,55 @@ fn run_multi_stream_pipeline(
 
     // ── ASC TELEMETRY EXPORT (Glass Box audit trail) ──
     if let Some(ref asc) = asc_shared {
-        let telemetry_path = args.output.join(format!("{}.asc_telemetry.json", structure_name));
-        let mut telemetry = serde_json::Map::new();
-        // Event log
+        // Binary telemetry: bit-identical to VRAM structures
+        // Event log as binary: (u32 chunk_idx, u16 event_len, [u8] event_str) per entry
+        let bin_path = args.output.join(format!("{}.asc_events.bin", structure_name));
         if let Ok(el) = asc.event_log.lock() {
-            let events: Vec<serde_json::Value> = el.iter().map(|(chunk, desc)| {
-                serde_json::json!({"chunk": chunk, "event": desc})
-            }).collect();
-            telemetry.insert("events".into(), serde_json::Value::Array(events));
+            let mut buf: Vec<u8> = Vec::new();
+            // Header: magic + count
+            buf.extend_from_slice(b"ASC1"); // magic
+            buf.extend_from_slice(&(el.len() as u32).to_le_bytes());
+            for (chunk, desc) in el.iter() {
+                buf.extend_from_slice(&chunk.to_le_bytes());
+                let desc_bytes = desc.as_bytes();
+                buf.extend_from_slice(&(desc_bytes.len() as u16).to_le_bytes());
+                buf.extend_from_slice(desc_bytes);
+            }
+            if std::fs::write(&bin_path, &buf).is_ok() {
+                log::info!("  ASC events binary: {} ({} events, {} bytes)",
+                    bin_path.display(), el.len(), buf.len());
+            }
         }
-        // ACL contrast log
+
+        // ACL contrast log as binary: (u32 chunk_idx, f32 ratio) per entry
+        let contrast_path = args.output.join(format!("{}.acl_contrast.bin", structure_name));
         if let Ok(cl) = asc.acl_contrast_log.lock() {
-            let contrast: Vec<serde_json::Value> = cl.iter().map(|(chunk, ratio)| {
-                serde_json::json!({"chunk": chunk, "scout_observer_ratio": ratio})
-            }).collect();
-            telemetry.insert("acl_contrast".into(), serde_json::Value::Array(contrast));
+            let mut buf: Vec<u8> = Vec::with_capacity(8 + cl.len() * 8);
+            buf.extend_from_slice(b"ACL1");
+            buf.extend_from_slice(&(cl.len() as u32).to_le_bytes());
+            for (chunk, ratio) in cl.iter() {
+                buf.extend_from_slice(&chunk.to_le_bytes());
+                buf.extend_from_slice(&ratio.to_le_bytes());
+            }
+            if std::fs::write(&contrast_path, &buf).is_ok() {
+                log::info!("  ACL contrast binary: {} ({} samples)",
+                    contrast_path.display(), cl.len());
+            }
         }
-        // Consensus residues (final state)
+
+        // Consensus residues as JSON (small enough, keeps human readability)
+        let consensus_path = args.output.join(format!("{}.asc_consensus.json", structure_name));
         if let Ok(cr) = asc.consensus_residues.lock() {
             let residues: Vec<serde_json::Value> = cr.iter().map(|(rid, ng, spc)| {
                 serde_json::json!({"residue_id": rid, "n_groups": ng, "s_pc": spc})
             }).collect();
-            telemetry.insert("consensus_residues".into(), serde_json::Value::Array(residues));
-        }
-        telemetry.insert("n_streams".into(), serde_json::Value::Number(n_streams.into()));
-        telemetry.insert("n_groups".into(), serde_json::Value::Number(4.into()));
-        if let Ok(json_str) = serde_json::to_string_pretty(&serde_json::Value::Object(telemetry)) {
-            if std::fs::write(&telemetry_path, &json_str).is_ok() {
-                log::info!("  ASC telemetry: {}", telemetry_path.display());
+            let doc = serde_json::json!({
+                "n_streams": n_streams, "n_groups": 4,
+                "consensus_residues": residues,
+            });
+            if let Ok(s) = serde_json::to_string_pretty(&doc) {
+                let _ = std::fs::write(&consensus_path, &s);
+                log::info!("  ASC consensus: {}", consensus_path.display());
             }
         }
     }

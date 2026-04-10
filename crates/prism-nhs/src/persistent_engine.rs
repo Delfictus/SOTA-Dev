@@ -1238,6 +1238,16 @@ impl PersistentNhsEngine {
         self.engine.as_mut().map(|e| &mut e.d_protocol_state)
     }
 
+    /// Get BOTH threshold buffers AND protocol state in one borrow — for GPU ring buffer coupling.
+    /// Returns (osc_thresholds, base_thresholds, protocol_state) all as mutable.
+    pub fn coupling_buffers_mut(&mut self) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>, &mut CudaSlice<u8>)> {
+        if let Some(ref mut engine) = self.engine {
+            engine.coupling_buffers_for_twin()
+        } else {
+            None
+        }
+    }
+
     /// Capture the autonomous physics step as a CUDA Graph for replay.
     pub fn capture_autonomous_graph(&mut self) -> anyhow::Result<crate::graph_capture::AutonomousGraph> {
         use cudarc::driver::sys;

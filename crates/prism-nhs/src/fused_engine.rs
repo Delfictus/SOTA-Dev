@@ -3403,6 +3403,12 @@ impl NhsAmberFusedEngine {
         }
     }
 
+    /// Get threshold + protocol state buffers for GPU-direct TWIN coupling.
+    /// Single borrow that gives both mutable threshold and protocol state access.
+    pub fn coupling_buffers_for_twin(&mut self) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>, &mut CudaSlice<u8>)> {
+        Some((&mut self.d_neuron_threshold, &self.d_neuron_mean, &mut self.d_protocol_state))
+    }
+
     /// ASC steering: write focus residue + UV boost to GPU ProtocolState.
     /// Downloads full 164-byte struct, modifies steering fields, re-uploads.
     pub fn set_steering_focus_residue(&mut self, residue_id: i32) {
