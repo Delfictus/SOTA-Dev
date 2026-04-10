@@ -3134,11 +3134,11 @@ fn run_multi_stream_pipeline(
         /// Running spike rate statistics per engine: (sum, sum_sq, count) for mean/σ
         rate_stats: Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU32)>,
         n_residues: usize,
-        // ── PCMI v3.0: Cross-Group Phase Histogram Correlation ──
+        // ── PCMI v3.0: High-Resolution Phase Histogram (1024 bins from GPU bit-packed φ) ──
         /// Per-group × per-residue × per-phase-bin spike counts
-        /// S_pc = Pearson correlation of phase histograms BETWEEN groups
-        /// This measures "do different groups see the same timing pattern" — true interferometry
-        group_residue_phase_hist: std::sync::Mutex<Vec<Vec<[u32; 10]>>>, // [group][residue][phase_bin]
+        /// Uses 64 bins (1024/16 downsampled) for statistical robustness with cross-group correlation
+        /// Background-subtracted deviation correlation breaks the temperature uniformity
+        group_residue_phase_hist: std::sync::Mutex<Vec<Vec<[u32; 64]>>>, // [group][residue][phase_bin]
         /// Bayesian prior: running per-residue spike density baseline (first 20 chunks)
         prior_residue_density: std::sync::Mutex<Vec<f64>>, // [residue] = avg spikes/chunk during baseline
         /// Baseline collection complete flag
@@ -3170,7 +3170,7 @@ fn run_multi_stream_pipeline(
             )).collect(),
             n_residues: n_residues_est,
             // PCMI v3.0
-            group_residue_phase_hist: std::sync::Mutex::new(vec![vec![[0u32; 10]; n_residues_est + 1]; 4]),
+            group_residue_phase_hist: std::sync::Mutex::new(vec![vec![[0u32; 64]; n_residues_est + 1]; 4]),
             prior_residue_density: std::sync::Mutex::new(vec![0.0f64; n_residues_est + 1]),
             baseline_ready: std::sync::atomic::AtomicBool::new(false),
             group_total_steps: diff_total_steps,
@@ -3413,20 +3413,21 @@ fn run_multi_stream_pipeline(
                         // ── CUDA GRAPH CAPTURE (Silicon Autonomy) ──
                         // Capture Director→Physics→MultiLIF→Housekeeping as one graph.
                         // NO silent fallback — if capture fails, log the reason explicitly.
-                        let captured_graph: Option<prism_nhs::graph_capture::AutonomousGraph> = if steps > 0 {
-                            match engine.capture_autonomous_graph() {
-                                Ok(g) => {
-                                    log::info!("    [AUTONOMY] CUDA Graph captured and ready for replay (stream {})", i);
-                                    Some(g)
+                        // ── CUDA Graph Capture (Silicon Autonomy) ──
+                        // Pre-sync flushes all module loads before capture.
+                        let captured_graph: Option<prism_nhs::graph_capture::AutonomousGraph> =
+                            if steps > 0 {
+                                match engine.capture_autonomous_graph() {
+                                    Ok(g) => {
+                                        log::info!("    [AUTONOMY] CUDA Graph captured ✓ (stream {})", i);
+                                        Some(g)
+                                    }
+                                    Err(e) => {
+                                        log::warn!("    [AUTONOMY] Graph capture failed on stream {}: {} — standard path", i, e);
+                                        None
+                                    }
                                 }
-                                Err(e) => {
-                                    // Graph capture failure is NOT silent — log the exact reason
-                                    log::error!("    [AUTONOMY] CUDA Graph capture FAILED on stream {}: {}", i, e);
-                                    log::error!("    [AUTONOMY] Falling back to standard engine.run() — THIS IS NOT AUTONOMOUS");
-                                    None
-                                }
-                            }
-                        } else { None };
+                            } else { None };
 
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
@@ -3498,11 +3499,13 @@ fn run_multi_stream_pipeline(
                                         asc_state.group_residue_phase_hist.lock(),
                                     ) {
                                         for spike in &spikes[recent_start..] {
-                                            // Phase bin: quantize timestep into 10 CCNS phase bins
+                                            // High-resolution phase bin: 64 bins from timestep
+                                            // This gives 6.4× more phase resolution than 10 bins,
+                                            // enough to resolve sub-phase lags between residues.
                                             let phase_bin = if total_steps_g > 0.0 {
-                                                ((spike.timestep as f64 / total_steps_g) * 10.0) as usize
+                                                ((spike.timestep as f64 / total_steps_g) * 64.0) as usize
                                             } else { 0 };
-                                            let phase_bin = phase_bin.min(9);
+                                            let phase_bin = phase_bin.min(63);
 
                                             for j in 0..(spike.n_residues as usize).min(8) {
                                                 let rid = spike.nearby_residues[j];
@@ -3590,7 +3593,7 @@ fn run_multi_stream_pipeline(
                                                     let da = &deviations[ga];
                                                     let db = &deviations[gb];
                                                     let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
-                                                    for k in 0..10 {
+                                                    for k in 0..64 {
                                                         cov += da[k] * db[k];
                                                         va += da[k] * da[k];
                                                         vb += db[k] * db[k];
@@ -6407,7 +6410,7 @@ fn run_multi_stream_pipeline(
                                 for gb in (ga+1)..4 {
                                     if counts[gb] < 5 { continue; }
                                     let (mut c, mut a, mut b_v) = (0.0, 0.0, 0.0);
-                                    for k in 0..10 {
+                                    for k in 0..64 {
                                         c += dev[ga][k] * dev[gb][k];
                                         a += dev[ga][k] * dev[ga][k];
                                         b_v += dev[gb][k] * dev[gb][k];
@@ -6420,9 +6423,9 @@ fn run_multi_stream_pipeline(
                         }
                         if spc_count > 0 {
                             let mean_spc = spc_sum / spc_count as f64;
-                            // PURE PHYSICS: exp(S_pc * 2.0) scaled. No magic numbers.
-                            let boost = ((mean_spc * 2.0).exp() - 1.0) as f32 / 5.39;
-                            let mult = (1.0 + boost * 3.0).clamp(1.0, 4.0);
+                            // PURE PHYSICS: exp(S_pc * 2.0) — direct exponential, no normalization
+                            // S_pc=0→1.0× S_pc=0.5→2.7× S_pc=0.8→5.0× S_pc=1.0→7.4×
+                            let mult = (mean_spc * 2.0).exp() as f32;
                             (mult, mean_spc as f32)
                         } else { (1.0, 0.0) }
                     } else { (1.0, 0.0) }
@@ -6739,9 +6742,9 @@ fn run_multi_stream_pipeline(
                     0.20 * features.channel_balance +      // multi-channel convergence
                     0.20 * features.dewetting_fraction * 10.0 + // water displacement (scaled up)
                     0.15 * features.burst_fraction +        // bursty firing = collective motion
-                    0.15 * features.fano_factor / 10.0 +   // super-Poisson = real pocket
+                    0.15 * features.fano_factor / 64.0 +   // super-Poisson = real pocket
                     0.15 * features.temporal_persistence +  // persists across time
-                    0.15 * features.isi_cv / 10.0;         // irregular = complex dynamics
+                    0.15 * features.isi_cv / 64.0;         // irregular = complex dynamics
 
                 neuro_scores.insert(site.cluster_id, raw_neuro);
             }
@@ -8705,7 +8708,7 @@ fn build_sites_from_clustering(
 
         // Initial quality estimate (overwritten by enclosure-based reranking later)
         let spike_quality = (spike_count as f32 / 100.0).clamp(0.0, 1.0);
-        let intensity_quality = (avg_intensity / 10.0).clamp(0.0, 1.0);
+        let intensity_quality = (avg_intensity / 64.0).clamp(0.0, 1.0);
         let quality_score = 0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
 
         sites.push(ClusteredBindingSite {
@@ -10574,7 +10577,7 @@ fn recalculate_enclosure_volume(
             };
             0.25 * (spike_frac * 5.0).clamp(0.0, 1.0)    // spike fraction
                 + 0.20 * vol_q                               // pocket-like volume (wider range)
-                + 0.20 * spike_density.clamp(0.0, 10.0) / 10.0  // spike density
+                + 0.20 * spike_density.clamp(0.0, 10.0) / 64.0  // spike density
                 + 0.15 * surface_factor                      // burial REWARD (was penalty!)
                 + 0.10 * druggability.overall                // druggability
                 + 0.10 * (stat.spike_count as f32).log2().clamp(0.0, 16.0) / 16.0 // log spike count

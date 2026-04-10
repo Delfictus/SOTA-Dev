@@ -1249,9 +1249,17 @@ impl PersistentNhsEngine {
     }
 
     /// Capture the autonomous physics step as a CUDA Graph for replay.
+    /// Pre-synchronizes the stream to flush all prior work (module loads, memcpy)
+    /// before entering capture mode — this prevents CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED.
     pub fn capture_autonomous_graph(&mut self) -> anyhow::Result<crate::graph_capture::AutonomousGraph> {
         use cudarc::driver::sys;
         let stream = self.stream.clone();
+
+        // CRITICAL: sync the stream BEFORE capture to flush all prior module loads,
+        // memcpy, and initialization. CUDA capture mode forbids these operations.
+        stream.synchronize()
+            .map_err(|e| anyhow::anyhow!("Pre-capture sync: {:?}", e))?;
+
         if let Some(ref mut engine) = self.engine {
             // Begin stream capture
             stream.begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
