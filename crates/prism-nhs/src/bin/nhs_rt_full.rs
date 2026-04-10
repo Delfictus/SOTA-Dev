@@ -3134,11 +3134,11 @@ fn run_multi_stream_pipeline(
         /// Running spike rate statistics per engine: (sum, sum_sq, count) for mean/σ
         rate_stats: Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU32)>,
         n_residues: usize,
-        // ── PCMI v3.0: Phase Coherence + Bayesian Surprise ──
-        /// Per-group × per-residue phase accumulators: (cos_sum, sin_sum) for S_pc
-        /// Phase angle φ = 2π × (spike_timestep / group_total_steps)
-        /// S_pc = |Σ exp(iφ)| / N = sqrt(cos_sum² + sin_sum²) / N
-        group_residue_phase: std::sync::Mutex<Vec<Vec<(f64, f64)>>>, // [group][residue] = (cos_sum, sin_sum)
+        // ── PCMI v3.0: Cross-Group Phase Histogram Correlation ──
+        /// Per-group × per-residue × per-phase-bin spike counts
+        /// S_pc = Pearson correlation of phase histograms BETWEEN groups
+        /// This measures "do different groups see the same timing pattern" — true interferometry
+        group_residue_phase_hist: std::sync::Mutex<Vec<Vec<[u32; 10]>>>, // [group][residue][phase_bin]
         /// Bayesian prior: running per-residue spike density baseline (first 20 chunks)
         prior_residue_density: std::sync::Mutex<Vec<f64>>, // [residue] = avg spikes/chunk during baseline
         /// Baseline collection complete flag
@@ -3170,7 +3170,7 @@ fn run_multi_stream_pipeline(
             )).collect(),
             n_residues: n_residues_est,
             // PCMI v3.0
-            group_residue_phase: std::sync::Mutex::new(vec![vec![(0.0f64, 0.0f64); n_residues_est + 1]; 4]),
+            group_residue_phase_hist: std::sync::Mutex::new(vec![vec![[0u32; 10]; n_residues_est + 1]; 4]),
             prior_residue_density: std::sync::Mutex::new(vec![0.0f64; n_residues_est + 1]),
             baseline_ready: std::sync::atomic::AtomicBool::new(false),
             group_total_steps: diff_total_steps,
@@ -3428,26 +3428,24 @@ fn run_multi_stream_pipeline(
                                     let spikes = engine.get_accumulated_spikes();
                                     let recent_start = spikes.len().saturating_sub(delta as usize);
                                     let total_steps_g = asc_state.group_total_steps[group_idx] as f64;
-                                    let two_pi = 2.0 * std::f64::consts::PI;
 
                                     if let (Ok(mut grc), Ok(mut gph)) = (
                                         asc_state.group_residue_counts.lock(),
-                                        asc_state.group_residue_phase.lock(),
+                                        asc_state.group_residue_phase_hist.lock(),
                                     ) {
                                         for spike in &spikes[recent_start..] {
-                                            // Phase angle: where in the CCNS cycle did this spike fire?
-                                            let phi = two_pi * (spike.timestep as f64 / total_steps_g);
-                                            let cos_phi = phi.cos();
-                                            let sin_phi = phi.sin();
+                                            // Phase bin: quantize timestep into 10 CCNS phase bins
+                                            let phase_bin = if total_steps_g > 0.0 {
+                                                ((spike.timestep as f64 / total_steps_g) * 10.0) as usize
+                                            } else { 0 };
+                                            let phase_bin = phase_bin.min(9);
 
                                             for j in 0..(spike.n_residues as usize).min(8) {
                                                 let rid = spike.nearby_residues[j];
                                                 if rid >= 0 && (rid as usize) < asc_state.n_residues {
                                                     let r = rid as usize;
                                                     grc[group_idx][r] += 1;
-                                                    // Accumulate phasor components for S_pc
-                                                    gph[group_idx][r].0 += cos_phi;
-                                                    gph[group_idx][r].1 += sin_phi;
+                                                    gph[group_idx][r][phase_bin] += 1;
                                                 }
                                             }
                                         }
@@ -3472,7 +3470,7 @@ fn run_multi_stream_pipeline(
 
                                     if let (Ok(grc), Ok(gph)) = (
                                         asc_state.group_residue_counts.lock(),
-                                        asc_state.group_residue_phase.lock(),
+                                        asc_state.group_residue_phase_hist.lock(),
                                     ) {
                                         let mut hotspots: Vec<(i32, usize, f32)> = Vec::new(); // (rid, n_groups, S_pc)
                                         let scout_groups = [0usize, 2]; // TS, UV
@@ -3483,23 +3481,42 @@ fn run_multi_stream_pipeline(
                                             let active_groups = counts.iter().filter(|&&c| c > 5).count();
                                             if active_groups < 2 { continue; }
 
-                                            // ── Phase Coherence S_pc ──
-                                            // Sum phasors across ALL groups for this residue
-                                            let mut cos_total = 0.0f64;
-                                            let mut sin_total = 0.0f64;
-                                            let mut n_total = 0u64;
-                                            for g in 0..4 {
-                                                cos_total += gph[g][rid].0;
-                                                sin_total += gph[g][rid].1;
-                                                n_total += counts[g] as u64;
+                                            // ── Cross-Group Phase Histogram Correlation ──
+                                            // S_pc = mean Pearson correlation of phase histograms between group pairs
+                                            // This measures "do different groups see spikes at the SAME CCNS phases"
+                                            let mut corr_sum = 0.0f64;
+                                            let mut corr_count = 0u32;
+                                            for ga in 0..4 {
+                                                if counts[ga] < 5 { continue; }
+                                                for gb in (ga+1)..4 {
+                                                    if counts[gb] < 5 { continue; }
+                                                    // Pearson correlation of 10-bin phase histograms
+                                                    let ha: Vec<f64> = gph[ga][rid].iter().map(|&v| v as f64).collect();
+                                                    let hb: Vec<f64> = gph[gb][rid].iter().map(|&v| v as f64).collect();
+                                                    let mean_a = ha.iter().sum::<f64>() / 10.0;
+                                                    let mean_b = hb.iter().sum::<f64>() / 10.0;
+                                                    let mut cov = 0.0f64;
+                                                    let mut var_a = 0.0f64;
+                                                    let mut var_b = 0.0f64;
+                                                    for k in 0..10 {
+                                                        let da = ha[k] - mean_a;
+                                                        let db = hb[k] - mean_b;
+                                                        cov += da * db;
+                                                        var_a += da * da;
+                                                        var_b += db * db;
+                                                    }
+                                                    let denom = (var_a * var_b).sqrt();
+                                                    if denom > 1e-10 {
+                                                        corr_sum += cov / denom;
+                                                        corr_count += 1;
+                                                    }
+                                                }
                                             }
-                                            let s_pc = if n_total > 10 {
-                                                (cos_total.powi(2) + sin_total.powi(2)).sqrt() / n_total as f64
-                                            } else {
-                                                0.0
-                                            };
+                                            let s_pc = if corr_count > 0 {
+                                                (corr_sum / corr_count as f64).max(0.0)
+                                            } else { 0.0 };
 
-                                            if s_pc > 0.01 { // minimum coherence to even consider
+                                            if s_pc > 0.01 {
                                                 hotspots.push((rid as i32, active_groups, s_pc as f32));
                                             }
                                         }
@@ -6198,32 +6215,47 @@ fn run_multi_stream_pipeline(
                 // exp(S_pc * 2.0) - 1.0: S_pc=0→0.0, S_pc=0.5→1.72, S_pc=1.0→6.39
                 // Clamped to [1.0, 4.0] as a multiplier
                 let (f_spc, mean_spc_val) = if let Some(ref asc) = asc_shared {
-                    if let (Ok(gph), Ok(grc)) = (asc.group_residue_phase.lock(), asc.group_residue_counts.lock()) {
+                    if let (Ok(gph), Ok(grc)) = (asc.group_residue_phase_hist.lock(), asc.group_residue_counts.lock()) {
                         let mut spc_sum = 0.0f64;
                         let mut spc_count = 0u32;
                         // Use lining_residues (populated by spatial join)
                         for lr in &site.lining_residues {
                             let rid = lr.resid as usize;
                             if rid >= asc.n_residues { continue; }
-                            let mut cos_t = 0.0f64;
-                            let mut sin_t = 0.0f64;
-                            let mut n_t = 0u64;
-                            for g in 0..4 {
-                                cos_t += gph[g][rid].0;
-                                sin_t += gph[g][rid].1;
-                                n_t += grc[g][rid] as u64;
+                            let counts: Vec<u32> = (0..4).map(|g| grc[g][rid]).collect();
+                            let active = counts.iter().filter(|&&c| c > 5).count();
+                            if active < 2 { continue; }
+
+                            // Cross-group histogram correlation (same as ASC controller)
+                            let mut corr_sum = 0.0f64;
+                            let mut corr_n = 0u32;
+                            for ga in 0..4 {
+                                if counts[ga] < 5 { continue; }
+                                for gb in (ga+1)..4 {
+                                    if counts[gb] < 5 { continue; }
+                                    let ha: Vec<f64> = gph[ga][rid].iter().map(|&v| v as f64).collect();
+                                    let hb: Vec<f64> = gph[gb][rid].iter().map(|&v| v as f64).collect();
+                                    let ma = ha.iter().sum::<f64>() / 10.0;
+                                    let mb = hb.iter().sum::<f64>() / 10.0;
+                                    let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
+                                    for k in 0..10 {
+                                        let (da, db) = (ha[k] - ma, hb[k] - mb);
+                                        cov += da * db; va += da * da; vb += db * db;
+                                    }
+                                    let d = (va * vb).sqrt();
+                                    if d > 1e-10 { corr_sum += cov / d; corr_n += 1; }
+                                }
                             }
-                            if n_t > 10 {
-                                let spc = (cos_t.powi(2) + sin_t.powi(2)).sqrt() / n_t as f64;
-                                spc_sum += spc;
+                            if corr_n > 0 {
+                                spc_sum += (corr_sum / corr_n as f64).max(0.0);
                                 spc_count += 1;
                             }
                         }
                         if spc_count > 0 {
                             let mean_spc = spc_sum / spc_count as f64;
-                            // Exponential scaling: sites with high phase coherence get exponential boost
-                            let boost = ((mean_spc * 2.0).exp() - 1.0) as f32 / 5.39; // normalize so S_pc=1→1.0
-                            let mult = (1.0 + boost * 3.0).clamp(1.0, 4.0); // max 4× for perfect coherence
+                            // PURE PHYSICS: exp(S_pc * 2.0) - 1.0 scaled
+                            let boost = ((mean_spc * 2.0).exp() - 1.0) as f32 / 5.39;
+                            let mult = (1.0 + boost * 3.0).clamp(1.0, 4.0);
                             (mult, mean_spc as f32)
                         } else { (1.0, 0.0) }
                     } else { (1.0, 0.0) }

@@ -219,7 +219,8 @@ extern "C" __global__ void compact_and_push(
     unsigned char* __restrict__ ring_buffer,           // ring buffer storage
     unsigned int* __restrict__ head_ptr,               // monotonic write counter
     unsigned int* __restrict__ overflow_ptr,            // overflow counter
-    unsigned int capacity                              // ring buffer capacity
+    unsigned int capacity,                             // ring buffer capacity
+    const ProtocolState* __restrict__ d_protocol       // for phase angle computation
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int n_spikes = *spike_count;
@@ -241,8 +242,31 @@ extern "C" __global__ void compact_and_push(
     compact.n_nearby_excited  = src->n_nearby_excited;
     compact.spike_source      = src->spike_source;
     compact.wavelength_nm     = src->wavelength_nm;
-    // Lossless residue attribution: carry the primary (nearest) residue ID
-    compact.primary_residue_id = (src->n_residues > 0) ? src->nearby_residues[0] : -1;
+
+    // ── BIT-PACKED PHASE ANGLE + RESIDUE ID ──
+    // Bits 0-15:  primary residue ID (0-65535)
+    // Bits 16-25: quantized CCNS phase angle (0-1023 → 0-2π)
+    // Bits 26-31: reserved
+    //
+    // Phase angle is read from ProtocolState at the INSTANT of this spike,
+    // not derived from timestep. This survives ASC timeline steering.
+    int residue_id = (src->n_residues > 0) ? src->nearby_residues[0] : -1;
+    int residue_bits = residue_id & 0xFFFF; // 16-bit residue ID
+
+    // Compute instantaneous phase from ProtocolState
+    int phase_bits = 0;
+    if (d_protocol != nullptr) {
+        unsigned int step = d_protocol->current_step;
+        unsigned int total = d_protocol->total_steps;
+        if (total > 0) {
+            // Quantize to 10 bits (0-1023)
+            phase_bits = (int)((unsigned long long)step * 1023ULL / (unsigned long long)total);
+            phase_bits = min(max(phase_bits, 0), 1023);
+        }
+    }
+
+    // Pack: residue_id[15:0] | phase_angle[25:16]
+    compact.primary_residue_id = residue_bits | (phase_bits << 16);
 
     // Atomic increment head to claim a slot
     unsigned int slot = atomicAdd(head_ptr, 1);

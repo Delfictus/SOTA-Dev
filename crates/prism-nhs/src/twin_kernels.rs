@@ -302,20 +302,30 @@ impl TwinRingBuffer {
     /// to ring buffer. All on GPU, never touches CPU or PCIe bus.
     ///
     /// This replaces push_compacted() for the autonomous graph path.
+    /// Now accepts ProtocolState for bit-packed phase angle computation.
     pub fn push_device(
         &mut self,
         stream: &Arc<CudaStream>,
         d_spike_events: &CudaSlice<u8>,   // engine's d_spike_events buffer
         d_spike_count: &CudaSlice<i32>,    // engine's d_spike_count
     ) -> Result<()> {
+        self.push_device_with_phase(stream, d_spike_events, d_spike_count, None)
+    }
+
+    /// Push with bit-packed phase angle from ProtocolState.
+    pub fn push_device_with_phase(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        d_spike_events: &CudaSlice<u8>,
+        d_spike_count: &CudaSlice<i32>,
+        d_protocol_state: Option<&CudaSlice<u8>>,
+    ) -> Result<()> {
         let compact_fn = match &self.compact_push_fn {
             Some(f) => f,
             None => anyhow::bail!("compact_and_push kernel not loaded — cannot use device path"),
         };
 
-        // Launch compact_and_push: one thread per spike, reads spike_count from device
-        // We launch max_spikes threads — the kernel checks spike_count internally
-        let max_spikes = 65536u32; // upper bound, kernel exits early for tid >= *spike_count
+        let max_spikes = 65536u32;
         let n_blocks = (max_spikes + 255) / 256;
         let cfg = LaunchConfig {
             grid_dim: (n_blocks, 1, 1),
@@ -323,15 +333,31 @@ impl TwinRingBuffer {
             shared_mem_bytes: 0,
         };
 
-        unsafe {
-            stream.launch_builder(compact_fn)
-                .arg(d_spike_events)     // const GpuSpikeEvent*
-                .arg(d_spike_count)       // const int*
-                .arg(&mut self.buffer)    // ring buffer storage
-                .arg(&mut self.head)      // monotonic head counter
-                .arg(&mut self.overflow)  // overflow counter
-                .arg(&self.capacity)      // ring capacity
-                .launch(cfg)?;
+        let null_ptr = 0u64;
+        if let Some(ps) = d_protocol_state {
+            unsafe {
+                stream.launch_builder(compact_fn)
+                    .arg(d_spike_events)
+                    .arg(d_spike_count)
+                    .arg(&mut self.buffer)
+                    .arg(&mut self.head)
+                    .arg(&mut self.overflow)
+                    .arg(&self.capacity)
+                    .arg(ps) // ProtocolState for phase angle
+                    .launch(cfg)?;
+            }
+        } else {
+            unsafe {
+                stream.launch_builder(compact_fn)
+                    .arg(d_spike_events)
+                    .arg(d_spike_count)
+                    .arg(&mut self.buffer)
+                    .arg(&mut self.head)
+                    .arg(&mut self.overflow)
+                    .arg(&self.capacity)
+                    .arg(&null_ptr) // nullptr — no phase angle
+                    .launch(cfg)?;
+            }
         }
 
         Ok(())
