@@ -222,6 +222,7 @@ pub struct GpuTemperatureProtocol {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 #[repr(C)]
+#[repr(C)]
 pub struct GpuSpikeEvent {
     pub timestep: i32,
     pub voxel_idx: i32,
@@ -238,6 +239,7 @@ pub struct GpuSpikeEvent {
     pub vibrational_energy: f32,     // UV energy deposited (0 for LIF)
     pub n_nearby_excited: i32,       // excited aromatics in range (pi-stacking)
     pub wd_change: f32,              // |water_density - water_density_prev| for SDST energy_gradient
+    pub phase_bits: u32,             // 10-bit CCNS phase angle (0-1023 → 0-2π) from ProtocolState
 }
 
 #[cfg(feature = "gpu")]
@@ -255,6 +257,7 @@ impl Default for GpuSpikeEvent {
             vibrational_energy: 0.0,
             n_nearby_excited: 0,
             wd_change: 0.0,
+            phase_bits: 0,
             intensity: 0.0,
             nearby_residues: [0; 8],
             n_residues: 0,
@@ -6129,9 +6132,13 @@ impl NhsAmberFusedEngine {
                         full_buffer[offset + 88], full_buffer[offset + 89],
                         full_buffer[offset + 90], full_buffer[offset + 91],
                     ]);
+                    let phase_bits = u32::from_le_bytes([
+                        full_buffer[offset + 92], full_buffer[offset + 93],
+                        full_buffer[offset + 94], full_buffer[offset + 95],
+                    ]);
                     if self.accumulated_spikes.len() < 5 {
-                        log::info!("SPIKE DEBUG #{}: pos=[{:.2}, {:.2}, {:.2}] voxel={} src={} wl={:.0} arom_type={} intensity={:.3} wd_change={:.4}",
-                            self.accumulated_spikes.len(), pos_x, pos_y, pos_z, voxel_idx, spike_source, wavelength_nm, aromatic_type, intensity, wd_change);
+                        log::info!("SPIKE DEBUG #{}: pos=[{:.2}, {:.2}, {:.2}] voxel={} src={} wl={:.0} arom_type={} intensity={:.3} phase={}/1024",
+                            self.accumulated_spikes.len(), pos_x, pos_y, pos_z, voxel_idx, spike_source, wavelength_nm, aromatic_type, intensity, phase_bits);
                         log::info!("  raw bytes[0..24]: {:?}", &full_buffer[offset..offset+24]);
                     }
                     self.accumulated_spikes.push(GpuSpikeEvent {
@@ -6149,6 +6156,7 @@ impl NhsAmberFusedEngine {
                         vibrational_energy,
                         n_nearby_excited,
                         wd_change,
+                        phase_bits,
                     });
                 }
             }
@@ -6967,6 +6975,7 @@ impl NhsAmberFusedEngine {
                 vibrational_energy: 0.0,
                 n_nearby_excited: 0,
                 wd_change: 0.0,
+                phase_bits: 0,
             });
         }
 
@@ -7175,12 +7184,13 @@ impl NhsAmberFusedEngine {
             let vibrational_energy = f32::from_le_bytes([full_buffer[offset+80], full_buffer[offset+81], full_buffer[offset+82], full_buffer[offset+83]]);
             let n_nearby_excited = i32::from_le_bytes([full_buffer[offset+84], full_buffer[offset+85], full_buffer[offset+86], full_buffer[offset+87]]);
             let wd_change = f32::from_le_bytes([full_buffer[offset+88], full_buffer[offset+89], full_buffer[offset+90], full_buffer[offset+91]]);
+            let phase_bits = u32::from_le_bytes([full_buffer[offset+92], full_buffer[offset+93], full_buffer[offset+94], full_buffer[offset+95]]);
 
             self.accumulated_spikes.push(GpuSpikeEvent {
                 timestep, voxel_idx, position: [pos_x, pos_y, pos_z], intensity,
                 nearby_residues, n_residues, spike_source, wavelength_nm,
                 aromatic_type, aromatic_residue_id, water_density, vibrational_energy,
-                n_nearby_excited, wd_change,
+                n_nearby_excited, wd_change, phase_bits,
             });
         }
 

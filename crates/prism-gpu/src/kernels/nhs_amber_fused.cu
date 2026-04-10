@@ -222,6 +222,7 @@ struct SpikeEvent {
     float vibrational_energy;   // energy deposited by UV excitation (0 for LIF)
     int n_nearby_excited;       // number of excited aromatics in range (pi-stacking)
     float wd_change;            // |water_density - water_density_prev| = |∂WD/∂t| for SDST energy_gradient
+    unsigned int phase_bits;    // 10-bit CCNS phase angle (0-1023 → 0-2π) from ProtocolState
 };
 
 // Warp matrix entry - maps voxel to atoms
@@ -777,7 +778,8 @@ __device__ void capture_spike_event(
     float water_density,         // local water density
     float vibrational_energy,    // UV energy deposited (0 for LIF)
     int n_nearby_excited,        // excited aromatics in range
-    float wd_change              // |water_density - water_density_prev| for SDST energy_gradient
+    float wd_change,             // |water_density - water_density_prev| for SDST energy_gradient
+    unsigned int phase_bits = 0  // 10-bit CCNS phase (set by caller from ProtocolState)
 ) {
     event.timestep = timestep;
     event.voxel_idx = voxel_idx;
@@ -791,6 +793,7 @@ __device__ void capture_spike_event(
     event.vibrational_energy = vibrational_energy;
     event.n_nearby_excited = n_nearby_excited;
     event.wd_change = wd_change;
+    event.phase_bits = phase_bits; // 10-bit CCNS phase from ProtocolState
     event.n_residues = 0;
 
     // Map to nearby residues via warp matrix

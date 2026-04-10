@@ -1304,6 +1304,7 @@ fn run_full_pipeline_internal(
                 vibrational_energy: 0.0,
                 n_nearby_excited: 0,
                 wd_change: 0.0,
+                phase_bits: 0,
             });
         }
 
@@ -2963,6 +2964,7 @@ fn detect_spikes_from_positions(
                     vibrational_energy: 0.0,
                     n_nearby_excited: 0,
                     wd_change: 0.0,
+                phase_bits: 0,
                 });
             }
         }
@@ -3134,11 +3136,12 @@ fn run_multi_stream_pipeline(
         /// Running spike rate statistics per engine: (sum, sum_sq, count) for mean/σ
         rate_stats: Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU32)>,
         n_residues: usize,
-        // ── PCMI v3.0: High-Resolution Phase Histogram (1024 bins from GPU bit-packed φ) ──
-        /// Per-group × per-residue × per-phase-bin spike counts
-        /// Uses 64 bins (1024/16 downsampled) for statistical robustness with cross-group correlation
-        /// Background-subtracted deviation correlation breaks the temperature uniformity
-        group_residue_phase_hist: std::sync::Mutex<Vec<Vec<[u32; 64]>>>, // [group][residue][phase_bin]
+        // ── PCMI v3.0: High-Resolution Phasor Accumulators (from GPU bit-packed φ) ──
+        /// Per-group × per-residue phasor accumulators: (cos_sum, sin_sum, count)
+        /// Phase angle from spike.phase_bits (10-bit GPU source, 1024 resolution)
+        /// S_pc = |Σ exp(iφ)| / N = sqrt(cos²+sin²) / N — vector phase resultant
+        /// Phase-Lag θ = atan2(sin_sum, cos_sum) — mean phase angle per residue
+        group_residue_phasors: std::sync::Mutex<Vec<Vec<(f64, f64, u32)>>>, // [group][residue] = (cos_sum, sin_sum, count)
         /// Bayesian prior: running per-residue spike density baseline (first 20 chunks)
         prior_residue_density: std::sync::Mutex<Vec<f64>>, // [residue] = avg spikes/chunk during baseline
         /// Baseline collection complete flag
@@ -3170,7 +3173,7 @@ fn run_multi_stream_pipeline(
             )).collect(),
             n_residues: n_residues_est,
             // PCMI v3.0
-            group_residue_phase_hist: std::sync::Mutex::new(vec![vec![[0u32; 64]; n_residues_est + 1]; 4]),
+            group_residue_phasors: std::sync::Mutex::new(vec![vec![(0.0f64, 0.0f64, 0u32); n_residues_est + 1]; 4]),
             prior_residue_density: std::sync::Mutex::new(vec![0.0f64; n_residues_est + 1]),
             baseline_ready: std::sync::atomic::AtomicBool::new(false),
             group_total_steps: diff_total_steps,
@@ -3499,23 +3502,24 @@ fn run_multi_stream_pipeline(
 
                                     if let (Ok(mut grc), Ok(mut gph)) = (
                                         asc_state.group_residue_counts.lock(),
-                                        asc_state.group_residue_phase_hist.lock(),
+                                        asc_state.group_residue_phasors.lock(),
                                     ) {
+                                        let two_pi = 2.0 * std::f64::consts::PI;
                                         for spike in &spikes[recent_start..] {
-                                            // High-resolution phase bin: 64 bins from timestep
-                                            // This gives 6.4× more phase resolution than 10 bins,
-                                            // enough to resolve sub-phase lags between residues.
-                                            let phase_bin = if total_steps_g > 0.0 {
-                                                ((spike.timestep as f64 / total_steps_g) * 64.0) as usize
-                                            } else { 0 };
-                                            let phase_bin = phase_bin.min(63);
+                                            // 1024-bin phase from GPU bit-packed field
+                                            // phase_bits = 0-1023 quantized CCNS phase from ProtocolState
+                                            let phi = (spike.phase_bits as f64 / 1024.0) * two_pi;
+                                            let cos_phi = phi.cos();
+                                            let sin_phi = phi.sin();
 
                                             for j in 0..(spike.n_residues as usize).min(8) {
                                                 let rid = spike.nearby_residues[j];
                                                 if rid >= 0 && (rid as usize) < asc_state.n_residues {
                                                     let r = rid as usize;
                                                     grc[group_idx][r] += 1;
-                                                    gph[group_idx][r][phase_bin] += 1;
+                                                    gph[group_idx][r].0 += cos_phi;
+                                                    gph[group_idx][r].1 += sin_phi;
+                                                    gph[group_idx][r].2 += 1;
                                                 }
                                             }
                                         }
@@ -3540,27 +3544,22 @@ fn run_multi_stream_pipeline(
 
                                     if let (Ok(grc), Ok(gph)) = (
                                         asc_state.group_residue_counts.lock(),
-                                        asc_state.group_residue_phase_hist.lock(),
+                                        asc_state.group_residue_phasors.lock(),
                                     ) {
                                         let mut hotspots: Vec<(i32, usize, f32)> = Vec::new();
-                                        let scout_groups = [0usize, 2]; // TS, UV
-                                        let observer_groups = [1usize, 3]; // EQ, HY
+                                        let scout_groups = [0usize, 2];
+                                        let observer_groups = [1usize, 3];
 
-                                        // ── BACKGROUND SUBTRACTION (AXSI direct-beam removal) ──
-                                        // Compute global phase histogram per group (all residues).
-                                        // This IS the temperature signal. Subtracting it reveals
-                                        // residue-specific phase deviations — the fringes.
-                                        let mut global_hist = [[0.0f64; 10]; 4];
+                                        // ── PHASOR-BASED S_pc + PHASE-LAG (from GPU bit-packed φ) ──
+                                        // Compute global mean phasor per group (temperature background)
+                                        let mut global_theta = [0.0f64; 4]; // mean phase angle per group
                                         for g in 0..4 {
+                                            let (mut gc, mut gs) = (0.0f64, 0.0f64);
                                             for rid in 0..asc_state.n_residues {
-                                                for b in 0..10 {
-                                                    global_hist[g][b] += gph[g][rid][b] as f64;
-                                                }
+                                                gc += gph[g][rid].0;
+                                                gs += gph[g][rid].1;
                                             }
-                                            let total: f64 = global_hist[g].iter().sum();
-                                            if total > 0.0 {
-                                                for b in 0..10 { global_hist[g][b] /= total; }
-                                            }
+                                            global_theta[g] = gs.atan2(gc);
                                         }
 
                                         for rid in 0..asc_state.n_residues {
@@ -3568,49 +3567,47 @@ fn run_multi_stream_pipeline(
                                             let active_groups = counts.iter().filter(|&&c| c > 5).count();
                                             if active_groups < 2 { continue; }
 
-                                            // ── Background-Subtracted Phase Deviation ──
-                                            // deviation = residue_fraction - global_fraction
-                                            // Positive = this residue spikes MORE than average at this phase
-                                            // Negative = this residue spikes LESS
-                                            let mut deviations = [[0.0f64; 10]; 4];
+                                            // Per-group: compute S_pc (vector resultant) and θ (mean phase)
+                                            let mut per_group_spc = [0.0f64; 4];
+                                            let mut per_group_theta = [0.0f64; 4];
+                                            let mut per_group_lag = [0.0f64; 4]; // θ_residue - θ_global
                                             for g in 0..4 {
-                                                let res_total: f64 = gph[g][rid].iter().map(|&v| v as f64).sum();
-                                                if res_total < 5.0 { continue; }
-                                                for b in 0..10 {
-                                                    let res_frac = gph[g][rid][b] as f64 / res_total;
-                                                    deviations[g][b] = res_frac - global_hist[g][b];
+                                                let (cs, ss, n) = gph[g][rid];
+                                                if n > 5 {
+                                                    let nf = n as f64;
+                                                    per_group_spc[g] = (cs*cs + ss*ss).sqrt() / nf;
+                                                    per_group_theta[g] = ss.atan2(cs);
+                                                    // Phase-lag: difference from global mean (background subtraction)
+                                                    per_group_lag[g] = per_group_theta[g] - global_theta[g];
                                                 }
                                             }
 
-                                            // ── Cross-Group Deviation Correlation ──
-                                            // S_pc = Pearson r of DEVIATIONS between group pairs.
-                                            // High S_pc = this residue's timing DEVIATION from average
-                                            // is CONSISTENT across groups = true interferometric signal.
-                                            // Low S_pc = deviations are random = temperature artifact.
-                                            let mut corr_sum = 0.0f64;
-                                            let mut corr_count = 0u32;
-                                            for ga in 0..4 {
-                                                if counts[ga] < 5 { continue; }
-                                                for gb in (ga+1)..4 {
-                                                    if counts[gb] < 5 { continue; }
-                                                    let da = &deviations[ga];
-                                                    let db = &deviations[gb];
-                                                    let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
-                                                    for k in 0..64 {
-                                                        cov += da[k] * db[k];
-                                                        va += da[k] * da[k];
-                                                        vb += db[k] * db[k];
-                                                    }
-                                                    let d = (va * vb).sqrt();
-                                                    if d > 1e-12 {
-                                                        corr_sum += cov / d;
-                                                        corr_count += 1;
-                                                    }
-                                                }
+                                            // Cross-group phase-lag consistency:
+                                            // If the lag is CONSISTENT across groups → real pocket signal
+                                            // If the lag varies wildly → noise
+                                            let active_lags: Vec<f64> = (0..4)
+                                                .filter(|&g| counts[g] > 5)
+                                                .map(|g| per_group_lag[g])
+                                                .collect();
+                                            if active_lags.len() < 2 { continue; }
+
+                                            // Circular variance of lags: 1 - |mean phasor of lags|
+                                            let (mut lc, mut ls) = (0.0f64, 0.0f64);
+                                            for &lag in &active_lags {
+                                                lc += lag.cos();
+                                                ls += lag.sin();
                                             }
-                                            let s_pc = if corr_count > 0 {
-                                                (corr_sum / corr_count as f64).max(0.0)
-                                            } else { 0.0 };
+                                            let n_l = active_lags.len() as f64;
+                                            let lag_coherence = (lc*lc + ls*ls).sqrt() / n_l;
+                                            // lag_coherence → 1.0 = consistent lag across groups
+                                            // lag_coherence → 0.0 = random lag = temperature artifact
+
+                                            // Mean lag magnitude (how different is this residue from background?)
+                                            let mean_lag = ls.atan2(lc).abs();
+
+                                            // S_pc = lag_coherence × (mean_lag > 0.1 check)
+                                            // Only residues with CONSISTENT NON-ZERO lag are real signals
+                                            let s_pc = if mean_lag > 0.1 { lag_coherence } else { lag_coherence * 0.5 };
 
                                             if s_pc > 0.01 {
                                                 hotspots.push((rid as i32, active_groups, s_pc as f32));
@@ -6407,22 +6404,19 @@ fn run_multi_stream_pipeline(
                 // Factor 1: CV interferometric (continuous, no lookup table)
                 let f_cv = (1.0 + 0.5 * (1.0 - cv as f32)).clamp(0.75, 1.5);
 
-                // Factor 2: S_pc EXPONENTIAL phase coherence for this site's residues
-                // exp(S_pc * 2.0) - 1.0: S_pc=0→0.0, S_pc=0.5→1.72, S_pc=1.0→6.39
-                // Clamped to [1.0, 4.0] as a multiplier
-                // Factor 2: S_pc — BACKGROUND-SUBTRACTED cross-group phase correlation
-                // Compute global phase baseline, subtract it, correlate deviations.
-                // This removes the temperature artifact that gave 0.98 uniform S_pc.
+                // Factor 2: PHASOR-BASED S_pc + Phase-Lag (from GPU 10-bit φ)
+                // Uses group_residue_phasors (cos_sum, sin_sum, count) per residue.
+                // S_pc = cross-group lag coherence. Phase-lag θ from atan2.
                 let (f_spc, mean_spc_val) = if let Some(ref asc) = asc_shared {
-                    if let (Ok(gph), Ok(grc)) = (asc.group_residue_phase_hist.lock(), asc.group_residue_counts.lock()) {
-                        // Global phase histogram per group (background = temperature signal)
-                        let mut global_hist = [[0.0f64; 10]; 4];
+                    if let (Ok(gph), Ok(grc)) = (asc.group_residue_phasors.lock(), asc.group_residue_counts.lock()) {
+                        // Global mean phasor per group (temperature background)
+                        let mut global_theta = [0.0f64; 4];
                         for g in 0..4 {
+                            let (mut gc, mut gs) = (0.0, 0.0);
                             for rid in 0..asc.n_residues {
-                                for b in 0..10 { global_hist[g][b] += gph[g][rid][b] as f64; }
+                                gc += gph[g][rid].0; gs += gph[g][rid].1;
                             }
-                            let total: f64 = global_hist[g].iter().sum();
-                            if total > 0.0 { for b in 0..10 { global_hist[g][b] /= total; } }
+                            global_theta[g] = gs.atan2(gc);
                         }
 
                         let mut spc_sum = 0.0f64;
@@ -6434,38 +6428,31 @@ fn run_multi_stream_pipeline(
                             let active = counts.iter().filter(|&&c| c > 5).count();
                             if active < 2 { continue; }
 
-                            // Background-subtracted deviations
-                            let mut dev = [[0.0f64; 10]; 4];
+                            // Per-group phase-lag (residue θ - global θ)
+                            let mut lags: Vec<f64> = Vec::new();
                             for g in 0..4 {
-                                let rt: f64 = gph[g][rid].iter().map(|&v| v as f64).sum();
-                                if rt < 5.0 { continue; }
-                                for b in 0..10 {
-                                    dev[g][b] = gph[g][rid][b] as f64 / rt - global_hist[g][b];
+                                let (cs, ss, n) = gph[g][rid];
+                                if n > 5 {
+                                    let theta = ss.atan2(cs);
+                                    lags.push(theta - global_theta[g]);
                                 }
                             }
-                            // Cross-group deviation correlation
-                            let mut cs = 0.0f64;
-                            let mut cn = 0u32;
-                            for ga in 0..4 {
-                                if counts[ga] < 5 { continue; }
-                                for gb in (ga+1)..4 {
-                                    if counts[gb] < 5 { continue; }
-                                    let (mut c, mut a, mut b_v) = (0.0, 0.0, 0.0);
-                                    for k in 0..64 {
-                                        c += dev[ga][k] * dev[gb][k];
-                                        a += dev[ga][k] * dev[ga][k];
-                                        b_v += dev[gb][k] * dev[gb][k];
-                                    }
-                                    let d = (a * b_v).sqrt();
-                                    if d > 1e-12 { cs += c / d; cn += 1; }
-                                }
-                            }
-                            if cn > 0 { spc_sum += (cs / cn as f64).max(0.0); spc_count += 1; }
+                            if lags.len() < 2 { continue; }
+
+                            // Lag coherence: consistency of phase-lag across groups
+                            let (mut lc, mut ls) = (0.0f64, 0.0f64);
+                            for &lag in &lags { lc += lag.cos(); ls += lag.sin(); }
+                            let lag_coh = (lc*lc + ls*ls).sqrt() / lags.len() as f64;
+                            let mean_lag = ls.atan2(lc).abs();
+
+                            // S_pc = lag coherence × lag significance
+                            let s = if mean_lag > 0.1 { lag_coh } else { lag_coh * 0.5 };
+                            spc_sum += s;
+                            spc_count += 1;
                         }
                         if spc_count > 0 {
                             let mean_spc = spc_sum / spc_count as f64;
-                            // PURE PHYSICS: exp(S_pc * 2.0) — direct exponential, no normalization
-                            // S_pc=0→1.0× S_pc=0.5→2.7× S_pc=0.8→5.0× S_pc=1.0→7.4×
+                            // PURE PHYSICS: exp(S_pc * 2.0)
                             let mult = (mean_spc * 2.0).exp() as f32;
                             (mult, mean_spc as f32)
                         } else { (1.0, 0.0) }
