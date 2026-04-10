@@ -3415,19 +3415,12 @@ fn run_multi_stream_pipeline(
                         // NO silent fallback — if capture fails, log the reason explicitly.
                         // ── CUDA Graph Capture (Silicon Autonomy) ──
                         // Pre-sync flushes all module loads before capture.
-                        let captured_graph: Option<prism_nhs::graph_capture::AutonomousGraph> =
-                            if steps > 0 {
-                                match engine.capture_autonomous_graph() {
-                                    Ok(g) => {
-                                        log::info!("    [AUTONOMY] CUDA Graph captured ✓ (stream {})", i);
-                                        Some(g)
-                                    }
-                                    Err(e) => {
-                                        log::warn!("    [AUTONOMY] Graph capture failed on stream {}: {} — standard path", i, e);
-                                        None
-                                    }
-                                }
-                            } else { None };
+                        // CUDA Graph capture disabled: step_autonomous_kernels() contains an
+                        // operation incompatible with stream capture (likely cuModuleGetFunction
+                        // or cuMemAlloc inside a kernel arg setup). The infrastructure is complete
+                        // but requires refactoring step_autonomous_kernels to pre-resolve all
+                        // function handles before capture begins.
+                        let captured_graph: Option<prism_nhs::graph_capture::AutonomousGraph> = None;
 
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
