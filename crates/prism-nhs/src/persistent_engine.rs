@@ -107,8 +107,15 @@ pub struct LiningResidue {
     pub resname: String,
     /// Minimum distance from any atom to pocket centroid (Å)
     pub min_distance: f32,
-    /// Number of atoms within cutoff
+    /// Number of atoms within cutoff (geometric — from compute_lining_residues)
     pub n_atoms_in_pocket: usize,
+    /// Number of GPU spike events attributed to this residue across all chunks
+    /// (dynamics — populated by the multi-stream consensus spike-attribution pass).
+    /// Distinct from `n_atoms_in_pocket`: the geometric atom count tells you which
+    /// residues line the pocket; the spike attribution count tells you which of
+    /// those residues actually carried activity during the run.
+    #[serde(default)]
+    pub spike_attribution_count: u32,
 }
 
 /// A clustered binding site detected from spike spatial patterns
@@ -2572,7 +2579,9 @@ impl ClusteredBindingSite {
             }
         }
 
-        // Convert to LiningResidue list, sorted by distance from refined centroid
+        // Convert to LiningResidue list, sorted by distance from refined centroid.
+        // spike_attribution_count is left at 0 here — it is populated by the
+        // caller after this function runs (if they have spike attribution data).
         self.lining_residues = residue_info
             .into_iter()
             .map(|((chain, resid), (resname, min_distance, n_atoms))| LiningResidue {
@@ -2581,6 +2590,7 @@ impl ClusteredBindingSite {
                 resname,
                 min_distance,
                 n_atoms_in_pocket: n_atoms,
+                spike_attribution_count: 0,
             })
             .collect();
 

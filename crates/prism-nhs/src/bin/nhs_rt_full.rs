@@ -2000,6 +2000,7 @@ fn run_full_pipeline_internal(
                         "resname": r.resname,
                         "min_distance": r.min_distance,
                         "n_atoms": r.n_atoms_in_pocket,
+                        "spike_attribution_count": r.spike_attribution_count,
                         "is_catalytic": is_catalytic,
                     })
                 }).collect::<Vec<_>>(),
@@ -2602,6 +2603,7 @@ fn run_batch_gpu_concurrent(
                                 "resname": r.resname,
                                 "min_distance": r.min_distance,
                                 "n_atoms": r.n_atoms_in_pocket,
+                                "spike_attribution_count": r.spike_attribution_count,
                                 "is_catalytic": is_catalytic,
                             })
                         }).collect::<Vec<_>>(),
@@ -6139,6 +6141,12 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // Background spike summary — populated inside the spatial fusion block
+        // below if there are any unattributed spikes. Default null if the block
+        // doesn't run (no spikes or no sites). Wired into binding_sites.json
+        // at the json_output construction step further down.
+        let mut background_summary_json: serde_json::Value = serde_json::Value::Null;
+
         // ══════════════════════════════════════════════════════════════════
         // SPATIAL FUSION: KD-tree spike→site join (populates spike_indices)
         //
@@ -6166,6 +6174,18 @@ fn run_multi_stream_pipeline(
                 site_grid.entry((ix, iy, iz)).or_default().push(site_idx);
             }
 
+            // Background quarantine: spikes that don't fall within `radius` of any
+            // consensus site centroid are NOT silently dropped — they're captured into
+            // background_spike_indices so they can be reviewed for "high-value spikes
+            // that are getting missed by the consensus." The summary (count +
+            // per-residue attribution) is exposed in the binding_sites.json so the
+            // conservation invariant Σ(spike_indices per site) + |background| ==
+            // |all_stream_spikes| is auditable from the output alone.
+            //
+            // The full per-spike background dump (with phase_bits, group_id,
+            // chunk_idx, etc.) is written by the Arrow IPC ring buffer in a later
+            // Phase 1 commit. Stage 1A only ships the count + residue summary.
+            let mut background_spike_indices: Vec<usize> = Vec::new();
             for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
                 let sx = (spike.position[0] * inv_cell).floor() as i32;
                 let sy = (spike.position[1] * inv_cell).floor() as i32;
@@ -6191,13 +6211,85 @@ fn run_multi_stream_pipeline(
                 if let Some(idx) = best_site {
                     clustered_sites[idx].spike_indices.push(spike_idx);
                     total_assigned += 1;
+                } else {
+                    background_spike_indices.push(spike_idx);
                 }
             }
 
-            // Update spike_count and compute lining residues from spikes
+            // Conservation invariant — assert and log so any future regression that
+            // drops spikes silently is caught immediately.
+            //
+            // We use `total_assigned` (the per-spike loop counter, where each spike
+            // increments exactly once when it lands in its best site) instead of
+            // summing `spike_indices.len()` over `clustered_sites`, because some
+            // sub-sites share spike_indices with their parents (the k-means
+            // sub-pocket splitter at the +1000 ID range earlier in this function
+            // generates child sites that re-reference parent spikes). Summing
+            // over the final clustered_sites would over-count by the parent/child
+            // overlap, defeating the conservation check.
+            let total_background = background_spike_indices.len();
+            let total_seen = total_assigned + total_background;
+            if total_seen != all_stream_spikes.len() {
+                log::error!(
+                    "  SPIKE CONSERVATION VIOLATION: attributed={} + background={} = {} != total={}",
+                    total_assigned, total_background, total_seen, all_stream_spikes.len()
+                );
+            }
+            log::info!(
+                "  Spike conservation: {} attributed + {} background = {} total ({:.1}% attributed)",
+                total_assigned, total_background, total_seen,
+                100.0 * total_assigned as f32 / total_seen.max(1) as f32
+            );
+
+            // Build a per-residue background attribution summary so reviewers can see
+            // which residues are accumulating background activity (potential missed
+            // pockets, surface noise, or just water/UV background).
+            let mut background_residue_counts: std::collections::HashMap<i32, u32> =
+                std::collections::HashMap::new();
+            for &idx in &background_spike_indices {
+                if let Some(spike) = all_stream_spikes.get(idx) {
+                    for j in 0..(spike.n_residues as usize).min(8) {
+                        let rid = spike.nearby_residues[j];
+                        if rid >= 0 {
+                            *background_residue_counts.entry(rid).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+            let mut background_top_residues: Vec<(i32, u32)> =
+                background_residue_counts.into_iter().collect();
+            background_top_residues.sort_by(|a, b| b.1.cmp(&a.1));
+            background_top_residues.truncate(50);
+            background_summary_json = serde_json::json!({
+                "count": total_background,
+                "fraction": total_background as f64 / total_seen.max(1) as f64,
+                "top_residues": background_top_residues.iter().map(|(rid, count)| {
+                    serde_json::json!({ "resid": rid, "spike_attribution_count": count })
+                }).collect::<Vec<_>>(),
+            });
+
+            // Update spike_count for each site. The lining_residues themselves are
+            // NOT touched here — they were already populated by compute_lining_residues
+            // earlier in the pipeline (line ~4413), and they will be RE-COMPUTED below
+            // after spike-weighted centroid refinement so they reflect the refined
+            // centroid. The per-residue spike attribution counts are accumulated into
+            // a parallel map that survives the centroid refinement step and is merged
+            // back into the LiningResidue records after the re-computation.
+            //
+            // This preserves both:
+            //   • geometric data (chain, resname, min_distance, n_atoms_in_pocket) —
+            //     from compute_lining_residues using the refined centroid
+            //   • dynamics data (spike_attribution_count) — from the spike-attribution
+            //     pass below
+            //
+            // Previously this block overwrote lining_residues with a placeholder
+            // record (chain="", resname="", min_distance=0, n_atoms_in_pocket=count),
+            // which destroyed the geometric mapping and mislabeled the spike count
+            // as an atom count. See feat/twin-data-integrity for the fix history.
+            let mut site_spike_attribution: Vec<std::collections::HashMap<i32, u32>> =
+                Vec::with_capacity(clustered_sites.len());
             for site in clustered_sites.iter_mut() {
                 site.spike_count = site.spike_indices.len();
-                // Extract lining residues from assigned spikes
                 let mut residue_counts: std::collections::HashMap<i32, u32> = std::collections::HashMap::new();
                 for &idx in &site.spike_indices {
                     if let Some(spike) = all_stream_spikes.get(idx) {
@@ -6209,18 +6301,7 @@ fn run_multi_stream_pipeline(
                         }
                     }
                 }
-                // Top residues by spike count → lining_residues
-                let mut sorted_res: Vec<_> = residue_counts.into_iter().collect();
-                sorted_res.sort_by(|a, b| b.1.cmp(&a.1));
-                site.lining_residues = sorted_res.iter().take(20).map(|&(rid, count)| {
-                    prism_nhs::persistent_engine::LiningResidue {
-                        chain: String::new(),
-                        resid: rid,
-                        resname: String::new(),
-                        min_distance: 0.0,
-                        n_atoms_in_pocket: count as usize,
-                    }
-                }).collect();
+                site_spike_attribution.push(residue_counts);
             }
 
             // ── SPIKE-WEIGHTED CENTROID REFINEMENT ──
@@ -6258,6 +6339,172 @@ fn run_multi_stream_pipeline(
                     }
                     site.centroid = new_c;
                 }
+            }
+
+            // ── Re-build lining residues: spike attribution (inclusion) + geometric (enrichment) ──
+            //
+            // Two-signal lining residue construction:
+            //
+            //   INCLUSION criterion — spike attribution.
+            //     The set of residues that appear in `lining_residues` is the set
+            //     that spike.nearby_residues[] attributed to this site. Captures
+            //     residues whose pocket-adjacent free space generated spikes even
+            //     when their atoms sit outside the geometric cutoff (a residue
+            //     can be a "lining" residue dynamically without being a "lining"
+            //     residue geometrically — see e.g. PHE71 in 4LPK SII-P, atoms at
+            //     8.5Å but the side-chain face faces into the open pocket).
+            //
+            //   ENRICHMENT — geometric metadata.
+            //     For each spike-attributed residue, the closest atom distance to
+            //     the refined centroid + the count of its atoms within lining_cutoff.
+            //     This populates chain / resname / min_distance / n_atoms_in_pocket
+            //     using the actual topology, not a placeholder.
+            //
+            //   spike_attribution_count — the per-residue spike count from the
+            //     attribution pass above. Distinct from n_atoms_in_pocket: one
+            //     measures dynamics (spikes), the other measures geometry (atoms).
+            //
+            // ── Performance characteristics (replaces an earlier O(n_sites × n_atoms) draft) ──
+            //
+            // Pre-pass: build a residue → atom-indices inverted map ONCE, outside
+            // the per-site loop. O(n_atoms). Then per site, walk only the atoms of
+            // residues that spike-attributed: O(spike_residues × atoms_per_residue),
+            // typically ~30 residues × ~10 atoms = ~300 work units per site, vs.
+            // ~n_atoms_topo (thousands) per site for the naïve walk. Memory uses a
+            // dense Vec<Option<...>> indexed by topology_idx instead of a string- or
+            // i32-keyed HashMap — zero hash overhead, one allocation per loop body,
+            // O(1) lookup.
+            //
+            // ── Cap selection (replaces an earlier `.truncate(20)` magic constant) ──
+            //
+            // The lining_residues list is bounded by a Pareto information-content
+            // cutoff: include the smallest set of residues whose cumulative
+            // spike_attribution_count covers ≥ LINING_PARETO_THRESHOLD of the
+            // site's total attribution. For sharply-peaked pockets this yields
+            // 5–10 residues; for diffuse pockets it yields 20–40. The threshold
+            // is the only tunable in this section and is justified by the
+            // Pareto principle for power-law spike distributions (Newman 2005,
+            // "Power laws, Pareto distributions and Zipf's law", Contemporary
+            // Physics 46:323–351). We expose it as a const so future calibration
+            // can move it without searching the codebase.
+            const LINING_PARETO_THRESHOLD: f64 = 0.95;
+
+            // Pre-pass: residue → atom indices, indexed by topology residue id.
+            // Build once, reuse for every site.
+            let max_topology_resid = topology.residue_ids.iter().copied().max().unwrap_or(0);
+            let mut residue_atoms: Vec<Vec<usize>> = vec![Vec::new(); max_topology_resid + 1];
+            for (atom_idx, &topo_resid) in topology.residue_ids.iter().enumerate() {
+                if topo_resid < residue_atoms.len() {
+                    residue_atoms[topo_resid].push(atom_idx);
+                }
+            }
+
+            let lining_cutoff = args.lining_cutoff;
+            let lining_cutoff_sq = lining_cutoff * lining_cutoff;
+            for (site_idx, site) in clustered_sites.iter_mut().enumerate() {
+                let cx = site.centroid[0];
+                let cy = site.centroid[1];
+                let cz = site.centroid[2];
+
+                let attrib = match site_spike_attribution.get(site_idx) {
+                    Some(m) if !m.is_empty() => m,
+                    _ => {
+                        // No spikes attributed → leave whatever lining_residues
+                        // compute_lining_residues set earlier (line ~4413). Safer
+                        // than wiping it.
+                        continue;
+                    }
+                };
+
+                // Build LiningResidue records by walking only the atoms of residues
+                // that spike-attributed (via the inverted map). This is the inner
+                // loop where the O(n_sites × n_atoms) naïve version was costly.
+                let mut new_lining: Vec<prism_nhs::persistent_engine::LiningResidue> =
+                    Vec::with_capacity(attrib.len());
+
+                for (&resid_i32, &spike_count) in attrib.iter() {
+                    let resid_usize = resid_i32 as usize;
+                    if resid_usize >= residue_atoms.len() {
+                        // Defensive: stale topology index, shouldn't happen with a
+                        // well-formed topology. Emit a record with empty geometric
+                        // tagging so the spike count isn't lost.
+                        new_lining.push(prism_nhs::persistent_engine::LiningResidue {
+                            chain: String::new(),
+                            resid: resid_i32,
+                            resname: String::new(),
+                            min_distance: 0.0,
+                            n_atoms_in_pocket: 0,
+                            spike_attribution_count: spike_count,
+                        });
+                        continue;
+                    }
+
+                    // Walk only this residue's atoms (typically 5–20 for amino acids).
+                    let mut min_d2 = f32::INFINITY;
+                    let mut n_in_pocket: usize = 0;
+                    let mut chain = String::new();
+                    let mut resname = String::new();
+                    let mut have_meta = false;
+
+                    for &atom_idx in &residue_atoms[resid_usize] {
+                        let dx = topology.positions[atom_idx * 3] - cx;
+                        let dy = topology.positions[atom_idx * 3 + 1] - cy;
+                        let dz = topology.positions[atom_idx * 3 + 2] - cz;
+                        let d2 = dx * dx + dy * dy + dz * dz;
+                        if d2 < min_d2 {
+                            min_d2 = d2;
+                        }
+                        if d2 <= lining_cutoff_sq {
+                            n_in_pocket += 1;
+                        }
+                        if !have_meta {
+                            if atom_idx < topology.chain_ids.len() {
+                                chain = topology.chain_ids[atom_idx].clone();
+                            }
+                            if atom_idx < topology.residue_names.len() {
+                                resname = topology.residue_names[atom_idx].clone();
+                            }
+                            have_meta = true;
+                        }
+                    }
+
+                    new_lining.push(prism_nhs::persistent_engine::LiningResidue {
+                        chain,
+                        resid: resid_i32,
+                        resname,
+                        min_distance: if min_d2.is_finite() { min_d2.sqrt() } else { 0.0 },
+                        n_atoms_in_pocket: n_in_pocket,
+                        spike_attribution_count: spike_count,
+                    });
+                }
+
+                // Sort by spike attribution descending.
+                new_lining.sort_by(|a, b| b.spike_attribution_count.cmp(&a.spike_attribution_count));
+
+                // Pareto information-content cutoff (replaces the earlier magic
+                // truncate(20)). Include the smallest set of residues whose cumulative
+                // spike_attribution_count covers ≥ LINING_PARETO_THRESHOLD of the
+                // total. Always include at least one residue. Always include at
+                // most all residues (no upper-bound magic constant).
+                let total_attribution: u64 = new_lining
+                    .iter()
+                    .map(|lr| lr.spike_attribution_count as u64)
+                    .sum();
+                if total_attribution > 0 {
+                    let target = (total_attribution as f64 * LINING_PARETO_THRESHOLD) as u64;
+                    let mut running: u64 = 0;
+                    let mut keep_n = 1usize;
+                    for (idx, lr) in new_lining.iter().enumerate() {
+                        running += lr.spike_attribution_count as u64;
+                        keep_n = idx + 1;
+                        if running >= target {
+                            break;
+                        }
+                    }
+                    new_lining.truncate(keep_n);
+                }
+
+                site.lining_residues = new_lining;
             }
 
             let join_ms = join_start.elapsed().as_millis();
@@ -7588,6 +7835,7 @@ fn run_multi_stream_pipeline(
                     serde_json::json!({
                         "chain": r.chain, "resid": r.resid, "resname": r.resname,
                         "min_distance": r.min_distance, "n_atoms": r.n_atoms_in_pocket,
+                        "spike_attribution_count": r.spike_attribution_count,
                         "is_catalytic": catalytic_residues.contains(&r.resname.as_str()),
                     })
                 }).collect::<Vec<_>>(),
@@ -8002,6 +8250,12 @@ fn run_multi_stream_pipeline(
             "sites": ms_sites_json,
             "all_pockets": reordered_pockets,
             "cryptic_sites": reordered_cryptic,
+            // Background spikes — quarantined unattributed spikes for review.
+            // Conservation invariant: Σ(per-site spike_count) + background_spikes.count
+            // == total spikes emitted by the engine. The full per-spike background
+            // dump (with phase_bits, group_id, chunk_idx) is written by the Arrow
+            // IPC writer in a later commit.
+            "background_spikes": background_summary_json,
             "prism_therm": prism_therm_result,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;

@@ -109,8 +109,14 @@ if [[ ! -f "$ENGINE" ]]; then
     exit 1
 fi
 
-# Derive prefix from topology filename
-PREFIX=$(basename "$TOPOLOGY" | sed 's/_clean\.topology\.json$//' | sed 's/\.topology\.json$//')
+# Derive prefix from topology filename. The engine derives its file_stem from the
+# topology path: for `4lpk_clean.topology.json` → file_stem `4lpk_clean.topology`,
+# then `with_extension("binding_sites.json")` strips `.topology` and produces
+# `4lpk_clean.binding_sites.json`. So PREFIX must equal `4lpk_clean`, not `4lpk`.
+# Strip ONLY `.topology.json` — never `_clean.topology.json` (the previous version
+# stripped both, which made postflight look for `4lpk.binding_sites.json` while the
+# engine wrote `4lpk_clean.binding_sites.json`, failing the validation gate).
+PREFIX=$(basename "$TOPOLOGY" | sed 's/\.topology\.json$//')
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
