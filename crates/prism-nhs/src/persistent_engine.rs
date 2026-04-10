@@ -1233,6 +1233,34 @@ impl PersistentNhsEngine {
         self.engine.as_ref().map(|e| &e.d_protocol_state)
     }
 
+    /// Mutable protocol state buffer for GPU-side ASC steering writes.
+    pub fn protocol_state_buffer_mut(&mut self) -> Option<&mut CudaSlice<u8>> {
+        self.engine.as_mut().map(|e| &mut e.d_protocol_state)
+    }
+
+    /// Capture the autonomous physics step as a CUDA Graph for replay.
+    pub fn capture_autonomous_graph(&mut self) -> anyhow::Result<crate::graph_capture::AutonomousGraph> {
+        use cudarc::driver::sys;
+        let stream = self.stream.clone();
+        if let Some(ref mut engine) = self.engine {
+            // Begin stream capture
+            stream.begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+                .map_err(|e| anyhow::anyhow!("Stream capture begin: {:?}", e))?;
+            // Launch one step's kernels (captured, not executed)
+            engine.step_autonomous_kernels(&stream)?;
+            // End capture → instantiate
+            let graph = stream.end_capture(
+                sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
+            ).map_err(|e| anyhow::anyhow!("Stream capture end: {:?}", e))?
+             .ok_or_else(|| anyhow::anyhow!("Null graph from capture"))?;
+            Ok(crate::graph_capture::AutonomousGraph::new(graph))
+        } else {
+            anyhow::bail!("No engine loaded")
+        }
+    }
+
+    // rebuild_neighbor_lists_if_needed already exists below (line 1283)
+
     /// Device-side spike events buffer (for GPU-direct ring buffer push).
     /// Returns the raw d_spike_events allocation — no CPU download.
     pub fn spike_events_device(&self) -> Option<&CudaSlice<u8>> {

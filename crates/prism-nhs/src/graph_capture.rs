@@ -25,6 +25,11 @@ pub struct AutonomousGraph {
 }
 
 impl AutonomousGraph {
+    /// Create from an instantiated CUDA graph.
+    pub fn new(graph: CudaGraph) -> Self {
+        Self { graph, steps_per_launch: 1 }
+    }
+
     /// Launch the graph once (executes one complete MD step on GPU).
     pub fn launch(&self) -> Result<()> {
         self.graph.launch().map_err(|e| anyhow::anyhow!("Graph launch failed: {:?}", e))
