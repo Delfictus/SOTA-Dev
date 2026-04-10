@@ -95,3 +95,63 @@ secret put API_KEY` and rotate. Logged in `CREDENTIAL_REGISTRY.md`.
 *To be appended after each commit completes.*
 
 ---
+
+## 2026-04-09/10 — Sentinel observation of TWIN v3.0 + containerization catalog
+
+**Session scope:** DevOps sentinel — read-only observation of active TWIN
+development session, dependency cataloging, container manifest, Worker API
+integration.
+
+### Deliverables
+
+**Task A — Real-time observation infrastructure**
+
+- Deployed two persistent monitors:
+  - `inotifywait` on `crates/prism-nhs/src/` and `crates/prism-gpu/src/kernels/`
+    (instant file-write detection)
+  - Git + process poll (5s interval) for new commits and engine runs
+- Observed 1 commit (`d2c1500f` — Glass Box infrastructure) and 1 engine run
+  (4obe KRAS G12C validation, 216s runtime, 9.5GB output)
+- All events POSTed to Worker API (`/observe`, `/snapshot`)
+
+**Task B — Container dependency manifest**
+
+- Wrote `docs/sentinel/container_manifest.json` — complete frozen-state
+  dependency tree: binary (6.2MB), 94 PTX files, 95 .cu sources, 11 .cuh
+  headers, libsdst.so (1.1MB), 461 Python packages, 482 data files
+- Key finding: CUDA toolkit is **13.2** (not 12.9 as documented elsewhere)
+- Key finding: prism-prep is a shell script at `scripts/prism-prep` (34KB),
+  not a compiled Rust binary
+
+**Task C — Observation log with cross-referenced timestamps**
+
+- Wrote `docs/sentinel/observation_log.md` — full timeline, commit analysis,
+  engine run args, output file inventory, flags, cross-references
+
+**Task D — Worker API integration**
+
+- POSTed: 1 system snapshot, 1 BUILD_IN_PROGRESS, 1 NEW_COMMIT, 2 ENGINE_RUN,
+  1 ENGINE_COMPLETE, 1 FLAG_ALERT
+- Worker auto-triggered PRISM-Observer cloud agent on ENGINE_COMPLETE
+- Created remote trigger `sentinel-twin-observer` for ongoing 15-min polling
+
+### Flags raised
+
+- **HIGH — /tmp output not synced to R2**: Glass Box 4obe output at
+  `/tmp/multi_diff_glass/` (9.5GB). Spike watcher daemon only watches
+  `/mnt/storage/prism-outputs/`. Data will be lost on reboot.
+
+### Discovered state
+
+- CUDA 13.2 (V13.2.51), driver 595.45.04, RTX 5080 sm_120
+- Rust 1.93.0, Python 3.12.3, cudarc 0.18.2
+- New engine flag: `--multi-differential` (Glass Box TWIN mode)
+- 3 managed cloud agents confirmed active in Worker API
+
+### Open items carried forward
+
+- `/tmp/multi_diff_glass/` output needs manual R2 upload or move to watched path
+- Container image build from manifest not yet executed
+- CUDA 13.2 vs 12.9 documentation discrepancy needs resolution across all docs
+
+---

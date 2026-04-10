@@ -1,0 +1,206 @@
+{
+  "manifest_version": "1.0",
+  "created_at": "2026-04-10T00:14:00Z",
+  "updated_at": "2026-04-10T01:35:00Z",
+  "created_by": "sentinel-devops-agent",
+  "git_commit": "c9345707 (latest observed)",
+  "git_commit_full": "c9345707 fix(twin): CUDA Graph capture — use graph-variant Director, skip cross-module kernels",
+  "git_branch": "feat/twin-multistream",
+  "commits_observed": 8,
+  "binary": {
+    "path": "target/release/nhs_rt_full",
+    "size_bytes": 6229952,
+    "features": ["gpu"],
+    "cudarc_version": "0.18.2",
+    "linked_libs": [
+      {"name": "libsdst.so", "path": "crates/sdst/lib/libsdst.so", "size_bytes": 1143712, "custom": true},
+      {"name": "libcudart.so.13", "path": "/usr/local/cuda/lib64/libcudart.so.13", "custom": false},
+      {"name": "libgcc_s.so.1", "path": "/lib/x86_64-linux-gnu/libgcc_s.so.1", "custom": false},
+      {"name": "libm.so.6", "path": "/lib/x86_64-linux-gnu/libm.so.6", "custom": false},
+      {"name": "libc.so.6", "path": "/lib/x86_64-linux-gnu/libc.so.6", "custom": false},
+      {"name": "libstdc++.so.6", "path": "/lib/x86_64-linux-gnu/libstdc++.so.6", "custom": false},
+      {"name": "libdl.so.2", "path": "/lib/x86_64-linux-gnu/libdl.so.2", "custom": false},
+      {"name": "libpthread.so.0", "path": "/lib/x86_64-linux-gnu/libpthread.so.0", "custom": false},
+      {"name": "librt.so.1", "path": "/lib/x86_64-linux-gnu/librt.so.1", "custom": false}
+    ]
+  },
+  "prep_tool": {
+    "path": "scripts/prism-prep",
+    "type": "shell_script",
+    "size_bytes": 34038
+  },
+  "cuda": {
+    "toolkit_version": "13.2",
+    "toolkit_release": "V13.2.51",
+    "compute_capability": "sm_120",
+    "ptx_production": [
+      {"path": "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx", "size_bytes": 2506136, "role": "main_md_kernel"},
+      {"path": "crates/prism-nhs/src/nhs_amber_fused.ptx", "size_bytes": 2509416, "role": "main_md_kernel_copy"},
+      {"path": "crates/prism-gpu/src/kernels/nhs_amber_fused_sm120.ptx", "size_bytes": 1271178, "role": "sm120_variant"},
+      {"path": "crates/prism-gpu/src/kernels/nhs_spike_detect_sm120.ptx", "size_bytes": 21374, "role": "spike_detection"},
+      {"path": "crates/prism-gpu/src/kernels/nhs_active_sensing_kernels.ptx", "size_bytes": 1102739, "role": "active_sensing"},
+      {"path": "crates/prism-gpu/src/kernels/basic_langevin.ptx", "size_bytes": 1084638, "role": "langevin_integrator"},
+      {"path": "crates/prism-gpu/src/kernels/thermodynamic.ptx", "size_bytes": 1021584, "role": "thermodynamic_integration"},
+      {"path": "crates/prism-gpu/src/kernels/rt_clustering.ptx", "size_bytes": 24513, "role": "clustering"},
+      {"path": "crates/prism-gpu/src/kernels/pharmacophore_splat.ptx", "size_bytes": 18917, "role": "pharmacophore"},
+      {"path": "crates/prism-gpu/src/kernels/transfer_entropy.ptx", "size_bytes": 68649, "role": "transfer_entropy"},
+      {"path": "crates/prism-gpu/src/kernels/structural_transfer_entropy.ptx", "size_bytes": 19458, "role": "structural_te"}
+    ],
+    "ptx_twin": [
+      {"path": "crates/prism-gpu/target/ptx/protocol_director.ptx", "size_bytes": 16662, "role": "twin_gate0_director"},
+      {"path": "crates/prism-gpu/target/ptx/housekeeping.ptx", "size_bytes": 9740, "role": "twin_gate2_housekeeping"},
+      {"path": "crates/prism-gpu/target/ptx/ring_buffer.ptx", "size_bytes": 17303, "role": "twin_gate3_spike_compaction"},
+      {"path": "crates/prism-gpu/target/ptx/spike_exchange.ptx", "size_bytes": 26265, "role": "twin_spike_exchange"},
+      {"path": "crates/prism-gpu/target/ptx/twin_coupling_persistent.ptx", "size_bytes": 25978, "role": "twin_coupling"},
+      {"path": "crates/prism-gpu/target/ptx/twin_persistent_physics.ptx", "size_bytes": 31068, "role": "twin_physics"},
+      {"path": "crates/prism-gpu/target/ptx/twin_persistent.ptx", "size_bytes": 6357, "role": "twin_persistent"},
+      {"path": "crates/prism-gpu/target/ptx/twin_signal.ptx", "size_bytes": 1361, "role": "twin_signal"},
+      {"path": "crates/prism-gpu/target/ptx/twin_transfer_entropy.ptx", "size_bytes": 62129, "role": "twin_te"},
+      {"path": "crates/prism-gpu/target/ptx/tensor_ccf.ptx", "size_bytes": 14258, "role": "twin_ccf"}
+    ],
+    "ptx_total_count": 94,
+    "cuh_headers": [
+      {"path": "crates/prism-gpu/src/kernels/protocol_state.cuh", "size_bytes": 6538, "role": "twin_protocol_state_struct"},
+      {"path": "crates/prism-gpu/src/kernels/cryo_thermal_detection.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/nhs_excited_state.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/prism_adaptive_protocol.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/nhs_active_sensing.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/prism_epi_features.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/sensitive_detector.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/reduction_primitives.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/runtime_config.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/prism_numerics.cuh", "size_bytes": null},
+      {"path": "crates/prism-gpu/src/kernels/uv_lif_coupling.cuh", "size_bytes": null}
+    ],
+    "cu_source_count": 95
+  },
+  "python": {
+    "version": "3.12.3",
+    "total_packages": 461,
+    "critical_packages": {
+      "numpy": "2.4.3",
+      "scipy": "1.17.0",
+      "pandas": "2.3.3",
+      "matplotlib": "3.10.8",
+      "scikit-learn": "1.8.0",
+      "pyarrow": "23.0.0",
+      "polars": "1.39.3",
+      "biopython": "1.86",
+      "mdtraj": "1.11.1.post1",
+      "rdkit": "2025.9.4",
+      "meeko": "0.7.1",
+      "OpenMM": "8.4.0.post2",
+      "pdbfixer": "1.12.0",
+      "torch": "2.10.0",
+      "torch-geometric": "2.7.0",
+      "xgboost": "3.2.0",
+      "lightgbm": "4.6.0",
+      "optuna": "4.8.0",
+      "anthropic": "0.79.0",
+      "duckdb": "1.5.1"
+    },
+    "pipeline_scripts": [
+      "scripts/prism_canonical.py",
+      "scripts/prism_replicate.py",
+      "scripts/gating_stack.py",
+      "scripts/consensus.py",
+      "scripts/feature_registry.py",
+      "scripts/contact_reorg_gate.py",
+      "scripts/response_selectivity.py",
+      "scripts/anchor_point_map.py",
+      "scripts/growth_vector_map.py",
+      "scripts/pocket_profile_builder.py",
+      "scripts/site_ranker.py",
+      "scripts/design_brief_builder.py",
+      "scripts/prism-clean.py",
+      "scripts/prism-merge-chains.py",
+      "scripts/prism-lookup-residue.py",
+      "scripts/prism-preflight.py",
+      "scripts/prism-postflight.py",
+      "scripts/postprocess_twin.py",
+      "scripts/coupled_spikes_to_parquet.py",
+      "scripts/prism_spike_watcher.py"
+    ],
+    "validation_wrapper": {
+      "path": "scripts/prism-validate-and-run.sh",
+      "lines": 216
+    },
+    "feature_registry": {
+      "path": "scripts/feature_registry.py",
+      "lines": 90,
+      "required_features": 14
+    }
+  },
+  "system": {
+    "os": "Ubuntu 24.04.4 LTS",
+    "os_codename": "noble",
+    "kernel": "6.14.0-37-generic",
+    "gpu_model": "NVIDIA GeForce RTX 5080",
+    "gpu_compute_cap": "12.0",
+    "driver_version": "595.45.04",
+    "cuda_runtime": "13.2",
+    "rust_version": "1.93.0"
+  },
+  "data_files": {
+    "total_count": 482,
+    "categories": {
+      "validation_pdbs": "data/validation/curated/pdb/ (holo + apo)",
+      "ground_truth_holo": "data/gt_holo/ (25+ PDB files)",
+      "targets": "data/targets/ (PDB + topology JSON)",
+      "manifests": "data/manifests/ (8 calibration JSONs)",
+      "ml_models": ["data/ml_prototype/model_b_best.pkl", "data/ml_prototype/model_production_v2.pkl", "data/ml_prototype/model_v2_best.pkl"]
+    },
+    "benchmarks": {
+      "bench30_manifest": "benchmarks/prism4d_bench30/benchmark_manifest.json",
+      "bench30_ground_truth": "benchmarks/prism4d_bench30/ground_truth/ligand_centroids.json",
+      "bench30_expanded_gt": "benchmarks/prism4d_bench30/ground_truth/ligand_centroids_expanded.json",
+      "cryptobench": "benchmarks/cryptobench/"
+    }
+  },
+  "sdst_library": {
+    "shared_lib": "crates/sdst/lib/libsdst.so",
+    "size_bytes": 1143712,
+    "linked_libs": ["libcudart.so.13", "libstdc++.so.6", "libm.so.6", "libgcc_s.so.1", "libc.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1"]
+  },
+  "environment_variables": {
+    "required": {
+      "LD_LIBRARY_PATH": "/usr/local/cuda/lib64:",
+      "PATH_includes": ["/usr/local/cuda/bin", "~/.cargo/bin"]
+    },
+    "optional": {
+      "ANTHROPIC_API_KEY": "for managed agents",
+      "R2_ACCESS_KEY_ID": "for R2 sync",
+      "R2_SECRET_ACCESS_KEY": "for R2 sync",
+      "CF_ACCOUNT_ID": "for Cloudflare Workers"
+    }
+  },
+  "services": {
+    "spike_watcher": {
+      "unit": "prism-spike-watcher.service",
+      "script": "scripts/prism_spike_watcher.py",
+      "purpose": "auto-sync spike JSONs to Cloudflare R2",
+      "status": "active (running)"
+    }
+  },
+  "run_command": {
+    "canonical": "scripts/prism-validate-and-run.sh -t <topo> -o <dir> --fast --hysteresis --multi-stream 8 --spike-percentile 95 --prism-therm --fused-steps 4 --hmr --adaptive-dt --replica-seed 42 -v",
+    "minimum": "target/release/nhs_rt_full -t <topo> -o <dir>",
+    "twin_differential": "target/release/nhs_rt_full -t <topo> -o <dir> --multi-differential --multi-stream 8 --fast --hysteresis --spike-percentile 95 --prism-therm --fused-steps 4 --hmr --adaptive-dt --replica-seed 42 -v"
+  },
+  "active_development": {
+    "twin_v3_files_modified": [
+      "crates/prism-gpu/src/kernels/protocol_director.cu",
+      "crates/prism-gpu/src/kernels/ring_buffer.cu",
+      "crates/prism-nhs/src/bin/nhs_rt_full.rs",
+      "crates/prism-nhs/src/fused_engine.rs",
+      "crates/prism-nhs/src/persistent_engine.rs",
+      "crates/prism-nhs/src/twin_kernels.rs",
+      "crates/prism-nhs/src/protocol_state.rs"
+    ],
+    "recent_commits": [
+      "d2c1500f feat(twin): Glass Box infrastructure — cross-group S_pc + bit-packed phase + pure physics ranking",
+      "e56ef983 feat(twin): Spatial fusion + exponential PCMI + ASC discovery reward",
+      "96dafca0 feat(twin): Three-factor blender ranking — LIGSITE × CV × S_pc × ASC"
+    ]
+  }
+}

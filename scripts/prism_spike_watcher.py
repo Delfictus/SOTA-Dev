@@ -60,6 +60,7 @@ from typing import Optional
 WATCH_DIRS = [
     "/mnt/storage/prism-outputs/runs",
     "/mnt/storage/prism-outputs/twin-runs",
+    "/tmp",
 ]
 
 # Patterns that match spike event files produced by the engine
@@ -76,6 +77,7 @@ R2_ROUTING = {
     r"/cryptobench199/": ("prism-archive", "cryptobench199"),
     r"/v1\.1-physics/":  ("prism-archive", "v1.1-physics"),
     r"/10k-runs/":       ("prism-archive", "10k-runs"),
+    r"^/tmp/":           ("prism-archive", "dev-runs"),
 }
 R2_DEFAULT = ("prism-archive", "runs")  # fallback
 
