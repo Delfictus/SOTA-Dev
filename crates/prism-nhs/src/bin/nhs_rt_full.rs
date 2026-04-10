@@ -3358,6 +3358,8 @@ fn run_multi_stream_pipeline(
                 let nma_amp = args.nma_amplification;
                 let nma_frac = args.nma_scan_fraction;
                 let cold_hold_steps = prot.cold_hold_steps;
+                let kcc_cold_hold_steps = prot.cold_hold_steps;
+                let kcc_ramp_steps = prot.ramp_steps;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -3450,6 +3452,39 @@ fn run_multi_stream_pipeline(
                                 let _ = engine.force_spike_sync();
                                 // NL rebuild (CPU-side, every 500 steps)
                                 engine.rebuild_neighbor_lists_if_needed()?;
+
+                                // ── KCC drive (outside captured graph) ──
+                                // The autonomous graph captures Director→Physics→multi_lif
+                                // but does NOT include kcc_residue_update (see the comment
+                                // at the end of NhsAmberFusedEngine::step_autonomous_kernels
+                                // for the rationale). Without this call, the KCC streaming
+                                // reductions and ring buffer would never advance during
+                                // graph replay, every residue would early-out the
+                                // `if (N < 2)` check in kcc_compute_rich_descriptors, and
+                                // the entire mechanistic driver pipeline (temporal_corr,
+                                // direction_score, motion_efficiency, burst_motion,
+                                // phase_shift, causal_lag, lag_corr_peak, local_cov)
+                                // would emit zeros — silently disabling 7 V3 ranker
+                                // features whose combined |weight| ≈ 0.96.
+                                //
+                                // Drive KCC once per chunk close, with a fresh timestep
+                                // value derived from the cumulative step count. The phase
+                                // is derived from the protocol's cold_hold/ramp/warm_hold
+                                // boundaries: cold_hold while steps_run is in the cold
+                                // hold region, ramp during the temperature ramp, warm_hold
+                                // afterward. Matches the convention in the standard
+                                // step() path's phase computation at fused_engine.rs:5889.
+                                let kcc_phase = {
+                                    if steps_run < kcc_cold_hold_steps {
+                                        0i32   // cold hold
+                                    } else if steps_run < kcc_cold_hold_steps + kcc_ramp_steps {
+                                        1i32   // ramp
+                                    } else {
+                                        2i32   // warm hold
+                                    }
+                                };
+                                let _ = engine.kcc_step_once(steps_run as u32, kcc_phase);
+
                                 last_summary = Some(prism_nhs::fused_engine::RunSummary {
                                     total_spikes: engine.get_accumulated_spikes().len(),
                                     start_temperature: 50.0,

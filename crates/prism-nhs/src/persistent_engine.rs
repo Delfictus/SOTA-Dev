@@ -1548,6 +1548,22 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Launch the KCC residue update kernel ONCE outside the captured CUDA Graph.
+    ///
+    /// Used by the autonomous (multi-stream + multi-differential) chunk loop to
+    /// drive KCC streaming reductions and ring buffer events between graph replays.
+    /// The captured graph (`step_autonomous_kernels`) does not include KCC because
+    /// the kernel needs a fresh `current_step` per call (the ring buffer event
+    /// coalescer would otherwise collapse all replays into a single ring slot).
+    /// See `NhsAmberFusedEngine::kcc_step_once` for the rationale and design.
+    pub fn kcc_step_once(&mut self, current_step: u32, current_phase: i32) -> anyhow::Result<()> {
+        if let Some(ref mut engine) = self.engine {
+            engine.kcc_step_once(current_step, current_phase)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Get snapshots from current run
     pub fn get_snapshots(&self) -> Vec<EnsembleSnapshot> {
         if let Some(ref engine) = self.engine {

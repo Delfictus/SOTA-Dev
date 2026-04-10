@@ -6860,6 +6860,92 @@ impl NhsAmberFusedEngine {
         // resolution during capture. Heartbeat is checked host-side between
         // graph replay chunks. Coupling clear is handled by the Director's
         // coupling_phase toggle.
+        //
+        // KCC residue update (kcc_residue_update_kernel) is also NOT launched
+        // here. It IS in the same fused PTX module as Director and Physics so
+        // there is no cross-module barrier — it was simply absent from the
+        // autonomous path. Capturing it inside the graph would require either
+        // (a) freezing the timestep parameter at capture time (which breaks the
+        // ring buffer event coalescing — current_step would never advance across
+        // replays so all events for a residue would coalesce into one ring slot
+        // and `n_events < 4` would early-out the burst/lag/local_cov outputs), or
+        // (b) using cudaGraphExecKernelNodeSetParams to mutate the captured
+        // kernel's parameters per launch (CUDA Graph API but more complex), or
+        // (c) modifying the kernel to read current_step from the device-side
+        // ProtocolState pointer (which IS captured by pointer not value, so
+        // contents stay fresh) — that requires .cu changes and is blocked by
+        // Bug C (--use_fast_math drift) until that's resolved.
+        //
+        // The clean fix that ships TODAY is `kcc_step_once` below: launch KCC
+        // once per chunk close from the host break, with a fresh timestep value
+        // each call. Streaming reductions (sum_m, sum_c, etc.) accumulate one
+        // sample per chunk close → 80 samples per residue per run, enough for
+        // temporal_corr / direction_score / motion_efficiency. Ring buffer gets
+        // one event per chunk → 80 events per residue, well above the n_events
+        // < 4 floor for burst_motion / phase_shift / causal_lag / lag_corr_peak
+        // / local_cov.
+
+        Ok(())
+    }
+
+    /// Launch the KCC residue update kernel ONCE, outside any captured graph.
+    ///
+    /// Used by the autonomous (multi-stream + multi-differential) chunk loop
+    /// to drive KCC streaming reductions and ring buffer events between graph
+    /// replay chunks. The captured graph (`step_autonomous_kernels`) does NOT
+    /// include the KCC kernel — see the long comment at the end of
+    /// `step_autonomous_kernels` for the rationale and the design alternatives.
+    ///
+    /// # Arguments
+    /// * `current_step` — host-side step index. Should advance monotonically
+    ///   across calls (e.g., chunk_idx * chunk_size + chunk_size). Used by
+    ///   the kernel for ring buffer event timestamps and event coalescing.
+    /// * `current_phase` — 0 = cold_hold, 1 = ramp, 2 = warm_hold.
+    pub fn kcc_step_once(
+        &mut self,
+        current_step: u32,
+        current_phase: i32,
+    ) -> Result<()> {
+        if self.n_residues == 0 {
+            return Ok(());
+        }
+
+        let n_res_i32 = self.n_residues as i32;
+        let kcc_blocks = (self.n_residues as u32).div_ceil(256);
+        let kcc_cfg = LaunchConfig {
+            grid_dim: (kcc_blocks, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+
+        unsafe {
+            self.stream
+                .launch_builder(&self.kcc_residue_update_kernel)
+                .arg(&self.d_positions)
+                .arg(&self.d_residue_ca_idx)
+                .arg(&n_res_i32)
+                .arg(&mut self.d_residue_prev_x)
+                .arg(&mut self.d_residue_prev_y)
+                .arg(&mut self.d_residue_prev_z)
+                .arg(&mut self.d_residue_sum_m)
+                .arg(&mut self.d_residue_sum_m2)
+                .arg(&mut self.d_residue_sum_c)
+                .arg(&mut self.d_residue_sum_c2)
+                .arg(&mut self.d_residue_sum_mc)
+                .arg(&mut self.d_residue_net_dx)
+                .arg(&mut self.d_residue_net_dy)
+                .arg(&mut self.d_residue_net_dz)
+                .arg(&mut self.d_residue_count)
+                .arg(&mut self.d_residue_active_causal)
+                .arg(&mut self.d_residue_step_causal)
+                .arg(&mut self.d_kcc_ring)
+                .arg(&mut self.d_kcc_ring_head)
+                .arg(&mut self.d_kcc_last_event_step)
+                .arg(&current_step)
+                .arg(&current_phase)
+                .launch(kcc_cfg)
+        }
+        .context("kcc_step_once: kcc_residue_update launch failed")?;
 
         Ok(())
     }
