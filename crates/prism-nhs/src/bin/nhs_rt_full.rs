@@ -3415,14 +3415,11 @@ fn run_multi_stream_pipeline(
                         // Eliminates ~40μs/step kernel launch overhead → target 1,500 steps/sec.
                         // ── CUDA GRAPH CAPTURE (Silicon Autonomy) ──
                         // Capture Director→Physics→MultiLIF→Housekeeping as one graph.
-                        // NO silent fallback — if capture fails, log the reason explicitly.
-                        // ── CUDA Graph Capture (Silicon Autonomy) ──
-                        // Pre-sync flushes all module loads before capture.
-                        // ── CUDA Graph Capture (Silicon Autonomy) ──
-                        // Director uses graph variant, housekeeping kernels skipped (cross-module).
-                        // Physics + MultiLIF from main module → clean capture.
+                        // ── CUDA Graph Capture with Warmup ──
                         let captured_graph: Option<prism_nhs::graph_capture::AutonomousGraph> =
                             if steps > 0 {
+                                // WARMUP: 1 step forces all lazy module/function init
+                                let _ = engine.run(1);
                                 match engine.capture_autonomous_graph() {
                                     Ok(g) => {
                                         log::info!("    [AUTONOMY] CUDA Graph captured ✓ (stream {})", i);
@@ -4033,6 +4030,33 @@ fn run_multi_stream_pipeline(
         all_stream_snapshots.push(stream_snapshots);
     }
 
+    // ── SPIKE DEBUG: verify phase_bits is non-zero ──
+    {
+        let n = all_stream_spikes.len();
+        // Sample from start, middle, and end to prove phase varies
+        let indices = [0, 1, n/4, n/2, 3*n/4, n.saturating_sub(2), n.saturating_sub(1)];
+        for &i in &indices {
+            if i < n {
+                let s = &all_stream_spikes[i];
+                log::info!("SPIKE DEBUG [{}]: ts={} phase={}/1024 src={} pos=({:.1},{:.1},{:.1})",
+                    i, s.timestep, s.phase_bits, s.spike_source,
+                    s.position[0], s.position[1], s.position[2]);
+            }
+        }
+        let total_nonzero = all_stream_spikes.iter().filter(|s| s.phase_bits > 0).count();
+        let total_zero = n - total_nonzero;
+        log::info!("SPIKE DEBUG: {}/{} non-zero phase_bits ({:.1}%), {} zero",
+            total_nonzero, n, total_nonzero as f64 / n.max(1) as f64 * 100.0, total_zero);
+        // Phase histogram: show distribution across 4 quadrants
+        let mut quads = [0usize; 4];
+        for s in &all_stream_spikes {
+            let q = (s.phase_bits as usize * 4 / 1024).min(3);
+            quads[q] += 1;
+        }
+        log::info!("SPIKE DEBUG phase quadrants: Q0(0-255)={} Q1(256-511)={} Q2(512-767)={} Q3(768-1023)={}",
+            quads[0], quads[1], quads[2], quads[3]);
+    }
+
     // Write LADD/COFIRE spike summary (multi-stream, before consensus — survives any crash)
     {
         let ladd_count = all_stream_spikes.iter().filter(|s| s.spike_source == 4).count();
@@ -4416,59 +4440,116 @@ fn run_multi_stream_pipeline(
         // For consensus sites (spike_indices empty), assign each spike to its nearest
         // consensus centroid within the cluster's bounding radius.
 
-        // Pre-assign spikes to consensus sites if spike_indices are empty
+        // ── O(N+M) Spatial Hash Join for spike→site assignment ──
+        // Always use spatial hash regardless of whether spike_indices exist.
+        // This gives consistent O(N+M) behavior on 13M+ spike arrays.
         let mut site_spike_assignments: Vec<Vec<usize>> = vec![Vec::new(); clustered_sites.len().min(100)];
         {
             let n_sites = clustered_sites.len().min(100);
-            let any_have_indices = clustered_sites.iter().take(n_sites)
-                .any(|s| !s.spike_indices.is_empty());
+            let join_t0 = std::time::Instant::now();
+            let max_dist = site_radius;
 
-            if any_have_indices {
-                // Per-stream or single-stream path: spike_indices are valid indices into
-                // the spike array used for clustering. Use them directly.
-                for (si, site) in clustered_sites.iter().take(n_sites).enumerate() {
-                    let total: Vec<usize> = site.spike_indices.iter()
-                        .copied()
-                        .collect();
-                    let (valid, invalid): (Vec<usize>, Vec<usize>) = total.into_iter()
-                        .partition(|&idx| idx < all_stream_spikes.len());
-                    if !invalid.is_empty() {
-                        log::warn!("Site {} has {} OOB spike indices (max={})",
-                            site.cluster_id, invalid.len(), all_stream_spikes.len());
-                    }
-                    site_spike_assignments[si] = valid;
-                }
-            } else {
-                log::info!("Using nearest-centroid fallback for {} consensus sites ({} total spikes)", n_sites, all_stream_spikes.len());
-                // Consensus path: spike_indices are empty. Assign each spike to its
-                // nearest consensus centroid within the cluster's bounding radius.
-                // Use max(bounding_box_half_diagonal, site_radius) as assignment radius
-                // to capture all cluster-relevant spikes without over-counting.
-                let mut site_radii: Vec<f32> = Vec::with_capacity(n_sites);
-                for site in clustered_sites.iter().take(n_sites) {
-                    let bb = site.bounding_box;
-                    let half_diag = (bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]).sqrt() / 2.0;
-                    // Use bounding box half-diagonal + 2Å margin, clamped to [3, site_radius]
-                    site_radii.push((half_diag + 2.0).clamp(3.0, site_radius));
-                }
-
-                for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
-                    let mut best_site: Option<usize> = None;
-                    let mut best_dist = f32::MAX;
-                    for (si, site) in clustered_sites.iter().take(n_sites).enumerate() {
-                        let dx = spike.position[0] - site.centroid[0];
-                        let dy = spike.position[1] - site.centroid[1];
-                        let dz = spike.position[2] - site.centroid[2];
-                        let dist = (dx*dx + dy*dy + dz*dz).sqrt();
-                        if dist <= site_radii[si] && dist < best_dist {
-                            best_dist = dist;
-                            best_site = Some(si);
+            const CELL_SIZE: f32 = 8.0;
+            let mut site_grid: std::collections::HashMap<(i32,i32,i32), Vec<usize>> =
+                std::collections::HashMap::new();
+            let mut site_radii: Vec<f32> = Vec::with_capacity(n_sites);
+            for (si, site) in clustered_sites.iter().take(n_sites).enumerate() {
+                let bb = site.bounding_box;
+                let half_diag = (bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]).sqrt() / 2.0;
+                site_radii.push((half_diag + 2.0).clamp(3.0, max_dist));
+                let cx = (site.centroid[0] / CELL_SIZE).floor() as i32;
+                let cy = (site.centroid[1] / CELL_SIZE).floor() as i32;
+                let cz = (site.centroid[2] / CELL_SIZE).floor() as i32;
+                for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        for dz in -1..=1 {
+                            site_grid.entry((cx+dx, cy+dy, cz+dz))
+                                .or_default().push(si);
                         }
                     }
-                    if let Some(si) = best_site {
-                        site_spike_assignments[si].push(spike_idx);
+                }
+            }
+
+            for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
+                let key = (
+                    (spike.position[0] / CELL_SIZE).floor() as i32,
+                    (spike.position[1] / CELL_SIZE).floor() as i32,
+                    (spike.position[2] / CELL_SIZE).floor() as i32,
+                );
+                if let Some(nearby) = site_grid.get(&key) {
+                    let mut best_site = usize::MAX;
+                    let mut best_d2 = f32::MAX;
+                    for &si in nearby {
+                        let dx = spike.position[0] - clustered_sites[si].centroid[0];
+                        let dy = spike.position[1] - clustered_sites[si].centroid[1];
+                        let dz = spike.position[2] - clustered_sites[si].centroid[2];
+                        let d2 = dx*dx + dy*dy + dz*dz;
+                        let r = site_radii[si];
+                        if d2 < r*r && d2 < best_d2 {
+                            best_d2 = d2;
+                            best_site = si;
+                        }
+                    }
+                    if best_site != usize::MAX {
+                        site_spike_assignments[best_site].push(spike_idx);
                     }
                 }
+            }
+            let join_ms = join_t0.elapsed().as_millis();
+            let assigned: usize = site_spike_assignments.iter().map(|v| v.len()).sum();
+            log::info!("Spatial hash join: {} spikes → {} sites ({} assigned) in {}ms",
+                all_stream_spikes.len(), n_sites, assigned, join_ms);
+        }
+
+        // ─── Intensity-Weighted Centroid Refinement (Information Density Center) ───
+        // Shift each site centroid toward the intensity-weighted mean of its assigned spikes.
+        // This corrects geometric centroids that land in low-density regions or outside
+        // the actual spike cloud. Weight = intensity^2 to emphasize high-signal spikes.
+        {
+            let n_sites = clustered_sites.len().min(100);
+            let mut refined = 0usize;
+            for si in 0..n_sites {
+                if site_spike_assignments[si].len() < 10 { continue; }
+                let old_c = clustered_sites[si].centroid;
+                let mut wx = 0.0f64;
+                let mut wy = 0.0f64;
+                let mut wz = 0.0f64;
+                let mut tw = 0.0f64;
+                for &idx in &site_spike_assignments[si] {
+                    if let Some(spike) = all_stream_spikes.get(idx) {
+                        let w = (spike.intensity as f64).max(1e-6);
+                        wx += spike.position[0] as f64 * w;
+                        wy += spike.position[1] as f64 * w;
+                        wz += spike.position[2] as f64 * w;
+                        tw += w;
+                    }
+                }
+                if tw > 0.0 {
+                    let new_c = [
+                        (wx / tw) as f32,
+                        (wy / tw) as f32,
+                        (wz / tw) as f32,
+                    ];
+                    let shift = ((new_c[0] - old_c[0]).powi(2)
+                        + (new_c[1] - old_c[1]).powi(2)
+                        + (new_c[2] - old_c[2]).powi(2)).sqrt();
+                    // Cap shift at 6A to avoid centroid flying off into solvent
+                    if shift <= 6.0 {
+                        clustered_sites[si].centroid = new_c;
+                        if shift > 0.5 {
+                            log::info!("  IDC refine site {}: shift {:.1}Å → ({:.1},{:.1},{:.1})",
+                                clustered_sites[si].cluster_id, shift,
+                                new_c[0], new_c[1], new_c[2]);
+                            refined += 1;
+                        }
+                    } else {
+                        log::debug!("  IDC refine site {}: shift {:.1}Å > 6Å cap, keeping original",
+                            clustered_sites[si].cluster_id, shift);
+                    }
+                }
+            }
+            if refined > 0 {
+                log::info!("  IDC: refined {}/{} site centroids by intensity weighting", refined, n_sites);
             }
         }
 
@@ -6351,6 +6432,109 @@ fn run_multi_stream_pipeline(
             let engines_per_group = n_streams / n_groups;
             let diff_set = CryoUvProtocol::twin_differential_set();
             let group_names = ["TS", "EQ", "UV", "HY"];
+
+            // ── Interferometric Mask: data-driven p80 thresholds ──
+            // Compute per-residue (circ_var, mean_lag_mag, lag_coh), then pick
+            // p80 threshold for each independently (top 20% most coherent, top 20%
+            // highest lag, bottom 20% lowest variance). Intersect the three sets.
+            let mask_residues: std::collections::HashSet<usize> = if let Some(ref asc) = asc_shared {
+                if let Ok(gph) = asc.group_residue_phasors.lock() {
+                    let mut global_theta = [0.0f64; 4];
+                    for g in 0..4 {
+                        let (mut gc, mut gs) = (0.0, 0.0);
+                        for rid in 0..asc.n_residues { gc += gph[g][rid].0; gs += gph[g][rid].1; }
+                        global_theta[g] = gs.atan2(gc);
+                    }
+
+                    // Compute per-residue metrics (rid, circ_var, mean_lag_mag, lag_coh)
+                    let mut metrics: Vec<(usize, f64, f64, f64)> = Vec::new();
+                    for rid in 0..asc.n_residues {
+                        let mut lags: Vec<f64> = Vec::new();
+                        let mut total_spc = 0.0f64;
+                        let mut spc_n = 0;
+                        for g in 0..4 {
+                            let (cs, ss, n) = gph[g][rid];
+                            if n > 10 {
+                                let nf = n as f64;
+                                total_spc += (cs*cs + ss*ss).sqrt() / nf;
+                                spc_n += 1;
+                                lags.push(ss.atan2(cs) - global_theta[g]);
+                            }
+                        }
+                        if lags.len() < 2 || spc_n == 0 { continue; }
+                        let mean_spc = total_spc / spc_n as f64;
+                        let circ_var = 1.0 - mean_spc;
+                        let (mut lc, mut ls) = (0.0, 0.0);
+                        for &l in &lags { lc += l.cos(); ls += l.sin(); }
+                        let lag_coh = (lc*lc + ls*ls).sqrt() / lags.len() as f64;
+                        let mean_lag_mag = ls.atan2(lc).abs();
+                        metrics.push((rid, circ_var, mean_lag_mag, lag_coh));
+                    }
+
+                    if metrics.is_empty() {
+                        log::info!("  Interferometric mask: 0 residues with sufficient phasor data");
+                        std::collections::HashSet::new()
+                    } else {
+                        // Distribution statistics
+                        let stats = |vals: &[f64]| -> (f64, f64, f64, f64, f64, f64) {
+                            let mut v: Vec<f64> = vals.to_vec();
+                            v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                            let n = v.len();
+                            let p = |q: f64| v[((n - 1) as f64 * q) as usize];
+                            let mean = vals.iter().sum::<f64>() / n as f64;
+                            (v[0], v[n-1], mean, p(0.5), p(0.8), p(0.9))
+                        };
+                        let cv_vals: Vec<f64> = metrics.iter().map(|m| m.1).collect();
+                        let lag_vals: Vec<f64> = metrics.iter().map(|m| m.2).collect();
+                        let coh_vals: Vec<f64> = metrics.iter().map(|m| m.3).collect();
+                        let (cv_min, cv_max, cv_mean, cv_p50, cv_p80, cv_p90) = stats(&cv_vals);
+                        let (lag_min, lag_max, lag_mean, lag_p50, lag_p80, lag_p90) = stats(&lag_vals);
+                        let (coh_min, coh_max, coh_mean, coh_p50, coh_p80, coh_p90) = stats(&coh_vals);
+                        log::info!("  Interferometric mask distributions (N={} residues with data):", metrics.len());
+                        log::info!("    circ_var: min={:.3} max={:.3} mean={:.3} p50={:.3} p80={:.3} p90={:.3}",
+                            cv_min, cv_max, cv_mean, cv_p50, cv_p80, cv_p90);
+                        log::info!("    mean_lag: min={:.3} max={:.3} mean={:.3} p50={:.3} p80={:.3} p90={:.3}",
+                            lag_min, lag_max, lag_mean, lag_p50, lag_p80, lag_p90);
+                        log::info!("    lag_coh:  min={:.3} max={:.3} mean={:.3} p50={:.3} p80={:.3} p90={:.3}",
+                            coh_min, coh_max, coh_mean, coh_p50, coh_p80, coh_p90);
+
+                        // Composite score: mean_lag * lag_coh / (circ_var + eps)
+                        // This weights residues with LARGE phase lag and CONSISTENT lag
+                        // across groups, normalized by their phase variance.
+                        // Strict intersection fails when metrics are saturated (e.g.,
+                        // circ_var 0.94-0.99 for all residues). Ranked composite is robust.
+                        let _ = (cv_p80, cv_p90, lag_p90, coh_p90); // keep stats vars used
+                        let mut scored: Vec<(usize, f64)> = metrics.iter()
+                            .map(|(rid, cv, lag, coh)| {
+                                // Higher is better. Clip circ_var to avoid div-by-zero.
+                                let denom = (1.0 - cv).max(0.01);
+                                let score = lag * coh * denom;
+                                (*rid, score)
+                            })
+                            .collect();
+                        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                        // Take top 15% (5-15% target per directive)
+                        let take_n = (metrics.len() as f64 * 0.15).ceil() as usize;
+                        let take_n = take_n.max(5).min(metrics.len());
+                        let threshold_score = scored.get(take_n.saturating_sub(1)).map(|x| x.1).unwrap_or(0.0);
+                        log::info!("  Interferometric mask: composite = lag * coh * (1 - circ_var)");
+                        log::info!("    Top 15% cutoff: {} residues, composite score ≥ {:.4}",
+                            take_n, threshold_score);
+                        if let Some((top_rid, top_s)) = scored.first() {
+                            log::info!("    Top residue: rid={} score={:.4}", top_rid, top_s);
+                        }
+                        let mask: std::collections::HashSet<usize> = scored.into_iter()
+                            .take(take_n)
+                            .map(|(rid, _)| rid)
+                            .collect();
+                        log::info!("  Interferometric mask: {}/{} residues pass (composite top 15%)",
+                            mask.len(), metrics.len());
+                        mask
+                    }
+                } else { std::collections::HashSet::new() }
+            } else { std::collections::HashSet::new() };
+            let _mask_count = mask_residues.len();
+
             log::info!("  [INTERFEROMETRIC] CV-based ranking: {} groups × {} engines (zero tuned constants)",
                 n_groups, engines_per_group);
 
@@ -6459,23 +6643,70 @@ fn run_multi_stream_pipeline(
                     } else { (1.0, 0.0) }
                 } else { (1.0, 0.0) };
 
-                // Factor 3: ASC 9th observer — PURE S_pc-driven reward (no tuned multipliers)
-                // The discovery reward IS the exponential S_pc. No separate `1.5^overlap`.
-                // Sites whose lining residues are in the ASC consensus AND have high S_pc
-                // get the S_pc exponential boost. That's the SOLE mechanism.
-                let f_asc = 1.0f32; // Merged into f_spc — no double-counting
+                // Factor 3: Phase-Lag Atomic-Accuracy Multiplier
+                // Sites with consistent, non-zero phase lag across groups get a 2x boost.
+                // Switch II has hysteresis lag (conformational change → delayed response);
+                // surface sites respond uniformly (no lag).
+                let f_lag = if let Some(ref asc) = asc_shared {
+                    if let Ok(gph) = asc.group_residue_phasors.lock() {
+                        let mut global_theta = [0.0f64; 4];
+                        for g in 0..4 {
+                            let (mut gc, mut gs) = (0.0, 0.0);
+                            for rid in 0..asc.n_residues { gc += gph[g][rid].0; gs += gph[g][rid].1; }
+                            global_theta[g] = gs.atan2(gc);
+                        }
+                        let mut lag_scores: Vec<f64> = Vec::new();
+                        for lr in &site.lining_residues {
+                            let rid = lr.resid as usize;
+                            if rid >= asc.n_residues { continue; }
+                            let mut lags: Vec<f64> = Vec::new();
+                            for g in 0..4 {
+                                let (cs, ss, n) = gph[g][rid];
+                                if n > 10 {
+                                    lags.push(ss.atan2(cs) - global_theta[g]);
+                                }
+                            }
+                            if lags.len() >= 2 {
+                                let (mut lc, mut ls) = (0.0, 0.0);
+                                for &l in &lags { lc += l.cos(); ls += l.sin(); }
+                                let coh = (lc*lc + ls*ls).sqrt() / lags.len() as f64;
+                                let mag = ls.atan2(lc).abs();
+                                if coh > 0.3 && mag > 0.5 {
+                                    lag_scores.push(coh * mag);
+                                }
+                            }
+                        }
+                        if !lag_scores.is_empty() {
+                            let mean_lag = lag_scores.iter().sum::<f64>() / lag_scores.len() as f64;
+                            if mean_lag > 0.3 { 2.0f32 } else { 1.0 }
+                        } else { 1.0 }
+                    } else { 1.0 }
+                } else { 1.0 };
 
-                // Apply three-factor blender
-                let combined_mult = f_cv * f_spc * f_asc;
+                // Factor 4: Interferometric Mask Overlap
+                // Sites whose lining residues overlap the top-15% interferometric
+                // mask residues get a boost proportional to the overlap fraction.
+                let f_mask = if !mask_residues.is_empty() && !site.lining_residues.is_empty() {
+                    let n_lining = site.lining_residues.len() as f32;
+                    let n_hit: usize = site.lining_residues.iter()
+                        .filter(|lr| mask_residues.contains(&(lr.resid as usize)))
+                        .count();
+                    let overlap_frac = n_hit as f32 / n_lining;
+                    // Linear boost: 0% overlap → 1.0×, 100% overlap → 3.0×
+                    1.0 + 2.0 * overlap_frac
+                } else { 1.0 };
+
+                // Apply full blender: CV × S_pc × Lag × Mask
+                let combined_mult = f_cv * f_spc * f_lag * f_mask;
                 let old_q = site.quality_score;
                 site.quality_score *= combined_mult;
 
                 let rate_str: String = (0..n_groups).map(|g| {
                     format!("{}:{:.1}", group_names[g], rates[g] * 1000.0)
                 }).collect::<Vec<_>>().join(" ");
-                log::info!("  Site {}: 3-FACTOR {:.3}→{:.3} (CV={:.3}→×{:.2} Spc={:.3}→×{:.2} ASC→×{:.2} = ×{:.2}) [{}]",
+                log::info!("  Site {}: 5-FACTOR {:.3}→{:.3} (CV={:.3}→×{:.2} Spc={:.3}→×{:.2} Lag→×{:.1} Mask→×{:.2} = ×{:.2}) [{}]",
                     site.cluster_id, old_q, site.quality_score,
-                    cv, f_cv, mean_spc_val, f_spc, f_asc, combined_mult, rate_str);
+                    cv, f_cv, mean_spc_val, f_spc, f_lag, f_mask, combined_mult, rate_str);
             }
         }
 
@@ -8465,6 +8696,48 @@ fn run_multi_stream_pipeline(
             if let Ok(s) = serde_json::to_string_pretty(&doc) {
                 let _ = std::fs::write(&consensus_path, &s);
                 log::info!("  ASC consensus: {}", consensus_path.display());
+            }
+        }
+    }
+
+    // ── GLASS BOX: Binary phasor telemetry export ──
+    if let Some(ref asc) = asc_shared {
+        let phasor_path = args.output.join(format!("{}.phasors.bin", structure_name));
+        log::info!("[GLASS BOX] Exporting Phasor Data for v004 GAT...");
+        if let Ok(phasors) = asc.group_residue_phasors.lock() {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::File::create(&phasor_path) {
+                // Header: magic + n_groups + n_residues
+                let _ = file.write_all(b"PHZ1");
+                let _ = file.write_all(&4u32.to_le_bytes());
+                let _ = file.write_all(&(asc.n_residues as u32).to_le_bytes());
+                // Data: [group][residue] = (f64 cos, f64 sin, u32 count) = 20 bytes per entry
+                for g in 0..4 {
+                    for r in 0..asc.n_residues {
+                        let (cos, sin, count) = phasors[g][r];
+                        let _ = file.write_all(&cos.to_le_bytes());
+                        let _ = file.write_all(&sin.to_le_bytes());
+                        let _ = file.write_all(&count.to_le_bytes());
+                    }
+                }
+                log::info!("  Phasor binary: {} ({} groups × {} residues = {} bytes)",
+                    phasor_path.display(), 4, asc.n_residues, 12 + 4 * asc.n_residues * 20);
+            }
+        }
+        // Event log binary
+        let events_path = args.output.join(format!("{}.asc_events.bin", structure_name));
+        if let Ok(el) = asc.event_log.lock() {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::File::create(&events_path) {
+                let _ = file.write_all(b"ASC1");
+                let _ = file.write_all(&(el.len() as u32).to_le_bytes());
+                for (chunk, desc) in el.iter() {
+                    let _ = file.write_all(&chunk.to_le_bytes());
+                    let db = desc.as_bytes();
+                    let _ = file.write_all(&(db.len() as u16).to_le_bytes());
+                    let _ = file.write_all(db);
+                }
+                log::info!("  ASC events binary: {} ({} events)", events_path.display(), el.len());
             }
         }
     }

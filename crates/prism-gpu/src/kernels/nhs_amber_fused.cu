@@ -779,7 +779,7 @@ __device__ void capture_spike_event(
     float vibrational_energy,    // UV energy deposited (0 for LIF)
     int n_nearby_excited,        // excited aromatics in range
     float wd_change,             // |water_density - water_density_prev| for SDST energy_gradient
-    unsigned int phase_bits = 0  // 10-bit CCNS phase (set by caller from ProtocolState)
+    unsigned int phase_bits      // 10-bit CCNS phase from ProtocolState (REQUIRED — no default)
 ) {
     event.timestep = timestep;
     event.voxel_idx = voxel_idx;
@@ -1590,7 +1590,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         water_density[v],       // water_density
                         _vib_e,                 // vibrational_energy
                         n_nearby_excited,       // n_nearby_excited
-                        fabsf(water_density[v] - water_density_prev[v])  // wd_change
+                        fabsf(water_density[v] - water_density_prev[v]),  // wd_change
+                        d_protocol->current_phase_bits  // CCNS phase
                     );
                 }
 
@@ -1664,7 +1665,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         water_density[v],
                         lif_vibe,
                         n_nearby_excited,
-                        fabsf(water_density[v] - water_density_prev[v])  // wd_change
+                        fabsf(water_density[v] - water_density_prev[v]),  // wd_change
+                        d_protocol->current_phase_bits  // CCNS phase
                     );
                 }
             }
@@ -1746,7 +1748,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                         polar_intensity, warp_matrix[efp_v], residue_ids,
                         3, 0.0f, polar_type, -1,
                         water_density[efp_v], flux, n_charged_nearby,
-                        wd_change  // already computed above
+                        wd_change,  // already computed above
+                        d_protocol->current_phase_bits  // CCNS phase
                     );
                 }
             }
@@ -2731,7 +2734,8 @@ extern "C" __global__ void nhs_voxel_step(
                         spike_intensity, warp_matrix[v], residue_ids,
                         1, uv_wavelength_nm, _arom_type, _arom_res,
                         water_density[v], _vib_e, n_nearby_excited,
-                        fabsf(water_density[v] - water_density_prev[v])
+                        fabsf(water_density[v] - water_density_prev[v]),
+                        d_protocol->current_phase_bits
                     );
                 }
                 lif_potential[v] = LIF_RESET;
@@ -2776,7 +2780,8 @@ extern "C" __global__ void nhs_voxel_step(
                         lif_source2, lif_wl,
                         lif_atype, lif_ares, water_density[v],
                         lif_vibe, n_nearby_excited,
-                        fabsf(water_density[v] - water_density_prev[v])
+                        fabsf(water_density[v] - water_density_prev[v]),
+                        d_protocol->current_phase_bits
                     );
                 }
             }
@@ -2845,7 +2850,8 @@ efp_phase:
                         polar_intensity, warp_matrix[v], residue_ids,
                         3, 0.0f, polar_type, -1,
                         water_density[v], flux, n_charged_nearby,
-                        wd_change  // already computed above
+                        wd_change,  // already computed above
+                        d_protocol->current_phase_bits
                     );
                 }
             }
@@ -3537,7 +3543,8 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                 spike_intensity, entry, residue_ids,
                 spike_source, _wl, _arom_type, _arom_res,
                 water_density[v], _vibe, n_nearby_excited,
-                fabsf(water_density[v] - water_density_prev[v])
+                fabsf(water_density[v] - water_density_prev[v]),
+                d_protocol->current_phase_bits
             );
         }
     }
@@ -3626,7 +3633,8 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
                         polar_intensity, entry, residue_ids,
                         3, 0.0f, polar_type, -1,
                         water_density[v], flux, n_charged_nearby,
-                        wd_change
+                        wd_change,
+                        d_protocol->current_phase_bits
                     );
                 }
             }

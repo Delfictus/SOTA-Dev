@@ -1255,17 +1255,45 @@ impl PersistentNhsEngine {
         use cudarc::driver::sys;
         let stream = self.stream.clone();
 
-        // CRITICAL: sync the stream BEFORE capture to flush all prior module loads,
-        // memcpy, and initialization. CUDA capture mode forbids these operations.
+        // CRITICAL: sync the stream and bind the context BEFORE capture to flush all
+        // prior module loads, memcpy, and initialization. CUDA capture mode forbids
+        // context management calls (cuCtxGetCurrent/cuCtxSetCurrent), so the context
+        // must already be bound before we enter capture mode.
+        stream.context().bind_to_thread()
+            .map_err(|e| anyhow::anyhow!("Pre-capture context bind: {:?}", e))?;
         stream.synchronize()
             .map_err(|e| anyhow::anyhow!("Pre-capture sync: {:?}", e))?;
 
         if let Some(ref mut engine) = self.engine {
+            // Enable capture mode flag — cudarc's bind_to_thread() becomes a no-op.
+            // See vendor/cudarc/src/driver/safe/core.rs for the patch.
+            cudarc::driver::set_capture_mode_active(true);
+
+            // Helper to always clear the flag, even on error paths.
+            struct CaptureGuard;
+            impl Drop for CaptureGuard {
+                fn drop(&mut self) {
+                    cudarc::driver::set_capture_mode_active(false);
+                }
+            }
+            let _guard = CaptureGuard;
+
             // Begin stream capture
             stream.begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
                 .map_err(|e| anyhow::anyhow!("Stream capture begin: {:?}", e))?;
+
             // Launch one step's kernels (captured, not executed)
-            engine.step_autonomous_kernels(&stream)?;
+            match engine.step_autonomous_kernels(&stream) {
+                Ok(()) => {},
+                Err(e) => {
+                    log::warn!("step_autonomous: {} — aborting capture", e);
+                    let _ = stream.end_capture(
+                        sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
+                    );
+                    return Err(anyhow::anyhow!("step_autonomous: {}", e));
+                }
+            }
+
             // End capture → instantiate
             let graph = stream.end_capture(
                 sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH

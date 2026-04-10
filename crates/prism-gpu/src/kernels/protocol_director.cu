@@ -185,6 +185,16 @@ extern "C" __global__ void protocol_director(ProtocolState* __restrict__ state) 
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // Phase-Coherence Metrology — 10-bit CCNS phase angle
+    // ══════════════════════════════════════════════════════════════════════════
+    // Maps current_step within the full CCNS cycle to 0-1023.
+    // Downstream phasor math uses atan2(sin_sum, cos_sum) to compute S_pc.
+    // Spikes at different thermal phases get different phase_bits → real pocket
+    // signals show coherent lag; temperature artifacts show uniform phase.
+
+    state->current_phase_bits = (unsigned int)((float)step / (float)state->total_steps * 1024.0f) & 0x3FF;
+
+    // ══════════════════════════════════════════════════════════════════════════
     // Coupling Phase Toggle (multi-LIF double-buffer swap)
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -283,6 +293,9 @@ extern "C" __global__ void protocol_director_graph(
         state->fused_step_counter = (state->fused_step_counter + 1)
                                    % state->fused_inner_steps;
     }
+
+    // Phase-coherence metrology (same as standard Director)
+    state->current_phase_bits = (unsigned int)((float)step / (float)state->total_steps * 1024.0f) & 0x3FF;
 
     // Coupling phase toggle
     state->coupling_phase = 1 - state->coupling_phase;

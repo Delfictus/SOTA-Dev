@@ -106,12 +106,19 @@ pub struct ProtocolState {
     pub steering_focus_residue: i32,
     /// Bit flags: 0x1=phase_lock, 0x2=cryo_stabilize, 0x4=adaptive_slow
     pub steering_flags: i32,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Phase-coherence metrology (4 bytes)
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// 10-bit CCNS phase angle (0-1023), updated by Director each step
+    pub current_phase_bits: u32,
 }
 
 const _: () = {
     // Compile-time size check: must match CUDA struct
-    // Gates 0-2 (148) + ASC hooks (16) = 164 bytes
-    assert!(std::mem::size_of::<ProtocolState>() == 164);
+    // Gates 0-2 (148) + ASC hooks (16) + phase (4) = 168 bytes
+    assert!(std::mem::size_of::<ProtocolState>() == 168);
 };
 
 impl ProtocolState {
@@ -186,6 +193,8 @@ impl ProtocolState {
             steering_temp_bias: 0.0,
             steering_focus_residue: -1,
             steering_flags: 0,
+            // Phase metrology
+            current_phase_bits: 0,
         }
     }
 
@@ -372,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_protocol_state_size() {
-        assert_eq!(std::mem::size_of::<ProtocolState>(), 164);
+        assert_eq!(std::mem::size_of::<ProtocolState>(), 168);
     }
 
     #[test]

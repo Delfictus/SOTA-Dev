@@ -87,8 +87,14 @@ struct ProtocolState {
     float steering_temp_bias;        // additive temperature offset (K, 0.0 = neutral)
     int steering_focus_residue;      // residue ID to focus UV on (-1 = no focus)
     int steering_flags;              // bit flags: 0x1=phase_lock, 0x2=cryo_stabilize, 0x4=adaptive_slow
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Phase-coherence metrology (4 bytes)
+    // ════════════════════════════════════════════════════════════════════════
+
+    unsigned int current_phase_bits; // 10-bit CCNS phase angle (0-1023), updated by Director each step
 };
 
-// Struct size: 148 (Gates 0-2) + 16 (ASC hooks) = 164 bytes
+// Struct size: 148 (Gates 0-2) + 16 (ASC hooks) + 4 (phase) = 168 bytes
 
 #endif // PROTOCOL_STATE_CUH

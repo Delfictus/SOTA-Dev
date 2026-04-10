@@ -218,11 +218,8 @@ pub struct GpuTemperatureProtocol {
 /// CUDA struct: timestep (4), voxel_idx (4), position (12), intensity (4),
 /// nearby_residues[8] (32), n_residues (4) = 60 bytes
 #[cfg(feature = "gpu")]
-#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
-#[repr(C)]
-#[repr(C)]
-#[repr(C)]
+#[repr(C, align(32))]
 pub struct GpuSpikeEvent {
     pub timestep: i32,
     pub voxel_idx: i32,
@@ -6672,15 +6669,20 @@ impl NhsAmberFusedEngine {
     pub fn step_autonomous_kernels(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
         let n_atoms_i32 = self.n_atoms as i32;
 
-        // Director kernel — use graph variant if available (avoids cross-module sync during capture)
+        // Director kernel — use the standard (non-graph) variant.
+        // The _graph variant requires conditional graph handles as extra args
+        // and is only usable with CUDA Graph conditional nodes, not basic
+        // stream capture. Basic stream capture works fine with the 1-arg variant.
         {
             let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
-            let dir_fn = self.director_graph_fn.as_ref().unwrap_or(&self.director_fn);
-            unsafe {
-                stream.launch_builder(dir_fn)
+            let res = unsafe {
+                stream.launch_builder(&self.director_fn)
                     .arg(&mut self.d_protocol_state)
                     .launch(cfg)
-            }.context("step_autonomous: Director failed")?;
+            };
+            if let Err(e) = res {
+                return Err(anyhow::anyhow!("step_autonomous: Director launch failed: {:?}", e));
+            }
         }
 
         // Physics kernel (reads from ProtocolState)

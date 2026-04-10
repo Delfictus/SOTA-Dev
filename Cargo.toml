@@ -159,3 +159,10 @@ codegen-units = 1
 [profile.bench]
 inherits = "release"
 debug = true
+
+# Patch cudarc locally to add capture-mode-aware bind_to_thread()
+# See vendor/cudarc/src/driver/safe/core.rs — adds set_capture_mode_active()
+# that makes bind_to_thread() a no-op during stream capture. This is required
+# because cuCtxGetCurrent/cuCtxSetCurrent are illegal during cuStreamBeginCapture.
+[patch.crates-io]
+cudarc = { path = "vendor/cudarc" }
