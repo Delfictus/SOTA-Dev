@@ -6135,6 +6135,43 @@ fn run_multi_stream_pipeline(
                 }).collect();
             }
 
+            // ── SPIKE-WEIGHTED CENTROID REFINEMENT ──
+            // Replace the LIGSITE geometric center with the Information Density Center:
+            // mean (x,y,z) of all attributed spikes weighted by intensity².
+            // LIGSITE centroids are wrong for cryptic pockets because the geometry
+            // is measured at step 0 when the pocket is CLOSED. The spike-weighted
+            // centroid shifts to where the pocket ACTUALLY opens.
+            for site in clustered_sites.iter_mut() {
+                if site.spike_indices.len() < 10 { continue; }
+                let old_c = site.centroid;
+                let mut wx = 0.0f64;
+                let mut wy = 0.0f64;
+                let mut wz = 0.0f64;
+                let mut w_total = 0.0f64;
+                for &idx in &site.spike_indices {
+                    if let Some(spike) = all_stream_spikes.get(idx) {
+                        let w = (spike.intensity * spike.intensity) as f64; // intensity² weighting
+                        wx += spike.position[0] as f64 * w;
+                        wy += spike.position[1] as f64 * w;
+                        wz += spike.position[2] as f64 * w;
+                        w_total += w;
+                    }
+                }
+                if w_total > 0.0 {
+                    let new_c = [
+                        (wx / w_total) as f32,
+                        (wy / w_total) as f32,
+                        (wz / w_total) as f32,
+                    ];
+                    let shift = ((new_c[0]-old_c[0]).powi(2) + (new_c[1]-old_c[1]).powi(2) + (new_c[2]-old_c[2]).powi(2)).sqrt();
+                    if shift > 0.5 { // only log significant shifts
+                        log::info!("    Site {}: centroid refined {:.1}A → ({:.1},{:.1},{:.1})",
+                            site.cluster_id, shift, new_c[0], new_c[1], new_c[2]);
+                    }
+                    site.centroid = new_c;
+                }
+            }
+
             let join_ms = join_start.elapsed().as_millis();
             log::info!("  Spatial fusion: {}/{} spikes → {} sites ({} assigned, {}ms)",
                 total_assigned, all_stream_spikes.len(), clustered_sites.len(),
@@ -6144,8 +6181,9 @@ fn run_multi_stream_pipeline(
                     let top_res: String = site.lining_residues.iter().take(5)
                         .map(|r| format!("r{}({})", r.resid, r.n_atoms_in_pocket))
                         .collect::<Vec<_>>().join(",");
-                    log::info!("    Site {}: {} spikes, lining=[{}]",
-                        site.cluster_id, site.spike_count, top_res);
+                    log::info!("    Site {}: {} spikes, centroid=({:.1},{:.1},{:.1}), lining=[{}]",
+                        site.cluster_id, site.spike_count,
+                        site.centroid[0], site.centroid[1], site.centroid[2], top_res);
                 }
             }
         }
