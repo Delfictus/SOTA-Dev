@@ -126,8 +126,37 @@ struct Args {
     /// Spike intensity percentile filter (0-100). Only keep spikes above this
     /// percentile of intensity. Higher = stricter = fewer spikes.
     /// Default 70 = keep top 30%. Use 90+ to suppress thermal noise.
+    ///
+    /// Magic-constant fallback. The principled replacement is `--filter-otsu`
+    /// which derives the threshold from the data via Otsu's method (1979)
+    /// — no parameters, adapts per target. This flag is preserved for
+    /// backward compatibility and is the active filter only when
+    /// `--filter-otsu` is NOT set. The canonical run command in CLAUDE.md
+    /// (`--spike-percentile 95`) continues to work unchanged.
     #[arg(long, default_value = "70")]
     spike_percentile: u32,
+
+    /// Use Otsu's method (1979) instead of `--spike-percentile` for
+    /// per-channel intensity filtering.
+    ///
+    /// Otsu finds the natural binarization threshold of the intensity
+    /// distribution by maximizing the between-class variance — equivalently,
+    /// minimizing the intra-class variance. It is the standard image-
+    /// thresholding algorithm with 50 years of validation. Compared to a
+    /// fixed percentile cutoff, Otsu:
+    ///
+    ///   • adapts per target (sharp distributions get higher thresholds,
+    ///     noisy distributions get lower)
+    ///   • has zero parameters (no magic constant)
+    ///   • cannot return a threshold outside the data range
+    ///
+    /// The threshold is computed independently per spike source channel
+    /// (UV, LIF, EFP), preserving the existing channel-isolation guarantee.
+    /// LADD/COFIRE channels are still preserved verbatim regardless.
+    ///
+    /// Reference: Otsu, N. (1979) IEEE TSMC 9(1):62-66.
+    #[arg(long, default_value = "false")]
+    filter_otsu: bool,
 
     /// Enable PRISM-Therm: feed spike events into SDST and run hysteresis + CCNS
     /// thermodynamic analysis after the simulation completes.
@@ -289,6 +318,202 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Otsu's method for spike intensity thresholding (Stage 1A.6)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Lower edge of the Otsu sanity band. If Otsu's threshold would keep a
+/// fraction below this, fall back to percentile filtering — the
+/// distribution is too skewed for bimodal thresholding to be appropriate.
+/// See `otsu_intensity_threshold` doc for the EFP channel failure mode.
+const OTSU_SANITY_BAND_LOW: f64 = 0.10;
+
+/// Upper edge of the Otsu sanity band. Symmetric counterpart to LOW.
+/// Above this fraction Otsu is essentially keeping everything anyway,
+/// so the percentile filter is at least as informative.
+const OTSU_SANITY_BAND_HIGH: f64 = 0.90;
+
+/// Otsu's method (1979) — data-driven binary threshold from a 1-D histogram.
+///
+/// Replaces the magic `--spike-percentile` constant with a per-target,
+/// per-channel threshold derived from the actual intensity distribution.
+/// For each channel (UV, LIF, EFP) we build a 256-bin histogram of spike
+/// intensities and search for the threshold τ that **maximizes the
+/// between-class variance**:
+///
+///   σ²_b(τ) = ω₀(τ) · ω₁(τ) · (μ₀(τ) - μ₁(τ))²
+///
+/// where ω₀, μ₀ are the weight and mean of the below-threshold class and
+/// ω₁, μ₁ are the same for the above-threshold class. Maximizing
+/// between-class variance is equivalent to minimizing intra-class variance
+/// (Otsu's original derivation), so the threshold is the natural
+/// binarization point where "noise" and "signal" populations separate.
+///
+/// Properties that make this the right replacement for the magic 95th
+/// percentile:
+///
+///   1. **Zero parameters.** No magic constants. The threshold is derived
+///      entirely from the data.
+///   2. **Adapts per target.** A target with a sharp intensity distribution
+///      gets a high threshold; a target with a noisy distribution gets a
+///      lower threshold. Forcing 95% globally over-filters sharp targets
+///      and under-filters noisy ones.
+///   3. **50 years of validation.** Otsu is the standard image
+///      thresholding algorithm with thousands of citations.
+///   4. **Bounded by the actual distribution.** Cannot return a threshold
+///      outside [min, max] of the input — degenerate distributions
+///      (all-equal intensities) return the min, keeping all spikes.
+///   5. **O(N + B) where B = 256.** Linear in spike count, no sort.
+///
+/// Reference: Otsu, N. (1979). "A threshold selection method from
+/// gray-level histograms." IEEE Transactions on Systems, Man, and
+/// Cybernetics 9 (1): 62-66. doi:10.1109/TSMC.1979.4310076
+///
+/// ## Failure mode and the sanity band
+///
+/// Otsu assumes a roughly **bimodal** distribution where one mode is
+/// "background" and the other is "signal". For inputs that violate this
+/// assumption (highly skewed unimodal distributions, or distributions
+/// where the "background = low / signal = high" topology is inverted)
+/// Otsu can return a threshold that lands deep in a tail.
+///
+/// Validated on the PRISM-4D EFP (electrostatic field) channel during the
+/// Stage 1A.6 A/B: EFP intensity has a massive low-intensity bulk (the
+/// real distributed electrostatic activity) and a sparse high-intensity
+/// tail (rare strong polarization events). Otsu correctly identifies the
+/// bimodal split, but the "keep above threshold" semantics then discards
+/// the bulk (the actual signal) and keeps only the rare outliers — kept
+/// only **270 of 2.4M EFP spikes (0.011%)**, breaking the multi-channel
+/// ranker's reliance on the EFP signal and demoting the canonical SII-P
+/// pocket from Rank 1 to Rank 2.
+///
+/// To handle this without hardcoding channel-specific exceptions, the
+/// caller (`filter_ch` below) gates Otsu's output by a **sanity band**:
+/// if the kept fraction would fall outside `[OTSU_SANITY_BAND_LOW,
+/// OTSU_SANITY_BAND_HIGH]` (typically `[0.10, 0.90]`), the distribution
+/// is judged to be poorly suited to bimodal thresholding and the caller
+/// falls back to the percentile method. The sanity band edges are the
+/// only tunables in the Otsu path and are documented at the call site.
+///
+/// `otsu_intensity_threshold` itself is unchanged from the textbook
+/// algorithm — the sanity band is applied by the caller, after computing
+/// the threshold and counting how many spikes survive.
+///
+/// Returns the intensity threshold; spikes with `intensity >= threshold`
+/// should be kept (subject to the caller's sanity band check).
+fn otsu_intensity_threshold(intensities: &[f32]) -> f32 {
+    if intensities.len() < 2 {
+        return 0.0;
+    }
+
+    // Find min/max in a single pass
+    let mut imin = f32::INFINITY;
+    let mut imax = f32::NEG_INFINITY;
+    for &v in intensities {
+        if v.is_finite() {
+            if v < imin { imin = v; }
+            if v > imax { imax = v; }
+        }
+    }
+    if !imin.is_finite() || !imax.is_finite() || imax <= imin {
+        // Degenerate distribution (all equal, or no finite values).
+        // Return imin so the caller's `intensity >= threshold` keeps everything.
+        return if imin.is_finite() { imin } else { 0.0 };
+    }
+
+    // 256-bin histogram (Otsu's standard choice for 8-bit grayscale; works
+    // well for any distribution and is very fast to compute).
+    const N_BINS: usize = 256;
+    let mut hist = [0u64; N_BINS];
+    let bin_width = (imax - imin) / (N_BINS as f32);
+    if bin_width <= 0.0 {
+        return imin;
+    }
+    for &v in intensities {
+        if !v.is_finite() {
+            continue;
+        }
+        let mut idx = ((v - imin) / bin_width).floor() as usize;
+        if idx >= N_BINS {
+            idx = N_BINS - 1;
+        }
+        hist[idx] += 1;
+    }
+
+    // Total weighted sum (for between-class variance computation).
+    let total_count: u64 = hist.iter().sum();
+    if total_count == 0 {
+        return imin;
+    }
+    let mut sum_total: f64 = 0.0;
+    for b in 0..N_BINS {
+        let bin_center = imin as f64 + (b as f64 + 0.5) * bin_width as f64;
+        sum_total += bin_center * hist[b] as f64;
+    }
+
+    // Sweep all candidate thresholds, find the bin with maximum
+    // between-class variance.
+    let total_f = total_count as f64;
+    let mut best_var: f64 = -1.0;
+    let mut best_bin: usize = 0;
+    let mut sum_bg: f64 = 0.0;
+    let mut w_bg: f64 = 0.0;
+    for b in 0..N_BINS {
+        let bin_center = imin as f64 + (b as f64 + 0.5) * bin_width as f64;
+        let h = hist[b] as f64;
+        w_bg += h;
+        sum_bg += bin_center * h;
+        let w_fg = total_f - w_bg;
+        if w_bg <= 0.0 || w_fg <= 0.0 {
+            continue;
+        }
+        let mu_bg = sum_bg / w_bg;
+        let mu_fg = (sum_total - sum_bg) / w_fg;
+        let between = w_bg * w_fg * (mu_bg - mu_fg).powi(2);
+        if between > best_var {
+            best_var = between;
+            best_bin = b;
+        }
+    }
+
+    // Threshold = bin center of the best split bin.
+    imin + (best_bin as f32 + 0.5) * bin_width
+}
+
+#[cfg(test)]
+mod otsu_tests {
+    use super::otsu_intensity_threshold;
+
+    #[test]
+    fn otsu_bimodal_separates_noise_from_signal() {
+        // Synthetic bimodal: 1000 noise spikes around 0.1, 100 signal around 0.9.
+        let mut data: Vec<f32> = (0..1000).map(|i| 0.1 + (i as f32 * 0.0001)).collect();
+        data.extend((0..100).map(|i| 0.9 + (i as f32 * 0.0001)));
+        let t = otsu_intensity_threshold(&data);
+        assert!(t > 0.2 && t < 0.8, "expected threshold in noise-signal gap, got {}", t);
+    }
+
+    #[test]
+    fn otsu_unimodal_returns_within_range() {
+        // All values clustered around 0.5
+        let data: Vec<f32> = (0..1000).map(|i| 0.5 + (i as f32 * 0.00001)).collect();
+        let t = otsu_intensity_threshold(&data);
+        assert!(t >= 0.4 && t <= 0.6, "unimodal threshold should be near data center, got {}", t);
+    }
+
+    #[test]
+    fn otsu_degenerate_all_equal_returns_value() {
+        let data = vec![0.5f32; 100];
+        let t = otsu_intensity_threshold(&data);
+        assert!((t - 0.5).abs() < 1e-6 || t == 0.5);
+    }
+
+    #[test]
+    fn otsu_empty_returns_zero() {
+        assert_eq!(otsu_intensity_threshold(&[]), 0.0);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1386,11 +1611,29 @@ fn run_full_pipeline_internal(
     log::info!("  Snapshots: {}", total_snapshots);
     log::info!("  Final temperature: {:.1}K", final_temperature);
 
-    // Intensity pre-filtering: keep only spikes above --spike-percentile
-    // Apply PER-CHANNEL to prevent high-intensity LIF/UV from drowning out
-    // lower-intensity EFP (electrostatic) spikes. EFP spikes are rare (~0.2%)
-    // but carry critical electrostatic binding information.
+    // ── Intensity pre-filtering: per-channel, with Otsu opt-in (Stage 1A.6) ──
+    //
+    // This is the single-replica path's filter (mirror of the multi-stream
+    // path's filter near line ~4000). Spikes are partitioned by source
+    // channel (UV, LIF, EFP, LADD/COFIRE) so the high-intensity UV/LIF
+    // channels do not drown out the rare but mechanistically critical EFP
+    // (electrostatic) channel — EFP spikes are ~0.2% of total but carry
+    // unique electrostatic binding information.
+    //
+    // Filter modes:
+    //   • `--spike-percentile <N>` (default, magic-constant fallback):
+    //     sort each channel by intensity, keep the top (100-N)%.
+    //   • `--filter-otsu` (data-driven, recommended):
+    //     compute Otsu's 1979 threshold per channel from a 256-bin
+    //     histogram. Adapts per target. Zero parameters.
+    //
+    // LADD/COFIRE channel is always preserved verbatim regardless of mode
+    // (it is rare and high-value).
+    //
+    // The 100-spike minimum is preserved in both modes (skip filtering on
+    // tiny samples to avoid statistical artifacts).
     let pct = (args.spike_percentile.min(99) as f32) / 100.0;
+    let use_otsu = args.filter_otsu;
     let accumulated_spikes = if all_spikes.len() > 1000 {
         // Partition by source channel
         let mut uv_spikes: Vec<_> = Vec::new();
@@ -1406,16 +1649,59 @@ fn run_full_pipeline_internal(
             }
         }
 
-        // Apply percentile filter independently per channel
-        let filter_channel = |mut spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent>| -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
+        // Per-channel filter closure: dispatches to Otsu or percentile
+        // based on the CLI flag, with the same sanity-band fallback used
+        // by the multi-stream path's filter_ch closure (see Stage 1A.6
+        // commit and otsu_intensity_threshold doc for the EFP failure mode
+        // and the [OTSU_SANITY_BAND_LOW, OTSU_SANITY_BAND_HIGH] gating
+        // rationale). Both branches preserve the input ordering of the
+        // kept spikes. The 100-spike floor protects against degenerate
+        // small-sample threshold computation.
+        let filter_channel = |spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent>,
+                              channel_label: &str|
+         -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
             if spikes.len() < 100 {
                 return spikes; // keep all if too few
             }
-            let mut intensities: Vec<f32> = spikes.iter().map(|s| s.intensity).collect();
-            intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let idx = (intensities.len() as f32 * pct) as usize;
-            let thresh = intensities.get(idx).copied().unwrap_or(0.0);
-            spikes.into_iter().filter(|s| s.intensity >= thresh).collect()
+            let n_pre = spikes.len();
+            let intensities: Vec<f32> = spikes.iter().map(|s| s.intensity).collect();
+            let i_min = intensities.iter().copied().fold(f32::INFINITY, f32::min);
+            let i_max = intensities.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let percentile_thresh = {
+                let mut sorted = intensities.clone();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let idx = (sorted.len() as f32 * pct) as usize;
+                sorted.get(idx).copied().unwrap_or(0.0)
+            };
+            let final_thresh = if use_otsu {
+                let otsu_t = otsu_intensity_threshold(&intensities);
+                let n_kept_otsu = intensities.iter().filter(|&&v| v >= otsu_t).count();
+                let kept_frac = n_kept_otsu as f64 / n_pre as f64;
+                log::info!(
+                    "    [Otsu] {}: n={} threshold={:.4} kept_frac={:.4} \
+                     (min={:.4} max={:.4})",
+                    channel_label, n_pre, otsu_t, kept_frac, i_min, i_max,
+                );
+                if kept_frac < OTSU_SANITY_BAND_LOW || kept_frac > OTSU_SANITY_BAND_HIGH {
+                    log::info!(
+                        "    [Otsu] {}: kept_frac {:.4} outside sanity band \
+                         [{:.2},{:.2}] → falling back to percentile (thresh={:.4})",
+                        channel_label, kept_frac,
+                        OTSU_SANITY_BAND_LOW, OTSU_SANITY_BAND_HIGH,
+                        percentile_thresh,
+                    );
+                    percentile_thresh
+                } else {
+                    otsu_t
+                }
+            } else {
+                percentile_thresh
+            };
+            drop(intensities);
+            spikes
+                .into_iter()
+                .filter(|s| s.intensity >= final_thresh)
+                .collect()
         };
 
         let n_uv_pre = uv_spikes.len();
@@ -1423,12 +1709,16 @@ fn run_full_pipeline_internal(
         let n_efp_pre = efp_spikes.len();
         let n_ladd_pre = ladd_spikes.len();
 
-        let uv_filtered = filter_channel(uv_spikes);
-        let lif_filtered = filter_channel(lif_spikes);
-        let efp_filtered = filter_channel(efp_spikes);
-        // LADD/COFIRE: keep all (rare, high-value channel — no percentile filtering)
+        let uv_filtered = filter_channel(uv_spikes, "UV");
+        let lif_filtered = filter_channel(lif_spikes, "LIF");
+        let efp_filtered = filter_channel(efp_spikes, "EFP");
+        // LADD/COFIRE: keep all (rare, high-value channel — no filtering)
 
-        log::info!("  Intensity filter (per-channel, top {}%):", 100 - args.spike_percentile);
+        if use_otsu {
+            log::info!("  Intensity filter (per-channel, Otsu data-driven):");
+        } else {
+            log::info!("  Intensity filter (per-channel, top {}%):", 100 - args.spike_percentile);
+        }
         log::info!("    UV:  {} → {}", n_uv_pre, uv_filtered.len());
         log::info!("    LIF: {} → {}", n_lif_pre, lif_filtered.len());
         log::info!("    EFP: {} → {} (preserved)", n_efp_pre, efp_filtered.len());
@@ -3987,8 +4277,32 @@ fn run_multi_stream_pipeline(
         }
 
         // Per-channel intensity filter: preserves EFP spikes that would be
-        // drowned by high-intensity LIF/UV under a global percentile cut.
+        // ── Per-channel intensity filtering (Stage 1A.6: Otsu opt-in) ──
+        //
+        // Spikes are partitioned by source channel (UV, LIF, EFP, LADD/COFIRE)
+        // and each channel is filtered independently. This prevents the
+        // high-intensity UV/LIF channels from drowning out the rare but
+        // mechanistically critical EFP (electrostatic) channel under a
+        // single global threshold. LADD/COFIRE is always preserved verbatim
+        // because it is rare and high-value.
+        //
+        // Two filter modes are supported:
+        //
+        //   • Default — `--spike-percentile <N>` (magic-constant fallback):
+        //     sorts each channel by intensity, keeps the top (100-N)%.
+        //     Used by the canonical run command in CLAUDE.md.
+        //
+        //   • Opt-in — `--filter-otsu` (data-driven, recommended):
+        //     computes Otsu's 1979 threshold per channel from a 256-bin
+        //     histogram of spike intensities. Adapts the threshold to each
+        //     target's actual distribution; no parameters. See the
+        //     `otsu_intensity_threshold` function above for the math.
+        //
+        // The `spikes.len() < 100` minimum is preserved in both modes —
+        // skip filtering on tiny samples to avoid statistical artifacts
+        // (the same minimum the previous code used).
         let pct_f = (args.spike_percentile.min(99) as f32) / 100.0;
+        let use_otsu = args.filter_otsu;
         let filtered = if raw_spikes.len() > 1000 {
             let mut uv_s: Vec<_> = Vec::new();
             let mut lif_s: Vec<_> = Vec::new();
@@ -4002,18 +4316,87 @@ fn run_multi_stream_pipeline(
                     _ => lif_s.push(s),
                 }
             }
-            let filter_ch = |mut spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent>| -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
-                if spikes.len() < 100 { return spikes; }
+            // Per-channel filter closure: dispatches to Otsu or percentile
+            // based on the CLI flag, with a sanity-band fallback that
+            // protects against Otsu pathologies on skewed channel
+            // distributions (notably EFP — see otsu_intensity_threshold doc).
+            //
+            // Algorithm:
+            //   1. If --filter-otsu, compute Otsu threshold + simulate the
+            //      kept fraction.
+            //   2. If kept fraction is in [OTSU_SANITY_BAND_LOW,
+            //      OTSU_SANITY_BAND_HIGH], accept Otsu and use it.
+            //   3. Otherwise (Otsu is in a tail), fall back to percentile.
+            //   4. If --filter-otsu is false, always use percentile.
+            //
+            // Returns the filtered Vec preserving spike order within the
+            // kept set.
+            let filter_ch = |spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent>,
+                             channel_label: &str|
+             -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
+                if spikes.len() < 100 {
+                    return spikes;
+                }
+                let n_pre = spikes.len();
+
+                // Compute the percentile threshold first — used as either the
+                // primary filter or as the Otsu fallback.
                 let mut ints: Vec<f32> = spikes.iter().map(|s| s.intensity).collect();
-                ints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let idx = (ints.len() as f32 * pct_f) as usize;
-                let thresh = ints.get(idx).copied().unwrap_or(0.0);
-                spikes.into_iter().filter(|s| s.intensity >= thresh).collect()
+                let i_min = ints.iter().copied().fold(f32::INFINITY, f32::min);
+                let i_max = ints.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let percentile_thresh = {
+                    let mut sorted = ints.clone();
+                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let idx = (sorted.len() as f32 * pct_f) as usize;
+                    sorted.get(idx).copied().unwrap_or(0.0)
+                };
+
+                let final_thresh = if use_otsu {
+                    let otsu_t = otsu_intensity_threshold(&ints);
+                    // Simulate the Otsu kept fraction without allocating the full vec
+                    let n_kept_otsu = ints.iter().filter(|&&v| v >= otsu_t).count();
+                    let kept_frac = n_kept_otsu as f64 / n_pre as f64;
+                    log::info!(
+                        "  [Otsu] {}: n={} threshold={:.4} kept_frac={:.4} \
+                         (min={:.4} max={:.4})",
+                        channel_label, n_pre, otsu_t, kept_frac, i_min, i_max,
+                    );
+                    if kept_frac < OTSU_SANITY_BAND_LOW || kept_frac > OTSU_SANITY_BAND_HIGH {
+                        log::info!(
+                            "  [Otsu] {}: kept_frac {:.4} outside sanity band \
+                             [{:.2},{:.2}] → falling back to percentile (thresh={:.4})",
+                            channel_label, kept_frac,
+                            OTSU_SANITY_BAND_LOW, OTSU_SANITY_BAND_HIGH,
+                            percentile_thresh,
+                        );
+                        percentile_thresh
+                    } else {
+                        otsu_t
+                    }
+                } else {
+                    percentile_thresh
+                };
+                drop(ints); // free the working buffer before the consuming filter
+                let kept: Vec<_> = spikes
+                    .into_iter()
+                    .filter(|s| s.intensity >= final_thresh)
+                    .collect();
+                if use_otsu {
+                    log::info!(
+                        "  [Otsu] {}: kept {}/{} ({:.1}%) at final threshold {:.4}",
+                        channel_label,
+                        kept.len(),
+                        n_pre,
+                        100.0 * kept.len() as f32 / n_pre as f32,
+                        final_thresh,
+                    );
+                }
+                kept
             };
-            let mut result = filter_ch(uv_s);
-            result.extend(filter_ch(lif_s));
-            result.extend(filter_ch(efp_s));
-            result.extend(ladd_s); // LADD/COFIRE: preserve all
+            let mut result = filter_ch(uv_s, "UV");
+            result.extend(filter_ch(lif_s, "LIF"));
+            result.extend(filter_ch(efp_s, "EFP"));
+            result.extend(ladd_s); // LADD/COFIRE: preserve all (rare, high-value channel)
             result
         } else {
             raw_spikes
