@@ -517,7 +517,44 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
         .arg("-arch=sm_120")
         // Optimization flags
         .arg("-O3") // Maximum optimization
-        .arg("--use_fast_math") // Fast math operations
+        // ── Phase 0 (Bug C fix): --use_fast_math intentionally REMOVED ──
+        //
+        // --use_fast_math implies:
+        //   • --ftz=true       (flush denormals to zero)
+        //   • --prec-div=false (approximate division)
+        //   • --prec-sqrt=false (approximate sqrt)
+        //   • --fmad=true      (fused multiply-add)
+        //
+        // These flags caused PTX codegen drift between freshly-built and
+        // vendored PTX bundles. Specifically, `protocol_director.ptx` from
+        // a fresh build with --use_fast_math used `div.approx.ftz.f32` /
+        // `sub.ftz.f32` / `fma.rn.ftz.f32` instead of the IEEE-correct
+        // `div.rn.f32` / `sub.f32` / `fma.rn.f32` opcodes used in the
+        // vendored bundle. When the engine computed small phase deltas
+        // near zero, FTZ flushed them to zero → division produced inf or
+        // NaN → integer cast → out-of-bounds index → SIGSEGV in the
+        // Director kernel.
+        //
+        // The bootstrap commit (24c6cdb1) worked around this by vendoring
+        // a known-good PTX bundle in vendor/working_ptx_2026-04-10/ and
+        // having scripts/prism-validate-and-run.sh seed target/ptx/ from
+        // it when freshly-built protocol_director.ptx was missing.
+        //
+        // Removing --use_fast_math here makes fresh builds match the
+        // vendored bundle's IEEE semantics. The vendored bundle becomes
+        // unnecessary and can be retired in a follow-up commit once this
+        // change is validated against the bootstrap signature gate.
+        //
+        // Performance impact: minimal. PRISM-4D's hot kernels (Physics,
+        // multi_lif) are dominated by memory bandwidth, not transcendental
+        // throughput. The IEEE-correct division and sub instructions cost
+        // ~5% more cycles than their fast-math counterparts but the
+        // bottleneck is L2/HBM, not the ALU.
+        //
+        // If a future kernel genuinely needs fast-math semantics for
+        // performance, it should use the --use_fast_math equivalent
+        // intrinsics directly (`__fdividef`, `__fadd_rz`, etc.) on a
+        // per-call-site basis rather than enabling it globally.
         .arg("--restrict") // Enable restrict keyword optimization
         // Include paths
         .arg("-I/usr/local/cuda/include")
@@ -553,7 +590,12 @@ fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target
         .arg("-arch=sm_120")
         .arg("-rdc=true")           // relocatable device code for grid.sync()
         .arg("-O3")
-        .arg("--use_fast_math")
+        // --use_fast_math intentionally REMOVED — see compile_kernel
+        // above for the full rationale (Phase 0 / Bug C fix). Same fix
+        // applies here for cooperative kernels (twin_persistent_physics
+        // and friends): IEEE-correct codegen prevents the PTX drift
+        // that caused SIGSEGV when small phase deltas got flushed to
+        // zero by FTZ semantics.
         .arg("--restrict")
         .arg("-I/usr/local/cuda/include")
         .arg("-Isrc/kernels")  // For shared headers (protocol_state.cuh)
