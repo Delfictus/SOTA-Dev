@@ -1234,7 +1234,7 @@ impl PersistentNhsEngine {
         }
     }
 
-    /// Get reference to GPU-resident ProtocolState (148 bytes).
+    /// Get reference to GPU-resident ProtocolState (684 bytes after Stage 2).
     /// Used for heartbeat polling and graph capture.
     pub fn protocol_state_buffer(&self) -> Option<&CudaSlice<u8>> {
         self.engine.as_ref().map(|e| &e.d_protocol_state)
@@ -1562,6 +1562,87 @@ impl PersistentNhsEngine {
         } else {
             Ok(())
         }
+    }
+
+    /// Stage 2: Write the closed-loop ASC steering focus list into the
+    /// device-side ProtocolState.
+    ///
+    /// `entries` is a slice of `(residue_id, weight)` tuples derived from the
+    /// per-chunk GC-PID synergy fraction (Stage 1B-3). At most
+    /// `STEERING_FOCUS_MAX = 64` entries are written; any extra are ignored.
+    /// The host serializes the new `steering_focus_count` + the array bytes
+    /// into a small staging buffer and issues a `memcpy_htod` at the
+    /// appropriate offset within ProtocolState. The autonomous CUDA Graph
+    /// has captured the *pointer* to ProtocolState; the next graph replay
+    /// (and the next launch of `ring_buffer_read_and_adapt`) reads the new
+    /// contents automatically — no graph re-capture, no kernel re-launch
+    /// configuration change.
+    ///
+    /// This is the canonical "captured pointer with mutable contents"
+    /// pattern, identical to how the existing legacy steering hooks
+    /// (`steering_uv_boost`, etc.) are updated. The only difference is the
+    /// payload size (516 bytes instead of 4-16 bytes) and the offset within
+    /// the struct.
+    ///
+    /// Used by the autonomous chunk loop in `nhs_rt_full.rs` when
+    /// `--closed-loop-steering` is enabled. Without the flag, the
+    /// `steering_focus_count` stays at zero and the kernel's per-spike
+    /// steering branch is a no-op (the `if (n_focus > 0)` guard short-
+    /// circuits) so this method has no effect on default behavior.
+    pub fn write_steering_focus(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        entries: &[(i32, f32)],
+    ) -> anyhow::Result<()> {
+        use crate::protocol_state::{ProtocolState, SteerEntry, STEERING_FOCUS_MAX};
+
+        // Strategy: download the full ProtocolState (684 bytes), update only
+        // the steering fields in the host copy, upload the full struct back.
+        // The full-struct round trip is ~1.4 KB of PCIe traffic per chunk
+        // (~80 chunks per run = ~110 KB total) — negligible compared to the
+        // multi-GB spike data downloads. Avoiding partial writes also dodges
+        // a cudarc slice-typing issue with `memcpy_htod` on a `CudaView`.
+        //
+        // We could optimize this to a partial write at the steering field
+        // offset using `slice_mut(..).into()` once the cudarc trait
+        // resolution is stable, but for Stage 2 v1 the round-trip approach
+        // is correct, simple, and fast enough.
+        if let Some(ref mut engine) = self.engine {
+            // Download
+            let mut buf = vec![0u8; std::mem::size_of::<ProtocolState>()];
+            stream.memcpy_dtoh(&engine.d_protocol_state, &mut buf)?;
+            // Reinterpret as ProtocolState (matching the device-side layout
+            // exactly via #[repr(C)]).
+            let mut state: ProtocolState =
+                unsafe { std::ptr::read(buf.as_ptr() as *const ProtocolState) };
+
+            // Update only the steering fields
+            let n_active = entries.len().min(STEERING_FOCUS_MAX) as i32;
+            state.steering_focus_count = n_active;
+            for i in 0..STEERING_FOCUS_MAX {
+                state.steering_focus_residues[i] = if i < entries.len() {
+                    SteerEntry {
+                        residue_id: entries[i].0,
+                        weight: entries[i].1,
+                    }
+                } else {
+                    SteerEntry {
+                        residue_id: -1,
+                        weight: 0.0,
+                    }
+                };
+            }
+
+            // Upload the modified struct back
+            let bytes: &[u8] = unsafe {
+                std::slice::from_raw_parts(
+                    &state as *const ProtocolState as *const u8,
+                    std::mem::size_of::<ProtocolState>(),
+                )
+            };
+            stream.memcpy_htod(bytes, &mut engine.d_protocol_state)?;
+        }
+        Ok(())
     }
 
     /// Get snapshots from current run

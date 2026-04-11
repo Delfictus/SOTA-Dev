@@ -112,6 +112,24 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
     float max_reduction = 0.0f;
     int hotspot_residue = -1;
 
+    // ── Stage 2: Closed-loop ASC steering ──
+    //
+    // Snapshot the steering focus list once per kernel launch (it's small —
+    // up to 64 entries — and the rest of the loop only reads it). Reading
+    // through the device pointer once amortizes the global-memory load.
+    //
+    // The autonomous CUDA Graph captures `d_protocol` as a device pointer;
+    // the contents change between graph replays via the host's
+    // cuMemcpyHtoDAsync writes. This kernel re-loads the focus list every
+    // launch (every chunk), so it always sees the latest decisions from
+    // the ASC controller without any graph re-capture.
+    int n_focus = 0;
+    if (d_protocol != nullptr) {
+        n_focus = d_protocol->steering_focus_count;
+        if (n_focus < 0) n_focus = 0;
+        if (n_focus > 64) n_focus = 64;
+    }
+
     for (unsigned int i = 0; i < n_to_process; i++) {
         unsigned int ring_idx = (tail + i) % capacity;
         RingSpikeEvent spike = ring_buffer[ring_idx];
@@ -131,6 +149,36 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
         if (age < 0.0f) age = 0.0f;
         float time_weight = expf(-age / decay_constant);
         float boost = sensitivity_boost * spike.intensity * time_weight;
+
+        // ── Stage 2 steering boost ──
+        //
+        // Extract the spike's primary residue id from the bit-packed
+        // primary_residue_id field (low 16 bits hold the residue id; bits
+        // 16-25 hold the 10-bit phase angle from compact_and_push). Then
+        // walk the focus list and check if this spike's residue is in it.
+        // If it is, multiply the threshold-reduction boost by
+        // `(1 + steering_gain × weight)`.
+        //
+        // STEERING_GAIN = 2.0 means a synergy_fraction of 1.0 produces a
+        // 3× boost on the spike's threshold reduction. This is moderate
+        // enough not to overwhelm the natural physics signal but strong
+        // enough to actually shift the cross-group divergence. Documented
+        // as a tunable in the kernel comment so future calibration work
+        // can swap it without searching.
+        float steer_weight = 0.0f;
+        if (n_focus > 0) {
+            int spike_residue = spike.primary_residue_id & 0xFFFF;
+            #pragma unroll 8
+            for (int k = 0; k < 64; k++) {
+                if (k >= n_focus) break;
+                if (d_protocol->steering_focus_residues[k].residue_id == spike_residue) {
+                    steer_weight = d_protocol->steering_focus_residues[k].weight;
+                    break;
+                }
+            }
+        }
+        const float STEERING_GAIN = 2.0f;
+        boost *= (1.0f + STEERING_GAIN * steer_weight);
 
         float base = base_thresholds[voxel_idx];
         float floor_val = base * (1.0f - max_reduction_fraction);

@@ -93,8 +93,60 @@ struct ProtocolState {
     // ════════════════════════════════════════════════════════════════════════
 
     unsigned int current_phase_bits; // 10-bit CCNS phase angle (0-1023), updated by Director each step
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Stage 2: Closed-loop ASC steering — focus residues with weights (516 B)
+    // ════════════════════════════════════════════════════════════════════════
+    //
+    // The ASC controller writes the top-K residues by GC-PID synergy_fraction
+    // (from Stage 1B-3 — see crates/prism-nhs/src/gcpid.rs and the per-run
+    // {prefix}.gcpid_synergy.json export) into this fixed-size array each
+    // chunk via cuMemcpyHtoDAsync on the engine stream. The
+    // ring_buffer_read_and_adapt kernel reads it on its next launch and
+    // applies a multiplicative threshold-reduction boost to spikes whose
+    // primary residue id is in the focus list.
+    //
+    // The captured CUDA Graph holds a POINTER to this ProtocolState, not a
+    // value. The contents change between graph replays without requiring
+    // graph re-capture — this is the canonical "captured pointer with
+    // mutable contents" pattern documented at length in
+    // graph_capture.rs and persistent_engine.rs::kcc_step_once.
+    //
+    // ## Why we steer toward synergy_fraction residues, NOT pocket residues
+    //
+    // Stage 1B-3 validation on 4LPK showed that the SII signature pocket
+    // residues (the canonical detection targets) have HIGH total mutual
+    // information about future spike rate but LOW synergy_fraction —
+    // their information is mostly REDUNDANT across the four TWIN groups
+    // (every group sees the same pocket the same way). The high-
+    // synergy_fraction residues are DIFFERENT residues (152, 45, 65,
+    // 105, ...) where the joint distribution of (scout, observer)
+    // groups carries information that no single group has alone.
+    // These are the cross-group COORDINATION points — the leverage
+    // points for steering. Steering pocket residues that every group
+    // already agrees on produces no divergence. Steering coordination
+    // points forces groups into states they wouldn't reach
+    // independently — which is precisely what the ACL contrast metric
+    // is supposed to measure but currently can't because the loop is
+    // open. See Stage 1B-2+1B-3 commit b8aeff61 for the full
+    // theoretical justification.
+    //
+    // ## Layout
+    //
+    // The capacity of 64 is enough to cover the cryptic-pocket-relevant
+    // surface of any reasonable target (the largest BENCH60 protein has
+    // ~500 residues; even if a quarter are coordination centers, 64 is
+    // a generous slice). Inactive slots have residue_id = -1.
+
+    int steering_focus_count;       // number of active entries in the array (0..64)
+    struct SteerEntry {
+        int residue_id;             // -1 = inactive slot
+        float weight;               // GC-PID synergy_fraction in [0,1]; 0 = inactive
+    } steering_focus_residues[64];  // 64 × 8 bytes = 512 bytes
 };
 
-// Struct size: 148 (Gates 0-2) + 16 (ASC hooks) + 4 (phase) = 168 bytes
+// Struct size:
+//   148 (Gates 0-2) + 16 (legacy ASC hooks) + 4 (phase) = 168
+//   + 4 (steering_focus_count) + 512 (steering_focus_residues[64]) = 684 bytes
 
 #endif // PROTOCOL_STATE_CUH

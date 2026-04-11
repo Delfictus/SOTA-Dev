@@ -18,6 +18,30 @@ use std::sync::Arc;
 use crate::fused_engine::CryoUvProtocol;
 use crate::twin_kernels::find_twin_ptx;
 
+/// Stage 2: Closed-loop steering focus residue with weight.
+///
+/// One entry in `ProtocolState::steering_focus_residues`. The ASC controller
+/// fills this array each chunk with the top-K residues by GC-PID
+/// synergy_fraction (Stage 1B-3 — see `crates/prism-nhs/src/gcpid.rs`).
+/// The `ring_buffer_read_and_adapt` kernel reads the array on its next
+/// launch and applies a multiplicative threshold-reduction boost to spikes
+/// whose primary residue id matches an active entry.
+///
+/// `residue_id = -1` and/or `weight = 0.0` mark the entry as inactive.
+///
+/// Layout MUST match the CUDA `SteerEntry` struct nested in
+/// `ProtocolState` in `protocol_state.cuh`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SteerEntry {
+    pub residue_id: i32,
+    pub weight: f32,
+}
+
+/// Maximum number of focus residues the steering buffer can hold.
+/// MUST match the CUDA `steering_focus_residues[64]` array dimension.
+pub const STEERING_FOCUS_MAX: usize = 64;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ProtocolState — must match protocol_state.cuh struct exactly
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,12 +137,54 @@ pub struct ProtocolState {
 
     /// 10-bit CCNS phase angle (0-1023), updated by Director each step
     pub current_phase_bits: u32,
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Stage 2: Closed-loop ASC steering — focus residues (516 bytes)
+    // ════════════════════════════════════════════════════════════════════════
+    //
+    // The ASC controller writes the top-K residues by GC-PID
+    // synergy_fraction into this fixed-size array each chunk via
+    // cuMemcpyHtoDAsync on the engine stream. The
+    // `ring_buffer_read_and_adapt` kernel reads it on its next launch and
+    // applies a multiplicative threshold-reduction boost to spikes whose
+    // primary residue id matches.
+    //
+    // The autonomous CUDA Graph captures a POINTER to this struct (not a
+    // value), so contents change between graph replays without requiring
+    // re-capture — the canonical "captured pointer with mutable contents"
+    // pattern. See graph_capture.rs and persistent_engine.rs::kcc_step_once
+    // for the same pattern at work elsewhere.
+    //
+    // We steer toward synergy_fraction-ranked residues, NOT pocket
+    // detection residues. The Stage 1B-3 validation on 4LPK showed the
+    // SII signature pocket residues have HIGH total MI but LOW
+    // synergy_fraction (their information is mostly redundant across
+    // groups), while OTHER residues (152, 45, 65, 105, ...) have LOWER
+    // total MI but HIGHER synergy_fraction (cross-group coordination
+    // points). Steering toward coordination points produces real
+    // cross-group divergence; steering toward already-agreed-upon
+    // pocket residues does nothing.
+
+    /// Number of active entries in `steering_focus_residues` (0..64).
+    pub steering_focus_count: i32,
+
+    /// Top-K focus residues by GC-PID synergy_fraction. Inactive entries
+    /// have `residue_id = -1` and `weight = 0.0`.
+    pub steering_focus_residues: [SteerEntry; STEERING_FOCUS_MAX],
 }
 
 const _: () = {
-    // Compile-time size check: must match CUDA struct
-    // Gates 0-2 (148) + ASC hooks (16) + phase (4) = 168 bytes
-    assert!(std::mem::size_of::<ProtocolState>() == 168);
+    // Compile-time size check: must match CUDA struct.
+    //
+    // Layout breakdown:
+    //   148 (Gates 0-2)
+    // +  16 (legacy single-residue ASC hooks)
+    // +   4 (current_phase_bits)
+    // +   4 (steering_focus_count)         ← Stage 2
+    // + 512 (steering_focus_residues[64])  ← Stage 2 (64 × 8 bytes)
+    // = 684 bytes total
+    assert!(std::mem::size_of::<ProtocolState>() == 684);
+    assert!(std::mem::size_of::<SteerEntry>() == 8);
 };
 
 impl ProtocolState {
@@ -195,6 +261,11 @@ impl ProtocolState {
             steering_flags: 0,
             // Phase metrology
             current_phase_bits: 0,
+            // Stage 2 closed-loop steering — initialized empty.
+            // The ASC controller will populate this each chunk via
+            // cuMemcpyHtoDAsync once --closed-loop-steering is enabled.
+            steering_focus_count: 0,
+            steering_focus_residues: [SteerEntry { residue_id: -1, weight: 0.0 }; STEERING_FOCUS_MAX],
         }
     }
 
@@ -381,7 +452,28 @@ mod tests {
 
     #[test]
     fn test_protocol_state_size() {
-        assert_eq!(std::mem::size_of::<ProtocolState>(), 168);
+        // Stage 2 extension: 168 (legacy) + 4 (count) + 512 (focus array) = 684 bytes
+        assert_eq!(std::mem::size_of::<ProtocolState>(), 684);
+        assert_eq!(std::mem::size_of::<SteerEntry>(), 8);
+    }
+
+    #[test]
+    fn test_steering_defaults_are_neutral() {
+        let protocol = CryoUvProtocol::fast_35k();
+        let state = ProtocolState::from_cryo_uv(
+            &protocol, 45000, 0.002, 1.0, 9.0, 4, true, true,
+        );
+        // Default-initialized steering should not affect the kernel's behavior.
+        assert_eq!(state.steering_focus_count, 0);
+        for entry in state.steering_focus_residues.iter() {
+            assert_eq!(entry.residue_id, -1);
+            assert_eq!(entry.weight, 0.0);
+        }
+        // Legacy steering hooks should also be at neutral defaults
+        assert_eq!(state.steering_uv_boost, 1.0);
+        assert_eq!(state.steering_temp_bias, 0.0);
+        assert_eq!(state.steering_focus_residue, -1);
+        assert_eq!(state.steering_flags, 0);
     }
 
     #[test]

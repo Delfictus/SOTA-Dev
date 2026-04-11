@@ -136,6 +136,31 @@ struct Args {
     #[arg(long, default_value = "70")]
     spike_percentile: u32,
 
+    /// Enable Stage 2 closed-loop ASC steering writeback.
+    ///
+    /// When set, the per-chunk GC-PID synergy estimator (Stage 1B-3) writes
+    /// the top-K residues by synergy_fraction into the device-side
+    /// ProtocolState.steering_focus_residues array via cuMemcpyHtoDAsync on
+    /// the engine stream. The ring_buffer_read_and_adapt kernel reads the
+    /// list on its next launch and applies a multiplicative threshold-
+    /// reduction boost to spikes whose primary residue id is in the focus
+    /// list, with strength proportional to the residue's synergy weight.
+    ///
+    /// THIS CLOSES THE ACS CONTROL LOOP. Without this flag, the ASC
+    /// computes hotspots and discards them at line ~3740. With this flag,
+    /// the GC-PID-derived steering weights actively bias the ring buffer
+    /// adaptation, which should produce real cross-group divergence and
+    /// finally lift the ACL contrast off 0.998.
+    ///
+    /// Default false (opt-in for safety). The bootstrap signature gate
+    /// must remain green by default.
+    ///
+    /// Reference: closes the loop documented at nhs_rt_full.rs:3740-3749
+    /// where `let _ = (n_groups, s_pc, top_residue);` currently throws
+    /// away the ASC's high-level decisions.
+    #[arg(long, default_value = "false")]
+    closed_loop_steering: bool,
+
     /// Enable BOCPD-driven dynamic chunking (Stage 1B-2).
     ///
     /// When set, the autonomous chunk loop runs Adams-MacKay Bayesian
@@ -3480,6 +3505,18 @@ fn run_multi_stream_pipeline(
         /// the run; subtracting the previous snapshot gives the
         /// per-chunk increment.
         prev_group_residue_counts: std::sync::Mutex<Vec<Vec<u32>>>,
+        // ── Stage 2: Closed-loop ASC steering ──
+        /// Top-K residues by GC-PID synergy_fraction, published every chunk
+        /// by thread 0 inside the second barrier-synchronized block. Every
+        /// stream's thread reads this list after the barrier and calls
+        /// `engine.write_steering_focus(...)` to push it into its own
+        /// device-side ProtocolState via cuMemcpyHtoDAsync. Each entry is
+        /// `(residue_id, synergy_fraction)` with synergy_fraction in [0,1].
+        ///
+        /// When --closed-loop-steering is NOT set, this list stays empty and
+        /// the per-stream writes are no-ops (the kernel's `if (n_focus > 0)`
+        /// guard short-circuits the steering boost path).
+        current_steering_focus: std::sync::Mutex<Vec<(i32, f32)>>,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3521,6 +3558,11 @@ fn run_multi_stream_pipeline(
             prev_group_residue_counts: std::sync::Mutex::new(
                 vec![vec![0u32; n_residues_est + 1]; 4]
             ),
+            // Stage 2 closed-loop steering — empty by default. The thread-0
+            // GC-PID block populates this each chunk when --closed-loop-steering
+            // is enabled; otherwise it stays empty and per-stream writebacks
+            // are no-ops.
+            current_steering_focus: std::sync::Mutex::new(Vec::new()),
         }))
     } else {
         None
@@ -3704,6 +3746,10 @@ fn run_multi_stream_pipeline(
                 let kcc_ramp_steps = prot.ramp_steps;
                 let kcc_warm_hold_steps = prot.warm_hold_steps;
                 let bocpd_enabled = args.bocpd_chunking;
+                // Stage 2 — captured into the per-stream closure so each thread
+                // can decide whether to call write_steering_focus after the
+                // second ASC barrier.
+                let closed_loop_steering = args.closed_loop_steering;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -4308,6 +4354,44 @@ fn run_multi_stream_pipeline(
                                                     chunk_idx, residue_synergies.len(), top5,
                                                 );
                                             }
+
+                                            // ── Stage 2: Publish top-K focus list to shared state ──
+                                            //
+                                            // Compute every chunk (not just every 20) so the per-stream
+                                            // writeback after the second barrier always has the freshest
+                                            // synergy ranking. Only the first
+                                            // STEERING_FOCUS_MAX (= 64) residues are kept; the kernel
+                                            // truncates anyway.
+                                            //
+                                            // The publication is unconditional (computed even when
+                                            // --closed-loop-steering is off) but the per-stream
+                                            // writeback is gated on the flag. Computing always means
+                                            // the focus list is available for diagnostic logs even
+                                            // when steering is disabled.
+                                            {
+                                                let mut all_synergies: Vec<(i32, f32)> = Vec::new();
+                                                for rid in 0..asc_state.n_residues {
+                                                    if let Some(atoms) = accs[rid].compute() {
+                                                        let frac = atoms.synergy_fraction() as f32;
+                                                        let mi = atoms.total_mi;
+                                                        // Only include residues with meaningful PID
+                                                        // (positive synergy fraction AND non-trivial
+                                                        // total MI). Otherwise the entry is noise.
+                                                        if mi > 0.001 && frac > 0.0 {
+                                                            all_synergies.push((rid as i32, frac));
+                                                        }
+                                                    }
+                                                }
+                                                all_synergies.sort_by(|a, b| {
+                                                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                                                });
+                                                all_synergies.truncate(
+                                                    prism_nhs::protocol_state::STEERING_FOCUS_MAX
+                                                );
+                                                if let Ok(mut sf) = asc_state.current_steering_focus.lock() {
+                                                    *sf = all_synergies;
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -4316,7 +4400,56 @@ fn run_multi_stream_pipeline(
                                 asc_state.barrier.wait();
 
                                 // ══════════════════════════════════════════════════════
-                                // OMNIDIRECTIONAL PCMI-GATED STEERING
+                                // Stage 2: Closed-loop ASC steering writeback
+                                //
+                                // Every stream's thread reads the focus list that thread 0
+                                // published inside the GC-PID block (above) and writes it
+                                // into its own engine's device-side ProtocolState via
+                                // cuMemcpyHtoDAsync. The next launch of
+                                // ring_buffer_read_and_adapt (i.e., the next graph replay
+                                // that includes the ring exchange) reads the new
+                                // steering_focus_residues array and applies the
+                                // synergy-weighted boost to spikes whose primary residue
+                                // is in the focus list.
+                                //
+                                // Gated on the --closed-loop-steering CLI flag. When the
+                                // flag is off, the focus list in shared state is still
+                                // computed (every chunk, in the GC-PID block above) for
+                                // diagnostic logging, but no per-stream writeback occurs
+                                // and the kernel's `if (n_focus > 0)` short-circuits the
+                                // steering boost path. Default behavior unchanged.
+                                //
+                                // The writeback happens AFTER the barrier so that thread
+                                // 0's focus-list publication is guaranteed to be visible
+                                // to every thread (the barrier provides the
+                                // happens-before relationship).
+                                if closed_loop_steering {
+                                    let focus_snapshot: Vec<(i32, f32)> =
+                                        if let Ok(sf) = asc_state.current_steering_focus.lock() {
+                                            sf.clone()
+                                        } else {
+                                            Vec::new()
+                                        };
+                                    if !focus_snapshot.is_empty() {
+                                        if let Err(e) = engine.write_steering_focus(&stream_rb, &focus_snapshot) {
+                                            log::warn!(
+                                                "    [stream {}] Stage 2 steering writeback failed: {}",
+                                                i, e
+                                            );
+                                        } else if i == 0 && chunk_idx % 20 == 0 {
+                                            log::info!(
+                                                "    [Stage 2 steering chunk {}]: pushed {} focus residues to all 8 streams (top: r{}(s={:.2}))",
+                                                chunk_idx,
+                                                focus_snapshot.len(),
+                                                focus_snapshot[0].0,
+                                                focus_snapshot[0].1,
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // ══════════════════════════════════════════════════════
+                                // OMNIDIRECTIONAL PCMI-GATED STEERING (legacy path)
                                 //
                                 // Gate: (S_pc > 0.85) AND (≥3 groups active)
                                 // Action: Information handshake — boost engines that
