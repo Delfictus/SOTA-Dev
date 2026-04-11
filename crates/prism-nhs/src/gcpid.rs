@@ -150,6 +150,25 @@ impl PidAtoms {
         }
     }
 
+    /// The redundancy fraction: `Redundancy / I(T; A, B)`. In `[0, 1]` by
+    /// construction. Returns 0 if total_mi is non-positive.
+    ///
+    /// **Used by #1 asymmetric steering as the OBSERVER focus weight.**
+    /// Per-residue: high redundancy fraction = "this residue's information
+    /// is shared across both sources, both groups already agree on it."
+    /// Pushing observers toward high-redundancy residues anchors them to
+    /// the cross-group consensus, making the scout/observer divergence
+    /// physically meaningful (scouts probe novelty, observers reinforce
+    /// consensus). This is structurally orthogonal to UCB1/LCB1 on the
+    /// SAME metric, which collapses when sample counts are uniform.
+    pub fn redundancy_fraction(&self) -> f64 {
+        if self.total_mi <= 0.0 {
+            0.0
+        } else {
+            (self.redundancy / self.total_mi).clamp(0.0, 1.0)
+        }
+    }
+
     /// Convert from nats to bits.
     pub fn to_bits(&self) -> PidAtoms {
         let inv_ln2 = 1.0 / 2_f64.ln();

@@ -161,6 +161,48 @@ struct Args {
     #[arg(long, default_value = "false")]
     closed_loop_steering: bool,
 
+    /// #1: Asymmetric per-group steering (synergy / redundancy split).
+    ///
+    /// When --closed-loop-steering is enabled, by default the same focus
+    /// list (top-K by synergy_fraction) is pushed to all 4 groups (the
+    /// symmetric Stage 2 path). With --asymmetric-steering, the controller
+    /// pushes TWO physically distinct focus lists from the same PID
+    /// decomposition, one per group role:
+    ///
+    ///   * Scout groups (TS=0, UV=2): top-K by SYNERGY_FRACTION
+    ///       (= Synergy / I(T; A, B))
+    ///     Residues whose information ONLY emerges from the joint
+    ///     distribution of scouts and observers. This is the cross-group
+    ///     COORDINATION axis — what one frame sees that the other doesn't.
+    ///     Scouts amplify these to drive their unique contribution.
+    ///
+    ///   * Observer groups (EQ=1, HY=3): top-K by REDUNDANCY_FRACTION
+    ///       (= Redundancy / I(T; A, B))
+    ///     Residues that scouts AND observers BOTH see independently.
+    ///     This is the cross-group CONSENSUS axis — what every frame
+    ///     already agrees on. Observers anchor on these to resist
+    ///     contamination from scout exploration noise.
+    ///
+    /// Why synergy/redundancy and not UCB1/LCB1 on the same metric: with
+    /// uniform per-residue PID sample counts (which holds on dense
+    /// systems where every residue spikes every chunk), UCB and LCB
+    /// rankings collapse to the same ordering of synergy_fraction. The
+    /// synergy/redundancy split is structurally orthogonal — they are
+    /// independent atoms of the PID decomposition (Williams & Beer 2010)
+    /// and the rankings can diverge sharply.
+    ///
+    /// The asymmetry breaks the symmetric-boost limitation that prevented
+    /// the original Stage 2 from shifting ACL contrast. Now scouts and
+    /// observers see physically distinct steering biases.
+    ///
+    /// Reference: Williams & Beer (2010), "Nonnegative decomposition of
+    /// multivariate information," arXiv:1004.2515 — defines the synergy
+    /// and redundancy atoms used as separable steering targets here.
+    ///
+    /// Requires --closed-loop-steering. Default false.
+    #[arg(long, default_value = "false")]
+    asymmetric_steering: bool,
+
     /// Enable BOCPD-driven dynamic chunking (Stage 1B-2).
     ///
     /// When set, the autonomous chunk loop runs Adams-MacKay Bayesian
@@ -3513,10 +3555,34 @@ fn run_multi_stream_pipeline(
         /// device-side ProtocolState via cuMemcpyHtoDAsync. Each entry is
         /// `(residue_id, synergy_fraction)` with synergy_fraction in [0,1].
         ///
+        /// Used by ALL groups when --asymmetric-steering is OFF (the
+        /// original symmetric Stage 2 path).
+        ///
         /// When --closed-loop-steering is NOT set, this list stays empty and
         /// the per-stream writes are no-ops (the kernel's `if (n_focus > 0)`
         /// guard short-circuits the steering boost path).
         current_steering_focus: std::sync::Mutex<Vec<(i32, f32)>>,
+        // ── #1: Asymmetric per-group steering ──
+        /// Top-K by UCB1 (synergy_fraction + sqrt(2 ln t / n_samples)) —
+        /// favors residues with high estimated synergy OR high uncertainty.
+        /// Pushed only to scout groups (TS=0, UV=2) when --asymmetric-steering
+        /// is enabled. Encourages scouts to probe coordination points whose
+        /// behavior is still poorly characterized.
+        ///
+        /// Reference: Auer (2002) "Finite-time Analysis of the Multiarmed
+        /// Bandit Problem" — UCB1 algorithm. The exploration term
+        /// `sqrt(2 ln t / n_samples)` is the canonical UCB1 confidence
+        /// bound; for residues with few samples it dominates, pushing them
+        /// to the top of the list.
+        scout_steering_focus: std::sync::Mutex<Vec<(i32, f32)>>,
+        /// Top-K by LCB1 (synergy_fraction - sqrt(2 ln t / n_samples)) —
+        /// favors residues with high estimated synergy AND narrow
+        /// confidence interval. Pushed only to observer groups (EQ=1, HY=3)
+        /// when --asymmetric-steering is enabled. Encourages observers to
+        /// stay locked onto coordination points the controller is most
+        /// confident about, so the controller's exploitation reads are not
+        /// contaminated by exploration noise.
+        observer_steering_focus: std::sync::Mutex<Vec<(i32, f32)>>,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3563,6 +3629,10 @@ fn run_multi_stream_pipeline(
             // is enabled; otherwise it stays empty and per-stream writebacks
             // are no-ops.
             current_steering_focus: std::sync::Mutex::new(Vec::new()),
+            // #1 asymmetric steering — also empty until thread 0 populates
+            // them. Only used when --asymmetric-steering is enabled.
+            scout_steering_focus: std::sync::Mutex::new(Vec::new()),
+            observer_steering_focus: std::sync::Mutex::new(Vec::new()),
         }))
     } else {
         None
@@ -3750,6 +3820,9 @@ fn run_multi_stream_pipeline(
                 // can decide whether to call write_steering_focus after the
                 // second ASC barrier.
                 let closed_loop_steering = args.closed_loop_steering;
+                // #1 asymmetric steering — captured per stream so the
+                // writeback block can decide which focus list to push.
+                let asymmetric_steering = args.asymmetric_steering;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -4402,41 +4475,115 @@ fn run_multi_stream_pipeline(
                                                 );
                                             }
 
-                                            // ── Stage 2: Publish top-K focus list to shared state ──
+                                            // ── Stage 2: Publish top-K focus list(s) to shared state ──
                                             //
                                             // Compute every chunk (not just every 20) so the per-stream
                                             // writeback after the second barrier always has the freshest
-                                            // synergy ranking. Only the first
-                                            // STEERING_FOCUS_MAX (= 64) residues are kept; the kernel
-                                            // truncates anyway.
+                                            // synergy ranking. Only the first STEERING_FOCUS_MAX (= 64)
+                                            // residues are kept; the kernel truncates anyway.
                                             //
                                             // The publication is unconditional (computed even when
                                             // --closed-loop-steering is off) but the per-stream
-                                            // writeback is gated on the flag. Computing always means
-                                            // the focus list is available for diagnostic logs even
-                                            // when steering is disabled.
+                                            // writeback is gated on the flag.
+                                            //
+                                            // ── #1 asymmetric steering: synergy vs redundancy ──
+                                            // We build TWO physically distinct focus lists from the
+                                            // SAME PID decomposition:
+                                            //
+                                            //   * `synergy_focus`    — top-K by synergy_fraction
+                                            //     (= Synergy / I(T; A, B)). High value = "this
+                                            //     residue's information ONLY emerges from the joint
+                                            //     distribution of scouts AND observers — neither
+                                            //     group sees it alone." This is the cross-group
+                                            //     COORDINATION axis: residues whose contribution
+                                            //     requires both observation frames to detect.
+                                            //     Pushed to scout groups (TS=0, UV=2) so that scouts
+                                            //     amplify the spikes that drive their unique
+                                            //     contribution to the joint signal.
+                                            //
+                                            //   * `redundancy_focus` — top-K by redundancy_fraction
+                                            //     (= Redundancy / I(T; A, B)). High value = "both
+                                            //     scouts AND observers see this residue's information
+                                            //     independently." This is the cross-group CONSENSUS
+                                            //     axis: residues that every group already agrees on,
+                                            //     anchoring the system. Pushed to observer groups
+                                            //     (EQ=1, HY=3) so observers stay locked onto the
+                                            //     consensus and resist exploration noise.
+                                            //
+                                            // Why this is the RIGHT axis (vs UCB1/LCB1 on the same
+                                            // metric, which I tried first and discarded): UCB and LCB
+                                            // share the same ranking criterion and only differ in the
+                                            // sign of the exploration bonus. When sample counts are
+                                            // approximately uniform across residues — as they ARE on
+                                            // 4LPK, where every active residue gets PID samples every
+                                            // chunk — the bonus is constant and the rankings collapse
+                                            // to identical orderings of synergy_fraction. The
+                                            // synergy/redundancy split is structurally orthogonal:
+                                            // a residue with high synergy can have ANY redundancy
+                                            // value, and the two are constrained only by
+                                            //   `synergy + redundancy + unique_a + unique_b = total_mi`
+                                            // so the rankings can diverge sharply.
+                                            //
+                                            // Reference: Williams & Beer (2010) PID. The synergy and
+                                            // redundancy atoms are independent dimensions of a
+                                            // residue's information geometry; using both as steering
+                                            // targets gives the controller two physically distinct
+                                            // levers instead of two views of the same lever.
                                             {
-                                                let mut all_synergies: Vec<(i32, f32)> = Vec::new();
+                                                let mut synergy_list: Vec<(i32, f32)> = Vec::new();
+                                                let mut redundancy_list: Vec<(i32, f32)> = Vec::new();
                                                 for rid in 0..asc_state.n_residues {
                                                     if let Some(atoms) = accs[rid].compute() {
-                                                        let frac = atoms.synergy_fraction() as f32;
                                                         let mi = atoms.total_mi;
-                                                        // Only include residues with meaningful PID
-                                                        // (positive synergy fraction AND non-trivial
-                                                        // total MI). Otherwise the entry is noise.
-                                                        if mi > 0.001 && frac > 0.0 {
-                                                            all_synergies.push((rid as i32, frac));
+                                                        if mi > 0.001 {
+                                                            let s_frac =
+                                                                atoms.synergy_fraction() as f32;
+                                                            let r_frac =
+                                                                atoms.redundancy_fraction() as f32;
+                                                            if s_frac > 0.0 {
+                                                                synergy_list.push((rid as i32, s_frac));
+                                                            }
+                                                            if r_frac > 0.0 {
+                                                                redundancy_list.push((rid as i32, r_frac));
+                                                            }
                                                         }
                                                     }
                                                 }
-                                                all_synergies.sort_by(|a, b| {
-                                                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                                                // Sort both lists by their respective fraction
+                                                // (descending) and truncate to the kernel-side
+                                                // STEERING_FOCUS_MAX bound.
+                                                synergy_list.sort_by(|a, b| {
+                                                    b.1.partial_cmp(&a.1)
+                                                        .unwrap_or(std::cmp::Ordering::Equal)
                                                 });
-                                                all_synergies.truncate(
+                                                synergy_list.truncate(
                                                     prism_nhs::protocol_state::STEERING_FOCUS_MAX
                                                 );
-                                                if let Ok(mut sf) = asc_state.current_steering_focus.lock() {
-                                                    *sf = all_synergies;
+                                                redundancy_list.sort_by(|a, b| {
+                                                    b.1.partial_cmp(&a.1)
+                                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                                });
+                                                redundancy_list.truncate(
+                                                    prism_nhs::protocol_state::STEERING_FOCUS_MAX
+                                                );
+                                                // Symmetric (Stage 2 baseline) list = synergy list.
+                                                // The symmetric writeback path uses this when
+                                                // --asymmetric-steering is OFF, preserving the
+                                                // pre-#1 behavior exactly.
+                                                if let Ok(mut sf) =
+                                                    asc_state.current_steering_focus.lock()
+                                                {
+                                                    *sf = synergy_list.clone();
+                                                }
+                                                if let Ok(mut sf) =
+                                                    asc_state.scout_steering_focus.lock()
+                                                {
+                                                    *sf = synergy_list;
+                                                }
+                                                if let Ok(mut sf) =
+                                                    asc_state.observer_steering_focus.lock()
+                                                {
+                                                    *sf = redundancy_list;
                                                 }
                                             }
                                         }
@@ -4471,12 +4618,45 @@ fn run_multi_stream_pipeline(
                                 // to every thread (the barrier provides the
                                 // happens-before relationship).
                                 if closed_loop_steering {
-                                    let focus_snapshot: Vec<(i32, f32)> =
-                                        if let Ok(sf) = asc_state.current_steering_focus.lock() {
+                                    // #1 asymmetric steering: select per-group list.
+                                    //
+                                    // group_idx = i / epg_val (defined at line ~4099),
+                                    // but we're BEFORE that scope here. Recompute it
+                                    // locally — same formula.
+                                    //
+                                    // group_idx ∈ {0..4}:
+                                    //   0 = ThermalShock  (scout)
+                                    //   1 = Equilibrium   (observer)
+                                    //   2 = UvAromatic    (scout)
+                                    //   3 = Hysteresis    (observer)
+                                    //
+                                    // Even group_idx = scout → use UCB list.
+                                    // Odd group_idx = observer → use LCB list.
+                                    //
+                                    // When --asymmetric-steering is OFF, fall back to
+                                    // the symmetric current_steering_focus list (the
+                                    // unmodified Stage 2 path) so the bootstrap
+                                    // behavior is unchanged unless the user explicitly
+                                    // opts in.
+                                    let group_idx_local: usize = i / epg_val;
+                                    let focus_snapshot: Vec<(i32, f32)> = if asymmetric_steering {
+                                        let lock_result = if group_idx_local % 2 == 0 {
+                                            asc_state.scout_steering_focus.lock()
+                                        } else {
+                                            asc_state.observer_steering_focus.lock()
+                                        };
+                                        if let Ok(sf) = lock_result {
                                             sf.clone()
                                         } else {
                                             Vec::new()
-                                        };
+                                        }
+                                    } else if let Ok(sf) =
+                                        asc_state.current_steering_focus.lock()
+                                    {
+                                        sf.clone()
+                                    } else {
+                                        Vec::new()
+                                    };
                                     if !focus_snapshot.is_empty() {
                                         if let Err(e) = engine.write_steering_focus(&stream_rb, &focus_snapshot) {
                                             log::warn!(
@@ -4484,13 +4664,31 @@ fn run_multi_stream_pipeline(
                                                 i, e
                                             );
                                         } else if i == 0 && chunk_idx % 20 == 0 {
+                                            let mode = if asymmetric_steering { "asym" } else { "sym " };
                                             log::info!(
-                                                "    [Stage 2 steering chunk {}]: pushed {} focus residues to all 8 streams (top: r{}(s={:.2}))",
+                                                "    [Stage 2 steering chunk {} {}]: stream {} (group {}, {}): pushed {} focus residues (top: r{}(s={:.2}))",
                                                 chunk_idx,
+                                                mode,
+                                                i,
+                                                group_idx_local,
+                                                if group_idx_local % 2 == 0 { "scout" } else { "observer" },
                                                 focus_snapshot.len(),
                                                 focus_snapshot[0].0,
                                                 focus_snapshot[0].1,
                                             );
+                                        }
+                                    }
+                                    // For asymmetric mode also log the OBSERVER snapshot
+                                    // separately on stream 1 every 20 chunks so we can
+                                    // see that the two lists are actually different.
+                                    if asymmetric_steering && i == 1 && chunk_idx % 20 == 0 {
+                                        if let Ok(sf) = asc_state.observer_steering_focus.lock() {
+                                            if !sf.is_empty() {
+                                                log::info!(
+                                                    "    [Stage 2 steering chunk {} asym]: observer top: r{}(s={:.2})",
+                                                    chunk_idx, sf[0].0, sf[0].1,
+                                                );
+                                            }
                                         }
                                     }
                                 }
