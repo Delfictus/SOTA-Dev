@@ -44,6 +44,16 @@ rand_distr = "0.4"
 # Statistical analysis for CCNS power-law fitting
 statrs = { workspace = true }
 
+# Apache Arrow IPC streaming for per-spike training data export (Stage 1B-1).
+# Pure Rust implementation; no system dependencies. Used by spike_arrow_writer
+# to produce columnar per-target Arrow IPC files with full per-spike tagging
+# (28 columns including phase_bits, nearby_residues, group_id, chunk_idx,
+# voxel_idx, wd_change, plus background spike stratification).
+arrow = "53"
+arrow-ipc = "53"
+arrow-array = "53"
+arrow-schema = "53"
+
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 env_logger = "0.10"

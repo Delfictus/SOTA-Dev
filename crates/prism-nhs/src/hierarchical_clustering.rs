@@ -568,6 +568,7 @@ mod tests {
             vibrational_energy: 0.0,
             n_nearby_excited: 0,
             wd_change: 0.0,
+            phase_bits: 0,
         }
     }
 

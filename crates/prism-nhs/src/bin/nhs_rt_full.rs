@@ -4840,6 +4840,20 @@ fn run_multi_stream_pipeline(
     std::fs::create_dir_all(&args.output)?;
     let output_base = args.output.join(&structure_name);
 
+    // ── Stage 1B-1 per-spike classification scratch (function-level scope) ──
+    // Three parallel arrays indexed by spike_idx into all_stream_spikes,
+    // populated by the spatial fusion block inside the upcoming
+    // `if !clustered_sites.is_empty()` block. Used by the Arrow IPC writer
+    // further down (also OUTSIDE the if block) to build per-spike
+    // classification records. Empty defaults so the writer can no-op when
+    // the spatial fusion block doesn't run.
+    //
+    // These MUST be declared at function level (not inside the if block)
+    // because the Arrow writer call site is outside the same scope.
+    let mut spike_to_site_global: Vec<i32> = Vec::new();
+    let mut spike_nearest_id_global: Vec<i32> = Vec::new();
+    let mut spike_nearest_dist_global: Vec<f32> = Vec::new();
+
     if !clustered_sites.is_empty() {
         write_binding_site_visualizations(&clustered_sites, &output_base, &structure_name)?;
 
@@ -6600,17 +6614,39 @@ fn run_multi_stream_pipeline(
             // conservation invariant Σ(spike_indices per site) + |background| ==
             // |all_stream_spikes| is auditable from the output alone.
             //
-            // The full per-spike background dump (with phase_bits, group_id,
-            // chunk_idx, etc.) is written by the Arrow IPC ring buffer in a later
-            // Phase 1 commit. Stage 1A only ships the count + residue summary.
+            // ── Stage 1B-1 extension ──
+            // The loop also now records, for EVERY spike (assigned + background):
+            //   • spike_to_site[i]    = cluster_id of the assigned site, -1 if background
+            //   • spike_nearest_id[i] = cluster_id of the closest site regardless of radius
+            //   • spike_nearest_dist[i] = distance in Å to that closest site
+            //
+            // The "regardless of radius" nearest is used by the Arrow per-spike
+            // writer to populate `nearest_site_id` / `nearest_site_dist` for both
+            // assigned and background spikes, and by the background_class
+            // stratifier to identify "near miss" spikes (background spikes that
+            // sit just outside a real site's radius — the highest-value training
+            // negatives).
+            //
+            // The previous attribution logic only tracked the in-radius nearest
+            // (early-out when d2 >= radius_sq), so background spikes had no
+            // recorded nearest distance. The modified loop walks the same 27
+            // neighboring cells but tracks the absolute nearest unconditionally,
+            // then applies the radius gate after the search. Same total work,
+            // strictly more information per spike.
+            let n_spikes = all_stream_spikes.len();
             let mut background_spike_indices: Vec<usize> = Vec::new();
+            let mut spike_to_site: Vec<i32> = vec![-1; n_spikes];
+            let mut spike_nearest_id: Vec<i32> = vec![-1; n_spikes];
+            let mut spike_nearest_dist: Vec<f32> = vec![f32::INFINITY; n_spikes];
             for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
                 let sx = (spike.position[0] * inv_cell).floor() as i32;
                 let sy = (spike.position[1] * inv_cell).floor() as i32;
                 let sz = (spike.position[2] * inv_cell).floor() as i32;
-                let mut best_dist_sq = f32::MAX;
-                let mut best_site: Option<usize> = None;
-                // Check 27 neighboring cells
+                let mut nearest_dist_sq = f32::MAX;
+                let mut nearest_site_idx: Option<usize> = None;
+                // Check 27 neighboring cells. Track the ABSOLUTE nearest centroid
+                // (regardless of radius) so background spikes get a real
+                // nearest_site_dist for the Arrow writer's stratification.
                 for dz in -1..=1 { for dy in -1..=1 { for dx in -1..=1 {
                     if let Some(sites_in_cell) = site_grid.get(&(sx+dx, sy+dy, sz+dz)) {
                         for &site_idx in sites_in_cell {
@@ -6619,17 +6655,28 @@ fn run_multi_stream_pipeline(
                             let ddy = spike.position[1] - site.centroid[1];
                             let ddz = spike.position[2] - site.centroid[2];
                             let d2 = ddx*ddx + ddy*ddy + ddz*ddz;
-                            if d2 < radius_sq && d2 < best_dist_sq {
-                                best_dist_sq = d2;
-                                best_site = Some(site_idx);
+                            if d2 < nearest_dist_sq {
+                                nearest_dist_sq = d2;
+                                nearest_site_idx = Some(site_idx);
                             }
                         }
                     }
                 }}}
-                if let Some(idx) = best_site {
-                    clustered_sites[idx].spike_indices.push(spike_idx);
-                    total_assigned += 1;
+                if let Some(idx) = nearest_site_idx {
+                    let nearest_dist = nearest_dist_sq.sqrt();
+                    let cid = clustered_sites[idx].cluster_id;
+                    spike_nearest_id[spike_idx] = cid;
+                    spike_nearest_dist[spike_idx] = nearest_dist;
+                    if nearest_dist_sq < radius_sq {
+                        clustered_sites[idx].spike_indices.push(spike_idx);
+                        spike_to_site[spike_idx] = cid;
+                        total_assigned += 1;
+                    } else {
+                        background_spike_indices.push(spike_idx);
+                    }
                 } else {
+                    // No site found in the 27 nearest cells — spike is in deep
+                    // solvent. Background, with no nearest site recorded.
                     background_spike_indices.push(spike_idx);
                 }
             }
@@ -6685,6 +6732,14 @@ fn run_multi_stream_pipeline(
                     serde_json::json!({ "resid": rid, "spike_attribution_count": count })
                 }).collect::<Vec<_>>(),
             });
+
+            // Hand the per-spike classification arrays out to the outer scope
+            // so the Arrow IPC writer at the end of the pipeline can consume
+            // them. Move (not clone) — these arrays are only read by the
+            // writer, not by anything else in this block.
+            spike_to_site_global = std::mem::take(&mut spike_to_site);
+            spike_nearest_id_global = std::mem::take(&mut spike_nearest_id);
+            spike_nearest_dist_global = std::mem::take(&mut spike_nearest_dist);
 
             // Update spike_count for each site. The lining_residues themselves are
             // NOT touched here — they were already populated by compute_lining_residues
@@ -9302,6 +9357,209 @@ fn run_multi_stream_pipeline(
         }
     } else if !args.emit_spike_json && !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
         log::info!("  Spike event JSON skipped (use --emit-spike-json to enable)");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Stage 1B-1: Per-spike Apache Arrow IPC writer
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Writes a single columnar `{prefix}.spike_events.arrow` file with the
+    // full 28-column per-spike schema (see spike_arrow_writer module doc):
+    //   • provenance:    spike_id, replica_seed, stream_id, group_id,
+    //                    chunk_idx, voxel_idx
+    //   • physical:      timestep, frame_index, x/y/z, intensity,
+    //                    spike_source, aromatic_type, aromatic_residue_id,
+    //                    phase_bits, n_residues, nearby_residues[8],
+    //                    n_nearby_excited, vibrational_energy,
+    //                    water_density, wd_change, wavelength_nm, ccns_phase
+    //   • classification: site_id, nearest_site_id, nearest_site_dist,
+    //                    background_class, burial_score, intensity_percentile
+    //
+    // This is the canonical training-grade per-spike output going forward.
+    // It runs UNCONDITIONALLY (not gated on --emit-spike-json) because it
+    // is a strict superset of the JSON dump in information content AND is
+    // ~5× smaller on disk and 100× faster to read. The legacy per-site JSON
+    // dumps (above) remain only for backward compatibility with downstream
+    // tools that haven't been migrated yet; they will be removed in a
+    // separate commit once all consumers are off them.
+    //
+    // Memory cost: ~150 bytes per spike for the SpikeClassification array
+    // + ~150 bytes per spike for the Arrow batch construction. For 31M
+    // spikes that's ~9 GB peak working set. Stage 1B-2 will switch to
+    // streaming per-chunk batches to amortize this over the chunk loop.
+    if !all_stream_spikes.is_empty()
+        && !spike_to_site_global.is_empty()
+        && spike_to_site_global.len() == all_stream_spikes.len()
+    {
+        use prism_nhs::spike_arrow_writer as saw;
+        let arrow_path = args.output.join(format!("{}.spike_events.arrow", structure_name));
+
+        // Build a stream-id reverse lookup table from stream_spike_offsets.
+        // stream_spike_offsets[i] is the index in all_stream_spikes where
+        // stream i's spikes start. To find the stream_id for a given
+        // spike_idx, we walk the offsets table — O(n_streams) per spike,
+        // O(n_spikes × n_streams) total. With 8 streams and 31M spikes
+        // that's 248M comparisons (~1 sec on modern CPU). Acceptable for
+        // Stage 1B-1; Stage 1B-2 will track stream_id per spike at
+        // emission time to eliminate this scan.
+        let stream_id_for = |spike_idx: usize| -> u8 {
+            let mut sid: u8 = 0;
+            for (i, &offset) in stream_spike_offsets.iter().enumerate() {
+                if spike_idx >= offset {
+                    sid = i as u8;
+                } else {
+                    break;
+                }
+            }
+            sid
+        };
+
+        // ── Per-channel intensity percentile lookup ──
+        // Sort each channel's intensities once, then for each spike binary
+        // search to find its rank. The percentile is `100 * rank / n`.
+        let mut uv_intensities: Vec<f32> = Vec::new();
+        let mut lif_intensities: Vec<f32> = Vec::new();
+        let mut efp_intensities: Vec<f32> = Vec::new();
+        let mut ladd_intensities: Vec<f32> = Vec::new();
+        for spike in &all_stream_spikes {
+            match spike.spike_source {
+                1 => uv_intensities.push(spike.intensity),
+                3 => efp_intensities.push(spike.intensity),
+                4 | 5 => ladd_intensities.push(spike.intensity),
+                _ => lif_intensities.push(spike.intensity),
+            }
+        }
+        let cmp_f32 = |a: &f32, b: &f32| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal);
+        uv_intensities.sort_by(cmp_f32);
+        lif_intensities.sort_by(cmp_f32);
+        efp_intensities.sort_by(cmp_f32);
+        ladd_intensities.sort_by(cmp_f32);
+        let pct_for = |intensity: f32, sorted: &[f32]| -> u8 {
+            if sorted.is_empty() {
+                return 0;
+            }
+            // Binary search for the insertion point of `intensity`. Use
+            // `partition_point` to find the rightmost index where `<` holds.
+            let rank = sorted.partition_point(|&v| v < intensity);
+            ((rank as f64 * 100.0 / sorted.len() as f64).round() as i32)
+                .clamp(0, 100) as u8
+        };
+
+        // ── Build classifications for every spike ──
+        // First pass: build all classifications WITHOUT background_class
+        // (we need the percentile distribution before classifying).
+        // Second pass: compute background percentiles and finalize the
+        // background_class field for site_id == -1 spikes.
+        let chunk_size_const: i32 = 500;  // matches the autonomous chunk loop
+        let max_chunks_const: i32 = (steps_per_stream / chunk_size_const).max(1) + 1;
+        let n_streams_local = n_streams;
+        let is_md = is_multi_diff;
+        let mut classifications: Vec<saw::SpikeClassification> = Vec::with_capacity(all_stream_spikes.len());
+        for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
+            let stream_id = stream_id_for(spike_idx);
+            let group_id = saw::group_id_for_stream(stream_id as usize, n_streams_local, is_md);
+            let chunk_idx = saw::chunk_idx_for_timestep(spike.timestep, chunk_size_const, max_chunks_const);
+            let ccns_phase = saw::ccns_phase_for_step(
+                spike.timestep,
+                protocol.cold_hold_steps,
+                protocol.ramp_steps,
+            );
+            let intensity_pct = match spike.spike_source {
+                1 => pct_for(spike.intensity, &uv_intensities),
+                3 => pct_for(spike.intensity, &efp_intensities),
+                4 | 5 => pct_for(spike.intensity, &ladd_intensities),
+                _ => pct_for(spike.intensity, &lif_intensities),
+            };
+            // Per-spike burial proxy: linear normalization n_residues / 8.0
+            // (the warp matrix tracks at most 8 distinct nearby residues per
+            // voxel, so the value is bounded [0, 1] by construction). This
+            // is a different shape than the per-site sigmoid burial score
+            // at fused_engine.rs line ~5113, which was tuned for per-site
+            // means rather than per-spike rank statistics.
+            //
+            // Why NOT the sigmoid here:
+            // The sigmoid `1 / (1 + exp(-2*(n - 3)))` saturates to 1.0
+            // immediately for n >= 5 (sigmoid output > 0.99). On 4LPK
+            // background spikes the median n_residues is 5+, so the
+            // sigmoid puts the median burial at 1.000. The percentile-based
+            // background classifier in `classify_background` then has
+            // `burial_p50 = burial_p75 = 1.0`, and the conditions
+            // `burial > p50` / `burial > p75` are NEVER satisfied — the
+            // surface_noise and relabel_candidate background classes get
+            // ZERO spikes. Caught by the v2 smoke validation log.
+            //
+            // Linear `n / 8.0` keeps the rank statistics meaningful:
+            //   n=0 → 0.0 (no nearby residues, surface/solvent)
+            //   n=4 → 0.5 (moderate)
+            //   n=8 → 1.0 (fully buried, max distinct neighbors)
+            // The percentiles are now well-distributed and the four
+            // background sub-classes get non-zero counts.
+            let burial_score = (spike.n_residues as f32 / 8.0).clamp(0.0, 1.0);
+            classifications.push(saw::SpikeClassification {
+                stream_id,
+                group_id,
+                chunk_idx,
+                ccns_phase,
+                site_id: spike_to_site_global[spike_idx],
+                nearest_site_id: spike_nearest_id_global[spike_idx],
+                nearest_site_dist: spike_nearest_dist_global[spike_idx],
+                background_class: 0, // placeholder; finalized below
+                burial_score,
+                intensity_percentile: intensity_pct,
+            });
+        }
+
+        // Compute per-run distance percentiles from the background spikes
+        // only, then re-classify each spike's background_class. Burial is
+        // used as a binary feature (`< 1.0` = surface, `== 1.0` = internal)
+        // because the n_residues distribution is heavily concentrated at
+        // the ceiling on most proteins (see classify_background doc).
+        let (bg_dist_p10, bg_dist_p50) =
+            saw::compute_background_percentiles(&classifications);
+        for cls in classifications.iter_mut() {
+            cls.background_class = saw::classify_background(
+                cls.site_id,
+                cls.nearest_site_dist,
+                cls.intensity_percentile,
+                cls.burial_score,
+                bg_dist_p10,
+                bg_dist_p50,
+            );
+        }
+
+        // Background class histogram for the log line below
+        let mut bg_hist = [0u64; 5];
+        for c in &classifications {
+            if (c.background_class as usize) < bg_hist.len() {
+                bg_hist[c.background_class as usize] += 1;
+            }
+        }
+
+        // Build the RecordBatch and write the Arrow IPC file.
+        match saw::build_spike_record_batch(&all_stream_spikes, &classifications, args.replica_seed) {
+            Ok(batch) => {
+                match saw::write_spike_arrow_file(&arrow_path, &batch) {
+                    Ok(()) => {
+                        log::info!(
+                            "  Spike events Arrow: {} ({} rows × {} cols)",
+                            arrow_path.display(),
+                            batch.num_rows(),
+                            batch.num_columns(),
+                        );
+                        log::info!(
+                            "  Background stratification: primary={} bulk_thermal={} surface_noise={} near_miss={} relabel_candidate={}",
+                            bg_hist[0], bg_hist[1], bg_hist[2], bg_hist[3], bg_hist[4],
+                        );
+                        log::info!(
+                            "  Background percentiles: dist_p10={:.2}A dist_p50={:.2}A (burial used as binary)",
+                            bg_dist_p10, bg_dist_p50,
+                        );
+                    }
+                    Err(e) => log::warn!("  Spike events Arrow write failed: {}", e),
+                }
+            }
+            Err(e) => log::warn!("  Spike events Arrow batch build failed: {}", e),
+        }
     }
 
     // Write per-stream ensemble trajectories

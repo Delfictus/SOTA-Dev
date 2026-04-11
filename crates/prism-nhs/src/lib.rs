@@ -146,6 +146,11 @@ pub mod pharmacophore_gpu;
 pub mod gpu_knn;
 pub mod cubical_ph;
 pub mod boltzmann_weights;
+/// Per-spike Apache Arrow IPC writer for training-grade output (Stage 1B-1).
+/// Produces a single columnar `.arrow` file per target with full per-spike
+/// tagging (28 columns) including stratified background spike preservation.
+#[cfg(feature = "gpu")]
+pub mod spike_arrow_writer;
 pub mod composition;
 pub mod batch_scheduler;
 pub mod input;
