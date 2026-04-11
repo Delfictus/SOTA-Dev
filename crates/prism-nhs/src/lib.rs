@@ -148,9 +148,21 @@ pub mod cubical_ph;
 pub mod boltzmann_weights;
 /// Per-spike Apache Arrow IPC writer for training-grade output (Stage 1B-1).
 /// Produces a single columnar `.arrow` file per target with full per-spike
-/// tagging (28 columns) including stratified background spike preservation.
+/// tagging (30 columns) including stratified background spike preservation.
 #[cfg(feature = "gpu")]
 pub mod spike_arrow_writer;
+
+/// Bayesian Online Changepoint Detection (Adams & MacKay, 2007) for
+/// physics-driven dynamic chunking. Stage 1B-2: opt-in alternative to the
+/// magic `chunk_size = 500` constant in the autonomous chunk loop.
+pub mod bocpd;
+
+/// Gaussian-Copula Partial Information Decomposition (Ince 2017) for
+/// per-residue synergy fraction estimation. Stage 1B-3: principled,
+/// parameter-free steering weights for the Stage 2 closed-loop ASC
+/// writeback (`weight = synergy_fraction(target=future_spike_rate,
+/// source_A=scout_group_rate, source_B=observer_group_rate)` per residue).
+pub mod gcpid;
 pub mod composition;
 pub mod batch_scheduler;
 pub mod input;

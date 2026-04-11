@@ -136,6 +136,24 @@ struct Args {
     #[arg(long, default_value = "70")]
     spike_percentile: u32,
 
+    /// Enable BOCPD-driven dynamic chunking (Stage 1B-2).
+    ///
+    /// When set, the autonomous chunk loop runs Adams-MacKay Bayesian
+    /// Online Changepoint Detection on the per-stream spike rate stream
+    /// and may close chunks early when a regime change is detected
+    /// (P(r ≤ 2) > 0.5). When NOT set (default), BOCPD still runs in
+    /// **measurement-only mode** — every chunk gets logged with the
+    /// BOCPD posterior so users can see what BOCPD WOULD decide before
+    /// flipping the switch. The default behavior is unchanged from
+    /// pre-Stage-1B-2.
+    ///
+    /// Reference: Adams, R. P., & MacKay, D. J. C. (2007).
+    /// "Bayesian online changepoint detection." arXiv:0710.3742.
+    ///
+    /// See `crates/prism-nhs/src/bocpd.rs` for the implementation.
+    #[arg(long, default_value = "false")]
+    bocpd_chunking: bool,
+
     /// Use Otsu's method (1979) instead of `--spike-percentile` for
     /// per-channel intensity filtering.
     ///
@@ -3440,6 +3458,28 @@ fn run_multi_stream_pipeline(
         baseline_ready: std::sync::atomic::AtomicBool,
         /// Per-group total CCNS steps (for phase angle computation)
         group_total_steps: Vec<i32>,
+        // ── Stage 1B-3: Gaussian-Copula PID synergy estimator ──
+        /// Per-residue PID accumulator. One entry per residue. Updated
+        /// inside the thread-0 ASC analysis block (already locked, no
+        /// extra contention) with the per-chunk per-residue
+        /// (target, source_A, source_B) observation, where:
+        ///   • target   = total spike count at residue r this chunk (all groups)
+        ///   • source_A = scout group sum (TS group + UV group spike counts)
+        ///   • source_B = observer group sum (EQ group + HY group spike counts)
+        ///
+        /// The synergy fraction (`Synergy / I(T; A, B)`) computed from
+        /// the accumulator is the principled steering weight for the
+        /// Stage 2 closed-loop ASC writeback. Per Ince 2017's closed-form
+        /// Gaussian-copula PID, the synergy fraction is in [0, 1] by
+        /// construction with no normalization constants.
+        pid_accumulators: std::sync::Mutex<Vec<prism_nhs::gcpid::PidAccumulator>>,
+        /// Tracks the per-residue group_residue_counts at the END of the
+        /// previous chunk. Used to compute per-CHUNK deltas (the
+        /// observation stream for the PID accumulator). The
+        /// `group_residue_counts` field accumulates monotonically across
+        /// the run; subtracting the previous snapshot gives the
+        /// per-chunk increment.
+        prev_group_residue_counts: std::sync::Mutex<Vec<Vec<u32>>>,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3469,6 +3509,18 @@ fn run_multi_stream_pipeline(
             prior_residue_density: std::sync::Mutex::new(vec![0.0f64; n_residues_est + 1]),
             baseline_ready: std::sync::atomic::AtomicBool::new(false),
             group_total_steps: diff_total_steps,
+            // Stage 1B-3 GC-PID accumulators (one per residue, max 256
+            // samples each — bounded so the per-chunk PID computation
+            // stays O(n_residues × n_samples × log n_samples) for the
+            // rank transform inside compute_pid_from_samples)
+            pid_accumulators: std::sync::Mutex::new(
+                (0..(n_residues_est + 1))
+                    .map(|_| prism_nhs::gcpid::PidAccumulator::new(256))
+                    .collect()
+            ),
+            prev_group_residue_counts: std::sync::Mutex::new(
+                vec![vec![0u32; n_residues_est + 1]; 4]
+            ),
         }))
     } else {
         None
@@ -3650,6 +3702,8 @@ fn run_multi_stream_pipeline(
                 let cold_hold_steps = prot.cold_hold_steps;
                 let kcc_cold_hold_steps = prot.cold_hold_steps;
                 let kcc_ramp_steps = prot.ramp_steps;
+                let kcc_warm_hold_steps = prot.warm_hold_steps;
+                let bocpd_enabled = args.bocpd_chunking;
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -3692,6 +3746,49 @@ fn run_multi_stream_pipeline(
                     }
 
                     engine.reset_for_replica(seed)?;
+
+                    // ── BOCPD per-stream changepoint detector (Stage 1B-2) ──
+                    //
+                    // Initialized once per thread, before the chunk loop. Updated
+                    // after each chunk's spike count is known. Hazard function is
+                    // parameterized by the CCNS protocol phase boundaries — cold
+                    // hold has long expected runs (low changepoint rate), warm
+                    // hold has short expected runs (high changepoint rate). The
+                    // observation stream is the per-chunk spike DELTA (new spikes
+                    // emitted in the most recent chunk).
+                    //
+                    // In the default measurement-only mode (--bocpd-chunking
+                    // disabled), BOCPD posteriors are logged every chunk so users
+                    // can see what BOCPD WOULD decide before flipping the switch.
+                    // The actual chunk_size and chunk close decisions are
+                    // unchanged from pre-Stage-1B-2 (chunk_size = 500 fixed).
+                    //
+                    // When --bocpd-chunking is enabled, the chunk loop additionally
+                    // logs `[BOCPD-CHUNK-CLOSE]` events at chunks where BOCPD's
+                    // recent_changepoint_probability(horizon=2) exceeds 0.5 — i.e.,
+                    // where BOCPD says "more than 50% confident a changepoint
+                    // occurred within the last 2 observations." Acting on these
+                    // events (replacing the fixed 500-step chunking with
+                    // BOCPD-driven dynamic chunks) is left to a follow-up commit
+                    // once the measurement-mode data validates the choice on
+                    // multiple targets.
+                    let mut bocpd_state = prism_nhs::bocpd::BocpdState::new(
+                        prism_nhs::bocpd::PhaseAwareHazard::from_protocol(
+                            kcc_cold_hold_steps,
+                            kcc_ramp_steps,
+                            kcc_warm_hold_steps,
+                        ),
+                        // Prior variance for the log-transformed spike-delta
+                        // observation. Raw spike deltas per chunk are in the
+                        // hundreds of thousands; log-transform compresses to
+                        // ~10–15 nats with variance ~1–4 across regime
+                        // transitions, so prior_variance = 4.0 gives BOCPD a
+                        // sane starting point that doesn't trigger spurious
+                        // changepoints on the first few observations.
+                        4.0,
+                    );
+                    let mut bocpd_prev_spike_count: u64 = 0;
+                    let mut bocpd_changepoint_count: u32 = 0;
 
                     // ── ASC Fusion Controller: chunk-based coupled loop ──
                     // Multi-differential: run in chunks with barrier sync for cross-group coupling.
@@ -3774,6 +3871,76 @@ fn run_multi_stream_pipeline(
                                     }
                                 };
                                 let _ = engine.kcc_step_once(steps_run as u32, kcc_phase);
+
+                                // ── Stage 1B-2: BOCPD update (per-chunk spike-rate observation) ──
+                                //
+                                // Compute the spike delta for this chunk (new spikes
+                                // emitted since the previous chunk close), feed it to
+                                // the per-stream BOCPD state, and check whether the
+                                // posterior says "changepoint just happened."
+                                //
+                                // The decision signal is recent_changepoint_probability
+                                // with horizon=2 — i.e., "more than 50% confident a
+                                // changepoint occurred within the last 2 chunks."
+                                // P(r=0) (the "right now" probability) is NOT what we
+                                // want — see bocpd::BocpdState::recent_changepoint_probability
+                                // doc for why. The model typically attributes
+                                // changepoints retrospectively (r=1 or r=2), so
+                                // watching just r=0 misses real regime changes.
+                                //
+                                // Logging cadence:
+                                //   • Every 20 chunks: routine "[BOCPD]" status
+                                //   • On any chunk where recent_p > 0.5: special
+                                //     "[BOCPD-CHUNK-CLOSE]" event line so the post-run
+                                //     log analysis can count detected changepoints
+                                //
+                                // Acting on these events (closing the chunk early
+                                // and triggering a fresh ASC barrier) is gated on
+                                // bocpd_enabled (--bocpd-chunking flag) AND is left
+                                // to a follow-up commit. v1 ships measurement only
+                                // so the bootstrap signature gate stays green by
+                                // default and the data shows whether BOCPD
+                                // decisions match the engineered chunk boundaries.
+                                let bocpd_current = engine.get_accumulated_spikes().len() as u64;
+                                let bocpd_delta = bocpd_current.saturating_sub(bocpd_prev_spike_count);
+                                bocpd_prev_spike_count = bocpd_current;
+                                // Log transform: spike count deltas are heavy-tailed
+                                // (range hundreds to hundreds of thousands per chunk).
+                                // Log-transformed values are in [0, ~14] nats with
+                                // variance ~1–4 across regime transitions. This is
+                                // the natural scale for changepoint detection on
+                                // count data — the underlying generative process is
+                                // multiplicative (each chunk's activity scales with
+                                // the current MD state, not adds linearly), so the
+                                // log domain captures regime changes as additive
+                                // shifts that BOCPD's Gaussian predictive can model.
+                                // Prior variance is calibrated to match the
+                                // log-transformed range above.
+                                let bocpd_observation = ((bocpd_delta + 1) as f64).ln();
+                                let _ = bocpd_state.update(bocpd_observation, steps_run);
+                                let bocpd_recent_p = bocpd_state.recent_changepoint_probability(2);
+                                let bocpd_recent_bits = bocpd_state.recent_changepoint_log_odds_bits(2);
+                                let bocpd_map_r = bocpd_state.most_likely_run_length().0;
+                                let chunk_close_signal = bocpd_recent_p
+                                    > prism_nhs::bocpd::BOCPD_CLOSE_THRESHOLD;
+                                if chunk_close_signal {
+                                    bocpd_changepoint_count += 1;
+                                    log::info!(
+                                        "    [BOCPD-CHUNK-CLOSE stream {} chunk {}]: \
+                                         delta={} recent_p={:.3} ({:+.2} bits) \
+                                         MAP_r={} (bocpd_chunking={})",
+                                        i, chunk_idx, bocpd_delta,
+                                        bocpd_recent_p, bocpd_recent_bits,
+                                        bocpd_map_r, bocpd_enabled,
+                                    );
+                                } else if chunk_idx % 20 == 0 {
+                                    log::info!(
+                                        "    [BOCPD stream {} chunk {}]: \
+                                         delta={} recent_p={:.3} ({:+.2} bits) MAP_r={}",
+                                        i, chunk_idx, bocpd_delta,
+                                        bocpd_recent_p, bocpd_recent_bits, bocpd_map_r,
+                                    );
+                                }
 
                                 last_summary = Some(prism_nhs::fused_engine::RunSummary {
                                     total_spikes: engine.get_accumulated_spikes().len(),
@@ -4051,6 +4218,97 @@ fn run_multi_stream_pipeline(
                                         if let Ok(mut log) = asc_state.acl_contrast_log.lock() {
                                             log.push((chunk_idx as u32, so_ratio));
                                         }
+
+                                        // ══════════════════════════════════════════════════════
+                                        // Stage 1B-3: GC-PID per-residue synergy update
+                                        //
+                                        // For each residue, compute the per-CHUNK delta in
+                                        // (target = total spikes, source_A = scout group sum,
+                                        //  source_B = observer group sum) and feed to the
+                                        // per-residue PidAccumulator.
+                                        //
+                                        // The per-chunk delta is the current group_residue_counts
+                                        // minus the previous chunk's snapshot. group_residue_counts
+                                        // accumulates monotonically; the prev snapshot lives in
+                                        // asc_state.prev_group_residue_counts and is updated
+                                        // after each chunk barrier.
+                                        //
+                                        // Per Ince 2017 closed-form Gaussian-copula PID, the
+                                        // per-residue synergy fraction (Synergy / I(T; A, B))
+                                        // is in [0, 1] by construction and equals the fraction
+                                        // of T's information that requires the joint
+                                        // distribution of (A, B) — the canonical "non-naive"
+                                        // steering weight for Stage 2's closed-loop ASC.
+                                        //
+                                        // Logging cadence:
+                                        //   • Every 20 chunks: top 5 residues by synergy fraction
+                                        //   • Decisions on these (Stage 2 closed-loop steering
+                                        //     writeback) are gated on Phase 0 (Bug C) being
+                                        //     resolved — this stage emits the data structure
+                                        //     that Stage 2 will consume.
+                                        if let (Ok(mut prev_grc), Ok(mut accs)) = (
+                                            asc_state.prev_group_residue_counts.lock(),
+                                            asc_state.pid_accumulators.lock(),
+                                        ) {
+                                            for rid in 0..asc_state.n_residues {
+                                                // Per-chunk delta per group
+                                                let mut group_deltas = [0u32; 4];
+                                                for g in 0..4 {
+                                                    let prev = prev_grc[g][rid];
+                                                    let cur = grc[g][rid];
+                                                    group_deltas[g] = cur.saturating_sub(prev);
+                                                }
+                                                let target =
+                                                    group_deltas.iter().sum::<u32>() as f64;
+                                                // Scout = groups 0 (TS) + 2 (UV)
+                                                let source_a =
+                                                    (group_deltas[0] + group_deltas[2]) as f64;
+                                                // Observer = groups 1 (EQ) + 3 (HY)
+                                                let source_b =
+                                                    (group_deltas[1] + group_deltas[3]) as f64;
+                                                if target > 0.0 {
+                                                    accs[rid].observe(target, source_a, source_b);
+                                                }
+                                            }
+                                            // Snapshot the current grc as the previous for
+                                            // next chunk.
+                                            for g in 0..4 {
+                                                for rid in 0..asc_state.n_residues {
+                                                    prev_grc[g][rid] = grc[g][rid];
+                                                }
+                                            }
+
+                                            // Every 20 chunks: log the top synergy residues
+                                            if chunk_idx % 20 == 0 && chunk_idx > 0 {
+                                                let mut residue_synergies: Vec<(usize, f64, f64)> =
+                                                    Vec::new();
+                                                for rid in 0..asc_state.n_residues {
+                                                    if let Some(atoms) = accs[rid].compute() {
+                                                        let frac = atoms.synergy_fraction();
+                                                        let mi = atoms.total_mi;
+                                                        if mi > 0.001 && frac > 0.0 {
+                                                            residue_synergies.push((rid, frac, mi));
+                                                        }
+                                                    }
+                                                }
+                                                // Sort by synergy fraction descending
+                                                residue_synergies.sort_by(|a, b| {
+                                                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                                                });
+                                                let top5: String = residue_synergies
+                                                    .iter()
+                                                    .take(5)
+                                                    .map(|(rid, frac, mi)| {
+                                                        format!("r{}(s={:.2},mi={:.2})", rid, frac, mi)
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                log::info!(
+                                                    "    [GC-PID chunk {}]: {} residues with PID, top synergy: [{}]",
+                                                    chunk_idx, residue_synergies.len(), top5,
+                                                );
+                                            }
+                                        }
                                     }
                                 }
 
@@ -4122,6 +4380,16 @@ fn run_multi_stream_pipeline(
                                 // CPU set_steering_focus_residue() ELIMINATED — GPU bridge only
                             }
                         }
+                        // Stage 1B-2: per-stream BOCPD summary at the end of the chunk loop.
+                        log::info!(
+                            "    [BOCPD stream {} SUMMARY]: {} chunks observed, {} chunk-close \
+                             changepoints detected (recent_p > {:.2}), bocpd_chunking_acted={}",
+                            i,
+                            bocpd_state.n_observations,
+                            bocpd_changepoint_count,
+                            prism_nhs::bocpd::BOCPD_CLOSE_THRESHOLD,
+                            bocpd_enabled,
+                        );
                         last_summary.unwrap_or_else(|| engine.run(0).unwrap())
                     } else if adaptive_protocol || rest2_lambda < 1.0 {
                         // Split run: cold_hold first, then apply focused REST2, then remaining steps.
@@ -9626,6 +9894,62 @@ fn run_multi_stream_pipeline(
             if let Ok(s) = serde_json::to_string_pretty(&doc) {
                 let _ = std::fs::write(&consensus_path, &s);
                 log::info!("  ASC consensus: {}", consensus_path.display());
+            }
+        }
+
+        // ── Stage 1B-3: GC-PID synergy export ──
+        //
+        // Per-residue PID atoms + synergy fraction at end of run. This
+        // is the canonical "principled steering weight" data that
+        // Stage 2's closed-loop ASC writeback will consume — when
+        // Stage 2 lands, it will read this list and load the top-K
+        // residues into the GPU's `steering_focus_residues[]` device
+        // buffer with weights = their synergy fractions.
+        //
+        // For Stage 1B-3 v1 we just write the JSON; the actual
+        // device-buffer load happens in Stage 2 (gated on Phase 0
+        // Bug C resolution).
+        let gcpid_path = args.output.join(format!("{}.gcpid_synergy.json", structure_name));
+        if let Ok(accs) = asc.pid_accumulators.lock() {
+            let mut entries: Vec<serde_json::Value> = Vec::new();
+            let mut n_with_pid = 0usize;
+            for (rid, acc) in accs.iter().enumerate() {
+                if let Some(atoms) = acc.compute() {
+                    if atoms.total_mi > 0.0 {
+                        n_with_pid += 1;
+                        entries.push(serde_json::json!({
+                            "residue_id": rid,
+                            "n_samples": acc.n_samples(),
+                            "synergy_fraction": atoms.synergy_fraction(),
+                            "synergy_nats": atoms.synergy,
+                            "redundancy_nats": atoms.redundancy,
+                            "unique_a_nats": atoms.unique_a,
+                            "unique_b_nats": atoms.unique_b,
+                            "total_mi_nats": atoms.total_mi,
+                        }));
+                    }
+                }
+            }
+            // Sort entries by synergy_fraction descending
+            entries.sort_by(|a, b| {
+                let fa = a.get("synergy_fraction").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let fb = b.get("synergy_fraction").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let doc = serde_json::json!({
+                "n_residues": asc.n_residues,
+                "n_residues_with_pid": n_with_pid,
+                "scout_groups": [0, 2],     // TS, UV
+                "observer_groups": [1, 3],  // EQ, HY
+                "reference": "Ince 2017 — closed-form Gaussian-copula PID",
+                "residues": entries,
+            });
+            if let Ok(s) = serde_json::to_string_pretty(&doc) {
+                let _ = std::fs::write(&gcpid_path, &s);
+                log::info!(
+                    "  GC-PID synergy: {} ({}/{} residues with valid PID)",
+                    gcpid_path.display(), n_with_pid, asc.n_residues,
+                );
             }
         }
     }
