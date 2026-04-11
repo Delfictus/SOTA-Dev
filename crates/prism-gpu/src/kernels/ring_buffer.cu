@@ -128,6 +128,11 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
         n_focus = d_protocol->steering_focus_count;
         if (n_focus < 0) n_focus = 0;
         if (n_focus > 64) n_focus = 64;
+        // Stage 2 calibration: snapshot the first focus residue id every launch
+        // so the host can verify the kernel sees the same data the upload wrote.
+        d_protocol->last_seen_focus_id = (n_focus > 0)
+            ? d_protocol->steering_focus_residues[0].residue_id
+            : -3;
     }
 
     for (unsigned int i = 0; i < n_to_process; i++) {
@@ -166,6 +171,13 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
         // as a tunable in the kernel comment so future calibration work
         // can swap it without searching.
         float steer_weight = 0.0f;
+        // Stage 2 calibration: count every spike processed and record its
+        // residue id (raw, before & 0xFFFF) so the host can sanity-check the
+        // residue id space the spike pipeline produces.
+        if (d_protocol != nullptr) {
+            atomicAdd(&d_protocol->processed_spike_count, 1u);
+            d_protocol->last_seen_spike_residue = spike.primary_residue_id & 0xFFFF;
+        }
         if (n_focus > 0) {
             int spike_residue = spike.primary_residue_id & 0xFFFF;
             #pragma unroll 8
@@ -173,6 +185,14 @@ extern "C" __global__ void ring_buffer_read_and_adapt(
                 if (k >= n_focus) break;
                 if (d_protocol->steering_focus_residues[k].residue_id == spike_residue) {
                     steer_weight = d_protocol->steering_focus_residues[k].weight;
+                    // Stage 2 calibration: count this as a successful focus
+                    // match. atomicAdd because multiple read_and_adapt launches
+                    // (across chunks) and multiple matched spikes inside one
+                    // launch all increment the same counter. The kernel itself
+                    // is single-threaded per launch, so the atomic is only
+                    // necessary across launches — but the cost of an atomic on
+                    // a single-threaded path is negligible.
+                    atomicAdd(&d_protocol->focus_match_count, 1u);
                     break;
                 }
             }

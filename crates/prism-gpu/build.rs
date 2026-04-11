@@ -46,8 +46,26 @@ fn main() {
     let ptx_dir = out_dir.join("ptx");
     std::fs::create_dir_all(&ptx_dir).expect("Failed to create PTX output directory");
 
-    // Also create target/ptx for easier access
-    let target_ptx_dir = PathBuf::from("target/ptx");
+    // Also create target/ptx for easier access.
+    //
+    // CRITICAL: cargo runs build scripts with CWD = the build script's crate
+    // directory, NOT the workspace root. The previous version used a relative
+    // path `target/ptx`, which (since this build.rs lives in
+    // `crates/prism-gpu/`) resolved to `crates/prism-gpu/target/ptx/` rather
+    // than the workspace `target/ptx/`. Meanwhile `find_twin_ptx` (in
+    // `crates/prism-nhs/src/twin_kernels.rs`) loads PTX from the workspace
+    // `target/ptx/` first. The result was that fresh PTX builds went into
+    // a directory the engine never reads, and the vendored Apr-9 bundle
+    // sitting in workspace `target/ptx/` "won" against every fresh build —
+    // silently. Stage 2 was the symptom that exposed this: my kernel
+    // changes built cleanly but produced zero observable effect because the
+    // engine was loading the stale vendored kernel.
+    //
+    // Fix: anchor `target_ptx_dir` to `CARGO_MANIFEST_DIR/../../target/ptx`
+    // so it always lands at the workspace root regardless of where cargo
+    // runs the build script from.
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let target_ptx_dir = manifest_dir.join("../../target/ptx");
     std::fs::create_dir_all(&target_ptx_dir).expect("Failed to create target/ptx directory");
 
     // Compile Floyd-Warshall kernel

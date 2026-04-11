@@ -3882,6 +3882,53 @@ fn run_multi_stream_pipeline(
                                 } else {
                                     engine.run(this_chunk)?;
                                 }
+
+                                // ══════════════════════════════════════════════════════
+                                // GPU RING BUFFER PUSH (must run BEFORE force_spike_sync)
+                                //
+                                // Critical ordering: force_spike_sync() resets the
+                                // engine's d_spike_count to 0 after downloading spikes
+                                // to host. compact_and_push reads d_spike_count and
+                                // early-exits when it's 0. If we run force_spike_sync
+                                // first, every thread in compact_and_push hits the
+                                // `if (tid >= n_spikes) return;` guard and the ring
+                                // buffer never advances head — making the entire
+                                // GPU-direct interferometric exchange a no-op.
+                                //
+                                // This was a latent bug from before Stage 2: the ring
+                                // buffer push at the end of the chunk loop ran AFTER
+                                // force_spike_sync, so head stayed at 0 forever and
+                                // every read_and_adapt launch saw n_to_process == 0.
+                                // The Stage 2 calibration counters
+                                // (focus_match_count = 0 with processed_spike_count = 0
+                                // but steering_focus_count = 64) exposed it: the kernel
+                                // was correctly seeing the focus list but never seeing
+                                // any spikes.
+                                //
+                                // Fix: push now, BEFORE force_spike_sync resets the
+                                // counter. The corresponding read_and_adapt remains in
+                                // its original location after the second ASC barrier
+                                // (so reads see pushes from this chunk on this engine
+                                // and from prior chunks on others).
+                                if let Some(ref rbs) = ring_bufs {
+                                    // Compute group_idx locally; the canonical
+                                    // definition lower in the chunk loop is not yet
+                                    // in scope here (it's `let group_idx = i / epg_val`
+                                    // inside the consensus residues block).
+                                    let push_group_idx: usize = i / epg_val;
+                                    if let (Some(sbuf), Some(sc), Some(ps)) = (
+                                        engine.spike_buffer_gpu(),
+                                        engine.spike_count_gpu(),
+                                        engine.protocol_state_buffer(),
+                                    ) {
+                                        if let Ok(mut rb) = rbs[push_group_idx].lock() {
+                                            let _ = rb.push_device_with_phase(
+                                                &stream_rb, sbuf, sc, Some(ps),
+                                            );
+                                        }
+                                    }
+                                }
+
                                 let _ = engine.force_spike_sync();
                                 // NL rebuild (CPU-side, every 500 steps)
                                 engine.rebuild_neighbor_lists_if_needed()?;
@@ -4467,27 +4514,16 @@ fn run_multi_stream_pipeline(
                                 }
 
                                 // ══════════════════════════════════════════════════════
-                                // GPU RING BUFFER EXCHANGE (Interferometric Bridge)
+                                // GPU RING BUFFER READ (Interferometric Bridge)
                                 //
-                                // GPU-to-GPU spike coupling: push this engine's spikes
-                                // to its group ring buffer, read from other groups' buffers
-                                // to modulate thresholds + write steering via VRAM.
-                                // Zero CPU latency — all kernel launches on engine's stream.
+                                // The corresponding push runs early in the chunk
+                                // BEFORE force_spike_sync (see the long comment at
+                                // that call site). The read here pulls spikes that
+                                // OTHER groups pushed earlier in their chunks and
+                                // adapts this engine's thresholds based on them, with
+                                // the Stage 2 steering boost layered on top.
                                 // ══════════════════════════════════════════════════════
                                 if let Some(ref rbs) = ring_bufs {
-                                    // Push this engine's spikes to group ring buffer (GPU-side)
-                                    if let (Some(sbuf), Some(sc), Some(ps)) = (
-                                        engine.spike_buffer_gpu(),
-                                        engine.spike_count_gpu(),
-                                        engine.protocol_state_buffer(),
-                                    ) {
-                                        if let Ok(mut rb) = rbs[group_idx].lock() {
-                                            let _ = rb.push_device_with_phase(
-                                                &stream_rb, sbuf, sc, Some(ps),
-                                            );
-                                        }
-                                    }
-
                                     // ── GPU-DIRECT STEERING BRIDGE (zero PCIe) ──
                                     // coupling_buffers_mut() extracts threshold + protocol state
                                     // in one borrow. read_and_adapt_with_steering() passes the
@@ -4523,6 +4559,36 @@ fn run_multi_stream_pipeline(
                             prism_nhs::bocpd::BOCPD_CLOSE_THRESHOLD,
                             bocpd_enabled,
                         );
+
+                        // ── Stage 2 calibration: focus match counter ──
+                        // Download the final ProtocolState from this stream's
+                        // engine and log the kernel-side `focus_match_count`.
+                        // - 0 with --closed-loop-steering ON   → loop is dead
+                        //   (writeback ↔ kernel link broken; bug)
+                        // - >0 with --closed-loop-steering ON  → loop is alive
+                        //   (kernel sees the focus list and matches spikes)
+                        // - 0 with --closed-loop-steering OFF  → expected
+                        //   (focus_count == 0 short-circuits the match check)
+                        // The number lets us reason about whether observed
+                        // null-effect on spike counts is due to the loop being
+                        // broken or due to the boost being absorbed by the
+                        // threshold floor.
+                        if let Ok(final_state) = engine.download_protocol_state(&stream_rb) {
+                            log::info!(
+                                "    [Stage 2 stream {} match counter]: \
+                                 focus_match_count={} processed_spike_count={} \
+                                 steering_focus_count={} last_seen_focus_id={} \
+                                 last_seen_spike_residue={} closed_loop_steering={}",
+                                i,
+                                final_state.focus_match_count,
+                                final_state.processed_spike_count,
+                                final_state.steering_focus_count,
+                                final_state.last_seen_focus_id,
+                                final_state.last_seen_spike_residue,
+                                closed_loop_steering,
+                            );
+                        }
+
                         last_summary.unwrap_or_else(|| engine.run(0).unwrap())
                     } else if adaptive_protocol || rest2_lambda < 1.0 {
                         // Split run: cold_hold first, then apply focused REST2, then remaining steps.

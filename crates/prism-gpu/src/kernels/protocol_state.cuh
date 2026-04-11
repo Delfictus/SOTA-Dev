@@ -143,10 +143,28 @@ struct ProtocolState {
         int residue_id;             // -1 = inactive slot
         float weight;               // GC-PID synergy_fraction in [0,1]; 0 = inactive
     } steering_focus_residues[64];  // 64 × 8 bytes = 512 bytes
+
+    // ── Stage 2 calibration counters (12 bytes) ──
+    // atomicAdd'd by ring_buffer_read_and_adapt every time a spike's
+    // primary residue id matches an active entry in steering_focus_residues.
+    unsigned int focus_match_count;
+    // atomicAdd'd for every spike processed in the inner loop. Distinguishes
+    // "kernel never runs" from "kernel runs but matches fail."
+    unsigned int processed_spike_count;
+    // Kernel writes steering_focus_residues[0].residue_id here every launch.
+    // Catches a struct layout mismatch (host writes one offset, kernel reads
+    // another).
+    int last_seen_focus_id;
+    // Kernel writes the last spike's primary_residue_id & 0xFFFF here every
+    // launch. Catches an encoding mismatch between the residue ID space the
+    // ASC controller uses and the one the spike pipeline produces.
+    int last_seen_spike_residue;
 };
 
 // Struct size:
 //   148 (Gates 0-2) + 16 (legacy ASC hooks) + 4 (phase) = 168
-//   + 4 (steering_focus_count) + 512 (steering_focus_residues[64]) = 684 bytes
+//   + 4 (steering_focus_count) + 512 (steering_focus_residues[64]) = 684
+//   + 4 (focus_match_count) + 4 (processed_spike_count)
+//   + 4 (last_seen_focus_id) + 4 (last_seen_spike_residue) = 700 bytes
 
 #endif // PROTOCOL_STATE_CUH

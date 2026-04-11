@@ -1645,6 +1645,31 @@ impl PersistentNhsEngine {
         Ok(())
     }
 
+    /// Stage 2 calibration: download the full ProtocolState from the engine's
+    /// device buffer. Used by the chunk loop's end-of-run summary to read the
+    /// `focus_match_count` counter that the kernel atomicAdd's whenever a
+    /// spike's primary residue id matches an active focus list entry.
+    ///
+    /// Synchronizes the stream before reading so the dtoh copy sees the
+    /// final value (the kernel atomicAdds run on the same stream as the
+    /// graph replay, but PCIe traffic from a different stream still needs
+    /// the explicit sync).
+    pub fn download_protocol_state(
+        &self,
+        stream: &Arc<CudaStream>,
+    ) -> anyhow::Result<crate::protocol_state::ProtocolState> {
+        use crate::protocol_state::ProtocolState;
+        if let Some(ref engine) = self.engine {
+            let mut buf = vec![0u8; std::mem::size_of::<ProtocolState>()];
+            stream.memcpy_dtoh(&engine.d_protocol_state, &mut buf)?;
+            let state: ProtocolState =
+                unsafe { std::ptr::read(buf.as_ptr() as *const ProtocolState) };
+            Ok(state)
+        } else {
+            anyhow::bail!("download_protocol_state: engine not initialized")
+        }
+    }
+
     /// Get snapshots from current run
     pub fn get_snapshots(&self) -> Vec<EnsembleSnapshot> {
         if let Some(ref engine) = self.engine {

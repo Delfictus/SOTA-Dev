@@ -171,6 +171,29 @@ pub struct ProtocolState {
     /// Top-K focus residues by GC-PID synergy_fraction. Inactive entries
     /// have `residue_id = -1` and `weight = 0.0`.
     pub steering_focus_residues: [SteerEntry; STEERING_FOCUS_MAX],
+
+    /// Diagnostic: incremented (atomicAdd) inside `ring_buffer_read_and_adapt`
+    /// every time a spike's primary residue id matches an active focus entry.
+    /// Lets the host verify end-to-end that the steering writeback is
+    /// actually being read by the kernel — distinguishes "loop dead" from
+    /// "loop alive but boost saturated by threshold floor". Reset to 0 by
+    /// the Director's init kernel; never decremented.
+    pub focus_match_count: u32,
+
+    /// Diagnostic: incremented for every spike the kernel actually processes
+    /// in its inner loop. Lets us distinguish "kernel never runs" (counter=0)
+    /// from "kernel runs but matches fail" (counter>0 but focus_match_count=0).
+    pub processed_spike_count: u32,
+
+    /// Diagnostic: the kernel writes `steering_focus_residues[0].residue_id`
+    /// here on every launch. Lets the host verify the kernel sees the same
+    /// data the upload wrote (catches struct layout mismatch).
+    pub last_seen_focus_id: i32,
+
+    /// Diagnostic: the kernel writes the LAST spike's `primary_residue_id &
+    /// 0xFFFF` here. Lets the host see what residue ID space the spikes
+    /// actually live in (catches a residue id encoding mismatch).
+    pub last_seen_spike_residue: i32,
 }
 
 const _: () = {
@@ -182,8 +205,12 @@ const _: () = {
     // +   4 (current_phase_bits)
     // +   4 (steering_focus_count)         ← Stage 2
     // + 512 (steering_focus_residues[64])  ← Stage 2 (64 × 8 bytes)
-    // = 684 bytes total
-    assert!(std::mem::size_of::<ProtocolState>() == 684);
+    // +   4 (focus_match_count)            ← Stage 2 calibration
+    // +   4 (processed_spike_count)        ← Stage 2 calibration
+    // +   4 (last_seen_focus_id)           ← Stage 2 calibration
+    // +   4 (last_seen_spike_residue)      ← Stage 2 calibration
+    // = 700 bytes total
+    assert!(std::mem::size_of::<ProtocolState>() == 700);
     assert!(std::mem::size_of::<SteerEntry>() == 8);
 };
 
@@ -266,6 +293,10 @@ impl ProtocolState {
             // cuMemcpyHtoDAsync once --closed-loop-steering is enabled.
             steering_focus_count: 0,
             steering_focus_residues: [SteerEntry { residue_id: -1, weight: 0.0 }; STEERING_FOCUS_MAX],
+            focus_match_count: 0,
+            processed_spike_count: 0,
+            last_seen_focus_id: -2,
+            last_seen_spike_residue: -2,
         }
     }
 
@@ -452,8 +483,8 @@ mod tests {
 
     #[test]
     fn test_protocol_state_size() {
-        // Stage 2 extension: 168 (legacy) + 4 (count) + 512 (focus array) = 684 bytes
-        assert_eq!(std::mem::size_of::<ProtocolState>(), 684);
+        // Stage 2 + calibration counters: 688 + 12 (3 × u32 diagnostics) = 700 bytes
+        assert_eq!(std::mem::size_of::<ProtocolState>(), 700);
         assert_eq!(std::mem::size_of::<SteerEntry>(), 8);
     }
 
