@@ -200,10 +200,18 @@ def phase_bootstrap() -> None:
     else:
         run(["git", "-C", str(REPO_DIR), "pull", "origin", GIT_BRANCH])
 
-    # Python deps
-    run(["pip", "install", "--quiet", "--no-cache-dir",
-         "numpy", "scipy", "scikit-learn", "pandas", "pyarrow",
-         "torch", "fair-esm", "onnx", "onnxruntime"])
+    # Python deps. --break-system-packages needed on Ubuntu 24.04 containers
+    # that mark the system Python as externally-managed (PEP 668).
+    pip_cmd = ["pip", "install", "--quiet", "--no-cache-dir",
+               "--break-system-packages",
+               "numpy", "scipy", "scikit-learn", "pandas", "pyarrow",
+               "fair-esm", "onnx", "onnxruntime"]
+    try:
+        run(pip_cmd)
+    except subprocess.CalledProcessError:
+        # Older containers without PEP 668 don't recognize the flag
+        pip_cmd.remove("--break-system-packages")
+        run(pip_cmd)
 
     import torch
     gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
