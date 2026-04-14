@@ -177,15 +177,21 @@ def train_epoch(model: VNEGNN, samples: List[Dict[str, torch.Tensor]],
 
 
 def eval_samples(model: VNEGNN, samples: List[Dict[str, torch.Tensor]],
-                 cutoff: float) -> Dict[str, Any]:
+                 cutoff: float, eval_seed: int = 42) -> Dict[str, Any]:
+    """Deterministic eval: each target's VN init seeded by (eval_seed + index)
+    so repeated calls with the same weights produce identical SR@k — prevents
+    best-state selection from racing with VN-rotation noise."""
     model.eval()
     per_target = []
     with torch.no_grad():
-        for s in samples:
+        for i, s in enumerate(samples):
             edge_index = build_edge_index(s["atom_coords"],
                                           n_virtual_nodes=model.n_virtual_nodes,
                                           cutoff=cutoff)
-            vn_init = init_virtual_nodes(s["atom_coords"], model.n_virtual_nodes)
+            rng = torch.Generator(device=s["atom_coords"].device)
+            rng.manual_seed(eval_seed + i)
+            vn_init = init_virtual_nodes(s["atom_coords"],
+                                         model.n_virtual_nodes, rng=rng)
             atom_logits, vn_coords, vn_conf = model(
                 s["atom_features"], s["atom_coords"], edge_index, None, vn_init)
             vn_dists = torch.linalg.norm(vn_coords - s["ligand_centroid"].unsqueeze(0),
