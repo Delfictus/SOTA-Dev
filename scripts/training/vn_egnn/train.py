@@ -77,17 +77,23 @@ class TargetSample:
 
 
 def _build_x_from_bundle(b: Dict[str, np.ndarray]) -> np.ndarray:
-    """Assemble VN-EGNN input matrix: structural+NMA+perturbed+physics+tide+temporal+esm.
+    """Assemble VN-EGNN input matrix: structural+NMA+perturbed+physics+tide+temporal+channel+esm.
 
-    Layout (input_dim up to 25+26+5+216+7+2+1280 = 1561):
+    Layout (input_dim up to 25+26+5+216+7+2+108+1280 = 1669):
       structural [N,25] + nma [N,26] + perturbed_nma [N,5] + physics_216 [N,216]
-      + tide_residue [N,7] + temporal [N,2] + esm2 [N,1280]
+      + tide_residue [N,7] + temporal [N,2] + channel_features [N,108] + esm2 [N,1280]
+
+    channel_features are the 108-dim neuromorphic channel signals from the
+    engine (3 sources × 10 + 5 phases × 6 + 4 cont × 6 + 12 cross + 6 coop +
+    6 intensity). They're extracted once into the .npz and are unique to
+    PRISM — see extract_channel_features.py.
 
     esm2 is added by the RunPod Phase 2 step; absent in dev runs without GPU.
+    Without ESM2, input_dim = 25+26+5+216+7+2+108 = 389.
     """
     blocks = []
     for k in ("structural", "nma", "perturbed_nma", "physics_216",
-              "tide_residue", "temporal", "esm2"):
+              "tide_residue", "temporal", "channel_features", "esm2"):
         if k in b:
             blocks.append(b[k].astype(np.float32))
     if not blocks and "X" in b:
@@ -304,7 +310,12 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
-    best_vn_dcc = float("inf")
+    # Best-state selection on val SR@8Å (matches --gate-sr8). Warmup prevents
+    # an untrained epoch-1 random-init from winning before the atom head has
+    # learned anything — on v002 that bug saved a 0.508-AUROC model.
+    BEST_STATE_WARMUP = 3
+    best_sr8 = -1.0
+    best_vn_dcc = float("inf")  # tracked for reporting only
     best_state = None
     patience = 0
     t0 = time.time()
@@ -322,8 +333,10 @@ def main():
             line += f" atom_AUROC={ev['atom_auroc_mean']:.3f}"
         print(line, flush=True)
 
-        if ev["vn_dcc_median"] < best_vn_dcc:
-            best_vn_dcc = ev["vn_dcc_median"]
+        current_sr8 = float(ev["vn_sr_at_8A"])
+        if ep + 1 >= BEST_STATE_WARMUP and current_sr8 > best_sr8:
+            best_sr8 = current_sr8
+            best_vn_dcc = float(ev["vn_dcc_median"])
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             torch.save(best_state, args.out_dir / f"{args.out_dir.name}.pt")
             patience = 0
@@ -354,7 +367,9 @@ def main():
         "n_params": n_params,
         "training_time_sec": time.time() - t0,
         "val": val_ev, "test": test_ev,
+        "best_val_sr8": float(best_sr8),
         "best_val_vn_dcc_median": float(best_vn_dcc),
+        "best_state_warmup": BEST_STATE_WARMUP,
         "passed": passed,
         "gate_sr8": args.gate_sr8,
     }, indent=2, default=str))
