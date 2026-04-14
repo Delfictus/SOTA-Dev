@@ -1,0 +1,39 @@
+name = "prism-feature-pipeline"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+
+# Served on the workers.dev subdomain (Phase 5.3 read API).
+workers_dev = true
+
+# D1 binding (Phase 1)
+[[d1_databases]]
+binding = "DB"
+database_name = "prism-features"
+database_id = "07660fb8-9668-4b54-bee1-766adf3ec440"
+
+# R2 binding
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "prism-archive"
+
+# Queue consumer (Phase 2.2) — fires on R2 object creates
+[[queues.consumers]]
+queue = "prism-feature-pipeline"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "prism-feature-pipeline-dlq"
+
+# Durable Object for campaign state (Phase 2.3)
+[[durable_objects.bindings]]
+name = "CAMPAIGN"
+class_name = "CampaignTracker"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CampaignTracker"]
+
+# Analytics Engine dataset (Phase 2.4)
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "prism_spike_telemetry"

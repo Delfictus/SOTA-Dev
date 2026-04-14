@@ -40,6 +40,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from cluster_split import target_to_cluster_map
+
 API_BASE = os.environ.get("PRISM_API", "https://prism-feature-pipeline.is-0b9.workers.dev")
 OUT_DIR = Path("/mnt/storage/spike-audit/ranker-xgb-v4")
 
@@ -173,12 +175,19 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def loto_evaluate(df: pd.DataFrame, n_rounds: int = 500) -> Dict[str, Any]:
-    """LOTO with XGBRanker rank:ndcg."""
-    # Drop sites without a graded_score (no ground truth)
+def loto_evaluate(df: pd.DataFrame, n_rounds: int = 500,
+                  cluster_map: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """LOTO with XGBRanker rank:ndcg.
+
+    When cluster_map is provided, each training fold excludes the entire
+    sequence-identity cluster of the held-out target, not just that one
+    target. This prevents homolog leakage.
+    """
     df = df.dropna(subset=["graded_score"]).reset_index(drop=True)
     targets = df["target"].unique()
-    print(f"\nLOTO over {len(targets)} pct70 targets (after GT filter)")
+    cluster_mode = cluster_map is not None
+    print(f"\nLOTO over {len(targets)} pct70 targets (after GT filter, "
+          f"cluster_split={'ON' if cluster_mode else 'OFF'})")
 
     X = df[FEATURE_COLS].to_numpy(dtype=np.float32)
     y = df["graded_score"].to_numpy(dtype=np.float32)
@@ -186,13 +195,22 @@ def loto_evaluate(df: pd.DataFrame, n_rounds: int = 500) -> Dict[str, Any]:
     tgt_arr = df["target"].to_numpy()
     site_arr = df["site_name"].to_numpy()
 
+    tgt_cluster_arr = None
+    if cluster_map is not None:
+        tgt_cluster_arr = np.array([cluster_map.get(t, t) for t in tgt_arr])
+
     sr = {1: 0, 3: 0, 5: 0, 10: 0}
     per_target = []
+    total_homologs_excluded = 0
     t0 = time.time()
 
     for i, tgt in enumerate(targets):
-        train_mask = tgt_arr != tgt
         test_mask = tgt_arr == tgt
+        if cluster_map is not None:
+            cluster = cluster_map.get(tgt, tgt)
+            train_mask = tgt_cluster_arr != cluster
+        else:
+            train_mask = tgt_arr != tgt
         X_tr, y_tr = X[train_mask], y_int[train_mask]
         t_tr = tgt_arr[train_mask]
         order = np.argsort(t_tr, kind="stable")
@@ -220,6 +238,8 @@ def loto_evaluate(df: pd.DataFrame, n_rounds: int = 500) -> Dict[str, Any]:
             if gold_pos <= k:
                 sr[k] += 1
 
+        n_excluded = int((~train_mask).sum() - test_mask.sum()) if cluster_map else 0
+        total_homologs_excluded += n_excluded
         per_target.append({
             "target": str(tgt),
             "n_sites": int(len(X_te)),
@@ -227,6 +247,8 @@ def loto_evaluate(df: pd.DataFrame, n_rounds: int = 500) -> Dict[str, Any]:
             "gold_dist": float(1.0 / y_te[gold] - 1.0) if y_te[gold] > 0 else math.inf,
             "gold_rank": gold_pos,
             "top_pred": str(site_te[ranking[0]]),
+            "cluster": cluster_map.get(tgt) if cluster_map else None,
+            "n_homologs_excluded": n_excluded,
         })
 
         if (i + 1) % 25 == 0 or (i + 1) == len(targets):
@@ -234,8 +256,15 @@ def loto_evaluate(df: pd.DataFrame, n_rounds: int = 500) -> Dict[str, Any]:
             print(f"  [{i+1}/{len(targets)}]  SR@1={sr1:.2f}%", flush=True)
 
     n = len(per_target)
+    if cluster_map and n:
+        n_clusters = len({cluster_map.get(t, t) for t in targets})
+        print(f"\n  Cluster-aware LOTO: {n_clusters} clusters, "
+              f"{total_homologs_excluded} total homolog sites excluded across all folds")
     return {
         "n_targets_evaluated": n,
+        "cluster_split": cluster_map is not None,
+        "n_clusters": len({cluster_map.get(t, t) for t in targets}) if cluster_map else None,
+        "total_homologs_excluded": total_homologs_excluded,
         "sr1": sr[1], "sr1_pct": round(sr[1] / n * 100, 2) if n else 0.0,
         "sr3": sr[3], "sr3_pct": round(sr[3] / n * 100, 2) if n else 0.0,
         "sr5": sr[5], "sr5_pct": round(sr[5] / n * 100, 2) if n else 0.0,
@@ -296,6 +325,14 @@ def main():
     parser.add_argument("--n-rounds", type=int, default=500)
     parser.add_argument("--no-loto", action="store_true")
     parser.add_argument("--out-dir", default=str(OUT_DIR))
+    parser.add_argument("--bundle-dir", type=Path,
+                        default=Path("/mnt/storage/spike-audit/features-pct95"))
+    parser.add_argument("--min-seq-id", type=float, default=0.3,
+                        help="MMseqs2 identity threshold for homolog-safe LOTO")
+    parser.add_argument("--cluster-cache-path", type=Path,
+                        default=Path("/mnt/storage/spike-audit/seq_clusters.json"))
+    parser.add_argument("--no-cluster-split", action="store_true",
+                        help="Disable cluster-aware LOTO (NOT recommended)")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -321,7 +358,21 @@ def main():
           f"{df['graded_score'].notna().sum()} with GT")
 
     if not args.no_loto:
-        result = loto_evaluate(df, n_rounds=args.n_rounds)
+        cluster_map: Optional[Dict[str, str]] = None
+        if not args.no_cluster_split:
+            eval_targets = df.dropna(subset=["graded_score"])["target"].unique().tolist()
+            print(f"\nBuilding MMseqs2 cluster map ({args.min_seq_id*100:.0f}% id)...")
+            cluster_map = target_to_cluster_map(
+                bundle_dir=args.bundle_dir,
+                targets=eval_targets,
+                min_seq_id=args.min_seq_id,
+                cache_path=args.cluster_cache_path,
+            )
+            n_clust = len(set(cluster_map.values()))
+            print(f"  {len(cluster_map)} targets → {n_clust} clusters "
+                  f"(avg {len(cluster_map)/max(n_clust,1):.1f}/cluster)")
+
+        result = loto_evaluate(df, n_rounds=args.n_rounds, cluster_map=cluster_map)
         print(f"\n{'='*60}")
         print(f"  XGBoost v4 — LOTO Results (pct70)")
         print(f"{'='*60}")
