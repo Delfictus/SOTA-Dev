@@ -298,9 +298,10 @@ def main():
     best_state = None
     patience = 0
     t0 = time.time()
+    epoch_rng = np.random.default_rng(42)
 
     for ep in range(args.epochs):
-        rng.shuffle(train_d)
+        epoch_rng.shuffle(train_d)
         tr = train_epoch(model, train_d, opt, cutoff=args.edge_cutoff)
         sched.step()
         ev = eval_samples(model, val_d, cutoff=args.edge_cutoff)
