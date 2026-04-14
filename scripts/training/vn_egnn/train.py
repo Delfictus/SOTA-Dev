@@ -94,8 +94,17 @@ def _build_x_from_bundle(b: Dict[str, np.ndarray]) -> np.ndarray:
     blocks = []
     for k in ("structural", "nma", "perturbed_nma", "physics_216",
               "tide_residue", "temporal", "channel_features", "esm2"):
-        if k in b:
-            blocks.append(b[k].astype(np.float32))
+        if k not in b:
+            continue
+        v = b[k].astype(np.float32)
+        # channel_features are raw spike counts / slopes — some columns hit
+        # 1e11. Left untransformed they blow up the first forward pass into
+        # NaN. Apply signed log1p to compress magnitude while preserving
+        # zeros, negatives (cross-channel / trend cols), and the per-column
+        # ordering. Keeps numerical scale comparable to the other blocks.
+        if k == "channel_features":
+            v = np.sign(v) * np.log1p(np.abs(v))
+        blocks.append(v)
     if not blocks and "X" in b:
         return b["X"].astype(np.float32)
     return np.concatenate(blocks, axis=1)
