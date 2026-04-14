@@ -49,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from model import (VNEGNN, build_edge_index, init_virtual_nodes,
                    focal_binary_loss, chamfer_vn_loss, export_onnx)
 from feature_extractor import load_bundle, FEATURE_DIM
+from cluster_split import cluster_split_bundles  # homolog-safe splits
 
 API_BASE = os.environ.get("PRISM_API", "https://prism-feature-pipeline.is-0b9.workers.dev")
 
@@ -75,20 +76,48 @@ class TargetSample:
         self.centroid = centroid  # [3]
 
 
+def _build_x_from_bundle(b: Dict[str, np.ndarray]) -> np.ndarray:
+    """Assemble VN-EGNN input matrix: structural+NMA+perturbed+physics+tide+temporal.
+
+    Layout (input_dim = 25+26+5+216+7+2 = 281):
+      structural [N,25] + nma [N,26] + perturbed_nma [N,5] + physics_216 [N,216]
+      + tide_residue [N,7] + temporal [N,2]
+
+    The physics_216 already contains a normalized form of structural/NMA, but
+    including them separately (unnormalized) preserves the directive's
+    explicit feature spec. The model learns redundancy away.
+    """
+    blocks = []
+    for k in ("structural", "nma", "perturbed_nma", "physics_216",
+              "tide_residue", "temporal"):
+        if k in b:
+            blocks.append(b[k].astype(np.float32))
+    if not blocks and "X" in b:
+        return b["X"].astype(np.float32)
+    return np.concatenate(blocks, axis=1)
+
+
 def load_samples(features_dir: Path, targets: List[str],
                  min_residues: int = 30) -> List[TargetSample]:
     out: List[TargetSample] = []
     for t in targets:
-        p = features_dir / f"{t}.features.npz"
-        if not p.exists():
+        # Accept both naming conventions
+        for stem in (f"{t}_features.npz", f"{t}.features.npz"):
+            p = features_dir / stem
+            if p.exists():
+                break
+        else:
             continue
         d = load_bundle(p)
-        if d["X"].shape[0] < min_residues:
+        X = _build_x_from_bundle(d)
+        if X.shape[0] < min_residues:
             continue
+        # Coords key differs across extractor versions
+        ca_key = "coords" if "coords" in d else "ca_coords"
         out.append(TargetSample(
             target=t,
-            X=d["X"].astype(np.float32),
-            ca=d["ca_coords"].astype(np.float32),
+            X=X,
+            ca=d[ca_key].astype(np.float32),
             labels=d["labels"].astype(np.float32),
             centroid=d["ligand_centroid"].astype(np.float32),
         ))
@@ -200,8 +229,15 @@ def main():
     parser.add_argument("--n-vns", type=int, default=16)
     parser.add_argument("--edge-cutoff", type=float, default=8.0)
     parser.add_argument("--patience", type=int, default=20)
-    parser.add_argument("--val-fraction", type=float, default=0.15)
-    parser.add_argument("--test-fraction", type=float, default=0.05)
+    parser.add_argument("--val-fraction", type=float, default=0.15,
+                        help="Fraction of CLUSTERS (not targets) in val")
+    parser.add_argument("--test-fraction", type=float, default=0.05,
+                        help="Fraction of CLUSTERS (not targets) in test")
+    parser.add_argument("--min-seq-id", type=float, default=0.3,
+                        help="MMseqs2 clustering identity threshold")
+    parser.add_argument("--cluster-cache-path", type=Path,
+                        default=Path("/mnt/storage/spike-audit/seq_clusters.json"),
+                        help="Cache for the MMseqs2 cluster map (JSON)")
     parser.add_argument("--exclude-grade", default="POOR")
     parser.add_argument("--gate-sr8", type=float, default=0.55,
                         help="Min SR@8Å on test set")
@@ -227,14 +263,22 @@ def main():
     if samples[0].X.shape[1] != FEATURE_DIM:
         print(f"WARN: sample dim {samples[0].X.shape[1]} != FEATURE_DIM {FEATURE_DIM}")
 
-    # 3) Split by target
-    rng = np.random.default_rng(42)
-    rng.shuffle(samples)
-    n_test = max(2, int(args.test_fraction * len(samples)))
-    n_val = max(5, int(args.val_fraction * len(samples)))
-    test_s = samples[:n_test]
-    val_s = samples[n_test:n_test + n_val]
-    train_s = samples[n_test + n_val:]
+    # 3) Sequence-cluster split — homologs (≥30% seq-id) kept in a single
+    #    split to prevent evaluation leakage. MMseqs2 runs once; result is
+    #    cached at args.cluster_cache_path.
+    sample_targets = [s.target for s in samples]
+    train_names, val_names, test_names = cluster_split_bundles(
+        bundle_dir=args.features_dir,
+        targets=sample_targets,
+        val_frac=args.val_fraction,
+        test_frac=args.test_fraction,
+        min_seq_id=args.min_seq_id,
+        cache_path=args.cluster_cache_path,
+    )
+    train_set, val_set, test_set = set(train_names), set(val_names), set(test_names)
+    train_s = [s for s in samples if s.target in train_set]
+    val_s   = [s for s in samples if s.target in val_set]
+    test_s  = [s for s in samples if s.target in test_set]
     print(f"  Train: {len(train_s)}  Val: {len(val_s)}  Test: {len(test_s)}")
 
     # Move to device (feature tensors already built once, reused per epoch)

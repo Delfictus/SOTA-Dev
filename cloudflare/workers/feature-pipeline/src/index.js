@@ -106,7 +106,38 @@ export default {
             return Response.json({ target, count: rows.results.length, residues: rows.results });
         }
 
-        if (path.startsWith('/site-features/')) {
+        // Offline temporal-feature upload (POST) — must be checked before the
+        // generic GET /site-features/<target> handler below.
+        if (request.method === 'POST'
+            && path.startsWith('/site-features/')
+            && path.endsWith('/temporal')) {
+            const target = path.substring('/site-features/'.length,
+                                          path.length - '/temporal'.length);
+            let body;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return Response.json({ error: 'invalid JSON' }, { status: 400 });
+            }
+            if (!Array.isArray(body)) {
+                return Response.json({ error: 'expected array' }, { status: 400 });
+            }
+            const stmts = body.map(r => env.DB.prepare(
+                `UPDATE site_features
+                   SET phase_transition_ratio = ?, warm_hold_spike_fraction = ?
+                 WHERE target = ? AND site_name = ?`
+            ).bind(
+                r.phase_transition_ratio ?? null,
+                r.warm_hold_spike_fraction ?? null,
+                target, r.site_name,
+            ));
+            if (stmts.length > 0) {
+                await env.DB.batch(stmts);
+            }
+            return Response.json({ target, updated: stmts.length });
+        }
+
+        if (request.method === 'GET' && path.startsWith('/site-features/')) {
             const target = path.substring('/site-features/'.length);
             const rows = await env.DB.prepare(
                 'SELECT * FROM site_features WHERE target = ? ORDER BY spike_count DESC'

@@ -338,6 +338,185 @@ def compute_site_features(binding_sites_path: Optional[Path],
 
 
 # ─────────────────────────────────────────────────────────────
+#  Temporal features (2 per-residue + 2 per-site)
+# ─────────────────────────────────────────────────────────────
+#
+#  Empirically validated on 9 targets: phase_transition_ratio discriminates
+#  EXCELLENT from POOR detections (0.549 vs 0.737, p=-0.188).
+#
+#    phase_transition_ratio   = warm_hold_spikes / max(cold_hold_spikes, 1)
+#    warm_hold_spike_fraction = warm_hold_spikes / max(total_spikes, 1)
+#
+#  Lower phase_transition_ratio = more likely a true binding site (stable
+#  during cold_hold). Higher = transient thermal artifact.
+#
+#  Per-residue version uses spikes within 5 Å of Cα. Per-site version uses
+#  all spikes in the site's parquet/JSON file.
+
+PHASE_COLD_HOLD = "cold_hold"
+PHASE_WARM_HOLD = "warm_hold"
+TEMPORAL_NEAR_R = 5.0
+
+
+def _read_spike_phases(path: Path) -> Optional[np.ndarray]:
+    """Read the ccns_phase column + xyz from a spike file. Returns structured
+    array with fields x/y/z/phase (phase is string). None if unreadable."""
+    try:
+        if path.suffix == ".parquet":
+            import pyarrow.parquet as pq
+            t = pq.read_table(path, columns=["x", "y", "z", "ccns_phase"])
+            xyz = np.column_stack([
+                t.column("x").to_numpy(), t.column("y").to_numpy(),
+                t.column("z").to_numpy(),
+            ]).astype(np.float32)
+            phases = t.column("ccns_phase").to_pandas().values
+        elif path.suffix == ".json":
+            import orjson
+            data = orjson.loads(open(path, "rb").read())
+            spikes = data.get("spikes", [])
+            if not spikes:
+                return None
+            xyz = np.array([[s["x"], s["y"], s["z"]] for s in spikes],
+                           dtype=np.float32)
+            phases = np.array([s.get("ccns_phase", "") for s in spikes])
+        else:
+            return None
+    except Exception:
+        return None
+    # Pack into structured record
+    rec = np.empty(len(xyz), dtype=[("xyz", "f4", 3), ("phase", "U20")])
+    rec["xyz"] = xyz
+    rec["phase"] = phases
+    return rec
+
+
+def compute_temporal_features(run_dir: Path, ca_coords: np.ndarray,
+                              resid_list: List[int], bs_sites: List[Dict[str, Any]]
+                              ) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
+    """Returns (per_residue [N,2], per_site dict).
+
+    per_residue columns (in order):
+        0: residue_phase_transition_ratio  (warm_hold / max(cold_hold, 1))
+        1: residue_warm_hold_fraction      (warm_hold / max(total, 1))
+
+    per_site dict[site_name] = {
+        "phase_transition_ratio": float or NaN,
+        "warm_hold_spike_fraction": float or NaN,
+    }
+    NaN when ccns_phase is absent — lets XGBoost handle missing natively.
+    """
+    n = len(resid_list)
+    per_res = np.zeros((n, 2), dtype=np.float32)
+    per_site: Dict[str, Dict[str, float]] = {}
+
+    spike_files = sorted(run_dir.glob("*.spike_events.parquet"))
+    if not spike_files:
+        spike_files = sorted(run_dir.glob("*.spike_events.json"))
+    if not spike_files:
+        # Mark all per-site as NaN
+        for s in bs_sites:
+            sid = s.get("id", "unknown")
+            per_site[f"site{sid}"] = {
+                "phase_transition_ratio": float("nan"),
+                "warm_hold_spike_fraction": float("nan"),
+            }
+        return per_res, per_site
+
+    # Map site_id → parquet filename pattern:  {target}.site{id}.spike_events.*
+    site_file_map: Dict[Any, Path] = {}
+    for sf in spike_files:
+        stem = sf.name
+        # Pattern: <target>.site<ID>.spike_events.<ext>
+        try:
+            site_part = stem.split(".site", 1)[1].split(".spike_events", 1)[0]
+            sid = int(site_part)
+        except (IndexError, ValueError):
+            continue
+        site_file_map[sid] = sf
+
+    # Per-site ratios
+    for s in bs_sites:
+        sid = s.get("id", "unknown")
+        name = f"site{sid}"
+        sf = site_file_map.get(sid)
+        if sf is None:
+            per_site[name] = {
+                "phase_transition_ratio": float("nan"),
+                "warm_hold_spike_fraction": float("nan"),
+            }
+            continue
+        rec = _read_spike_phases(sf)
+        if rec is None or len(rec) == 0:
+            per_site[name] = {
+                "phase_transition_ratio": float("nan"),
+                "warm_hold_spike_fraction": float("nan"),
+            }
+            continue
+        phases = rec["phase"]
+        n_warm = int((phases == PHASE_WARM_HOLD).sum())
+        n_cold = int((phases == PHASE_COLD_HOLD).sum())
+        n_tot = int(len(phases))
+        per_site[name] = {
+            "phase_transition_ratio": float(n_warm / max(n_cold, 1)),
+            "warm_hold_spike_fraction": float(n_warm / max(n_tot, 1)),
+        }
+
+    # Per-residue ratios — aggregate ALL spike files, assign to nearest Cα
+    # within 5 Å. Iterate per file to keep memory bounded.
+    warm_counts = np.zeros(n, dtype=np.int64)
+    cold_counts = np.zeros(n, dtype=np.int64)
+    total_counts = np.zeros(n, dtype=np.int64)
+    r2 = TEMPORAL_NEAR_R ** 2
+
+    for sf in spike_files:
+        rec = _read_spike_phases(sf)
+        if rec is None or len(rec) == 0:
+            continue
+        xyz = rec["xyz"]
+        phases = rec["phase"]
+        # For each spike, find ca_coords index within radius (use KDTree for speed)
+        try:
+            from scipy.spatial import cKDTree
+            tree = cKDTree(ca_coords)
+            # Query: for each spike, nearest CA within radius
+            nearest_dist, nearest_idx = tree.query(xyz, k=1,
+                                                    distance_upper_bound=TEMPORAL_NEAR_R)
+            mask = nearest_dist < TEMPORAL_NEAR_R
+            nearest_idx = nearest_idx[mask]
+            phases_m = phases[mask]
+        except ImportError:
+            # Fallback: explicit loop
+            nearest_idx_list = []
+            phases_list = []
+            for i, xyz_i in enumerate(xyz):
+                d2 = ((ca_coords - xyz_i) ** 2).sum(axis=1)
+                j = int(np.argmin(d2))
+                if d2[j] <= r2:
+                    nearest_idx_list.append(j)
+                    phases_list.append(phases[i])
+            nearest_idx = np.asarray(nearest_idx_list, dtype=np.int64)
+            phases_m = np.asarray(phases_list)
+
+        # Accumulate counts
+        for rid, ph in zip(nearest_idx, phases_m):
+            total_counts[rid] += 1
+            if ph == PHASE_WARM_HOLD:
+                warm_counts[rid] += 1
+            elif ph == PHASE_COLD_HOLD:
+                cold_counts[rid] += 1
+
+    # Compute ratios with NaN-safe semantics:
+    # If total_count == 0, set features to 0 (no evidence, not NaN — numpy
+    # nan would propagate into training). Model learns that residues with
+    # zero spike evidence have (0, 0) temporal features.
+    has_any = total_counts > 0
+    per_res[has_any, 0] = warm_counts[has_any] / np.maximum(cold_counts[has_any], 1)
+    per_res[has_any, 1] = warm_counts[has_any] / np.maximum(total_counts[has_any], 1)
+
+    return per_res, per_site
+
+
+# ─────────────────────────────────────────────────────────────
 #  Binding labels from ligand centroid
 # ─────────────────────────────────────────────────────────────
 
@@ -422,7 +601,13 @@ def extract_one(target: str, run_dir: Path,
         b3 = ex216.extract_block3(run_dir, resid_list, n_res)                  # 13
         b4 = ex216.extract_block4(run_dir, resid_list, n_res)                  # 4
         b5 = ex216.extract_block5(run_dir, resid_list, n_res)                  # 18
-        b6, phase_data = ex216.extract_block6(run_dir, ca_pos, resid_list, n_res)  # 48
+        # extract_block6 returns (feat, phase_data) normally, but falls back to
+        # just `feat` when no spike parquets/json files are present.
+        b6_result = ex216.extract_block6(run_dir, ca_pos, resid_list, n_res)   # 48
+        if isinstance(b6_result, tuple):
+            b6, phase_data = b6_result
+        else:
+            b6, phase_data = b6_result, None
         b7 = ex216.extract_block7(run_dir, ca_pos, resid_list, n_res,
                                    block6_phase_data=phase_data)               # 81
     except Exception as e:
@@ -480,6 +665,24 @@ def extract_one(target: str, run_dir: Path,
     # Labels
     labels = compute_labels(ca_pos, resid_list, ligand_c)
 
+    # Temporal features (2 per-residue + 2 per-site) — validated empirically
+    # discriminative between EXCELLENT and POOR detections.
+    bs_sites_raw = []
+    if bs_path and bs_path.exists():
+        try:
+            bs_sites_raw = json.load(open(bs_path)).get("sites", [])
+        except Exception:
+            bs_sites_raw = []
+    temporal_residue, temporal_site = compute_temporal_features(
+        run_dir, coords, resid_list, bs_sites_raw,
+    )
+    # Merge per-site temporal into site_feat_dict (XGBoost consumes this)
+    for sname, t in temporal_site.items():
+        if sname in site_feat_dict:
+            site_feat_dict[sname].update(t)
+        else:
+            site_feat_dict[sname] = dict(t)
+
     # Save .npz
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{target}_features.npz"
@@ -490,6 +693,7 @@ def extract_one(target: str, run_dir: Path,
         perturbed_nma=perturbed_5,
         physics_216=raw_216,          # Full 216 matrix (as produced by original extractor)
         tide_residue=tide_7,
+        temporal=temporal_residue,    # [N, 2]: phase_transition_ratio, warm_hold_fraction
         coords=coords,
         sequence=np.asarray(sequence),
         residue_ids=np.asarray(resid_list, dtype=np.int64),

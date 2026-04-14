@@ -196,6 +196,20 @@ SOFT_CONSTRAINTS: List[PhysicsConstraint] = [
             (feat["transfer_entropy"] > feat.q("transfer_entropy", 90))
         ),
     ),
+    PhysicsConstraint(
+        name="transient_site_low_binding",
+        description="Sites with phase_transition_ratio > 1.2 are thermally "
+                    "transient (more active during warm_hold than cold_hold) "
+                    "and should not produce high binding probability (> 0.3). "
+                    "Empirical basis: EXCELLENT targets all have ratio < 0.7; "
+                    "9xzz_chainA (POOR) at 1.173 is the boundary case.",
+        rule_fn=lambda pred, feat: (
+            (feat["phase_transition_ratio"] > 1.2) & (pred >= 0.3)
+        ),
+        contrapositive_fn=lambda pred, feat: (
+            (pred >= 0.3) & (feat["phase_transition_ratio"] > 1.2)
+        ),
+    ),
 ]
 
 
@@ -288,17 +302,18 @@ if __name__ == "__main__":
     import numpy as np
     N = 100
     feat = FeatureView({
-        "spike_count":          np.random.randint(0, 100, N),
-        "n_streams":            np.random.randint(0, 4, N),
-        "burial":               np.random.uniform(0, 1, N),
-        "sasa":                 np.random.uniform(0, 1, N),
-        "unsat_frac":           np.random.uniform(0, 1, N),
-        "hysteresis_asymmetry": np.random.uniform(0, 1, N),
-        "is_cryptic":           np.random.randint(0, 2, N),
-        "therm_class_inert":    np.random.randint(0, 2, N),
-        "transfer_entropy":     np.random.uniform(0, 1, N),
-        "role_trigger":         np.random.randint(0, 2, N),
-        "role_responder":       np.random.randint(0, 2, N),
+        "spike_count":             np.random.randint(0, 100, N),
+        "n_streams":               np.random.randint(0, 4, N),
+        "burial":                  np.random.uniform(0, 1, N),
+        "sasa":                    np.random.uniform(0, 1, N),
+        "unsat_frac":              np.random.uniform(0, 1, N),
+        "hysteresis_asymmetry":    np.random.uniform(0, 1, N),
+        "is_cryptic":              np.random.randint(0, 2, N),
+        "therm_class_inert":       np.random.randint(0, 2, N),
+        "transfer_entropy":        np.random.uniform(0, 1, N),
+        "role_trigger":            np.random.randint(0, 2, N),
+        "role_responder":          np.random.randint(0, 2, N),
+        "phase_transition_ratio":  np.random.uniform(0, 2, N),  # new
     })
     pred = np.random.uniform(0, 1, N)
 

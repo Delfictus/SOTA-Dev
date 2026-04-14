@@ -56,6 +56,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 
 sys.path.insert(0, str(Path(__file__).parent))
 from feature_extractor import FEATURE_DIM, load_bundle, BLOCK_OFFSETS
+from cluster_split import target_to_cluster_map  # homolog-safe LOTO
 
 API_BASE = os.environ.get("PRISM_API", "https://prism-feature-pipeline.is-0b9.workers.dev")
 
@@ -82,6 +83,30 @@ def fetch_valid_targets(exclude_grade: str = "POOR") -> List[str]:
 #  Data assembly
 # ─────────────────────────────────────────────────────────────
 
+def _build_x_from_bundle(bundle: Dict[str, np.ndarray]) -> np.ndarray:
+    """Assemble per-residue feature matrix from the extract_all_features .npz.
+
+    Layout (dynamic input_dim = 225):
+        physics_216 [N, 216]  ← includes structural + NMA + 216 physics blocks
+        tide_residue [N, 7]   ← directive Phase 0.1
+        temporal [N, 2]       ← phase_transition_ratio, warm_hold_fraction
+
+    The perturbed_nma block is computed but NOT included here to stay compatible
+    with the old v002 teacher feature layout; it lives in vn_egnn only.
+    """
+    blocks = []
+    if "physics_216" in bundle:
+        blocks.append(bundle["physics_216"].astype(np.float32))
+    if "tide_residue" in bundle:
+        blocks.append(bundle["tide_residue"].astype(np.float32))
+    if "temporal" in bundle:
+        blocks.append(bundle["temporal"].astype(np.float32))
+    # Back-compat: old bundles had a flat "X" key
+    if not blocks and "X" in bundle:
+        return bundle["X"].astype(np.float32)
+    return np.concatenate(blocks, axis=1)
+
+
 def assemble_dataset(features_dir: Path, targets: List[str]
                      ) -> Tuple[np.ndarray, np.ndarray, List[str], List[int]]:
     """Load all per-target .npz bundles into one (X, y, target_per_row, offsets).
@@ -90,12 +115,22 @@ def assemble_dataset(features_dir: Path, targets: List[str]
     """
     X_list, y_list, tgt_per_row, offsets = [], [], [], [0]
 
+    # Try both naming conventions: new extract_all_features produces
+    # <target>_features.npz; old feature_extractor used <target>.features.npz.
+    def _find_bundle(tgt: str) -> Optional[Path]:
+        for stem in (f"{tgt}_features.npz", f"{tgt}.features.npz"):
+            p = features_dir / stem
+            if p.exists():
+                return p
+        return None
+
     for tgt in targets:
-        p = features_dir / f"{tgt}.features.npz"
-        if not p.exists():
+        p = _find_bundle(tgt)
+        if p is None:
             continue
         d = load_bundle(p)
-        X_list.append(d["X"].astype(np.float32))
+        X = _build_x_from_bundle(d)
+        X_list.append(X)
         y_list.append(d["labels"].astype(np.int32))
         tgt_per_row.extend([tgt] * len(d["labels"]))
         offsets.append(offsets[-1] + len(d["labels"]))
@@ -221,8 +256,16 @@ def train_fold(X: np.ndarray, y: np.ndarray, train_mask: np.ndarray,
 def run_loto(X: np.ndarray, y: np.ndarray, targets_per_row: List[str],
              offsets: List[int], unique_targets: List[str],
              out_dir: Path, epochs: int, batch_size: int, lr: float,
-             device: torch.device) -> Dict:
-    """Leave-one-target-out. Saves fold checkpoints and returns per-fold metrics."""
+             device: torch.device,
+             cluster_map: Optional[Dict[str, str]] = None) -> Dict:
+    """Leave-one-target-out with homolog-safe training folds.
+
+    When `cluster_map` is provided, every training fold excludes not just
+    the held-out target but every target in its sequence-identity cluster
+    (MMseqs2 at 30% by default). This prevents homolog leakage — the
+    trained model never sees any sequence ≥30% identical to the held-out
+    target during training of that fold.
+    """
     stats = fit_feature_stats(X)
     (out_dir / "feature_stats.json").write_text(json.dumps({
         "mean": stats["mean"].tolist(),
@@ -237,10 +280,30 @@ def run_loto(X: np.ndarray, y: np.ndarray, targets_per_row: List[str],
     # Map row index → target index for fast masking
     row_to_tgt_idx = np.asarray([unique_targets.index(t) for t in targets_per_row], dtype=np.int32)
 
+    # Cluster-aware masking: when a target is held out, mask out the
+    # ENTIRE cluster from the training set.
+    cluster_masks: Optional[List[np.ndarray]] = None
+    if cluster_map is not None:
+        cluster_masks = []
+        tgt_idx_to_cluster = [cluster_map.get(t) for t in unique_targets]
+        targets_per_row_cluster = np.asarray(
+            [cluster_map.get(t, "__orphan__") for t in targets_per_row])
+        for ti, t in enumerate(unique_targets):
+            c = tgt_idx_to_cluster[ti]
+            if c is None:
+                # Unknown cluster → default to same-target only (fallback)
+                cluster_masks.append(row_to_tgt_idx == ti)
+            else:
+                cluster_masks.append(targets_per_row_cluster == c)
+
     for fold, held_out in enumerate(unique_targets):
         held_idx = unique_targets.index(held_out)
         val_mask = (row_to_tgt_idx == held_idx)
-        train_mask = ~val_mask
+        if cluster_masks is not None:
+            # Drop the held-out target's entire cluster from training
+            train_mask = ~cluster_masks[held_idx]
+        else:
+            train_mask = ~val_mask
         if val_mask.sum() == 0 or y[val_mask].sum() == 0:
             print(f"[fold {fold+1}/{n_targets}] {held_out}: skipping (no val residues or no positives)")
             continue
@@ -248,9 +311,12 @@ def run_loto(X: np.ndarray, y: np.ndarray, targets_per_row: List[str],
         model, m = train_fold(X, y, train_mask, val_mask, stats,
                               epochs=epochs, batch_size=batch_size, lr=lr,
                               seed=1000 + fold, device=device)
+        n_excluded = int(cluster_masks[held_idx].sum() - val_mask.sum()) if cluster_masks else 0
         ckpt = {
             "state_dict": model.state_dict(),
             "test_target": held_out,
+            "cluster": (cluster_map.get(held_out) if cluster_map else None),
+            "n_homolog_residues_excluded": n_excluded,
             "fold_idx": fold,
             "in_dim": int(X.shape[1]),
             "auroc": m["auroc"],
@@ -260,13 +326,16 @@ def run_loto(X: np.ndarray, y: np.ndarray, targets_per_row: List[str],
         torch.save(ckpt, ckpt_path)
         m["target"] = held_out
         m["fold"] = fold
+        m["n_homolog_residues_excluded"] = n_excluded
         all_metrics.append(m)
 
         elapsed = time.time() - t0
         mean_so_far = np.nanmean([mm["auroc"] for mm in all_metrics])
         eta = elapsed / (fold + 1) * (n_targets - fold - 1)
+        extra = f" (-{n_excluded:,} homolog res)" if n_excluded else ""
         print(f"[fold {fold+1}/{n_targets}] {held_out} AUROC={m['auroc']:.3f} "
-              f"AUPRC={m['auprc']:.3f} (mean AUROC so far: {mean_so_far:.3f}, ETA {eta/60:.0f}m)",
+              f"AUPRC={m['auprc']:.3f} (mean AUROC so far: {mean_so_far:.3f}, "
+              f"ETA {eta/60:.0f}m){extra}",
               flush=True)
 
     return {"metrics": all_metrics, "n_targets": n_targets,
@@ -321,6 +390,13 @@ def main():
     parser.add_argument("--gate-auroc", type=float, default=0.723)
     parser.add_argument("--exclude-grade", default="POOR",
                         help="corrected_dcc grade to exclude (default POOR)")
+    parser.add_argument("--min-seq-id", type=float, default=0.3,
+                        help="MMseqs2 identity threshold for homolog-safe LOTO")
+    parser.add_argument("--cluster-cache-path", type=Path,
+                        default=Path("/mnt/storage/spike-audit/seq_clusters.json"),
+                        help="Cache for MMseqs2 cluster map")
+    parser.add_argument("--no-cluster-split", action="store_true",
+                        help="Disable cluster-aware LOTO (NOT recommended for publication)")
     args = parser.parse_args()
 
     if not HAVE_TORCH:
@@ -349,10 +425,26 @@ def main():
     if X.shape[1] != FEATURE_DIM:
         print(f"  WARN: X.shape[1]={X.shape[1]} != FEATURE_DIM={FEATURE_DIM}")
 
-    # 3) LOTO
-    print(f"\nRunning LOTO (epochs={args.epochs}, batch={args.batch_size}, lr={args.lr})...")
+    # 3) Sequence-identity cluster map (for homolog-safe LOTO)
+    cluster_map: Optional[Dict[str, str]] = None
+    if not args.no_cluster_split:
+        print(f"\nBuilding MMseqs2 cluster map ({args.min_seq_id*100:.0f}% id)...")
+        cluster_map = target_to_cluster_map(
+            bundle_dir=args.features_dir,
+            targets=present_targets,
+            min_seq_id=args.min_seq_id,
+            cache_path=args.cluster_cache_path,
+        )
+        n_clust = len(set(cluster_map.values()))
+        print(f"  {len(cluster_map)} targets → {n_clust} clusters "
+              f"(avg {len(cluster_map)/max(n_clust,1):.1f}/cluster)")
+
+    # 4) LOTO
+    print(f"\nRunning LOTO (epochs={args.epochs}, batch={args.batch_size}, lr={args.lr}, "
+          f"cluster_split={cluster_map is not None})...")
     results = run_loto(X, y, tgt_per_row, offsets, present_targets,
-                       args.out_dir, args.epochs, args.batch_size, args.lr, device)
+                       args.out_dir, args.epochs, args.batch_size, args.lr, device,
+                       cluster_map=cluster_map)
 
     # 4) Aggregate
     aurocs = [m["auroc"] for m in results["metrics"] if np.isfinite(m["auroc"])]
