@@ -86,13 +86,12 @@ def fetch_valid_targets(exclude_grade: str = "POOR") -> List[str]:
 def _build_x_from_bundle(bundle: Dict[str, np.ndarray]) -> np.ndarray:
     """Assemble per-residue feature matrix from the extract_all_features .npz.
 
-    Layout (dynamic input_dim = 225):
+    Layout (dynamic input_dim up to 1505):
         physics_216 [N, 216]  ← includes structural + NMA + 216 physics blocks
         tide_residue [N, 7]   ← directive Phase 0.1
         temporal [N, 2]       ← phase_transition_ratio, warm_hold_fraction
-
-    The perturbed_nma block is computed but NOT included here to stay compatible
-    with the old v002 teacher feature layout; it lives in vn_egnn only.
+        esm2 [N, 1280]        ← ESM-2 t33 embeddings (added by RunPod phase 2)
+                                 Skipped if not present (dev runs without GPU).
     """
     blocks = []
     if "physics_216" in bundle:
@@ -101,6 +100,8 @@ def _build_x_from_bundle(bundle: Dict[str, np.ndarray]) -> np.ndarray:
         blocks.append(bundle["tide_residue"].astype(np.float32))
     if "temporal" in bundle:
         blocks.append(bundle["temporal"].astype(np.float32))
+    if "esm2" in bundle:
+        blocks.append(bundle["esm2"].astype(np.float32))
     # Back-compat: old bundles had a flat "X" key
     if not blocks and "X" in bundle:
         return bundle["X"].astype(np.float32)

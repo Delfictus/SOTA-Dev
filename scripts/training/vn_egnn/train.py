@@ -77,19 +77,17 @@ class TargetSample:
 
 
 def _build_x_from_bundle(b: Dict[str, np.ndarray]) -> np.ndarray:
-    """Assemble VN-EGNN input matrix: structural+NMA+perturbed+physics+tide+temporal.
+    """Assemble VN-EGNN input matrix: structural+NMA+perturbed+physics+tide+temporal+esm.
 
-    Layout (input_dim = 25+26+5+216+7+2 = 281):
+    Layout (input_dim up to 25+26+5+216+7+2+1280 = 1561):
       structural [N,25] + nma [N,26] + perturbed_nma [N,5] + physics_216 [N,216]
-      + tide_residue [N,7] + temporal [N,2]
+      + tide_residue [N,7] + temporal [N,2] + esm2 [N,1280]
 
-    The physics_216 already contains a normalized form of structural/NMA, but
-    including them separately (unnormalized) preserves the directive's
-    explicit feature spec. The model learns redundancy away.
+    esm2 is added by the RunPod Phase 2 step; absent in dev runs without GPU.
     """
     blocks = []
     for k in ("structural", "nma", "perturbed_nma", "physics_216",
-              "tide_residue", "temporal"):
+              "tide_residue", "temporal", "esm2"):
         if k in b:
             blocks.append(b[k].astype(np.float32))
     if not blocks and "X" in b:

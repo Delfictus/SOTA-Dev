@@ -62,17 +62,22 @@ def rclone_parquets(r2_target_prefix: str, dst_dir: Path,
 
 def post_temporal(worker_url: str, target: str,
                   per_site: Dict[str, Dict[str, float]]) -> bool:
-    """POST per-site temporal aggregates to the Worker's update endpoint."""
-    payload = []
-    for site_name, vals in per_site.items():
-        p = vals.get("phase_transition_ratio")
-        w = vals.get("warm_hold_spike_fraction")
-        payload.append({
-            "site_name": site_name,
-            "phase_transition_ratio": None if not np.isfinite(p or 0) or p is None else float(p),
-            "warm_hold_spike_fraction": None if not np.isfinite(w or 0) or w is None else float(w),
-        })
-    body = json.dumps(payload).encode("utf-8")
+    """POST per-site temporal aggregates to the Worker's update endpoint.
+    Coerces NaN/inf → None so the resulting JSON is RFC-compliant and
+    Cloudflare Workers parses it."""
+    import math
+    def _clean(v):
+        if v is None:
+            return None
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return float(v)
+    payload = [{
+        "site_name": site_name,
+        "phase_transition_ratio": _clean(vals.get("phase_transition_ratio")),
+        "warm_hold_spike_fraction": _clean(vals.get("warm_hold_spike_fraction")),
+    } for site_name, vals in per_site.items()]
+    body = json.dumps(payload, allow_nan=False).encode("utf-8")
     req = urllib.request.Request(
         f"{worker_url}/site-features/{target}/temporal",
         data=body,
