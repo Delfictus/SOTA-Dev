@@ -329,6 +329,32 @@ def run_loto(X: np.ndarray, y: np.ndarray, targets_per_row: List[str],
             print(f"[fold {fold+1}/{n_targets}] {held_out}: skipping (no val residues or no positives)")
             continue
 
+        # Resume: if this fold was already trained, reuse its ckpt+metrics
+        ckpt_path = out_dir / f"teacher_fold_{fold:03d}_{held_out}.pt"
+        if ckpt_path.exists():
+            try:
+                prior = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+                m = {"auroc": float(prior.get("auroc", float("nan"))),
+                     "auprc": float(prior.get("auprc", float("nan"))),
+                     "target": held_out,
+                     "fold": fold,
+                     "n_homolog_residues_excluded": int(prior.get("n_homolog_residues_excluded", 0)),
+                     "resumed": True}
+                all_metrics.append(m)
+                n_excluded = m["n_homolog_residues_excluded"]
+                elapsed = time.time() - t0
+                mean_so_far = np.nanmean([mm["auroc"] for mm in all_metrics])
+                eta = elapsed / (fold + 1) * (n_targets - fold - 1)
+                extra = f" (-{n_excluded:,} homolog res)" if n_excluded else ""
+                print(f"[fold {fold+1}/{n_targets}] {held_out} AUROC={m['auroc']:.3f} "
+                      f"AUPRC={m['auprc']:.3f} (mean AUROC so far: {mean_so_far:.3f}, "
+                      f"ETA {eta/60:.0f}m) RESUMED{extra}",
+                      flush=True)
+                continue
+            except Exception as e:
+                print(f"[fold {fold+1}/{n_targets}] {held_out}: ckpt present but unloadable ({e}); retraining",
+                      flush=True)
+
         model, m = train_fold(X, y, train_mask, val_mask, stats,
                               epochs=epochs, batch_size=batch_size, lr=lr,
                               seed=1000 + fold, device=device)
