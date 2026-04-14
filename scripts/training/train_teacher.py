@@ -488,7 +488,7 @@ def main():
     mean_auprc = float(np.mean(auprcs)) if auprcs else float("nan")
 
     print(f"\n{'='*60}")
-    print(f"  TEACHER v004 — LOTO summary ({len(aurocs)} evaluable folds)")
+    print(f"  TEACHER {args.out_dir.name} — LOTO summary ({len(aurocs)} evaluable folds)")
     print(f"{'='*60}")
     print(f"  Mean AUROC:   {mean_auroc:.4f}")
     print(f"  Median AUROC: {median_auroc:.4f}")
@@ -514,7 +514,7 @@ def main():
     if fold_ckpts:
         print("\nExporting mean-ensemble ONNX...")
         export_onnx_mean_ensemble(fold_ckpts, X.shape[1],
-                                   args.out_dir / "teacher_v004.onnx", device)
+                                   args.out_dir / f"{args.out_dir.name}.onnx", device)
 
     print(f"\n  Outputs in: {args.out_dir}")
     sys.exit(0 if passed else 2)
