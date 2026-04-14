@@ -286,8 +286,11 @@ def main():
 
     # 4) Model
     in_dim = samples[0].X.shape[1]
+    # edge_feat_dim=0 because train_epoch/eval pass edge_feat=None — the
+    # EGNNLayer concat must match. Default of 1 caused a mat-mul size error.
     model = VNEGNN(in_dim=in_dim, hidden_dim=args.hidden_dim,
-                   n_layers=args.n_layers, n_virtual_nodes=args.n_vns).to(device)
+                   n_layers=args.n_layers, n_virtual_nodes=args.n_vns,
+                   edge_feat_dim=0).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Model: {n_params:,} params  (in_dim={in_dim})")
 
