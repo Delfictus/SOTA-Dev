@@ -83,32 +83,37 @@ def fetch_valid_targets(exclude_grade: str = "POOR") -> List[str]:
 #  Data assembly
 # ─────────────────────────────────────────────────────────────
 
-def _build_x_from_bundle(bundle: Dict[str, np.ndarray]) -> np.ndarray:
+def _build_x_from_bundle(bundle: Dict[str, np.ndarray],
+                         feature_set: str = "full") -> np.ndarray:
     """Assemble per-residue feature matrix from the extract_all_features .npz.
 
-    Layout (dynamic input_dim up to 1505):
-        physics_216 [N, 216]  ← includes structural + NMA + 216 physics blocks
-        tide_residue [N, 7]   ← directive Phase 0.1
-        temporal [N, 2]       ← phase_transition_ratio, warm_hold_fraction
-        esm2 [N, 1280]        ← ESM-2 t33 embeddings (added by RunPod phase 2)
-                                 Skipped if not present (dev runs without GPU).
+    feature_set selects which blocks are concatenated:
+        full     — structural + nma + perturbed_nma + physics_216
+                   + tide_residue + temporal + esm2            (≤1561 dims)
+        esm2     — esm2 only                                    (1280 dims)
+        physics  — structural + nma + perturbed_nma + physics_216
+                   + tide_residue + temporal (no esm2)         (≤281 dims)
     """
     blocks = []
-    if "physics_216" in bundle:
-        blocks.append(bundle["physics_216"].astype(np.float32))
-    if "tide_residue" in bundle:
-        blocks.append(bundle["tide_residue"].astype(np.float32))
-    if "temporal" in bundle:
-        blocks.append(bundle["temporal"].astype(np.float32))
-    if "esm2" in bundle:
+    include_structural = feature_set in ("full", "physics")
+    include_esm = feature_set in ("full", "esm2")
+
+    if include_structural:
+        for k in ("structural", "nma", "perturbed_nma", "physics_216",
+                  "tide_residue", "temporal"):
+            if k in bundle:
+                blocks.append(bundle[k].astype(np.float32))
+    if include_esm and "esm2" in bundle:
         blocks.append(bundle["esm2"].astype(np.float32))
+
     # Back-compat: old bundles had a flat "X" key
     if not blocks and "X" in bundle:
         return bundle["X"].astype(np.float32)
     return np.concatenate(blocks, axis=1)
 
 
-def assemble_dataset(features_dir: Path, targets: List[str]
+def assemble_dataset(features_dir: Path, targets: List[str],
+                     feature_set: str = "full"
                      ) -> Tuple[np.ndarray, np.ndarray, List[str], List[int]]:
     """Load all per-target .npz bundles into one (X, y, target_per_row, offsets).
 
@@ -130,7 +135,7 @@ def assemble_dataset(features_dir: Path, targets: List[str]
         if p is None:
             continue
         d = load_bundle(p)
-        X = _build_x_from_bundle(d)
+        X = _build_x_from_bundle(d, feature_set=feature_set)
         X_list.append(X)
         y_list.append(d["labels"].astype(np.int32))
         tgt_per_row.extend([tgt] * len(d["labels"]))
@@ -398,6 +403,10 @@ def main():
                         help="Cache for MMseqs2 cluster map")
     parser.add_argument("--no-cluster-split", action="store_true",
                         help="Disable cluster-aware LOTO (NOT recommended for publication)")
+    parser.add_argument("--feature-set", choices=("full", "esm2", "physics"),
+                        default="full",
+                        help="Which feature blocks to concatenate (full=all, "
+                             "esm2=ESM-2 only, physics=non-ESM blocks)")
     args = parser.parse_args()
 
     if not HAVE_TORCH:
@@ -418,7 +427,9 @@ def main():
 
     # 2) Load all feature bundles
     print(f"Loading feature bundles from {args.features_dir}...")
-    X, y, tgt_per_row, offsets = assemble_dataset(args.features_dir, valid_targets)
+    X, y, tgt_per_row, offsets = assemble_dataset(
+        args.features_dir, valid_targets, feature_set=args.feature_set)
+    print(f"  feature_set={args.feature_set}  input_dim={X.shape[1] if X.size else 0}")
     present_targets = sorted(set(tgt_per_row))
     print(f"  {len(present_targets)} targets loaded  |  X: {X.shape}  |  y+: {int(y.sum()):,} "
           f"({y.mean():.2%})")
