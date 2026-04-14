@@ -48,7 +48,8 @@ from cluster_split import target_to_cluster_map
 # ─────────────────────────────────────────────────────────────
 
 VOCAB_SIZE = 7680
-MAX_TOKENS = 10_000
+DEFAULT_MAX_TOKENS = 10_000
+MAX_TOKENS = int(os.environ.get("PRISM_MAX_TOKENS", DEFAULT_MAX_TOKENS))
 EMBED_DIM = 32
 N_HEADS = 4
 TEACHER_DIM = 128
@@ -537,6 +538,7 @@ def export_onnx(model: SpikeAttentionRanker, out_path: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-targets", type=int, default=0)
+    parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
     parser.add_argument("--skip-tokenize", action="store_true")
     parser.add_argument("--no-cluster-split", action="store_true")
     parser.add_argument("--epochs", type=int, default=50)
@@ -627,6 +629,9 @@ def main():
         tok_data = np.load(token_path, allow_pickle=True)
         site_names = tok_data["site_names"]
         site_centroids = tok_data["site_centroids"]
+        # Truncate to --max-tokens if cached tokens are longer
+        cached_ids = tok_data["token_ids"][:, :args.max_tokens]
+        cached_mask = tok_data["pad_mask"][:, :args.max_tokens]
 
         feat_result = extract_site_features(
             target, site_names, site_centroids, pca_components, pca_mean)
@@ -640,8 +645,8 @@ def main():
         labels = 1.0 / (1.0 + dists_to_ligand)
 
         all_data[target] = {
-            "token_ids": tok_data["token_ids"],
-            "pad_mask": tok_data["pad_mask"],
+            "token_ids": cached_ids,
+            "pad_mask": cached_mask,
             "site_names": site_names,
             "teacher_emb": teacher_emb,
             "engine_feats": engine_feats,
