@@ -144,35 +144,61 @@ def compute_nma(coords: np.ndarray, n_modes: int = 13) -> Tuple[np.ndarray, np.n
 # SpikeBERT inference (all-masked → 512-dim embeddings)
 # ─────────────────────────────────────────────────────────────
 
-def run_spikebert(structural_feats: np.ndarray, onnx_path: str) -> np.ndarray:
-    """Run SpikeBERT in all-masked mode → 512-dim per residue."""
-    import onnxruntime as ort
+def run_spikebert(structural_feats: np.ndarray, model_path: str) -> np.ndarray:
+    """Run SpikeBERT v002 in all-masked mode → 512-dim per residue.
 
-    sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
-    N = structural_feats.shape[0]
+    Uses PyTorch .pt checkpoint directly (ONNX export has broken
+    dynamic shapes in TransformerEncoder attention reshapes).
+    """
+    import torch
+    import torch.nn as nn
+
     MASK_TOKEN = 2048
     PAD_TOKEN = 2049
+    VOCAB = 2050
+    HIDDEN = 512
+    STRUCT = 56
+    NLAYERS = 6
+    NHEADS = 8
 
-    input_ids = np.full((1, N), MASK_TOKEN, dtype=np.int64)
-    struct_feats = structural_feats[np.newaxis, :, :].astype(np.float32)
-    pad_mask = np.zeros((1, N), dtype=np.bool_)
+    class _SpikeBERT(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.token_embed = nn.Embedding(VOCAB, HIDDEN, padding_idx=PAD_TOKEN)
+            self.struct_proj = nn.Linear(STRUCT, HIDDEN)
+            self.pos_embed = nn.Embedding(2048, HIDDEN)
+            self.input_norm = nn.LayerNorm(HIDDEN)
+            self.input_dropout = nn.Dropout(0.15)
+            layer = nn.TransformerEncoderLayer(
+                d_model=HIDDEN, nhead=NHEADS, dim_feedforward=2048,
+                dropout=0.15, activation="gelu", batch_first=True, norm_first=True)
+            self.encoder = nn.TransformerEncoder(layer, num_layers=NLAYERS)
+            self.mlm_norm = nn.LayerNorm(HIDDEN)
+            self.mlm_head = nn.Linear(HIDDEN, 2048)
+            self.distill_head = nn.Sequential(
+                nn.LayerNorm(HIDDEN), nn.Linear(HIDDEN, 128),
+                nn.GELU(), nn.Linear(128, 1))
+            self.physics_head = nn.Sequential(
+                nn.LayerNorm(HIDDEN), nn.Linear(HIDDEN, 256),
+                nn.GELU(), nn.Linear(256, 216))
 
-    input_names = [inp.name for inp in sess.get_inputs()]
-    output_names = [out.name for out in sess.get_outputs()]
+    model = _SpikeBERT()
+    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    model.load_state_dict(state)
+    model.eval()
 
-    feeds = {}
-    for name in input_names:
-        if "input_ids" in name or "token" in name:
-            feeds[name] = input_ids
-        elif "struct" in name:
-            feeds[name] = struct_feats
-        elif "pad" in name or "mask" in name:
-            feeds[name] = pad_mask
+    N = structural_feats.shape[0]
+    ids = torch.full((1, N), MASK_TOKEN, dtype=torch.long)
+    sf = torch.tensor(structural_feats, dtype=torch.float32).unsqueeze(0)
+    pm = torch.zeros(1, N, dtype=torch.bool)
+    pos = torch.arange(N).unsqueeze(0)
 
-    results = sess.run(output_names, feeds)
-    # Hidden states are typically the last output
-    hidden = results[-1]
-    return hidden.squeeze(0).astype(np.float32)  # [N, 512]
+    with torch.no_grad():
+        x = model.token_embed(ids) + model.struct_proj(sf) + model.pos_embed(pos)
+        x = model.input_dropout(model.input_norm(x))
+        h = model.encoder(x, src_key_padding_mask=pm)
+
+    return h.squeeze(0).numpy().astype(np.float32)  # [N, 512]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -197,16 +223,19 @@ def run_vnegnn(atom_features: np.ndarray, atom_coords: np.ndarray,
     input_names = [inp.name for inp in sess.get_inputs()]
     output_names = [out.name for out in sess.get_outputs()]
 
-    feeds = {
-        input_names[0]: atom_features.astype(np.float32),
-        input_names[1]: atom_coords.astype(np.float32),
-        input_names[2]: edge_index.astype(np.int64),
-    }
-    if len(input_names) > 3:
-        E = edge_index.shape[1]
-        feeds[input_names[3]] = np.zeros((E, 1), dtype=np.float32)
-    if len(input_names) > 4:
-        feeds[input_names[4]] = vn_init.astype(np.float32)
+    feeds = {}
+    for inp in sess.get_inputs():
+        if inp.name == "atom_features":
+            feeds[inp.name] = atom_features.astype(np.float32)
+        elif inp.name == "atom_coords":
+            feeds[inp.name] = atom_coords.astype(np.float32)
+        elif inp.name == "edge_index":
+            feeds[inp.name] = edge_index.astype(np.int64)
+        elif inp.name == "vn_init_coords":
+            feeds[inp.name] = vn_init.astype(np.float32)
+        elif inp.name == "edge_feat":
+            E = edge_index.shape[1]
+            feeds[inp.name] = np.zeros((E, 1), dtype=np.float32)
 
     results = sess.run(output_names, feeds)
     atom_logits = results[0]
@@ -293,8 +322,8 @@ def write_pymol_script(sites: List[Dict], pdb_path: str, out_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Zero-shot binding site prediction (no ESM-2, no engine)")
     parser.add_argument("--pdb", required=True, help="Input PDB file")
-    parser.add_argument("--spikebert-onnx", type=Path,
-                        default=Path("/mnt/storage/spike-audit/spike-bert/spike_bert.onnx"))
+    parser.add_argument("--spikebert-pt", type=Path,
+                        default=Path("/mnt/storage/spike-audit/spike-bert-v002/best_model.pt"))
     parser.add_argument("--vnegnn-onnx", type=Path,
                         default=Path("/mnt/storage/spike-audit/vnegnn-v004/vnegnn_v004.onnx"))
     parser.add_argument("--tokenizer", type=Path,
@@ -321,8 +350,8 @@ def main():
     print(f"  {len(coords)} residues, structural: {struct_feats.shape}")
 
     # Step 2: SpikeBERT → 512-dim spike embeddings
-    print("\n[2/4] SpikeBERT (all-masked) → 512-dim spike embeddings...")
-    spike_emb = run_spikebert(struct_feats, str(args.spikebert_onnx))
+    print("\n[2/4] SpikeBERT v002 (all-masked, PyTorch) → 512-dim spike embeddings...")
+    spike_emb = run_spikebert(struct_feats, str(args.spikebert_pt))
     print(f"  SpikeBERT output: {spike_emb.shape}")
 
     # Step 3: Concatenate → 568 dims
