@@ -96,10 +96,10 @@ def _build_x_from_bundle(b: Dict[str, np.ndarray]) -> np.ndarray:
 
 
 def load_samples(features_dir: Path, targets: List[str],
-                 min_residues: int = 30) -> List[TargetSample]:
+                 min_residues: int = 30,
+                 label_cutoff: Optional[float] = None) -> List[TargetSample]:
     out: List[TargetSample] = []
     for t in targets:
-        # Accept both naming conventions
         for stem in (f"{t}_features.npz", f"{t}.features.npz"):
             p = features_dir / stem
             if p.exists():
@@ -110,15 +110,15 @@ def load_samples(features_dir: Path, targets: List[str],
         X = _build_x_from_bundle(d)
         if X.shape[0] < min_residues:
             continue
-        # Coords key differs across extractor versions
         ca_key = "coords" if "coords" in d else "ca_coords"
-        out.append(TargetSample(
-            target=t,
-            X=X,
-            ca=d[ca_key].astype(np.float32),
-            labels=d["labels"].astype(np.float32),
-            centroid=d["ligand_centroid"].astype(np.float32),
-        ))
+        ca = d[ca_key].astype(np.float32)
+        centroid = d["ligand_centroid"].astype(np.float32)
+        if label_cutoff is not None:
+            labels = (np.linalg.norm(ca - centroid, axis=1) <= label_cutoff
+                      ).astype(np.float32)
+        else:
+            labels = d["labels"].astype(np.float32)
+        out.append(TargetSample(target=t, X=X, ca=ca, labels=labels, centroid=centroid))
     return out
 
 
@@ -237,6 +237,8 @@ def main():
                         default=Path("/mnt/storage/spike-audit/seq_clusters.json"),
                         help="Cache for the MMseqs2 cluster map (JSON)")
     parser.add_argument("--exclude-grade", default="POOR")
+    parser.add_argument("--label-cutoff", type=float, default=None,
+                        help="Relabel at Cα-to-ligand ≤ this (Å); unset = use .npz labels")
     parser.add_argument("--gate-sr8", type=float, default=0.55,
                         help="Min SR@8Å on test set")
     args = parser.parse_args()
@@ -253,7 +255,7 @@ def main():
     print(f"Valid targets (D1 excl {args.exclude_grade}): {len(valid)}")
 
     # 2) Load feature bundles
-    samples = load_samples(args.features_dir, valid)
+    samples = load_samples(args.features_dir, valid, label_cutoff=args.label_cutoff)
     print(f"Usable samples: {len(samples)}")
     if len(samples) < 50:
         print("ERROR: <50 usable samples"); sys.exit(1)

@@ -113,7 +113,8 @@ def _build_x_from_bundle(bundle: Dict[str, np.ndarray],
 
 
 def assemble_dataset(features_dir: Path, targets: List[str],
-                     feature_set: str = "full"
+                     feature_set: str = "full",
+                     label_cutoff: Optional[float] = None,
                      ) -> Tuple[np.ndarray, np.ndarray, List[str], List[int]]:
     """Load all per-target .npz bundles into one (X, y, target_per_row, offsets).
 
@@ -136,10 +137,24 @@ def assemble_dataset(features_dir: Path, targets: List[str],
             continue
         d = load_bundle(p)
         X = _build_x_from_bundle(d, feature_set=feature_set)
+        # Optional on-the-fly relabeling from Cα-to-ligand distance.
+        # Skips rebuilding .npz files — extractor's 4.5Å labels are overridden.
+        if label_cutoff is not None:
+            coords_key = "coords" if "coords" in d else "ca_coords"
+            if coords_key in d and "ligand_centroid" in d:
+                dists = np.linalg.norm(
+                    d[coords_key].astype(np.float32)
+                    - d["ligand_centroid"].astype(np.float32), axis=1,
+                )
+                y = (dists <= label_cutoff).astype(np.int32)
+            else:
+                y = d["labels"].astype(np.int32)
+        else:
+            y = d["labels"].astype(np.int32)
         X_list.append(X)
-        y_list.append(d["labels"].astype(np.int32))
-        tgt_per_row.extend([tgt] * len(d["labels"]))
-        offsets.append(offsets[-1] + len(d["labels"]))
+        y_list.append(y)
+        tgt_per_row.extend([tgt] * len(y))
+        offsets.append(offsets[-1] + len(y))
 
     if not X_list:
         raise RuntimeError(f"No .features.npz found in {features_dir}")
@@ -407,6 +422,9 @@ def main():
                         default="full",
                         help="Which feature blocks to concatenate (full=all, "
                              "esm2=ESM-2 only, physics=non-ESM blocks)")
+    parser.add_argument("--label-cutoff", type=float, default=None,
+                        help="Relabel at Cα-to-ligand distance ≤ this (Å). "
+                             "If unset, use the 4.5Å labels stored in the .npz.")
     args = parser.parse_args()
 
     if not HAVE_TORCH:
@@ -428,8 +446,12 @@ def main():
     # 2) Load all feature bundles
     print(f"Loading feature bundles from {args.features_dir}...")
     X, y, tgt_per_row, offsets = assemble_dataset(
-        args.features_dir, valid_targets, feature_set=args.feature_set)
-    print(f"  feature_set={args.feature_set}  input_dim={X.shape[1] if X.size else 0}")
+        args.features_dir, valid_targets,
+        feature_set=args.feature_set, label_cutoff=args.label_cutoff)
+    cutoff_str = (f"{args.label_cutoff:.1f}Å (relabel)" if args.label_cutoff
+                  else "4.5Å (from .npz)")
+    print(f"  feature_set={args.feature_set}  input_dim={X.shape[1] if X.size else 0}"
+          f"  label_cutoff={cutoff_str}  pos_rate={y.mean():.4f}")
     present_targets = sorted(set(tgt_per_row))
     print(f"  {len(present_targets)} targets loaded  |  X: {X.shape}  |  y+: {int(y.sum()):,} "
           f"({y.mean():.2%})")
