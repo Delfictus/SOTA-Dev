@@ -1,44 +1,44 @@
 #!/usr/bin/env python3
 """Master RunPod orchestrator — PRISM-4D teacher v004 + VN-EGNN v001.
 
-Single pod lifecycle, sequential phases. Designed to run as the entrypoint
-of a RunPod A100 session started by `runpodctl pod create`.
+Single pod lifecycle, sequential phases, with **per-phase resume + continuous
+R2 sync**. Designed to run as the entrypoint of a RunPod H100/A100 session.
 
-Bundles have been pre-extracted on the workstation and uploaded to
-r2:prism-archive/training-data/pct95-v1/ (372 .npz files, ~30 MB total).
-The pod downloads these and only needs to add ESM-2 embeddings before
-training.
+Resume logic: every phase writes a completion sentinel
+(`/workspace/phase_<n>_done.json`). On restart, each phase checks its
+sentinel and skips if present. This means a pod crash mid-VN-EGNN does not
+re-run ESM-2 or teacher training.
 
-Expected env vars (injected at pod creation):
-    R2_ENDPOINT            https://<account>.r2.cloudflarestorage.com
-    R2_ACCESS_KEY          Cloudflare R2 access key
-    R2_SECRET_KEY          Cloudflare R2 secret key
-    R2_BUCKET              prism-archive
-    GIT_REPO               https://github.com/Delfictus/SOTA-Dev.git
-    GIT_BRANCH             feat/twin-data-integrity
-    BUNDLE_PREFIX          r2:prism-archive/training-data/pct95-v1
-    RUNPOD_API_KEY         for self-termination
-    RUNPOD_POD_ID          auto-populated by RunPod runtime
+Continuous R2 sync: a background rclone loop mirrors /workspace/ to
+`r2:prism-archive/training-runs/runpod-YYYYMMDD/` every 10 minutes,
+capturing every *.pt, *.onnx, *.json, *.log. If the pod dies at any point,
+the latest artifacts are on R2 within 10 minutes.
+
+Expected env vars:
+    R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET,
+    GIT_REPO, GIT_BRANCH, BUNDLE_PREFIX,
+    RUNPOD_API_KEY, RUNPOD_POD_ID  (optional — for self-terminate)
 
 Phases:
-  0.  Bootstrap (git clone, pip install, rclone config, apt deps)
-  1.  Download pre-extracted .npz bundles from R2 (~30 MB, 372 files)
-  2.  ESM-2 extraction — run esm2_t33_650M on each target's sequence, save
-      embedding as a new "esm2" key inside the .npz
-  3.  Teacher v004 cluster-aware LOTO training (gate AUROC ≥ 0.723)
-  4.  VN-EGNN v001 training
-  5.  Export ONNX for both models
-  6.  Upload artifacts to R2 (models/teacher-v004/, models/vnegnn-v001/)
-  7.  Self-terminate via RunPod GraphQL API
+  0. Bootstrap                   → /workspace/phase_0_done.json
+  1. Download bundles            → /workspace/features/*.npz
+  2. ESM-2 extraction            → in-place add 'esm2' key to each .npz
+                                   → /workspace/phase_2_manifest.json (all 372 have esm2)
+  3. Teacher training (cluster-aware LOTO) → /workspace/models/teacher_v004/
+                                             → phase_3_done after evaluation.json written
+  4. VN-EGNN training            → /workspace/models/vn_egnn_v001/
+  5. Upload artifacts to R2      → /workspace/models/ → models/*
+  6. Self-terminate              → RunPod GraphQL podTerminate
 
-Exit codes propagate — any phase failure triggers a partial-upload + pod
-termination so we don't pay for idle.
+All file paths are under /workspace/ (the persistent network volume). The
+continuous sync writes to r2://prism-archive/training-runs/runpod-YYYYMMDD/.
 """
 from __future__ import annotations
 
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -48,24 +48,31 @@ from pathlib import Path
 from typing import List, Optional
 
 # ─────────────────────────────────────────────────────────────
-#  Config
+#  Config — ALL paths under /workspace (persistent volume)
 # ─────────────────────────────────────────────────────────────
 
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
 REPO_DIR = WORKSPACE / "Prism4D-bio"
 FEATURES_DIR = WORKSPACE / "features"
 MODELS_DIR = WORKSPACE / "models"
+LOGS_DIR = WORKSPACE / "logs"
+SENTINEL_DIR = WORKSPACE / "phase_sentinels"
+CLUSTER_CACHE = WORKSPACE / "seq_clusters.json"
 
 GIT_REPO = os.environ.get("GIT_REPO", "https://github.com/Delfictus/SOTA-Dev.git")
 GIT_BRANCH = os.environ.get("GIT_BRANCH", "feat/twin-data-integrity")
 R2_BUCKET = os.environ.get("R2_BUCKET", "prism-archive")
 BUNDLE_PREFIX = os.environ.get("BUNDLE_PREFIX",
                                 f"r2:{R2_BUCKET}/training-data/pct95-v1")
+RUN_TAG = time.strftime("%Y%m%d_%H%M%S")
+RUN_DATE = time.strftime("%Y%m%d")
+CONTINUOUS_SYNC_DEST = f"r2:{R2_BUCKET}/training-runs/runpod-{RUN_DATE}"
 
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
 RUNPOD_POD_ID = os.environ.get("RUNPOD_POD_ID")
 
 PHASE_TIMINGS: dict = {}
+_SYNC_PID: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -83,19 +90,87 @@ def log_phase(name: str) -> None:
     print(f"\n{'='*70}\n[{ts}] PHASE: {name}\n{'='*70}", flush=True)
 
 
+def sentinel_path(n: int) -> Path:
+    SENTINEL_DIR.mkdir(parents=True, exist_ok=True)
+    return SENTINEL_DIR / f"phase_{n}_done.json"
+
+
+def phase_already_done(n: int) -> bool:
+    return sentinel_path(n).exists()
+
+
+def mark_phase_done(n: int, **info) -> None:
+    data = {"phase": n, "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            **info}
+    sentinel_path(n).write_text(json.dumps(data, indent=2, default=str))
+
+
+def sync_phase(local: Path, remote_suffix: str, transfers: int = 8) -> None:
+    """Per-phase R2 sync. High-throughput (no bwlimit)."""
+    if not local.exists():
+        return
+    run(["rclone", "copy", str(local), f"r2:{R2_BUCKET}/{remote_suffix}",
+         "--transfers", str(transfers), "--checkers", str(transfers),
+         "--buffer-size", "128M", "--quiet"],
+        timeout=1800, check=False)
+
+
+# ─────────────────────────────────────────────────────────────
+#  Continuous background sync — every 10 min while we're alive
+# ─────────────────────────────────────────────────────────────
+
+def start_continuous_sync() -> None:
+    """Fork a background rclone-every-10-min loop that captures checkpoints."""
+    global _SYNC_PID
+    script = WORKSPACE / "continuous_sync.sh"
+    script.write_text(f"""#!/bin/bash
+set -u
+while true; do
+  rclone copy {WORKSPACE} {CONTINUOUS_SYNC_DEST} \\
+    --include "*.pt" --include "*.onnx" --include "*.json" \\
+    --include "*.log" --include "*.npz" --include "*.txt" \\
+    --transfers 8 --checkers 8 --buffer-size 128M --quiet \\
+    || true
+  sleep 600
+done
+""")
+    script.chmod(0o755)
+    log_path = LOGS_DIR / "continuous_sync.log"
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    p = subprocess.Popen(
+        ["bash", str(script)],
+        stdout=open(log_path, "w"), stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    _SYNC_PID = p.pid
+    print(f"  continuous R2 sync started (PID {p.pid}, dest={CONTINUOUS_SYNC_DEST})")
+
+
+def stop_continuous_sync() -> None:
+    global _SYNC_PID
+    if _SYNC_PID:
+        try:
+            os.killpg(os.getpgid(_SYNC_PID), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        _SYNC_PID = None
+
+
 # ─────────────────────────────────────────────────────────────
 #  Phase 0 — Bootstrap
 # ─────────────────────────────────────────────────────────────
 
 def phase_bootstrap() -> None:
     log_phase("0 / Bootstrap")
+    if phase_already_done(0):
+        print("  sentinel present, skipping")
+        return
     t0 = time.time()
 
-    WORKSPACE.mkdir(parents=True, exist_ok=True)
-    FEATURES_DIR.mkdir(parents=True, exist_ok=True)
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    for d in (WORKSPACE, FEATURES_DIR, MODELS_DIR, LOGS_DIR, SENTINEL_DIR):
+        d.mkdir(parents=True, exist_ok=True)
 
-    # OS packages: rclone, mmseqs2 (for cluster splits)
+    # OS packages
     try:
         subprocess.run(["rclone", "version"], check=True, capture_output=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -106,13 +181,11 @@ def phase_bootstrap() -> None:
         run(["apt-get", "update", "-qq"])
         run(["apt-get", "install", "-y", "-qq", "mmseqs2"])
 
-    # rclone remote config
+    # rclone config
     rclone_conf_dir = Path.home() / ".config" / "rclone"
     rclone_conf_dir.mkdir(parents=True, exist_ok=True)
     (rclone_conf_dir / "rclone.conf").write_text(
-        f"[r2]\n"
-        f"type = s3\n"
-        f"provider = Cloudflare\n"
+        f"[r2]\ntype = s3\nprovider = Cloudflare\n"
         f"access_key_id = {os.environ['R2_ACCESS_KEY']}\n"
         f"secret_access_key = {os.environ['R2_SECRET_KEY']}\n"
         f"endpoint = {os.environ['R2_ENDPOINT']}\n"
@@ -120,7 +193,7 @@ def phase_bootstrap() -> None:
     )
     run(["rclone", "lsd", f"r2:{R2_BUCKET}"], timeout=60)
 
-    # Clone repo
+    # Repo
     if not REPO_DIR.exists():
         run(["git", "clone", "-b", GIT_BRANCH, "--depth", "1",
              GIT_REPO, str(REPO_DIR)])
@@ -133,37 +206,43 @@ def phase_bootstrap() -> None:
          "torch", "fair-esm", "onnx", "onnxruntime"])
 
     import torch
-    print(f"  torch {torch.__version__}  cuda={torch.cuda.is_available()}  "
-          f"device={torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu'}")
+    gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+    print(f"  torch {torch.__version__}  cuda={torch.cuda.is_available()}  gpu={gpu}")
 
     PHASE_TIMINGS["bootstrap"] = time.time() - t0
+    mark_phase_done(0, gpu=gpu)
 
 
 # ─────────────────────────────────────────────────────────────
-#  Phase 1 — Download pre-extracted bundles
+#  Phase 1 — Download bundles from R2
 # ─────────────────────────────────────────────────────────────
 
 def phase_download_bundles() -> List[str]:
     log_phase("1 / Download pre-extracted .npz bundles from R2")
+    # Always run this — it's a resumable rclone copy (skips matched files)
     t0 = time.time()
     run(["rclone", "copy", BUNDLE_PREFIX, str(FEATURES_DIR),
-         "--include", "*.npz", "--transfers", "16", "--quiet"],
-        timeout=600)
-    # Count
+         "--include", "*.npz", "--transfers", "16", "--checkers", "16",
+         "--buffer-size", "128M", "--quiet"],
+        timeout=1800)
     files = sorted(FEATURES_DIR.glob("*_features.npz"))
-    print(f"  Downloaded {len(files)} bundles")
+    print(f"  bundles available: {len(files)}")
     if len(files) < 300:
         raise RuntimeError(f"Only {len(files)} bundles — expected ~372")
     PHASE_TIMINGS["download"] = time.time() - t0
+    mark_phase_done(1, n_bundles=len(files))
     return [p.stem.replace("_features", "") for p in files]
 
 
 # ─────────────────────────────────────────────────────────────
-#  Phase 2 — ESM-2 extraction (GPU), write into each .npz
+#  Phase 2 — ESM-2 extraction, idempotent per-target
 # ─────────────────────────────────────────────────────────────
 
 def phase_esm2(targets: List[str]) -> None:
-    log_phase("2 / ESM-2 extraction (esm2_t33_650M, batched on GPU)")
+    log_phase("2 / ESM-2 extraction (esm2_t33_650M)")
+    if phase_already_done(2):
+        print("  sentinel present, skipping")
+        return
     t0 = time.time()
 
     import numpy as np
@@ -174,9 +253,11 @@ def phase_esm2(targets: List[str]) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.eval().to(device)
     batcher = alphabet.get_batch_converter()
-    print(f"  loaded ESM-2 t33 on {device}")
+    print(f"  ESM-2 loaded on {device}")
 
     AA_VALID = set("ACDEFGHIKLMNPQRSTVWY")
+    n_added = n_cached = 0
+
     for i, t in enumerate(targets):
         npz_path = FEATURES_DIR / f"{t}_features.npz"
         if not npz_path.exists():
@@ -186,14 +267,16 @@ def phase_esm2(targets: List[str]) -> None:
         except Exception as e:
             print(f"  [{i+1}/{len(targets)}] {t}: load failed: {e}")
             continue
-        if "esm2" in d.files and d["esm2"].shape[0] == d["coords"].shape[0]:
-            # Already has ESM-2 (idempotent)
+
+        # Idempotent: skip if already has esm2 matching coord count
+        if ("esm2" in d.files and d["esm2"].ndim == 2
+                and d["esm2"].shape[0] == d["coords"].shape[0]):
+            n_cached += 1
             continue
 
         seq = str(d["sequence"].item() if d["sequence"].ndim == 0 else d["sequence"])
         if not seq or len(seq) < 10:
             continue
-        # Replace non-standard AAs with X (ESM tolerates X)
         seq_clean = "".join(c if c in AA_VALID else "X" for c in seq)
 
         try:
@@ -203,10 +286,9 @@ def phase_esm2(targets: List[str]) -> None:
                 out = model(tokens, repr_layers=[33], return_contacts=False)
             reps = out["representations"][33][0, 1:-1, :].cpu().numpy().astype(np.float32)
         except RuntimeError as e:
-            print(f"  [{i+1}/{len(targets)}] {t}: ESM failed ({e}); zero-pad")
+            print(f"  [{i+1}/{len(targets)}] {t}: ESM RuntimeError ({str(e)[:80]}); zero-pad")
             reps = np.zeros((d["coords"].shape[0], 1280), dtype=np.float32)
 
-        # Pad/trim to match coords
         N = d["coords"].shape[0]
         if reps.shape[0] > N:
             reps = reps[:N]
@@ -214,46 +296,72 @@ def phase_esm2(targets: List[str]) -> None:
             pad = np.zeros((N - reps.shape[0], 1280), dtype=np.float32)
             reps = np.concatenate([reps, pad], axis=0)
 
-        # Re-save npz with esm2 key
         existing = {k: d[k] for k in d.files}
         existing["esm2"] = reps
         np.savez_compressed(npz_path, **existing)
+        n_added += 1
 
         if (i + 1) % 25 == 0 or (i + 1) == len(targets):
             elapsed = time.time() - t0
             eta = elapsed / (i + 1) * (len(targets) - i - 1)
-            print(f"  [{i+1}/{len(targets)}] elapsed={elapsed/60:.1f}m ETA={eta/60:.0f}m",
-                  flush=True)
+            print(f"  [{i+1}/{len(targets)}] added={n_added} cached={n_cached} "
+                  f"elapsed={elapsed/60:.1f}m ETA={eta/60:.0f}m", flush=True)
+
+    # Manifest
+    manifest = {
+        "n_targets": len(targets),
+        "n_added": n_added,
+        "n_already_cached": n_cached,
+        "n_missing": sum(1 for t in targets
+                         if not (FEATURES_DIR / f"{t}_features.npz").exists()),
+    }
+    manifest_path = WORKSPACE / "phase_2_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    print(f"  ESM-2 manifest: {manifest}")
+
+    # Per-phase R2 sync — upload the enriched .npz bundles
+    sync_phase(FEATURES_DIR, "training-data/pct95-v1-esm2", transfers=16)
 
     PHASE_TIMINGS["esm2"] = time.time() - t0
+    mark_phase_done(2, **manifest)
 
 
 # ─────────────────────────────────────────────────────────────
-#  Phase 3 — Teacher training
+#  Phase 3 — Teacher training (cluster-aware LOTO)
 # ─────────────────────────────────────────────────────────────
 
 def phase_train_teacher() -> Path:
     log_phase("3 / Teacher v004 — cluster-aware LOTO training")
-    t0 = time.time()
     out = MODELS_DIR / "teacher_v004"
     out.mkdir(parents=True, exist_ok=True)
 
-    r = subprocess.run(
-        [sys.executable, str(REPO_DIR / "scripts" / "training" / "train_teacher.py"),
-         "--features-dir", str(FEATURES_DIR),
-         "--out-dir", str(out),
-         "--epochs", "30",
-         "--batch-size", "1024",
-         "--lr", "1e-3",
-         "--gate-auroc", "0.723",
-         "--cluster-cache-path", str(WORKSPACE / "seq_clusters.json")],
-        check=False,
-    )
+    if phase_already_done(3) and (out / "evaluation.json").exists():
+        print("  sentinel present + evaluation.json exists, skipping")
+        return out
+
+    t0 = time.time()
+    log_file = LOGS_DIR / f"teacher_{RUN_TAG}.log"
+    with open(log_file, "w") as logf:
+        r = subprocess.run(
+            [sys.executable, str(REPO_DIR / "scripts" / "training" / "train_teacher.py"),
+             "--features-dir", str(FEATURES_DIR),
+             "--out-dir", str(out),
+             "--epochs", "30",
+             "--batch-size", "1024",
+             "--lr", "1e-3",
+             "--gate-auroc", "0.723",
+             "--cluster-cache-path", str(CLUSTER_CACHE)],
+            stdout=logf, stderr=subprocess.STDOUT, check=False,
+        )
     PHASE_TIMINGS["teacher_training"] = time.time() - t0
+    sync_phase(out, "models/teacher-v004", transfers=8)
+    sync_phase(log_file, "training-runs/logs", transfers=2)
+
     if r.returncode not in (0, 2):
-        raise RuntimeError(f"train_teacher.py exited {r.returncode}")
+        raise RuntimeError(f"train_teacher.py exited {r.returncode} (see {log_file})")
     if r.returncode == 2:
         print("  WARN: teacher gate FAILED — continuing to VN-EGNN anyway")
+    mark_phase_done(3, gate_passed=(r.returncode == 0))
     return out
 
 
@@ -263,58 +371,63 @@ def phase_train_teacher() -> Path:
 
 def phase_train_vnegnn() -> Path:
     log_phase("4 / VN-EGNN v001 training")
-    t0 = time.time()
     out = MODELS_DIR / "vn_egnn_v001"
     out.mkdir(parents=True, exist_ok=True)
 
-    r = subprocess.run(
-        [sys.executable, str(REPO_DIR / "scripts" / "training" / "vn_egnn" / "train.py"),
-         "--features-dir", str(FEATURES_DIR),
-         "--out-dir", str(out),
-         "--epochs", "200",
-         "--lr", "5e-4",
-         "--patience", "20",
-         "--gate-sr8", "0.55",
-         "--cluster-cache-path", str(WORKSPACE / "seq_clusters.json")],
-        check=False,
-    )
+    if phase_already_done(4) and (out / "evaluation.json").exists():
+        print("  sentinel present + evaluation.json exists, skipping")
+        return out
+
+    t0 = time.time()
+    log_file = LOGS_DIR / f"vnegnn_{RUN_TAG}.log"
+    with open(log_file, "w") as logf:
+        r = subprocess.run(
+            [sys.executable, str(REPO_DIR / "scripts" / "training" / "vn_egnn" / "train.py"),
+             "--features-dir", str(FEATURES_DIR),
+             "--out-dir", str(out),
+             "--epochs", "200",
+             "--lr", "5e-4",
+             "--patience", "20",
+             "--gate-sr8", "0.55",
+             "--cluster-cache-path", str(CLUSTER_CACHE)],
+            stdout=logf, stderr=subprocess.STDOUT, check=False,
+        )
     PHASE_TIMINGS["vn_egnn_training"] = time.time() - t0
+    sync_phase(out, "models/vnegnn-v001", transfers=8)
+    sync_phase(log_file, "training-runs/logs", transfers=2)
+
     if r.returncode not in (0, 2):
-        raise RuntimeError(f"vn_egnn/train.py exited {r.returncode}")
+        raise RuntimeError(f"vn_egnn/train.py exited {r.returncode} (see {log_file})")
     if r.returncode == 2:
-        print("  WARN: VN-EGNN gate FAILED — uploading artifacts anyway for inspection")
+        print("  WARN: VN-EGNN gate FAILED — uploading for inspection")
+    mark_phase_done(4, gate_passed=(r.returncode == 0))
     return out
 
 
 # ─────────────────────────────────────────────────────────────
-#  Phase 5 — Upload to R2
+#  Phase 5 — Final upload (idempotent; ensures stamped copy)
 # ─────────────────────────────────────────────────────────────
 
 def phase_upload(teacher_dir: Path, vnegnn_dir: Path) -> None:
-    log_phase("5 / Upload artifacts to R2")
+    log_phase("5 / Final artifact upload (stamped)")
     t0 = time.time()
-    tag = time.strftime("%Y%m%d_%H%M%S")
-
-    def upload(local: Path, remote_prefix: str):
-        run(["rclone", "copy", str(local), f"r2:{R2_BUCKET}/{remote_prefix}",
-             "--transfers", "8", "--quiet"], timeout=600)
-        run(["rclone", "copy", str(local), f"r2:{R2_BUCKET}/{remote_prefix}_{tag}",
-             "--transfers", "8", "--quiet"], timeout=600)
-
-    upload(teacher_dir, "models/teacher-v004")
-    upload(vnegnn_dir,  "models/vnegnn-v001")
+    # Canonical latest paths
+    sync_phase(teacher_dir, "models/teacher-v004", transfers=8)
+    sync_phase(vnegnn_dir,  "models/vnegnn-v001", transfers=8)
+    # Run-stamped history
+    sync_phase(teacher_dir, f"models/teacher-v004_{RUN_TAG}", transfers=8)
+    sync_phase(vnegnn_dir,  f"models/vnegnn-v001_{RUN_TAG}", transfers=8)
 
     manifest = {
-        "run_timestamp": tag,
+        "run_timestamp": RUN_TAG,
         "phases": PHASE_TIMINGS,
         "teacher_dir": "r2://prism-archive/models/teacher-v004",
         "vnegnn_dir": "r2://prism-archive/models/vnegnn-v001",
     }
-    man_path = WORKSPACE / "run_manifest.json"
-    man_path.write_text(json.dumps(manifest, indent=2))
-    run(["rclone", "copy", str(man_path), f"r2:{R2_BUCKET}/models/runs/"])
-
+    (WORKSPACE / "run_manifest.json").write_text(json.dumps(manifest, indent=2))
+    sync_phase(WORKSPACE / "run_manifest.json", "models/runs", transfers=1)
     PHASE_TIMINGS["upload"] = time.time() - t0
+    mark_phase_done(5)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -323,11 +436,11 @@ def phase_upload(teacher_dir: Path, vnegnn_dir: Path) -> None:
 
 def phase_terminate() -> None:
     log_phase("6 / Self-terminate")
+    stop_continuous_sync()
     if not RUNPOD_API_KEY or not RUNPOD_POD_ID:
-        print("  NOTE: RUNPOD_API_KEY or RUNPOD_POD_ID missing — skipping self-termination.")
+        print("  RUNPOD_API_KEY or RUNPOD_POD_ID missing — manual delete required:")
         print(f"    runpodctl pod delete {RUNPOD_POD_ID or '<pod-id>'}")
         return
-
     gql = {
         "query": "mutation($input: PodTerminateInput!) { podTerminate(input: $input) }",
         "variables": {"input": {"podId": RUNPOD_POD_ID}},
@@ -335,10 +448,8 @@ def phase_terminate() -> None:
     req = urllib.request.Request(
         "https://api.runpod.io/graphql",
         data=json.dumps(gql).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {RUNPOD_API_KEY}",
-            "Content-Type": "application/json",
-        },
+        headers={"Authorization": f"Bearer {RUNPOD_API_KEY}",
+                 "Content-Type": "application/json"},
         method="POST",
     )
     try:
@@ -355,9 +466,13 @@ def phase_terminate() -> None:
 def main() -> int:
     start = time.time()
     print(f"PRISM-4D RunPod orchestrator starting at "
-          f"{time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
+          f"{time.strftime('%Y-%m-%d %H:%M:%S')}  run_tag={RUN_TAG}", flush=True)
+
+    # Keep orchestrator log under /workspace/logs/
     try:
         phase_bootstrap()
+        start_continuous_sync()  # fires now — captures everything hereafter
+
         targets = phase_download_bundles()
         if len(targets) < 300:
             raise RuntimeError(f"Only {len(targets)} bundles — abort")
@@ -369,11 +484,9 @@ def main() -> int:
         print(f"\nFATAL: {type(e).__name__}: {e}", flush=True)
         import traceback; traceback.print_exc()
         PHASE_TIMINGS["fatal_error"] = str(e)
+        # Emergency partial-artifact sync before terminate
         try:
-            if MODELS_DIR.exists():
-                run(["rclone", "copy", str(MODELS_DIR),
-                     f"r2:{R2_BUCKET}/models/partial_{time.strftime('%Y%m%d_%H%M%S')}",
-                     "--transfers", "8", "--quiet"], check=False)
+            sync_phase(MODELS_DIR, f"models/partial_{RUN_TAG}", transfers=8)
         except Exception:
             pass
         phase_terminate()
