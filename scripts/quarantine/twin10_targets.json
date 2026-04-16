@@ -148,7 +148,10 @@
       "known_binding_residues": null,
       "cryptic_site_type": "intramolecular_glue_tkbd_lhr_interface",
       "species": "Homo sapiens",
-      "notes": "Blind predict framing: engine sees only 3VGO; validation compares to recently-deposited 8GCY. Strongest patent narrative."
+      "skip_in_campaign": true,
+      "failure_classification": "engine_regime_boundary_dispersed_aromatics",
+      "failed_run_artifacts": "see cblb_apo/ for 3 attempts with escalating flags — all 0 spikes",
+      "notes": "DEFINITIVE REGIME BOUNDARY. Three runs attempted: (1) baseline flags → 0 spikes; (2) NMA amp=3.0 + filter-otsu + adaptive-bias → 0 spikes (NMA modes have eigenvalues ~1e-6, too floppy to drive firing); (3) REST2 + NMA amp=10 + stepped-holds + filter-otsu + adaptive-bias → still 0 spikes even at REST2 effective T=1000K on stream 7. 394-residue TKBD with aromatics at 89A RoG (vs KRAS 15A) places CBL-B 3VGO outside the engine's neuromorphic detection regime. Skipping in campaign; document as patent honest-disclosure of engine regime boundary. 8GCY validation opportunity deferred pending engine-side physics improvements."
     },
     {
       "target": "trex1_apo",
@@ -168,21 +171,21 @@
       "notes": "Clinically undrugged. No small-molecule allosteric holo in PDB. Any high-confidence cryptic = first-in-class discovery claim."
     },
     {
-      "target": "znrf3_apo",
+      "target": "trip12_hect_apo",
       "rank": 10,
       "is_frontier": true,
-      "description": "ZNRF3 ectodomain — Wnt E3 ligase. Purest frontier apo.",
-      "pdb_id": "4C86",
+      "description": "TRIP12 HECT catalytic domain — E3 ubiquitin ligase business end. Drug-design relevant.",
+      "pdb_id": "9GKN",
       "chain": "A",
-      "uniprot_accession": "Q8WGN3",
-      "resolution_angstrom": 2.00,
-      "state": "apo_mouse_ectodomain",
+      "uniprot_accession": "Q14669",
+      "resolution_angstrom": 3.40,
+      "state": "hect_catalytic_domain_with_k29_linkage_analog",
       "paired_holo_pdb_id": null,
-      "paired_holo_ligand_resname": null,
+      "paired_holo_ligand_resname": "SY8",
       "known_binding_residues": null,
       "cryptic_site_type": "undiscovered",
-      "species": "Mus musculus",
-      "notes": "Mouse ectodomain. Zero published cryptic pocket mapping for ZNRF3 anywhere. Any detected site = novel discovery claim."
+      "species": "Homo sapiens",
+      "notes": "Human TRIP12 HECT catalytic domain, 2025 cryo-EM 3.4A (Nat Struct Mol Biol). Published as K29-linked ubiquitin chain intermediate. Ligand SY8 = 5-aminopentanone (C5H11NO) is a K29-isopeptide linkage analog (substrate mimic), NOT a drug — strip for apo. Selected over 9BKS (WWE+ADP, 1.17A) for catalytic-site relevance: drug discovery targets HECT cysteine + allosteric pockets. No published small-molecule inhibitors on TRIP12. Frontier claim: detect cryptic pockets on the catalytic HECT domain."
     }
   ]
 }

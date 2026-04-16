@@ -232,16 +232,32 @@ def stage3_prep(target: Dict[str, Any], target_dir: Path,
     topology = artifacts_dir / f"{pdb_id}.topology.json"
     prism_prep = REPO_ROOT / "scripts" / "prism-prep"
 
+    # Target-specific NMA mode generation (enables --nma-perturb in engine stage)
+    nma_modes_n = int(target.get("nma_modes", 0) or 0)
+
     with RunContext(tname, "3_prep", "prism_prep", artifacts_dir, prov_dir,
                     upstream_prov=upstream_prov) as ctx:
         ctx.add_input(clean_pdb, upstream_prov_ref="2_clean.prism_clean")
-        ctx.set_tool("prism-prep", [str(prism_prep), str(clean_pdb), str(topology)])
+        prep_argv = [str(prism_prep), str(clean_pdb), str(topology)]
+        if nma_modes_n > 0:
+            prep_argv.extend(["--nma-modes", str(nma_modes_n)])
+            ctx.add_note(f"NMA mode generation requested: {nma_modes_n} modes")
+        ctx.set_tool("prism-prep", prep_argv)
         result = ctx.run(
-            [str(prism_prep), str(clean_pdb), str(topology)],
+            prep_argv,
             stdout_file=artifacts_dir / "prism_prep.stdout.log",
             stderr_file=artifacts_dir / "prism_prep.stderr.log",
         )
         ctx.add_output(topology, role="topology")
+        # NMA modes file is emitted as <topology_stem>_nma_modes.json
+        nma_file = artifacts_dir / f"{pdb_id}.topology_nma_modes.json"
+        if nma_file.exists():
+            ctx.add_output(nma_file, role="nma_modes")
+            ctx.set_gate("nma_modes_generated", "PASS",
+                        note=f"{nma_modes_n} modes → {nma_file.name}")
+        elif nma_modes_n > 0:
+            ctx.set_gate("nma_modes_generated", "FAIL",
+                        note=f"requested {nma_modes_n} modes but {nma_file.name} not produced")
         ctx.set_gate("prism_prep_exit", "PASS" if result.returncode == 0 else "FAIL")
         ctx.set_gate("topology_exists", "PASS" if topology.exists() else "FAIL")
         ctx.set_verdict("PASS" if topology.exists() and result.returncode == 0 else "FAIL")
@@ -498,6 +514,8 @@ def stage5_engine(target: Dict[str, Any], target_dir: Path,
         "--multi-differential",
         "--multi-stream", str(multi_stream),
         "--spike-percentile", "70",
+        "--filter-otsu",        # Tier-A: data-adaptive per-channel threshold (supersedes fixed 70%)
+        "--stepped-holds",       # Tier-A: 100K/150K/200K holds during ramp → cryptic-basin sampling
         "--use-tokenized-ranker",
         "--fast", "--hysteresis", "--prism-therm",
         "--fused-steps", "4", "--hmr", "--adaptive-dt",
@@ -508,6 +526,28 @@ def stage5_engine(target: Dict[str, Any], target_dir: Path,
     # Enable only for active-site-only benchmarks.
     if cascade:
         engine_argv.insert(-1, "--cascade")
+
+    # NMA perturbation — auto-attach if _nma_modes.json was produced in stage 3.
+    # Engine runs explicit mechanical perturbation during warm_hold, forces
+    # conformational motion independent of UV-LIF coupling. Critical for
+    # targets where aromatic chromophores are spatially dispersed and UV-LIF
+    # never reaches firing threshold (e.g. CBL-B zero-spikes regime).
+    # prism-prep saves modes as `<pdb_stem>_nma_modes.json` — glob to find it.
+    prep_dir = target_dir / "artifacts" / "3_prep"
+    nma_candidates = list(prep_dir.glob("*_nma_modes.json"))
+    if nma_candidates:
+        nma_modes_file = nma_candidates[0]
+        engine_argv.insert(-1, "--nma-perturb")
+        engine_argv.insert(-1, str(nma_modes_file))
+        nma_amp = float(target.get("nma_amplification", 3.0) or 3.0)
+        engine_argv.insert(-1, "--nma-amplification")
+        engine_argv.insert(-1, str(nma_amp))
+
+    # Per-target engine flag additions (for enhanced sampling / rescue flags
+    # like --filter-otsu, --adaptive-bias, --rest2). Specified in target_config.
+    extra_flags = target.get("engine_flag_additions") or []
+    for flag in extra_flags:
+        engine_argv.insert(-1, str(flag))
     if graph_coupling:
         # NOTE: --graph-coupling only affects the coupled-twin (2-group) path.
         # In --multi-differential (4-group) mode, this flag is effectively a no-op;
