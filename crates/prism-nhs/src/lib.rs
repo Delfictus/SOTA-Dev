@@ -157,12 +157,31 @@ pub mod spike_arrow_writer;
 /// magic `chunk_size = 500` constant in the autonomous chunk loop.
 pub mod bocpd;
 
+/// Tokenized ranker (v4 LOTO) — learned site-ranking lookup baked into
+/// the binary. Replaces legacy druggability-weighted ranking. Source:
+/// `/mnt/storage/spike-audit/ranker-loto-v4/` (SR@1 36.4%, SR@3 81.1%,
+/// SR@5 94.7% via LOTO on 302 targets).
+pub mod tokenized_ranker;
+
+/// XGBoost v3 site ranker — ONNX-backed gradient-boosted model with 13
+/// continuous features and graded LOTO labels. Beats tokenized v4 by
+/// +11.4 pts SR@1 (47.83% vs 36.42%). Loaded from embedded ONNX via the
+/// `ort` crate. Source: `/mnt/storage/spike-audit/ranker-xgb-v3/`.
+pub mod xgb_ranker;
+
 /// Gaussian-Copula Partial Information Decomposition (Ince 2017) for
 /// per-residue synergy fraction estimation. Stage 1B-3: principled,
 /// parameter-free steering weights for the Stage 2 closed-loop ASC
 /// writeback (`weight = synergy_fraction(target=future_spike_rate,
 /// source_A=scout_group_rate, source_B=observer_group_rate)` per residue).
 pub mod gcpid;
+
+/// Tier-2 ASC rescue controller (Adams & MacKay 2007 BOCPD, Ince 2017 GC-PID).
+/// Data-driven, continuous-magnitude rescue decisions when the engine falls
+/// into a zero-spike regime. Decision-only (v1); emits telemetry for V2-only
+/// actions requiring engine kernel work.
+pub mod rescue_controller;
+
 pub mod composition;
 pub mod batch_scheduler;
 pub mod input;

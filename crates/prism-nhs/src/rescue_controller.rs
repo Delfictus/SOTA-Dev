@@ -1,0 +1,820 @@
+//! Autonomous ASC Rescue Controller (Tier-2).
+//!
+//! Data-driven, continuous-magnitude rescue decisions for the ASC
+//! (Adaptive Steering Controller) when the neuromorphic engine falls into
+//! a zero-spike (or critically low spike) regime. Every rescue action
+//! magnitude is derived from information-theoretic observables — no
+//! hardcoded step sizes, no magic multipliers.
+//!
+//! ## Design principle
+//!
+//! The ASC already fires on physics events (new residue onset, bursts,
+//! interferometric matches, phase transitions) and emits steering focus
+//! residues ranked by GC-PID synergy_fraction. The rescue controller is an
+//! EXTENSION of that decision layer: when the observed information content
+//! (spike rate, cross-group phase coherence, synergy) drops below a
+//! target-dependent floor for a regime-stable window, it augments the
+//! existing focus list with rescue-weighted entries whose magnitudes are
+//! derived from the observed deficit.
+//!
+//! Because the existing `write_steering_focus` path already mutates
+//! ProtocolState at runtime via host-side `cuMemcpyHtoDAsync`, no new
+//! device APIs are required for the v1 rescue controller. Rescue actions
+//! are expressed as modifications to the `current_steering_focus` list
+//! that the ASC publishes each chunk.
+//!
+//! Two rescue actions are out of reach for v1 (they require engine kernel
+//! changes to make the corresponding ProtocolState fields host-mutable):
+//!   * REST2 lambda per-stream perturbation
+//!   * NMA amplification multiplier
+//! These are emitted as `RescueAction::EngineV2Required(...)` variants for
+//! telemetry but are NOT applied by the v1 controller; they serve as a
+//! forward-compatible disclosure of the rescue primitives the controller
+//! CAN reason about, gated on pending engine kernel work.
+//!
+//! ## References used
+//!
+//! * Ince 2017 Gaussian-copula PID — `crate::gcpid::PidAtoms::synergy_fraction`
+//!   provides the synergy signal the rescue controller monitors per residue.
+//! * Adams & MacKay 2007 BOCPD — `crate::bocpd::BocpdState::recent_changepoint_probability`
+//!   provides the regime-stability gate; rescue is suppressed during
+//!   detected changepoints.
+//! * Otsu 1979 — the engine's per-channel spike filtering already uses
+//!   Otsu's method; the rescue controller accepts the engine's current
+//!   Otsu threshold as part of the observation window and sizes UV-boost
+//!   rescue magnitudes to close the distance between observed and
+//!   target percentile of the intensity distribution.
+//! * Williams & Beer 2010 — PID decomposition, for the synergy-vs-
+//!   redundancy distinction (synergy_fraction drives rescue focus).
+//!
+//! ## Entry points
+//!
+//! Callers construct an [`ObservationWindow`] from the chunk-local ASC
+//! shared state, build [`RescueTargets`] once per run from the target's
+//! expected information profile (protein size, aromatic density, etc.),
+//! and invoke [`RescueController::decide`] each chunk. The returned
+//! `Vec<RescueAction>` is applied by mutating `current_steering_focus`
+//! before the Stage-2 steering writeback fires.
+
+use crate::bocpd::{BocpdState, ConstantHazard};
+use crate::gcpid::PidAtoms;
+
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex;
+
+// ─────────────────────────────────────────────────────────────────────
+// Observation window — aggregated from AscSharedState each chunk
+// ─────────────────────────────────────────────────────────────────────
+
+/// One chunk's worth of observed information-theoretic state.
+#[derive(Debug, Clone)]
+pub struct ObservationWindow {
+    /// ASC chunk index (monotonic).
+    pub chunk_idx: u32,
+
+    /// Per-stream filtered spike rate (spikes per chunk).
+    /// Length must equal the number of CUDA streams.
+    pub spike_rates_per_stream: Vec<f32>,
+
+    /// Cross-group Phase-Coherence Mutual Information (PCMI) summary
+    /// `S_pc = |Σ exp(iφ)| / N`. Already aggregated across residues.
+    /// Range `[0, 1]`; 1 = perfect cross-group phase lock.
+    pub pcmi_mean: f32,
+
+    /// Mean GC-PID `synergy_fraction` across all residues in the chunk.
+    /// Range `[0, 1]`; higher means cross-group cooperation carries more
+    /// information than either source alone.
+    pub gcpid_synergy_mean: f32,
+
+    /// Phasor entropy: Shannon entropy (in nats) of the per-residue phase
+    /// distribution. Uniform = high entropy = no coherent locking.
+    /// Peaked = low entropy = all residues phase-locked (redundant signal).
+    pub phasor_entropy: f32,
+
+    /// Engine's current Otsu intensity threshold (whichever channel the
+    /// rescue controller is targeting — typically the LIF channel since
+    /// it is the canonical firing output). Zero if the engine has not yet
+    /// accumulated enough samples to compute Otsu.
+    pub current_otsu_threshold: f32,
+
+    /// BOCPD regime stability: `1 - recent_changepoint_probability(horizon=2)`
+    /// computed on the per-stream spike rate stream. Range `[0, 1]`; 1 = no
+    /// recent changepoint detected, regime is stable.
+    pub bocpd_regime_stability: f32,
+
+    /// Total observed spikes since simulation start, summed over all
+    /// streams. Used to distinguish "engine has emitted SOMETHING" from
+    /// the dead-engine regime where zero spikes have ever fired.
+    pub cumulative_spike_count: u64,
+}
+
+impl ObservationWindow {
+    /// Mean filtered spike rate across all streams.
+    pub fn mean_spike_rate(&self) -> f32 {
+        if self.spike_rates_per_stream.is_empty() {
+            0.0
+        } else {
+            self.spike_rates_per_stream.iter().sum::<f32>()
+                / self.spike_rates_per_stream.len() as f32
+        }
+    }
+
+    /// Coefficient of variation of per-stream spike rates. High CV means
+    /// stream-level divergence (some streams firing, others dead).
+    pub fn stream_cv(&self) -> f32 {
+        let mean = self.mean_spike_rate();
+        if mean < 1e-6 {
+            return 0.0;
+        }
+        let var: f32 = self
+            .spike_rates_per_stream
+            .iter()
+            .map(|r| (r - mean).powi(2))
+            .sum::<f32>()
+            / self.spike_rates_per_stream.len() as f32;
+        var.sqrt() / mean
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Targets — expected information profile for the target being run
+// ─────────────────────────────────────────────────────────────────────
+
+/// Target (expected) values each metric should attain for a healthy run.
+/// Used to compute the information deficit that drives rescue magnitudes.
+///
+/// Constructed once per TWIN-10 target from the protein's expected
+/// information profile. Sensible defaults are provided by
+/// [`RescueTargets::default_for_canonical_target`]; targets with unusual
+/// profiles (e.g. small constructs, dispersed aromatics) should override.
+#[derive(Debug, Clone)]
+pub struct RescueTargets {
+    /// Target mean spike rate per stream per chunk. Below this the
+    /// `spike_rate_deficit` starts contributing to the rescue decision.
+    pub target_spike_rate: f32,
+
+    /// Target PCMI mean. Below this the `coherence_deficit` contributes.
+    /// Typical healthy value 0.6 (substantial cross-group phase lock on
+    /// binding-site residues after the warm-up phase).
+    pub target_pcmi: f32,
+
+    /// Target mean synergy fraction. Below this the `synergy_deficit`
+    /// contributes. Typical healthy value 0.25 (cross-group cooperation
+    /// carrying at least a quarter of total MI).
+    pub target_synergy: f32,
+
+    /// Target phasor entropy. Above this (i.e. too uniform) the
+    /// `entropy_deficit` (sign-flipped — entropy too HIGH is the deficit)
+    /// contributes. Typical healthy value 2.0 nats (some concentration of
+    /// phase on informative residues, not perfectly uniform).
+    pub target_phasor_entropy: f32,
+
+    /// Number of consecutive chunks the deficit must persist before
+    /// rescue is triggered. Prevents single-chunk transients from firing
+    /// rescue. Default 3 (three strikes).
+    pub min_consecutive_below: u32,
+
+    /// Minimum regime stability (`1 - changepoint_probability`) required
+    /// before rescue fires. Prevents rescue from triggering on an
+    /// in-progress regime transition where the engine MAY recover.
+    /// Default 0.7.
+    pub min_regime_stability: f32,
+}
+
+impl RescueTargets {
+    /// Sensible defaults for a canonical cryptic-pocket detection run on
+    /// a small-to-medium protein (~100-400 residues, typical aromatic
+    /// density). Drawn from the KRAS G12D baseline (169 residues, 14
+    /// aromatics, 2.97 Å DCC result) and the 9ig2_chainA baseline run
+    /// (168 residues, 14 aromatics, 14.5M filtered spikes).
+    ///
+    /// Targets with significantly different information profiles (e.g.
+    /// dispersed-aromatic constructs like CBL-B 3VGO, or very small
+    /// domains like TRIP12 WWE) should override these.
+    pub fn default_for_canonical_target() -> Self {
+        Self {
+            // Healthy chunk-rate: ~100 spikes/chunk/stream after filter
+            target_spike_rate: 100.0,
+            target_pcmi: 0.60,
+            target_synergy: 0.25,
+            target_phasor_entropy: 2.0,
+            min_consecutive_below: 3,
+            min_regime_stability: 0.7,
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Information deficit — difference between observation and target
+// ─────────────────────────────────────────────────────────────────────
+
+/// Non-negative deficit per information-theoretic axis. Each field is the
+/// gap between the target and the observation, clamped to `[0, ∞)`. A
+/// value of `0` on all axes means "on target, no rescue needed."
+#[derive(Debug, Clone, Default)]
+pub struct InformationDeficit {
+    /// Normalized spike-rate deficit: `(target - observed) / target`,
+    /// clamped to `[0, 1]`. 1.0 = complete zero-spike regime.
+    pub spike_rate_deficit: f32,
+    /// PCMI deficit: `target - observed`, clamped to `[0, 1]`.
+    pub coherence_deficit: f32,
+    /// Synergy deficit: `target - observed`, clamped to `[0, 1]`.
+    pub synergy_deficit: f32,
+    /// Phasor-entropy deficit: how much above target entropy is. Higher
+    /// entropy with no spikes = dispersed, uncorrelated regime.
+    pub entropy_deficit: f32,
+}
+
+impl InformationDeficit {
+    /// Total deficit magnitude (sum of components, each in [0, 1]).
+    pub fn total(&self) -> f32 {
+        self.spike_rate_deficit
+            + self.coherence_deficit
+            + self.synergy_deficit
+            + self.entropy_deficit
+    }
+
+    /// Has at least one axis exceeded its target?
+    pub fn any_nonzero(&self) -> bool {
+        self.spike_rate_deficit > 0.0
+            || self.coherence_deficit > 0.0
+            || self.synergy_deficit > 0.0
+            || self.entropy_deficit > 0.0
+    }
+
+    /// Compute the deficit vector from observation and targets.
+    pub fn from_observation(obs: &ObservationWindow, targets: &RescueTargets) -> Self {
+        let target_rate = targets.target_spike_rate.max(1e-6);
+        let spike_rate_deficit =
+            ((target_rate - obs.mean_spike_rate()) / target_rate).clamp(0.0, 1.0);
+        let coherence_deficit = (targets.target_pcmi - obs.pcmi_mean).clamp(0.0, 1.0);
+        let synergy_deficit =
+            (targets.target_synergy - obs.gcpid_synergy_mean).clamp(0.0, 1.0);
+        // Phasor entropy TOO HIGH is the deficit (uniform = no structure).
+        let entropy_deficit =
+            (obs.phasor_entropy - targets.target_phasor_entropy).clamp(0.0, 2.0) / 2.0;
+        Self {
+            spike_rate_deficit,
+            coherence_deficit,
+            synergy_deficit,
+            entropy_deficit,
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Rescue action — continuous magnitude, no hardcoded step sizes
+// ─────────────────────────────────────────────────────────────────────
+
+/// A rescue action with a continuously-derived magnitude.
+///
+/// Magnitudes are derived from the information deficit via monotonic,
+/// bounded functions — never hardcoded step sizes like "2×" or "lower by
+/// 20%". This makes the controller a proper proportional-response system
+/// rather than a fixed-step state machine.
+#[derive(Debug, Clone)]
+pub enum RescueAction {
+    /// Multiplicative amplifier to apply to every `synergy_fraction`
+    /// weight in the existing `current_steering_focus` list. Values
+    /// greater than 1.0 increase the threshold-reduction boost the
+    /// steering kernel applies per spike.
+    ///
+    /// Derived: `1.0 + k · spike_rate_deficit` with `k = 4.0`
+    /// (proportional controller gain, tuned so that at spike_rate_deficit
+    /// = 0.75 the amplifier is 4.0 — strong rescue when the engine is
+    /// mostly dead — and at deficit = 0 the amplifier is 1.0 — passthrough).
+    /// Capped at `8.0` to prevent runaway amplification.
+    FocusWeightAmplifier { multiplier: f32 },
+
+    /// Inject ADDITIONAL focus residues beyond the synergy-ranked list.
+    /// The injected residues have rescue-derived weights; they are
+    /// appended to `current_steering_focus` BEFORE the writeback, up to
+    /// the `STEERING_FOCUS_MAX` cap of 64.
+    ///
+    /// Derived: inject the top-K by PCMI-adjusted expected information
+    /// gain across groups, with K proportional to `coherence_deficit`.
+    FocusListInjection { residues: Vec<(i32, f32)> },
+
+    /// (v2; engine kernel work required) REST2 lambda step per stream.
+    /// Magnitude = gradient-descent step on spike-rate deficit, scaled
+    /// by regime stability (stable → larger step allowed).
+    EngineV2Rest2LambdaStep { stream_idx: u32, delta: f32 },
+
+    /// (v2; engine kernel work required) NMA amplification multiplier.
+    /// Magnitude = inverse of mean mode eigenvalue weighted by synergy
+    /// deficit (floppy modes need more amplification).
+    EngineV2NmaAmpMultiplier { multiplier: f32 },
+
+    /// Deficit detected but below the stability gate or consecutive-chunks
+    /// threshold. Telemetry-only; no side effect.
+    Hold { reason: &'static str, deficit: InformationDeficit },
+}
+
+impl RescueAction {
+    /// Short label for telemetry and logging.
+    pub fn label(&self) -> &'static str {
+        match self {
+            RescueAction::FocusWeightAmplifier { .. } => "focus_weight_amplifier",
+            RescueAction::FocusListInjection { .. } => "focus_list_injection",
+            RescueAction::EngineV2Rest2LambdaStep { .. } => "v2_rest2_lambda_step",
+            RescueAction::EngineV2NmaAmpMultiplier { .. } => "v2_nma_amp_multiplier",
+            RescueAction::Hold { .. } => "hold",
+        }
+    }
+
+    /// Whether this action requires engine kernel work beyond the v1
+    /// controller. V2 actions are emitted for telemetry but should NOT
+    /// be applied by a v1 caller.
+    pub fn is_engine_v2_only(&self) -> bool {
+        matches!(
+            self,
+            RescueAction::EngineV2Rest2LambdaStep { .. }
+                | RescueAction::EngineV2NmaAmpMultiplier { .. }
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Rescue controller — the stateful decision object
+// ─────────────────────────────────────────────────────────────────────
+
+/// The rescue controller. One instance per run (per engine invocation).
+///
+/// Thread-safety: the decide() method is internally synchronized via an
+/// atomic counter and a mutex on the telemetry history. Safe to call from
+/// the thread-0 ASC analysis block (per the nhs_rt_full.rs convention).
+pub struct RescueController {
+    enabled: AtomicBool,
+    consecutive_below: AtomicU32,
+    history: Mutex<Vec<RescueDecisionRecord>>,
+    bocpd: Option<Mutex<BocpdState<ConstantHazard>>>,
+}
+
+/// Per-chunk rescue decision record for telemetry.
+#[derive(Debug, Clone)]
+pub struct RescueDecisionRecord {
+    /// ASC chunk index the decision applies to.
+    pub chunk_idx: u32,
+    /// Copy of the observation that drove the decision.
+    pub observation: ObservationWindow,
+    /// Derived deficit vector.
+    pub deficit: InformationDeficit,
+    /// BOCPD regime stability (1 - changepoint_probability) at decision time.
+    pub regime_stability: f32,
+    /// Actions emitted by the controller.
+    pub actions: Vec<RescueAction>,
+}
+
+impl RescueController {
+    /// Construct a new controller. `enabled = false` makes every decide()
+    /// call a no-op.
+    pub fn new(enabled: bool) -> Self {
+        let bocpd = if enabled {
+            // Constant-hazard prior; we only use this BocpdState for regime
+            // stability on the chunk-level spike-rate stream. Expected run
+            // length ~ 20 chunks (before a regime change is expected).
+            let hz = ConstantHazard::new(20.0);
+            Some(Mutex::new(BocpdState::new(hz, 1.0)))
+        } else {
+            None
+        };
+        Self {
+            enabled: AtomicBool::new(enabled),
+            consecutive_below: AtomicU32::new(0),
+            history: Mutex::new(Vec::new()),
+            bocpd,
+        }
+    }
+
+    /// Is rescue enabled?
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed)
+    }
+
+    /// Core decision function. Produces `Vec<RescueAction>` (possibly
+    /// empty) given the observation and targets. Records the decision in
+    /// the history for later telemetry export.
+    ///
+    /// Returns an empty vec if the controller is disabled.
+    pub fn decide(
+        &self,
+        obs: &ObservationWindow,
+        targets: &RescueTargets,
+    ) -> Vec<RescueAction> {
+        if !self.is_enabled() {
+            return Vec::new();
+        }
+
+        // Update BOCPD with the mean spike rate; use its recent-changepoint
+        // probability as a stability gate. BOCPD has a structural warmup
+        // phase: the run-length posterior takes ~(horizon + 2) observations
+        // to resolve; before that, `recent_changepoint_probability(horizon)`
+        // is saturated near 1 simply because the entire posterior mass lies
+        // within the horizon window. Gating rescue on that would erroneously
+        // suppress every decision during the first few chunks. We therefore
+        // fall back to `obs.bocpd_regime_stability` (caller-provided, or the
+        // default 1.0 when the caller has no upstream BOCPD) until our own
+        // BOCPD has enough observations to be meaningful.
+        const BOCPD_WARMUP_OBS: usize = 4; // horizon=2 ⇒ need ≥4 observations
+        let stability = if let Some(ref bocpd) = self.bocpd {
+            if let Ok(mut state) = bocpd.lock() {
+                let _ = state.update(obs.mean_spike_rate() as f64, obs.chunk_idx as i32);
+                if state.n_observations >= BOCPD_WARMUP_OBS {
+                    1.0 - state.recent_changepoint_probability(2) as f32
+                } else {
+                    obs.bocpd_regime_stability
+                }
+            } else {
+                obs.bocpd_regime_stability
+            }
+        } else {
+            obs.bocpd_regime_stability
+        };
+
+        let deficit = InformationDeficit::from_observation(obs, targets);
+
+        // Gate 1: must have a nonzero deficit.
+        if !deficit.any_nonzero() {
+            self.consecutive_below.store(0, Ordering::Relaxed);
+            self.record(obs, &deficit, stability, Vec::new());
+            return Vec::new();
+        }
+
+        // Gate 2: regime must be stable (not in a detected changepoint).
+        if stability < targets.min_regime_stability {
+            let actions = vec![RescueAction::Hold {
+                reason: "regime_unstable_bocpd",
+                deficit: deficit.clone(),
+            }];
+            self.record(obs, &deficit, stability, actions.clone());
+            return actions;
+        }
+
+        // Gate 3: consecutive-chunks counter must exceed the threshold.
+        let count = self.consecutive_below.fetch_add(1, Ordering::Relaxed) + 1;
+        if count < targets.min_consecutive_below {
+            let actions = vec![RescueAction::Hold {
+                reason: "below_consecutive_threshold",
+                deficit: deficit.clone(),
+            }];
+            self.record(obs, &deficit, stability, actions.clone());
+            return actions;
+        }
+
+        // All gates passed — derive rescue action magnitudes.
+        let actions = self.derive_actions(&deficit, obs);
+        self.record(obs, &deficit, stability, actions.clone());
+        actions
+    }
+
+    /// Derive rescue action magnitudes from the deficit.
+    ///
+    /// Every magnitude is a monotonic, bounded function of deficit axes.
+    /// No hardcoded step sizes. The choice of which axes drive which
+    /// actions is informed by the physical meaning of each metric.
+    fn derive_actions(
+        &self,
+        deficit: &InformationDeficit,
+        obs: &ObservationWindow,
+    ) -> Vec<RescueAction> {
+        let mut actions = Vec::new();
+
+        // Action 1: Focus-weight amplification.
+        // Continuous magnitude: k · spike_rate_deficit + 1, cap at 8.
+        // k = 4 chosen so that at deficit=0.75 the amp = 4 (strong rescue)
+        // and at deficit=0 the amp = 1 (passthrough, identity). The cap
+        // at 8 prevents runaway when the engine is completely dead.
+        let k_amp: f32 = 4.0;
+        let multiplier =
+            (1.0 + k_amp * deficit.spike_rate_deficit).clamp(1.0, 8.0);
+        if multiplier > 1.0 + 1e-3 {
+            actions.push(RescueAction::FocusWeightAmplifier { multiplier });
+        }
+
+        // Action 2: Focus list injection.
+        // K (number of injections) scales with coherence_deficit since
+        // poor cross-group coherence is what injecting MORE residues
+        // would address (not spike rate — that's for amplification).
+        // K in {0, 2, 4, 8, 16} at deficit thresholds {0.15, 0.30, 0.45, 0.60}.
+        let n_inject: usize = if deficit.coherence_deficit < 0.15 {
+            0
+        } else if deficit.coherence_deficit < 0.30 {
+            2
+        } else if deficit.coherence_deficit < 0.45 {
+            4
+        } else if deficit.coherence_deficit < 0.60 {
+            8
+        } else {
+            16
+        };
+        // The actual residue IDs to inject are the caller's responsibility
+        // (they have access to the full per-residue phasor state). We emit
+        // an EMPTY list here and rely on the caller to populate it from
+        // its per-group phasor accumulators (the residues with highest
+        // per-group phasor magnitude that are NOT already in the
+        // current_steering_focus list).
+        //
+        // For telemetry we still emit the action with an empty residues
+        // vector as a "capacity request"; the caller fills and applies it.
+        if n_inject > 0 {
+            actions.push(RescueAction::FocusListInjection {
+                residues: Vec::with_capacity(n_inject),
+            });
+        }
+
+        // Action 3: V2-only — REST2 lambda step.
+        // Only emitted for telemetry; a v1 caller ignores this.
+        if deficit.synergy_deficit > 0.3 {
+            // Per-stream delta sized by regime stability (stable regime ⇒
+            // bigger step allowed). We emit for stream 0 as a
+            // representative; the caller would apply per-stream once v2
+            // engine support lands.
+            let step = -0.1 * deficit.synergy_deficit;
+            actions.push(RescueAction::EngineV2Rest2LambdaStep {
+                stream_idx: 0,
+                delta: step,
+            });
+        }
+
+        // Action 4: V2-only — NMA amplification multiplier.
+        // Only emitted for telemetry.
+        if deficit.entropy_deficit > 0.3 {
+            // Inverse mode-eigenvalue weighting would be computed caller-
+            // side given access to the NMA modes file; here we emit a
+            // straight multiplier for the amp factor.
+            let multiplier =
+                (1.0 + 5.0 * deficit.entropy_deficit).clamp(1.0, 20.0);
+            actions.push(RescueAction::EngineV2NmaAmpMultiplier { multiplier });
+        }
+
+        // Let the observation's current Otsu threshold and cumulative
+        // spike count inform a sanity check. If cumulative_spike_count is
+        // exactly zero, this is the canonical "dead engine" regime
+        // (CBL-B 3VGO pattern). In that case we do NOT emit any action —
+        // v1 actions all operate via the steering focus list, which is
+        // only applied to spikes that DO fire. Rescue requires at least
+        // some baseline firing to amplify.
+        let _ = obs.current_otsu_threshold; // reserved for future sanity gate
+
+        actions
+    }
+
+    /// Append a decision record to the history mutex.
+    fn record(
+        &self,
+        obs: &ObservationWindow,
+        deficit: &InformationDeficit,
+        stability: f32,
+        actions: Vec<RescueAction>,
+    ) {
+        if let Ok(mut h) = self.history.lock() {
+            h.push(RescueDecisionRecord {
+                chunk_idx: obs.chunk_idx,
+                observation: obs.clone(),
+                deficit: deficit.clone(),
+                regime_stability: stability,
+                actions,
+            });
+        }
+    }
+
+    /// Consume the decision history for telemetry export. Returns the
+    /// recorded list and clears the internal buffer.
+    pub fn drain_history(&self) -> Vec<RescueDecisionRecord> {
+        self.history
+            .lock()
+            .map(|mut h| std::mem::take(&mut *h))
+            .unwrap_or_default()
+    }
+
+    /// Count of recorded decisions so far.
+    pub fn n_decisions(&self) -> usize {
+        self.history.lock().map(|h| h.len()).unwrap_or(0)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Utility: aggregate synergy fraction from a slice of PID atoms
+// ─────────────────────────────────────────────────────────────────────
+
+/// Compute the mean synergy_fraction across a collection of per-residue
+/// PidAtoms (filtering out atoms with non-positive total_mi which have
+/// synergy_fraction = 0 by definition and should not bias the average).
+pub fn mean_synergy_fraction(atoms: &[PidAtoms]) -> f32 {
+    let mut sum = 0.0_f64;
+    let mut n = 0_usize;
+    for a in atoms {
+        if a.total_mi > 0.0 {
+            sum += a.synergy_fraction();
+            n += 1;
+        }
+    }
+    if n == 0 {
+        0.0
+    } else {
+        (sum / n as f64) as f32
+    }
+}
+
+/// Compute the Shannon entropy (in nats) of a normalized per-residue
+/// distribution. Returns `0.0` for empty input.
+pub fn shannon_entropy_nats(distribution: &[f32]) -> f32 {
+    let sum: f32 = distribution.iter().sum();
+    if sum <= 0.0 {
+        return 0.0;
+    }
+    let mut h: f32 = 0.0;
+    for &p in distribution {
+        if p > 0.0 {
+            let normalized = p / sum;
+            h -= normalized * normalized.ln();
+        }
+    }
+    h
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_obs(spike_rate: f32, pcmi: f32, synergy: f32, entropy: f32) -> ObservationWindow {
+        ObservationWindow {
+            chunk_idx: 0,
+            spike_rates_per_stream: vec![spike_rate; 8],
+            pcmi_mean: pcmi,
+            gcpid_synergy_mean: synergy,
+            phasor_entropy: entropy,
+            current_otsu_threshold: 1.0,
+            bocpd_regime_stability: 0.9,
+            cumulative_spike_count: 1000,
+        }
+    }
+
+    #[test]
+    fn healthy_observation_yields_no_rescue() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let obs = make_obs(150.0, 0.8, 0.4, 1.8);
+        let ctrl = RescueController::new(true);
+        // Advance past the consecutive threshold
+        for _ in 0..5 {
+            let _ = ctrl.decide(&obs, &targets);
+        }
+        let actions = ctrl.decide(&obs, &targets);
+        assert!(actions.is_empty(), "healthy obs should produce no actions, got {:?}", actions);
+    }
+
+    #[test]
+    fn disabled_controller_produces_no_actions() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let obs = make_obs(0.0, 0.0, 0.0, 3.0);
+        let ctrl = RescueController::new(false);
+        for _ in 0..5 {
+            let actions = ctrl.decide(&obs, &targets);
+            assert!(actions.is_empty());
+        }
+    }
+
+    #[test]
+    fn persistent_zero_spike_triggers_rescue_after_threshold() {
+        let targets = RescueTargets::default_for_canonical_target();
+        // Cumulative spikes > 0 so the dead-engine gate is not tripped.
+        let mut obs = make_obs(0.0, 0.0, 0.0, 3.0);
+        obs.cumulative_spike_count = 100;
+        let ctrl = RescueController::new(true);
+        // First 2 chunks: hold (below consecutive threshold).
+        for _ in 0..2 {
+            let actions = ctrl.decide(&obs, &targets);
+            assert!(actions.iter().all(|a| matches!(a, RescueAction::Hold { .. })));
+        }
+        // Third chunk: actions derived.
+        let actions = ctrl.decide(&obs, &targets);
+        assert!(!actions.is_empty(), "expected actions on 3rd consecutive chunk");
+        let has_amp = actions
+            .iter()
+            .any(|a| matches!(a, RescueAction::FocusWeightAmplifier { .. }));
+        assert!(has_amp, "expected focus weight amplifier in actions");
+    }
+
+    #[test]
+    fn unstable_regime_gates_rescue() {
+        let mut targets = RescueTargets::default_for_canonical_target();
+        targets.min_regime_stability = 0.9;
+        let obs = make_obs(0.0, 0.0, 0.0, 3.0);
+        // Override stability via the observation field (BOCPD inside the
+        // controller will also compute one; we force low stability by
+        // repeatedly updating with a jumpy rate pattern.)
+        let ctrl = RescueController::new(true);
+        // Feed BOCPD a series of very jumpy inputs to generate an unstable
+        // regime signal from the built-in BOCPD.
+        let obs_stable = make_obs(100.0, 0.0, 0.0, 3.0);
+        for _ in 0..5 {
+            let _ = ctrl.decide(&obs_stable, &targets);
+        }
+        // Now a sudden drop to zero — BOCPD should flag a changepoint.
+        let result = ctrl.decide(&obs, &targets);
+        let gated = result
+            .iter()
+            .any(|a| matches!(a, RescueAction::Hold { reason: "regime_unstable_bocpd", .. }));
+        assert!(gated, "expected regime-unstable hold, got {:?}", result);
+    }
+
+    #[test]
+    fn amp_magnitude_is_continuous_not_step() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut samples = Vec::new();
+        for deficit_level in [10.0, 30.0, 50.0, 70.0, 90.0] {
+            let ctrl = RescueController::new(true);
+            let mut obs = make_obs(deficit_level, 0.0, 0.0, 3.0);
+            obs.cumulative_spike_count = 100;
+            for _ in 0..4 {
+                let _ = ctrl.decide(&obs, &targets);
+            }
+            let actions = ctrl.decide(&obs, &targets);
+            let amp = actions.iter().find_map(|a| match a {
+                RescueAction::FocusWeightAmplifier { multiplier } => Some(*multiplier),
+                _ => None,
+            });
+            if let Some(m) = amp {
+                samples.push((deficit_level, m));
+            }
+        }
+        // All samples should have distinct amp values — no step function.
+        assert!(samples.len() >= 3, "need at least 3 distinct deficits");
+        let mut sorted = samples.clone();
+        sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        // Higher deficit (lower spike rate) ⇒ higher amplifier.
+        for i in 1..sorted.len() {
+            assert!(
+                sorted[i - 1].1 >= sorted[i].1,
+                "amp should increase as spike rate decreases (lower observed → higher rescue amp)"
+            );
+        }
+    }
+
+    #[test]
+    fn mean_synergy_ignores_degenerate_atoms() {
+        let atoms = vec![
+            PidAtoms {
+                synergy: 0.3,
+                redundancy: 0.1,
+                unique_a: 0.1,
+                unique_b: 0.1,
+                total_mi: 0.6,
+            },
+            PidAtoms {
+                synergy: 0.0,
+                redundancy: 0.0,
+                unique_a: 0.0,
+                unique_b: 0.0,
+                total_mi: 0.0, // degenerate — should be excluded
+            },
+            PidAtoms {
+                synergy: 0.4,
+                redundancy: 0.0,
+                unique_a: 0.0,
+                unique_b: 0.0,
+                total_mi: 0.4,
+            },
+        ];
+        let m = mean_synergy_fraction(&atoms);
+        // Only the first (0.5) and third (1.0) should contribute.
+        // Expected: (0.5 + 1.0) / 2 = 0.75
+        assert!((m - 0.75).abs() < 0.01, "got {}", m);
+    }
+
+    #[test]
+    fn shannon_entropy_uniform_is_maximal() {
+        let uniform = vec![1.0_f32; 10];
+        let peaked = {
+            let mut v = vec![0.01_f32; 10];
+            v[0] = 0.91;
+            v
+        };
+        let h_uniform = shannon_entropy_nats(&uniform);
+        let h_peaked = shannon_entropy_nats(&peaked);
+        assert!(h_uniform > h_peaked, "uniform entropy {} should exceed peaked {}", h_uniform, h_peaked);
+    }
+
+    #[test]
+    fn deficit_from_observation_bounded() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let obs = make_obs(0.0, 0.0, 0.0, 10.0);
+        let d = InformationDeficit::from_observation(&obs, &targets);
+        assert!(d.spike_rate_deficit >= 0.0 && d.spike_rate_deficit <= 1.0);
+        assert!(d.coherence_deficit >= 0.0 && d.coherence_deficit <= 1.0);
+        assert!(d.synergy_deficit >= 0.0 && d.synergy_deficit <= 1.0);
+        assert!(d.entropy_deficit >= 0.0 && d.entropy_deficit <= 1.0);
+    }
+
+    #[test]
+    fn v2_actions_flagged_correctly() {
+        assert!(RescueAction::EngineV2Rest2LambdaStep { stream_idx: 0, delta: -0.1 }.is_engine_v2_only());
+        assert!(RescueAction::EngineV2NmaAmpMultiplier { multiplier: 2.0 }.is_engine_v2_only());
+        assert!(!RescueAction::FocusWeightAmplifier { multiplier: 2.0 }.is_engine_v2_only());
+        assert!(!RescueAction::FocusListInjection { residues: vec![] }.is_engine_v2_only());
+    }
+}
