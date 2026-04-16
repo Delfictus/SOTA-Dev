@@ -1,0 +1,15 @@
+name = "rcsb-prism-mcp"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+# Served on the workers.dev subdomain — claude.ai custom connector URL will be
+# https://rcsb-prism-mcp.is-0b9.workers.dev/sse
+workers_dev = true
+
+# No D1, R2, or KV bindings — this server is a stateless passthrough to
+# public RCSB APIs + a minimal PDB coordinate parser for ligand centroids.
+
+[vars]
+# Server identity reported to MCP clients during initialize
+MCP_SERVER_NAME = "rcsb-prism-mcp"
+MCP_SERVER_VERSION = "0.1.0"
