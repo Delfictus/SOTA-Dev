@@ -3698,17 +3698,14 @@ fn run_multi_stream_pipeline(
         /// NaN = no target published yet.
         rescue_nma_target_bits: std::sync::atomic::AtomicU32,
         // ── v3 observability channel (per-stream → thread-0) ──
-        /// Per-stream p10 of spike-intensity distribution over the current
-        /// chunk. Stored as f32 bits in an AtomicU32; NaN = "no chunk spikes
-        /// this chunk". Written by each stream BEFORE the first barrier; read
-        /// by thread-0 rescue hook AFTER the first barrier.
-        chunk_intensity_p10_bits: Vec<std::sync::atomic::AtomicU32>,
-        /// Per-stream p90 of spike-intensity distribution over the current
-        /// chunk. Same encoding as `chunk_intensity_p10_bits`.
-        chunk_intensity_p90_bits: Vec<std::sync::atomic::AtomicU32>,
-        /// Per-stream count of spikes this chunk (n samples used to compute
-        /// the p10/p90 above). 0 = no spikes.
-        chunk_intensity_n: Vec<std::sync::atomic::AtomicU32>,
+        /// Per-chunk spike-intensity distribution aggregation channel.
+        /// Each per-stream worker calls `publish_stream` before the first
+        /// ASC barrier; thread-0 calls `aggregate` after the first barrier
+        /// and feeds the ratio to the rescue controller via
+        /// `ObservationWindow::spike_intensity_p90_over_p10`. The primitive
+        /// is defined + unit-tested in `rescue_controller.rs`
+        /// (see `ChunkIntensityChannel`).
+        chunk_intensity: prism_nhs::rescue_controller::ChunkIntensityChannel,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3781,16 +3778,8 @@ fn run_multi_stream_pipeline(
                 .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
                 .collect(),
             rescue_nma_target_bits: std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()),
-            // v3 observability channel — start with NaN per-stream.
-            chunk_intensity_p10_bits: (0..n_streams)
-                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
-                .collect(),
-            chunk_intensity_p90_bits: (0..n_streams)
-                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
-                .collect(),
-            chunk_intensity_n: (0..n_streams)
-                .map(|_| std::sync::atomic::AtomicU32::new(0))
-                .collect(),
+            // v3 observability channel — encapsulated primitive.
+            chunk_intensity: prism_nhs::rescue_controller::ChunkIntensityChannel::new(n_streams),
         }))
     } else {
         None
@@ -4469,56 +4458,30 @@ fn run_multi_stream_pipeline(
                                 }
 
                                 // ── v3 observability: per-stream chunk-local spike-
-                                // intensity distribution p10 / p90 ──
+                                // intensity distribution → aggregation channel ──
                                 //
-                                // Published BEFORE the first barrier so thread-0 can
-                                // aggregate after. NaN if no spikes fired this chunk.
+                                // INVARIANT: inside the chunk loop, engine
+                                // .accumulated_spikes is APPEND-ONLY. The only places
+                                // it gets cleared are `clear_accumulated_spikes()`
+                                // (no callers) and `reset_for_replica()`, which is
+                                // invoked ONCE before the chunk loop enters. Therefore
+                                // `spikes[len - delta..]` is always the chunk-local
+                                // slice (verified by grep 2026-04-17).
                                 //
-                                // The rescue controller's intensity_flatness_deficit
-                                // axis consumes the aggregated ratio to detect POLQ /
-                                // CBL-B failures (kernel fires spikes but all are bulk
-                                // noise with a flat intensity distribution — the post-
-                                // hoc adaptive intensity threshold cuts every spike
-                                // and primary-classification survival drops to zero).
+                                // Primitive definition + tests in rescue_controller
+                                // ::ChunkIntensityChannel. Each stream publishes its
+                                // chunk-local intensity sample before the first
+                                // barrier; thread-0 aggregates after.
                                 if delta > 0 {
                                     let spikes_full = engine.get_accumulated_spikes();
                                     let recent_start = spikes_full.len().saturating_sub(delta as usize);
-                                    let chunk_spikes = &spikes_full[recent_start..];
-                                    let mut intensities: Vec<f32> = chunk_spikes.iter()
+                                    let intensities: Vec<f32> = spikes_full[recent_start..]
+                                        .iter()
                                         .map(|s| s.intensity)
-                                        .filter(|v| v.is_finite())
                                         .collect();
-                                    if !intensities.is_empty() {
-                                        intensities.sort_by(|a, b|
-                                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                                        let n = intensities.len();
-                                        let p10_idx = ((n as f32 * 0.10) as usize).min(n - 1);
-                                        let p90_idx = ((n as f32 * 0.90) as usize).min(n - 1);
-                                        asc_state.chunk_intensity_p10_bits[i].store(
-                                            intensities[p10_idx].to_bits(),
-                                            std::sync::atomic::Ordering::Relaxed);
-                                        asc_state.chunk_intensity_p90_bits[i].store(
-                                            intensities[p90_idx].to_bits(),
-                                            std::sync::atomic::Ordering::Relaxed);
-                                        asc_state.chunk_intensity_n[i].store(
-                                            n as u32, std::sync::atomic::Ordering::Relaxed);
-                                    } else {
-                                        // All intensities non-finite — defensive fallback.
-                                        asc_state.chunk_intensity_n[i].store(
-                                            0, std::sync::atomic::Ordering::Relaxed);
-                                        asc_state.chunk_intensity_p10_bits[i].store(
-                                            f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
-                                        asc_state.chunk_intensity_p90_bits[i].store(
-                                            f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
-                                    }
+                                    asc_state.chunk_intensity.publish_stream(i, &intensities);
                                 } else {
-                                    // No spikes this chunk → publish count=0 + NaN.
-                                    asc_state.chunk_intensity_n[i].store(
-                                        0, std::sync::atomic::Ordering::Relaxed);
-                                    asc_state.chunk_intensity_p10_bits[i].store(
-                                        f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
-                                    asc_state.chunk_intensity_p90_bits[i].store(
-                                        f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                                    asc_state.chunk_intensity.publish_empty(i);
                                 }
 
                                 // Barrier: all engines have written their residue data
@@ -4993,41 +4956,15 @@ fn run_multi_stream_pipeline(
                                                             &phasor_dist,
                                                         );
 
-                                                    // ── Aggregate per-stream chunk-local p10/p90
-                                                    // into a single p90_over_p10 ratio ──
+                                                    // ── Aggregate per-stream chunk-local p10/p90 ──
                                                     //
-                                                    // Read every stream's slot, discard those with
-                                                    // n==0 (no spikes this chunk) or NaN p10/p90.
-                                                    // Compute MEDIAN across streams (robust to single-
-                                                    // stream outliers without weight bookkeeping).
-                                                    // Division by ε-floored p10 so p10=0 does not
-                                                    // produce Inf.
-                                                    let mut p10s: Vec<f32> = Vec::with_capacity(
-                                                        asc_state.chunk_intensity_p10_bits.len());
-                                                    let mut p90s: Vec<f32> = Vec::with_capacity(
-                                                        asc_state.chunk_intensity_p90_bits.len());
-                                                    for s_idx in 0..asc_state.chunk_intensity_n.len() {
-                                                        let n = asc_state.chunk_intensity_n[s_idx]
-                                                            .load(std::sync::atomic::Ordering::Relaxed);
-                                                        if n == 0 { continue; }
-                                                        let p10 = f32::from_bits(asc_state.chunk_intensity_p10_bits[s_idx]
-                                                            .load(std::sync::atomic::Ordering::Relaxed));
-                                                        let p90 = f32::from_bits(asc_state.chunk_intensity_p90_bits[s_idx]
-                                                            .load(std::sync::atomic::Ordering::Relaxed));
-                                                        if p10.is_finite() && p90.is_finite() {
-                                                            p10s.push(p10);
-                                                            p90s.push(p90);
-                                                        }
-                                                    }
-                                                    let spike_intensity_p90_over_p10: f32 = if p10s.is_empty() {
-                                                        f32::NAN  // no data from any stream this chunk
-                                                    } else {
-                                                        p10s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                                                        p90s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                                                        let median_p10 = p10s[p10s.len() / 2].max(1e-6);
-                                                        let median_p90 = p90s[p90s.len() / 2];
-                                                        median_p90 / median_p10
-                                                    };
+                                                    // Single call into the ChunkIntensityChannel
+                                                    // primitive. `None` → no stream contributed
+                                                    // data this chunk → pass NaN to the rescue
+                                                    // controller (no claim → zero flatness deficit).
+                                                    let spike_intensity_p90_over_p10: f32 =
+                                                        asc_state.chunk_intensity.aggregate()
+                                                            .unwrap_or(f32::NAN);
 
                                                     let obs = prism_nhs::rescue_controller::ObservationWindow {
                                                         chunk_idx: chunk_idx as u32,
@@ -5232,12 +5169,20 @@ fn run_multi_stream_pipeline(
                                     if !target.is_nan() && (target - current_solute_lambda).abs() > 1e-4 {
                                         engine.set_solute_lambda(target);
                                         // apply_focused_lambda uploads the per-atom lambda
-                                        // array to GPU. If it has no spikes to focus on yet,
-                                        // it just warns — harmless.
+                                        // array to GPU. If it has no spikes to focus on
+                                        // yet, it returns a warning but continues. Errors
+                                        // here mean the GPU upload actually failed, which
+                                        // means the rescue mutation we just logged will
+                                        // NOT take effect on the next MD step — that is
+                                        // exactly the kind of silent-fail failure mode we
+                                        // refuse to accept. Log at WARN and record the
+                                        // stream + chunk so the reviewer can correlate.
                                         if let Err(e) = engine.apply_focused_lambda() {
-                                            log::debug!(
-                                                "    [RESCUE stream {} chunk {}] apply_focused_lambda: {}",
-                                                i, chunk_idx, e
+                                            log::warn!(
+                                                "    [RESCUE stream {} chunk {}] apply_focused_lambda FAILED: {} \
+                                                — set_solute_lambda({:.3}) took effect on engine state \
+                                                but per-atom array was NOT uploaded to GPU. Rescue effect may be degraded.",
+                                                i, chunk_idx, e, target
                                             );
                                         }
                                         if chunk_idx % 20 == 0 || (current_solute_lambda - target).abs() > 0.05 {

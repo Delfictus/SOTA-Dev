@@ -378,15 +378,31 @@ impl InformationDeficit {
         // Phasor entropy TOO HIGH is the deficit (uniform = no structure).
         let entropy_deficit =
             (obs.phasor_entropy - targets.target_phasor_entropy).clamp(0.0, 2.0) / 2.0;
-        // Intensity flatness: (target - observed) / (target - 1.0), clamped.
+        // Intensity flatness deficit — LOG-SCALE because p90/p10 is an
+        // intrinsic ratio, not a linear quantity. A ratio of 2.0 is NOT
+        // "half as bad" as a ratio of 3.0 — it is `log(2)/log(3) ≈ 63%`
+        // of the way. Linear arithmetic under-weights the "near-flat"
+        // regime where the distribution is almost entirely collapsed.
+        //
+        // Formula: `1 - log(observed) / log(target)`, clamped to [0, 1].
+        //   * observed >= target    → deficit = 0 (healthy)
+        //   * observed == 1.0       → deficit = 1 (perfectly flat — no
+        //                             distribution, all spikes identical)
+        //   * observed in (1, target) → deficit in (0, 1) with log-scale
+        //                             weighting.
+        //
         // NaN observed → 0.0 deficit (no signal, no claim).
         let intensity_flatness_deficit = if obs.spike_intensity_p90_over_p10.is_nan() {
             0.0
         } else {
             let target_ratio = targets.target_intensity_p90_over_p10.max(1.0 + 1e-3);
-            let numer = target_ratio - obs.spike_intensity_p90_over_p10;
-            let denom = target_ratio - 1.0;
-            (numer / denom).clamp(0.0, 1.0)
+            let observed = obs.spike_intensity_p90_over_p10.max(1.0);
+            if observed >= target_ratio {
+                0.0
+            } else {
+                let log_target = target_ratio.ln().max(1e-6);
+                (1.0 - observed.ln() / log_target).clamp(0.0, 1.0)
+            }
         };
         Self {
             spike_rate_deficit,
@@ -754,6 +770,164 @@ impl RescueController {
     /// Count of recorded decisions so far.
     pub fn n_decisions(&self) -> usize {
         self.history.lock().map(|h| h.len()).unwrap_or(0)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Chunk intensity channel — per-stream → thread-0 observability for the
+// `spike_intensity_p90_over_p10` observable in ObservationWindow.
+//
+// Encapsulates the atomic-u32 slot layout and the cross-stream
+// aggregation logic so it can be unit-tested WITHOUT spawning real
+// streams or GPU work. The engine binary (nhs_rt_full.rs) holds one
+// instance of this struct inside AscSharedState and uses publish_stream
+// / publish_empty (from each per-stream thread, before the first ASC
+// barrier) and aggregate (from thread-0, after the first barrier).
+// ─────────────────────────────────────────────────────────────────────
+
+/// Shared-state channel carrying per-stream chunk-local spike-intensity
+/// percentiles from every per-stream worker thread to the thread-0
+/// rescue hook.
+///
+/// Layout: three parallel `Vec<AtomicU32>` of length `n_streams`:
+///   * `p10_bits[i]`  — f32 bits of stream i's chunk-local p10 intensity,
+///                      or `f32::NAN` bits when no data is available.
+///   * `p90_bits[i]`  — same, for the p90.
+///   * `n[i]`         — sample count used to compute the percentiles
+///                      (0 = no data).
+///
+/// Concurrency: writes from per-stream threads and reads from thread-0
+/// are separated by an ASC barrier at the caller, so `Relaxed` ordering
+/// is sufficient. No lock, no false sharing beyond the atomic vec itself.
+///
+/// Aggregation strategy (see [`Self::aggregate`]): median-of-medians
+/// across streams that contributed data. Robust to a single flat stream
+/// dragging the ratio, while an all-flat distribution (POLQ / CBL-B
+/// regime boundary) still produces a low ratio → feeds the rescue
+/// controller's `intensity_flatness_deficit` axis.
+pub struct ChunkIntensityChannel {
+    p10_bits: Vec<std::sync::atomic::AtomicU32>,
+    p90_bits: Vec<std::sync::atomic::AtomicU32>,
+    n: Vec<std::sync::atomic::AtomicU32>,
+}
+
+impl ChunkIntensityChannel {
+    /// Construct with `n_streams` slots, initialized to the "no data yet"
+    /// state (NaN p10/p90, n=0).
+    pub fn new(n_streams: usize) -> Self {
+        Self {
+            p10_bits: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
+                .collect(),
+            p90_bits: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
+                .collect(),
+            n: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(0))
+                .collect(),
+        }
+    }
+
+    /// Number of per-stream slots.
+    pub fn n_streams(&self) -> usize {
+        self.n.len()
+    }
+
+    /// Compute chunk-local p10/p90 from a stream's intensities, filter
+    /// out non-finite samples, sort internally, and publish to this
+    /// stream's slot. If all intensities are non-finite or the slice is
+    /// empty, publishes the empty-slot marker (NaN, n=0).
+    ///
+    /// Safe to call from any thread concurrently with reads from other
+    /// streams' slots (each stream owns exactly one slot).
+    pub fn publish_stream(&self, stream_idx: usize, intensities: &[f32]) {
+        use std::sync::atomic::Ordering;
+        if stream_idx >= self.n.len() {
+            return;
+        }
+        let mut filtered: Vec<f32> =
+            intensities.iter().copied().filter(|v| v.is_finite()).collect();
+        if filtered.is_empty() {
+            self.publish_empty(stream_idx);
+            return;
+        }
+        filtered.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = filtered.len();
+        let p10_idx = ((n as f32 * 0.10) as usize).min(n - 1);
+        let p90_idx = ((n as f32 * 0.90) as usize).min(n - 1);
+        self.p10_bits[stream_idx].store(filtered[p10_idx].to_bits(), Ordering::Relaxed);
+        self.p90_bits[stream_idx].store(filtered[p90_idx].to_bits(), Ordering::Relaxed);
+        self.n[stream_idx].store(n as u32, Ordering::Relaxed);
+    }
+
+    /// Publish the "no data this chunk" marker (NaN, n=0). Called by
+    /// streams that had zero spikes in the current chunk.
+    pub fn publish_empty(&self, stream_idx: usize) {
+        use std::sync::atomic::Ordering;
+        if stream_idx >= self.n.len() {
+            return;
+        }
+        self.n[stream_idx].store(0, Ordering::Relaxed);
+        self.p10_bits[stream_idx].store(f32::NAN.to_bits(), Ordering::Relaxed);
+        self.p90_bits[stream_idx].store(f32::NAN.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Aggregate every stream's published p10/p90 into a single
+    /// `p90_over_p10` ratio for this chunk. Returns `None` when no stream
+    /// contributed data (caller should then treat the axis as "no claim"
+    /// by passing `f32::NAN` to ObservationWindow).
+    ///
+    /// Method: median-of-medians. Take each stream's (p10, p90), keep
+    /// only streams with `n > 0` and finite bits, sort the collected
+    /// p10s, sort the p90s, and return `median(p90s) / max(median(p10s),
+    /// 1e-6)`. The ε-floor prevents `Inf` when a stream reports p10 of
+    /// exactly zero.
+    ///
+    /// Rationale: median-of-medians is robust to a single
+    /// high-dispersion stream (so it will not mask a pan-stream flat
+    /// distribution) and robust to a single flat stream (so it will not
+    /// drag the aggregate ratio to 1.0 when other streams are healthy).
+    /// It is a deliberate approximation of the true pooled percentile;
+    /// the exact pooled percentile would require publishing raw
+    /// intensity samples from each stream (higher-bandwidth channel,
+    /// not currently needed for the rescue-controller coarse signal).
+    pub fn aggregate(&self) -> Option<f32> {
+        use std::sync::atomic::Ordering;
+        let mut p10s: Vec<f32> = Vec::with_capacity(self.n.len());
+        let mut p90s: Vec<f32> = Vec::with_capacity(self.n.len());
+        for i in 0..self.n.len() {
+            let n = self.n[i].load(Ordering::Relaxed);
+            if n == 0 {
+                continue;
+            }
+            let p10 = f32::from_bits(self.p10_bits[i].load(Ordering::Relaxed));
+            let p90 = f32::from_bits(self.p90_bits[i].load(Ordering::Relaxed));
+            if p10.is_finite() && p90.is_finite() {
+                p10s.push(p10);
+                p90s.push(p90);
+            }
+        }
+        if p10s.is_empty() {
+            return None;
+        }
+        p10s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        p90s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median_p10 = p10s[p10s.len() / 2].max(1e-6);
+        let median_p90 = p90s[p90s.len() / 2];
+        Some(median_p90 / median_p10)
+    }
+
+    /// Reset every slot to the "no data" state. Not strictly required
+    /// (publish_stream / publish_empty overwrite) but useful when a new
+    /// chunk starts and the caller wants to guarantee any stream that
+    /// forgets to publish leaves a fresh slate rather than stale data.
+    pub fn reset(&self) {
+        use std::sync::atomic::Ordering;
+        for i in 0..self.n.len() {
+            self.n[i].store(0, Ordering::Relaxed);
+            self.p10_bits[i].store(f32::NAN.to_bits(), Ordering::Relaxed);
+            self.p90_bits[i].store(f32::NAN.to_bits(), Ordering::Relaxed);
+        }
     }
 }
 
@@ -1287,9 +1461,150 @@ mod tests {
         let mut obs = make_obs(150.0, 0.8, 0.4, 1.5);
         obs.spike_intensity_p90_over_p10 = 1.5; // flat
         let deficit = InformationDeficit::from_observation(&obs, &targets);
-        // (3.0 - 1.5) / (3.0 - 1.0) = 0.75
-        assert!((deficit.intensity_flatness_deficit - 0.75).abs() < 1e-5,
-            "expected flatness deficit 0.75, got {}", deficit.intensity_flatness_deficit);
+        // Log-scale: 1 - log(1.5)/log(3.0) ≈ 1 - 0.4055/1.0986 ≈ 0.631
+        let expected = 1.0 - (1.5_f32).ln() / (3.0_f32).ln();
+        assert!((deficit.intensity_flatness_deficit - expected).abs() < 1e-4,
+            "expected log-scale flatness deficit ~{:.4}, got {}",
+            expected, deficit.intensity_flatness_deficit);
+    }
+
+    #[test]
+    fn perfectly_flat_yields_unit_flatness_deficit() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut obs = make_obs(150.0, 0.8, 0.4, 1.5);
+        obs.spike_intensity_p90_over_p10 = 1.0; // perfectly flat
+        let deficit = InformationDeficit::from_observation(&obs, &targets);
+        // log(1)/log(3) = 0  → deficit = 1.0
+        assert!((deficit.intensity_flatness_deficit - 1.0).abs() < 1e-5,
+            "expected flatness deficit 1.0, got {}", deficit.intensity_flatness_deficit);
+    }
+
+    #[test]
+    fn at_target_flatness_is_zero() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut obs = make_obs(150.0, 0.8, 0.4, 1.5);
+        obs.spike_intensity_p90_over_p10 = targets.target_intensity_p90_over_p10;
+        let deficit = InformationDeficit::from_observation(&obs, &targets);
+        assert_eq!(deficit.intensity_flatness_deficit, 0.0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ChunkIntensityChannel unit + threaded integration tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn channel_publish_stream_computes_correct_percentiles() {
+        let ch = ChunkIntensityChannel::new(2);
+        // Stream 0: 100 samples, linear ramp 0.01 .. 1.00.
+        // Impl picks p10_idx = floor(n * 0.1) = 10 (0-indexed) → sample 0.11.
+        // Impl picks p90_idx = floor(n * 0.9) = 90 (0-indexed) → sample 0.91.
+        // Expected ratio = 0.91 / 0.11 = 8.272...
+        let data: Vec<f32> = (1..=100).map(|i| i as f32 / 100.0).collect();
+        ch.publish_stream(0, &data);
+        let ratio = ch.aggregate().unwrap();
+        let expected = 0.91_f32 / 0.11_f32;
+        assert!((ratio - expected).abs() < 0.01,
+            "expected {:.3}, got {:.3}", expected, ratio);
+    }
+
+    #[test]
+    fn channel_publish_empty_signals_no_data() {
+        let ch = ChunkIntensityChannel::new(4);
+        // No stream publishes.
+        assert!(ch.aggregate().is_none());
+    }
+
+    #[test]
+    fn channel_filters_non_finite_intensities() {
+        let ch = ChunkIntensityChannel::new(1);
+        let mixed = vec![1.0, f32::NAN, 2.0, f32::INFINITY, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        ch.publish_stream(0, &mixed);
+        let ratio = ch.aggregate().unwrap();
+        // After filter: 8 finite samples 1..8, p10 idx = 0 (→ 1.0), p90 idx = 7 (→ 8.0)
+        assert!((ratio - 8.0).abs() < 1e-3, "got {}", ratio);
+    }
+
+    #[test]
+    fn channel_aggregate_skips_zero_n_streams() {
+        let ch = ChunkIntensityChannel::new(3);
+        // Stream 0 publishes; streams 1 and 2 are idle.
+        ch.publish_stream(0, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+        ch.publish_empty(1);
+        ch.publish_empty(2);
+        let ratio = ch.aggregate().unwrap();
+        // Stream 0: p10 at idx 1 (2.0), p90 at idx 9 (10.0), ratio = 5.0
+        assert!((ratio - 5.0).abs() < 1e-3, "got {}", ratio);
+    }
+
+    #[test]
+    fn channel_aggregate_median_of_medians_is_robust_to_one_flat_stream() {
+        // Threaded test: 4 streams, 3 publish wide distributions, 1 publishes flat.
+        // Median-of-medians should preserve the wide-distribution signal, NOT
+        // collapse to the flat stream's ratio.
+        use std::sync::Arc;
+        use std::sync::Barrier;
+        use std::thread;
+        let ch = Arc::new(ChunkIntensityChannel::new(4));
+        let barrier = Arc::new(Barrier::new(5)); // 4 writers + main
+        let mut handles = vec![];
+        for s_idx in 0..4 {
+            let c = Arc::clone(&ch);
+            let b = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                let data: Vec<f32> = match s_idx {
+                    // Three wide distributions: p10 ≈ 1.0, p90 ≈ 10.0 → ratio ~10
+                    0 | 1 | 2 => (1..=100).map(|k| k as f32 / 10.0).collect(),
+                    // One flat: all 5.0 → p90/p10 = 1.0
+                    _ => vec![5.0; 100],
+                };
+                c.publish_stream(s_idx, &data);
+                b.wait();
+            }));
+        }
+        barrier.wait();
+        for h in handles { h.join().unwrap(); }
+        let ratio = ch.aggregate().unwrap();
+        // median_p10 across [1.0, 1.0, 1.0, 5.0] = 1.0
+        // median_p90 across [10.0, 10.0, 10.0, 5.0] = 10.0
+        // ratio = 10.0. The flat stream does NOT drag the aggregate down.
+        assert!(ratio > 5.0,
+            "median-of-medians should preserve wide signal from 3 streams, got {}",
+            ratio);
+    }
+
+    #[test]
+    fn channel_aggregate_catches_all_flat_distribution() {
+        // Every stream is flat — this is the POLQ / CBL-B regime-boundary
+        // pattern. Aggregate should return a ratio near 1.0 → rescue
+        // controller sees a strong flatness_deficit.
+        let ch = ChunkIntensityChannel::new(4);
+        for s_idx in 0..4 {
+            let data = vec![1.0f32; 100]; // perfectly flat
+            ch.publish_stream(s_idx, &data);
+        }
+        let ratio = ch.aggregate().unwrap();
+        assert!((ratio - 1.0).abs() < 1e-3,
+            "all-flat distribution should aggregate to ~1.0, got {}", ratio);
+    }
+
+    #[test]
+    fn channel_reset_clears_all_slots() {
+        let ch = ChunkIntensityChannel::new(2);
+        ch.publish_stream(0, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+        assert!(ch.aggregate().is_some());
+        ch.reset();
+        assert!(ch.aggregate().is_none(),
+            "reset should clear all slots to no-data state");
+    }
+
+    #[test]
+    fn channel_out_of_bounds_stream_idx_is_no_op() {
+        let ch = ChunkIntensityChannel::new(2);
+        // Must not panic.
+        ch.publish_stream(99, &[1.0, 2.0, 3.0]);
+        ch.publish_empty(99);
+        assert!(ch.aggregate().is_none(),
+            "out-of-bounds publishes should not corrupt valid slots");
     }
 
     #[test]
