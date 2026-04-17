@@ -8056,23 +8056,133 @@ fn run_multi_stream_pipeline(
         }
 
         // ── PRISM-Therm (multi-stream path) — run BEFORE final reranking ──
+        //
+        // In multi-differential mode (`--multi-differential` with >=4
+        // streams), 4 distinct TWIN protocols (ThermalShock, Equilibrium,
+        // UvAromatic, Hysteresis) run concurrently. Running a SINGLE
+        // SdstBridge with one canonical protocol mis-classifies phase_id
+        // for spikes from 3 of the 4 groups and saturates
+        // asymmetry_score at 1.0 on every site (z-score → 0 → every site
+        // becomes therm_class::RESPONSIVE — classifier collapse).
+        //
+        // Fix: PER-GROUP SdstBridge. Partition `all_stream_spikes` by the
+        // originating stream (via `stream_spike_offsets`), map stream →
+        // group via `group_idx = stream_idx / epg_val`, and run one
+        // bridge per group with that group's own TWIN protocol. Merge
+        // per-site results via `merge_per_group_analyses` (MAX-over-groups
+        // asymmetry + recomputed z-score + reclassified therm_class).
         let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
             log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)...");
-            match SdstBridge::new(&topology, &protocol, all_stream_spikes.len()) {
-                Err(e) => { log::warn!("  PRISM-Therm: SDST init failed ({})", e); None }
-                Ok(bridge) => {
-                    match bridge.ingest_all_spikes(&all_stream_spikes) {
-                        Err(e) => { log::warn!("  PRISM-Therm: ingest failed ({})", e); None }
-                        Ok(event_count) => {
-                            log::info!("  PRISM-Therm: {} events ingested", event_count);
-                            match bridge.analyze(&clustered_sites) {
-                                Err(e) => { log::warn!("  PRISM-Therm: analysis failed ({})", e); None }
-                                Ok(analysis) => {
-                                    log::info!("  PRISM-Therm: {}/{} hysteretic | {} SDST pockets",
-                                        analysis.hysteretic_site_count,
-                                        clustered_sites.len(),
-                                        analysis.global_pockets.len());
-                                    Some(analysis)
+            if is_multi_diff && n_streams >= 4 && stream_spike_offsets.len() == n_streams {
+                let twin_protocols = prism_nhs::fused_engine::CryoUvProtocol::twin_differential_set();
+                let group_names = ["ThermalShock", "Equilibrium", "UvAromatic", "Hysteresis"];
+                let mut per_group_analyses: Vec<PrismThermAnalysis> = Vec::with_capacity(4);
+                for group_idx in 0..4usize {
+                    // Gather spikes from every stream that maps to this group.
+                    let mut group_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
+                    for stream_idx in 0..n_streams {
+                        if stream_idx / epg_val != group_idx { continue; }
+                        let start = stream_spike_offsets[stream_idx];
+                        let end = if stream_idx + 1 < stream_spike_offsets.len() {
+                            stream_spike_offsets[stream_idx + 1]
+                        } else {
+                            all_stream_spikes.len()
+                        };
+                        if end <= start || end > all_stream_spikes.len() { continue; }
+                        group_spikes.extend_from_slice(&all_stream_spikes[start..end]);
+                    }
+                    if group_spikes.is_empty() {
+                        log::warn!(
+                            "  PRISM-Therm [group {} {}]: no spikes in this group — skipping",
+                            group_idx, group_names[group_idx]
+                        );
+                        continue;
+                    }
+                    log::info!(
+                        "  PRISM-Therm [group {} {}]: {} spikes, protocol cold={} ramp={} warm={} down={} return={}",
+                        group_idx, group_names[group_idx], group_spikes.len(),
+                        twin_protocols[group_idx].cold_hold_steps,
+                        twin_protocols[group_idx].ramp_steps,
+                        twin_protocols[group_idx].warm_hold_steps,
+                        twin_protocols[group_idx].ramp_down_steps,
+                        twin_protocols[group_idx].cold_return_steps,
+                    );
+                    match SdstBridge::new(&topology, &twin_protocols[group_idx], group_spikes.len()) {
+                        Err(e) => {
+                            log::warn!(
+                                "  PRISM-Therm [group {}]: SDST init failed ({}) — skipping group",
+                                group_idx, e
+                            );
+                        }
+                        Ok(bridge) => match bridge.ingest_all_spikes(&group_spikes) {
+                            Err(e) => {
+                                log::warn!(
+                                    "  PRISM-Therm [group {}]: ingest failed ({}) — skipping group",
+                                    group_idx, e
+                                );
+                            }
+                            Ok(event_count) => {
+                                log::info!(
+                                    "  PRISM-Therm [group {}]: {} events ingested",
+                                    group_idx, event_count
+                                );
+                                match bridge.analyze(&clustered_sites) {
+                                    Err(e) => {
+                                        log::warn!(
+                                            "  PRISM-Therm [group {}]: analyze failed ({}) — skipping group",
+                                            group_idx, e
+                                        );
+                                    }
+                                    Ok(a) => {
+                                        log::info!(
+                                            "  PRISM-Therm [group {}]: {}/{} hysteretic | {} SDST pockets",
+                                            group_idx,
+                                            a.hysteretic_site_count,
+                                            clustered_sites.len(),
+                                            a.global_pockets.len()
+                                        );
+                                        per_group_analyses.push(a);
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+                if per_group_analyses.is_empty() {
+                    log::warn!("  PRISM-Therm: all per-group analyses failed — no thermo data");
+                    None
+                } else {
+                    let merged = prism_nhs::sdst_bridge::merge_per_group_analyses(
+                        &per_group_analyses, &clustered_sites,
+                    );
+                    log::info!(
+                        "  PRISM-Therm MERGED ({} groups): {}/{} hysteretic | {} SDST pockets | total events {}",
+                        per_group_analyses.len(),
+                        merged.hysteretic_site_count,
+                        clustered_sites.len(),
+                        merged.global_pockets.len(),
+                        merged.sdst_event_count,
+                    );
+                    Some(merged)
+                }
+            } else {
+                // Single-stream path — one bridge with the canonical protocol.
+                match SdstBridge::new(&topology, &protocol, all_stream_spikes.len()) {
+                    Err(e) => { log::warn!("  PRISM-Therm: SDST init failed ({})", e); None }
+                    Ok(bridge) => {
+                        match bridge.ingest_all_spikes(&all_stream_spikes) {
+                            Err(e) => { log::warn!("  PRISM-Therm: ingest failed ({})", e); None }
+                            Ok(event_count) => {
+                                log::info!("  PRISM-Therm: {} events ingested", event_count);
+                                match bridge.analyze(&clustered_sites) {
+                                    Err(e) => { log::warn!("  PRISM-Therm: analysis failed ({})", e); None }
+                                    Ok(analysis) => {
+                                        log::info!("  PRISM-Therm: {}/{} hysteretic | {} SDST pockets",
+                                            analysis.hysteretic_site_count,
+                                            clustered_sites.len(),
+                                            analysis.global_pockets.len());
+                                        Some(analysis)
+                                    }
                                 }
                             }
                         }

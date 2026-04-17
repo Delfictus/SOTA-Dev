@@ -502,6 +502,153 @@ impl SdstBridge {
     // Internal helpers
     // -----------------------------------------------------------------------
 
+    // (helpers continue after this block)
+}
+
+/// Merge multiple `PrismThermAnalysis` results — one per TWIN-differential
+/// group — into a single analysis.
+///
+/// ## Why this exists
+///
+/// In multi-differential mode the engine runs 4 distinct protocols
+/// concurrently (ThermalShock, Equilibrium, UvAromatic, Hysteresis).
+/// Phase boundaries differ across protocols, so a SDST bridge with a
+/// single protocol mis-classifies every spike that didn't come from the
+/// group whose protocol it holds. The observed failure is
+/// `asymmetry_score = 1.0` on every site and `therm_class = RESPONSIVE`
+/// for every site — because the z-score across saturated values is zero.
+///
+/// ## Strategy
+///
+/// Per-group SdstBridge instances ingest only their own group's spikes,
+/// each with the correct protocol. Each produces its own
+/// `PrismThermAnalysis`. This function merges them:
+///
+///   1. For each site, select the per-group `PrismThermSiteResult` with
+///      the MAX `asymmetry_score`. This reflects the physical intuition
+///      that a real cryptic pocket responds most strongly to the
+///      protocol best suited to excite it (ThermalShock for hot
+///      cryptics, Hysteresis for re-closure-resistant, etc.).
+///   2. Once the merged per-site asymmetry is selected, recompute the
+///      z-score across sites and reclassify `therm_class` using the
+///      same logic as `SdstBridge::analyze` (z > 1.5 → Cryptic, etc.).
+///      This way the classifier actually differentiates sites instead
+///      of collapsing to one bucket.
+///   3. Global pockets: concatenated union (each group may find
+///      different candidate pockets). Duplicates at the same grid
+///      region are collapsed.
+///   4. Other fields summed (sdst_event_count, total_avalanches).
+///
+/// ## Input invariants
+///
+///   * Every input analysis must have been produced against the SAME
+///     `clustered_sites` slice. Site IDs are matched by `site_id`.
+///   * `analyses` is non-empty.
+pub fn merge_per_group_analyses(
+    analyses: &[PrismThermAnalysis],
+    sites: &[ClusteredBindingSite],
+) -> PrismThermAnalysis {
+    assert!(!analyses.is_empty(), "merge_per_group_analyses: analyses must be non-empty");
+
+    // Step 1: for each site, pick the per-group result with MAX asymmetry_score.
+    let mut merged_sites: Vec<PrismThermSiteResult> = Vec::with_capacity(sites.len());
+    for site in sites {
+        let sid = site.cluster_id;
+        let mut best: Option<PrismThermSiteResult> = None;
+        for a in analyses {
+            if let Some(sr) = a.sites.iter().find(|s| s.site_id == sid) {
+                match &best {
+                    None => best = Some(sr.clone()),
+                    Some(cur) if sr.asymmetry_score > cur.asymmetry_score => {
+                        best = Some(sr.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if let Some(mut sr) = best {
+            // Clear the existing relative_asymmetry + therm_class — they were
+            // derived from the per-group z-score which is not valid after
+            // merging. Both are recomputed in step 2 below.
+            sr.relative_asymmetry = 0.0;
+            sr.therm_class = ThermClass::Responsive;
+            merged_sites.push(sr);
+        }
+    }
+
+    // Step 2: recompute z-score + reclassify on the merged asymmetries.
+    // Mirrors the classifier in SdstBridge::analyze:425-455 exactly.
+    let asymmetries: Vec<f32> = merged_sites.iter().map(|r| r.asymmetry_score).collect();
+    let n = asymmetries.len() as f32;
+    let mean_asym = if n > 0.0 { asymmetries.iter().sum::<f32>() / n } else { 0.0 };
+    let var_asym = if n > 1.0 {
+        asymmetries.iter().map(|a| (a - mean_asym).powi(2)).sum::<f32>() / (n - 1.0)
+    } else { 0.01 };
+    let std_asym = var_asym.sqrt().max(0.001);
+
+    let mut all_te: Vec<f32> = merged_sites.iter()
+        .flat_map(|r| r.tide_decomposition.iter().map(|t| t.transfer_entropy))
+        .collect();
+    all_te.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median_te = if all_te.is_empty() { 0.0 } else { all_te[all_te.len() / 2] };
+
+    let mut hysteretic_count = 0usize;
+    for sr in merged_sites.iter_mut() {
+        let z = (sr.asymmetry_score - mean_asym) / std_asym;
+        sr.relative_asymmetry = z;
+        let top_te = sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0);
+        let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
+        let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
+        sr.therm_class = if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
+            ThermClass::Cryptic
+        } else if z > 0.5 {
+            ThermClass::Dynamic
+        } else if z > -0.5 {
+            ThermClass::Responsive
+        } else {
+            ThermClass::Inert
+        };
+        if sr.is_hysteretic {
+            hysteretic_count += 1;
+        }
+    }
+
+    log::info!("  PRISM-Therm merged ({} groups): mean_asym={:.4}, std={:.4}, median_TE={:.5}",
+        analyses.len(), mean_asym, std_asym, median_te);
+
+    // Step 3: union global_pockets across groups. Dedupe by grid_region.
+    let mut merged_global: Vec<PrismThermGlobalPocket> = Vec::new();
+    let mut seen_regions: std::collections::HashSet<[u32; 6]> = std::collections::HashSet::new();
+    for a in analyses {
+        for p in &a.global_pockets {
+            if seen_regions.insert(p.grid_region) {
+                merged_global.push(p.clone());
+            }
+        }
+    }
+
+    // Step 4: sum event counts + avalanches + pick max tide_residues_mapped.
+    let sdst_event_count: u32 = analyses.iter().map(|a| a.sdst_event_count).sum();
+    let total_avalanches: usize = analyses.iter().map(|a| a.total_avalanches).sum();
+    let tide_residues_mapped: usize = analyses.iter()
+        .map(|a| a.tide_residues_mapped)
+        .max()
+        .unwrap_or(0);
+
+    PrismThermAnalysis {
+        sdst_event_count,
+        hysteresis_threshold: HYSTERESIS_THRESHOLD,
+        hysteretic_site_count: hysteretic_count,
+        sites: merged_sites,
+        global_pockets: merged_global,
+        total_avalanches,
+        tide_residues_mapped,
+    }
+}
+
+// (SdstBridge impl continues below with the remaining helper methods)
+impl SdstBridge {
+
     /// Convert one `GpuSpikeEvent` to `SpikeInput` for SDST ingestion.
     fn convert_spike(&self, s: &GpuSpikeEvent) -> sdst::SpikeInput {
         let ts = s.timestep.max(0) as u32;
