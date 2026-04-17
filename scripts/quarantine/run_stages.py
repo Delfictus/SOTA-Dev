@@ -232,8 +232,14 @@ def stage3_prep(target: Dict[str, Any], target_dir: Path,
     topology = artifacts_dir / f"{pdb_id}.topology.json"
     prism_prep = REPO_ROOT / "scripts" / "prism-prep"
 
-    # Target-specific NMA mode generation (enables --nma-perturb in engine stage)
-    nma_modes_n = int(target.get("nma_modes", 0) or 0)
+    # NMA mode generation — default ON with 32 modes. The v3 rescue
+    # controller's auto-NMA-load step at engine startup looks for the
+    # modes file alongside the topology; without the modes file the
+    # rescue's EngineV2NmaAmpMultiplier actions mutate engine state
+    # without kernel-level effect (demonstrated on POLQ v3.2 run:
+    # primary=0 even though rescue published NMA amp → 20.0 cap).
+    # Targets can opt out by setting `"nma_modes": 0` in their config.
+    nma_modes_n = int(target.get("nma_modes", 32) or 32)
 
     with RunContext(tname, "3_prep", "prism_prep", artifacts_dir, prov_dir,
                     upstream_prov=upstream_prov) as ctx:
@@ -249,8 +255,13 @@ def stage3_prep(target: Dict[str, Any], target_dir: Path,
             stderr_file=artifacts_dir / "prism_prep.stderr.log",
         )
         ctx.add_output(topology, role="topology")
-        # NMA modes file is emitted as <topology_stem>_nma_modes.json
-        nma_file = artifacts_dir / f"{pdb_id}.topology_nma_modes.json"
+        # NMA modes file: prism-prep (line 766-767) writes
+        # output_topology.stem.replace('.topology', '') + '_nma_modes.json'
+        # → for topology "5a9j.topology.json", the modes file is
+        # "5a9j_nma_modes.json" (NOT "5a9j.topology_nma_modes.json").
+        # The engine's auto-detect in nhs_rt_full.rs uses the SAME
+        # convention; both sides must agree.
+        nma_file = artifacts_dir / f"{pdb_id}_nma_modes.json"
         if nma_file.exists():
             ctx.add_output(nma_file, role="nma_modes")
             ctx.set_gate("nma_modes_generated", "PASS",
