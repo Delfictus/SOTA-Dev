@@ -3871,6 +3871,10 @@ fn run_multi_stream_pipeline(
                 // Per-stream clone of the Arc<RescueTargets>. Captured by
                 // the thread worker; cheap (Arc clone is a refcount bump).
                 let rescue_targets_i = rescue_targets.clone();
+                // Captured for NMA-modes auto-detection inside the closure —
+                // stem of this path locates the sibling `*_nma_modes.json`
+                // written by prism-prep.
+                let topology_path_capture = topology_path.clone();
                 // Multi-temperature ladder: spread end_temp across streams
                 // Stream 0 gets the base temperature; higher streams get progressively
                 // hotter to crack high-barrier pockets. The ramp_down phase then cools
@@ -4047,11 +4051,72 @@ fn run_multi_stream_pipeline(
                     if ladd_enabled {
                         engine.set_ladd_enabled(true);
                     }
-                    if let Some(ref nma_p) = nma_path {
+                    // ── NMA modes loading ──
+                    //
+                    // Priority order:
+                    //   1. Explicit --nma-perturb CLI flag (if set, use it verbatim).
+                    //   2. Auto-detect `{topology_stem}_nma_modes.json` alongside the
+                    //      topology file. prism-prep generates this by default.
+                    //   3. No NMA modes available — warn that NMA rescue will be no-op.
+                    //
+                    // Auto-detection is silent-success-loud-failure: if found, load and
+                    // log which path. If not found AND rescue controller is enabled, emit
+                    // a WARN explaining that EngineV2NmaAmpMultiplier rescue actions will
+                    // mutate the engine's amp field without kernel-level effect (because
+                    // the NMA perturbation kernel is a no-op without modes).
+                    let auto_nma_loaded = if let Some(ref nma_p) = nma_path {
                         engine.set_nma_amplification(nma_amp);
                         engine.set_nma_scan_fraction(nma_frac);
                         engine.load_nma_modes(nma_p.to_str().unwrap_or(""))?;
-                    }
+                        if i == 0 {
+                            log::info!("    [stream {}] NMA modes loaded from CLI --nma-perturb: {}",
+                                i, nma_p.display());
+                        }
+                        true
+                    } else {
+                        // Auto-detect the prep-produced modes file.
+                        let topo_pathbuf = topology_path_capture.clone();
+                        let stem = topo_pathbuf.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("");
+                        // Topology JSON may be named either `{stem}.topology.json` or
+                        // `{stem}_clean.topology.json`; prism-prep emits the modes file
+                        // as `{stem}_nma_modes.json` using the SAME stem as the topology.
+                        // Strip `.topology` suffix from the stem if present.
+                        let base_stem = stem.trim_end_matches(".topology");
+                        let parent = topo_pathbuf.parent().unwrap_or(std::path::Path::new("."));
+                        let candidate = parent.join(format!("{}_nma_modes.json", base_stem));
+                        if candidate.is_file() {
+                            engine.set_nma_amplification(nma_amp);
+                            engine.set_nma_scan_fraction(nma_frac);
+                            match engine.load_nma_modes(candidate.to_str().unwrap_or("")) {
+                                Ok(()) => {
+                                    if i == 0 {
+                                        log::info!("    [stream {}] NMA modes AUTO-LOADED from {} (amp={:.1})",
+                                            i, candidate.display(), nma_amp);
+                                    }
+                                    true
+                                }
+                                Err(e) => {
+                                    if i == 0 {
+                                        log::warn!("    [stream {}] NMA modes auto-load failed ({}): {}",
+                                            i, candidate.display(), e);
+                                    }
+                                    false
+                                }
+                            }
+                        } else {
+                            if i == 0 {
+                                log::warn!("    [stream {}] NMA modes not found — neither --nma-perturb set nor {} exists. \
+                                    Rescue NMA actions will mutate engine state but produce no kernel-level effect. \
+                                    To enable NMA-based rescue, regenerate topology via prism-prep which writes the modes file alongside, \
+                                    or pass --nma-perturb <path>.",
+                                    i, candidate.display());
+                            }
+                            false
+                        }
+                    };
+                    let _ = auto_nma_loaded; // captured for potential future telemetry
                     engine.set_cryo_uv_protocol(prot)?;
                     engine.set_spike_accumulation(true);
 
@@ -4867,7 +4932,7 @@ fn run_multi_stream_pipeline(
                                                         // are not host-accessible at this callsite.
                                                         // Feeding 0.0 is explicitly safe — the
                                                         // module does not consume this field in
-                                                        // v1 (see rescue_controller.rs:538).
+                                                        // v1.
                                                         current_otsu_threshold: 0.0,
                                                         // Fallback for callers that don't run an
                                                         // upstream BOCPD. The controller has its
@@ -4877,6 +4942,15 @@ fn run_multi_stream_pipeline(
                                                         // rescue_controller.rs decide()).
                                                         bocpd_regime_stability: 1.0,
                                                         cumulative_spike_count,
+                                                        // v3 intensity-distribution observable.
+                                                        // Computing per-chunk p90/p10 across all
+                                                        // streams requires plumbing a new shared-
+                                                        // state channel (each stream publishes its
+                                                        // chunk-local intensity histogram → thread-0
+                                                        // aggregates). Not in scope for this pass;
+                                                        // NaN signals "no claim" and the rescue
+                                                        // controller ignores the flatness axis.
+                                                        spike_intensity_p90_over_p10: f32::NAN,
                                                     };
                                                     let actions = ctrl.decide(&obs, rescue_targets_i.as_ref());
 

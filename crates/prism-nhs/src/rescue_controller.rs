@@ -107,6 +107,16 @@ pub struct ObservationWindow {
     /// streams. Used to distinguish "engine has emitted SOMETHING" from
     /// the dead-engine regime where zero spikes have ever fired.
     pub cumulative_spike_count: u64,
+
+    /// Spike-intensity distribution flatness observable (v3).
+    /// Ratio of p90 / p10 over this chunk's per-stream spike intensities
+    /// (aggregated). Healthy targets show wide intensity distributions
+    /// (ratio ~5-10 — strong outliers above bulk) while regime-boundary
+    /// targets like POLQ / CBL-B show flat distributions (ratio ~1-2 —
+    /// uniform noise, no prominent spikes). Set to `f32::NAN` when the
+    /// caller cannot or has not computed the distribution; the rescue
+    /// controller treats NaN as "no deficit on this axis".
+    pub spike_intensity_p90_over_p10: f32,
 }
 
 impl ObservationWindow {
@@ -184,6 +194,19 @@ pub struct RescueTargets {
     /// in-progress regime transition where the engine MAY recover.
     /// Default 0.7.
     pub min_regime_stability: f32,
+
+    /// Target minimum spike-intensity p90/p10 ratio (v3). Below this, the
+    /// intensity distribution is too flat — most spikes will fail the
+    /// post-hoc adaptive intensity threshold and fail primary
+    /// classification. This is the observable that distinguishes "kernel
+    /// is firing spikes but they are all bulk noise" (POLQ regime) from
+    /// "engine is healthy with strong outlier spikes" (normal regime).
+    /// Default 3.0 (spikes at the 90th percentile should be at least 3×
+    /// more intense than spikes at the 10th percentile — a well-separated
+    /// distribution). Backward-compatible: `serde(default)` so older
+    /// targets JSONs (written before v3) still parse.
+    #[serde(default = "RescueTargets::default_target_intensity_p90_over_p10")]
+    pub target_intensity_p90_over_p10: f32,
 }
 
 impl RescueTargets {
@@ -196,6 +219,12 @@ impl RescueTargets {
     /// Targets with significantly different information profiles (e.g.
     /// dispersed-aromatic constructs like CBL-B 3VGO, or very small
     /// domains like TRIP12 WWE) should override these.
+    /// Serde default for `target_intensity_p90_over_p10` when the field is
+    /// absent from a target JSON file (backward compat for pre-v3 files).
+    fn default_target_intensity_p90_over_p10() -> f32 {
+        3.0
+    }
+
     pub fn default_for_canonical_target() -> Self {
         Self {
             // Healthy chunk-rate: ~100 spikes/chunk/stream after filter
@@ -205,6 +234,11 @@ impl RescueTargets {
             target_phasor_entropy: 2.0,
             min_consecutive_below: 3,
             min_regime_stability: 0.7,
+            // Healthy intensity distribution: p90 at least 3x p10. On
+            // KRAS the observed ratio is 5-10; on POLQ and CBL-B-class
+            // regime boundaries the ratio drops below 2 (intensity
+            // histogram collapses to near-uniform bulk noise).
+            target_intensity_p90_over_p10: 3.0,
         }
     }
 
@@ -296,6 +330,22 @@ pub struct InformationDeficit {
     /// Phasor-entropy deficit: how much above target entropy is. Higher
     /// entropy with no spikes = dispersed, uncorrelated regime.
     pub entropy_deficit: f32,
+
+    /// Intensity-distribution flatness deficit (v3). Clamped to `[0, 1]`.
+    /// 1.0 = distribution is perfectly flat (p90/p10 = 1.0 = all spikes
+    /// equally intense = no structure). 0.0 = distribution is healthy
+    /// (p90/p10 >= target).
+    ///
+    /// Formula: `(target_ratio - observed_ratio) / (target_ratio - 1.0)`
+    /// clamped to `[0, 1]`. At observed == target, deficit = 0; at
+    /// observed == 1.0 (perfectly flat), deficit = 1.0.
+    ///
+    /// This is the axis that detects the POLQ/CBL-B failure mode where
+    /// the engine fires millions of spikes but they are all bulk thermal
+    /// noise (flat intensity distribution → none survive the 10th-
+    /// percentile adaptive threshold → zero primary spikes → silent
+    /// failure).
+    pub intensity_flatness_deficit: f32,
 }
 
 impl InformationDeficit {
@@ -305,6 +355,7 @@ impl InformationDeficit {
             + self.coherence_deficit
             + self.synergy_deficit
             + self.entropy_deficit
+            + self.intensity_flatness_deficit
     }
 
     /// Has at least one axis exceeded its target?
@@ -313,6 +364,7 @@ impl InformationDeficit {
             || self.coherence_deficit > 0.0
             || self.synergy_deficit > 0.0
             || self.entropy_deficit > 0.0
+            || self.intensity_flatness_deficit > 0.0
     }
 
     /// Compute the deficit vector from observation and targets.
@@ -326,11 +378,22 @@ impl InformationDeficit {
         // Phasor entropy TOO HIGH is the deficit (uniform = no structure).
         let entropy_deficit =
             (obs.phasor_entropy - targets.target_phasor_entropy).clamp(0.0, 2.0) / 2.0;
+        // Intensity flatness: (target - observed) / (target - 1.0), clamped.
+        // NaN observed → 0.0 deficit (no signal, no claim).
+        let intensity_flatness_deficit = if obs.spike_intensity_p90_over_p10.is_nan() {
+            0.0
+        } else {
+            let target_ratio = targets.target_intensity_p90_over_p10.max(1.0 + 1e-3);
+            let numer = target_ratio - obs.spike_intensity_p90_over_p10;
+            let denom = target_ratio - 1.0;
+            (numer / denom).clamp(0.0, 1.0)
+        };
         Self {
             spike_rate_deficit,
             coherence_deficit,
             synergy_deficit,
             entropy_deficit,
+            intensity_flatness_deficit,
         }
     }
 }
@@ -619,14 +682,32 @@ impl RescueController {
             });
         }
 
-        // Action 4: V2-only — NMA amplification multiplier.
-        // Only emitted for telemetry.
-        if deficit.entropy_deficit > 0.3 {
-            // Inverse mode-eigenvalue weighting would be computed caller-
-            // side given access to the NMA modes file; here we emit a
-            // straight multiplier for the amp factor.
-            let multiplier =
-                (1.0 + 5.0 * deficit.entropy_deficit).clamp(1.0, 20.0);
+        // Action 4: NMA amplification multiplier.
+        // Applied via the v2 engine channel (set_nma_amplification per-
+        // stream after the second barrier). Fires when:
+        //   * `entropy_deficit > 0.3` (phasor distribution uniform → no
+        //     coherent pocket structure), OR
+        //   * `intensity_flatness_deficit > 0.3` (v3 — spike intensity
+        //     distribution too flat → regime-boundary signature: POLQ,
+        //     CBL-B pattern where the kernel fires millions of spikes
+        //     but all are bulk thermal noise).
+        //
+        // Magnitude is the MAX of both contributing deficits, because
+        // either axis alone justifies amplification but we do not
+        // over-multiply when both fire simultaneously.
+        let entropy_driver = if deficit.entropy_deficit > 0.3 {
+            deficit.entropy_deficit
+        } else {
+            0.0
+        };
+        let flatness_driver = if deficit.intensity_flatness_deficit > 0.3 {
+            deficit.intensity_flatness_deficit
+        } else {
+            0.0
+        };
+        let nma_driver = entropy_driver.max(flatness_driver);
+        if nma_driver > 0.0 {
+            let multiplier = (1.0 + 5.0 * nma_driver).clamp(1.0, 20.0);
             actions.push(RescueAction::EngineV2NmaAmpMultiplier { multiplier });
         }
 
@@ -845,6 +926,10 @@ mod tests {
             current_otsu_threshold: 1.0,
             bocpd_regime_stability: 0.9,
             cumulative_spike_count: 1000,
+            // Default healthy intensity distribution — wide spread.
+            // Tests that want to exercise the flatness-deficit path should
+            // override to a value near 1.0.
+            spike_intensity_p90_over_p10: 5.0,
         }
     }
 
@@ -1164,6 +1249,59 @@ mod tests {
     // End-to-end: RescueController + apply_actions produce observable
     // mutations after the consecutive threshold
     // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn flatness_deficit_triggers_nma_rescue() {
+        // POLQ/CBL-B regime-boundary signature: spike rate looks fine (kernel
+        // IS firing), synergy and coherence not in trouble, BUT intensity
+        // distribution is flat (p90/p10 = 1.5 vs target 3.0 → deficit ~0.75).
+        // This should trigger the NMA amp rescue via the flatness axis even
+        // when entropy_deficit alone is zero.
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut obs = make_obs(150.0, 0.8, 0.4, 1.5); // healthy on 4 axes
+        obs.cumulative_spike_count = 10_000_000;
+        obs.spike_intensity_p90_over_p10 = 1.5; // flat = POLQ signature
+        let ctrl = RescueController::new(true);
+        // Advance past the consecutive-below threshold + BOCPD warmup.
+        for _ in 0..5 {
+            let _ = ctrl.decide(&obs, &targets);
+        }
+        let actions = ctrl.decide(&obs, &targets);
+        let has_nma = actions.iter().any(|a|
+            matches!(a, RescueAction::EngineV2NmaAmpMultiplier { .. }));
+        assert!(has_nma,
+            "expected NMA rescue on flat intensity distribution, got: {:?}", actions);
+    }
+
+    #[test]
+    fn healthy_intensity_distribution_yields_no_flatness_deficit() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let obs = make_obs(150.0, 0.8, 0.4, 1.5); // healthy, default p90/p10=5.0
+        let deficit = InformationDeficit::from_observation(&obs, &targets);
+        assert_eq!(deficit.intensity_flatness_deficit, 0.0);
+    }
+
+    #[test]
+    fn flat_intensity_distribution_yields_flatness_deficit() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut obs = make_obs(150.0, 0.8, 0.4, 1.5);
+        obs.spike_intensity_p90_over_p10 = 1.5; // flat
+        let deficit = InformationDeficit::from_observation(&obs, &targets);
+        // (3.0 - 1.5) / (3.0 - 1.0) = 0.75
+        assert!((deficit.intensity_flatness_deficit - 0.75).abs() < 1e-5,
+            "expected flatness deficit 0.75, got {}", deficit.intensity_flatness_deficit);
+    }
+
+    #[test]
+    fn nan_intensity_yields_zero_flatness_deficit() {
+        // NaN observed (caller unable or unwilling to compute) should be
+        // treated as "no claim" — zero deficit, no false rescue.
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut obs = make_obs(150.0, 0.8, 0.4, 1.5);
+        obs.spike_intensity_p90_over_p10 = f32::NAN;
+        let deficit = InformationDeficit::from_observation(&obs, &targets);
+        assert_eq!(deficit.intensity_flatness_deficit, 0.0);
+    }
 
     #[test]
     fn end_to_end_rescue_amplifies_published_weights() {
