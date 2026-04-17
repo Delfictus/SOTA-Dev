@@ -203,6 +203,51 @@ struct Args {
     #[arg(long, default_value = "false")]
     asymmetric_steering: bool,
 
+    /// Tier-2 autonomous rescue controller.
+    ///
+    /// When set AND the multi-differential path is active (>=4 streams),
+    /// every chunk the thread-0 ASC block builds an ObservationWindow
+    /// (per-stream spike rates, mean PCMI across hotspots, mean
+    /// GC-PID synergy, cumulative spike count), computes an
+    /// InformationDeficit against data-driven targets (RescueTargets::
+    /// default_for_canonical_target), and — gated on a built-in BOCPD
+    /// regime-stability check and a consecutive-below threshold —
+    /// emits continuous-magnitude RescueActions:
+    ///
+    ///   * FocusWeightAmplifier { multiplier }: scale every weight in
+    ///     the published synergy focus list by `multiplier`. Multiplier
+    ///     is `1.0 + 4.0 * spike_rate_deficit`, capped at 8.0, so the
+    ///     boost grows proportionally with the engine's emptiness.
+    ///     Applied BEFORE synergy_list is written to
+    ///     `current_steering_focus`, so the Stage-2 steering writeback
+    ///     that pushes to every stream's ProtocolState picks up the
+    ///     amplified weights and the ring_buffer_read_and_adapt kernel
+    ///     applies a stronger threshold-reduction boost to each spike
+    ///     that hits a focus residue.
+    ///
+    ///   * FocusListInjection: append residues from per-group phasor
+    ///     magnitude (those NOT already in the synergy list) to close
+    ///     observed coherence-deficit gaps. K is tiered by
+    ///     coherence_deficit ∈ [0, 0.15, 0.30, 0.45, 0.60] →
+    ///     K ∈ [0, 2, 4, 8, 16]. Appended entries share the amplifier
+    ///     when both actions fire in the same chunk.
+    ///
+    ///   * EngineV2Rest2LambdaStep / EngineV2NmaAmpMultiplier: emitted
+    ///     for telemetry only (v2 engine kernel work required). Logged
+    ///     at WARN level so they are NEVER silent — the log shows the
+    ///     requested magnitude and the reason it was not applied.
+    ///
+    ///   * Hold: deficit detected but gated (below consecutive threshold
+    ///     or unstable regime). Logged every 20 chunks with the reason.
+    ///
+    /// Reference: Ince 2017 GC-PID, Adams & MacKay 2007 BOCPD, Williams
+    /// & Beer 2010 PID decomposition. Implementation at
+    /// crates/prism-nhs/src/rescue_controller.rs (9/9 unit tests pass).
+    ///
+    /// Default false (opt-in — must pass the flag explicitly).
+    #[arg(long, default_value = "false")]
+    enable_autonomous_rescue: bool,
+
     /// Enable BOCPD-driven dynamic chunking (Stage 1B-2).
     ///
     /// When set, the autonomous chunk loop runs Adams-MacKay Bayesian
@@ -354,6 +399,37 @@ struct Args {
     /// Reduces ~34 sites to ~5-8 high-confidence candidates.
     #[arg(long, default_value = "false")]
     cascade: bool,
+
+    /// Apply the v4 tokenized ranker (LOTO-learned 4D lookup) to the emitted
+    /// sites array as the final ranking pass. Computes per-site unsat_frac
+    /// from spike intensities, looks up the 256-bin probability, re-sorts
+    /// descending with spike_count as tiebreak. The ranker is baked into the
+    /// binary via `include_bytes!` — no external file needed.
+    ///
+    /// Evaluation (LOTO, 302 targets):
+    ///     SR@1 = 36.4%   SR@3 = 81.1%   SR@5 = 94.7%
+    ///
+    /// SUPERSEDED by --use-xgb-ranker (v3), which beats this by +11.4 pts SR@1.
+    /// Kept for backward compatibility.
+    #[arg(long, default_value = "false")]
+    use_tokenized_ranker: bool,
+
+    /// Apply the v3 XGBoost ranker (ONNX-backed, 13 continuous features,
+    /// graded LOTO labels) to the emitted sites array as the final
+    /// ranking pass. Model baked into the binary via `include_bytes!`.
+    ///
+    /// Evaluation (LOTO, 345 targets):
+    ///     SR@1 = 47.83%   SR@3 = 85.51%   SR@5 = 95.94%   SR@10 = 99.42%
+    ///
+    /// Features: [spike_count, n_streams, interaction, unsat_frac, persistence,
+    /// log_spike_count, log_interaction, spread, burial_score, spike_density,
+    /// druggability, aromatic_score, n_lining_residues].
+    ///
+    /// This is the PRODUCTION ranker. Set for all pct70+ canonical runs.
+    /// If both --use-xgb-ranker and --use-tokenized-ranker are set,
+    /// xgb-ranker is applied last (wins).
+    #[arg(long, default_value = "false")]
+    use_xgb_ranker: bool,
 
     /// Stage 1: require spikes from both UV AND LIF channels.
     #[arg(long, default_value = "false")]
@@ -3583,6 +3659,15 @@ fn run_multi_stream_pipeline(
         /// confident about, so the controller's exploitation reads are not
         /// contaminated by exploration noise.
         observer_steering_focus: std::sync::Mutex<Vec<(i32, f32)>>,
+        // ── Tier-2 autonomous rescue controller (decision + applied-effect log) ──
+        /// BOCPD-gated, continuous-magnitude rescue controller. `None` when
+        /// --enable-autonomous-rescue is off. Thread-0 invokes
+        /// `decide(obs, targets)` each chunk; returned RescueActions mutate
+        /// `current_steering_focus` BEFORE it is published to the Stage 2
+        /// steering writeback. The controller's `decide` call records every
+        /// decision in its internal history — drained at run end into the
+        /// output JSON under `rescue_history`.
+        rescue_controller: Option<prism_nhs::rescue_controller::RescueController>,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3633,6 +3718,19 @@ fn run_multi_stream_pipeline(
             // them. Only used when --asymmetric-steering is enabled.
             scout_steering_focus: std::sync::Mutex::new(Vec::new()),
             observer_steering_focus: std::sync::Mutex::new(Vec::new()),
+            // Tier-2 rescue controller: `Some(...)` only when the user
+            // explicitly opts in. When enabled we log the construction at
+            // INFO so there is no ambiguity about whether the controller
+            // is live.
+            rescue_controller: if args.enable_autonomous_rescue {
+                log::info!(
+                    "  [RESCUE] Tier-2 autonomous rescue controller ENABLED (n_streams={}, n_residues={}). Decisions logged per chunk.",
+                    n_streams, n_residues_est,
+                );
+                Some(prism_nhs::rescue_controller::RescueController::new(true))
+            } else {
+                None
+            },
         }))
     } else {
         None
@@ -4566,6 +4664,173 @@ fn run_multi_stream_pipeline(
                                                 redundancy_list.truncate(
                                                     prism_nhs::protocol_state::STEERING_FOCUS_MAX
                                                 );
+
+                                                // ── Tier-2 Autonomous Rescue Controller ──
+                                                //
+                                                // Runs only when --enable-autonomous-rescue is set
+                                                // (the controller is None otherwise and this block
+                                                // is a no-op). Every chunk:
+                                                //   1. Build ObservationWindow from live ASC state
+                                                //   2. controller.decide(...) → Vec<RescueAction>
+                                                //   3. Apply actions to BOTH synergy_list and
+                                                //      redundancy_list IN PLACE before they are
+                                                //      published to shared state. Applying BEFORE
+                                                //      publication guarantees the Stage-2 steering
+                                                //      writeback (which fires after the second
+                                                //      barrier) picks up the amplified / injected
+                                                //      entries and pushes them to every stream's
+                                                //      ProtocolState. The ring_buffer_read_and_adapt
+                                                //      kernel then sees the rescue-modified focus
+                                                //      list on its next launch.
+                                                //
+                                                // Every action is logged at INFO or WARN so rescue
+                                                // decisions are never silent. V2-only actions emit
+                                                // WARN lines explicitly stating they were NOT
+                                                // applied and why.
+                                                if let Some(ref ctrl) = asc_state.rescue_controller {
+                                                    // — Build ObservationWindow —
+                                                    let spike_rates_per_stream: Vec<f32> =
+                                                        asc_state.spike_deltas.iter()
+                                                            .map(|a| a.load(
+                                                                std::sync::atomic::Ordering::Relaxed
+                                                            ) as f32)
+                                                            .collect();
+                                                    let cumulative_spike_count: u64 =
+                                                        asc_state.spike_counts.iter()
+                                                            .map(|a| a.load(
+                                                                std::sync::atomic::Ordering::Relaxed
+                                                            ))
+                                                            .sum();
+                                                    // Mean PCMI from the hotspots vector computed
+                                                    // above (lag-coherence per-residue, already
+                                                    // threshold-filtered to s_pc > 0.01).
+                                                    let pcmi_mean: f32 = if !hotspots.is_empty() {
+                                                        hotspots.iter().map(|h| h.2).sum::<f32>()
+                                                            / hotspots.len() as f32
+                                                    } else {
+                                                        0.0
+                                                    };
+                                                    // Mean GC-PID synergy across residues with
+                                                    // total_mi > 0 (same filter as
+                                                    // rescue_controller::mean_synergy_fraction).
+                                                    let mut sum_syn = 0.0_f64;
+                                                    let mut n_syn = 0_usize;
+                                                    for rid in 0..asc_state.n_residues {
+                                                        if let Some(atoms) = accs[rid].compute() {
+                                                            if atoms.total_mi > 0.0 {
+                                                                sum_syn += atoms.synergy_fraction();
+                                                                n_syn += 1;
+                                                            }
+                                                        }
+                                                    }
+                                                    let gcpid_synergy_mean: f32 = if n_syn > 0 {
+                                                        (sum_syn / n_syn as f64) as f32
+                                                    } else {
+                                                        0.0
+                                                    };
+
+                                                    let obs = prism_nhs::rescue_controller::ObservationWindow {
+                                                        chunk_idx: chunk_idx as u32,
+                                                        spike_rates_per_stream,
+                                                        pcmi_mean,
+                                                        gcpid_synergy_mean,
+                                                        phasor_entropy: 0.0,
+                                                        current_otsu_threshold: 0.0,
+                                                        bocpd_regime_stability: 1.0,
+                                                        cumulative_spike_count,
+                                                    };
+                                                    let targets = prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target();
+                                                    let actions = ctrl.decide(&obs, &targets);
+
+                                                    // — Apply each action —
+                                                    for action in &actions {
+                                                        match action {
+                                                            prism_nhs::rescue_controller::RescueAction::FocusWeightAmplifier { multiplier } => {
+                                                                for (_, w) in synergy_list.iter_mut() {
+                                                                    *w *= multiplier;
+                                                                }
+                                                                for (_, w) in redundancy_list.iter_mut() {
+                                                                    *w *= multiplier;
+                                                                }
+                                                                log::info!(
+                                                                    "    [RESCUE chunk {}] APPLIED FocusWeightAmplifier x{:.3} to synergy_list ({} entries) and redundancy_list ({} entries)",
+                                                                    chunk_idx, multiplier,
+                                                                    synergy_list.len(), redundancy_list.len()
+                                                                );
+                                                            }
+                                                            prism_nhs::rescue_controller::RescueAction::FocusListInjection { residues } => {
+                                                                // The rescue controller emits an empty
+                                                                // Vec with capacity = K. Caller fills it
+                                                                // from per-group phasor magnitudes: pick
+                                                                // the top-K residues by max-over-groups
+                                                                // phasor magnitude that are NOT already
+                                                                // in the synergy list, append them to
+                                                                // synergy_list with the maximum phasor
+                                                                // magnitude as the weight, and truncate
+                                                                // back to STEERING_FOCUS_MAX.
+                                                                let n_wanted = residues.capacity();
+                                                                let already: std::collections::HashSet<i32> =
+                                                                    synergy_list.iter().map(|(r, _)| *r).collect();
+                                                                let mut cand: Vec<(i32, f32)> = Vec::new();
+                                                                for rid in 0..asc_state.n_residues {
+                                                                    if already.contains(&(rid as i32)) {
+                                                                        continue;
+                                                                    }
+                                                                    let mut max_mag: f32 = 0.0;
+                                                                    for g in 0..4 {
+                                                                        let (cs, ss, n) = gph[g][rid];
+                                                                        if n > 5 {
+                                                                            let m = ((cs*cs + ss*ss).sqrt() / n as f64) as f32;
+                                                                            if m > max_mag { max_mag = m; }
+                                                                        }
+                                                                    }
+                                                                    if max_mag > 0.0 {
+                                                                        cand.push((rid as i32, max_mag));
+                                                                    }
+                                                                }
+                                                                cand.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                                                                cand.truncate(n_wanted);
+                                                                let n_injected = cand.len();
+                                                                for e in cand {
+                                                                    synergy_list.push(e);
+                                                                }
+                                                                synergy_list.truncate(
+                                                                    prism_nhs::protocol_state::STEERING_FOCUS_MAX
+                                                                );
+                                                                log::info!(
+                                                                    "    [RESCUE chunk {}] APPLIED FocusListInjection: injected {}/{} residues from phasor state; synergy_list now {} entries",
+                                                                    chunk_idx, n_injected, n_wanted,
+                                                                    synergy_list.len()
+                                                                );
+                                                            }
+                                                            prism_nhs::rescue_controller::RescueAction::EngineV2Rest2LambdaStep { stream_idx, delta } => {
+                                                                log::warn!(
+                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2Rest2LambdaStep stream={} delta={:.3} — NOT APPLIED (requires engine kernel work to expose per-stream REST2 lambda as host-mutable ProtocolState)",
+                                                                    chunk_idx, stream_idx, delta
+                                                                );
+                                                            }
+                                                            prism_nhs::rescue_controller::RescueAction::EngineV2NmaAmpMultiplier { multiplier } => {
+                                                                log::warn!(
+                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2NmaAmpMultiplier x{:.3} — NOT APPLIED (requires NMA amp to be exposed as host-mutable ProtocolState field)",
+                                                                    chunk_idx, multiplier
+                                                                );
+                                                            }
+                                                            prism_nhs::rescue_controller::RescueAction::Hold { reason, deficit } => {
+                                                                if chunk_idx % 20 == 0 {
+                                                                    log::info!(
+                                                                        "    [RESCUE chunk {}] HOLD reason={} [spike_def={:.3} coh_def={:.3} syn_def={:.3} ent_def={:.3}]",
+                                                                        chunk_idx, reason,
+                                                                        deficit.spike_rate_deficit,
+                                                                        deficit.coherence_deficit,
+                                                                        deficit.synergy_deficit,
+                                                                        deficit.entropy_deficit
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
                                                 // Symmetric (Stage 2 baseline) list = synergy list.
                                                 // The symmetric writeback path uses this when
                                                 // --asymmetric-steering is OFF, preserving the
@@ -5695,6 +5960,12 @@ fn run_multi_stream_pipeline(
         let mut sti_results: std::collections::HashMap<i32, BindingFreeEnergy> = std::collections::HashMap::new();
         let mut uv_enrichment_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
 
+        // Tokenized ranker v4 — computed per-site below, emitted into binding_sites.json
+        // (always), used as the final sort key when --use-tokenized-ranker is set.
+        let tokenized_ranker_opt = prism_nhs::tokenized_ranker::TokenizedRanker::embedded().ok();
+        let mut tokenized_scores: std::collections::HashMap<i32, (f32, usize, f32)> =
+            std::collections::HashMap::new();
+
         // Build StiConfig from protocol parameters
         let sti_config = StiConfig {
             temperature: protocol.end_temp as f64,
@@ -5775,6 +6046,23 @@ fn run_multi_stream_pipeline(
             } else {
                 (0.0, 0.0)
             };
+
+            // ─── Tokenized ranker v4 (LOTO) — per-site score computation ───
+            // Computes the 4D token (spike_count × n_streams × interaction ×
+            // unsat_frac) and looks up the empirical binding probability.
+            // Always computed for every site; emitted into binding_sites.json.
+            // When --use-tokenized-ranker is set, used as the final sort key.
+            if let Some(ref ranker) = tokenized_ranker_opt {
+                let intensities: Vec<f32> = site_spikes.iter().map(|s| s.intensity).collect();
+                let unsat_frac = prism_nhs::tokenized_ranker::compute_unsat_frac(&intensities, 0.01);
+                let token = ranker.compute_token(
+                    site_spikes.len() as u64,
+                    n_streams as u32,
+                    unsat_frac,
+                );
+                let score = ranker.lookup[token];
+                tokenized_scores.insert(site.cluster_id, (score, token, unsat_frac));
+            }
 
             // ─── Burial depth: mean nearby residues per spike ───
             let (mean_burial, deep_fraction, burial_score) = if !site_spikes.is_empty() {
@@ -8990,8 +9278,21 @@ fn run_multi_stream_pipeline(
                 "rank_L": rank_scores[site_rank].5,
                 "localization_score_raw": rank_scores[site_rank].6,
                 "gtck_rank": rank_order.iter().position(|&idx| idx == site_rank).map(|p| p + 1).unwrap_or(999),
+                // Tokenized ranker v4 (LOTO) — always emitted, used as sort key
+                // when --use-tokenized-ranker is set.
+                "tokenized_score": tokenized_scores.get(&s.cluster_id).map(|(sc,_,_)| *sc).unwrap_or(0.0),
+                "tokenized_token": tokenized_scores.get(&s.cluster_id).map(|(_,t,_)| *t as i64).unwrap_or(-1),
+                "unsat_frac": tokenized_scores.get(&s.cluster_id).map(|(_,_,uf)| *uf).unwrap_or(0.0),
             })
         }).collect();
+
+        // NOTE: FINAL rerankers (tokenized_v4 + xgb_v3) moved to after CRYPTIC
+        // rerank so they're the last sort before JSON write. Applying them
+        // here would be clobbered by composite_v3 / composite_audit / cryptic
+        // re-sorts that run in the meantime.
+        // Per-site tokenized_score / tokenized_token / unsat_frac fields ARE
+        // still emitted above (additive metadata, always present regardless
+        // of which ranker is active).
 
         // Inject PRISM-Therm classification into each site
         if let Some(ref analysis) = prism_therm_result {
@@ -9371,6 +9672,50 @@ fn run_multi_stream_pipeline(
                     sj.get("therm_class").and_then(|v| v.as_str()).unwrap_or("?"),
                     score,
                     sj["gtck_rank"].as_u64().unwrap_or(0));
+            }
+        }
+
+        // ── FINAL RERANKERS (applied last so they control output site order) ──
+        // Order: tokenized_v4 (legacy), then xgb_v3 (production). If both are
+        // set, xgb_v3 runs last and wins.
+
+        if args.use_tokenized_ranker {
+            ms_sites_json.sort_by(|a, b| {
+                let sa = a.get("tokenized_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let sb = b.get("tokenized_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let primary = sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal);
+                if primary != std::cmp::Ordering::Equal {
+                    return primary;
+                }
+                let ca = a.get("spike_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let cb = b.get("spike_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                cb.cmp(&ca)
+            });
+            for (i, site) in ms_sites_json.iter_mut().enumerate() {
+                if let Some(obj) = site.as_object_mut() {
+                    obj.insert("rank".to_string(), serde_json::json!(i + 1));
+                    obj.insert("ranker_version".to_string(), serde_json::json!("tokenized_v4"));
+                }
+            }
+            log::info!("✓ FINAL RERANK: tokenized v4 applied ({} sites)", ms_sites_json.len());
+        }
+
+        if args.use_xgb_ranker {
+            match prism_nhs::xgb_ranker::apply_rerank(&mut ms_sites_json) {
+                Ok(n) => {
+                    log::info!("✓ FINAL RERANK: XGBoost v3 applied ({} sites)", n);
+                    if let Some(top) = ms_sites_json.first() {
+                        log::info!(
+                            "  Top-1: id={} xgb_score={:.4} spike_count={}",
+                            top.get("id").and_then(|v| v.as_i64()).unwrap_or(-1),
+                            top.get("xgb_score").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                            top.get("spike_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::error!("XGBoost ranker failed: {} — keeping prior order", e);
+                }
             }
         }
 
