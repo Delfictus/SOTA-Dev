@@ -852,6 +852,31 @@ def stage6_rerank(target: Dict[str, Any], target_dir: Path,
             ctx.add_note(f"spike centroid extraction failed: {e}")
             site_centroid_dict = {}
 
+        # ── v4.1-C: engine_rank from binding_sites.json quality_score order ──
+        # Stage 6 production scoring is compared against the engine's own
+        # quality-score ranking so stage 7 can compute rank_shift. The engine
+        # rank is 1-indexed; pockets absent from binding_sites.sites[] get
+        # engine_rank = None and are flagged in the shift aggregate.
+        bs_files = list(eng_dir.glob("*.binding_sites.json"))
+        engine_rank_map: Dict[int, int] = {}
+        engine_is_druggable: Dict[int, bool] = {}
+        engine_volume: Dict[int, float] = {}
+        if bs_files:
+            try:
+                with open(bs_files[0]) as f:
+                    bs_doc = json.load(f)
+                bs_sites = bs_doc.get("sites", [])
+                bs_sites_sorted = sorted(bs_sites, key=lambda s: -(s.get("quality_score") or 0))
+                for rank1, s in enumerate(bs_sites_sorted, 1):
+                    sid = s.get("id") or s.get("cluster_id")
+                    if sid is None:
+                        continue
+                    engine_rank_map[int(sid)] = rank1
+                    engine_is_druggable[int(sid)] = bool(s.get("is_druggable"))
+                    engine_volume[int(sid)] = float(s.get("volume") or 0.0)
+            except Exception as e:
+                ctx.add_note(f"engine_rank extraction failed: {e}")
+
         # Merge prism_therm (classification) with arrow (spike centroid).
         merged_pockets = []
         for p in therm.get("pockets", []):
@@ -870,13 +895,34 @@ def stage6_rerank(target: Dict[str, Any], target_dir: Path,
                 "top_residue_ids": top_res_ids,
                 "centroid_spike_weighted": sp_data.get("centroid"),
                 "n_spikes_attributed": sp_data.get("n_spikes", 0),
+                # v4.1-C: engine-side metadata for rank_shift and druggability
+                # transparency. Keyed off pocket_id ≡ site_id across stages.
+                "engine_rank": engine_rank_map.get(pid),
+                "engine_is_druggable": engine_is_druggable.get(pid),
+                "site_volume_angstrom_cubed": engine_volume.get(pid),
             })
 
         # ─── Normalized composite (weights sum to 1.0 exactly) ───
         # Every term is mapped to [0, 1] BEFORE weighting. See function
         # docstring for the full rationale and the prior-bug history.
+        #
+        # v4.1-A: spike_score is log-saturating like tide_score, matching
+        # the treatment already used for unbounded / heavy-tailed feature
+        # counts. Previously spike used linear `n / max(n)` which caused
+        # DYNAMIC pockets with maximal spike counts to outrank CRYPTIC
+        # pockets by more than the therm-advantage could compensate
+        # (observed on WRN v4: DYNAMIC rank 1 beat CRYPTIC rank 2 by 0.042
+        # because spike linear delta 0.106 > therm delta 0.060).
+        #
+        # v4.1-B: every pocket records druggability_threshold_applied,
+        # volume_threshold_applied, and druggability_exclusion_reason so a
+        # reviewer can instantly see why a site with high druggability_score
+        # may still have is_druggable=false.
         import math
         TIDE_SATURATION = 20  # tide_score saturates at 20 trigger residues
+        DRUGGABILITY_THRESHOLD = 0.45
+        VOLUME_MIN_A3 = 50.0
+        VOLUME_MAX_A3 = 8000.0
         THERM_MAP = {
             "CRYPTIC": 1.0,
             "DYNAMIC": 0.7,
@@ -897,7 +943,8 @@ def stage6_rerank(target: Dict[str, Any], target_dir: Path,
 
         max_spikes = max((p.get("n_spikes_attributed") or 0)
                          for p in merged_pockets) or 1
-        log_tide_sat = math.log(1.0 + TIDE_SATURATION)
+        log_tide_sat  = math.log(1.0 + TIDE_SATURATION)
+        log_spike_sat = math.log(1.0 + float(max_spikes))
 
         for p in merged_pockets:
             # Per-term normalization.
@@ -906,8 +953,9 @@ def stage6_rerank(target: Dict[str, Any], target_dir: Path,
 
             therm_score = THERM_MAP.get((p.get("therm_class") or "").upper(), 0.0)
 
-            n_spk       = float(p.get("n_spikes_attributed") or 0)
-            spike_score = n_spk / max_spikes if max_spikes > 0 else 0.0
+            # v4.1-A: log-saturating spike score.
+            n_spk = float(p.get("n_spikes_attributed") or 0)
+            spike_score = (math.log(1.0 + n_spk) / log_spike_sat) if log_spike_sat > 0 else 0.0
             spike_score = max(0.0, min(1.0, spike_score))
 
             n_tide      = len(p.get("top_residue_ids") or [])
@@ -949,15 +997,59 @@ def stage6_rerank(target: Dict[str, Any], target_dir: Path,
             p["dynamic_support"]         = float(dynamic_support)
             p["druggability_support"]    = float(druggability_support)
 
+            # ── v4.1-B: druggability exclusion reason ──
+            # Independent dual-criteria check exposes why is_druggable may
+            # disagree with druggability_score. Criteria mirror the engine
+            # semantics (see CLAUDE.md notes on druggability threshold +
+            # volume bounds). Emit the threshold and the outcome per pocket.
+            vol = p.get("site_volume_angstrom_cubed") or 0.0
+            if drug_score < DRUGGABILITY_THRESHOLD:
+                excl = "low_score"
+            elif vol > 0.0 and vol < VOLUME_MIN_A3:
+                excl = "volume_too_small"
+            elif vol > VOLUME_MAX_A3:
+                excl = "volume_too_large"
+            elif vol == 0.0:
+                excl = "volume_missing"
+            else:
+                excl = "passes"
+            p["druggability_threshold_applied"] = DRUGGABILITY_THRESHOLD
+            p["volume_threshold_applied"]      = [VOLUME_MIN_A3, VOLUME_MAX_A3]
+            p["druggability_exclusion_reason"] = excl
+
         merged_pockets.sort(key=lambda p: -p["rerank_composite"])
         for i, p in enumerate(merged_pockets):
             p["rerank_position"] = i + 1
+            # v4.1-C: rank_shift relative to engine quality_score rank.
+            # Positive = rerank moved the pocket UP. Negative = DOWN.
+            # None engine_rank → None shift (pocket absent from binding_sites).
+            er = p.get("engine_rank")
+            p["rerank_rank"] = i + 1
+            p["rank_shift"]  = (er - (i + 1)) if isinstance(er, int) else None
+
+        # v4.1-C / v4.1-D: aggregate rank-shift metrics so stage 7 (or any
+        # consumer) can measure how far the reranker moved pockets vs the
+        # engine's own quality_score ordering.
+        shifts = [p["rank_shift"] for p in merged_pockets if isinstance(p.get("rank_shift"), int)]
+        n_up   = sum(1 for s in shifts if s > 0)
+        n_down = sum(1 for s in shifts if s < 0)
+        n_same = sum(1 for s in shifts if s == 0)
+        max_up   = max(shifts) if shifts else 0
+        max_down = min(shifts) if shifts else 0
 
         result: Dict[str, Any] = {
             "method": "normalized_cryptic_rerank",
+            "schema_version": "stage6-rerank-v4.1",
             "ranker_weights": WEIGHTS,
             "therm_class_mapping": THERM_MAP,
             "tide_saturation": TIDE_SATURATION,
+            "spike_normalization": "log(1+n) / log(1+max_n) — v4.1 log-saturating (was linear n/max in v4)",
+            "druggability_criteria": {
+                "score_threshold": DRUGGABILITY_THRESHOLD,
+                "volume_range_angstrom_cubed": [VOLUME_MIN_A3, VOLUME_MAX_A3],
+                "exclusion_reasons": ["passes","low_score","volume_too_small",
+                                      "volume_too_large","volume_missing"],
+            },
             "confidence_band_definitions": {
                 "cryptic_likelihood":
                     "fraction of {therm==CRYPTIC, tau in SOC [1.2,1.5], asym_z>0.5} satisfied",
@@ -965,6 +1057,15 @@ def stage6_rerank(target: Dict[str, Any], target_dir: Path,
                     "fraction of {asym_z>0, tau>0, n_tide_triggers>5} satisfied",
                 "druggability_support":
                     "passthrough of druggability_score (already [0, 1])",
+            },
+            "rerank_shift_summary": {
+                "n_pockets": len(merged_pockets),
+                "n_pockets_with_engine_rank": len(shifts),
+                "n_pockets_shifted_up_by_rerank": n_up,
+                "n_pockets_shifted_down_by_rerank": n_down,
+                "n_pockets_unchanged": n_same,
+                "max_upward_shift_delta": int(max_up),
+                "max_downward_shift_delta": int(max_down),
             },
             "merged_pockets": merged_pockets,
             "note": "Production scoring only. Evaluation (DCC, contact-residue overlap, "
@@ -1037,12 +1138,28 @@ def stage7_evaluation(target: Dict[str, Any], target_dir: Path,
 
     with RunContext(tname, "7_evaluation", "four_outcome_matrix",
                     artifacts_dir, prov_dir, upstream_prov=upstream_prov) as ctx:
+        # ── v4.1-D: pull stage 6 rerank shift aggregate for this target ──
+        # Read early so frontier (no GT) and engine-failure paths also carry
+        # the rank-shift summary into their result dicts. Single source of
+        # truth: stage 6's own aggregate, not recomputed here.
+        rerank_path_stage6 = target_dir / "artifacts" / "6_rerank" / "rerank_result.json"
+        rerank_shift_summary = None
+        if rerank_path_stage6.is_file():
+            try:
+                with open(rerank_path_stage6) as _rf:
+                    _rr = json.load(_rf)
+                rerank_shift_summary = _rr.get("rerank_shift_summary")
+            except Exception as e:
+                ctx.add_note(f"rerank_shift_summary read failed: {e}")
+
         # ── Case 1: frontier target (no paired holo) ──
         if not gt_sidecar.exists():
             result = {
                 "target": tname, "pdb_id": pdb_id,
                 "ground_truth_available": False,
                 "verdict_tag": "NO_GROUND_TRUTH",
+                "rerank_shift_summary": rerank_shift_summary,
+                "schema_version": "stage7-evaluation-v4.1",
                 "note": "Frontier apo target — no paired holo. Evaluation not applicable.",
             }
             with open(eval_out, "w") as f:
@@ -1058,6 +1175,8 @@ def stage7_evaluation(target: Dict[str, Any], target_dir: Path,
                 "target": tname, "pdb_id": pdb_id,
                 "ground_truth_available": True,
                 "verdict_tag": "ENGINE_FAILURE",
+                "rerank_shift_summary": rerank_shift_summary,
+                "schema_version": "stage7-evaluation-v4.1",
                 "note": "binding_sites.json not produced by stage 5 engine.",
             }
             with open(eval_out, "w") as f:
@@ -1074,6 +1193,8 @@ def stage7_evaluation(target: Dict[str, Any], target_dir: Path,
             bs = json.load(f)
         ctx.add_input(gt_sidecar, upstream_prov_ref="4_ground_truth.superposition")
         ctx.add_input(bs_files[0], upstream_prov_ref="5_engine.nhs_rt_full")
+        if rerank_path_stage6.is_file():
+            ctx.add_input(rerank_path_stage6, upstream_prov_ref="6_rerank.normalized_cryptic_rerank")
 
         if "error" in gt or not gt.get("ligand_centroid_apo_frame"):
             result = {
@@ -1222,7 +1343,11 @@ def stage7_evaluation(target: Dict[str, Any], target_dir: Path,
             "expected_class": expected_class,
             "observed_class": observed_class,
             "verdict_tag": verdict_tag,
+            # v4.1-D: rerank shift aggregate (read from stage 6; not computed
+            # here to preserve single-source-of-truth).
+            "rerank_shift_summary": rerank_shift_summary,
             "per_site_eval": per_site_eval,
+            "schema_version": "stage7-evaluation-v4.1",
             "note": "Stage 7 is strictly evaluation. Never feeds back into stage 6 scoring.",
         }
         with open(eval_out, "w") as f:

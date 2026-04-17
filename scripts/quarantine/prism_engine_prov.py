@@ -107,8 +107,20 @@ _RE_STREAM_START = re.compile(r"\[stream (\d+)\] Starting \(seed: (\d+)\)")
 _RE_STREAM_COMPLETE = re.compile(r"\[stream (\d+)\] Complete: (\d+) spikes, (\d+) snapshots, T=([\d.]+)K")
 _RE_STREAM_FILTERED = re.compile(r"Stream (\d+): (\d+) filtered spikes .* (\d+) sites")
 _RE_MULTI_STREAM_TIME = re.compile(r"All \d+ streams complete in ([\d.]+)s")
-_RE_MULTI_DIFF_HDR = re.compile(r"Multi-Differential")
-_RE_MULTI_STREAM_HDR = re.compile(r"TRUE MULTI-STREAM|MULTI-STREAM PIPELINE")
+_RE_MULTI_DIFF_HDR = re.compile(
+    # v4.1-E: widen detection to cover current engine output.
+    # Current nhs_rt_full emits per-group PRISM-Therm merge + per-group
+    # hysteretic lines; any of these proves multi-differential ran.
+    r"Multi-Differential|MULTI-DIFF group|"
+    r"PRISM-Therm \[group [0-3]\]|PRISM-Therm MERGED \(4 groups\)"
+)
+_RE_MULTI_STREAM_HDR = re.compile(
+    r"TRUE MULTI-STREAM|MULTI-STREAM PIPELINE|All \d+ streams complete"
+)
+# v4.1-E: per-group ingestion marker — if we see ≥4 distinct group ids
+# in these lines, we've got four-group emission (replaces the stale
+# per-stream-PDB count which the engine no longer produces by default).
+_RE_THERM_GROUP_LINE = re.compile(r"PRISM-Therm \[group (\d)\]")
 _RE_SPIKE_DEBUG = re.compile(r"SPIKE DEBUG \[(\d+)\]: ts=(\d+) phase=(\d+)/(\d+) src=(\d+) pos=\(([-\d.]+),([-\d.]+),([-\d.]+)\)")
 
 
@@ -131,6 +143,10 @@ def parse_run_log(log_path: Path) -> Dict[str, Any]:
         "warnings": [],
         "first_ts": None,
         "last_ts": None,
+        # v4.1-E: track which TWIN-differential group indices fired their
+        # per-group PRISM-Therm ingest. The tier_b gate `four_groups_emitted`
+        # PASSes when all four (0..3) are observed.
+        "therm_groups_observed": [],
     }
 
     with open(log_path, "r", errors="replace") as f:
@@ -140,6 +156,12 @@ def parse_run_log(log_path: Path) -> Dict[str, Any]:
                 events["multi_diff_detected"] = True
             if _RE_MULTI_STREAM_HDR.search(line):
                 events["multi_stream_detected"] = True
+            # v4.1-E: capture per-group therm ingest markers.
+            m_grp = _RE_THERM_GROUP_LINE.search(line)
+            if m_grp:
+                gidx = int(m_grp.group(1))
+                if gidx not in events["therm_groups_observed"]:
+                    events["therm_groups_observed"].append(gidx)
             m = _RE_TIMESTAMP.match(line)
             if m:
                 ts = m.group(1)
@@ -417,7 +439,19 @@ def emit_engine_tier_b_provenance(
         "artifact_hashes": hash_engine_artifacts(engine_output_dir),
         "spike_streams": hash_spike_streams_per_group(engine_output_dir),
         "stream_trajectories": extract_stream_trajectory_hashes(engine_output_dir),
-        "run_log_parsed": parse_run_log(engine_output_dir / "run.log"),
+        # v4.1-E: accept the actual engine log paths. The nhs_rt_full binary
+        # writes `engine.stdout.log` + `engine.stderr.log` (engine.stderr.log
+        # contains every structured INFO line we parse); the prior probe
+        # looked for `run.log` which has never existed in the current
+        # engine. Preference order: stderr.log → stdout.log → legacy run.log.
+        "run_log_parsed": parse_run_log(
+            next(
+                (engine_output_dir / n for n in
+                 ("engine.stderr.log", "engine.stdout.log", "run.log")
+                 if (engine_output_dir / n).exists()),
+                engine_output_dir / "run.log"  # fallback for gate FAIL reporting
+            )
+        ),
     }
     if gpu_telemetry_csv and Path(gpu_telemetry_csv).exists():
         record["gpu_telemetry"] = {
@@ -434,10 +468,25 @@ def emit_engine_tier_b_provenance(
     gates["run_log_present"] = "PASS" if run_log.get("present") else "FAIL"
     gates["multi_differential_activated"] = "PASS" if run_log.get("multi_diff_detected") else "FAIL"
     gates["no_errors_in_log"] = "PASS" if len(run_log.get("errors", [])) == 0 else f"WARN — {len(run_log.get('errors', []))} error lines"
-    gates["four_groups_emitted"] = (
-        "PASS" if len(record["stream_trajectories"]) >= 4 else
-        f"FAIL — only {len(record['stream_trajectories'])} stream PDBs"
-    )
+
+    # v4.1-E: four_groups_emitted now checks the ACTUAL per-group PRISM-Therm
+    # ingest markers in the engine log, not per-stream PDB count (which the
+    # current engine does not emit by default). PASS when all four TWIN
+    # differential group indices (0..3) have fired their per-group therm
+    # ingest — this is proof the multi-differential path executed to
+    # completion and produced per-group analyses ready for merge.
+    therm_groups = set(run_log.get("therm_groups_observed", []))
+    if therm_groups >= {0, 1, 2, 3}:
+        gates["four_groups_emitted"] = "PASS"
+    elif len(record["stream_trajectories"]) >= 4:
+        # Legacy per-stream PDB path still honored for pipelines that opt in.
+        gates["four_groups_emitted"] = "PASS"
+    else:
+        gates["four_groups_emitted"] = (
+            f"FAIL — therm groups observed: {sorted(therm_groups) or 'none'}; "
+            f"stream PDBs: {len(record['stream_trajectories'])}"
+        )
+
     gates["arrow_stream_present"] = "PASS" if record["spike_streams"]["counts"]["arrow"] >= 1 else "FAIL"
     gates["binding_sites_emitted"] = "PASS" if any(
         r["role"] == "binding_sites" for r in record["artifact_hashes"]
