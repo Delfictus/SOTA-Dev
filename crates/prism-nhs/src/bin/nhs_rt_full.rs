@@ -203,50 +203,47 @@ struct Args {
     #[arg(long, default_value = "false")]
     asymmetric_steering: bool,
 
-    /// Tier-2 autonomous rescue controller.
+    /// Disable the Tier-2 autonomous rescue controller.
     ///
-    /// When set AND the multi-differential path is active (>=4 streams),
-    /// every chunk the thread-0 ASC block builds an ObservationWindow
-    /// (per-stream spike rates, mean PCMI across hotspots, mean
-    /// GC-PID synergy, cumulative spike count), computes an
-    /// InformationDeficit against data-driven targets (RescueTargets::
-    /// default_for_canonical_target), and — gated on a built-in BOCPD
-    /// regime-stability check and a consecutive-below threshold —
-    /// emits continuous-magnitude RescueActions:
+    /// By default the rescue controller is ENABLED in multi-differential
+    /// mode (n_streams >= 4). The controller is a pure decision layer
+    /// observing the ASC's own state; it only mutates the focus list
+    /// when ALL THREE internal gates pass:
     ///
-    ///   * FocusWeightAmplifier { multiplier }: scale every weight in
-    ///     the published synergy focus list by `multiplier`. Multiplier
-    ///     is `1.0 + 4.0 * spike_rate_deficit`, capped at 8.0, so the
-    ///     boost grows proportionally with the engine's emptiness.
-    ///     Applied BEFORE synergy_list is written to
-    ///     `current_steering_focus`, so the Stage-2 steering writeback
-    ///     that pushes to every stream's ProtocolState picks up the
-    ///     amplified weights and the ring_buffer_read_and_adapt kernel
-    ///     applies a stronger threshold-reduction boost to each spike
-    ///     that hits a focus residue.
+    ///   1. `InformationDeficit::any_nonzero()` — at least one of
+    ///      {spike_rate, coherence, synergy, entropy} is below target.
+    ///   2. BOCPD regime stability >= min_regime_stability (default 0.7)
+    ///      — not firing during an active changepoint.
+    ///   3. Consecutive-below counter >= min_consecutive_below (default 3)
+    ///      — sustained deficit, not a single transient bad chunk.
     ///
-    ///   * FocusListInjection: append residues from per-group phasor
-    ///     magnitude (those NOT already in the synergy list) to close
-    ///     observed coherence-deficit gaps. K is tiered by
+    /// When all three gates pass:
+    ///
+    ///   * FocusWeightAmplifier { multiplier }: scales every weight in
+    ///     synergy_list and redundancy_list by `1 + 4 * spike_rate_deficit`
+    ///     (capped at 8). Applied BEFORE publication to shared state so
+    ///     the Stage-2 writeback pushes amplified weights to every
+    ///     stream's ProtocolState.
+    ///
+    ///   * FocusListInjection: appends K residues by per-group phasor
+    ///     magnitude (not already in the list). K tiered by
     ///     coherence_deficit ∈ [0, 0.15, 0.30, 0.45, 0.60] →
-    ///     K ∈ [0, 2, 4, 8, 16]. Appended entries share the amplifier
-    ///     when both actions fire in the same chunk.
+    ///     K ∈ [0, 2, 4, 8, 16].
     ///
-    ///   * EngineV2Rest2LambdaStep / EngineV2NmaAmpMultiplier: emitted
-    ///     for telemetry only (v2 engine kernel work required). Logged
-    ///     at WARN level so they are NEVER silent — the log shows the
-    ///     requested magnitude and the reason it was not applied.
+    ///   * EngineV2Rest2LambdaStep / EngineV2NmaAmpMultiplier: WARN-logged
+    ///     as "NOT APPLIED" in v1 (requires engine kernel work).
     ///
-    ///   * Hold: deficit detected but gated (below consecutive threshold
-    ///     or unstable regime). Logged every 20 chunks with the reason.
+    /// When gates DON'T pass: Hold is emitted (no mutation), logged every
+    /// 20 chunks with reason + deficit vector.
     ///
     /// Reference: Ince 2017 GC-PID, Adams & MacKay 2007 BOCPD, Williams
     /// & Beer 2010 PID decomposition. Implementation at
-    /// crates/prism-nhs/src/rescue_controller.rs (9/9 unit tests pass).
+    /// crates/prism-nhs/src/rescue_controller.rs (19/19 unit tests pass).
     ///
-    /// Default false (opt-in — must pass the flag explicitly).
+    /// Pass `--no-autonomous-rescue` to disable (e.g. for bootstrap
+    /// debugging or baseline runs).
     #[arg(long, default_value = "false")]
-    enable_autonomous_rescue: bool,
+    no_autonomous_rescue: bool,
 
     /// Optional path to a JSON file overriding the default
     /// [`RescueTargets`]. Fields and ranges are validated on load; a bad
@@ -3741,13 +3738,16 @@ fn run_multi_stream_pipeline(
             // explicitly opts in. When enabled we log the construction at
             // INFO so there is no ambiguity about whether the controller
             // is live.
-            rescue_controller: if args.enable_autonomous_rescue {
+            rescue_controller: if !args.no_autonomous_rescue {
                 log::info!(
-                    "  [RESCUE] Tier-2 autonomous rescue controller ENABLED (n_streams={}, n_residues={}). Decisions logged per chunk.",
+                    "  [RESCUE] Tier-2 autonomous rescue controller ENABLED (n_streams={}, n_residues={}). Default-on; pass --no-autonomous-rescue to disable. Decisions logged per chunk.",
                     n_streams, n_residues_est,
                 );
                 Some(prism_nhs::rescue_controller::RescueController::new(true))
             } else {
+                log::info!(
+                    "  [RESCUE] Tier-2 autonomous rescue controller DISABLED (--no-autonomous-rescue set)."
+                );
                 None
             },
         }))
@@ -3757,13 +3757,15 @@ fn run_multi_stream_pipeline(
 
     // ── Precondition: rescue controller requires the multi-diff path ──
     //
-    // If the user passed --enable-autonomous-rescue but the conditions for
-    // the thread-0 ASC block to run (multi-differential + >=4 streams) are
-    // not met, the hook would silently never fire. Warn explicitly at
-    // startup so the mismatch is visible.
-    if args.enable_autonomous_rescue && asc_shared.is_none() {
+    // Rescue is default-on in multi-differential mode. If the user is
+    // running a non-multi-diff configuration (single-stream, etc.), the
+    // thread-0 ASC block that hosts the rescue hook never runs — so the
+    // controller silently never fires. Warn explicitly at startup so the
+    // mismatch is visible. Suppressed when the user explicitly disabled
+    // rescue via --no-autonomous-rescue.
+    if !args.no_autonomous_rescue && asc_shared.is_none() {
         log::warn!(
-            "  [RESCUE] --enable-autonomous-rescue was set but the multi-differential ASC path is NOT active (is_multi_diff={}, n_streams={}). Controller will NOT fire. Pass --multi-differential with >=4 streams to enable.",
+            "  [RESCUE] rescue controller is default-on but the multi-differential ASC path is NOT active (is_multi_diff={}, n_streams={}). Controller will NOT fire. Pass --multi-differential with >=4 streams to enable, or --no-autonomous-rescue to silence this warning.",
             is_multi_diff, n_streams
         );
     }
