@@ -489,9 +489,12 @@ def stage4_ground_truth(target: Dict[str, Any], target_dir: Path,
             ctx.set_verdict("FAIL")
         else:
             ctx.set_gate("superposition_success", "PASS")
+            _rmsd = result.get("core_rmsd_after_alignment")
+            _rmsd_ok = isinstance(_rmsd, (int, float)) and _rmsd < 5.0
+            _rmsd_str = f"{_rmsd:.2f}Å" if isinstance(_rmsd, (int, float)) else "N/A"
             ctx.set_gate("rmsd_reasonable",
-                        "PASS" if result.get("core_rmsd_after_alignment", 999) < 5.0 else "WARN",
-                        note=f"RMSD={result.get('core_rmsd_after_alignment', 'N/A'):.2f}Å")
+                        "PASS" if _rmsd_ok else "WARN",
+                        note=f"RMSD={_rmsd_str}")
             ctx.set_verdict("PASS")
 
     return prov_dir / "4_ground_truth.superposition.prov.json"
