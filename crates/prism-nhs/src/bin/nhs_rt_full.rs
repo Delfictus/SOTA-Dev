@@ -3697,6 +3697,18 @@ fn run_multi_stream_pipeline(
         /// Every stream reads and applies (NMA amp is a global engine scalar).
         /// NaN = no target published yet.
         rescue_nma_target_bits: std::sync::atomic::AtomicU32,
+        // ── v3 observability channel (per-stream → thread-0) ──
+        /// Per-stream p10 of spike-intensity distribution over the current
+        /// chunk. Stored as f32 bits in an AtomicU32; NaN = "no chunk spikes
+        /// this chunk". Written by each stream BEFORE the first barrier; read
+        /// by thread-0 rescue hook AFTER the first barrier.
+        chunk_intensity_p10_bits: Vec<std::sync::atomic::AtomicU32>,
+        /// Per-stream p90 of spike-intensity distribution over the current
+        /// chunk. Same encoding as `chunk_intensity_p10_bits`.
+        chunk_intensity_p90_bits: Vec<std::sync::atomic::AtomicU32>,
+        /// Per-stream count of spikes this chunk (n samples used to compute
+        /// the p10/p90 above). 0 = no spikes.
+        chunk_intensity_n: Vec<std::sync::atomic::AtomicU32>,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3769,6 +3781,16 @@ fn run_multi_stream_pipeline(
                 .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
                 .collect(),
             rescue_nma_target_bits: std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()),
+            // v3 observability channel — start with NaN per-stream.
+            chunk_intensity_p10_bits: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
+                .collect(),
+            chunk_intensity_p90_bits: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
+                .collect(),
+            chunk_intensity_n: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(0))
+                .collect(),
         }))
     } else {
         None
@@ -4446,6 +4468,59 @@ fn run_multi_stream_pipeline(
                                     }
                                 }
 
+                                // ── v3 observability: per-stream chunk-local spike-
+                                // intensity distribution p10 / p90 ──
+                                //
+                                // Published BEFORE the first barrier so thread-0 can
+                                // aggregate after. NaN if no spikes fired this chunk.
+                                //
+                                // The rescue controller's intensity_flatness_deficit
+                                // axis consumes the aggregated ratio to detect POLQ /
+                                // CBL-B failures (kernel fires spikes but all are bulk
+                                // noise with a flat intensity distribution — the post-
+                                // hoc adaptive intensity threshold cuts every spike
+                                // and primary-classification survival drops to zero).
+                                if delta > 0 {
+                                    let spikes_full = engine.get_accumulated_spikes();
+                                    let recent_start = spikes_full.len().saturating_sub(delta as usize);
+                                    let chunk_spikes = &spikes_full[recent_start..];
+                                    let mut intensities: Vec<f32> = chunk_spikes.iter()
+                                        .map(|s| s.intensity)
+                                        .filter(|v| v.is_finite())
+                                        .collect();
+                                    if !intensities.is_empty() {
+                                        intensities.sort_by(|a, b|
+                                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                                        let n = intensities.len();
+                                        let p10_idx = ((n as f32 * 0.10) as usize).min(n - 1);
+                                        let p90_idx = ((n as f32 * 0.90) as usize).min(n - 1);
+                                        asc_state.chunk_intensity_p10_bits[i].store(
+                                            intensities[p10_idx].to_bits(),
+                                            std::sync::atomic::Ordering::Relaxed);
+                                        asc_state.chunk_intensity_p90_bits[i].store(
+                                            intensities[p90_idx].to_bits(),
+                                            std::sync::atomic::Ordering::Relaxed);
+                                        asc_state.chunk_intensity_n[i].store(
+                                            n as u32, std::sync::atomic::Ordering::Relaxed);
+                                    } else {
+                                        // All intensities non-finite — defensive fallback.
+                                        asc_state.chunk_intensity_n[i].store(
+                                            0, std::sync::atomic::Ordering::Relaxed);
+                                        asc_state.chunk_intensity_p10_bits[i].store(
+                                            f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                                        asc_state.chunk_intensity_p90_bits[i].store(
+                                            f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                } else {
+                                    // No spikes this chunk → publish count=0 + NaN.
+                                    asc_state.chunk_intensity_n[i].store(
+                                        0, std::sync::atomic::Ordering::Relaxed);
+                                    asc_state.chunk_intensity_p10_bits[i].store(
+                                        f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                                    asc_state.chunk_intensity_p90_bits[i].store(
+                                        f32::NAN.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                                }
+
                                 // Barrier: all engines have written their residue data
                                 asc_state.barrier.wait();
 
@@ -4918,6 +4993,42 @@ fn run_multi_stream_pipeline(
                                                             &phasor_dist,
                                                         );
 
+                                                    // ── Aggregate per-stream chunk-local p10/p90
+                                                    // into a single p90_over_p10 ratio ──
+                                                    //
+                                                    // Read every stream's slot, discard those with
+                                                    // n==0 (no spikes this chunk) or NaN p10/p90.
+                                                    // Compute MEDIAN across streams (robust to single-
+                                                    // stream outliers without weight bookkeeping).
+                                                    // Division by ε-floored p10 so p10=0 does not
+                                                    // produce Inf.
+                                                    let mut p10s: Vec<f32> = Vec::with_capacity(
+                                                        asc_state.chunk_intensity_p10_bits.len());
+                                                    let mut p90s: Vec<f32> = Vec::with_capacity(
+                                                        asc_state.chunk_intensity_p90_bits.len());
+                                                    for s_idx in 0..asc_state.chunk_intensity_n.len() {
+                                                        let n = asc_state.chunk_intensity_n[s_idx]
+                                                            .load(std::sync::atomic::Ordering::Relaxed);
+                                                        if n == 0 { continue; }
+                                                        let p10 = f32::from_bits(asc_state.chunk_intensity_p10_bits[s_idx]
+                                                            .load(std::sync::atomic::Ordering::Relaxed));
+                                                        let p90 = f32::from_bits(asc_state.chunk_intensity_p90_bits[s_idx]
+                                                            .load(std::sync::atomic::Ordering::Relaxed));
+                                                        if p10.is_finite() && p90.is_finite() {
+                                                            p10s.push(p10);
+                                                            p90s.push(p90);
+                                                        }
+                                                    }
+                                                    let spike_intensity_p90_over_p10: f32 = if p10s.is_empty() {
+                                                        f32::NAN  // no data from any stream this chunk
+                                                    } else {
+                                                        p10s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                                                        p90s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                                                        let median_p10 = p10s[p10s.len() / 2].max(1e-6);
+                                                        let median_p90 = p90s[p90s.len() / 2];
+                                                        median_p90 / median_p10
+                                                    };
+
                                                     let obs = prism_nhs::rescue_controller::ObservationWindow {
                                                         chunk_idx: chunk_idx as u32,
                                                         spike_rates_per_stream,
@@ -4942,15 +5053,10 @@ fn run_multi_stream_pipeline(
                                                         // rescue_controller.rs decide()).
                                                         bocpd_regime_stability: 1.0,
                                                         cumulative_spike_count,
-                                                        // v3 intensity-distribution observable.
-                                                        // Computing per-chunk p90/p10 across all
-                                                        // streams requires plumbing a new shared-
-                                                        // state channel (each stream publishes its
-                                                        // chunk-local intensity histogram → thread-0
-                                                        // aggregates). Not in scope for this pass;
-                                                        // NaN signals "no claim" and the rescue
-                                                        // controller ignores the flatness axis.
-                                                        spike_intensity_p90_over_p10: f32::NAN,
+                                                        // v3 intensity-distribution observable —
+                                                        // populated from the per-stream chunk
+                                                        // channel above.
+                                                        spike_intensity_p90_over_p10,
                                                     };
                                                     let actions = ctrl.decide(&obs, rescue_targets_i.as_ref());
 

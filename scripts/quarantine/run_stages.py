@@ -578,11 +578,32 @@ def stage5_engine(target: Dict[str, Any], target_dir: Path,
         ctx.set_tool("nhs_rt_full", final_argv,
                     binary_path=engine_bin if engine_bin.exists() else None)
         tel.start()
+        # ── Adaptive engine timeout ──
+        # USP1 (multichain heterodimer, 9352 atoms) hit the prior hard-coded
+        # 3600s cap and got SIGKILLed by subprocess.run while still running
+        # its MD. Scale the timeout to topology size so large multichain
+        # targets don't silently fail.
+        #
+        # Formula: base 1800 s + (n_atoms × 0.4 s) capped at 14400 s (4 hr).
+        # For reference:
+        #   KRAS    2,684 atoms  → 2,874 s (~48 min)
+        #   POLQ   14,167 atoms  → 7,467 s (~2 hr)
+        #   TRIP12 24,620 atoms  → 11,648 s (~3.2 hr, under cap)
+        #   1M-atom hypothetical → 14,400 s (cap — needs --engine-timeout flag)
+        engine_timeout = 1800
+        try:
+            topo_data = json.loads(topology.read_text())
+            n_atoms = int(topo_data.get('n_atoms', 0))
+            if n_atoms > 0:
+                engine_timeout = min(max(1800, 1800 + int(n_atoms * 0.4)), 14400)
+        except Exception:
+            pass  # fall back to 1800 s if topology isn't readable
+        print(f"  engine timeout: {engine_timeout}s (adaptive from topology size)")
         try:
             # Engine resolves PTX paths relative to CWD; must run from repo root
             result = ctx.run(
                 final_argv,
-                timeout=3600,
+                timeout=engine_timeout,
                 env_overrides=det_env,
                 stdout_file=artifacts_dir / "engine.stdout.log",
                 stderr_file=artifacts_dir / "engine.stderr.log",
