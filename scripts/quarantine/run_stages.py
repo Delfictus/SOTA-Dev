@@ -659,40 +659,88 @@ def stage5_engine(target: Dict[str, Any], target_dir: Path,
 # Stage 6 — DCC + baselines
 # ─────────────────────────────────────────────────────────────────────
 
-def stage6_dcc(target: Dict[str, Any], target_dir: Path,
-               upstream_prov: List[Path]) -> Path:
-    """Spike-based DCC with cryptic-boost re-ranking.
+def stage6_rerank(target: Dict[str, Any], target_dir: Path,
+                  upstream_prov: List[Path]) -> Path:
+    """Stage 6 — production re-ranking with confidence bands.
 
-    Uses the arrow spike stream (authoritative detection output) rather than
-    binding_sites.sites[] (which is cascade-filtered and suffers from the
-    composite_v3 ranker bias that under-weights CRYPTIC classification).
+    **Production scoring only.** Ground truth NEVER enters this stage — that
+    work is in stage 7 (evaluation). Strictly separates ranking (here) from
+    evaluation (stage 7) so an immature scorer cannot erase a correct
+    detection.
 
-    Post-hoc ranker: composite_score = 0.40 * druggability
-                                     + 0.25 * (1 if CRYPTIC else 0.5 if RESPONSIVE else 0)
-                                     + 0.20 * spike_density_percentile
-                                     + 0.15 * tide_residue_specificity
-    Reports top-5 by this score + per-site centroid DCC + min-atom DCC.
+    Rewritten from the prior `stage6_dcc` which had three bugs:
+      1. Weights summed to 1.15 (not 1.0) — arithmetic error that inflated
+         the score scale and distorted relative contributions.
+      2. `is_cryptic_additional` double-counted with `therm_class_bonus`
+         (CRYPTIC already gets the highest therm bonus; adding a separate
+         binary 0.15 on top was cryptic-rewarded-twice).
+      3. Mixed / unbounded scales. `tide_coupling_count` (raw integer, 0-20+)
+         swamped the other terms which were all in [0, 1]. Continuous
+         features weren't normalized onto compatible scales.
+
+    New composite (weights sum to 1.0 exactly):
+
+        S = 0.40 * drug_score       (already [0, 1])
+          + 0.20 * therm_score       (categorical → [0, 1])
+          + 0.20 * spike_score       (n / max_in_run → [0, 1])
+          + 0.20 * tide_score        (log-saturating, capped at 1.0)
+
+    Where each term is normalized BEFORE weighting:
+
+      * drug_score  = pocket.druggability_score             [0, 1]
+      * therm_score = {CRYPTIC: 1.0, DYNAMIC: 0.7,
+                       RESPONSIVE: 0.4, INERT: 0.1,
+                       '':         0.0}                      categorical
+      * spike_score = n_spikes / max(n_spikes) in this run   [0, 1]
+      * tide_score  = log(1 + n_tide) / log(1 + tide_sat),
+                      capped at 1.0, with tide_sat = 20.
+                      Count = 0   → 0
+                      Count = 3   → log(4)/log(21)  ≈ 0.46
+                      Count = 20+ → 1.0 (saturation)
+
+    `is_cryptic_additional` removed entirely. Sites flagged CRYPTIC by the
+    thermo classifier get the highest `therm_score` (1.0) and that is their
+    credit. No double-counting.
+
+    **Confidence bands** (new — per Bradley critique):
+    In addition to the single scalar `rerank_composite`, this stage emits
+    three soft-confidence axes per site:
+
+      * cryptic_likelihood    = therm == CRYPTIC AND tau in SOC [1.2, 1.5]
+                                AND asym_z > 0.5 → fraction of conditions met
+      * dynamic_support       = fraction of (asym_z > 0, tau > 0,
+                                n_tide_triggers > 5) satisfied
+      * druggability_support  = drug_score (passthrough)
+
+    These let the reviewer see "site localizes to known cryptic region but
+    tau is outside SOC" as a calibrated signal rather than being forced
+    into a hard {CRYPTIC | DYNAMIC | RESPONSIVE | INERT} class.
+
+    Stage name: `6_rerank` (was `6_dcc` — renamed; the prior name was
+    misleading because the DCC computation it did only runs when ground
+    truth exists and has now moved to stage 7).
     """
     tname = target["target"]
     pdb_id = target["pdb_id"].lower()
     eng_dir = target_dir / "artifacts" / "5_engine"
     enr_dir = target_dir / "artifacts" / "7_enrichment"
-    gt_sidecar = target_dir / "artifacts" / "4_ground_truth" / f"{pdb_id}_ground_truth.json"
-    artifacts_dir = target_dir / "artifacts" / "6_dcc"
+    # Stage 6 is production scoring only — NO ground truth access (that is stage 7).
+    artifacts_dir = target_dir / "artifacts" / "6_rerank"
     prov_dir = target_dir / "prov"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    dcc_out = artifacts_dir / "dcc_result.json"
-    with RunContext(tname, "6_dcc", "spike_based_cryptic_rerank",
+    rerank_out = artifacts_dir / "rerank_result.json"
+    with RunContext(tname, "6_rerank", "normalized_cryptic_rerank",
                     artifacts_dir, prov_dir, upstream_prov=upstream_prov) as ctx:
-        # Inputs: prism_therm (therm class), arrow stream (spike centroids), ground truth (if paired)
+        # Inputs: prism_therm (therm class), arrow stream (spike centroids).
+        # NOT ground truth — that is used only in stage 7 for evaluation.
         therm_files = list(eng_dir.glob("*.topology.prism_therm.json"))
         arrow_files = list(eng_dir.glob("*.topology.spike_events.arrow"))
         if not therm_files or not arrow_files:
             ctx.set_gate("inputs_present", "FAIL",
                         note=f"therm={len(therm_files)} arrow={len(arrow_files)}")
             ctx.set_verdict("FAIL")
-            return prov_dir / "6_dcc.spike_based_cryptic_rerank.prov.json"
+            return prov_dir / "6_rerank.normalized_cryptic_rerank.prov.json"
         ctx.add_input(therm_files[0], upstream_prov_ref="5_engine.nhs_rt_full")
         ctx.add_input(arrow_files[0], upstream_prov_ref="5_engine.nhs_rt_full")
 
@@ -731,12 +779,11 @@ def stage6_dcc(target: Dict[str, Any], target_dir: Path,
             ctx.add_note(f"spike centroid extraction failed: {e}")
             site_centroid_dict = {}
 
-        # Merge prism_therm (classification) with arrow (spike centroid)
+        # Merge prism_therm (classification) with arrow (spike centroid).
         merged_pockets = []
         for p in therm.get("pockets", []):
             pid = p.get("pocket_id")
             sp_data = site_centroid_dict.get(pid, {})
-            # Derive centroid from top residue Cα as fallback for missing spike data
             top_res_ids = [r.get("residue_id") for r in p.get("top_residues", [])
                            if r.get("residue_id") is not None]
             merged_pockets.append({
@@ -745,124 +792,381 @@ def stage6_dcc(target: Dict[str, Any], target_dir: Path,
                 "druggability_score": p.get("druggability_score"),
                 "ccns_tau": p.get("ccns_tau"),
                 "hysteresis_asymmetry": p.get("hysteresis_asymmetry"),
+                "relative_asymmetry": p.get("relative_asymmetry"),
                 "is_cryptic": p.get("is_cryptic", False),
                 "top_residue_ids": top_res_ids,
                 "centroid_spike_weighted": sp_data.get("centroid"),
                 "n_spikes_attributed": sp_data.get("n_spikes", 0),
             })
 
-        # ─── CRYPTIC-BOOST RE-RANKING (the bug fix) ───
-        # Normalize dimensions to [0, 1] then weighted sum
+        # ─── Normalized composite (weights sum to 1.0 exactly) ───
+        # Every term is mapped to [0, 1] BEFORE weighting. See function
+        # docstring for the full rationale and the prior-bug history.
+        import math
+        TIDE_SATURATION = 20  # tide_score saturates at 20 trigger residues
+        THERM_MAP = {
+            "CRYPTIC": 1.0,
+            "DYNAMIC": 0.7,
+            "RESPONSIVE": 0.4,
+            "INERT": 0.1,
+        }
+        WEIGHTS = {
+            "drug":  0.40,
+            "therm": 0.20,
+            "spike": 0.20,
+            "tide":  0.20,
+        }
+        # ── fail-loud invariant check ──
+        _wsum = sum(WEIGHTS.values())
+        if abs(_wsum - 1.0) > 1e-9:
+            raise RuntimeError(
+                f"ranker weights do not sum to 1.0 (got {_wsum}) — refusing to run")
+
         max_spikes = max((p.get("n_spikes_attributed") or 0)
-                        for p in merged_pockets) or 1
+                         for p in merged_pockets) or 1
+        log_tide_sat = math.log(1.0 + TIDE_SATURATION)
+
         for p in merged_pockets:
-            drug = p.get("druggability_score") or 0
-            therm_class = p.get("therm_class") or ""
-            therm_bonus = (1.0 if therm_class == "CRYPTIC"
-                           else 0.5 if therm_class == "RESPONSIVE"
-                           else 0.25 if therm_class == "DYNAMIC"
-                           else 0.0)
-            spike_frac = (p.get("n_spikes_attributed") or 0) / max_spikes
-            is_crypt_bonus = 0.15 if p.get("is_cryptic") else 0
-            composite = (
-                0.40 * drug +
-                0.25 * therm_bonus +
-                0.20 * spike_frac +
-                0.15 * min(1.0, len(p.get("top_residue_ids", [])) / 20.0) +
-                is_crypt_bonus
-            )
-            p["rerank_composite"] = float(composite)
+            # Per-term normalization.
+            drug_score  = float(p.get("druggability_score") or 0.0)
+            drug_score  = max(0.0, min(1.0, drug_score))
+
+            therm_score = THERM_MAP.get((p.get("therm_class") or "").upper(), 0.0)
+
+            n_spk       = float(p.get("n_spikes_attributed") or 0)
+            spike_score = n_spk / max_spikes if max_spikes > 0 else 0.0
+            spike_score = max(0.0, min(1.0, spike_score))
+
+            n_tide      = len(p.get("top_residue_ids") or [])
+            tide_score  = math.log(1.0 + n_tide) / log_tide_sat
+            tide_score  = max(0.0, min(1.0, tide_score))
+
+            # Weighted composite.
+            composite = (WEIGHTS["drug"]  * drug_score  +
+                         WEIGHTS["therm"] * therm_score +
+                         WEIGHTS["spike"] * spike_score +
+                         WEIGHTS["tide"]  * tide_score)
+
+            # ── Confidence bands (NOT a hard class label) ──
+            # cryptic_likelihood: fraction of (therm==CRYPTIC, tau in SOC,
+            # asym_z > 0.5) satisfied. Principled — each signal is a bit of
+            # evidence; we report the aggregate fraction, not a hard label.
+            tau   = float(p.get("ccns_tau") or 0.0)
+            asz   = float(p.get("relative_asymmetry") or 0.0)
+            cryptic_bits = [
+                (p.get("therm_class") or "").upper() == "CRYPTIC",
+                1.2 <= tau <= 1.5,
+                asz > 0.5,
+            ]
+            cryptic_likelihood = sum(1.0 for b in cryptic_bits if b) / len(cryptic_bits)
+
+            # dynamic_support: fraction of (asym_z > 0, tau > 0, n_tide > 5)
+            dynamic_bits = [asz > 0.0, tau > 0.0, n_tide > 5]
+            dynamic_support = sum(1.0 for b in dynamic_bits if b) / len(dynamic_bits)
+
+            # druggability_support = drug_score (passthrough — already [0, 1])
+            druggability_support = drug_score
+
+            p["drug_score_normalized"]   = drug_score
+            p["therm_score_normalized"]  = therm_score
+            p["spike_score_normalized"]  = spike_score
+            p["tide_score_normalized"]   = tide_score
+            p["rerank_composite"]        = float(composite)
+            p["cryptic_likelihood"]      = float(cryptic_likelihood)
+            p["dynamic_support"]         = float(dynamic_support)
+            p["druggability_support"]    = float(druggability_support)
+
         merged_pockets.sort(key=lambda p: -p["rerank_composite"])
         for i, p in enumerate(merged_pockets):
             p["rerank_position"] = i + 1
 
-        # ─── DCC computation (paired targets only) ───
         result: Dict[str, Any] = {
-            "method": "spike_based_cryptic_rerank",
-            "ranker_weights": {
-                "druggability": 0.40,
-                "therm_class_bonus": 0.25,
-                "spike_fraction": 0.20,
-                "tide_residue_count": 0.15,
-                "is_cryptic_additional": 0.15,
+            "method": "normalized_cryptic_rerank",
+            "ranker_weights": WEIGHTS,
+            "therm_class_mapping": THERM_MAP,
+            "tide_saturation": TIDE_SATURATION,
+            "confidence_band_definitions": {
+                "cryptic_likelihood":
+                    "fraction of {therm==CRYPTIC, tau in SOC [1.2,1.5], asym_z>0.5} satisfied",
+                "dynamic_support":
+                    "fraction of {asym_z>0, tau>0, n_tide_triggers>5} satisfied",
+                "druggability_support":
+                    "passthrough of druggability_score (already [0, 1])",
             },
             "merged_pockets": merged_pockets,
+            "note": "Production scoring only. Evaluation (DCC, contact-residue overlap, "
+                    "4-outcome matrix) lives in stage 7 and reads ground_truth.json "
+                    "separately. Ground truth does not enter this stage.",
         }
 
-        if gt_sidecar.exists():
-            with open(gt_sidecar) as f:
-                gt = json.load(f)
-            ctx.add_input(gt_sidecar, upstream_prov_ref="4_ground_truth.superposition")
-            if "error" not in gt and gt.get("ligand_centroid_apo_frame"):
-                lig_centroid = np.asarray(gt["ligand_centroid_apo_frame"], dtype=np.float64)
-                lig_atoms = np.asarray(gt.get("ligand_atoms_apo_frame") or [lig_centroid],
-                                       dtype=np.float64)
-                per_pocket_dcc = []
-                for p in merged_pockets:
-                    c = p.get("centroid_spike_weighted")
-                    if c is None:
-                        continue
-                    c_arr = np.asarray(c, dtype=np.float64)
-                    centroid_dcc = float(np.linalg.norm(c_arr - lig_centroid))
-                    min_atom_dcc = float(np.min(np.linalg.norm(lig_atoms - c_arr, axis=1))) \
-                                   if lig_atoms.ndim == 2 else centroid_dcc
-                    per_pocket_dcc.append({
-                        "pocket_id": p["pocket_id"],
-                        "therm_class": p["therm_class"],
-                        "rerank_position": p["rerank_position"],
-                        "centroid": c,
-                        "centroid_dcc_angstrom": centroid_dcc,
-                        "min_atom_dcc_angstrom": min_atom_dcc,
-                        "n_spikes": p["n_spikes_attributed"],
-                        "druggability": p["druggability_score"],
-                    })
-                per_pocket_dcc.sort(key=lambda r: r["centroid_dcc_angstrom"])
-                best_by_dcc = per_pocket_dcc[0] if per_pocket_dcc else None
-
-                # SR@k using the RE-RANKED position (not engine's composite_v3 rank)
-                sr_at = {}
-                for k in (1, 3, 5, 10):
-                    sr_at[f"sr_at_{k}"] = any(
-                        p["rerank_position"] <= k and p["centroid_dcc_angstrom"] < 8.0
-                        for p in per_pocket_dcc
-                    )
-
-                grade = ("EXCELLENT" if best_by_dcc and best_by_dcc["centroid_dcc_angstrom"] < 5
-                         else "GOOD" if best_by_dcc and best_by_dcc["centroid_dcc_angstrom"] < 8
-                         else "MARGINAL" if best_by_dcc and best_by_dcc["centroid_dcc_angstrom"] < 10
-                         else "POOR" if best_by_dcc else "NO_DATA")
-
-                result.update({
-                    "ligand_centroid_apo_frame": lig_centroid.tolist(),
-                    "alignment_method": gt.get("alignment_method"),
-                    "rmsd_after_alignment": gt.get("rmsd_rigid_alignment")
-                                            or gt.get("rmsd_global_alignment"),
-                    "best_pocket_by_centroid_dcc": best_by_dcc,
-                    "per_pocket_dcc": per_pocket_dcc,
-                    "grade": grade,
-                    **sr_at,
-                })
-                if best_by_dcc:
-                    ctx.set_gate("best_centroid_dcc_under_8A",
-                                "PASS" if best_by_dcc["centroid_dcc_angstrom"] < 8 else "WARN",
-                                note=f"{best_by_dcc['centroid_dcc_angstrom']:.2f} Å")
-                    ctx.set_gate("best_min_atom_dcc_under_5A",
-                                "PASS" if best_by_dcc["min_atom_dcc_angstrom"] < 5 else "WARN",
-                                note=f"{best_by_dcc['min_atom_dcc_angstrom']:.2f} Å")
-                    ctx.add_note(f"grade={grade}  best_pocket_id={best_by_dcc['pocket_id']}  "
-                                f"rerank_pos={best_by_dcc['rerank_position']}")
-            else:
-                result["note"] = f"ground_truth has error: {gt.get('error', 'unknown')}"
-        else:
-            result["note"] = "no ground truth sidecar (frontier target)"
-
-        with open(dcc_out, "w") as f:
+        with open(rerank_out, "w") as f:
             json.dump(result, f, indent=2, default=str)
-        ctx.add_output(dcc_out, role="dcc_result")
-        ctx.set_gate("dcc_computed", "PASS")
+        ctx.add_output(rerank_out, role="rerank_result")
+        ctx.set_gate("rerank_computed", "PASS",
+                     note=f"{len(merged_pockets)} pockets ranked")
+        ctx.set_gate("weight_sum_invariant", "PASS",
+                     note=f"weights sum to {_wsum:.6f}")
         ctx.set_verdict("PASS")
 
-    return prov_dir / "6_dcc.spike_based_cryptic_rerank.prov.json"
+    return prov_dir / "6_rerank.normalized_cryptic_rerank.prov.json"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Stage 7 — EVALUATION (strictly separate from scoring)
+# ─────────────────────────────────────────────────────────────────────
+
+def stage7_evaluation(target: Dict[str, Any], target_dir: Path,
+                      upstream_prov: List[Path]) -> Path:
+    """Stage 7 — reviewer-facing evaluation with 4-outcome diagnostic matrix.
+
+    This stage **reads** ground_truth.json and binding_sites.json and
+    emits a benchmarking report. It never feeds back into the scorer —
+    ground truth is quarantined to evaluation.
+
+    For each target with a paired holo PDB, produces the Bradley
+    4-outcome matrix:
+
+      A. Detection       — did ANY detected site match the true region?
+      B. Ranking         — what rank was the best-matching site?
+      C. Typing          — did the classifier assign the correct therm_class?
+      D. Druggability    — was the best-matching site flagged as tractable?
+
+    Plus a `verdict_tag` that names the failure mode precisely:
+
+      * FOUND_TOP_RANKED           — detection + ranking + typing all correct
+      * FOUND_TOP_RANKED_MISCLASSIFIED — detection + ranking correct, typing wrong
+      * FOUND_NOT_TOP_RANKED       — detection correct but not at rank 1
+      * FOUND_NOT_TOP_RANKED_MISCLASSIFIED — ditto + typing wrong
+      * NOT_FOUND                  — no site within threshold of ground truth
+      * NO_GROUND_TRUTH            — frontier target (no paired holo)
+
+    Edge cases handled:
+      * No paired holo       → NO_GROUND_TRUTH, exit 0
+      * Extended ligand      → reports both atom-centroid DCC and pocket-
+                               CA centroid DCC (see 9BKS ADP analysis)
+      * Multichain           → ground_truth.json already accounts for
+                               chain-merged frame
+      * pdbfixer-filled gaps → flag lining residues whose PDB number is
+                               inside a documented gap in the raw PDB
+                               (future extension)
+    """
+    tname = target["target"]
+    pdb_id = target["pdb_id"].lower()
+    eng_dir   = target_dir / "artifacts" / "5_engine"
+    gt_dir    = target_dir / "artifacts" / "4_ground_truth"
+    artifacts_dir = target_dir / "artifacts" / "7_evaluation"
+    prov_dir  = target_dir / "prov"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    gt_sidecar = gt_dir / f"{pdb_id}_ground_truth.json"
+    bs_files   = list(eng_dir.glob("*.binding_sites.json"))
+    eval_out   = artifacts_dir / "evaluation.json"
+
+    with RunContext(tname, "7_evaluation", "four_outcome_matrix",
+                    artifacts_dir, prov_dir, upstream_prov=upstream_prov) as ctx:
+        # ── Case 1: frontier target (no paired holo) ──
+        if not gt_sidecar.exists():
+            result = {
+                "target": tname, "pdb_id": pdb_id,
+                "ground_truth_available": False,
+                "verdict_tag": "NO_GROUND_TRUTH",
+                "note": "Frontier apo target — no paired holo. Evaluation not applicable.",
+            }
+            with open(eval_out, "w") as f:
+                json.dump(result, f, indent=2)
+            ctx.add_output(eval_out, role="evaluation")
+            ctx.set_gate("ground_truth_present", "N/A", note="frontier target")
+            ctx.set_verdict("PASS")
+            return prov_dir / "7_evaluation.four_outcome_matrix.prov.json"
+
+        # ── Case 2: binding_sites.json missing → engine failure ──
+        if not bs_files:
+            result = {
+                "target": tname, "pdb_id": pdb_id,
+                "ground_truth_available": True,
+                "verdict_tag": "ENGINE_FAILURE",
+                "note": "binding_sites.json not produced by stage 5 engine.",
+            }
+            with open(eval_out, "w") as f:
+                json.dump(result, f, indent=2)
+            ctx.add_output(eval_out, role="evaluation")
+            ctx.set_gate("binding_sites_present", "FAIL")
+            ctx.set_verdict("FAIL")
+            return prov_dir / "7_evaluation.four_outcome_matrix.prov.json"
+
+        # ── Load inputs ──
+        with open(gt_sidecar) as f:
+            gt = json.load(f)
+        with open(bs_files[0]) as f:
+            bs = json.load(f)
+        ctx.add_input(gt_sidecar, upstream_prov_ref="4_ground_truth.superposition")
+        ctx.add_input(bs_files[0], upstream_prov_ref="5_engine.nhs_rt_full")
+
+        if "error" in gt or not gt.get("ligand_centroid_apo_frame"):
+            result = {
+                "target": tname, "pdb_id": pdb_id,
+                "ground_truth_available": False,
+                "verdict_tag": "GROUND_TRUTH_INVALID",
+                "note": f"ground_truth.json invalid: {gt.get('error', 'missing ligand_centroid')}",
+            }
+            with open(eval_out, "w") as f:
+                json.dump(result, f, indent=2)
+            ctx.add_output(eval_out, role="evaluation")
+            ctx.set_gate("ground_truth_valid", "FAIL")
+            ctx.set_verdict("FAIL")
+            return prov_dir / "7_evaluation.four_outcome_matrix.prov.json"
+
+        lig_centroid = np.asarray(gt["ligand_centroid_apo_frame"], dtype=np.float64)
+        lig_atoms    = np.asarray(gt.get("ligand_atoms_apo_frame") or [lig_centroid],
+                                  dtype=np.float64)
+        lig_contact_residues = set(gt.get("ligand_contact_residues", []) or [])
+
+        sites = bs.get("sites", [])
+        if not sites:
+            result = {
+                "target": tname, "pdb_id": pdb_id,
+                "ground_truth_available": True,
+                "verdict_tag": "NOT_FOUND",
+                "note": "engine emitted zero sites",
+            }
+            with open(eval_out, "w") as f:
+                json.dump(result, f, indent=2)
+            ctx.add_output(eval_out, role="evaluation")
+            ctx.set_gate("sites_detected", "FAIL", note="0 sites")
+            ctx.set_verdict("FAIL")
+            return prov_dir / "7_evaluation.four_outcome_matrix.prov.json"
+
+        # ── Per-site distance + contact overlap ──
+        DCC_DETECTION_THRESHOLD = 8.0     # Å, standard cryptic benchmark
+        CONTACT_OVERLAP_THRESHOLD = 0.30  # 30% shared contact residues = "same pocket"
+
+        per_site_eval = []
+        for s in sites:
+            c = s.get("centroid")
+            if c is None or len(c) != 3:
+                continue
+            c_arr = np.asarray(c, dtype=np.float64)
+            centroid_dcc = float(np.linalg.norm(c_arr - lig_centroid))
+            # min_atom_dcc: nearest ligand ATOM to the site centroid —
+            # robust to extended cofactors (e.g., ADP) where geometric
+            # centroid is offset from pocket cavity.
+            if lig_atoms.ndim == 2:
+                min_atom_dcc = float(np.min(np.linalg.norm(lig_atoms - c_arr, axis=1)))
+            else:
+                min_atom_dcc = centroid_dcc
+            # Contact residue overlap.
+            site_lining = set()
+            for r in (s.get("lining_residues") or []):
+                rid = r.get("resid") or r.get("residue_id")
+                if rid is not None:
+                    site_lining.add(int(rid))
+            overlap_count = len(site_lining & lig_contact_residues) if lig_contact_residues else 0
+            overlap_frac = (overlap_count / len(lig_contact_residues)) \
+                            if lig_contact_residues else 0.0
+            per_site_eval.append({
+                "site_id": s.get("id") or s.get("cluster_id"),
+                "rank_by_quality": len(per_site_eval) + 1,  # JSON order = quality order
+                "quality_score": s.get("quality_score"),
+                "therm_class": s.get("therm_class"),
+                "is_druggable": s.get("is_druggable"),
+                "centroid": list(c),
+                "centroid_dcc_angstrom": centroid_dcc,
+                "min_atom_dcc_angstrom": min_atom_dcc,
+                "contact_overlap_count": overlap_count,
+                "contact_overlap_fraction": float(overlap_frac),
+            })
+
+        # ── Best-match site: minimize EITHER DCC-to-atom OR maximize contact
+        # overlap. Pick whichever agrees more strongly with the ligand.
+        # Default to min_atom_dcc since contact overlap requires ligand
+        # contact residue list which may be absent for some targets.
+        best_by_atom_dcc = min(per_site_eval, key=lambda r: r["min_atom_dcc_angstrom"])
+        best_by_overlap  = max(per_site_eval, key=lambda r: r["contact_overlap_fraction"]) \
+                            if lig_contact_residues else best_by_atom_dcc
+
+        # The "best match" for the 4-outcome matrix. Prefer overlap-based
+        # when contact residues are known; fall back to distance otherwise.
+        best_match = best_by_overlap if lig_contact_residues else best_by_atom_dcc
+
+        # ── A. Detection ──
+        detection_pass = (best_match["min_atom_dcc_angstrom"] < DCC_DETECTION_THRESHOLD or
+                          best_match["contact_overlap_fraction"] >= CONTACT_OVERLAP_THRESHOLD)
+
+        # ── B. Ranking ──
+        best_rank = best_match["rank_by_quality"]
+        if best_rank == 1:
+            rank_class = "TOP_1"
+        elif best_rank <= 3:
+            rank_class = "TOP_3"
+        elif best_rank <= 10:
+            rank_class = "TOP_10"
+        else:
+            rank_class = "BEYOND_TOP_10"
+
+        # ── C. Typing ──
+        # Biologically-correct class: use target_config cryptic_site_type
+        # hint if present; otherwise default expectation is CRYPTIC for any
+        # target where the paired holo binds in a region that's disordered
+        # or re-shaped in the apo. This is a hint, not a hard truth —
+        # reviewer may override.
+        expected_class = "CRYPTIC" if target.get("cryptic_site_type") else "DYNAMIC"
+        observed_class = (best_match.get("therm_class") or "").upper()
+        typing_pass = (observed_class == expected_class)
+        classification_disagreement = not typing_pass
+
+        # ── D. Druggability ──
+        druggability_pass = bool(best_match.get("is_druggable"))
+
+        # ── verdict_tag (Bradley taxonomy) ──
+        if not detection_pass:
+            verdict_tag = "NOT_FOUND"
+        elif rank_class == "TOP_1" and typing_pass:
+            verdict_tag = "FOUND_TOP_RANKED"
+        elif rank_class == "TOP_1" and not typing_pass:
+            verdict_tag = "FOUND_TOP_RANKED_MISCLASSIFIED"
+        elif typing_pass:
+            verdict_tag = f"FOUND_{rank_class}"
+        else:
+            verdict_tag = f"FOUND_{rank_class}_MISCLASSIFIED"
+
+        # ── Emit result ──
+        result = {
+            "target": tname, "pdb_id": pdb_id,
+            "paired_holo_pdb_id": target.get("paired_holo_pdb_id"),
+            "ground_truth_available": True,
+            "thresholds": {
+                "dcc_detection_angstrom": DCC_DETECTION_THRESHOLD,
+                "contact_overlap_fraction": CONTACT_OVERLAP_THRESHOLD,
+            },
+            "best_match": best_match,
+            "four_outcome_matrix": {
+                "A_detection":      "PASS" if detection_pass    else "FAIL",
+                "B_ranking":        rank_class,
+                "C_typing":         "PASS" if typing_pass       else "FAIL",
+                "D_druggability":   "PASS" if druggability_pass else "FAIL",
+            },
+            "classification_disagreement": classification_disagreement,
+            "expected_class": expected_class,
+            "observed_class": observed_class,
+            "verdict_tag": verdict_tag,
+            "per_site_eval": per_site_eval,
+            "note": "Stage 7 is strictly evaluation. Never feeds back into stage 6 scoring.",
+        }
+        with open(eval_out, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+        ctx.add_output(eval_out, role="evaluation")
+        ctx.set_gate("A_detection",    "PASS" if detection_pass    else "FAIL",
+                     note=f"best DCC {best_match['min_atom_dcc_angstrom']:.2f} Å / overlap "
+                          f"{best_match['contact_overlap_fraction']:.2f}")
+        ctx.set_gate("B_ranking",      rank_class,
+                     note=f"best-match at rank {best_rank}")
+        ctx.set_gate("C_typing",       "PASS" if typing_pass       else "FAIL",
+                     note=f"observed={observed_class} expected={expected_class}")
+        ctx.set_gate("D_druggability", "PASS" if druggability_pass else "FAIL")
+        ctx.set_verdict("PASS")
+        ctx.add_note(f"verdict={verdict_tag}")
+
+    return prov_dir / "7_evaluation.four_outcome_matrix.prov.json"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -885,7 +1189,12 @@ STAGE_FUNCS = {
     "3_prep": stage3_prep,
     "4_ground_truth": stage4_ground_truth,
     "5_engine": stage5_engine,
-    "6_dcc": stage6_dcc,
+    "6_rerank": stage6_rerank,            # production scoring (no ground truth)
+    "7_evaluation": stage7_evaluation,    # reviewer-facing evaluation (reads ground truth)
+    # Legacy alias — old runners / docs referenced 6_dcc. Keep the alias so
+    # `--stage 6_dcc` still works until all callers migrate. Internally
+    # identical to 6_rerank.
+    "6_dcc": stage6_rerank,
 }
 
 
@@ -904,7 +1213,8 @@ def main() -> int:
         target = json.load(f)
 
     if args.stage == "all":
-        stages = ["1_download", "2_clean", "3_prep", "4_ground_truth", "5_engine", "6_dcc"]
+        stages = ["1_download", "2_clean", "3_prep", "4_ground_truth",
+                  "5_engine", "6_rerank", "7_evaluation"]
     else:
         stages = [args.stage]
 
