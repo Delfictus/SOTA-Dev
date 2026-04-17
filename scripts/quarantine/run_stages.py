@@ -338,6 +338,59 @@ def _parse_pdb_hetatm(path: Path, resname: str, chain: str = "A") -> np.ndarray:
     return np.asarray(coords, dtype=np.float64)
 
 
+# Common cofactors / crystallization additives / solvents to SKIP when
+# auto-selecting the drug ligand. This is a conservative denylist — we
+# would rather miss a legitimate drug (and require explicit resname in
+# target_config.json) than auto-pick a Zn atom as "the drug."
+_AUTOPICK_SKIP_RESNAMES = {
+    # waters + buffers
+    "HOH", "WAT", "DOD", "TIP", "H2O",
+    # salts, ions, metals
+    "NA", "K", "CL", "MG", "CA", "ZN", "FE", "MN", "CO", "NI", "CU", "SO4",
+    "PO4", "NO3", "CO3", "BR", "IOD",
+    # cofactors / nucleotides (common but may be the drug — manual review required)
+    "ATP", "ADP", "AMP", "GTP", "GDP", "GMP", "FAD", "FMN", "NAD", "NDP", "NAP",
+    "COA", "SAM", "SAH", "PLP", "HEM", "CLA", "CHL", "BCL",
+    # crystallization additives
+    "GOL", "PEG", "PGE", "PG4", "EDO", "MPD", "DMS", "TLA", "SO4", "FMT",
+    "ACT", "IPA", "EOH", "MES", "BME", "DTT", "TRS", "HEZ", "HEPS",
+    # lipids / detergents
+    "OLA", "OLC", "LMT", "LDA", "LMN", "DDR", "TWT",
+}
+
+
+def _autopick_drug_hetatm(holo_pdb: Path, chain: str = "A") -> str:
+    """Auto-select the drug-like ligand when the target config leaves
+    `paired_holo_ligand_resname` as null.
+
+    Strategy: scan all HETATM records on the specified chain, count atoms
+    per unique residue-name, skip anything on `_AUTOPICK_SKIP_RESNAMES`,
+    return the resname with the MOST atoms. Drugs are typically 20-50
+    heavy atoms, ions and waters are 1, cofactors are 30-70 (and
+    already excluded). If multiple candidates tie, prefer the lexically
+    first (deterministic).
+
+    Returns empty string if no drug-like HETATM is found — caller should
+    fall back to reporting `ligand_resname_unknown` in ground_truth.json.
+    """
+    counts: Dict[str, int] = {}
+    with open(holo_pdb) as f:
+        for line in f:
+            if not line.startswith("HETATM"):
+                continue
+            ch = line[21:22]
+            if ch != chain:
+                continue
+            rn = line[17:20].strip().upper()
+            if rn in _AUTOPICK_SKIP_RESNAMES or len(rn) == 0:
+                continue
+            counts[rn] = counts.get(rn, 0) + 1
+    if not counts:
+        return ""
+    # Largest atom count wins; tie broken lexically.
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+
 def _kabsch(P: np.ndarray, Q: np.ndarray):
     """Kabsch superposition: find transform such that transformed P best matches Q."""
     Pc, Qc = P.mean(axis=0), Q.mean(axis=0)
@@ -462,7 +515,7 @@ def stage4_ground_truth(target: Dict[str, Any], target_dir: Path,
     apo_pdb = target_dir / "artifacts" / "2_clean" / f"{target['pdb_id'].lower()}_clean.pdb"
     holo_pdb_id = target["paired_holo_pdb_id"].lower()
     holo_pdb = target_dir / "artifacts" / "1_download" / f"{holo_pdb_id}.pdb"
-    ligand_resname = target.get("paired_holo_ligand_resname", "LIG")
+    ligand_resname = target.get("paired_holo_ligand_resname")
     chain = target.get("chain", "A")
     artifacts_dir = target_dir / "artifacts" / "4_ground_truth"
     prov_dir = target_dir / "prov"
@@ -474,12 +527,29 @@ def stage4_ground_truth(target: Dict[str, Any], target_dir: Path,
         ctx.add_input(apo_pdb, upstream_prov_ref="2_clean.prism_clean")
         ctx.add_input(holo_pdb, upstream_prov_ref="1_download.rcsb_fetch")
         ctx.set_tool("kabsch_numpy_svd", ["python3", "-c", "import numpy as np"])
+
+        # ── Auto-pick drug resname when target config leaves it null ──
+        # At campaign setup we populated paired_holo_ligand_resname for
+        # KRAS + USP1 only; other targets have null. Rather than fail with
+        # "ligand None not found", scan the holo HETATM records for the
+        # largest non-cofactor residue and use that. Conservative denylist
+        # in _AUTOPICK_SKIP_RESNAMES prevents picking ions / waters /
+        # buffers / canonical cofactors.
+        autopicked = False
+        if not ligand_resname:
+            ligand_resname = _autopick_drug_hetatm(holo_pdb, chain) or "LIG"
+            autopicked = True
+            ctx.add_note(f"ligand_resname auto-picked: {ligand_resname} "
+                         f"(paired_holo_ligand_resname was null in target_config)")
+
         # Use two-stage Kabsch (bypass MDAnalysis selectall-by-segid bug).
         # If flexible_regions provided, rigid-core alignment is used.
         result = _apo_holo_superposition(
             apo_pdb, holo_pdb, ligand_resname, chain,
             flexible_regions=flexible_regions,
         )
+        if isinstance(result, dict) and not result.get("error"):
+            result["ligand_resname_autopicked"] = autopicked
         gt_sidecar = artifacts_dir / f"{target['pdb_id'].lower()}_ground_truth.json"
         with open(gt_sidecar, "w") as f:
             json.dump(result, f, indent=2, default=str)
