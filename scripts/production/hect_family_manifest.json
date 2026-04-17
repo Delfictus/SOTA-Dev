@@ -1,0 +1,129 @@
+{
+  "schema_version": "hect-family-v1",
+  "description": "HECT-domain E3 ubiquitin ligase targets for HECT-only monomer cryptic-pocket screening. Each entry lists a PDB structure, the TRIP12/E3 protein chain, optional residue range to restrict the output to the HECT catalytic domain only (if a co-complex is present), and chains/residues to strip (Ub, substrate, linker analogs).",
+  "generated_utc": "2026-04-16",
+  "notes": "For the first-pass HECT landscape, keep full construct of target chain (chain_a_residue_range = null) to capture all regulatory-domain cryptics. For high-throughput screens, restrict to hect_domain_residue_range (~400-450 residues) for ~8-12min engine runs.",
+  "targets": [
+    {
+      "id": "trip12",
+      "pdb_id": "9GKN",
+      "uniprot": "Q14669",
+      "target_chain": "A",
+      "chain_a_residue_range": [484, 2040],
+      "hect_domain_residue_range": [1600, 2040],
+      "strip_chains": ["B", "C"],
+      "strip_hetatm_resnames": ["SY8"],
+      "notes": "9GKN = TRIP12 bound to K29-linked Ub chain (SY8 = aminopentanone linker analog on chain B). Chain A is full TRIP12 isoform 3."
+    },
+    {
+      "id": "smurf1",
+      "pdb_id": "3PYC",
+      "uniprot": "Q9HCE7",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [370, 757],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "SMURF1 apo HECT domain. Reference: Stieglitz et al. Cell 2025 drugged a cryptic allosteric cavity in SMURF1 HECT."
+    },
+    {
+      "id": "smurf2",
+      "pdb_id": "1ZVD",
+      "uniprot": "Q9HAU4",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [378, 748],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "SMURF2 HECT apo. Related to SMURF1; shares the same druggable cryptic class."
+    },
+    {
+      "id": "nedd4",
+      "pdb_id": "2XBB",
+      "uniprot": "P46934",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [574, 900],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "NEDD4 HECT. Archetypal HECT E3 ligase."
+    },
+    {
+      "id": "nedd4l",
+      "pdb_id": "2ONI",
+      "uniprot": "Q96PU5",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [601, 975],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "NEDD4L (NEDD4-2) HECT. Medical relevance: hypertension (Liddle syndrome)."
+    },
+    {
+      "id": "huwe1",
+      "pdb_id": "3G1N",
+      "uniprot": "Q7Z6Z7",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [4017, 4374],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "HUWE1 (Mule/ARF-BP1) HECT. Very large E3 (4374 residues); HECT domain at C-terminus."
+    },
+    {
+      "id": "itch",
+      "pdb_id": "3TUG",
+      "uniprot": "Q96J02",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [497, 862],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "ITCH HECT. T-cell anergy target."
+    },
+    {
+      "id": "wwp1",
+      "pdb_id": "1ND7",
+      "uniprot": "Q9H0M0",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [559, 922],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "WWP1 HECT. Paralog of WWP2."
+    },
+    {
+      "id": "wwp2",
+      "pdb_id": "6J1W",
+      "uniprot": "O00308",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [506, 870],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "WWP2 HECT. Oncology target."
+    },
+    {
+      "id": "ube3a",
+      "pdb_id": "1C4Z",
+      "uniprot": "Q05086",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [494, 852],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "UBE3A (E6AP). Angelman syndrome target; also hijacked by HPV E6."
+    },
+    {
+      "id": "hace1",
+      "pdb_id": "6QH4",
+      "uniprot": "Q8IYU2",
+      "target_chain": "A",
+      "chain_a_residue_range": null,
+      "hect_domain_residue_range": [544, 909],
+      "strip_chains": [],
+      "strip_hetatm_resnames": [],
+      "notes": "HACE1 HECT. Tumor suppressor (Rac1 ubiquitylation)."
+    }
+  ]
+}
