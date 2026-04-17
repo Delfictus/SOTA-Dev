@@ -4910,16 +4910,27 @@ fn run_multi_stream_pipeline(
                                                                 );
                                                             }
                                                             prism_nhs::rescue_controller::RescueAction::EngineV2Rest2LambdaStep { stream_idx, delta } => {
-                                                                log::warn!(
-                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2Rest2LambdaStep stream={} delta={:.3} — NOT APPLIED (requires engine kernel work)",
-                                                                    chunk_idx, stream_idx, delta
-                                                                );
+                                                                // V2-only telemetry. Rate-limit to every 20 chunks
+                                                                // to match the Hold cadence — entropy_deficit can
+                                                                // trigger this every chunk on large structures and
+                                                                // the WARN stream otherwise drowns the real signal.
+                                                                if chunk_idx % 20 == 0 {
+                                                                    log::warn!(
+                                                                        "    [RESCUE chunk {}] V2-ONLY EngineV2Rest2LambdaStep stream={} delta={:.3} — NOT APPLIED (requires engine kernel work)",
+                                                                        chunk_idx, stream_idx, delta
+                                                                    );
+                                                                }
                                                             }
                                                             prism_nhs::rescue_controller::RescueAction::EngineV2NmaAmpMultiplier { multiplier } => {
-                                                                log::warn!(
-                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2NmaAmpMultiplier x{:.3} — NOT APPLIED (requires engine kernel work)",
-                                                                    chunk_idx, multiplier
-                                                                );
+                                                                // Same rate-limit as V2Rest2 — fires constantly on
+                                                                // large structures where phasor_entropy starts
+                                                                // saturated (uniform, no pocket structure yet).
+                                                                if chunk_idx % 20 == 0 {
+                                                                    log::warn!(
+                                                                        "    [RESCUE chunk {}] V2-ONLY EngineV2NmaAmpMultiplier x{:.3} — NOT APPLIED (requires engine kernel work)",
+                                                                        chunk_idx, multiplier
+                                                                    );
+                                                                }
                                                             }
                                                             prism_nhs::rescue_controller::RescueAction::Hold { reason, deficit } => {
                                                                 if chunk_idx % 20 == 0 {
