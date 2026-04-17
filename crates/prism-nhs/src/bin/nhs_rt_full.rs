@@ -3684,6 +3684,19 @@ fn run_multi_stream_pipeline(
         /// decision in its internal history — drained at run end into the
         /// output JSON under `rescue_history`.
         rescue_controller: Option<prism_nhs::rescue_controller::RescueController>,
+        // ── V2 rescue channel (thread-0 → per-stream) ──
+        /// Per-stream REST2 lambda TARGET absolute values, published by the
+        /// thread-0 rescue hook when a `EngineV2Rest2LambdaStep` fires. Each
+        /// stream reads its own index after the second barrier and applies
+        /// `engine.set_solute_lambda(target)` if the target differs from the
+        /// previously-applied value. Initialized to NaN (f32 bits = 0x7fc00000)
+        /// meaning "no target published yet" — streams skip.
+        rescue_rest2_target_bits: Vec<std::sync::atomic::AtomicU32>,
+        /// Global NMA amplification TARGET absolute value (f32 bits), published
+        /// by the thread-0 rescue hook when a `EngineV2NmaAmpMultiplier` fires.
+        /// Every stream reads and applies (NMA amp is a global engine scalar).
+        /// NaN = no target published yet.
+        rescue_nma_target_bits: std::sync::atomic::AtomicU32,
     }
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
@@ -3750,6 +3763,12 @@ fn run_multi_stream_pipeline(
                 );
                 None
             },
+            // V2 channel — initialize with f32::NAN bits so "no target" is
+            // trivially detectable via NaN != NaN.
+            rescue_rest2_target_bits: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()))
+                .collect(),
+            rescue_nma_target_bits: std::sync::atomic::AtomicU32::new(f32::NAN.to_bits()),
         }))
     } else {
         None
@@ -4002,6 +4021,14 @@ fn run_multi_stream_pipeline(
                         config_ref, ctx, mod_, stream_i,
                     )?;
                     engine.load_topology(topo_ref)?;
+
+                    // V2 rescue tracking: per-stream current values of engine
+                    // state that the rescue controller can mutate. Initialized
+                    // from startup config; updated each time a V2 rescue action
+                    // is consumed after the second barrier (above).
+                    let mut current_solute_lambda: f32 = rest2_lambda;
+                    let mut current_nma_amp: f32 = nma_amp;
+
                     if rest2_lambda < 1.0 {
                         engine.set_solute_lambda(rest2_lambda);
                     }
@@ -4909,26 +4936,55 @@ fn run_multi_stream_pipeline(
                                                                     synergy_list.len()
                                                                 );
                                                             }
-                                                            prism_nhs::rescue_controller::RescueAction::EngineV2Rest2LambdaStep { stream_idx, delta } => {
-                                                                // V2-only telemetry. Rate-limit to every 20 chunks
-                                                                // to match the Hold cadence — entropy_deficit can
-                                                                // trigger this every chunk on large structures and
-                                                                // the WARN stream otherwise drowns the real signal.
+                                                            prism_nhs::rescue_controller::RescueAction::EngineV2Rest2LambdaStep { stream_idx: _, delta } => {
+                                                                // V2 engine-state mutation — REST2 lambda per stream.
+                                                                // Thread-0 publishes absolute targets to
+                                                                // `rescue_rest2_target_bits[s]` for every stream.
+                                                                // Each stream's writeback block (after the second
+                                                                // barrier) reads its own slot and calls
+                                                                // `engine.set_solute_lambda(target)` — consuming the
+                                                                // target and resetting the slot to NaN.
+                                                                //
+                                                                // The rescue controller emits a single delta for
+                                                                // representative stream 0; we apply that same delta
+                                                                // to the currently-cached lambda of EVERY stream
+                                                                // (REST2 softening is physically meaningful on all
+                                                                // replicas when the engine is in a dead-spike regime).
+                                                                let delta = *delta;
+                                                                for s_idx in 0..asc_state.rescue_rest2_target_bits.len() {
+                                                                    // Use the last-published target as the current
+                                                                    // baseline; if NaN (no prior), fall back to 1.0.
+                                                                    let prev_bits = asc_state.rescue_rest2_target_bits[s_idx]
+                                                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                                                    let prev = f32::from_bits(prev_bits);
+                                                                    let baseline = if prev.is_nan() { 1.0 } else { prev };
+                                                                    let new_target = (baseline + delta).clamp(0.1, 1.0);
+                                                                    asc_state.rescue_rest2_target_bits[s_idx]
+                                                                        .store(new_target.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                                                                }
                                                                 if chunk_idx % 20 == 0 {
-                                                                    log::warn!(
-                                                                        "    [RESCUE chunk {}] V2-ONLY EngineV2Rest2LambdaStep stream={} delta={:.3} — NOT APPLIED (requires engine kernel work)",
-                                                                        chunk_idx, stream_idx, delta
+                                                                    log::info!(
+                                                                        "    [RESCUE chunk {}] PUBLISHED Rest2LambdaStep delta={:+.3} (per-stream targets updated — applied by each stream after second barrier)",
+                                                                        chunk_idx, delta
                                                                     );
                                                                 }
                                                             }
                                                             prism_nhs::rescue_controller::RescueAction::EngineV2NmaAmpMultiplier { multiplier } => {
-                                                                // Same rate-limit as V2Rest2 — fires constantly on
-                                                                // large structures where phasor_entropy starts
-                                                                // saturated (uniform, no pocket structure yet).
+                                                                // V2 engine-state mutation — NMA amp global.
+                                                                // Publish absolute target by multiplying the last-
+                                                                // published NMA target (or 1.0 if no prior target).
+                                                                let mult = *multiplier;
+                                                                let prev_bits = asc_state.rescue_nma_target_bits
+                                                                    .load(std::sync::atomic::Ordering::Relaxed);
+                                                                let prev = f32::from_bits(prev_bits);
+                                                                let baseline = if prev.is_nan() { 1.0 } else { prev };
+                                                                let new_target = (baseline * mult).clamp(1.0, 20.0);
+                                                                asc_state.rescue_nma_target_bits
+                                                                    .store(new_target.to_bits(), std::sync::atomic::Ordering::Relaxed);
                                                                 if chunk_idx % 20 == 0 {
-                                                                    log::warn!(
-                                                                        "    [RESCUE chunk {}] V2-ONLY EngineV2NmaAmpMultiplier x{:.3} — NOT APPLIED (requires engine kernel work)",
-                                                                        chunk_idx, multiplier
+                                                                    log::info!(
+                                                                        "    [RESCUE chunk {}] PUBLISHED NmaAmpMultiplier x{:.3} → absolute target {:.2} (applied by each stream after second barrier)",
+                                                                        chunk_idx, mult, new_target
                                                                     );
                                                                 }
                                                             }
@@ -4974,6 +5030,58 @@ fn run_multi_stream_pipeline(
 
                                 // Second barrier: ASC decisions ready
                                 asc_state.barrier.wait();
+
+                                // ══════════════════════════════════════════════════════
+                                // V2 Rescue application — per-stream engine mutation
+                                //
+                                // Thread-0's rescue hook publishes absolute REST2 lambda
+                                // and NMA amp targets to `asc_state.rescue_rest2_target_bits[i]`
+                                // and `asc_state.rescue_nma_target_bits`. This stream reads
+                                // its slot and calls the engine's host-mutable setters
+                                // (`set_solute_lambda` + `apply_focused_lambda` for REST2;
+                                // `set_nma_amplification` for NMA). Targets are f32 bits;
+                                // a NaN value means "no target published" — skip.
+                                //
+                                // Applied BEFORE the Stage 2 focus writeback below because
+                                // REST2 lambda affects AMBER force softening and must be
+                                // set before the next simulation step begins.
+                                {
+                                    let slot = &asc_state.rescue_rest2_target_bits[i];
+                                    let tbits = slot.load(std::sync::atomic::Ordering::Relaxed);
+                                    let target = f32::from_bits(tbits);
+                                    if !target.is_nan() && (target - current_solute_lambda).abs() > 1e-4 {
+                                        engine.set_solute_lambda(target);
+                                        // apply_focused_lambda uploads the per-atom lambda
+                                        // array to GPU. If it has no spikes to focus on yet,
+                                        // it just warns — harmless.
+                                        if let Err(e) = engine.apply_focused_lambda() {
+                                            log::debug!(
+                                                "    [RESCUE stream {} chunk {}] apply_focused_lambda: {}",
+                                                i, chunk_idx, e
+                                            );
+                                        }
+                                        if chunk_idx % 20 == 0 || (current_solute_lambda - target).abs() > 0.05 {
+                                            log::info!(
+                                                "    [RESCUE stream {} chunk {}] APPLIED REST2 lambda {:.3} → {:.3}",
+                                                i, chunk_idx, current_solute_lambda, target
+                                            );
+                                        }
+                                        current_solute_lambda = target;
+                                    }
+                                    let nbits = asc_state.rescue_nma_target_bits
+                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                    let ntarget = f32::from_bits(nbits);
+                                    if !ntarget.is_nan() && (ntarget - current_nma_amp).abs() > 1e-4 {
+                                        engine.set_nma_amplification(ntarget);
+                                        if chunk_idx % 20 == 0 || (current_nma_amp - ntarget).abs() > 0.5 {
+                                            log::info!(
+                                                "    [RESCUE stream {} chunk {}] APPLIED NMA amp {:.2} → {:.2}",
+                                                i, chunk_idx, current_nma_amp, ntarget
+                                            );
+                                        }
+                                        current_nma_amp = ntarget;
+                                    }
+                                }
 
                                 // ══════════════════════════════════════════════════════
                                 // Stage 2: Closed-loop ASC steering writeback
