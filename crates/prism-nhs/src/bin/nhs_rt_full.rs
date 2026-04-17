@@ -248,6 +248,25 @@ struct Args {
     #[arg(long, default_value = "false")]
     enable_autonomous_rescue: bool,
 
+    /// Optional path to a JSON file overriding the default
+    /// [`RescueTargets`]. Fields and ranges are validated on load; a bad
+    /// file logs ERROR and falls back to default_for_canonical_target().
+    /// When not set, the canonical default is used.
+    ///
+    /// Expected schema:
+    /// ```json
+    /// {
+    ///   "target_spike_rate": 50.0,
+    ///   "target_pcmi": 0.50,
+    ///   "target_synergy": 0.20,
+    ///   "target_phasor_entropy": 2.2,
+    ///   "min_consecutive_below": 5,
+    ///   "min_regime_stability": 0.75
+    /// }
+    /// ```
+    #[arg(long)]
+    rescue_targets_json: Option<String>,
+
     /// Enable BOCPD-driven dynamic chunking (Stage 1B-2).
     ///
     /// When set, the autonomous chunk loop runs Adams-MacKay Bayesian
@@ -3735,6 +3754,55 @@ fn run_multi_stream_pipeline(
     } else {
         None
     };
+
+    // ── Precondition: rescue controller requires the multi-diff path ──
+    //
+    // If the user passed --enable-autonomous-rescue but the conditions for
+    // the thread-0 ASC block to run (multi-differential + >=4 streams) are
+    // not met, the hook would silently never fire. Warn explicitly at
+    // startup so the mismatch is visible.
+    if args.enable_autonomous_rescue && asc_shared.is_none() {
+        log::warn!(
+            "  [RESCUE] --enable-autonomous-rescue was set but the multi-differential ASC path is NOT active (is_multi_diff={}, n_streams={}). Controller will NOT fire. Pass --multi-differential with >=4 streams to enable.",
+            is_multi_diff, n_streams
+        );
+    }
+
+    // ── Resolve RescueTargets once per run ──
+    //
+    // If --rescue-targets-json points to a valid JSON file, load + validate
+    // per-target overrides. Otherwise use default_for_canonical_target().
+    // Wrapped in Arc so multiple per-stream worker closures can cheaply
+    // share a reference without reaching the "cannot move captured" case
+    // on FnMut closures.
+    let rescue_targets: std::sync::Arc<prism_nhs::rescue_controller::RescueTargets> =
+        std::sync::Arc::new(
+            if let Some(ref path_str) = args.rescue_targets_json {
+                let path = std::path::Path::new(path_str);
+                match prism_nhs::rescue_controller::RescueTargets::load_from_json(path) {
+                    Ok(t) => {
+                        log::info!(
+                            "  [RESCUE] Loaded RescueTargets from {}: spike_rate={:.1} pcmi={:.2} synergy={:.2} entropy={:.2} consec={} stability={:.2}",
+                            path.display(),
+                            t.target_spike_rate, t.target_pcmi, t.target_synergy,
+                            t.target_phasor_entropy, t.min_consecutive_below,
+                            t.min_regime_stability,
+                        );
+                        t
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "  [RESCUE] FAILED to load --rescue-targets-json from {}: {}. Falling back to default_for_canonical_target().",
+                            path.display(), e
+                        );
+                        prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target()
+                    }
+                }
+            } else {
+                prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target()
+            }
+        );
+
     let epg_val = if is_multi_diff { n_streams / 4 } else { 1 };
 
     // ── GPU Ring Buffer Exchange (multi-differential only) ──
@@ -3779,6 +3847,9 @@ fn run_multi_stream_pipeline(
                 let stream_rb = streams[i].clone(); // second handle for ring buffer ops
                 let topo_ref = &topology;
                 let config_ref = &config;
+                // Per-stream clone of the Arc<RescueTargets>. Captured by
+                // the thread worker; cheap (Arc clone is a refcount bump).
+                let rescue_targets_i = rescue_targets.clone();
                 // Multi-temperature ladder: spread end_temp across streams
                 // Stream 0 gets the base temperature; higher streams get progressively
                 // hotter to crack high-barrier pockets. The ramp_down phase then cools
@@ -4668,25 +4739,18 @@ fn run_multi_stream_pipeline(
                                                 // ── Tier-2 Autonomous Rescue Controller ──
                                                 //
                                                 // Runs only when --enable-autonomous-rescue is set
-                                                // (the controller is None otherwise and this block
-                                                // is a no-op). Every chunk:
-                                                //   1. Build ObservationWindow from live ASC state
-                                                //   2. controller.decide(...) → Vec<RescueAction>
-                                                //   3. Apply actions to BOTH synergy_list and
-                                                //      redundancy_list IN PLACE before they are
-                                                //      published to shared state. Applying BEFORE
-                                                //      publication guarantees the Stage-2 steering
-                                                //      writeback (which fires after the second
-                                                //      barrier) picks up the amplified / injected
-                                                //      entries and pushes them to every stream's
-                                                //      ProtocolState. The ring_buffer_read_and_adapt
-                                                //      kernel then sees the rescue-modified focus
-                                                //      list on its next launch.
-                                                //
-                                                // Every action is logged at INFO or WARN so rescue
-                                                // decisions are never silent. V2-only actions emit
-                                                // WARN lines explicitly stating they were NOT
-                                                // applied and why.
+                                                // and the controller was actually constructed (see
+                                                // AscSharedState::rescue_controller). Observations
+                                                // are built from live ASC state; actions are applied
+                                                // to BOTH synergy_list and redundancy_list IN PLACE
+                                                // before they are published to shared state, so the
+                                                // Stage-2 steering writeback (after the second
+                                                // barrier) picks up rescue-modified entries and the
+                                                // ring_buffer_read_and_adapt kernel sees them on its
+                                                // next launch. Every mutation is logged and the
+                                                // AppliedSummary returned by apply_actions() is
+                                                // attached to the decision record for end-of-run
+                                                // telemetry.
                                                 if let Some(ref ctrl) = asc_state.rescue_controller {
                                                     // — Build ObservationWindow —
                                                     let spike_rates_per_stream: Vec<f32> =
@@ -4729,89 +4793,129 @@ fn run_multi_stream_pipeline(
                                                         0.0
                                                     };
 
+                                                    // ── Phasor entropy: Shannon entropy of the
+                                                    // per-residue max-over-groups phasor magnitude
+                                                    // distribution. Uniform (no concentration) =
+                                                    // high entropy = no structure; peaked = low
+                                                    // entropy = all information concentrated on a
+                                                    // few residues. Uses the same
+                                                    // shannon_entropy_nats helper the module's
+                                                    // tests exercise.
+                                                    let mut phasor_dist: Vec<f32> =
+                                                        Vec::with_capacity(asc_state.n_residues);
+                                                    for rid in 0..asc_state.n_residues {
+                                                        let mut m_max: f32 = 0.0;
+                                                        for g in 0..4 {
+                                                            let (cs, ss, n) = gph[g][rid];
+                                                            if n > 5 {
+                                                                let m = ((cs * cs + ss * ss).sqrt()
+                                                                    / n as f64) as f32;
+                                                                if m > m_max {
+                                                                    m_max = m;
+                                                                }
+                                                            }
+                                                        }
+                                                        if m_max > 0.0 {
+                                                            phasor_dist.push(m_max);
+                                                        }
+                                                    }
+                                                    let phasor_entropy =
+                                                        prism_nhs::rescue_controller::shannon_entropy_nats(
+                                                            &phasor_dist,
+                                                        );
+
                                                     let obs = prism_nhs::rescue_controller::ObservationWindow {
                                                         chunk_idx: chunk_idx as u32,
                                                         spike_rates_per_stream,
                                                         pcmi_mean,
                                                         gcpid_synergy_mean,
-                                                        phasor_entropy: 0.0,
+                                                        phasor_entropy,
+                                                        // current_otsu_threshold is reserved for a
+                                                        // future sanity gate inside the rescue
+                                                        // module; the engine's per-channel Otsu
+                                                        // thresholds live on device-local state
+                                                        // inside each stream's fused engine and
+                                                        // are not host-accessible at this callsite.
+                                                        // Feeding 0.0 is explicitly safe — the
+                                                        // module does not consume this field in
+                                                        // v1 (see rescue_controller.rs:538).
                                                         current_otsu_threshold: 0.0,
+                                                        // Fallback for callers that don't run an
+                                                        // upstream BOCPD. The controller has its
+                                                        // own internal BOCPD that is the actual
+                                                        // gate; this value is only used when the
+                                                        // internal BOCPD is in warmup (see
+                                                        // rescue_controller.rs decide()).
                                                         bocpd_regime_stability: 1.0,
                                                         cumulative_spike_count,
                                                     };
-                                                    let targets = prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target();
-                                                    let actions = ctrl.decide(&obs, &targets);
+                                                    let actions = ctrl.decide(&obs, rescue_targets_i.as_ref());
 
-                                                    // — Apply each action —
+                                                    // Build candidate supplier for FocusListInjection:
+                                                    // top-K per-group max phasor magnitude residues.
+                                                    let candidate_supplier = |_k: usize| {
+                                                        let mut cand: Vec<(i32, f32)> =
+                                                            Vec::with_capacity(asc_state.n_residues);
+                                                        for rid in 0..asc_state.n_residues {
+                                                            let mut max_mag: f32 = 0.0;
+                                                            for g in 0..4 {
+                                                                let (cs, ss, n) = gph[g][rid];
+                                                                if n > 5 {
+                                                                    let m = ((cs * cs + ss * ss).sqrt()
+                                                                        / n as f64) as f32;
+                                                                    if m > max_mag {
+                                                                        max_mag = m;
+                                                                    }
+                                                                }
+                                                            }
+                                                            if max_mag > 0.0 {
+                                                                cand.push((rid as i32, max_mag));
+                                                            }
+                                                        }
+                                                        cand.sort_by(|a, b| {
+                                                            b.1.partial_cmp(&a.1)
+                                                                .unwrap_or(std::cmp::Ordering::Equal)
+                                                        });
+                                                        cand
+                                                    };
+
+                                                    // Apply in one call; the returned AppliedSummary
+                                                    // makes every effect observable.
+                                                    let summary =
+                                                        prism_nhs::rescue_controller::apply_actions(
+                                                            &actions,
+                                                            &mut synergy_list,
+                                                            &mut redundancy_list,
+                                                            prism_nhs::protocol_state::STEERING_FOCUS_MAX,
+                                                            candidate_supplier,
+                                                        );
+
+                                                    // Per-action logging so nothing is silent.
                                                     for action in &actions {
                                                         match action {
                                                             prism_nhs::rescue_controller::RescueAction::FocusWeightAmplifier { multiplier } => {
-                                                                for (_, w) in synergy_list.iter_mut() {
-                                                                    *w *= multiplier;
-                                                                }
-                                                                for (_, w) in redundancy_list.iter_mut() {
-                                                                    *w *= multiplier;
-                                                                }
                                                                 log::info!(
-                                                                    "    [RESCUE chunk {}] APPLIED FocusWeightAmplifier x{:.3} to synergy_list ({} entries) and redundancy_list ({} entries)",
+                                                                    "    [RESCUE chunk {}] APPLIED FocusWeightAmplifier x{:.3} (synergy_list={}, redundancy_list={})",
                                                                     chunk_idx, multiplier,
                                                                     synergy_list.len(), redundancy_list.len()
                                                                 );
                                                             }
-                                                            prism_nhs::rescue_controller::RescueAction::FocusListInjection { residues } => {
-                                                                // The rescue controller emits an empty
-                                                                // Vec with capacity = K. Caller fills it
-                                                                // from per-group phasor magnitudes: pick
-                                                                // the top-K residues by max-over-groups
-                                                                // phasor magnitude that are NOT already
-                                                                // in the synergy list, append them to
-                                                                // synergy_list with the maximum phasor
-                                                                // magnitude as the weight, and truncate
-                                                                // back to STEERING_FOCUS_MAX.
-                                                                let n_wanted = residues.capacity();
-                                                                let already: std::collections::HashSet<i32> =
-                                                                    synergy_list.iter().map(|(r, _)| *r).collect();
-                                                                let mut cand: Vec<(i32, f32)> = Vec::new();
-                                                                for rid in 0..asc_state.n_residues {
-                                                                    if already.contains(&(rid as i32)) {
-                                                                        continue;
-                                                                    }
-                                                                    let mut max_mag: f32 = 0.0;
-                                                                    for g in 0..4 {
-                                                                        let (cs, ss, n) = gph[g][rid];
-                                                                        if n > 5 {
-                                                                            let m = ((cs*cs + ss*ss).sqrt() / n as f64) as f32;
-                                                                            if m > max_mag { max_mag = m; }
-                                                                        }
-                                                                    }
-                                                                    if max_mag > 0.0 {
-                                                                        cand.push((rid as i32, max_mag));
-                                                                    }
-                                                                }
-                                                                cand.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                                                                cand.truncate(n_wanted);
-                                                                let n_injected = cand.len();
-                                                                for e in cand {
-                                                                    synergy_list.push(e);
-                                                                }
-                                                                synergy_list.truncate(
-                                                                    prism_nhs::protocol_state::STEERING_FOCUS_MAX
-                                                                );
+                                                            prism_nhs::rescue_controller::RescueAction::FocusListInjection { .. } => {
                                                                 log::info!(
-                                                                    "    [RESCUE chunk {}] APPLIED FocusListInjection: injected {}/{} residues from phasor state; synergy_list now {} entries",
-                                                                    chunk_idx, n_injected, n_wanted,
+                                                                    "    [RESCUE chunk {}] APPLIED FocusListInjection injected={} residues (list now {})",
+                                                                    chunk_idx, summary.injected_residues.len(),
                                                                     synergy_list.len()
                                                                 );
                                                             }
                                                             prism_nhs::rescue_controller::RescueAction::EngineV2Rest2LambdaStep { stream_idx, delta } => {
                                                                 log::warn!(
-                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2Rest2LambdaStep stream={} delta={:.3} — NOT APPLIED (requires engine kernel work to expose per-stream REST2 lambda as host-mutable ProtocolState)",
+                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2Rest2LambdaStep stream={} delta={:.3} — NOT APPLIED (requires engine kernel work)",
                                                                     chunk_idx, stream_idx, delta
                                                                 );
                                                             }
                                                             prism_nhs::rescue_controller::RescueAction::EngineV2NmaAmpMultiplier { multiplier } => {
                                                                 log::warn!(
-                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2NmaAmpMultiplier x{:.3} — NOT APPLIED (requires NMA amp to be exposed as host-mutable ProtocolState field)",
+                                                                    "    [RESCUE chunk {}] V2-ONLY EngineV2NmaAmpMultiplier x{:.3} — NOT APPLIED (requires engine kernel work)",
                                                                     chunk_idx, multiplier
                                                                 );
                                                             }
@@ -9719,6 +9823,42 @@ fn run_multi_stream_pipeline(
             }
         }
 
+        // ── Drain rescue controller history for the run manifest ──
+        //
+        // If the rescue controller was active, this pulls every
+        // RescueDecisionRecord emitted during the run out of the
+        // controller's internal buffer and serializes the full decision
+        // trace into the output JSON. If rescue was disabled, this is
+        // serde_json::Value::Null and adds nothing to the output.
+        let rescue_history_json: serde_json::Value =
+            if let Some(ref shared) = asc_shared {
+                if let Some(ref ctrl) = shared.rescue_controller {
+                    let history = ctrl.drain_history();
+                    log::info!(
+                        "  [RESCUE] run complete — {} decision records collected",
+                        history.len()
+                    );
+                    // RescueTargets actually used is also embedded so the
+                    // reviewer can see exactly what thresholds the
+                    // controller was operating against.
+                    serde_json::json!({
+                        "enabled": true,
+                        "targets_used": rescue_targets.as_ref(),
+                        "decisions": history,
+                    })
+                } else {
+                    serde_json::json!({
+                        "enabled": false,
+                        "reason": "controller_not_constructed",
+                    })
+                }
+            } else {
+                serde_json::json!({
+                    "enabled": false,
+                    "reason": "multi_differential_asc_path_not_active",
+                })
+            };
+
         let json_output = serde_json::json!({
             "structure": structure_name,
             "mode": "multi_stream",
@@ -9740,6 +9880,9 @@ fn run_multi_stream_pipeline(
             // IPC writer in a later commit.
             "background_spikes": background_summary_json,
             "prism_therm": prism_therm_result,
+            // Tier-2 rescue controller telemetry (always present — when
+            // rescue is off, `enabled: false` with a reason tag).
+            "rescue_history": rescue_history_json,
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());

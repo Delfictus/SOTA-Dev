@@ -59,6 +59,7 @@
 use crate::bocpd::{BocpdState, ConstantHazard};
 use crate::gcpid::PidAtoms;
 
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
@@ -67,7 +68,7 @@ use std::sync::Mutex;
 // ─────────────────────────────────────────────────────────────────────
 
 /// One chunk's worth of observed information-theoretic state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObservationWindow {
     /// ASC chunk index (monotonic).
     pub chunk_idx: u32,
@@ -147,7 +148,11 @@ impl ObservationWindow {
 /// information profile. Sensible defaults are provided by
 /// [`RescueTargets::default_for_canonical_target`]; targets with unusual
 /// profiles (e.g. small constructs, dispersed aromatics) should override.
-#[derive(Debug, Clone)]
+///
+/// Serializable so per-target overrides can be loaded from a JSON file
+/// via [`RescueTargets::load_from_json`] and so the values actually used
+/// in a run can be serialized into the output manifest for review.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RescueTargets {
     /// Target mean spike rate per stream per chunk. Below this the
     /// `spike_rate_deficit` starts contributing to the rescue decision.
@@ -202,6 +207,74 @@ impl RescueTargets {
             min_regime_stability: 0.7,
         }
     }
+
+    /// Load from a JSON file at `path`. Returns `Err` if the file cannot
+    /// be read or parsed, OR if any field fails validation (negative
+    /// targets, zero spike rate target, out-of-range regime stability).
+    ///
+    /// Expected JSON schema matches `RescueTargets`'s derive:
+    /// ```json
+    /// {
+    ///   "target_spike_rate": 50.0,
+    ///   "target_pcmi": 0.50,
+    ///   "target_synergy": 0.20,
+    ///   "target_phasor_entropy": 2.2,
+    ///   "min_consecutive_below": 5,
+    ///   "min_regime_stability": 0.75
+    /// }
+    /// ```
+    pub fn load_from_json(path: &std::path::Path) -> std::io::Result<Self> {
+        let raw = std::fs::read_to_string(path)?;
+        let parsed: Self = serde_json::from_str(&raw).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("rescue-targets JSON parse error: {}", e),
+            )
+        })?;
+        parsed.validate().map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+        })?;
+        Ok(parsed)
+    }
+
+    /// Validate field values. Returns `Err(msg)` with a specific message
+    /// if any field is out of its physically meaningful range.
+    pub fn validate(&self) -> Result<(), String> {
+        if !(self.target_spike_rate > 0.0 && self.target_spike_rate.is_finite()) {
+            return Err(format!(
+                "target_spike_rate must be > 0 and finite, got {}",
+                self.target_spike_rate
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.target_pcmi) {
+            return Err(format!(
+                "target_pcmi must be in [0, 1], got {}",
+                self.target_pcmi
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.target_synergy) {
+            return Err(format!(
+                "target_synergy must be in [0, 1], got {}",
+                self.target_synergy
+            ));
+        }
+        if !(self.target_phasor_entropy >= 0.0 && self.target_phasor_entropy.is_finite()) {
+            return Err(format!(
+                "target_phasor_entropy must be >= 0 and finite, got {}",
+                self.target_phasor_entropy
+            ));
+        }
+        if self.min_consecutive_below == 0 {
+            return Err("min_consecutive_below must be >= 1".to_string());
+        }
+        if !(0.0..=1.0).contains(&self.min_regime_stability) {
+            return Err(format!(
+                "min_regime_stability must be in [0, 1], got {}",
+                self.min_regime_stability
+            ));
+        }
+        Ok(())
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -211,7 +284,7 @@ impl RescueTargets {
 /// Non-negative deficit per information-theoretic axis. Each field is the
 /// gap between the target and the observation, clamped to `[0, ∞)`. A
 /// value of `0` on all axes means "on target, no rescue needed."
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InformationDeficit {
     /// Normalized spike-rate deficit: `(target - observed) / target`,
     /// clamped to `[0, 1]`. 1.0 = complete zero-spike regime.
@@ -272,7 +345,8 @@ impl InformationDeficit {
 /// bounded functions — never hardcoded step sizes like "2×" or "lower by
 /// 20%". This makes the controller a proper proportional-response system
 /// rather than a fixed-step state machine.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
 pub enum RescueAction {
     /// Multiplicative amplifier to apply to every `synergy_fraction`
     /// weight in the existing `current_steering_focus` list. Values
@@ -307,7 +381,16 @@ pub enum RescueAction {
 
     /// Deficit detected but below the stability gate or consecutive-chunks
     /// threshold. Telemetry-only; no side effect.
-    Hold { reason: &'static str, deficit: InformationDeficit },
+    Hold {
+        /// Short machine-readable reason tag. Populated with one of the
+        /// canonical values `"regime_unstable_bocpd"` or
+        /// `"below_consecutive_threshold"` by the controller itself;
+        /// callers may mint their own tags if they emit Hold externally.
+        /// Owned String (not `&'static str`) so the enum is serde-friendly.
+        reason: String,
+        /// Deficit vector at the time of the hold.
+        deficit: InformationDeficit,
+    },
 }
 
 impl RescueAction {
@@ -351,7 +434,7 @@ pub struct RescueController {
 }
 
 /// Per-chunk rescue decision record for telemetry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RescueDecisionRecord {
     /// ASC chunk index the decision applies to.
     pub chunk_idx: u32,
@@ -443,7 +526,7 @@ impl RescueController {
         // Gate 2: regime must be stable (not in a detected changepoint).
         if stability < targets.min_regime_stability {
             let actions = vec![RescueAction::Hold {
-                reason: "regime_unstable_bocpd",
+                reason: "regime_unstable_bocpd".to_string(),
                 deficit: deficit.clone(),
             }];
             self.record(obs, &deficit, stability, actions.clone());
@@ -454,7 +537,7 @@ impl RescueController {
         let count = self.consecutive_below.fetch_add(1, Ordering::Relaxed) + 1;
         if count < targets.min_consecutive_below {
             let actions = vec![RescueAction::Hold {
-                reason: "below_consecutive_threshold",
+                reason: "below_consecutive_threshold".to_string(),
                 deficit: deficit.clone(),
             }];
             self.record(obs, &deficit, stability, actions.clone());
@@ -594,6 +677,117 @@ impl RescueController {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Action application — the concrete effect of each RescueAction on the
+// caller's focus lists. Lives in this module (not inline in the engine
+// binary) so the wiring is testable end-to-end without the GPU path.
+// ─────────────────────────────────────────────────────────────────────
+
+/// What [`apply_actions`] actually did this chunk. Every field is a
+/// concrete, observable side effect so "the controller decided X but
+/// nothing happened" becomes impossible.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AppliedSummary {
+    /// Number of FocusWeightAmplifier actions that fired.
+    pub amplifier_applied: u32,
+    /// Product of every FocusWeightAmplifier multiplier applied this
+    /// chunk. `1.0` when no amplifier fired.
+    pub amplifier_total_multiplier: f32,
+    /// Number of FocusListInjection actions that fired.
+    pub injection_applied: u32,
+    /// Actual residues appended to the synergy list this chunk (after
+    /// the not-already-present filter and candidate-supplier pull).
+    pub injected_residues: Vec<(i32, f32)>,
+    /// Number of V2-only actions emitted (telemetry only; no mutation).
+    pub v2_only_requested: u32,
+    /// Number of Hold actions emitted (telemetry only; no mutation).
+    pub holds: u32,
+}
+
+/// Apply a sequence of [`RescueAction`]s to the caller's focus lists.
+///
+/// This is the canonical — and the ONLY — implementation of the
+/// decision→effect mapping. Engine callers pass their in-flight
+/// `synergy_list` and `redundancy_list` (which are about to be published
+/// to shared state) and a closure that produces injection candidates
+/// from live state (per-group phasor magnitudes, etc.). The function:
+///
+///   1. For each `FocusWeightAmplifier`: multiplies every weight in
+///      BOTH lists by the derived multiplier.
+///   2. For each `FocusListInjection`: calls `inject_candidates(k)` to
+///      get a list of at most K `(rid, weight)` pairs, filters out
+///      residues already present in synergy_list, appends the remainder,
+///      truncates synergy_list back to `focus_max`.
+///   3. For V2-only actions: records the request in the summary and
+///      leaves both lists untouched. Callers should WARN-log these
+///      (never silent-drop).
+///   4. For Hold: records the hold in the summary. Callers should INFO-
+///      log with the hold reason at whatever cadence they prefer.
+///
+/// Returns an [`AppliedSummary`] describing the concrete mutations,
+/// suitable for both logging and for serializing into the run's output
+/// JSON.
+pub fn apply_actions<F>(
+    actions: &[RescueAction],
+    synergy_list: &mut Vec<(i32, f32)>,
+    redundancy_list: &mut Vec<(i32, f32)>,
+    focus_max: usize,
+    mut inject_candidates: F,
+) -> AppliedSummary
+where
+    F: FnMut(usize) -> Vec<(i32, f32)>,
+{
+    let mut summary = AppliedSummary {
+        amplifier_total_multiplier: 1.0,
+        ..Default::default()
+    };
+
+    for action in actions {
+        match action {
+            RescueAction::FocusWeightAmplifier { multiplier } => {
+                for (_, w) in synergy_list.iter_mut() {
+                    *w *= multiplier;
+                }
+                for (_, w) in redundancy_list.iter_mut() {
+                    *w *= multiplier;
+                }
+                summary.amplifier_applied += 1;
+                summary.amplifier_total_multiplier *= multiplier;
+            }
+            RescueAction::FocusListInjection { residues } => {
+                let k = residues.capacity().max(residues.len());
+                let already: std::collections::HashSet<i32> =
+                    synergy_list.iter().map(|(r, _)| *r).collect();
+                let cands = inject_candidates(k);
+                let mut added: Vec<(i32, f32)> = Vec::new();
+                for (rid, w) in cands {
+                    if added.len() >= k {
+                        break;
+                    }
+                    if !already.contains(&rid) {
+                        synergy_list.push((rid, w));
+                        added.push((rid, w));
+                    }
+                }
+                if synergy_list.len() > focus_max {
+                    synergy_list.truncate(focus_max);
+                }
+                summary.injection_applied += 1;
+                summary.injected_residues.extend(added);
+            }
+            RescueAction::EngineV2Rest2LambdaStep { .. }
+            | RescueAction::EngineV2NmaAmpMultiplier { .. } => {
+                summary.v2_only_requested += 1;
+            }
+            RescueAction::Hold { .. } => {
+                summary.holds += 1;
+            }
+        }
+    }
+
+    summary
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Utility: aggregate synergy fraction from a slice of PID atoms
 // ─────────────────────────────────────────────────────────────────────
 
@@ -718,7 +912,7 @@ mod tests {
         let result = ctrl.decide(&obs, &targets);
         let gated = result
             .iter()
-            .any(|a| matches!(a, RescueAction::Hold { reason: "regime_unstable_bocpd", .. }));
+            .any(|a| matches!(a, RescueAction::Hold { reason, .. } if reason == "regime_unstable_bocpd"));
         assert!(gated, "expected regime-unstable hold, got {:?}", result);
     }
 
@@ -816,5 +1010,181 @@ mod tests {
         assert!(RescueAction::EngineV2NmaAmpMultiplier { multiplier: 2.0 }.is_engine_v2_only());
         assert!(!RescueAction::FocusWeightAmplifier { multiplier: 2.0 }.is_engine_v2_only());
         assert!(!RescueAction::FocusListInjection { residues: vec![] }.is_engine_v2_only());
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // apply_actions: the wiring from decision → effect must be testable
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn apply_amplifier_scales_both_lists() {
+        let mut synergy = vec![(10, 0.5_f32), (11, 0.3)];
+        let mut redundancy = vec![(12, 0.8_f32), (13, 0.6)];
+        let actions = vec![RescueAction::FocusWeightAmplifier { multiplier: 3.0 }];
+        let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |_| vec![]);
+        // Use epsilon comparisons — f32 multiplication introduces unit
+        // ULP drift (0.3 * 3.0 != 0.9 exactly).
+        let eps = 1e-5_f32;
+        assert_eq!(synergy.len(), 2);
+        assert_eq!(synergy[0].0, 10);
+        assert!((synergy[0].1 - 1.5).abs() < eps);
+        assert_eq!(synergy[1].0, 11);
+        assert!((synergy[1].1 - 0.9).abs() < eps);
+        assert_eq!(redundancy.len(), 2);
+        assert!((redundancy[0].1 - 2.4).abs() < eps);
+        assert!((redundancy[1].1 - 1.8).abs() < eps);
+        assert_eq!(summary.amplifier_applied, 1);
+        assert!((summary.amplifier_total_multiplier - 3.0).abs() < eps);
+    }
+
+    #[test]
+    fn apply_amplifier_composes_multiplicatively() {
+        let mut synergy = vec![(10, 1.0_f32)];
+        let mut redundancy: Vec<(i32, f32)> = vec![];
+        let actions = vec![
+            RescueAction::FocusWeightAmplifier { multiplier: 2.0 },
+            RescueAction::FocusWeightAmplifier { multiplier: 4.0 },
+        ];
+        let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |_| vec![]);
+        assert!((synergy[0].1 - 8.0).abs() < 1e-5);
+        assert_eq!(summary.amplifier_applied, 2);
+        assert!((summary.amplifier_total_multiplier - 8.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn apply_injection_appends_candidates_and_skips_already_present() {
+        let mut synergy = vec![(10, 0.5_f32), (11, 0.3)];
+        let mut redundancy: Vec<(i32, f32)> = vec![];
+        // Request K=3 injection.
+        let mut req: Vec<(i32, f32)> = Vec::with_capacity(3);
+        req.reserve_exact(3);
+        let actions = vec![RescueAction::FocusListInjection { residues: req }];
+        // Candidate supplier returns rid=10 (already present — should be
+        // skipped), rid=20, rid=21, rid=22 (new — should be appended).
+        let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |k| {
+            assert!(k >= 3, "candidate supplier called with k={}", k);
+            vec![(10, 0.9), (20, 0.8), (21, 0.7), (22, 0.6)]
+        });
+        // synergy should now contain the original 2 plus the 3 new (skipping rid=10).
+        assert!(synergy.iter().any(|&(r, _)| r == 20));
+        assert!(synergy.iter().any(|&(r, _)| r == 21));
+        assert!(synergy.iter().any(|&(r, _)| r == 22));
+        assert_eq!(summary.injection_applied, 1);
+        assert_eq!(summary.injected_residues.len(), 3);
+    }
+
+    #[test]
+    fn apply_injection_respects_focus_max() {
+        let mut synergy: Vec<(i32, f32)> = (0..62).map(|i| (i, 0.1)).collect();
+        let mut redundancy: Vec<(i32, f32)> = vec![];
+        let mut req: Vec<(i32, f32)> = Vec::with_capacity(8);
+        req.reserve_exact(8);
+        let actions = vec![RescueAction::FocusListInjection { residues: req }];
+        let _ = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |k| {
+            (100..100 + k as i32).map(|i| (i, 0.5)).collect()
+        });
+        assert_eq!(synergy.len(), 64, "must truncate back to focus_max");
+    }
+
+    #[test]
+    fn apply_v2_actions_dont_mutate_but_are_counted() {
+        let mut synergy = vec![(10, 0.5_f32)];
+        let mut redundancy = vec![(11, 0.6_f32)];
+        let actions = vec![
+            RescueAction::EngineV2Rest2LambdaStep { stream_idx: 0, delta: -0.1 },
+            RescueAction::EngineV2NmaAmpMultiplier { multiplier: 3.0 },
+        ];
+        let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |_| vec![]);
+        assert_eq!(synergy, vec![(10, 0.5)]);
+        assert_eq!(redundancy, vec![(11, 0.6)]);
+        assert_eq!(summary.v2_only_requested, 2);
+        assert_eq!(summary.amplifier_applied, 0);
+        assert_eq!(summary.injection_applied, 0);
+    }
+
+    #[test]
+    fn apply_hold_is_counted_but_no_mutation() {
+        let mut synergy = vec![(10, 0.5_f32)];
+        let mut redundancy: Vec<(i32, f32)> = vec![];
+        let actions = vec![RescueAction::Hold {
+            reason: "test_hold".to_string(),
+            deficit: InformationDeficit::default(),
+        }];
+        let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |_| vec![]);
+        assert_eq!(synergy, vec![(10, 0.5)]);
+        assert_eq!(summary.holds, 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // RescueTargets: load + validate
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn targets_load_from_valid_json() {
+        let json = br#"{
+            "target_spike_rate": 50.0,
+            "target_pcmi": 0.55,
+            "target_synergy": 0.20,
+            "target_phasor_entropy": 2.2,
+            "min_consecutive_below": 5,
+            "min_regime_stability": 0.75
+        }"#;
+        let tmp = std::env::temp_dir().join("rescue_targets_ok.json");
+        std::fs::write(&tmp, json).unwrap();
+        let t = RescueTargets::load_from_json(&tmp).unwrap();
+        assert!((t.target_spike_rate - 50.0).abs() < 1e-5);
+        assert_eq!(t.min_consecutive_below, 5);
+    }
+
+    #[test]
+    fn targets_validate_rejects_bad_fields() {
+        let mut t = RescueTargets::default_for_canonical_target();
+        t.target_spike_rate = -1.0;
+        assert!(t.validate().is_err());
+        t = RescueTargets::default_for_canonical_target();
+        t.target_pcmi = 1.5;
+        assert!(t.validate().is_err());
+        t = RescueTargets::default_for_canonical_target();
+        t.min_consecutive_below = 0;
+        assert!(t.validate().is_err());
+        t = RescueTargets::default_for_canonical_target();
+        t.min_regime_stability = -0.1;
+        assert!(t.validate().is_err());
+    }
+
+    #[test]
+    fn targets_load_rejects_invalid_json() {
+        let tmp = std::env::temp_dir().join("rescue_targets_bad.json");
+        std::fs::write(&tmp, b"{ \"target_spike_rate\": 0.0 }").unwrap();
+        let r = RescueTargets::load_from_json(&tmp);
+        assert!(r.is_err(), "zero spike-rate target must be rejected");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // End-to-end: RescueController + apply_actions produce observable
+    // mutations after the consecutive threshold
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn end_to_end_rescue_amplifies_published_weights() {
+        let targets = RescueTargets::default_for_canonical_target();
+        let mut obs = make_obs(0.0, 0.0, 0.0, 3.0);
+        obs.cumulative_spike_count = 100;
+        let ctrl = RescueController::new(true);
+        // Feed past consecutive-below threshold.
+        for _ in 0..3 {
+            let _ = ctrl.decide(&obs, &targets);
+        }
+        let actions = ctrl.decide(&obs, &targets);
+        // Now apply to a synthetic list.
+        let mut synergy = vec![(42, 1.0_f32), (43, 0.5)];
+        let mut redundancy = vec![(99, 0.8_f32)];
+        let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |k| {
+            (200..200 + k as i32).map(|i| (i, 0.2)).collect()
+        });
+        // At spike_rate_deficit=1.0, amp = 1 + 4·1 = 5.0.
+        assert!(synergy[0].1 >= 4.99 && synergy[0].1 <= 5.01,
+            "expected weight ~5.0 after amplification, got {}", synergy[0].1);
+        assert!(summary.amplifier_applied >= 1);
     }
 }
