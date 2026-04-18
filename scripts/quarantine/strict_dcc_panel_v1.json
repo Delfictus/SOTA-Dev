@@ -1,0 +1,33 @@
+{
+  "version": "strict_dcc_panel_v1",
+  "frozen_at_utc": "2026-04-17T22:20:28Z",
+  "n_total": 18,
+  "membership_rule": "4 TWIN-10 verified + 3 TWIN-10 recoveries (KRAS/USP1/POLQ) + 11 blind_validation_100 CryptoBench pairs with pRMSD < 2.1 Å and ligand present",
+  "delta_log": [],
+  "panel": [
+    {"target_key": "wrn_apo",         "apo": "6yhr", "holo": "8pfo", "ligand": "YHC",   "source": "TWIN-10 done",          "bin_at_freeze": "BIN_A_READY"},
+    {"target_key": "menin_apo",       "apo": "3re2", "holo": "7uj4", "ligand": "OQ4",   "source": "TWIN-10 done",          "bin_at_freeze": "BIN_A_READY"},
+    {"target_key": "smarca2_brd_apo", "apo": "4qy4", "holo": "5dkc", "ligand": "5BW",   "source": "TWIN-10 done",          "bin_at_freeze": "BIN_A_READY"},
+    {"target_key": "pkmyt1_apo",      "apo": "3p1a", "holo": "8d6e", "ligand": "QGI",   "source": "TWIN-10 done",          "bin_at_freeze": "BIN_A_READY"},
+    {"target_key": "kras_g12d_apo",   "apo": "7f0w", "holo": "7rpz", "ligand": "6IC",   "source": "TWIN-10 recovery",      "bin_at_freeze": "BIN_C_REQUIRES_ENGINE"},
+    {"target_key": "usp1_apo",        "apo": "7ay0", "holo": "9di1", "ligand": "A1A4Y", "source": "TWIN-10 recovery",      "bin_at_freeze": "BIN_B_FIXABLE"},
+    {"target_key": "polq_apo",        "apo": "6xbu", "holo": "8e24", "ligand": "auto",  "source": "TWIN-10 recovery",      "bin_at_freeze": "BIN_B_FIXABLE"},
+    {"target_key": "m1_2nvp", "apo": "2nvp", "holo": "3qt9", "ligand": "Z4Y", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.01},
+    {"target_key": "m1_1xhx", "apo": "1xhx", "holo": "2pyj", "ligand": "DGT", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.01},
+    {"target_key": "m1_2akr", "apo": "2akr", "holo": "6ojp", "ligand": "BMA", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.02},
+    {"target_key": "m1_2e3k", "apo": "2e3k", "holo": "7wmu", "ligand": "JGF", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.03},
+    {"target_key": "m1_3bjp", "apo": "3bjp", "holo": "4n9v", "ligand": "AZA", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.04},
+    {"target_key": "m1_6tyo", "apo": "6tyo", "holo": "6tyn", "ligand": "5N6", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.04},
+    {"target_key": "m1_7se6", "apo": "7se6", "holo": "7se8", "ligand": "8W1", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.04},
+    {"target_key": "m1_1k47", "apo": "1k47", "holo": "3gon", "ligand": "PMV", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.04},
+    {"target_key": "m1_5yj2", "apo": "5yj2", "holo": "7cug", "ligand": "MXE", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.05},
+    {"target_key": "m1_3umi", "apo": "3umi", "holo": "5buo", "ligand": "SGN", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.06},
+    {"target_key": "m1_3bl7", "apo": "3bl7", "holo": "1st0", "ligand": "GTG", "source": "blind_validation_100", "bin_at_freeze": "BIN_C_REQUIRES_ENGINE", "pRMSD": 2.06}
+  ],
+  "material_improvement_rule": {
+    "top1_correct_min": 4,
+    "top1_correct_delta_over_baseline_A_min": 3,
+    "fp_top1_promotions_max": 1,
+    "stop_string_if_unmet": "ROOT_CAUSE_NOT_RESOLVED — ranking redesign must move beyond current feature family"
+  }
+}

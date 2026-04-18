@@ -319,22 +319,38 @@ def _parse_pdb_ca(path: Path, chain: str = "A") -> Dict[int, Tuple[str, np.ndarr
     return cas
 
 
-def _parse_pdb_hetatm(path: Path, resname: str, chain: str = "A") -> np.ndarray:
-    """Parse HETATM coordinates for a specific ligand."""
-    coords = []
-    with open(path) as f:
-        for line in f:
-            if not line.startswith("HETATM"):
-                continue
-            if line[17:20].strip() != resname:
-                continue
-            if line[21] != chain:
-                continue
-            try:
-                x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
-                coords.append([x, y, z])
-            except ValueError:
-                pass
+def _parse_pdb_hetatm(path: Path, resname: str, chain: str = "A",
+                      fallback_any_chain: bool = True) -> np.ndarray:
+    """Parse HETATM coordinates for a specific ligand.
+
+    v4.3 fix: if `fallback_any_chain` and the ligand resname is absent from
+    the requested chain, fall back to searching all chains. Many paired
+    apo/holo pairs place the ligand in a chain different from the protein
+    (e.g. CryptoBench 2nvp: protein chain A, ligand Z4Y chain B).
+    Without this fallback stage-4 returns GROUND_TRUTH_INVALID for every
+    such pair. Deterministic fallback — if any-chain search yields coords
+    they are used; otherwise empty array returned as before.
+    """
+    def _collect(match_chain):
+        coords = []
+        with open(path) as f:
+            for line in f:
+                if not line.startswith("HETATM"):
+                    continue
+                if line[17:20].strip() != resname:
+                    continue
+                if match_chain is not None and line[21] != match_chain:
+                    continue
+                try:
+                    x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+                    coords.append([x, y, z])
+                except ValueError:
+                    pass
+        return coords
+
+    coords = _collect(chain)
+    if not coords and fallback_any_chain:
+        coords = _collect(None)
     return np.asarray(coords, dtype=np.float64)
 
 

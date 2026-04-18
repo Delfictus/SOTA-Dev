@@ -68,7 +68,7 @@ BASE = Path("/mnt/storage/prism-outputs/twin-10-patent")
 CB_RUN_DIR = Path("/mnt/storage/prism-outputs/runs/cryptobench199")
 CB_BENCH_JSON = Path("/home/diddy/Desktop/Prism4D-bio/benchmarks/cryptobench/cryptobench_benchmark.json")
 
-TIER_A_TARGETS = ["wrn_apo", "menin_apo", "smarca2_brd_apo", "pkmyt1_apo"]
+TIER_A_TARGETS = ["wrn_apo", "menin_apo", "smarca2_brd_apo", "pkmyt1_apo", "kras_g12d_apo"]
 DCC_MATCH_A = 8.0
 TIDE_SATURATION = 20
 VOL_PRIOR_CENTER = 500.0
