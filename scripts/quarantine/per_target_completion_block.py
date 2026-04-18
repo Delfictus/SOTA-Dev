@@ -20,6 +20,36 @@ from m1_ablation import (
     score_D_tide_distinctness, score_E_geometry, score_F_mechanical_interpreter,
     dcc_of, cause_of_demotion, alias, DCC_MATCH_A,
 )
+import math as _math
+
+
+def _direct_dcc(pocket_id, pockets, ev):
+    """Direct DCC fallback: Euclidean distance between pocket.centroid_spike_weighted
+    (apo frame) and ev['best_match']['centroid']-derived ligand frame. stage 4 stores
+    ligand_centroid_apo_frame under artifacts/4_ground_truth/; per_site_eval is limited
+    to a subset of ranks. This fallback ensures every variant top-1 has a numeric DCC.
+    """
+    gt = ev.get("ground_truth_ligand_centroid_apo_frame")
+    if gt is None:
+        return None
+    for p in pockets:
+        if p.get("pocket_id") == pocket_id:
+            c = p.get("centroid_spike_weighted") or p.get("centroid")
+            if c is None or len(c) != 3:
+                return None
+            return float(_math.sqrt(sum((c[i] - gt[i]) ** 2 for i in range(3))))
+    return None
+
+
+def _load_gt_centroid(target_dir: Path) -> list | None:
+    gt_dir = target_dir / "artifacts/4_ground_truth"
+    for gt_file in gt_dir.glob("*_ground_truth.json"):
+        try:
+            g = json.loads(gt_file.read_text())
+            return g.get("ligand_centroid_apo_frame")
+        except Exception:
+            continue
+    return None
 
 PANEL_ROOTS = [
     Path("/mnt/storage/prism-outputs/twin-10-patent"),
@@ -65,6 +95,9 @@ def emit_block(target_key: str) -> dict | None:
     bm_dcc = bm.get("centroid_dcc_angstrom")
     detector_found = (bm_dcc is not None) and (bm_dcc < DCC_MATCH_A)
 
+    # Inject ligand_centroid_apo_frame for direct-DCC fallback
+    ev["ground_truth_ligand_centroid_apo_frame"] = _load_gt_centroid(tdir)
+
     block = {
         "target_key": target_key,
         "state": "COMPLETE",
@@ -85,8 +118,24 @@ def emit_block(target_key: str) -> dict | None:
         top1 = rows[0]
         top1_pid = top1["pocket_id"]
         top1_dcc = dcc_of(top1_pid, ev)
-        top1_match = (top1_dcc is not None) and (top1_dcc < DCC_MATCH_A)
-        top1_verdict = "PASS" if top1_match else ("FAIL" if top1_dcc is not None else "UNVERIFIED_NO_DCC")
+        if top1_dcc is None:
+            top1_dcc = _direct_dcc(top1_pid, pockets, ev)
+        # Derive verdict with no UNVERIFIED_NO_DCC / FEATURE_GAP tolerance on top-1.
+        if ev.get("verdict_tag") == "GROUND_TRUTH_INVALID":
+            top1_verdict = "GT_INVALID"
+        elif ev.get("verdict_tag") == "NO_GROUND_TRUTH":
+            top1_verdict = "NO_GROUND_TRUTH"
+        elif top1_dcc is None:
+            top1_verdict = "FAIL"  # unreachable after _direct_dcc unless gt centroid absent
+        elif top1_dcc < DCC_MATCH_A:
+            top1_verdict = "PASS"
+        elif top1_dcc > 30.0:
+            top1_verdict = "HARD_NOT_MATCH"
+        elif top1_dcc > 20.0:
+            top1_verdict = "NOT_MATCH"
+        else:
+            top1_verdict = "FAIL"
+        top1_match = top1_verdict == "PASS"
 
         bm_rank = None
         if bm_pid is not None:
@@ -100,7 +149,9 @@ def emit_block(target_key: str) -> dict | None:
             "site_id": top1_pid,
             "therm_class_raw": top1.get("therm_class") or "FEATURE_GAP:top1_class",
             "therm_class_alias": alias(top1.get("therm_class")),
-            "dcc_angstrom": round(top1_dcc, 3) if top1_dcc is not None else "FEATURE_GAP:top1_dcc",
+            "dcc_angstrom": round(top1_dcc, 3) if top1_dcc is not None else None,
+            "dcc_source": ("stage7" if dcc_of(top1_pid, ev) is not None
+                           else ("direct_apo_frame" if top1_dcc is not None else "unavailable")),
             "verdict": top1_verdict,
             "composite": round(top1["composite"], 4),
         }
