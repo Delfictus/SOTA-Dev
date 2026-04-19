@@ -46,6 +46,31 @@ def require_env(name):
         die(f"required env var missing: {name}")
     return v
 
+def _derive_top_level_engine_commit(artifact_hashes: dict, cli_fallback: str | None) -> str:
+    """Top-level manifest.engine_commit derivation per W4 lane spec.
+
+    Rules:
+      - gather the set of distinct non-null engine_commit values across targets
+      - if every target is NULL and a caller supplied --engine-commit as fallback,
+        use that (preserves legacy behavior for snapshots that predate W4)
+      - size 1              → that single value
+      - size > 1            → "MIXED:<N_distinct>"
+      - any target NULL     → "UNRECOVERED:<N_null>/<N_total>" (loud surface;
+                              NOT the old "UNKNOWN_NOT_PINNED_THIS_PHASE" sentinel)
+    """
+    commits = [(t, h.get("engine_commit")) for t, h in artifact_hashes.items()]
+    n_total = len(commits)
+    n_null = sum(1 for _, c in commits if not c)
+    distinct = sorted({c for _, c in commits if c})
+    if n_null == n_total and cli_fallback:
+        return cli_fallback
+    if n_null > 0:
+        return f"UNRECOVERED:{n_null}/{n_total}"
+    if len(distinct) == 1:
+        return distinct[0]
+    return f"MIXED:{len(distinct)}"
+
+
 def git_sha(path):
     try:
         r = subprocess.run(["git", "-C", str(REPO), "log", "-n", "1", "--format=%H", "--", str(path)],
@@ -60,6 +85,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api-base", required=True)
     ap.add_argument("--out-dir",  required=True, type=Path)
+    # --engine-commit is now OPTIONAL per W4 lane: engine_commit is read per-target
+    # from targets.engine_commit (populated by W4 producer).  If supplied, it
+    # acts only as a fallback override when every target's D1 engine_commit is NULL.
     ap.add_argument("--engine-commit",  default=os.environ.get("PRISM_ENGINE_COMMIT"))
     ap.add_argument("--worker-commit",  default=os.environ.get("PRISM_WORKER_COMMIT"))
     ap.add_argument("--d1-migrations", nargs="+",
@@ -117,8 +145,9 @@ def main():
             pass
         tgt_row = api_get(f"{args.api_base}/targets/{t}")
         artifact_hashes[t] = {
-            "binding_sites_json_sha256": tgt_row.get("binding_sites_json_sha256"),
-            "ground_truth_json_sha256":  tgt_row.get("ground_truth_json_sha256"),
+            "engine_commit":               tgt_row.get("engine_commit"),           # W4-owned
+            "binding_sites_json_sha256":   tgt_row.get("binding_sites_json_sha256"),
+            "ground_truth_json_sha256":    tgt_row.get("ground_truth_json_sha256"),
             "spike_events_manifest_sha256": None,  # populated by W3b run metadata if available
         }
 
@@ -221,7 +250,7 @@ def main():
         "snapshot_timestamp_utc": now,
         "snapshot_id": f"{now}_{feature_cols_hash[:8]}",
 
-        "engine_commit": args.engine_commit or die("engine_commit required (--engine-commit or PRISM_ENGINE_COMMIT)"),
+        "engine_commit": _derive_top_level_engine_commit(artifact_hashes, args.engine_commit),
         "engine_build_ptx_sha256": os.environ.get("PRISM_ENGINE_PTX_SHA256") or "UNKNOWN",
         "worker_commit": args.worker_commit or die("worker_commit required"),
 

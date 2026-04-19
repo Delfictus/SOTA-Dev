@@ -374,7 +374,9 @@ export default {
                     engine_mode                    = ?,
                     engine_simulation_time_sec     = ?,
                     engine_total_steps_per_stream  = ?,
-                    lining_residue_cutoff_angstroms = ?
+                    lining_residue_cutoff_angstroms = ?,
+                    binding_sites_json_sha256      = ?,
+                    ground_truth_json_sha256       = ?
                  WHERE target = ?`
             ).bind(
                 num(body.engine_time_seconds),
@@ -385,6 +387,8 @@ export default {
                 num(body.engine_simulation_time_sec),
                 int(body.engine_total_steps_per_stream),
                 num(body.lining_residue_cutoff_angstroms),
+                str(body.binding_sites_json_sha256),
+                str(body.ground_truth_json_sha256),
                 target,
             ).run();
             return Response.json({ target, runtime_updated: true });
