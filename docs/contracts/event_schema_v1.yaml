@@ -1,0 +1,108 @@
+schema_name: event_schema_v1
+schema_version: "1.0.0"
+description: >
+  Event-level schema contract for PRISM-4D spike events.  Defines the
+  inner `spikes[]` row contract for the .site*.spike_events.{json,parquet}
+  container format.  Independent of the artifact-level schema contract.
+
+# Verified basis:  results_1hhp/1hhp.site1.spike_events.json, n_spikes = 132480.
+# All 13 event fields, all enum values enumerated by frequency.
+
+applies_to:
+  - "*.site*.spike_events.json"            # json.spikes[] list
+  - "*.site*.spike_events.parquet"         # parquet rows
+  - "*.topology.spike_events.arrow"        # D5 SiteSpikeView rows
+
+container:
+  json:
+    required_top_level_keys: [centroid, lining_cutoff, n_spikes, open_frequency, site_id, spikes]
+    spikes_is: array_of_objects
+  parquet:
+    row_group_size_hint: 10000
+    required_columns:
+      [x, y, z, ccns_phase, intensity, spike_source, type, frame_index,
+       timestep, vibrational_energy, water_density, wavelength_nm,
+       aromatic_residue_id, n_nearby_excited]
+
+event_fields:
+  x:                   { dtype: float32, units: angstrom,       nullable: false }
+  y:                   { dtype: float32, units: angstrom,       nullable: false }
+  z:                   { dtype: float32, units: angstrom,       nullable: false }
+  intensity:           { dtype: float32, units: dimensionless,  nullable: false, observed_range: [1.0, 70.7] }
+  vibrational_energy:  { dtype: float32, units: raf_arbitrary,  nullable: false }
+  water_density:       { dtype: float32, units: "events/Å^3",   nullable: false }
+  wavelength_nm:       { dtype: float32, units: nm,             nullable: false, sentinel_zero: "0.0 ⇒ not assigned (non-UV)" }
+  aromatic_residue_id: { dtype: int32,   units: residue_id,     nullable: false, sentinel_negative: "-1 ⇒ no nearby aromatic" }
+  n_nearby_excited:    { dtype: int32,   units: count,          nullable: false }
+  frame_index:         { dtype: int32,   units: frame_index,    nullable: false }
+  timestep:            { dtype: int32,   units: integration,    nullable: false }
+
+  ccns_phase:
+    dtype: string
+    nullable: false
+    enum: [cold_hold, heating, warm_hold, cooling, cold_return]
+    enum_open: false
+    unknown_policy: bucket_and_warn
+    quarantine_threshold_fraction: 0.001     # 0.1% — see §4 policy
+
+  spike_source:
+    dtype: string
+    nullable: false
+    enum: [UV, LIF, EFP]
+    enum_open: false
+    unknown_policy: bucket_and_warn
+    quarantine_threshold_fraction: 0.001
+
+  type:
+    dtype: string
+    nullable: false
+    enum: [BNZ, UNK, ANION, CATION]
+    enum_open: true
+    unknown_policy: bucket_as_OTHER
+    quarantine_threshold_fraction: 0.01       # 1% — open enum, more tolerant
+
+aggregation_rules:
+  permutation_invariant:
+    - "count(ccns_phase == X) for each enum + count_phase_unknown bucket"
+    - "count(spike_source == X) for each enum + count_source_other bucket"
+    - "count(type == X) for each enum + count_type_other bucket"
+    - "mean/std of {intensity, vibrational_energy, water_density, n_nearby_excited}"
+    - "count(wavelength_nm != 0)"
+    - "count(aromatic_residue_id >= 0)"
+    - "Shannon entropy over spike_source distribution in nats"
+  deterministic_conditional_on: [engine_version, engine_flags, input_topology_sha256]
+
+v4_path_disposition:
+  preserved_via_site_features:
+    - "ccns_phase counts of warm_hold, cold_hold (collapsed into 2 ratios)"
+  preserved_via_site_event_aggregates:
+    - "all 5 ccns_phase counts + unknown bucket"
+    - "all 3 spike_source counts + other bucket"
+    - "all 4 type counts + other bucket"
+    - "mean/std intensity, mean vibrational_energy, water_density, n_nearby_excited"
+    - "wavelength_nm nonzero count"
+    - "aromatic_residue_id nonneg count"
+    - "source_entropy_nat"
+  preserved_via_deep_dcc_only:
+    - "x, y, z (min ||spike - ligand_centroid|| for spike-DCC validation)"
+    - "intensity < 64.0 threshold (legacy unsat_frac derivation)"
+  discarded_by_v4_path_but_available_in_artifact:
+    - frame_index
+    - timestep
+
+version_bump_rules:
+  - change: "new value added to an open enum (type)"
+    new_version: "1.1"   # minor
+    action: "add count_type_<new> column; move counts from count_type_other"
+  - change: "new value added to a closed enum (ccns_phase, spike_source)"
+    new_version: "2.0"   # major
+    action: "full schema review; new column; backfill pass"
+  - change: "removal of any enum value"
+    policy: forbidden
+  - change: "dtype change"
+    policy: forbidden_under_v1
+
+backward_compatibility:
+  - "Consumers pinned to event_schema_v1 must read v1.x snapshots (new open-enum buckets zero for v1-only)"
+  - "v2 consumers must read v1 snapshots; new closed-enum columns read as NULL for pre-v2 rows"
+  - "target-granularity version recorded in provenance_manifest.target_event_contract_versions"

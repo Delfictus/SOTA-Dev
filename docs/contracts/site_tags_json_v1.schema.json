@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "prism4d://contracts/site_tags_json/v1",
+  "title": "PRISM-4D site_tags_json blob schema v1",
+  "description": "Bounded decorative-only JSON blob for site_features.site_tags_json. Maximum 2KB serialized. Every key optional; every unrecognized key rejected by writer. No R/F/M/T-classified field may appear here (see v4_feature_contract.yaml).",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 13,
+  "properties": {
+    "mean_burial":          { "type": ["number", "null"], "description": "Redundant view of burial / engine_burial_score (both promoted to scalar). Kept for audit." },
+    "asymmetry_offset":     { "type": ["number", "null"], "description": "Offset/calibration constant (not the asymmetry signal)." },
+    "sti_n_spikes":         { "type": ["integer", "null"], "description": "STI channel diagnostic count." },
+    "sti_n_voxels":         { "type": ["integer", "null"], "description": "STI channel voxel domain count." },
+    "composite_v3_score":   { "type": ["number", "null"], "description": "Legacy composite score; superseded by engine_geo/chem/phys/vcs." },
+    "composite_audit_score":{ "type": ["number", "null"], "description": "Legacy audit composite." },
+    "composite_v3_rank":    { "type": ["integer", "null"] },
+    "composite_audit_rank": { "type": ["integer", "null"] },
+    "cryptic_rank":         { "type": ["integer", "null"], "description": "Ordinal view of cryptic_score (scalar)." },
+    "ranker_version":       { "type": ["string", "null"], "description": "Engine-side ranker identifier (e.g. 'tokenized_v4')." },
+    "tokenized_token":      { "type": ["integer", "null"], "description": "Internal tokenized ranker token ID. Int, not string (§3 dtype correction)." },
+    "tide_trigger_residues":{
+      "type": ["array", "null"],
+      "items": { "type": "integer" },
+      "maxItems": 64,
+      "description": "Short integer list of trigger residue IDs."
+    }
+  },
+  "examples": [
+    {
+      "mean_burial": 3.147,
+      "asymmetry_offset": 1.455,
+      "sti_n_spikes": 1835880,
+      "sti_n_voxels": 4769,
+      "composite_v3_score": 0.4102,
+      "composite_audit_score": 0.3399,
+      "composite_v3_rank": 11,
+      "composite_audit_rank": 9,
+      "cryptic_rank": 4,
+      "ranker_version": "tokenized_v4",
+      "tokenized_token": 255,
+      "tide_trigger_residues": [58, 108, 113]
+    }
+  ]
+}

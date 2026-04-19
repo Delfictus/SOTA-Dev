@@ -1,0 +1,434 @@
+schema_version: "v4.1"
+contract_name: v4_feature_contract
+description: >
+  Single source of truth for the v4 feature-service hardening contract.
+  Pinned against:
+    - cloudflare/d1/schema_phase4_site_tags.sql
+    - cloudflare/workers/feature-pipeline/src/index.js (W1/W2/W3/W3b/W4)
+    - scripts/training/xgboost_ranker_v4.py (FEATURE_COLS)
+    - docs/contracts/event_schema_v1.yaml
+    - docs/contracts/site_tags_json_v1.schema.json
+    - docs/contracts/persistence_contract.md
+
+# ─────────────────────────────────────────────────────────────
+#  v4 FEATURE_COLS — ORDER AND COUNT ARE LOAD-BEARING
+# ─────────────────────────────────────────────────────────────
+feature_cols:
+  count: 15
+  onnx_input_shape: [null, 15]
+  ordered_list:
+    - spike_count
+    - n_streams
+    - interaction
+    - unsat_frac
+    - persistence
+    - log_spike_count
+    - log_interaction
+    - spread
+    - burial_score
+    - spike_density
+    - druggability
+    - aromatic_score
+    - n_lining_residues
+    - phase_transition_ratio
+    - warm_hold_spike_fraction
+  # sha256 of JSON-encoded ordered_list with separators=(",",":"), ensure_ascii=True
+  ordering_sha256_canonicalization: |
+    import hashlib, json
+    FEATURE_COLS_ordering_sha256 = hashlib.sha256(
+        json.dumps(FEATURE_COLS, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+
+# ─────────────────────────────────────────────────────────────
+#  Writer ownership matrix
+# ─────────────────────────────────────────────────────────────
+writers:
+  W1_queue_consumer:
+    trigger: R2 event on 10k-runs{,-pct70}/<target>/<target>.binding_sites.json
+    pattern: INSERT_OR_IGNORE + UPDATE_column_scoped
+    owned_columns_site_features: &w1_cols
+      - spike_count
+      - n_streams
+      - unsat_frac
+      - spread
+      - volume
+      - burial
+      - engine_burial_score
+      - spike_density
+      - druggability
+      - aromatic_score
+      - n_lining_residues
+      - quality_score
+      - rank_score
+      - engine_geo
+      - engine_chem
+      - engine_phys
+      - engine_vcs
+      - tokenized_score
+      - cryptic_score
+      - gtck_rank
+      - rank
+      - rank_C
+      - rank_G
+      - rank_K
+      - rank_L
+      - rank_T
+      - classification
+      - therm_class
+      - is_druggable
+      - is_cryptic
+      - catalytic_residue_count
+      - ccns_tau
+      - hysteresis_asymmetry
+      - relative_asymmetry
+      - cold_phase_cold_fraction
+      - cold_phase_hot_fraction
+      - cold_phase_delta
+      - cold_phase_heating_spike_count
+      - cold_phase_heating_spike_rate
+      - cold_phase_cooling_spike_count
+      - cold_phase_cooling_spike_rate
+      - onset_score
+      - breathing_score
+      - kinetic_accessibility
+      - effective_delta_g_kcal_mol
+      - delta_g_aromatic_kcal_mol
+      - delta_g_cooperative_kcal_mol
+      - delta_g_dewetting_kcal_mol
+      - delta_g_electrostatic_kcal_mol
+      - delta_g_sti_kcal_mol
+      - frustrated_solvent_score
+      - ray_escape_ratio
+      - signal_preservation_causality_density
+      - signal_preservation_coupled_voxels
+      - signal_preservation_max_recurrence
+      - signal_preservation_mean_recurrence
+      - signal_preservation_n_voxels
+      - signal_preservation_primary_residue_count
+      - signal_preservation_primary_residue_id
+      - signal_preservation_residue_concentration
+      - signal_preservation_total_coupling
+      - signal_preservation_total_recurrence
+      - localization_score_raw
+      - sphericity
+      - kcc_active_causal_steps
+      - kcc_total_steps
+      - kcc_best_candidate_index
+      - kcc_driver_residue_id
+      - kcc_burst_motion
+      - kcc_direction_score
+      - kcc_confidence
+      - kcc_lag_corr_peak
+      - kcc_local_cov
+      - kcc_motion_efficiency
+      - kcc_temporal_corr
+      - kcc_site_burst_motion
+      - kcc_site_causal_lag
+      - kcc_site_direction_score
+      - kcc_site_lag_corr_peak
+      - kcc_site_local_cov
+      - kcc_site_motion_efficiency
+      - tide_coupling_score
+      - source_diversity
+      - uv_enrichment_score
+      - wd_coherence
+      - site_tags_json
+      - source
+      - source_version
+      # updated_at removed in v4.1 narrow patch — D1 column-cap unblock
+    owned_tables: [site_lining_residues, site_kcc_candidates]
+    prohibited_columns: &label_temporal_cols
+      - phase_transition_ratio
+      - warm_hold_spike_fraction
+      - min_dist_to_ligand
+      - graded_score
+      - dcc_metric_source
+      - persistence
+      - persistence_source
+
+  W2_dcc_endpoint:
+    endpoint: POST /site-features/:target/dcc
+    pattern: INSERT_OR_IGNORE + UPDATE_column_scoped
+    owned_columns_site_features:
+      - min_dist_to_ligand
+      - graded_score
+      - dcc_metric_source
+      # updated_at removed in v4.1 narrow patch
+    owned_tables: [corrected_dcc]
+
+  W3a_temporal_endpoint:
+    endpoint: POST /site-features/:target/temporal
+    pattern: INSERT_OR_IGNORE + UPDATE_column_scoped
+    owned_columns_site_features:
+      - phase_transition_ratio
+      - warm_hold_spike_fraction
+      # updated_at removed in v4.1 narrow patch
+    owned_tables: []
+
+  W3b_event_aggregates_endpoint:
+    endpoint: POST /site-features/:target/event-aggregates
+    pattern: INSERT_OR_REPLACE_on_site_event_aggregates_only
+    owned_tables: [site_event_aggregates, quarantined_event_aggregates]
+
+  W4_runtime_endpoint:
+    endpoint: POST /targets/:target/runtime
+    pattern: UPDATE_column_scoped
+    owned_columns_targets:
+      - engine_time_seconds
+      - engine_flags
+      - engine_commit
+      - engine_n_streams
+      - engine_mode
+      - engine_simulation_time_sec
+      - engine_total_steps_per_stream
+      - lining_residue_cutoff_angstroms
+
+  W5_persistence_endpoint:
+    endpoint: POST /site-features/:target/persistence
+    status: RESERVED_UNTIL_BLOCKED_LIFTS
+    blocker: docs/contracts/persistence_contract.md
+    owned_columns_site_features: [persistence, persistence_source]   # updated_at removed v4.1
+
+# ─────────────────────────────────────────────────────────────
+#  Per-feature provenance (v4 FEATURE_COLS only)
+# ─────────────────────────────────────────────────────────────
+features:
+
+  spike_count:
+    semantic_family: spike_distribution
+    raw_or_derived: raw
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: ".sites[i].spike_count"
+    granularity: site
+    storage_bits: 64
+    transport_dtype: INTEGER
+    model_dtype: float32
+    nullability: non_null_at_source
+    default_or_fill: "df.get('spike_count', 0).fillna(0)"
+    formula: null
+    ordering_sensitivity: none
+    critical_for_model: true
+    depends_on_event_level_schema: false
+
+  n_streams:
+    semantic_family: spike_distribution
+    raw_or_derived: raw
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: ".n_streams"              # CORRECTED — read from top-level, not hardcoded 4
+    granularity: target
+    storage_bits: 32
+    transport_dtype: INTEGER
+    model_dtype: float32
+    nullability: nullable
+    default_or_fill: "df.get('n_streams', 4).fillna(4)"
+    ordering_sensitivity: none
+    critical_for_model: low
+    depends_on_event_level_schema: false
+
+  interaction:
+    semantic_family: composite
+    raw_or_derived: derived
+    source_component: v4.build_features
+    granularity: site
+    storage_bits: 32
+    transport_dtype: ephemeral
+    model_dtype: float32
+    formula: "spike_count * n_streams"
+    critical_for_model: low
+    depends_on_event_level_schema: false
+
+  unsat_frac:
+    semantic_family: spike_distribution
+    raw_or_derived: raw_primary_or_event_derived_deep
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: ".sites[i].unsat_frac"
+    granularity: site
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    nullability: nullable
+    default_or_fill: "df.get('unsat_frac', 0).fillna(0)"
+    formula_primary: null
+    formula_deep: "mean(spike.intensity < 64.0)"
+    critical_for_model: true
+    depends_on_event_level_schema: true     # via deep path only
+
+  persistence:
+    semantic_family: spike_distribution_temporal
+    status: DEGENERATE_BLOCKED
+    blocker_ticket: TBD
+    source_component: W5_RESERVED
+    source_artifact: UNPINNED
+    exact_field_path: UNPINNED
+    granularity: site
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    nullability: nullable_always
+    default_or_fill: "df.get('persistence', 0).fillna(0)"
+    current_value_in_training: 0.0
+    expected_range_once_unblocked: [0.0, 1.0]
+    model_retraining_required_when_unblocked: true
+    removal_from_FEATURE_COLS_authorized: false
+    critical_for_model: degraded_to_noop
+    depends_on_event_level_schema: unknown_until_unblocked
+
+  log_spike_count:
+    semantic_family: composite
+    raw_or_derived: derived
+    source_component: v4.build_features
+    storage_bits: 32
+    model_dtype: float32
+    formula: "log1p(spike_count)"
+    critical_for_model: true
+
+  log_interaction:
+    semantic_family: composite
+    raw_or_derived: derived
+    source_component: v4.build_features
+    storage_bits: 32
+    model_dtype: float32
+    formula: "log1p(spike_count * n_streams)"
+    critical_for_model: low
+
+  spread:
+    semantic_family: geometry
+    raw_or_derived: derived
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: ".sites[i].volume"
+    granularity: site
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    formula: "cbrt(volume) if volume > 0 else NULL"
+    naming_note: "name is historical; NOT sqrt(mean(||x-centroid||^2)); is an isotropic-equivalent linear dimension"
+    critical_for_model: true
+    depends_on_event_level_schema: false
+
+  burial_score:
+    semantic_family: geometry_residue_aggregate
+    raw_or_derived: derived_within_ingest
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: "mean(.sites[i].lining_residues[*].min_distance)"
+    granularity: site_from_residue_aggregate
+    d1_column_name: burial       # v4 renames to burial_score in build_features
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    formula: "mean(lining_residues[*].min_distance) if lining_residues else NULL"
+    note: "distinct from engine-native .sites[i].burial_score which is preserved as engine_burial_score"
+    critical_for_model: true
+
+  spike_density:
+    semantic_family: geometry_spike
+    raw_or_derived: derived
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    formula: "spike_count / volume if volume > 0 else NULL"
+    critical_for_model: true
+
+  druggability:
+    semantic_family: ranker_prior
+    raw_or_derived: raw
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: ".sites[i].druggability"
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    nullability: nullable
+    default_or_fill: "0.0 if column missing"
+    critical_for_model: true
+
+  aromatic_score:
+    semantic_family: residue_composition
+    raw_or_derived: raw
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: ".sites[i].aromatic_score"
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    critical_for_model: true
+
+  n_lining_residues:
+    semantic_family: residue_composition
+    raw_or_derived: derived_count
+    source_component: W1
+    source_artifact: "{target}.binding_sites.json"
+    exact_field_path: "len(.sites[i].lining_residues)"
+    storage_bits: 32
+    transport_dtype: INTEGER
+    model_dtype: float32
+    critical_for_model: true
+
+  phase_transition_ratio:
+    semantic_family: event_derived_temporal
+    raw_or_derived: derived_from_events
+    source_component: W3a
+    source_artifact: "{target}.site{ID}.spike_events.{parquet,json}"
+    exact_field_path: ".spikes[*].ccns_phase"
+    granularity: event_aggregated_to_site
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    nullability: nullable_semantic        # NaN means parquets absent
+    default_or_fill: "preserve NaN"
+    formula: "count(ccns_phase == 'warm_hold') / max(count(ccns_phase == 'cold_hold'), 1)"
+    event_contract_pin: event_schema_v1
+    critical_for_model: true
+    depends_on_event_level_schema: true
+
+  warm_hold_spike_fraction:
+    semantic_family: event_derived_temporal
+    raw_or_derived: derived_from_events
+    source_component: W3a
+    source_artifact: "{target}.site{ID}.spike_events.{parquet,json}"
+    exact_field_path: ".spikes[*].ccns_phase"
+    granularity: event_aggregated_to_site
+    storage_bits: 32
+    transport_dtype: REAL
+    model_dtype: float32
+    formula: "count(ccns_phase == 'warm_hold') / max(len(.spikes), 1)"
+    event_contract_pin: event_schema_v1
+    critical_for_model: true
+    depends_on_event_level_schema: true
+
+# ─────────────────────────────────────────────────────────────
+#  Label
+# ─────────────────────────────────────────────────────────────
+label:
+  name: graded_score
+  formula: "1.0 / (1.0 + min_dist_to_ligand)"
+  graded_integer_buckets: 32
+  graded_integer_formula: "y_int = clip(round(graded_score * 31), 0, 31)"
+  exclusion_rule: "row is training-eligible iff graded_score IS NOT NULL"
+  owned_by: W2
+
+# ─────────────────────────────────────────────────────────────
+#  Enum contracts (site-level)
+# ─────────────────────────────────────────────────────────────
+enums:
+  classification:
+    enum: [ActiveSite, AllostericSite, SurfaceSite, CrypticSite, TransientSite]
+    enum_open: false
+    unknown_policy: bucket_as_OTHER_at_W1
+    log_level: WARN
+    confirmation_ticket: OPEN__engine_team_confirm_classification_enum
+
+  therm_class:
+    enum: [DYNAMIC, CRYPTIC, STATIC, TRANSIENT]
+    enum_open: false
+    unknown_policy: bucket_as_OTHER_at_W1
+    log_level: WARN
+    confirmation_ticket: OPEN__engine_team_confirm_therm_class_enum
+    confirmed_values: [DYNAMIC, CRYPTIC]    # observed in scope/memory
+    inferred_values: [STATIC, TRANSIENT]    # pending engine confirmation
