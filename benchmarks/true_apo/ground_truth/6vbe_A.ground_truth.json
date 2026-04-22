@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "6vbe",
+  "apo_chain": "A",
+  "holo_pdb": "6vbe",
+  "holo_chain": "B",
+  "ligand_code": "TLA",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    86.0283,
+    -88.1563,
+    3.3593
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 234,
+      "resname": "THR"
+    },
+    {
+      "resnum": 235,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 239,
+      "resname": "ALA"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 7.141,
+  "category": "STANDARD",
+  "apo_resolution": 1.9,
+  "holo_resolution": 1.9,
+  "uniprot_id": "P07954",
+  "cluster_id_30": "932.0"
+}

@@ -1,0 +1,86 @@
+{
+  "apo_pdb": "1rov",
+  "apo_chain": "A",
+  "holo_pdb": "1jnq",
+  "holo_chain": "A",
+  "ligand_code": "EGT",
+  "ligand_heavy_atoms": 22,
+  "ligand_centroid": [
+    20.503863636363644,
+    3.236,
+    19.853727272727273
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 277,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 513,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 514,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 515,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 518,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 519,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 523,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 557,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 565,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 566,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 572,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 576,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 716,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 769,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 773,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 857,
+      "resname": "ILE"
+    }
+  ],
+  "n_binding_residues": 16,
+  "pocket_rmsd": 0.221,
+  "category": "CRYPTIC",
+  "apo_resolution": 2.0,
+  "holo_resolution": 2.1,
+  "uniprot_id": "P09186",
+  "cluster_id_30": "1304.0"
+}

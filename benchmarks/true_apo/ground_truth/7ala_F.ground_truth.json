@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "7ala",
+  "apo_chain": "F",
+  "holo_pdb": "7alb",
+  "holo_chain": "s",
+  "ligand_code": "PHE",
+  "ligand_heavy_atoms": 12,
+  "ligand_centroid": [
+    -93.93083333333333,
+    52.292249999999996,
+    5.43875
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 8,
+      "resname": "THR"
+    },
+    {
+      "resnum": 9,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 10,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 11,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 12,
+      "resname": "MET"
+    },
+    {
+      "resnum": 75,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 77,
+      "resname": "LEU"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 0.164,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.85,
+  "holo_resolution": 1.98,
+  "uniprot_id": "P30047",
+  "cluster_id_30": "7687.0"
+}

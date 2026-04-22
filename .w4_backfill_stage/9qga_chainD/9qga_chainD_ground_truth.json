@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qga_chainD/9qga_chainD.topology.json",
+  "pdb_id": "9qga",
+  "target_chain": "D",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CA",
+    "chain": "D",
+    "resnum": 821,
+    "n_atoms": 1,
+    "classification": "metal_cofactor"
+  },
+  "ligand_centroid": [
+    -6.538,
+    50.044,
+    31.575
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qga.pdb"
+}

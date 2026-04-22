@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "5ajb",
+  "apo_chain": "B",
+  "holo_pdb": "9gr5",
+  "holo_chain": "C",
+  "ligand_code": "T3Y",
+  "ligand_heavy_atoms": 48,
+  "ligand_centroid": [
+    -14.53560416666667,
+    -22.919083333333337,
+    10.93204166666667
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": -2,
+      "resname": "MET"
+    },
+    {
+      "resnum": -1,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 0,
+      "resname": "ALA"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 1.32,
+  "uniprot_id": "A0A0S4TLR1",
+  "cluster_id_30": "2974.0"
+}

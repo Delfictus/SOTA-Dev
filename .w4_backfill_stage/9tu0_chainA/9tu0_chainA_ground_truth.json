@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9tu0_chainA/9tu0_chainA.topology.json",
+  "pdb_id": "9tu0",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "SEP",
+    "chain": "A",
+    "resnum": 286,
+    "n_atoms": 10,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    33.706900000000005,
+    -10.2884,
+    -16.1834
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9tu0.pdb"
+}

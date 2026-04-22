@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "7cxg",
+  "apo_chain": "B",
+  "holo_pdb": "6d8x",
+  "holo_chain": "A",
+  "ligand_code": "FLC",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    36.43253846153847,
+    14.283538461538459,
+    -18.881846153846155
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 216,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.88,
+  "holo_resolution": 1.9,
+  "uniprot_id": "P37231",
+  "cluster_id_30": "65.0"
+}

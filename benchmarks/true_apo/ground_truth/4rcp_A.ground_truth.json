@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "4rcp",
+  "apo_chain": "A",
+  "holo_pdb": "8crc",
+  "holo_chain": "A",
+  "ligand_code": "VIH",
+  "ligand_heavy_atoms": 19,
+  "ligand_centroid": [
+    -12.39478947368421,
+    -3.1826315789473685,
+    -17.02342105263158
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 406,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 407,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 410,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 542,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 551,
+      "resname": "THR"
+    },
+    {
+      "resnum": 553,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 557,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 559,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 0.563,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.65,
+  "uniprot_id": "P53350",
+  "cluster_id_30": "2835.0"
+}

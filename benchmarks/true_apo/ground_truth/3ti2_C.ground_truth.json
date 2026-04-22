@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "3ti2",
+  "apo_chain": "C",
+  "holo_pdb": "3ti2",
+  "holo_chain": "B",
+  "ligand_code": "PG4",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    76.78953846153846,
+    10.97369230769231,
+    73.70607692307694
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 40,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 61,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 63,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 65,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 66,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 67,
+      "resname": "SER"
+    },
+    {
+      "resnum": 72,
+      "resname": "THR"
+    },
+    {
+      "resnum": 74,
+      "resname": "GLU"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 0.198,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 1.9,
+  "uniprot_id": "Q9KRB0",
+  "cluster_id_30": "56043.0"
+}

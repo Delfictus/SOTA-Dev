@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "6rxs",
+  "apo_chain": "B",
+  "holo_pdb": "6rxr",
+  "holo_chain": "F",
+  "ligand_code": "KMQ",
+  "ligand_heavy_atoms": 40,
+  "ligand_centroid": [
+    70.0812875,
+    101.292025,
+    7.276025
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 16,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.7,
+  "uniprot_id": "P62805",
+  "cluster_id_30": "25822.0"
+}

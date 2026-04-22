@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "7w30",
+  "apo_chain": "B",
+  "holo_pdb": "7w2p",
+  "holo_chain": "A",
+  "ligand_code": "8AI",
+  "ligand_heavy_atoms": 21,
+  "ligand_centroid": [
+    -8.418857142857144,
+    5.404047619047619,
+    5.405523809523809
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 102,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 105,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 107,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 109,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 127,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 130,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 132,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 0.297,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.8,
+  "holo_resolution": 1.15,
+  "uniprot_id": "Q16637",
+  "cluster_id_30": "17256.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9pgw_chainA/9pgw_chainA.topology.json",
+  "pdb_id": "9pgw",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "NDP",
+    "chain": "A",
+    "resnum": 301,
+    "n_atoms": 48,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    25.16208333333333,
+    19.022625,
+    -0.8958958333333333
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9pgw.pdb"
+}

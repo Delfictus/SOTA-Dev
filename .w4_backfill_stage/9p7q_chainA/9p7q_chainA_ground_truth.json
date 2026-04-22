@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9p7q_chainA/9p7q_chainA.topology.json",
+  "pdb_id": "9p7q",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "PUT",
+    "chain": "A",
+    "resnum": 402,
+    "n_atoms": 18,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -22.53261111111111,
+    4.339666666666667,
+    24.723666666666666
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9p7q.pdb"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9mbn_chainB/9mbn_chainB.topology.json",
+  "pdb_id": "9mbn",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "IGU",
+    "chain": "B",
+    "resnum": 201,
+    "n_atoms": 23,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    18.39908695652174,
+    14.501434782608696,
+    -14.144
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9mbn.pdb"
+}

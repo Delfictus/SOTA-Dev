@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "2iq5",
+  "apo_chain": "B",
+  "holo_pdb": "2oec",
+  "holo_chain": "D",
+  "ligand_code": "1PE",
+  "ligand_heavy_atoms": 16,
+  "ligand_centroid": [
+    -18.1840625,
+    2.5850624999999994,
+    1.6107500000000001
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1178,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 1181,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.19,
+  "uniprot_id": "P0A1F6",
+  "cluster_id_30": "482.0"
+}

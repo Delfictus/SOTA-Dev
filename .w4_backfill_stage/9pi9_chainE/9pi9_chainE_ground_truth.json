@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9pi9_chainE/9pi9_chainE.topology.json",
+  "pdb_id": "9pi9",
+  "target_chain": "E",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "PCA",
+    "chain": "E",
+    "resnum": 31,
+    "n_atoms": 8,
+    "classification": "small_molecule"
+  },
+  "ligand_centroid": [
+    2.39675,
+    55.649625,
+    -22.5485
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9pi9.pdb"
+}

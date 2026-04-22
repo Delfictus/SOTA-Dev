@@ -1,0 +1,372 @@
+{
+  "config": {
+    "max_site_dist": 12.0,
+    "min_active_steps": 50,
+    "min_lag_corr": 0.2,
+    "min_local_cov": 0.05,
+    "min_weight": -0.25,
+    "max_pair_dist": 9.0,
+    "min_cosine": -0.2,
+    "max_lag_diff": 24.0,
+    "max_corr_diff": 0.35,
+    "min_edge_score": 0.3,
+    "min_cluster_size": 3,
+    "expand_neighbor_dist": 8.0,
+    "expand_centroid_dist": 10.0,
+    "expand_lag_sigma": 8.0,
+    "expand_corr_sigma": 0.2,
+    "expand_min_membership": 0.42,
+    "max_expand_residues": 24,
+    "seed_weight_floor": 1.0,
+    "added_weight_floor": 0.15
+  },
+  "n_rows": 424,
+  "n_rows_with_gt": 424,
+  "n_targets_with_gt": 41,
+  "mean_raw_dcc": 22.590299282552703,
+  "mean_mapped_dcc": 22.57163523761755,
+  "median_raw_dcc": 21.85538422011227,
+  "median_mapped_dcc": 21.936297810991604,
+  "mean_dcc_gain": 0.01866404493515372,
+  "median_dcc_gain": 0.0,
+  "improved_fraction": 0.49528301886792453,
+  "improved_targets_fraction": 0.4146341463414634,
+  "cluster_score_vs_raw_dcc_spearman": -0.06833234427561385,
+  "cluster_score_vs_mapped_dcc_spearman": -0.06916398657691575,
+  "top1_raw_hit_dcc_le_5": 0.024390243902439025,
+  "top1_mapped_hit_dcc_le_5": 0.024390243902439025,
+  "top3_raw_hit_dcc_le_5": 0.024390243902439025,
+  "top3_mapped_hit_dcc_le_5": 0.024390243902439025,
+  "top5_raw_hit_dcc_le_5": 0.024390243902439025,
+  "top5_mapped_hit_dcc_le_5": 0.024390243902439025,
+  "per_target_best": [
+    {
+      "target": "9sid_chainB",
+      "best_raw_dcc": 17.058214227089618,
+      "best_mapped_dcc": 16.493539706059842,
+      "best_target_gain": 0.5646745210297759,
+      "best_raw_site_id": 4001,
+      "best_mapped_site_id": 3007
+    },
+    {
+      "target": "9xji_chainB",
+      "best_raw_dcc": 11.645059093248868,
+      "best_mapped_dcc": 11.081402680933747,
+      "best_target_gain": 0.5636564123151206,
+      "best_raw_site_id": 4507,
+      "best_mapped_site_id": 508
+    },
+    {
+      "target": "9sid_chainA",
+      "best_raw_dcc": 7.967011446981919,
+      "best_mapped_dcc": 7.438180671887106,
+      "best_target_gain": 0.5288307750948134,
+      "best_raw_site_id": 2,
+      "best_mapped_site_id": 2
+    },
+    {
+      "target": "9qnh_chainA",
+      "best_raw_dcc": 15.789999513049755,
+      "best_mapped_dcc": 15.313589792500641,
+      "best_target_gain": 0.476409720549114,
+      "best_raw_site_id": 5,
+      "best_mapped_site_id": 5
+    },
+    {
+      "target": "9tf5_chainA",
+      "best_raw_dcc": 13.102923896791474,
+      "best_mapped_dcc": 12.704051687812983,
+      "best_target_gain": 0.3988722089784904,
+      "best_raw_site_id": 4009,
+      "best_mapped_site_id": 4009
+    },
+    {
+      "target": "9tf5_chainB",
+      "best_raw_dcc": 7.694160677826621,
+      "best_mapped_dcc": 7.437995950062371,
+      "best_target_gain": 0.2561647277642498,
+      "best_raw_site_id": 5,
+      "best_mapped_site_id": 5
+    },
+    {
+      "target": "9sic_chainB",
+      "best_raw_dcc": 10.548438612155019,
+      "best_mapped_dcc": 10.346086710212669,
+      "best_target_gain": 0.2023519019423503,
+      "best_raw_site_id": 4004,
+      "best_mapped_site_id": 4
+    },
+    {
+      "target": "9qng_chainA",
+      "best_raw_dcc": 18.446611752628577,
+      "best_mapped_dcc": 18.258262095485577,
+      "best_target_gain": 0.18834965714300012,
+      "best_raw_site_id": 507,
+      "best_mapped_site_id": 2
+    },
+    {
+      "target": "9t7f_chainA",
+      "best_raw_dcc": 10.070102811846015,
+      "best_mapped_dcc": 9.897802686607461,
+      "best_target_gain": 0.17230012523855365,
+      "best_raw_site_id": 2,
+      "best_mapped_site_id": 2
+    },
+    {
+      "target": "9nmy_chainD",
+      "best_raw_dcc": 32.53709341498092,
+      "best_mapped_dcc": 32.38239119968452,
+      "best_target_gain": 0.15470221529640327,
+      "best_raw_site_id": 3,
+      "best_mapped_site_id": 3
+    },
+    {
+      "target": "9u5b_chainA",
+      "best_raw_dcc": 9.559873592721974,
+      "best_mapped_dcc": 9.409693437920856,
+      "best_target_gain": 0.15018015480111835,
+      "best_raw_site_id": 1511,
+      "best_mapped_site_id": 1511
+    },
+    {
+      "target": "9t29_chainA",
+      "best_raw_dcc": 13.807869196346067,
+      "best_mapped_dcc": 13.751484689645826,
+      "best_target_gain": 0.05638450670024042,
+      "best_raw_site_id": 3532,
+      "best_mapped_site_id": 3532
+    },
+    {
+      "target": "9xj0_chainA",
+      "best_raw_dcc": 7.820408622038135,
+      "best_mapped_dcc": 7.767001217993908,
+      "best_target_gain": 0.05340740404422739,
+      "best_raw_site_id": 3006,
+      "best_mapped_site_id": 3006
+    },
+    {
+      "target": "9xji_chainA",
+      "best_raw_dcc": 4.83271357574932,
+      "best_mapped_dcc": 4.786590616450671,
+      "best_target_gain": 0.04612295929864896,
+      "best_raw_site_id": 8,
+      "best_mapped_site_id": 8
+    },
+    {
+      "target": "9nmx_chainA",
+      "best_raw_dcc": 10.08337768693138,
+      "best_mapped_dcc": 10.055095934633318,
+      "best_target_gain": 0.028281752298061846,
+      "best_raw_site_id": 3522,
+      "best_mapped_site_id": 3522
+    },
+    {
+      "target": "9upz_chainA",
+      "best_raw_dcc": 5.558544827635228,
+      "best_mapped_dcc": 5.530376159673808,
+      "best_target_gain": 0.02816866796142037,
+      "best_raw_site_id": 504,
+      "best_mapped_site_id": 504
+    },
+    {
+      "target": "9qnl_chainA",
+      "best_raw_dcc": 14.060269584056911,
+      "best_mapped_dcc": 14.034102684231273,
+      "best_target_gain": 0.026166899825637913,
+      "best_raw_site_id": 3,
+      "best_mapped_site_id": 3
+    },
+    {
+      "target": "9qnk_chainA",
+      "best_raw_dcc": 16.789272267491206,
+      "best_mapped_dcc": 16.789272267491206,
+      "best_target_gain": 0.0,
+      "best_raw_site_id": 4514,
+      "best_mapped_site_id": 4514
+    },
+    {
+      "target": "9t2f_chainA",
+      "best_raw_dcc": 5.992881929827305,
+      "best_mapped_dcc": 5.992881929827305,
+      "best_target_gain": 0.0,
+      "best_raw_site_id": 3511,
+      "best_mapped_site_id": 3511
+    },
+    {
+      "target": "9yg3_chainB",
+      "best_raw_dcc": 10.00837030604031,
+      "best_mapped_dcc": 10.00837030604031,
+      "best_target_gain": 0.0,
+      "best_raw_site_id": 1514,
+      "best_mapped_site_id": 1514
+    },
+    {
+      "target": "9znb_chainA",
+      "best_raw_dcc": 5.640247313132435,
+      "best_mapped_dcc": 5.640247313132435,
+      "best_target_gain": 0.0,
+      "best_raw_site_id": 1,
+      "best_mapped_site_id": 1
+    },
+    {
+      "target": "9nmx_chainD",
+      "best_raw_dcc": 46.18667205526188,
+      "best_mapped_dcc": 46.200626832034935,
+      "best_target_gain": -0.013954776773054789,
+      "best_raw_site_id": 504,
+      "best_mapped_site_id": 504
+    },
+    {
+      "target": "9xj0_chainB",
+      "best_raw_dcc": 6.770631856584153,
+      "best_mapped_dcc": 6.790209274890118,
+      "best_target_gain": -0.019577418305964933,
+      "best_raw_site_id": 4004,
+      "best_mapped_site_id": 4004
+    },
+    {
+      "target": "9ohy_chainB",
+      "best_raw_dcc": 15.018343314168007,
+      "best_mapped_dcc": 15.03970264017639,
+      "best_target_gain": -0.021359326008383306,
+      "best_raw_site_id": 4002,
+      "best_mapped_site_id": 4002
+    },
+    {
+      "target": "9qwj_chainD",
+      "best_raw_dcc": 6.377121867607087,
+      "best_mapped_dcc": 6.406020506069723,
+      "best_target_gain": -0.028898638462635517,
+      "best_raw_site_id": 1511,
+      "best_mapped_site_id": 1511
+    },
+    {
+      "target": "9t7f_chainB",
+      "best_raw_dcc": 7.638665795354865,
+      "best_mapped_dcc": 7.676277135054486,
+      "best_target_gain": -0.037611339699620494,
+      "best_raw_site_id": 1,
+      "best_mapped_site_id": 1
+    },
+    {
+      "target": "9t2g_chainA",
+      "best_raw_dcc": 17.801028398177543,
+      "best_mapped_dcc": 17.849500840516455,
+      "best_target_gain": -0.04847244233891246,
+      "best_raw_site_id": 1525,
+      "best_mapped_site_id": 1525
+    },
+    {
+      "target": "9ig2_chainA",
+      "best_raw_dcc": 8.441084332651679,
+      "best_mapped_dcc": 8.48973132910045,
+      "best_target_gain": -0.04864699644877213,
+      "best_raw_site_id": 4004,
+      "best_mapped_site_id": 4004
+    },
+    {
+      "target": "9sia_chainB",
+      "best_raw_dcc": 7.275002280630912,
+      "best_mapped_dcc": 7.384008674487328,
+      "best_target_gain": -0.10900639385641586,
+      "best_raw_site_id": 6,
+      "best_mapped_site_id": 6
+    },
+    {
+      "target": "9yc2_chainA",
+      "best_raw_dcc": 24.35384011427759,
+      "best_mapped_dcc": 24.470191895853947,
+      "best_target_gain": -0.1163517815763555,
+      "best_raw_site_id": 4002,
+      "best_mapped_site_id": 4002
+    },
+    {
+      "target": "9nr0_chainB",
+      "best_raw_dcc": 8.629279092064378,
+      "best_mapped_dcc": 8.748073128675701,
+      "best_target_gain": -0.11879403661132315,
+      "best_raw_site_id": 4007,
+      "best_mapped_site_id": 4007
+    },
+    {
+      "target": "9qnj_chainA",
+      "best_raw_dcc": 10.746990940866338,
+      "best_mapped_dcc": 10.911197597371778,
+      "best_target_gain": -0.1642066565054403,
+      "best_raw_site_id": 6,
+      "best_mapped_site_id": 6
+    },
+    {
+      "target": "9tf5_chainC",
+      "best_raw_dcc": 10.423339738160408,
+      "best_mapped_dcc": 10.592465671255164,
+      "best_target_gain": -0.16912593309475632,
+      "best_raw_site_id": 4000,
+      "best_mapped_site_id": 4000
+    },
+    {
+      "target": "9nxe_chainA",
+      "best_raw_dcc": 6.988131512940251,
+      "best_mapped_dcc": 7.2059884820479905,
+      "best_target_gain": -0.21785696910773922,
+      "best_raw_site_id": 1524,
+      "best_mapped_site_id": 1524
+    },
+    {
+      "target": "9ig2_chainB",
+      "best_raw_dcc": 9.034938092057898,
+      "best_mapped_dcc": 9.295842436794572,
+      "best_target_gain": -0.2609043447366748,
+      "best_raw_site_id": 1532,
+      "best_mapped_site_id": 1532
+    },
+    {
+      "target": "9sic_chainC",
+      "best_raw_dcc": 12.565929778527574,
+      "best_mapped_dcc": 12.952153010668438,
+      "best_target_gain": -0.38622323214086407,
+      "best_raw_site_id": 4008,
+      "best_mapped_site_id": 4008
+    },
+    {
+      "target": "9nxn_chainB",
+      "best_raw_dcc": 14.881861454637873,
+      "best_mapped_dcc": 15.278079574520659,
+      "best_target_gain": -0.39621811988278566,
+      "best_raw_site_id": 5,
+      "best_mapped_site_id": 5
+    },
+    {
+      "target": "9o9i_chainA",
+      "best_raw_dcc": 8.220408182602599,
+      "best_mapped_dcc": 8.649953185597278,
+      "best_target_gain": -0.42954500299467924,
+      "best_raw_site_id": 4005,
+      "best_mapped_site_id": 4005
+    },
+    {
+      "target": "9qni_chainA",
+      "best_raw_dcc": 10.209669068744601,
+      "best_mapped_dcc": 10.64504265803568,
+      "best_target_gain": -0.4353735892910784,
+      "best_raw_site_id": 0,
+      "best_mapped_site_id": 0
+    },
+    {
+      "target": "9qwj_chainT",
+      "best_raw_dcc": 8.684648834501933,
+      "best_mapped_dcc": 9.121652043208224,
+      "best_target_gain": -0.4370032087062903,
+      "best_raw_site_id": 507,
+      "best_mapped_site_id": 507
+    },
+    {
+      "target": "9nr0_chainA",
+      "best_raw_dcc": 6.859269879464216,
+      "best_mapped_dcc": 7.313980314321277,
+      "best_target_gain": -0.454710434857061,
+      "best_raw_site_id": 4000,
+      "best_mapped_site_id": 4000
+    }
+  ]
+}

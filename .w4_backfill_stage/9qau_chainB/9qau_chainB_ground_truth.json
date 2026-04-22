@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qau_chainB/9qau_chainB.topology.json",
+  "pdb_id": "9qau",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "X94",
+    "chain": "B",
+    "resnum": 709,
+    "n_atoms": 24,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    0.5815,
+    18.183625,
+    19.594666666666665
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qau.pdb"
+}

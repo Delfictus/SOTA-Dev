@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "3sbz",
+  "apo_chain": "A",
+  "holo_pdb": "3som",
+  "holo_chain": "A",
+  "ligand_code": "5AD",
+  "ligand_heavy_atoms": 18,
+  "ligand_centroid": [
+    111.08761111111113,
+    17.382555555555555,
+    191.28422222222224
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 109,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 110,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 111,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 2.0,
+  "holo_resolution": 2.4,
+  "uniprot_id": "Q9Y4U1",
+  "cluster_id_30": "8644.0"
+}

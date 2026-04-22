@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9owf_chainC/9owf_chainC.topology.json",
+  "pdb_id": "9owf",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "PCA",
+    "chain": "C",
+    "resnum": 1,
+    "n_atoms": 13,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    22.48076923076923,
+    54.41661538461538,
+    -40.612153846153845
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9owf.pdb"
+}

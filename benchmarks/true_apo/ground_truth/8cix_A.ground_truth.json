@@ -1,0 +1,158 @@
+{
+  "apo_pdb": "8cix",
+  "apo_chain": "A",
+  "holo_pdb": "6fvm",
+  "holo_chain": "B",
+  "ligand_code": "1PE",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    0.8901999999999998,
+    -36.25576000000001,
+    12.88624
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 9,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 15,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 18,
+      "resname": "SER"
+    },
+    {
+      "resnum": 21,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 22,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 23,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 56,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 57,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 58,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 60,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 72,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 73,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 76,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 80,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 83,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 84,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 159,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 161,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 162,
+      "resname": "THR"
+    },
+    {
+      "resnum": 163,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 190,
+      "resname": "SER"
+    },
+    {
+      "resnum": 191,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 192,
+      "resname": "SER"
+    },
+    {
+      "resnum": 193,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 194,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 229,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 237,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 239,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 240,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 241,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 242,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 243,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 244,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 245,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 34,
+  "pocket_rmsd": 5.748,
+  "category": "STANDARD",
+  "apo_resolution": 1.76,
+  "holo_resolution": 1.63,
+  "uniprot_id": "P0A988",
+  "cluster_id_30": "1425.0"
+}

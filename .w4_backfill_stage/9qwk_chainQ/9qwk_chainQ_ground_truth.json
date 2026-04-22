@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qwk_chainQ/9qwk_chainQ.topology.json",
+  "pdb_id": "9qwk",
+  "target_chain": "Q",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "D10",
+    "chain": "Q",
+    "resnum": 402,
+    "n_atoms": 10,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    25.8839,
+    11.8309,
+    -98.6456
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qwk.pdb"
+}

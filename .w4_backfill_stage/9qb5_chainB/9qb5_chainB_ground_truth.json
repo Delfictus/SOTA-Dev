@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qb5_chainB/9qb5_chainB.topology.json",
+  "pdb_id": "9qb5",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "F7I",
+    "chain": "B",
+    "resnum": 401,
+    "n_atoms": 32,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    28.9746875,
+    28.77371875,
+    19.4175
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qb5.pdb"
+}

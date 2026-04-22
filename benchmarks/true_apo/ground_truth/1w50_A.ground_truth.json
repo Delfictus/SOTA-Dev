@@ -1,0 +1,158 @@
+{
+  "apo_pdb": "1w50",
+  "apo_chain": "A",
+  "holo_pdb": "6uvp",
+  "holo_chain": "B",
+  "ligand_code": "QJJ",
+  "ligand_heavy_atoms": 23,
+  "ligand_centroid": [
+    70.51028985507249,
+    41.88236231884057,
+    79.48337681159423
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 9,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 10,
+      "resname": "SER"
+    },
+    {
+      "resnum": 11,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 12,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 13,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 30,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 32,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 34,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 35,
+      "resname": "SER"
+    },
+    {
+      "resnum": 61,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 63,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 71,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 82,
+      "resname": "THR"
+    },
+    {
+      "resnum": 96,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 97,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 98,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 108,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 110,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 115,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 118,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 132,
+      "resname": "SER"
+    },
+    {
+      "resnum": 134,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 139,
+      "resname": "SER"
+    },
+    {
+      "resnum": 142,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 143,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 162,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 164,
+      "resname": "SER"
+    },
+    {
+      "resnum": 165,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 228,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 229,
+      "resname": "SER"
+    },
+    {
+      "resnum": 230,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 231,
+      "resname": "THR"
+    },
+    {
+      "resnum": 232,
+      "resname": "THR"
+    },
+    {
+      "resnum": 335,
+      "resname": "ALA"
+    }
+  ],
+  "n_binding_residues": 34,
+  "pocket_rmsd": 7.678,
+  "category": "STANDARD",
+  "apo_resolution": 1.75,
+  "holo_resolution": 1.56,
+  "uniprot_id": "P56817",
+  "cluster_id_30": "446.0"
+}

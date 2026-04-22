@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9wwf_chainA/9wwf_chainA.topology.json",
+  "pdb_id": "9wwf",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "A3P",
+    "chain": "A",
+    "resnum": 404,
+    "n_atoms": 38,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -22.888842105263155,
+    7.377473684210526,
+    -8.430842105263158
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9wwf.pdb"
+}

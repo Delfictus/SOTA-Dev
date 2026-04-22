@@ -1,0 +1,58 @@
+{
+  "apo_pdb": "2w0p",
+  "apo_chain": "B",
+  "holo_pdb": "2brq",
+  "holo_chain": "B",
+  "ligand_code": "GSH",
+  "ligand_heavy_atoms": 20,
+  "ligand_centroid": [
+    28.407550000000004,
+    15.8422,
+    59.204600000000006
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 2263,
+      "resname": "THR"
+    },
+    {
+      "resnum": 2285,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 2286,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 2287,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 2288,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 2291,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 2292,
+      "resname": "SER"
+    },
+    {
+      "resnum": 2293,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 2294,
+      "resname": "GLY"
+    }
+  ],
+  "n_binding_residues": 9,
+  "pocket_rmsd": 0.43,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.1,
+  "uniprot_id": "P21333",
+  "cluster_id_30": "4090.0"
+}

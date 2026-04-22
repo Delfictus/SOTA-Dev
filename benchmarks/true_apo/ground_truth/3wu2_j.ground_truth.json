@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "3wu2",
+  "apo_chain": "j",
+  "holo_pdb": "5v2c",
+  "holo_chain": "J",
+  "ligand_code": "PG4",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    -19.173307692307695,
+    -88.32207692307693,
+    192.97334615384614
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 7,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 8,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 9,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 12,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 16,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 19,
+      "resname": "MET"
+    },
+    {
+      "resnum": 20,
+      "resname": "GLY"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.9,
+  "holo_resolution": 1.9,
+  "uniprot_id": "Q7DGD4",
+  "cluster_id_30": "748.0"
+}

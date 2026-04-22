@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9o8w_chainE/9o8w_chainE.topology.json",
+  "pdb_id": "9o8w",
+  "target_chain": "E",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CJA",
+    "chain": "E",
+    "resnum": 501,
+    "n_atoms": 43,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    6.687883720930233,
+    12.690976744186047,
+    30.040209302325582
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9o8w.pdb"
+}

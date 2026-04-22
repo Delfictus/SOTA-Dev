@@ -1,0 +1,46 @@
+{
+  "apo_pdb": "5b1b",
+  "apo_chain": "Y",
+  "holo_pdb": "7ev7",
+  "holo_chain": "Y",
+  "ligand_code": "CHD",
+  "ligand_heavy_atoms": 29,
+  "ligand_centroid": [
+    146.6909655172414,
+    287.725,
+    183.51672413793105
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 35,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 38,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 39,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 41,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 42,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 45,
+      "resname": "LEU"
+    }
+  ],
+  "n_binding_residues": 6,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.7,
+  "uniprot_id": "P00430",
+  "cluster_id_30": "2105.0"
+}

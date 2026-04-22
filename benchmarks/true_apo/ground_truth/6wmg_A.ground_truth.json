@@ -1,0 +1,46 @@
+{
+  "apo_pdb": "6wmg",
+  "apo_chain": "A",
+  "holo_pdb": "4dxr",
+  "holo_chain": "A",
+  "ligand_code": "DMU",
+  "ligand_heavy_atoms": 25,
+  "ligand_centroid": [
+    4.5416799999999995,
+    40.49644,
+    26.522799999999997
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 574,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 582,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 584,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 586,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 595,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 600,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 6,
+  "pocket_rmsd": 0.353,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.32,
+  "uniprot_id": "Q9UH99",
+  "cluster_id_30": "8721.0"
+}

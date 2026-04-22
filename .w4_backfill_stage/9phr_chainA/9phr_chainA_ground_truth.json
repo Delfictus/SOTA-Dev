@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9phr_chainA/9phr_chainA.topology.json",
+  "pdb_id": "9phr",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "9UM",
+    "chain": "A",
+    "resnum": 201,
+    "n_atoms": 28,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    0.9860357142857143,
+    5.602321428571429,
+    -9.825857142857144
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9phr.pdb"
+}

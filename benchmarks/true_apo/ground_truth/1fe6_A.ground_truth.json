@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "1fe6",
+  "apo_chain": "A",
+  "holo_pdb": "7r6h",
+  "holo_chain": "D",
+  "ligand_code": "1KW",
+  "ligand_heavy_atoms": 24,
+  "ligand_centroid": [
+    20.494124999999993,
+    -0.6082708333333336,
+    6.561187499999999
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 19,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 22,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 23,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 26,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 41,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 44,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 45,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 48,
+      "resname": "ILE"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 2.2,
+  "uniprot_id": "Q54436",
+  "cluster_id_30": "20499.0"
+}

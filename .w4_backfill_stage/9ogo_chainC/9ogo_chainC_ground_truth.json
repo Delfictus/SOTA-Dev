@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9ogo_chainC/9ogo_chainC.topology.json",
+  "pdb_id": "9ogo",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "K85",
+    "chain": "C",
+    "resnum": 1101,
+    "n_atoms": 42,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -30.749928571428573,
+    73.34009523809524,
+    27.079833333333333
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9ogo.pdb"
+}

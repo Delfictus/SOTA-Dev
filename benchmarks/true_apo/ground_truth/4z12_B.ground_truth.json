@@ -1,0 +1,70 @@
+{
+  "apo_pdb": "4z12",
+  "apo_chain": "B",
+  "holo_pdb": "4z13",
+  "holo_chain": "A",
+  "ligand_code": "TEW",
+  "ligand_heavy_atoms": 31,
+  "ligand_centroid": [
+    -19.592596774193545,
+    -27.503225806451603,
+    -29.172499999999996
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 52,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 53,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 59,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 61,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 62,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 154,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 157,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 158,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 159,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 350,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 352,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 356,
+      "resname": "PRO"
+    }
+  ],
+  "n_binding_residues": 12,
+  "pocket_rmsd": 0.168,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.85,
+  "holo_resolution": 1.78,
+  "uniprot_id": "A0A075DN54",
+  "cluster_id_30": "3133.0"
+}

@@ -1,0 +1,90 @@
+{
+  "apo_pdb": "2gq1",
+  "apo_chain": "A",
+  "holo_pdb": "2q8m",
+  "holo_chain": "B",
+  "ligand_code": "AMP",
+  "ligand_heavy_atoms": 23,
+  "ligand_centroid": [
+    110.77504347826087,
+    49.6561304347826,
+    38.591130434782606
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 8,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 11,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 12,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 15,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 17,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 18,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 19,
+      "resname": "THR"
+    },
+    {
+      "resnum": 20,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 21,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 22,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 23,
+      "resname": "THR"
+    },
+    {
+      "resnum": 26,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 104,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 105,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 132,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 154,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 171,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 17,
+  "pocket_rmsd": 0.515,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.45,
+  "holo_resolution": 2.05,
+  "uniprot_id": "P0A993",
+  "cluster_id_30": "297.0"
+}

@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "5pbj",
+  "apo_chain": "A",
+  "holo_pdb": "5cq6",
+  "holo_chain": "A",
+  "ligand_code": "PDC",
+  "ligand_heavy_atoms": 12,
+  "ligand_centroid": [
+    19.78366666666667,
+    50.76620833333334,
+    17.248625
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1895,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 1896,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 1902,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 1903,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.79,
+  "holo_resolution": 1.97,
+  "uniprot_id": "Q9UIF8",
+  "cluster_id_30": "86.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9ig2_chainA/9ig2_chainA.topology.json",
+  "pdb_id": "9ig2",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "9AI",
+    "chain": "A",
+    "resnum": 503,
+    "n_atoms": 6,
+    "classification": "small_molecule"
+  },
+  "ligand_centroid": [
+    3.9746666666666672,
+    13.466499999999998,
+    23.72
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9ig2.pdb"
+}

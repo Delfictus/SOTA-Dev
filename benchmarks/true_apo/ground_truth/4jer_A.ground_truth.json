@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "4jer",
+  "apo_chain": "A",
+  "holo_pdb": "4y4s",
+  "holo_chain": "A",
+  "ligand_code": "HEM",
+  "ligand_heavy_atoms": 43,
+  "ligand_centroid": [
+    -31.53079069767443,
+    -24.170046511627906,
+    1.286372093023256
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 45,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 46,
+      "resname": "SER"
+    },
+    {
+      "resnum": 49,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 55,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 82,
+      "resname": "THR"
+    },
+    {
+      "resnum": 83,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 84,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 85,
+      "resname": "GLY"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 6.196,
+  "category": "STANDARD",
+  "apo_resolution": 1.1,
+  "holo_resolution": 1.75,
+  "uniprot_id": "Q0WA92",
+  "cluster_id_30": "3223.0"
+}

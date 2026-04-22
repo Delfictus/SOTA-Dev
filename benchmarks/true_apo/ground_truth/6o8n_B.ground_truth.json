@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "6o8n",
+  "apo_chain": "B",
+  "holo_pdb": "6o8m",
+  "holo_chain": "A",
+  "ligand_code": "LSY",
+  "ligand_heavy_atoms": 25,
+  "ligand_centroid": [
+    32.4796,
+    29.703080000000003,
+    1.72872
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 37,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 38,
+      "resname": "MET"
+    },
+    {
+      "resnum": 41,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 102,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 103,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 106,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 107,
+      "resname": "CYS"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 0.624,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.95,
+  "holo_resolution": 1.46,
+  "uniprot_id": "D5AT91",
+  "cluster_id_30": "6386.0"
+}

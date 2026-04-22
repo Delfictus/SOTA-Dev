@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "7c67",
+  "apo_chain": "B",
+  "holo_pdb": "7c64",
+  "holo_chain": "A",
+  "ligand_code": "PG4",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    10.593076923076922,
+    7.307153846153847,
+    3.9043846153846156
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 41,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 117,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 177,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 256,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 334,
+      "resname": "MET"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 1.885,
+  "category": "CRYPTIC",
+  "apo_resolution": 2.0,
+  "holo_resolution": 1.63,
+  "uniprot_id": "Q53W80",
+  "cluster_id_30": "5380.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9wri_chainA/9wri_chainA.topology.json",
+  "pdb_id": "9wri",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "NAD",
+    "chain": "A",
+    "resnum": 401,
+    "n_atoms": 44,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    26.47834090909091,
+    31.280590909090908,
+    22.465227272727272
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9wri.pdb"
+}

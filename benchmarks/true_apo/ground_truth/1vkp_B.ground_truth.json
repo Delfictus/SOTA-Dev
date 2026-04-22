@@ -1,0 +1,58 @@
+{
+  "apo_pdb": "1vkp",
+  "apo_chain": "B",
+  "holo_pdb": "2q3u",
+  "holo_chain": "A",
+  "ligand_code": "MPO",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    -36.37481730769229,
+    20.776884615384624,
+    14.829499999999996
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 14,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 103,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 170,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 171,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 172,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 203,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 204,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 205,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 206,
+      "resname": "GLN"
+    }
+  ],
+  "n_binding_residues": 9,
+  "pocket_rmsd": 17.998,
+  "category": "STANDARD",
+  "apo_resolution": 1.53,
+  "holo_resolution": 1.53,
+  "uniprot_id": "Q8GWW7",
+  "cluster_id_30": "2319.0"
+}

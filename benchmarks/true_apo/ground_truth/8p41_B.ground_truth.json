@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "8p41",
+  "apo_chain": "B",
+  "holo_pdb": "6t13",
+  "holo_chain": "D",
+  "ligand_code": "M7H",
+  "ligand_heavy_atoms": 27,
+  "ligand_centroid": [
+    14.12388888888889,
+    3.2658518518518522,
+    -7.063148148148148
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 315,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 316,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 345,
+      "resname": "SER"
+    },
+    {
+      "resnum": 348,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 349,
+      "resname": "GLU"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 0.556,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.83,
+  "holo_resolution": 1.85,
+  "uniprot_id": "P04062",
+  "cluster_id_30": "2211.0"
+}

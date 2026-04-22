@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9u8w_chainA/9u8w_chainA.topology.json",
+  "pdb_id": "9u8w",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "GDP",
+    "chain": "A",
+    "resnum": 201,
+    "n_atoms": 28,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    16.002464285714286,
+    -8.623785714285715,
+    17.846678571428573
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9u8w.pdb"
+}

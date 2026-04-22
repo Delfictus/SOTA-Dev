@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "5b1b",
+  "apo_chain": "H",
+  "holo_pdb": "3abm",
+  "holo_chain": "H",
+  "ligand_code": "PGV",
+  "ligand_heavy_atoms": 51,
+  "ligand_centroid": [
+    82.19923529411764,
+    310.38370588235296,
+    183.92335294117655
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 22,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 24,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.95,
+  "uniprot_id": "P00429",
+  "cluster_id_30": "1242.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9ycu_chainA/9ycu_chainA.topology.json",
+  "pdb_id": "9ycu",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CSO",
+    "chain": "A",
+    "resnum": 106,
+    "n_atoms": 11,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    39.05345454545455,
+    -12.593363636363637,
+    -54.528363636363636
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9ycu.pdb"
+}

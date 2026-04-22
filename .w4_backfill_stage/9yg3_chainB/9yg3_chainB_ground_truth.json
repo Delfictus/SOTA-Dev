@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9yg3_chainB/9yg3_chainB.topology.json",
+  "pdb_id": "9yg3",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "MG",
+    "chain": "B",
+    "resnum": 402,
+    "n_atoms": 1,
+    "classification": "metal_cofactor"
+  },
+  "ligand_centroid": [
+    13.711,
+    45.767,
+    88.469
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9yg3.pdb"
+}

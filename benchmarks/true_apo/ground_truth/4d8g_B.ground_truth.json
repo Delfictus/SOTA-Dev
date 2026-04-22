@@ -1,0 +1,70 @@
+{
+  "apo_pdb": "4d8g",
+  "apo_chain": "B",
+  "holo_pdb": "4m1i",
+  "holo_chain": "A",
+  "ligand_code": "P6G",
+  "ligand_heavy_atoms": 19,
+  "ligand_centroid": [
+    -9.101736842105263,
+    3.883736842105263,
+    -25.474631578947367
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 160,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 161,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 163,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 164,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 176,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 179,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 180,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 183,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 252,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 253,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 256,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 260,
+      "resname": "LEU"
+    }
+  ],
+  "n_binding_residues": 12,
+  "pocket_rmsd": 0.2,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.75,
+  "holo_resolution": 1.8,
+  "uniprot_id": "O84835",
+  "cluster_id_30": "7280.0"
+}

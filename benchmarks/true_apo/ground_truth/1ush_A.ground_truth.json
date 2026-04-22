@@ -1,0 +1,110 @@
+{
+  "apo_pdb": "1ush",
+  "apo_chain": "A",
+  "holo_pdb": "1hpu",
+  "holo_chain": "C",
+  "ligand_code": "A12",
+  "ligand_heavy_atoms": 27,
+  "ligand_centroid": [
+    26.85555555555556,
+    53.479037037037024,
+    18.26518518518519
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 84,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 116,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 117,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 120,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 178,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 179,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 180,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 217,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 252,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 254,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 375,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 379,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 405,
+      "resname": "SER"
+    },
+    {
+      "resnum": 407,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 408,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 410,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 429,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 431,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 458,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 459,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 498,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 504,
+      "resname": "ASP"
+    }
+  ],
+  "n_binding_residues": 22,
+  "pocket_rmsd": 5.17,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.73,
+  "holo_resolution": 1.85,
+  "uniprot_id": "P07024",
+  "cluster_id_30": "7541.0"
+}

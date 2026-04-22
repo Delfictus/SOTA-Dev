@@ -1,0 +1,258 @@
+{
+  "apo_pdb": "1ls1",
+  "apo_chain": "A",
+  "holo_pdb": "2c03",
+  "holo_chain": "A",
+  "ligand_code": "DIO",
+  "ligand_heavy_atoms": 14,
+  "ligand_centroid": [
+    23.86226530612245,
+    30.290224489795918,
+    74.54209183673467
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 3,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 4,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 5,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 38,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 43,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 47,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 48,
+      "resname": "THR"
+    },
+    {
+      "resnum": 51,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 81,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 82,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 85,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 86,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 104,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 105,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 106,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 107,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 111,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 113,
+      "resname": "THR"
+    },
+    {
+      "resnum": 116,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 117,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 147,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 148,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 151,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 152,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 188,
+      "resname": "THR"
+    },
+    {
+      "resnum": 189,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 190,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 191,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 193,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 194,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 195,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 196,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 198,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 199,
+      "resname": "MET"
+    },
+    {
+      "resnum": 202,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 221,
+      "resname": "MET"
+    },
+    {
+      "resnum": 222,
+      "resname": "THR"
+    },
+    {
+      "resnum": 233,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 247,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 250,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 251,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 252,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 254,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 257,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 258,
+      "resname": "SER"
+    },
+    {
+      "resnum": 261,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 270,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 272,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 274,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 275,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 276,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 280,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 281,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 282,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 283,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 284,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 286,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 287,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 290,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 59,
+  "pocket_rmsd": 8.406,
+  "category": "STANDARD",
+  "apo_resolution": 1.1,
+  "holo_resolution": 1.24,
+  "uniprot_id": "O07347",
+  "cluster_id_30": "1370.0"
+}

@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "4gsq",
+  "apo_chain": "A",
+  "holo_pdb": "7f8p",
+  "holo_chain": "A",
+  "ligand_code": "GLU",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    -8.704899999999999,
+    13.8032,
+    65.5603
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 306,
+      "resname": "SER"
+    },
+    {
+      "resnum": 311,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 312,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 313,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 1.7,
+  "uniprot_id": "O53223",
+  "cluster_id_30": "2518.0"
+}

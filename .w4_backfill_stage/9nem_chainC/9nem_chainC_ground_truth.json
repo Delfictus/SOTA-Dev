@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9nem_chainC/9nem_chainC.topology.json",
+  "pdb_id": "9nem",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "FAR",
+    "chain": "C",
+    "resnum": 301,
+    "n_atoms": 15,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    9.644933333333334,
+    8.622666666666667,
+    -9.6608
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9nem.pdb"
+}

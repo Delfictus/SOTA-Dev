@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9rm2_chainJ/9rm2_chainJ.topology.json",
+  "pdb_id": "9rm2",
+  "target_chain": "J",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "P6G",
+    "chain": "J",
+    "resnum": 304,
+    "n_atoms": 19,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    57.88631578947368,
+    19.90731578947368,
+    -21.788947368421052
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9rm2.pdb"
+}

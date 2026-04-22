@@ -1,0 +1,62 @@
+{
+  "apo_pdb": "3r9v",
+  "apo_chain": "A",
+  "holo_pdb": "3r9v",
+  "holo_chain": "B",
+  "ligand_code": "DXC",
+  "ligand_heavy_atoms": 28,
+  "ligand_centroid": [
+    -1.0825,
+    -22.61792857142857,
+    46.553732142857136
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 131,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 134,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 135,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 138,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 142,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 312,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 314,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 315,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 316,
+      "resname": "SER"
+    },
+    {
+      "resnum": 317,
+      "resname": "SER"
+    }
+  ],
+  "n_binding_residues": 10,
+  "pocket_rmsd": 4.31,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 1.9,
+  "uniprot_id": "P18013",
+  "cluster_id_30": "16679.0"
+}

@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "4q5e",
+  "apo_chain": "B",
+  "holo_pdb": "5tr4",
+  "holo_chain": "D",
+  "ligand_code": "61T",
+  "ligand_heavy_atoms": 34,
+  "ligand_centroid": [
+    9.76473529411765,
+    60.06541176470588,
+    4.709823529411766
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 75,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 76,
+      "resname": "GLY"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.87,
+  "holo_resolution": 2.2,
+  "uniprot_id": "P0CG63",
+  "cluster_id_30": "55.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9u8g_chainA/9u8g_chainA.topology.json",
+  "pdb_id": "9u8g",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CA",
+    "chain": "A",
+    "resnum": 301,
+    "n_atoms": 1,
+    "classification": "metal_cofactor"
+  },
+  "ligand_centroid": [
+    -31.753,
+    -13.168,
+    12.209
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9u8g.pdb"
+}

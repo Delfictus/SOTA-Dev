@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9v84_chainG/9v84_chainG.topology.json",
+  "pdb_id": "9v84",
+  "target_chain": "G",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "9N8",
+    "chain": "G",
+    "resnum": 601,
+    "n_atoms": 35,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    43.649971428571426,
+    28.61042857142857,
+    36.912800000000004
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9v84.pdb"
+}

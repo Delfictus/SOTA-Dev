@@ -1,0 +1,126 @@
+{
+  "apo_pdb": "6mvr",
+  "apo_chain": "A",
+  "holo_pdb": "6mvt",
+  "holo_chain": "A",
+  "ligand_code": "NAI",
+  "ligand_heavy_atoms": 44,
+  "ligand_centroid": [
+    24.635045454545455,
+    34.29175000000001,
+    -0.6041818181818184
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 161,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 162,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 163,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 164,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 188,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 189,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 190,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 191,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 192,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 220,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 221,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 224,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 225,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 228,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 237,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 238,
+      "resname": "THR"
+    },
+    {
+      "resnum": 239,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 240,
+      "resname": "SER"
+    },
+    {
+      "resnum": 243,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 246,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 247,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 293,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 341,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 342,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 344,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 345,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 26,
+  "pocket_rmsd": 0.154,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.95,
+  "holo_resolution": 2.3,
+  "uniprot_id": "A0A0Q3EUQ3",
+  "cluster_id_30": "16398.0"
+}

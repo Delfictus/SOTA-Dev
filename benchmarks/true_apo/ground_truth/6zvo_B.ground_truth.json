@@ -1,0 +1,58 @@
+{
+  "apo_pdb": "6zvo",
+  "apo_chain": "B",
+  "holo_pdb": "6zz1",
+  "holo_chain": "A",
+  "ligand_code": "QOK",
+  "ligand_heavy_atoms": 19,
+  "ligand_centroid": [
+    -11.780052631578949,
+    -7.07842105263158,
+    1.3352631578947367
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 23,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 24,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 82,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 85,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 86,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 89,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 144,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 145,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 148,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 9,
+  "pocket_rmsd": 0.431,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.37,
+  "holo_resolution": 1.64,
+  "uniprot_id": "Q8NB16",
+  "cluster_id_30": "15022.0"
+}

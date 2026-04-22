@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "6hr1",
+  "apo_chain": "B",
+  "holo_pdb": "6hr1",
+  "holo_chain": "A",
+  "ligand_code": "TLA",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    40.36300000000001,
+    -53.55999999999999,
+    169.2534
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 358,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 367,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 368,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 369,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 0.684,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 1.9,
+  "uniprot_id": "P07313",
+  "cluster_id_30": "26046.0"
+}

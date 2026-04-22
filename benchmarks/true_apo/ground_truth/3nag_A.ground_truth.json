@@ -1,0 +1,58 @@
+{
+  "apo_pdb": "3nag",
+  "apo_chain": "A",
+  "holo_pdb": "3mbi",
+  "holo_chain": "C",
+  "ligand_code": "ADP",
+  "ligand_heavy_atoms": 27,
+  "ligand_centroid": [
+    36.77670370370371,
+    -2.9382592592592593,
+    50.71192592592594
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 91,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 92,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 96,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 100,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 124,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 161,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 184,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 186,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 189,
+      "resname": "ASP"
+    }
+  ],
+  "n_binding_residues": 9,
+  "pocket_rmsd": 0.422,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.75,
+  "holo_resolution": 1.8,
+  "uniprot_id": "Q97CA5",
+  "cluster_id_30": "596.0"
+}

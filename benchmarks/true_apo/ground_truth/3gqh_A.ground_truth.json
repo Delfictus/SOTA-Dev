@@ -1,0 +1,78 @@
+{
+  "apo_pdb": "3gqh",
+  "apo_chain": "A",
+  "holo_pdb": "3gqk",
+  "holo_chain": "A",
+  "ligand_code": "ATP",
+  "ligand_heavy_atoms": 31,
+  "ligand_centroid": [
+    -23.381322580645158,
+    6.724548387096774,
+    8.560967741935485
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 698,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 746,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 747,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 779,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 780,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 781,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 784,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 785,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 786,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 787,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 789,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 792,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 794,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 795,
+      "resname": "TRP"
+    }
+  ],
+  "n_binding_residues": 14,
+  "pocket_rmsd": 1.108,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.8,
+  "holo_resolution": 2.5,
+  "uniprot_id": "P20345",
+  "cluster_id_30": "81001.0"
+}

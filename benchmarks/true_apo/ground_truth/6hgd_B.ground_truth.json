@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "6hgd",
+  "apo_chain": "B",
+  "holo_pdb": "6hgf",
+  "holo_chain": "B",
+  "ligand_code": "HCY",
+  "ligand_heavy_atoms": 26,
+  "ligand_centroid": [
+    -39.42207692307693,
+    -15.463615384615384,
+    5.913346153846155
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 381,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 383,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 386,
+      "resname": "TRP"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.9,
+  "holo_resolution": 1.65,
+  "uniprot_id": "P01011",
+  "cluster_id_30": "7648.0"
+}

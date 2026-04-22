@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9o4m_chainD/9o4m_chainD.topology.json",
+  "pdb_id": "9o4m",
+  "target_chain": "D",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "6NA",
+    "chain": "D",
+    "resnum": 101,
+    "n_atoms": 17,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -32.092411764705886,
+    7.015823529411765,
+    -13.909117647058823
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9o4m.pdb"
+}

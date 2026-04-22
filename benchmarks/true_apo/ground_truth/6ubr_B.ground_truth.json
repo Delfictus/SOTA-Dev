@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "6ubr",
+  "apo_chain": "B",
+  "holo_pdb": "6ubr",
+  "holo_chain": "D",
+  "ligand_code": "GLY",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    -6.2003,
+    -55.6444,
+    226.2317
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 766,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 767,
+      "resname": "HIS"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.96,
+  "holo_resolution": 1.96,
+  "uniprot_id": "A0A161XU12",
+  "cluster_id_30": "12378.0"
+}

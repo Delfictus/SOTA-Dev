@@ -1,0 +1,58 @@
+{
+  "apo_pdb": "8soz",
+  "apo_chain": "A",
+  "holo_pdb": "1m4a",
+  "holo_chain": "A",
+  "ligand_code": "MPE",
+  "ligand_heavy_atoms": 18,
+  "ligand_centroid": [
+    -9.620888888888889,
+    -2.8651111111111103,
+    -8.364666666666668
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 28,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 31,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 35,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 36,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 39,
+      "resname": "MET"
+    },
+    {
+      "resnum": 42,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 69,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 72,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 73,
+      "resname": "ALA"
+    }
+  ],
+  "n_binding_residues": 9,
+  "pocket_rmsd": 0.546,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.64,
+  "holo_resolution": 2.18,
+  "uniprot_id": "P60568",
+  "cluster_id_30": "2559.0"
+}

@@ -1,0 +1,46 @@
+{
+  "apo_pdb": "5ral",
+  "apo_chain": "A",
+  "holo_pdb": "5ral",
+  "holo_chain": "B",
+  "ligand_code": "SNQ",
+  "ligand_heavy_atoms": 14,
+  "ligand_centroid": [
+    -35.4045,
+    46.121785714285714,
+    81.10157142857142
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1531,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 1714,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 1715,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 1717,
+      "resname": "THR"
+    },
+    {
+      "resnum": 1718,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 1721,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 6,
+  "pocket_rmsd": 0.835,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.68,
+  "holo_resolution": 1.68,
+  "uniprot_id": "Q7LBC6",
+  "cluster_id_30": "4048.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9m5y_chainB/9m5y_chainB.topology.json",
+  "pdb_id": "9m5y",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CA",
+    "chain": "B",
+    "resnum": 201,
+    "n_atoms": 1,
+    "classification": "metal_cofactor"
+  },
+  "ligand_centroid": [
+    114.039,
+    88.808,
+    141.406
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9m5y.pdb"
+}

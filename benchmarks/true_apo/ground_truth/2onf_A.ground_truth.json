@@ -1,0 +1,62 @@
+{
+  "apo_pdb": "2onf",
+  "apo_chain": "A",
+  "holo_pdb": "2onf",
+  "holo_chain": "B",
+  "ligand_code": "COA",
+  "ligand_heavy_atoms": 48,
+  "ligand_centroid": [
+    3.3480208333333334,
+    8.793562500000004,
+    5.656437500000002
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 56,
+      "resname": "THR"
+    },
+    {
+      "resnum": 57,
+      "resname": "THR"
+    },
+    {
+      "resnum": 60,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 61,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 64,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 111,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 115,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 118,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 119,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 121,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 10,
+  "pocket_rmsd": 0.172,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.7,
+  "holo_resolution": 1.7,
+  "uniprot_id": "Q9HLN2",
+  "cluster_id_30": "97620.0"
+}

@@ -1,0 +1,126 @@
+{
+  "apo_pdb": "3vja",
+  "apo_chain": "B",
+  "holo_pdb": "3vjc",
+  "holo_chain": "E",
+  "ligand_code": "ZGA",
+  "ligand_heavy_atoms": 49,
+  "ligand_centroid": [
+    -7.625081632653063,
+    42.82846938775508,
+    6.466020408163266
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 50,
+      "resname": "THR"
+    },
+    {
+      "resnum": 51,
+      "resname": "SER"
+    },
+    {
+      "resnum": 52,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 53,
+      "resname": "SER"
+    },
+    {
+      "resnum": 54,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 58,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 69,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 72,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 73,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 76,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 77,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 80,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 150,
+      "resname": "MET"
+    },
+    {
+      "resnum": 154,
+      "resname": "MET"
+    },
+    {
+      "resnum": 175,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 179,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 183,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 211,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 214,
+      "resname": "THR"
+    },
+    {
+      "resnum": 215,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 218,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 288,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 292,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 295,
+      "resname": "MET"
+    },
+    {
+      "resnum": 296,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 299,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 26,
+  "pocket_rmsd": 0.579,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.76,
+  "holo_resolution": 1.89,
+  "uniprot_id": "P37268",
+  "cluster_id_30": "1950.0"
+}

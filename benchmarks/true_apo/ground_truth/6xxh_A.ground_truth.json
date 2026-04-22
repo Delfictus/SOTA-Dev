@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "6xxh",
+  "apo_chain": "A",
+  "holo_pdb": "6xxh",
+  "holo_chain": "B",
+  "ligand_code": "MRD",
+  "ligand_heavy_atoms": 22,
+  "ligand_centroid": [
+    41.77109090909091,
+    27.398090909090907,
+    53.327090909090906
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 38,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 39,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 40,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 41,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.52,
+  "holo_resolution": 1.52,
+  "uniprot_id": "P49366",
+  "cluster_id_30": "1474.0"
+}

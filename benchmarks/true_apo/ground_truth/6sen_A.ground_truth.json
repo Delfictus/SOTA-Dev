@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "6sen",
+  "apo_chain": "A",
+  "holo_pdb": "5xjd",
+  "holo_chain": "B",
+  "ligand_code": "87L",
+  "ligand_heavy_atoms": 15,
+  "ligand_centroid": [
+    -66.20413333333333,
+    -33.413,
+    -31.220466666666667
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 329,
+      "resname": "SER"
+    },
+    {
+      "resnum": 330,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 366,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 369,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 370,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 373,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 382,
+      "resname": "VAL"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 0.674,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.65,
+  "holo_resolution": 2.22,
+  "uniprot_id": "Q15561",
+  "cluster_id_30": "2115.0"
+}

@@ -1,0 +1,102 @@
+{
+  "apo_pdb": "4wms",
+  "apo_chain": "A",
+  "holo_pdb": "8el1",
+  "holo_chain": "D",
+  "ligand_code": "WME",
+  "ligand_heavy_atoms": 72,
+  "ligand_centroid": [
+    -49.90668055555554,
+    -8.799958333333334,
+    -19.248194444444437
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 216,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 220,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 224,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 227,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 228,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 230,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 231,
+      "resname": "MET"
+    },
+    {
+      "resnum": 234,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 235,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 246,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 249,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 250,
+      "resname": "MET"
+    },
+    {
+      "resnum": 253,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 254,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 262,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 263,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 266,
+      "resname": "THR"
+    },
+    {
+      "resnum": 267,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 270,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 319,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 20,
+  "pocket_rmsd": 0.916,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.41,
+  "uniprot_id": "P0AEX9",
+  "cluster_id_30": "793.0"
+}

@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "3wa6",
+  "apo_chain": "A",
+  "holo_pdb": "4j0k",
+  "holo_chain": "B",
+  "ligand_code": "PG4",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    12.361461538461539,
+    39.95607692307692,
+    39.63653846153846
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 119,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 122,
+      "resname": "SER"
+    },
+    {
+      "resnum": 123,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 124,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 125,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 15.926,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 2.05,
+  "uniprot_id": "B3Y018",
+  "cluster_id_30": "12367.0"
+}

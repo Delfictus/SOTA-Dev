@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "5tvo",
+  "apo_chain": "A",
+  "holo_pdb": "5tvf",
+  "holo_chain": "D",
+  "ligand_code": "PUT",
+  "ligand_heavy_atoms": 18,
+  "ligand_centroid": [
+    -17.61761111111111,
+    9.153500000000001,
+    -34.09155555555555
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 130,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 131,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 132,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 133,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 136,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 146,
+      "resname": "MET"
+    },
+    {
+      "resnum": 172,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 174,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 1.7,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.48,
+  "holo_resolution": 2.42,
+  "uniprot_id": "Q587A7",
+  "cluster_id_30": "33833.0"
+}

@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "5c0c",
+  "apo_chain": "J",
+  "holo_pdb": "5c0b",
+  "holo_chain": "J",
+  "ligand_code": "PG4",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    7.4312,
+    59.07409999999999,
+    -94.24269999999999
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 37,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 38,
+      "resname": "THR"
+    },
+    {
+      "resnum": 39,
+      "resname": "MET"
+    },
+    {
+      "resnum": 42,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 43,
+      "resname": "LEU"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 0.093,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.97,
+  "holo_resolution": 2.03,
+  "uniprot_id": "A0A0B4J2E0",
+  "cluster_id_30": "271.0"
+}

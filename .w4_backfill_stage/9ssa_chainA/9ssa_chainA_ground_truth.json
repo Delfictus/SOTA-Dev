@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9ssa_chainA/9ssa_chainA.topology.json",
+  "pdb_id": "9ssa",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "ZED",
+    "chain": "A",
+    "resnum": 703,
+    "n_atoms": 42,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -14.120952380952382,
+    7.858357142857143,
+    -24.331904761904763
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9ssa.pdb"
+}

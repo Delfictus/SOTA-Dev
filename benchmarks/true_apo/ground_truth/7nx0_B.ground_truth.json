@@ -1,0 +1,46 @@
+{
+  "apo_pdb": "7nx0",
+  "apo_chain": "B",
+  "holo_pdb": "7nx1",
+  "holo_chain": "A",
+  "ligand_code": "BTB",
+  "ligand_heavy_atoms": 33,
+  "ligand_centroid": [
+    21.251909090909084,
+    54.77033333333333,
+    5.7521666666666675
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 118,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 377,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 378,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 379,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 381,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 382,
+      "resname": "GLU"
+    }
+  ],
+  "n_binding_residues": 6,
+  "pocket_rmsd": 12.315,
+  "category": "STANDARD",
+  "apo_resolution": 1.95,
+  "holo_resolution": 1.3,
+  "uniprot_id": "P29376",
+  "cluster_id_30": "81438.0"
+}

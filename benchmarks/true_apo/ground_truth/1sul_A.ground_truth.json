@@ -1,0 +1,82 @@
+{
+  "apo_pdb": "1sul",
+  "apo_chain": "A",
+  "holo_pdb": "1svi",
+  "holo_chain": "A",
+  "ligand_code": "GDP",
+  "ligand_heavy_atoms": 28,
+  "ligand_centroid": [
+    17.28525,
+    46.57589285714285,
+    42.677607142857134
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 31,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 32,
+      "resname": "SER"
+    },
+    {
+      "resnum": 33,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 34,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 35,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 36,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 37,
+      "resname": "SER"
+    },
+    {
+      "resnum": 38,
+      "resname": "SER"
+    },
+    {
+      "resnum": 142,
+      "resname": "THR"
+    },
+    {
+      "resnum": 143,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 145,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 146,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 175,
+      "resname": "SER"
+    },
+    {
+      "resnum": 176,
+      "resname": "SER"
+    },
+    {
+      "resnum": 177,
+      "resname": "GLU"
+    }
+  ],
+  "n_binding_residues": 15,
+  "pocket_rmsd": 0.498,
+  "category": "CRYPTIC",
+  "apo_resolution": 2.0,
+  "holo_resolution": 1.95,
+  "uniprot_id": "P38424",
+  "cluster_id_30": "363.0"
+}

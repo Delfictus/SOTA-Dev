@@ -1,0 +1,62 @@
+{
+  "apo_pdb": "6ukk",
+  "apo_chain": "A",
+  "holo_pdb": "2aco",
+  "holo_chain": "B",
+  "ligand_code": "VCA",
+  "ligand_heavy_atoms": 20,
+  "ligand_centroid": [
+    16.564400000000003,
+    34.78574999999999,
+    19.474300000000003
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 53,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 54,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 76,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 89,
+      "resname": "SER"
+    },
+    {
+      "resnum": 108,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 109,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 114,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 115,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 116,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 139,
+      "resname": "TRP"
+    }
+  ],
+  "n_binding_residues": 10,
+  "pocket_rmsd": 1.646,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.8,
+  "uniprot_id": "P0A901",
+  "cluster_id_30": "3425.0"
+}

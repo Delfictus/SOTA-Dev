@@ -1,0 +1,74 @@
+{
+  "apo_pdb": "8v5c",
+  "apo_chain": "A",
+  "holo_pdb": "8v5c",
+  "holo_chain": "B",
+  "ligand_code": "DXC",
+  "ligand_heavy_atoms": 28,
+  "ligand_centroid": [
+    -32.403714285714294,
+    -21.094767857142863,
+    46.540946428571424
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 131,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 134,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 135,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 138,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 139,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 142,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 312,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 314,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 315,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 316,
+      "resname": "SER"
+    },
+    {
+      "resnum": 317,
+      "resname": "SER"
+    },
+    {
+      "resnum": 318,
+      "resname": "THR"
+    },
+    {
+      "resnum": 319,
+      "resname": "ILE"
+    }
+  ],
+  "n_binding_residues": 13,
+  "pocket_rmsd": 3.712,
+  "category": "STANDARD",
+  "apo_resolution": 1.96,
+  "holo_resolution": 1.96,
+  "uniprot_id": "P18013",
+  "cluster_id_30": "18006.0"
+}

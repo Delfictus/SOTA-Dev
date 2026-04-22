@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/10dj_chainB/10dj_chainB.topology.json",
+  "pdb_id": "10dj",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "H8H",
+    "chain": "B",
+    "resnum": 601,
+    "n_atoms": 70,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -10.088485714285714,
+    -38.57112857142857,
+    -37.565085714285715
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/10dj.pdb"
+}

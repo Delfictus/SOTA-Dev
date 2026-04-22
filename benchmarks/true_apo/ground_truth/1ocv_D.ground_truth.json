@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "1ocv",
+  "apo_chain": "D",
+  "holo_pdb": "3myt",
+  "holo_chain": "C",
+  "ligand_code": "EQU",
+  "ligand_heavy_atoms": 20,
+  "ligand_centroid": [
+    27.197700000000005,
+    35.57064999999999,
+    -37.91235
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 88,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 89,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 91,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 2.0,
+  "holo_resolution": 1.96,
+  "uniprot_id": "P00947",
+  "cluster_id_30": "1766.0"
+}

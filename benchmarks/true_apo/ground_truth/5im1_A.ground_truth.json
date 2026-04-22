@@ -1,0 +1,78 @@
+{
+  "apo_pdb": "5im1",
+  "apo_chain": "A",
+  "holo_pdb": "5ily",
+  "holo_chain": "A",
+  "ligand_code": "BTB",
+  "ligand_heavy_atoms": 14,
+  "ligand_centroid": [
+    23.249714285714283,
+    78.36471428571429,
+    14.496714285714287
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 264,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 273,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 294,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 297,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 298,
+      "resname": "SER"
+    },
+    {
+      "resnum": 301,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 402,
+      "resname": "THR"
+    },
+    {
+      "resnum": 403,
+      "resname": "THR"
+    },
+    {
+      "resnum": 404,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 440,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 444,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 520,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 525,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 527,
+      "resname": "TYR"
+    }
+  ],
+  "n_binding_residues": 14,
+  "pocket_rmsd": 0.34,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.88,
+  "holo_resolution": 2.45,
+  "uniprot_id": "Q40577",
+  "cluster_id_30": "569.0"
+}

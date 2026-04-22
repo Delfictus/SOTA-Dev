@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "3lxr",
+  "apo_chain": "F",
+  "holo_pdb": "3lyq",
+  "holo_chain": "B",
+  "ligand_code": "FLC",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    47.900000000000006,
+    -23.870615384615387,
+    1.3824999999999998
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 35,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 37,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 141,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 142,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.68,
+  "holo_resolution": 2.3,
+  "uniprot_id": "Q9AJW7",
+  "cluster_id_30": "31938.0"
+}

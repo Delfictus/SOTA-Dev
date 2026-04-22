@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "7ng2",
+  "apo_chain": "A",
+  "holo_pdb": "7njc",
+  "holo_chain": "A",
+  "ligand_code": "TOE",
+  "ligand_heavy_atoms": 11,
+  "ligand_centroid": [
+    -2.4847272727272727,
+    24.898636363636363,
+    28.733454545454546
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 446,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 487,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 489,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 503,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 535,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 573,
+      "resname": "SER"
+    },
+    {
+      "resnum": 576,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 577,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 0.2,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.23,
+  "holo_resolution": 1.38,
+  "uniprot_id": "S8F6K2",
+  "cluster_id_30": "40708.0"
+}

@@ -1,0 +1,463 @@
+{
+  "config": {
+    "max_site_dist": 12.0,
+    "min_active_steps": 50,
+    "min_lag_corr": 0.2,
+    "min_local_cov": 0.05,
+    "min_weight": -0.25,
+    "max_pair_dist": 11.0,
+    "min_cosine": -0.2,
+    "max_lag_diff": 30.0,
+    "max_corr_diff": 0.35,
+    "min_edge_score": 0.15,
+    "min_cluster_size": 3
+  },
+  "n_clusters_total": 592,
+  "n_clusters_with_gt": 592,
+  "n_targets_with_gt": 42,
+  "cluster_score_vs_dcc_spearman": -0.07148711648166896,
+  "cluster_score_vs_dcc_pearson": -0.057708500480796274,
+  "top1_hit_dcc_le_5": 0.0,
+  "top3_hit_dcc_le_5": 0.047619047619047616,
+  "top5_hit_dcc_le_5": 0.047619047619047616,
+  "metric_correlations": [
+    {
+      "metric": "mean_cosine",
+      "spearman_vs_dcc": -0.17020392460819297,
+      "pearson_vs_dcc": -0.14614393248340007
+    },
+    {
+      "metric": "site_volume",
+      "spearman_vs_dcc": 0.16786739599016368,
+      "pearson_vs_dcc": 0.13468944924096618
+    },
+    {
+      "metric": "frac_negative_cos",
+      "spearman_vs_dcc": 0.14622800376053177,
+      "pearson_vs_dcc": 0.14920951964258392
+    },
+    {
+      "metric": "mean_lag_diff",
+      "spearman_vs_dcc": -0.11969223085815398,
+      "pearson_vs_dcc": -0.09792260106613274
+    },
+    {
+      "metric": "lag_std",
+      "spearman_vs_dcc": -0.10932228367733392,
+      "pearson_vs_dcc": -0.0720958707749221
+    },
+    {
+      "metric": "edge_density",
+      "spearman_vs_dcc": -0.09209775483485044,
+      "pearson_vs_dcc": -0.05016097199684469
+    },
+    {
+      "metric": "site_uv_enrichment_score",
+      "spearman_vs_dcc": 0.08616101209809947,
+      "pearson_vs_dcc": 0.11016062491541245
+    },
+    {
+      "metric": "mean_lag_corr",
+      "spearman_vs_dcc": -0.07736131493673404,
+      "pearson_vs_dcc": -0.07493517580765313
+    },
+    {
+      "metric": "n_residues",
+      "spearman_vs_dcc": 0.07371355414475297,
+      "pearson_vs_dcc": 0.11048403019512003
+    },
+    {
+      "metric": "cluster_score",
+      "spearman_vs_dcc": -0.07148711648166896,
+      "pearson_vs_dcc": -0.057708500480796274
+    },
+    {
+      "metric": "mean_corr_diff",
+      "spearman_vs_dcc": 0.06946042727860438,
+      "pearson_vs_dcc": 0.034323372200925836
+    },
+    {
+      "metric": "mean_motion_efficiency",
+      "spearman_vs_dcc": -0.06885880035003009,
+      "pearson_vs_dcc": -0.0014265835771936177
+    },
+    {
+      "metric": "mean_vector_norm",
+      "spearman_vs_dcc": -0.06801942289295984,
+      "pearson_vs_dcc": -0.05933963411286538
+    },
+    {
+      "metric": "max_diameter",
+      "spearman_vs_dcc": 0.06664380963752659,
+      "pearson_vs_dcc": 0.03205007924719763
+    },
+    {
+      "metric": "mean_local_cov",
+      "spearman_vs_dcc": 0.06491223075351578,
+      "pearson_vs_dcc": 0.07001771389010567
+    },
+    {
+      "metric": "separation_ratio",
+      "spearman_vs_dcc": -0.06424662224548865,
+      "pearson_vs_dcc": -0.044671674701589704
+    },
+    {
+      "metric": "site_druggability",
+      "spearman_vs_dcc": -0.06306366693070765,
+      "pearson_vs_dcc": -0.0251002642564222
+    },
+    {
+      "metric": "mean_burst_motion",
+      "spearman_vs_dcc": -0.04935424464389934,
+      "pearson_vs_dcc": -0.036896128727167334
+    },
+    {
+      "metric": "mean_radius",
+      "spearman_vs_dcc": 0.04405588989798603,
+      "pearson_vs_dcc": 0.002339278939334421
+    },
+    {
+      "metric": "mean_degree",
+      "spearman_vs_dcc": 0.04270093016320442,
+      "pearson_vs_dcc": 0.07352781965414901
+    }
+  ],
+  "per_target_best": [
+    {
+      "target": "9ig2_chainA",
+      "best_cluster_score": 0.7148721057898475,
+      "best_cluster_score_dcc": 8.442537906195653,
+      "oracle_best_dcc": 8.442537906195653,
+      "best_cluster_site_id": 4004,
+      "oracle_site_id": 4004
+    },
+    {
+      "target": "9ig2_chainB",
+      "best_cluster_score": 0.7690361734517879,
+      "best_cluster_score_dcc": 14.751796433572059,
+      "oracle_best_dcc": 8.467444011336958,
+      "best_cluster_site_id": 4534,
+      "oracle_site_id": 3539
+    },
+    {
+      "target": "9nmx_chainA",
+      "best_cluster_score": 0.77858740044323,
+      "best_cluster_score_dcc": 11.71039820564008,
+      "oracle_best_dcc": 10.32795627846082,
+      "best_cluster_site_id": 10,
+      "oracle_site_id": 3522
+    },
+    {
+      "target": "9nmx_chainD",
+      "best_cluster_score": 0.6181989636195048,
+      "best_cluster_score_dcc": 39.54945342889776,
+      "oracle_best_dcc": 25.518816647296816,
+      "best_cluster_site_id": 4004,
+      "oracle_site_id": 3
+    },
+    {
+      "target": "9nmy_chainD",
+      "best_cluster_score": 0.7416670904916859,
+      "best_cluster_score_dcc": 33.19577711409101,
+      "oracle_best_dcc": 22.502853577207354,
+      "best_cluster_site_id": 3,
+      "oracle_site_id": 4001
+    },
+    {
+      "target": "9nr0_chainA",
+      "best_cluster_score": 0.8435043347220712,
+      "best_cluster_score_dcc": 13.318046720556008,
+      "oracle_best_dcc": 7.281942063268708,
+      "best_cluster_site_id": 4,
+      "oracle_site_id": 3517
+    },
+    {
+      "target": "9nr0_chainB",
+      "best_cluster_score": 0.7870459861857413,
+      "best_cluster_score_dcc": 10.176164845797631,
+      "oracle_best_dcc": 8.546057371840032,
+      "best_cluster_site_id": 4008,
+      "oracle_site_id": 4007
+    },
+    {
+      "target": "9nxe_chainA",
+      "best_cluster_score": 0.7392481612732442,
+      "best_cluster_score_dcc": 24.2598979190068,
+      "oracle_best_dcc": 4.377652891357088,
+      "best_cluster_site_id": 3532,
+      "oracle_site_id": 3531
+    },
+    {
+      "target": "9nxn_chainB",
+      "best_cluster_score": 0.7013867366535225,
+      "best_cluster_score_dcc": 17.791676135476163,
+      "oracle_best_dcc": 10.634862454254758,
+      "best_cluster_site_id": 1509,
+      "oracle_site_id": 4005
+    },
+    {
+      "target": "9o9i_chainA",
+      "best_cluster_score": 0.7372122787805369,
+      "best_cluster_score_dcc": 11.678750552713863,
+      "oracle_best_dcc": 7.645611868492063,
+      "best_cluster_site_id": 1,
+      "oracle_site_id": 4005
+    },
+    {
+      "target": "9ohy_chainB",
+      "best_cluster_score": 0.7570897438007684,
+      "best_cluster_score_dcc": 15.070201661856798,
+      "oracle_best_dcc": 15.070201661856798,
+      "best_cluster_site_id": 4002,
+      "oracle_site_id": 4002
+    },
+    {
+      "target": "9pi9_chainE",
+      "best_cluster_score": 0.5698336471303018,
+      "best_cluster_score_dcc": 38.76658400467033,
+      "oracle_best_dcc": 38.710485059140524,
+      "best_cluster_site_id": 3516,
+      "oracle_site_id": 4511
+    },
+    {
+      "target": "9qng_chainA",
+      "best_cluster_score": 0.70081653622511,
+      "best_cluster_score_dcc": 43.328530605957205,
+      "oracle_best_dcc": 20.84718126241734,
+      "best_cluster_site_id": 3518,
+      "oracle_site_id": 505
+    },
+    {
+      "target": "9qnh_chainA",
+      "best_cluster_score": 0.705954786332435,
+      "best_cluster_score_dcc": 42.75933142818841,
+      "oracle_best_dcc": 9.363726360987515,
+      "best_cluster_site_id": 4002,
+      "oracle_site_id": 4006
+    },
+    {
+      "target": "9qni_chainA",
+      "best_cluster_score": 0.7374463605842123,
+      "best_cluster_score_dcc": 29.589384900055137,
+      "oracle_best_dcc": 11.081645633108831,
+      "best_cluster_site_id": 7,
+      "oracle_site_id": 3515
+    },
+    {
+      "target": "9qnj_chainA",
+      "best_cluster_score": 0.6386169250987496,
+      "best_cluster_score_dcc": 24.438253194399618,
+      "oracle_best_dcc": 10.469977496956922,
+      "best_cluster_site_id": 506,
+      "oracle_site_id": 6
+    },
+    {
+      "target": "9qnk_chainA",
+      "best_cluster_score": 0.7224288665419313,
+      "best_cluster_score_dcc": 13.440618803262502,
+      "oracle_best_dcc": 12.800743679530665,
+      "best_cluster_site_id": 1512,
+      "oracle_site_id": 512
+    },
+    {
+      "target": "9qnl_chainA",
+      "best_cluster_score": 0.6603209129373442,
+      "best_cluster_score_dcc": 36.46767437977029,
+      "oracle_best_dcc": 11.96678414345664,
+      "best_cluster_site_id": 1512,
+      "oracle_site_id": 3
+    },
+    {
+      "target": "9qwj_chainD",
+      "best_cluster_score": 0.6713788731040577,
+      "best_cluster_score_dcc": 8.289868238479887,
+      "oracle_best_dcc": 8.289868238479887,
+      "best_cluster_site_id": 8,
+      "oracle_site_id": 8
+    },
+    {
+      "target": "9qwj_chainT",
+      "best_cluster_score": 0.7988016010302459,
+      "best_cluster_score_dcc": 25.57676459425184,
+      "oracle_best_dcc": 10.038018041888101,
+      "best_cluster_site_id": 7,
+      "oracle_site_id": 507
+    },
+    {
+      "target": "9sia_chainB",
+      "best_cluster_score": 0.5984496592022096,
+      "best_cluster_score_dcc": 18.442909470439734,
+      "oracle_best_dcc": 10.614068743559296,
+      "best_cluster_site_id": 4004,
+      "oracle_site_id": 1
+    },
+    {
+      "target": "9sic_chainB",
+      "best_cluster_score": 0.7962059964630069,
+      "best_cluster_score_dcc": 10.206830728463189,
+      "oracle_best_dcc": 9.219415767781824,
+      "best_cluster_site_id": 4004,
+      "oracle_site_id": 4
+    },
+    {
+      "target": "9sic_chainC",
+      "best_cluster_score": 0.734575020197969,
+      "best_cluster_score_dcc": 13.48052327501424,
+      "oracle_best_dcc": 13.48052327501424,
+      "best_cluster_site_id": 4008,
+      "oracle_site_id": 4008
+    },
+    {
+      "target": "9sid_chainA",
+      "best_cluster_score": 0.9052672527210491,
+      "best_cluster_score_dcc": 8.119605549090842,
+      "oracle_best_dcc": 8.119605549090842,
+      "best_cluster_site_id": 2,
+      "oracle_site_id": 2
+    },
+    {
+      "target": "9sid_chainB",
+      "best_cluster_score": 0.7827933988691617,
+      "best_cluster_score_dcc": 16.869004590298985,
+      "oracle_best_dcc": 15.322654215059666,
+      "best_cluster_site_id": 3007,
+      "oracle_site_id": 3007
+    },
+    {
+      "target": "9t29_chainA",
+      "best_cluster_score": 0.6200973058485777,
+      "best_cluster_score_dcc": 33.780185994836806,
+      "oracle_best_dcc": 14.005447212444762,
+      "best_cluster_site_id": 3006,
+      "oracle_site_id": 4002
+    },
+    {
+      "target": "9t2f_chainA",
+      "best_cluster_score": 0.6384625867106829,
+      "best_cluster_score_dcc": 43.38753049346551,
+      "oracle_best_dcc": 5.618780270513739,
+      "best_cluster_site_id": 4514,
+      "oracle_site_id": 3511
+    },
+    {
+      "target": "9t2g_chainA",
+      "best_cluster_score": 0.8042865086071455,
+      "best_cluster_score_dcc": 20.641780211758142,
+      "oracle_best_dcc": 17.33514127378668,
+      "best_cluster_site_id": 1523,
+      "oracle_site_id": 517
+    },
+    {
+      "target": "9t7f_chainA",
+      "best_cluster_score": 0.5985972250518738,
+      "best_cluster_score_dcc": 20.42086221559268,
+      "oracle_best_dcc": 9.728281262363701,
+      "best_cluster_site_id": 1006,
+      "oracle_site_id": 2
+    },
+    {
+      "target": "9t7f_chainB",
+      "best_cluster_score": 0.7279891667172926,
+      "best_cluster_score_dcc": 19.050705622779407,
+      "oracle_best_dcc": 8.504853805531802,
+      "best_cluster_site_id": 3011,
+      "oracle_site_id": 1
+    },
+    {
+      "target": "9tf5_chainA",
+      "best_cluster_score": 0.7347104511427769,
+      "best_cluster_score_dcc": 24.85355307466748,
+      "oracle_best_dcc": 13.846908715620899,
+      "best_cluster_site_id": 1011,
+      "oracle_site_id": 4009
+    },
+    {
+      "target": "9tf5_chainB",
+      "best_cluster_score": 0.6611296835102636,
+      "best_cluster_score_dcc": 21.232864750946188,
+      "oracle_best_dcc": 6.8127444052347235,
+      "best_cluster_site_id": 4003,
+      "oracle_site_id": 4
+    },
+    {
+      "target": "9tf5_chainC",
+      "best_cluster_score": 0.7008425330218544,
+      "best_cluster_score_dcc": 14.660685527114023,
+      "oracle_best_dcc": 8.57459747667037,
+      "best_cluster_site_id": 4001,
+      "oracle_site_id": 4000
+    },
+    {
+      "target": "9u5b_chainA",
+      "best_cluster_score": 0.8063857710729307,
+      "best_cluster_score_dcc": 23.019773858429527,
+      "oracle_best_dcc": 8.930333883818626,
+      "best_cluster_site_id": 4000,
+      "oracle_site_id": 1511
+    },
+    {
+      "target": "9upz_chainA",
+      "best_cluster_score": 0.7222631365727674,
+      "best_cluster_score_dcc": 5.270437663917336,
+      "oracle_best_dcc": 5.270437663917336,
+      "best_cluster_site_id": 504,
+      "oracle_site_id": 504
+    },
+    {
+      "target": "9xj0_chainA",
+      "best_cluster_score": 0.5995054954398212,
+      "best_cluster_score_dcc": 13.531109969949075,
+      "oracle_best_dcc": 9.086481954098177,
+      "best_cluster_site_id": 4004,
+      "oracle_site_id": 1
+    },
+    {
+      "target": "9xj0_chainB",
+      "best_cluster_score": 0.75338862290456,
+      "best_cluster_score_dcc": 14.550701986888228,
+      "oracle_best_dcc": 4.90407569106112,
+      "best_cluster_site_id": 1,
+      "oracle_site_id": 1507
+    },
+    {
+      "target": "9xji_chainA",
+      "best_cluster_score": 0.6517583629337124,
+      "best_cluster_score_dcc": 16.3949185923306,
+      "oracle_best_dcc": 4.883317729450163,
+      "best_cluster_site_id": 3,
+      "oracle_site_id": 8
+    },
+    {
+      "target": "9xji_chainB",
+      "best_cluster_score": 0.6539678929994702,
+      "best_cluster_score_dcc": 15.431776624205884,
+      "oracle_best_dcc": 8.192439338432232,
+      "best_cluster_site_id": 4,
+      "oracle_site_id": 6
+    },
+    {
+      "target": "9yc2_chainA",
+      "best_cluster_score": 0.7852201792312962,
+      "best_cluster_score_dcc": 20.34298010758841,
+      "oracle_best_dcc": 5.214548664511267,
+      "best_cluster_site_id": 504,
+      "oracle_site_id": 0
+    },
+    {
+      "target": "9yg3_chainB",
+      "best_cluster_score": 0.8056856478030439,
+      "best_cluster_score_dcc": 34.701522140948455,
+      "oracle_best_dcc": 10.849654146805033,
+      "best_cluster_site_id": 511,
+      "oracle_site_id": 1512
+    },
+    {
+      "target": "9znb_chainA",
+      "best_cluster_score": 0.821713698832669,
+      "best_cluster_score_dcc": 38.98975304982055,
+      "oracle_best_dcc": 5.632630956412254,
+      "best_cluster_site_id": 4,
+      "oracle_site_id": 1
+    }
+  ]
+}

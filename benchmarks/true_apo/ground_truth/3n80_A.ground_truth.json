@@ -1,0 +1,130 @@
+{
+  "apo_pdb": "3n80",
+  "apo_chain": "A",
+  "holo_pdb": "8dr9",
+  "holo_chain": "B",
+  "ligand_code": "1PE",
+  "ligand_heavy_atoms": 11,
+  "ligand_centroid": [
+    19.1241875,
+    57.650843749999986,
+    4.730859375
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 71,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 120,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 124,
+      "resname": "MET"
+    },
+    {
+      "resnum": 170,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 173,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 174,
+      "resname": "MET"
+    },
+    {
+      "resnum": 177,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 292,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 296,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 301,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 303,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 331,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 332,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 333,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 374,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 375,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 380,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 391,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 392,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 397,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 422,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 423,
+      "resname": "SER"
+    },
+    {
+      "resnum": 424,
+      "resname": "THR"
+    },
+    {
+      "resnum": 457,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 459,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 465,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 494,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 27,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.5,
+  "holo_resolution": 1.5,
+  "uniprot_id": "P05091",
+  "cluster_id_30": "67.0"
+}

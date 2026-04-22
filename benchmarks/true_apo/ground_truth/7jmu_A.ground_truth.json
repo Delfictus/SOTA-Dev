@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "7jmu",
+  "apo_chain": "A",
+  "holo_pdb": "6syc",
+  "holo_chain": "A",
+  "ligand_code": "LYE",
+  "ligand_heavy_atoms": 37,
+  "ligand_centroid": [
+    12.01404054054054,
+    3.3311216216216213,
+    25.113702702702703
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 45,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 46,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 47,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.2,
+  "holo_resolution": 1.38,
+  "uniprot_id": "P00698",
+  "cluster_id_30": "52.0"
+}

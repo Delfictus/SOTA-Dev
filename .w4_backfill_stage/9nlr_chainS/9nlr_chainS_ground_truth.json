@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9nlr_chainS/9nlr_chainS.topology.json",
+  "pdb_id": "9nlr",
+  "target_chain": "S",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "ADP",
+    "chain": "S",
+    "resnum": 401,
+    "n_atoms": 27,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    56.58548148148148,
+    72.22092592592593,
+    66.51081481481481
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9nlr.pdb"
+}

@@ -1,0 +1,74 @@
+{
+  "apo_pdb": "4y6i",
+  "apo_chain": "F",
+  "holo_pdb": "1naq",
+  "holo_chain": "A",
+  "ligand_code": "MBO",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    28.981450000000006,
+    2.9166,
+    26.707
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 16,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 17,
+      "resname": "THR"
+    },
+    {
+      "resnum": 18,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 19,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 23,
+      "resname": "THR"
+    },
+    {
+      "resnum": 27,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 39,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 67,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 80,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 83,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 84,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 85,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 89,
+      "resname": "PRO"
+    }
+  ],
+  "n_binding_residues": 13,
+  "pocket_rmsd": 0.651,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.7,
+  "holo_resolution": 1.7,
+  "uniprot_id": "P69488",
+  "cluster_id_30": "1577.0"
+}

@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "6a2t",
+  "apo_chain": "A",
+  "holo_pdb": "6a2s",
+  "holo_chain": "C",
+  "ligand_code": "P6G",
+  "ligand_heavy_atoms": 19,
+  "ligand_centroid": [
+    6.828526315789473,
+    7.966473684210526,
+    66.5115789473684
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 235,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.5,
+  "uniprot_id": "P9WHR7",
+  "cluster_id_30": "17956.0"
+}

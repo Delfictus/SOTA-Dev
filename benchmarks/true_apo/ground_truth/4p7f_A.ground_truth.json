@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "4p7f",
+  "apo_chain": "A",
+  "holo_pdb": "4p7k",
+  "holo_chain": "A",
+  "ligand_code": "TLA",
+  "ligand_heavy_atoms": 14,
+  "ligand_centroid": [
+    -17.299714285714284,
+    -27.748142857142856,
+    52.73714285714287
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 263,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.37,
+  "holo_resolution": 1.22,
+  "uniprot_id": "O88587",
+  "cluster_id_30": "1338.0"
+}

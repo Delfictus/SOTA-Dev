@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "5nmn",
+  "apo_chain": "A",
+  "holo_pdb": "5nnt",
+  "holo_chain": "A",
+  "ligand_code": "DPV",
+  "ligand_heavy_atoms": 61,
+  "ligand_centroid": [
+    0.5527540983606558,
+    20.18886885245902,
+    5.216819672131146
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 2,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 4,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 5,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 6,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 7,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 1000.0,
+  "category": "CRYPTIC",
+  "apo_resolution": 0.95,
+  "holo_resolution": 2.21,
+  "uniprot_id": "P49913",
+  "cluster_id_30": "21286.0"
+}

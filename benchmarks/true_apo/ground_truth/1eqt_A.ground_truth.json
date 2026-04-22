@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "1eqt",
+  "apo_chain": "A",
+  "holo_pdb": "1b3a",
+  "holo_chain": "A",
+  "ligand_code": "AOP",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    20.9688,
+    23.6603,
+    40.39
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 2,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 3,
+      "resname": "TYR"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.6,
+  "uniprot_id": "P13501",
+  "cluster_id_30": "1603.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9x7c_chainC/9x7c_chainC.topology.json",
+  "pdb_id": "9x7c",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "8NG",
+    "chain": "C",
+    "resnum": 500,
+    "n_atoms": 51,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    2.2253725490196077,
+    -3.317313725490196,
+    20.469470588235293
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9x7c.pdb"
+}

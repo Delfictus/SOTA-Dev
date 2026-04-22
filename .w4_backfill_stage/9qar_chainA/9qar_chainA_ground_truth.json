@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qar_chainA/9qar_chainA.topology.json",
+  "pdb_id": "9qar",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "X92",
+    "chain": "A",
+    "resnum": 702,
+    "n_atoms": 28,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -0.22214285714285714,
+    -14.21042857142857,
+    -22.849321428571425
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qar.pdb"
+}

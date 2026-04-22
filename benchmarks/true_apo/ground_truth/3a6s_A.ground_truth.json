@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "3a6s",
+  "apo_chain": "A",
+  "holo_pdb": "3a6v",
+  "holo_chain": "A",
+  "ligand_code": "TLA",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    -9.794549999999997,
+    -9.8453,
+    20.17185
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 2,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 4,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 39,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 77,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 78,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 2.0,
+  "uniprot_id": "P08337",
+  "cluster_id_30": "2685.0"
+}

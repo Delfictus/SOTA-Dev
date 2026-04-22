@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "1pwx",
+  "apo_chain": "A",
+  "holo_pdb": "1zo8",
+  "holo_chain": "P",
+  "ligand_code": "SNO",
+  "ligand_heavy_atoms": 12,
+  "ligand_centroid": [
+    66.22591666666668,
+    14.141583333333335,
+    92.48891666666667
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 249,
+      "resname": "TRP"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 1.9,
+  "uniprot_id": "Q93D82",
+  "cluster_id_30": "9.0"
+}

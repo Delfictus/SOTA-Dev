@@ -1,0 +1,106 @@
+{
+  "apo_pdb": "4zo6",
+  "apo_chain": "B",
+  "holo_pdb": "4zo6",
+  "holo_chain": "A",
+  "ligand_code": "BGC",
+  "ligand_heavy_atoms": 12,
+  "ligand_centroid": [
+    -18.9724375,
+    -45.992500000000014,
+    -23.110416666666666
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 61,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 91,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 135,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 149,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 152,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 191,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 192,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 235,
+      "resname": "MET"
+    },
+    {
+      "resnum": 238,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 270,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 271,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 302,
+      "resname": "MET"
+    },
+    {
+      "resnum": 408,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 409,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 410,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 411,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 468,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 472,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 473,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 572,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 583,
+      "resname": "TYR"
+    }
+  ],
+  "n_binding_residues": 21,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 2.0,
+  "holo_resolution": 2.0,
+  "uniprot_id": "Q92AS9",
+  "cluster_id_30": "592.0"
+}

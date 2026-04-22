@@ -1,0 +1,86 @@
+{
+  "apo_pdb": "2ig7",
+  "apo_chain": "A",
+  "holo_pdb": "3feg",
+  "holo_chain": "A",
+  "ligand_code": "ADP",
+  "ligand_heavy_atoms": 27,
+  "ligand_centroid": [
+    31.545888888888893,
+    51.9167037037037,
+    8.311111111111112
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 82,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 102,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 104,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 133,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 145,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 146,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 147,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 148,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 150,
+      "resname": "SER"
+    },
+    {
+      "resnum": 152,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 246,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 247,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 249,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 263,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 264,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 266,
+      "resname": "GLU"
+    }
+  ],
+  "n_binding_residues": 16,
+  "pocket_rmsd": 0.806,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.8,
+  "holo_resolution": 1.3,
+  "uniprot_id": "Q9Y259",
+  "cluster_id_30": "1744.0"
+}

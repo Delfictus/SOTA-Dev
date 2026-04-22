@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9rwd_chainC/9rwd_chainC.topology.json",
+  "pdb_id": "9rwd",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "LLP",
+    "chain": "C",
+    "resnum": 280,
+    "n_atoms": 32,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    0.2773125,
+    73.21984375,
+    60.80315625
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9rwd.pdb"
+}

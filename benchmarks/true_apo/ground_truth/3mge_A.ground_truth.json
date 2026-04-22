@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "3mge",
+  "apo_chain": "A",
+  "holo_pdb": "6erm",
+  "holo_chain": "A",
+  "ligand_code": "AZT",
+  "ligand_heavy_atoms": 31,
+  "ligand_centroid": [
+    45.47483870967742,
+    78.69606451612901,
+    -2.8588387096774195
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 18,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.0,
+  "uniprot_id": "P12497",
+  "cluster_id_30": "1029.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9ymg_chainA/9ymg_chainA.topology.json",
+  "pdb_id": "9ymg",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "GTP",
+    "chain": "A",
+    "resnum": 501,
+    "n_atoms": 32,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    24.0618125,
+    8.57303125,
+    12.05496875
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9ymg.pdb"
+}

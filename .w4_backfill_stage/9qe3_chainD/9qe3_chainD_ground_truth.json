@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qe3_chainD/9qe3_chainD.topology.json",
+  "pdb_id": "9qe3",
+  "target_chain": "D",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CSO",
+    "chain": "D",
+    "resnum": 316,
+    "n_atoms": 11,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -38.10727272727273,
+    -16.418272727272726,
+    -17.41909090909091
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qe3.pdb"
+}

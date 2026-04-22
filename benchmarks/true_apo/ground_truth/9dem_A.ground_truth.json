@@ -1,0 +1,66 @@
+{
+  "apo_pdb": "9dem",
+  "apo_chain": "A",
+  "holo_pdb": "9iju",
+  "holo_chain": "G",
+  "ligand_code": "SRE",
+  "ligand_heavy_atoms": 20,
+  "ligand_centroid": [
+    9.5753,
+    -28.72185,
+    20.203400000000002
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 224,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 256,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 283,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 285,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 294,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 295,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 298,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 299,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 302,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 303,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 306,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 11,
+  "pocket_rmsd": 0.978,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.77,
+  "holo_resolution": 2.46,
+  "uniprot_id": "Q93009",
+  "cluster_id_30": "3633.0"
+}

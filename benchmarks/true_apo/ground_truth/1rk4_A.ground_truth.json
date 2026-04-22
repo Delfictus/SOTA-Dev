@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "1rk4",
+  "apo_chain": "A",
+  "holo_pdb": "1k0n",
+  "holo_chain": "A",
+  "ligand_code": "GSH",
+  "ligand_heavy_atoms": 20,
+  "ligand_centroid": [
+    -1.3433499999999998,
+    -6.385049999999999,
+    32.92665
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 13,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 24,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 26,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 27,
+      "resname": "SER"
+    },
+    {
+      "resnum": 64,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 65,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 76,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 77,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 3.361,
+  "category": "STANDARD",
+  "apo_resolution": 1.79,
+  "holo_resolution": 1.8,
+  "uniprot_id": "O00299",
+  "cluster_id_30": "2742.0"
+}

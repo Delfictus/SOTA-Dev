@@ -1,0 +1,769 @@
+{
+  "manifest_schema_version": "2.0",
+  "snapshot_timestamp_utc": "2026-04-20T19:29:23Z",
+  "snapshot_id": "2026-04-20T19:29:23Z_0822a2e4",
+  "engine_commit": "legacy_pct70_campaign_v1",
+  "engine_build_ptx_sha256": "UNKNOWN",
+  "worker_commit": "8eb44e37-8c7b-49d6-8168-0cf260ae1b59",
+  "d1_migration_ids": [
+    "schema.sql",
+    "schema_phase3.sql",
+    "schema_phase4_site_tags.sql"
+  ],
+  "d1_schema_fingerprint_sha256": "UNKNOWN",
+  "schema_version": "v4.1",
+  "feature_contract_path": "scripts/training/v4_feature_contract.yaml",
+  "feature_contract_checksum_sha256": "3612a5daebe43abefefec5ee80fe8155c4c0760ed3e53a2dba8ec9e0d0db3dee",
+  "event_contract_path": "docs/contracts/event_schema_v1.yaml",
+  "event_contract_checksum_sha256": "c5e903823064efe278c1fb5ee2ea963e2a5a30f403d8c5181013be0e4f87bb78",
+  "FEATURE_COLS_ordering_sha256": "0822a2e4aeae88538c05bbc7257e1f54e3cb7c900a5a180dd1cd95e51636b6aa",
+  "FEATURE_COLS_list": [
+    "spike_count",
+    "n_streams",
+    "interaction",
+    "unsat_frac",
+    "persistence",
+    "log_spike_count",
+    "log_interaction",
+    "spread",
+    "burial_score",
+    "spike_density",
+    "druggability",
+    "aromatic_score",
+    "n_lining_residues",
+    "phase_transition_ratio",
+    "warm_hold_spike_fraction"
+  ],
+  "cluster_split_sha256": "249b8ec9c4f1dfe3c8e1c948bee81679c7cbafda2a37bec020c2e9fe8d887369",
+  "cluster_split_params": {
+    "min_seq_id": 0.3,
+    "coverage": 0.8,
+    "mmseqs_version": "15-6f452+ds-2",
+    "mmseqs_git_commit": null,
+    "n_targets": 372,
+    "n_clusters": 106
+  },
+  "fold_definition_sha256": "08876d05cee24403eb8b6926daeb3a15d31fbdb92fba44f92931f23b17d8d8fe",
+  "fold_definition_object": {
+    "fold_type": "cluster_aware_LOTO",
+    "held_out_cluster_representative_for_each_fold": [
+      {
+        "held_out_target": "10dc_chainA",
+        "cluster": "9o0p_chainB",
+        "excluded_training_targets": [
+          "9o0q_chainC",
+          "9u8x_chainA",
+          "9vnh_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9ifv_chainA",
+        "cluster": "9ifv_chainA",
+        "excluded_training_targets": [
+          "9tcb_chainB"
+        ]
+      },
+      {
+        "held_out_target": "9m1x_chainA",
+        "cluster": "9m22_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9m7l_chainA",
+        "cluster": "9m7m_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9mbg_chainB",
+        "cluster": "9mbg_chainA",
+        "excluded_training_targets": [
+          "9mbk_chainA",
+          "9mbn_chainB"
+        ]
+      },
+      {
+        "held_out_target": "9mbk_chainA",
+        "cluster": "9mbg_chainA",
+        "excluded_training_targets": [
+          "9mbg_chainB",
+          "9mbn_chainB"
+        ]
+      },
+      {
+        "held_out_target": "9mbn_chainB",
+        "cluster": "9mbg_chainA",
+        "excluded_training_targets": [
+          "9mbg_chainB",
+          "9mbk_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9nem_chainE",
+        "cluster": "9nem_chainB",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9nlr_chainF",
+        "cluster": "9nm5_chainD",
+        "excluded_training_targets": [
+          "9nlr_chainM",
+          "9nlr_chainT",
+          "9nm5_chainG"
+        ]
+      },
+      {
+        "held_out_target": "9nlr_chainM",
+        "cluster": "9nm5_chainD",
+        "excluded_training_targets": [
+          "9nlr_chainF",
+          "9nlr_chainT",
+          "9nm5_chainG"
+        ]
+      },
+      {
+        "held_out_target": "9nlr_chainT",
+        "cluster": "9nm5_chainD",
+        "excluded_training_targets": [
+          "9nlr_chainF",
+          "9nlr_chainM",
+          "9nm5_chainG"
+        ]
+      },
+      {
+        "held_out_target": "9nm5_chainG",
+        "cluster": "9nm5_chainD",
+        "excluded_training_targets": [
+          "9nlr_chainF",
+          "9nlr_chainM",
+          "9nlr_chainT"
+        ]
+      },
+      {
+        "held_out_target": "9nr0_chainA",
+        "cluster": "9nr0_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9nxe_chainB",
+        "cluster": "9nxe_chainB",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9o08_chainC",
+        "cluster": "9o05_chainC",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9o0q_chainC",
+        "cluster": "9o0p_chainB",
+        "excluded_training_targets": [
+          "10dc_chainA",
+          "9u8x_chainA",
+          "9vnh_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9o8w_chainB",
+        "cluster": "9o8w_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9oaf_chainA",
+        "cluster": "9o8x_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9ogo_chainC",
+        "cluster": "9ogo_chainC",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9p1h_chainA",
+        "cluster": "9p1h_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9pfm_chainA",
+        "cluster": "9pfm_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9q1n_chainB",
+        "cluster": "9q1o_chainB",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9qan_chainA",
+        "cluster": "9qam_chainA",
+        "excluded_training_targets": [
+          "9qau_chainA",
+          "9ssb_chainC"
+        ]
+      },
+      {
+        "held_out_target": "9qau_chainA",
+        "cluster": "9qam_chainA",
+        "excluded_training_targets": [
+          "9qan_chainA",
+          "9ssb_chainC"
+        ]
+      },
+      {
+        "held_out_target": "9qe3_chainB",
+        "cluster": "9qga_chainB",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9qga_chainA",
+        "cluster": "9qe3_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9qm9_chainB",
+        "cluster": "9qm9_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9qug_chainA",
+        "cluster": "9qug_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9qwj_chainB",
+        "cluster": "9qwj_chainN",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9qwk_chainQ",
+        "cluster": "9qwk_chainG",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9r3c_chainA",
+        "cluster": "9r3c_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9r8c_chainB",
+        "cluster": "9r8c_chainB",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9rfd_chainA",
+        "cluster": "9rfd_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9rwd_chainB",
+        "cluster": "9rwd_chainB",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9sa1_chainA",
+        "cluster": "9sa1_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9sd7_chainA",
+        "cluster": "9sd5_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9sia_chainB",
+        "cluster": "9tf5_chainC",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9sop_chainA",
+        "cluster": "9sop_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9ssb_chainC",
+        "cluster": "9qam_chainA",
+        "excluded_training_targets": [
+          "9qan_chainA",
+          "9qau_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9t2g_chainA",
+        "cluster": "9t2g_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9tcb_chainB",
+        "cluster": "9ifv_chainA",
+        "excluded_training_targets": [
+          "9ifv_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9u8g_chainC",
+        "cluster": "9u8g_chainC",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9u8x_chainA",
+        "cluster": "9o0p_chainB",
+        "excluded_training_targets": [
+          "10dc_chainA",
+          "9o0q_chainC",
+          "9vnh_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9uj2_chainA",
+        "cluster": "9qng_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9v84_chainB",
+        "cluster": "9mb3_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9v8h_chainA",
+        "cluster": "9v8h_chainA",
+        "excluded_training_targets": []
+      },
+      {
+        "held_out_target": "9vnh_chainA",
+        "cluster": "9o0p_chainB",
+        "excluded_training_targets": [
+          "10dc_chainA",
+          "9o0q_chainC",
+          "9u8x_chainA"
+        ]
+      },
+      {
+        "held_out_target": "9wri_chainB",
+        "cluster": "9wri_chainA",
+        "excluded_training_targets": []
+      }
+    ],
+    "n_folds": 48
+  },
+  "label_definition_sha256": "8ae4828d96e6f24866ba8167ccbf12fafb32e3a22d33188c18ce3cce7337e299",
+  "label_definition_object": {
+    "label_source_column": "min_dist_to_ligand",
+    "label_formula": "graded_score = 1.0 / (1.0 + min_dist_to_ligand)",
+    "graded_integer_buckets": 32,
+    "graded_integer_formula": "y_int = clip(round(graded_score * 31), 0, 31)",
+    "exclusion_rule": "row is training-eligible iff graded_score IS NOT NULL",
+    "dcc_metric_used_per_target": {
+      "10dc_chainA": "centroid",
+      "9ifv_chainA": "centroid",
+      "9m1x_chainA": "centroid",
+      "9m7l_chainA": "centroid",
+      "9mbg_chainB": "centroid",
+      "9mbk_chainA": "centroid",
+      "9mbn_chainB": "centroid",
+      "9nem_chainE": "centroid",
+      "9nlr_chainF": "centroid",
+      "9nlr_chainM": "centroid",
+      "9nlr_chainT": "centroid",
+      "9nm5_chainG": "centroid",
+      "9nr0_chainA": "centroid",
+      "9nxe_chainB": "centroid",
+      "9o08_chainC": "centroid",
+      "9o0q_chainC": "centroid",
+      "9o8w_chainB": "centroid",
+      "9oaf_chainA": "centroid",
+      "9ogo_chainC": "centroid",
+      "9p1h_chainA": "centroid",
+      "9pfm_chainA": "centroid",
+      "9q1n_chainB": "centroid",
+      "9qan_chainA": "centroid",
+      "9qau_chainA": "centroid",
+      "9qe3_chainB": "centroid",
+      "9qga_chainA": "centroid",
+      "9qm9_chainB": "centroid",
+      "9qug_chainA": "centroid",
+      "9qwj_chainB": "centroid",
+      "9qwk_chainQ": "centroid",
+      "9r3c_chainA": "centroid",
+      "9r8c_chainB": "centroid",
+      "9rfd_chainA": "centroid",
+      "9rwd_chainB": "centroid",
+      "9sa1_chainA": "centroid",
+      "9sd7_chainA": "centroid",
+      "9sia_chainB": "centroid",
+      "9sop_chainA": "centroid",
+      "9ssb_chainC": "centroid",
+      "9t2g_chainA": "centroid",
+      "9tcb_chainB": "centroid",
+      "9u8g_chainC": "centroid",
+      "9u8x_chainA": "centroid",
+      "9uj2_chainA": "centroid",
+      "9v84_chainB": "centroid",
+      "9v8h_chainA": "centroid",
+      "9vnh_chainA": "centroid",
+      "9wri_chainB": "centroid"
+    }
+  },
+  "snapshot_export_sha256": "a5d24a9fc51ba1a26d6f5f1a32b77d63f3ca063a796acfc4378f30152772f7e2",
+  "snapshot_export_git_commit": "1f2690a28b22aa393d3a9f44228bb5d26f4b9e9a",
+  "snapshot_export_command_line": "scripts/production/export_v4_snapshot.py --api-base https://prism-feature-pipeline.is-0b9.workers.dev --out-dir /home/diddy/Desktop/Prism4D-bio/.w2_widened_snapshot --worker-commit 8eb44e37-8c7b-49d6-8168-0cf260ae1b59 --targets 10dc_chainA,9ifv_chainA,9m1x_chainA,9m7l_chainA,9mbg_chainB,9mbk_chainA,9mbn_chainB,9nem_chainE,9nlr_chainF,9nlr_chainM,9nlr_chainT,9nm5_chainG,9nr0_chainA,9nxe_chainB,9o08_chainC,9o0q_chainC,9o8w_chainB,9oaf_chainA,9ogo_chainC,9p1h_chainA,9pfm_chainA,9q1n_chainB,9qan_chainA,9qau_chainA,9qe3_chainB,9qga_chainA,9qm9_chainB,9qug_chainA,9qwj_chainB,9qwk_chainQ,9r3c_chainA,9r8c_chainB,9rfd_chainA,9rwd_chainB,9sa1_chainA,9sd7_chainA,9sia_chainB,9sop_chainA,9ssb_chainC,9t2g_chainA,9tcb_chainB,9u8g_chainC,9u8x_chainA,9uj2_chainA,9v84_chainB,9v8h_chainA,9vnh_chainA,9wri_chainB",
+  "xgboost_version": "3.2.0",
+  "onnxmltools_version": "1.16.0",
+  "mmseqs2_version": "15-6f452+ds-2",
+  "python_version": "3.12.3",
+  "numpy_version": "1.26.4",
+  "pandas_version": "2.3.3",
+  "source_targets": [
+    "10dc_chainA",
+    "9ifv_chainA",
+    "9m1x_chainA",
+    "9m7l_chainA",
+    "9mbg_chainB",
+    "9mbk_chainA",
+    "9mbn_chainB",
+    "9nem_chainE",
+    "9nlr_chainF",
+    "9nlr_chainM",
+    "9nlr_chainT",
+    "9nm5_chainG",
+    "9nr0_chainA",
+    "9nxe_chainB",
+    "9o08_chainC",
+    "9o0q_chainC",
+    "9o8w_chainB",
+    "9oaf_chainA",
+    "9ogo_chainC",
+    "9p1h_chainA",
+    "9pfm_chainA",
+    "9q1n_chainB",
+    "9qan_chainA",
+    "9qau_chainA",
+    "9qe3_chainB",
+    "9qga_chainA",
+    "9qm9_chainB",
+    "9qug_chainA",
+    "9qwj_chainB",
+    "9qwk_chainQ",
+    "9r3c_chainA",
+    "9r8c_chainB",
+    "9rfd_chainA",
+    "9rwd_chainB",
+    "9sa1_chainA",
+    "9sd7_chainA",
+    "9sia_chainB",
+    "9sop_chainA",
+    "9ssb_chainC",
+    "9t2g_chainA",
+    "9tcb_chainB",
+    "9u8g_chainC",
+    "9u8x_chainA",
+    "9uj2_chainA",
+    "9v84_chainB",
+    "9v8h_chainA",
+    "9vnh_chainA",
+    "9wri_chainB"
+  ],
+  "source_artifact_hashes": {
+    "10dc_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "7161d5584cfe651e4b4257b7ae0e7b579eb27c989d9bcf2cc91645f145a4b0b0",
+      "ground_truth_json_sha256": "d0cdb296078abd5b293cf992ba41e16a3f890d480edfd1b860e64521d8e183e8",
+      "spike_events_manifest_sha256": null
+    },
+    "9ifv_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "c90b3352d67262c5b0bef4e637d90a205747371770daaf50a07fe85f581a9e62",
+      "ground_truth_json_sha256": "b28d23571d6b46344d478f10be614d36af19ee294891625fa8d47bc3e7b830d3",
+      "spike_events_manifest_sha256": null
+    },
+    "9m1x_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "474bc2714349e87f9432321b7043d29634dfe7c8c0c4018cf207cf4022c0f667",
+      "ground_truth_json_sha256": "2015bad9085b055e22f2e918fc5619d03caba28de90e130a8f099bb60d2a7b7a",
+      "spike_events_manifest_sha256": null
+    },
+    "9m7l_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "aca2e36e82d8873ef3c8cbe896309bdd85c4c9baa2969393b5c6396cc8861555",
+      "ground_truth_json_sha256": "5fe72b2d142550f38a19c711b992a402e079694768e8175788194b25db250008",
+      "spike_events_manifest_sha256": null
+    },
+    "9mbg_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "0733c8d95fc5b7802a53492ccf467a17aa6e107a12c839fb3e487e65b65a63e0",
+      "ground_truth_json_sha256": "4988c7192b96df93386a07e5787f60cb2acb85ab81616e0c4b4920f8e2d9c4aa",
+      "spike_events_manifest_sha256": null
+    },
+    "9mbk_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "74a8950522e79df8766d03a0818c2556916ad4c7f9e98e106539575471c9067d",
+      "ground_truth_json_sha256": "1fe21c84089b97a93f20d46a1292d30ac25ad13542a5c06c2bfea09f4fdedc57",
+      "spike_events_manifest_sha256": null
+    },
+    "9mbn_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "485d12bf7836ef261b19321740370f59db808b652a0af70fb52a0fd2cd554b41",
+      "ground_truth_json_sha256": "5d1e97e455b677413ed48336d01371e30b8804c2181c2e80944813755b4c8ba9",
+      "spike_events_manifest_sha256": null
+    },
+    "9nem_chainE": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "3f84d6a0aa761e2e8791f57d08d71855a4396cd34e1734030bce7a7fc6299829",
+      "ground_truth_json_sha256": "2688cfab7c5a993afcd1d4a92cbfe1dcba944e72f85a431bc22aca4c3dc68f14",
+      "spike_events_manifest_sha256": null
+    },
+    "9nlr_chainF": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "7bf74b4a52a97dd3a79cbe1ff4d766e8556ba7dc8712d746440b1602441bbb86",
+      "ground_truth_json_sha256": "fdd9316fb3ca388cfa3027b7aafdca3c7b9ab24797610dbd6ace955d16521ce2",
+      "spike_events_manifest_sha256": null
+    },
+    "9nlr_chainM": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "a2f4783e5c54684e962872b8564e865633c23d77ba90ad7ea21fe47017b7536f",
+      "ground_truth_json_sha256": "18e6ce5497597ce0a7c7750f88490fa4dec734bf4265f7efe07e03d742011e9f",
+      "spike_events_manifest_sha256": null
+    },
+    "9nlr_chainT": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "e1ed932b78355b9133e41194ed4df90bfb77d2941342b9c08ba74783538cace5",
+      "ground_truth_json_sha256": "8e5bd790f68ad02eb4ea1ae886763300162bb4ab4bf176abbca7104fb276c127",
+      "spike_events_manifest_sha256": null
+    },
+    "9nm5_chainG": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "e19aae876365d8e49d1b9d31e516ae675951eb4b38a57122ecf1e7bbb62d02a2",
+      "ground_truth_json_sha256": "58d44f5e8f84ee869a311ae149f737e7ebd431b8f500d44872d480acbf6b538b",
+      "spike_events_manifest_sha256": null
+    },
+    "9nr0_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "108ce0d8003cb00cd57aec0988f279815dd77b2d5aa99aaf92ae7d4c05f10091",
+      "ground_truth_json_sha256": "1d6d354c7310c7d23e52213b238c7adc1f23210c89d984e6c652ff61f570a138",
+      "spike_events_manifest_sha256": null
+    },
+    "9nxe_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "c2c72b23f4ca175ddd50460fb63bccd70d5a1b6c69bb19bfa3698c689224a404",
+      "ground_truth_json_sha256": "9489fc7da49e6486123441d3fea35c9200f1c96f00d9578ebdb592485da0efe9",
+      "spike_events_manifest_sha256": null
+    },
+    "9o08_chainC": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "ffa9be41be01874bdd609d9dd08bd653064675946810332f67b8143db7d650cf",
+      "ground_truth_json_sha256": "e39762ea258c3941d4df7fd650c2f8610297e103b87f4df07023094e0acbdfa2",
+      "spike_events_manifest_sha256": null
+    },
+    "9o0q_chainC": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "e08420d35b43c1452b63a5d43d752eef66c41b5d81fbc3a6898b96e789b52734",
+      "ground_truth_json_sha256": "647ab1e57364fa7295fe47d3f49a4219c7fa96479c771caf9e23cfbd91572341",
+      "spike_events_manifest_sha256": null
+    },
+    "9o8w_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "2aef51e895dedebdcdac4b2a9cd0cb858a0c58da57e8792541c6be67181c2fe6",
+      "ground_truth_json_sha256": "d5fba86cd8350db8a26dd602ce8e9e5560a1c7bc7652a4fe9ea53b1bec6e9ee5",
+      "spike_events_manifest_sha256": null
+    },
+    "9oaf_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "794bc5e99b1710adbbeb46adf43244196a075b0e117636b706fce2cbe859fe2f",
+      "ground_truth_json_sha256": "25f82bd4f0150503258af0fca35c5bea3ad0a3cdd959055d7b4d48bd054c0389",
+      "spike_events_manifest_sha256": null
+    },
+    "9ogo_chainC": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "0a279be3ca6bfbe5521c54c3fec2e58c4f33080b556fbce824c309cdf694dd3c",
+      "ground_truth_json_sha256": "1930e26e05d0c4a9837a195d1a41c378ed1b5860306cc2a6e7045f9fbb39cb3a",
+      "spike_events_manifest_sha256": null
+    },
+    "9p1h_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "c8cf6b63d37fa6485e2a33b6056a6799ec84c095a85cee5732713591d85a0a2c",
+      "ground_truth_json_sha256": "9cb65003b2c8171822ee709b4592acb11f3f4e917b2a992e613029b3c2ecd6c5",
+      "spike_events_manifest_sha256": null
+    },
+    "9pfm_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "055595f610fb1f05f8b1f0e8589129719a4bee25c11b9a261faa3ceb9df151fd",
+      "ground_truth_json_sha256": "0a492e3285a4e4839b69e83aecbe8776da5698808454ec54c6752cf3d6b93df5",
+      "spike_events_manifest_sha256": null
+    },
+    "9q1n_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "1eb781b9654b0b468b7b8b2e12d8578c749190c9d1ca6246908b48ffa678c8f8",
+      "ground_truth_json_sha256": "029f80bfc286978aadd76feec169326d0fdbb1fbe2ff72d08de1f94e0e16b281",
+      "spike_events_manifest_sha256": null
+    },
+    "9qan_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "8edb37cf766d2e3bd86be2a3a266e633aac875d5b13ba736fff1e0365b9a9950",
+      "ground_truth_json_sha256": "e7dab128a5c82643dbc21b3945198187fe6807233ff3209bae5f1fb013f37586",
+      "spike_events_manifest_sha256": null
+    },
+    "9qau_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "20724c25288b1937a9b44fc9c9f8e85df4cf15196b6a5ee6159333b07c131bc6",
+      "ground_truth_json_sha256": "b037a43b0c0f74145bef80bde55732a0a1b81155993db6b798b34767ff9ab63a",
+      "spike_events_manifest_sha256": null
+    },
+    "9qe3_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "8f1605ecd82fa90f366f26162f2f649f3408ece9236c8469540f552ac5a724a8",
+      "ground_truth_json_sha256": "7747fab794f3fd463783ecd87846f7a758f5b912f696e106823f818609b3fb19",
+      "spike_events_manifest_sha256": null
+    },
+    "9qga_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "8fea9b734443b89af2686c92fca5b4342135c447c69305f7c7b773f30a9c1afa",
+      "ground_truth_json_sha256": "aac06a7926a47205ed5be5686037a6cf54ebdf1c87eea650dbaf0b4ace7508ff",
+      "spike_events_manifest_sha256": null
+    },
+    "9qm9_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "1eae8269848434b7e2471f65d1a35a466d358c3487fb000fac1920ba55508708",
+      "ground_truth_json_sha256": "9510b3886544faba43fbb556eb5e4430185e1b8f9c04b94924127317a968f18f",
+      "spike_events_manifest_sha256": null
+    },
+    "9qug_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "de02d13601d19c4d5c1769fb86872c93a416234be491fbf3b9d28a05970476a1",
+      "ground_truth_json_sha256": "c8a6b3da6f3c71dc91d423a28479fc8a1902aa55fcb2083a6cb9fe5f8400f429",
+      "spike_events_manifest_sha256": null
+    },
+    "9qwj_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "df575b4091974f46ce8f5d0230229fb15747ee16663370e5ebd8e0f8b3deee4f",
+      "ground_truth_json_sha256": "bcf97158ea333e1a72e563a8d1d10316231c932e9ed8ee172d21d3716b074bce",
+      "spike_events_manifest_sha256": null
+    },
+    "9qwk_chainQ": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "a0d8a17ae7c0c8011356723f53a00c1659be03cbcb9023156c5726f3219a4edb",
+      "ground_truth_json_sha256": "e8b23251d3acb824f23ae7844b3d00c767eb78624adcbbe3d3a31b5251304442",
+      "spike_events_manifest_sha256": null
+    },
+    "9r3c_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "3918ddfd31889a6ff24122c17d527f37e8e0f8d32d1884d81a95f01b62834d37",
+      "ground_truth_json_sha256": "908301834ca9d27d27e775206ac21a7d5f72a7f4dc42553376de537249354c2a",
+      "spike_events_manifest_sha256": null
+    },
+    "9r8c_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "fc8e7765a06e9c7e0a99fa1c798c71f64a698026362870801ba01cb6abc22ee0",
+      "ground_truth_json_sha256": "14c9fa7bc1158032f9a362e757cc71aae9b25e96966eee9097c1e1fffd48750e",
+      "spike_events_manifest_sha256": null
+    },
+    "9rfd_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "78a06cc609e4b9c21ff4f89cb78dc5eaf3373bb25eb72bedfae6c95b52bbd73f",
+      "ground_truth_json_sha256": "20e382cfeca3e575c93014048245b6fd0b5c5a36400cbedfd007d6a6680fd114",
+      "spike_events_manifest_sha256": null
+    },
+    "9rwd_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "212915facce94d192152aa1a9c4f1444493c691a1799bd374d5b73322dc5d307",
+      "ground_truth_json_sha256": "3c5dc83d5dacb6ddf2ff525fd60a97e6445e90a343ab4d9e345177bc49026bc4",
+      "spike_events_manifest_sha256": null
+    },
+    "9sa1_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "66f446782937fa7b5946485a461cd8b10cb17d419841522548abeb5530618f55",
+      "ground_truth_json_sha256": "682c2afc5ce4a44833e0955ce160f3c89c035ade06aba00cf585b0d11c17d3e8",
+      "spike_events_manifest_sha256": null
+    },
+    "9sd7_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "cddc3ff70cfd3e7a330c93501dfd2de2043f7e6dbedcc26b7a883c9135a4160b",
+      "ground_truth_json_sha256": "308d81462ea1839441677634ce9d4bac46e14c0e9c265ad38da6cedb90e278b0",
+      "spike_events_manifest_sha256": null
+    },
+    "9sia_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "98c89f6d77a23b536898b27c055fe3089e6fe159bd5ed124abb7f6b240b732ee",
+      "ground_truth_json_sha256": "4240b1c48f3fbc413514e02d3acd6780f49674a369c033ac365ca5b6cfe55015",
+      "spike_events_manifest_sha256": null
+    },
+    "9sop_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "7aef3bd24f4059daf303a0d446495bdc4a621023bc6b36da0049f37a9331991b",
+      "ground_truth_json_sha256": "686188b36c5bad8c621ba3c2e210a3ba04f9623fbdda96e583854a56b6f78823",
+      "spike_events_manifest_sha256": null
+    },
+    "9ssb_chainC": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "a7f79c603e17279549b10f2411b458712220f017276b8fdc308de497eb30f21e",
+      "ground_truth_json_sha256": "e4206a0a976c19c448b56d43dfa2f66e72758ec9ac6e2b7e53b3e558a278ab3a",
+      "spike_events_manifest_sha256": null
+    },
+    "9t2g_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "a5329ddd3a57d50f02cb28690d7b2f8b8696118799e239f6bd07a7af4986a349",
+      "ground_truth_json_sha256": "6c1128ff84723724983522d4e7f9fdbc7cf946e79b84f4f30dac59deb67241d8",
+      "spike_events_manifest_sha256": null
+    },
+    "9tcb_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "7b5cce8e0923ca76afffc6bada3c6a6b14035eda60ead5cbf1fec8b058da8e64",
+      "ground_truth_json_sha256": "7908ba2d5d7f52960149715e4f70681f49fb81c70f458e34939e8219f30bf22a",
+      "spike_events_manifest_sha256": null
+    },
+    "9u8g_chainC": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "2a7645b06c30d099a34366b4dcd04128bd14fd0f7ffc0d75580e36e66ea3ddd4",
+      "ground_truth_json_sha256": "76701aeb720c29e3ba1ca55e662d663ddf97760f7cbcb2d2ecd83794b9da35b2",
+      "spike_events_manifest_sha256": null
+    },
+    "9u8x_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "956ba6fad84909bb3d27370061b901c794fc24d24ebcebd3d1cda49074517ab3",
+      "ground_truth_json_sha256": "6ed8cdde176df29748ce42cb8a86699a92ae460d0875a6c0481808b3c8923125",
+      "spike_events_manifest_sha256": null
+    },
+    "9uj2_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "780cba1f0909e2a9b77b66ec45acf41f5c32ee39da197a779ba58954834dfae4",
+      "ground_truth_json_sha256": "efce525ffa5280cfa575470ffbe752117f3fdce878ff1381430dc95003e272f2",
+      "spike_events_manifest_sha256": null
+    },
+    "9v84_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "9f651f345f62b4536a9c8702ef4181d165646168f5bb16eebd6aed6fdaa8a40e",
+      "ground_truth_json_sha256": "f68f65a5581c94498729d8c57540d6eac8e41e5ecec80e88c52c61f3d4a80c8f",
+      "spike_events_manifest_sha256": null
+    },
+    "9v8h_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "a4065e6474819c81597d33a5e04c14a568de05bfc80f37029281b26d7a6a738f",
+      "ground_truth_json_sha256": "d16d6d2c7c17b4ae74564939ac503e86445559c82426b24db84d7f1d8da4f6c7",
+      "spike_events_manifest_sha256": null
+    },
+    "9vnh_chainA": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "611aa73dbfd39c6fdc16aa4e231bb5617aafa035102a12f7c361e743c93e1209",
+      "ground_truth_json_sha256": "3646d11b865f840557fbd34c4a00aae2c9596f369b8b50b414293a124ed41806",
+      "spike_events_manifest_sha256": null
+    },
+    "9wri_chainB": {
+      "engine_commit": "legacy_pct70_campaign_v1",
+      "binding_sites_json_sha256": "fdc98fd4bac37d0d3f0266a116281b74451c296774351aec37b638871539fbbb",
+      "ground_truth_json_sha256": "7d03822aabe100e8eea98c65188aaeb80c5abe547de840a6324fe5c3273a05da",
+      "spike_events_manifest_sha256": null
+    }
+  },
+  "target_event_contract_versions": {},
+  "row_counts": {
+    "site_features": 1387,
+    "site_tags": 1387,
+    "site_lining_residues": 60834,
+    "site_kcc_candidates": 4161,
+    "site_event_aggregates": 0,
+    "quarantined_event_aggregates": 0,
+    "ground_truth": 48
+  },
+  "snapshot_size_bytes": 1458264,
+  "persistence_contract_status": "BLOCKED",
+  "persistence_nonzero_row_count": 0,
+  "persistence_blocker_ticket": "TBD",
+  "quarantine_reasons_histogram": {}
+}

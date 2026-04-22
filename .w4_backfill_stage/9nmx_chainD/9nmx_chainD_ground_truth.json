@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9nmx_chainD/9nmx_chainD.topology.json",
+  "pdb_id": "9nmx",
+  "target_chain": "D",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "MLI",
+    "chain": "D",
+    "resnum": 302,
+    "n_atoms": 7,
+    "classification": "small_molecule"
+  },
+  "ligand_centroid": [
+    -0.08285714285714287,
+    0.09157142857142855,
+    -0.6691428571428572
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9nmx.pdb"
+}

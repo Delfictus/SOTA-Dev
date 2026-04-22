@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "6wy6",
+  "apo_chain": "A",
+  "holo_pdb": "7brn",
+  "holo_chain": "A",
+  "ligand_code": "ALE",
+  "ligand_heavy_atoms": 26,
+  "ligand_centroid": [
+    -42.501961538461536,
+    -23.171269230769227,
+    13.213461538461537
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 2,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 3,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 4,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 7,
+      "resname": "ASP"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 10.627,
+  "category": "STANDARD",
+  "apo_resolution": 1.77,
+  "holo_resolution": 2.23,
+  "uniprot_id": "P38182",
+  "cluster_id_30": "851.0"
+}

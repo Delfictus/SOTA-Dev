@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "1v54",
+  "apo_chain": "F",
+  "holo_pdb": "3ag4",
+  "holo_chain": "S",
+  "ligand_code": "PEK",
+  "ligand_heavy_atoms": 53,
+  "ligand_centroid": [
+    81.85401886792452,
+    286.21598113207546,
+    205.45301886792456
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1,
+      "resname": "ALA"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.8,
+  "holo_resolution": 2.05,
+  "uniprot_id": "P00428",
+  "cluster_id_30": "2101.0"
+}

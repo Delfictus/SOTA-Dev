@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "5l21",
+  "apo_chain": "A",
+  "holo_pdb": "8rvh",
+  "holo_chain": "A",
+  "ligand_code": "SIA",
+  "ligand_heavy_atoms": 20,
+  "ligand_centroid": [
+    -27.852575,
+    -11.801350000000001,
+    12.586374999999999
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1117,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 1252,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 1266,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 1267,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 1276,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 1278,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 1279,
+      "resname": "GLY"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 0.318,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.68,
+  "holo_resolution": 1.8,
+  "uniprot_id": "P0DPI1",
+  "cluster_id_30": "1893.0"
+}

@@ -1,0 +1,34 @@
+{
+  "apo_pdb": "1se8",
+  "apo_chain": "A",
+  "holo_pdb": "3udg",
+  "holo_chain": "C",
+  "ligand_code": "TMP",
+  "ligand_heavy_atoms": 21,
+  "ligand_centroid": [
+    16.301142857142857,
+    -75.25342857142857,
+    9.67290476190476
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 55,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 86,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 88,
+      "resname": "TRP"
+    }
+  ],
+  "n_binding_residues": 3,
+  "pocket_rmsd": 0.395,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.8,
+  "holo_resolution": 2.4,
+  "uniprot_id": "Q9RY51",
+  "cluster_id_30": "15257.0"
+}

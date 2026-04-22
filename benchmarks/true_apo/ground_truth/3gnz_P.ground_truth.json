@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "3gnz",
+  "apo_chain": "P",
+  "holo_pdb": "5no9",
+  "holo_chain": "D",
+  "ligand_code": "95Z",
+  "ligand_heavy_atoms": 12,
+  "ligand_centroid": [
+    -6.216416666666667,
+    -14.25425,
+    -62.85975
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 93,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 100,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 101,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 104,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 128,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 158,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 159,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 194,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 0.236,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.35,
+  "holo_resolution": 1.75,
+  "uniprot_id": "Q9SPD4",
+  "cluster_id_30": "12453.0"
+}

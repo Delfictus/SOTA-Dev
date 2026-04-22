@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9o07_chainC/9o07_chainC.topology.json",
+  "pdb_id": "9o07",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "LFN",
+    "chain": "C",
+    "resnum": 301,
+    "n_atoms": 19,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    36.425105263157896,
+    -3.8372105263157894,
+    23.26184210526316
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9o07.pdb"
+}

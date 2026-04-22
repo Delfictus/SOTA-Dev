@@ -1,0 +1,46 @@
+{
+  "apo_pdb": "4pau",
+  "apo_chain": "A",
+  "holo_pdb": "6izk",
+  "holo_chain": "A",
+  "ligand_code": "TLA",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    -13.896,
+    5.1908,
+    13.495000000000001
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 33,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 62,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 63,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 71,
+      "resname": "MET"
+    },
+    {
+      "resnum": 72,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 115,
+      "resname": "GLN"
+    }
+  ],
+  "n_binding_residues": 6,
+  "pocket_rmsd": 0.495,
+  "category": "CRYPTIC",
+  "apo_resolution": 2.0,
+  "holo_resolution": 2.29,
+  "uniprot_id": "Q2FVM5",
+  "cluster_id_30": "20462.0"
+}

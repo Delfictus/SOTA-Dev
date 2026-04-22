@@ -1,0 +1,106 @@
+{
+  "apo_pdb": "4bg8",
+  "apo_chain": "A",
+  "holo_pdb": "4bgb",
+  "holo_chain": "B",
+  "ligand_code": "ADP",
+  "ligand_heavy_atoms": 27,
+  "ligand_centroid": [
+    5.562925925925925,
+    -25.83000000000001,
+    -12.328777777777775
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 44,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 46,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 47,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 48,
+      "resname": "THR"
+    },
+    {
+      "resnum": 49,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 165,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 166,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 167,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 168,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 191,
+      "resname": "THR"
+    },
+    {
+      "resnum": 195,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 206,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 207,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 208,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 209,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 210,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 297,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 298,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 299,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 301,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 302,
+      "resname": "ASN"
+    }
+  ],
+  "n_binding_residues": 21,
+  "pocket_rmsd": 0.844,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.96,
+  "holo_resolution": 1.34,
+  "uniprot_id": "Q8TX37",
+  "cluster_id_30": "41606.0"
+}

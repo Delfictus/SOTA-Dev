@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qam_chainA/9qam_chainA.topology.json",
+  "pdb_id": "9qam",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "CPF",
+    "chain": "A",
+    "resnum": 707,
+    "n_atoms": 24,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -7.5215,
+    -3.938333333333333,
+    -8.975166666666667
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qam.pdb"
+}

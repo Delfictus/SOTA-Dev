@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "7weu",
+  "apo_chain": "B",
+  "holo_pdb": "7wet",
+  "holo_chain": "A",
+  "ligand_code": "AQR",
+  "ligand_heavy_atoms": 33,
+  "ligand_centroid": [
+    -27.577454545454547,
+    53.28127272727272,
+    4.505818181818182
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 172,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 173,
+      "resname": "CYS"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.81,
+  "holo_resolution": 1.76,
+  "uniprot_id": "Q06830",
+  "cluster_id_30": "865.0"
+}

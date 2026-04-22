@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "6dce",
+  "apo_chain": "A",
+  "holo_pdb": "7ea2",
+  "holo_chain": "A",
+  "ligand_code": "FLC",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    -34.75007692307692,
+    -28.289923076923074,
+    6.273
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1482,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 1484,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 1489,
+      "resname": "SER"
+    },
+    {
+      "resnum": 1490,
+      "resname": "SER"
+    },
+    {
+      "resnum": 1491,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.56,
+  "holo_resolution": 2.14,
+  "uniprot_id": "Q8TDY2",
+  "cluster_id_30": "13901.0"
+}

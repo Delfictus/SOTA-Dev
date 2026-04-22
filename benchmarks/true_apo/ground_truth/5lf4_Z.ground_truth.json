@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "5lf4",
+  "apo_chain": "Z",
+  "holo_pdb": "5lez",
+  "holo_chain": "L",
+  "ligand_code": "1PE",
+  "ligand_heavy_atoms": 16,
+  "ligand_centroid": [
+    14.768250000000002,
+    227.60193750000002,
+    52.32962499999999
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 33,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.99,
+  "holo_resolution": 2.19,
+  "uniprot_id": "P20618",
+  "cluster_id_30": "64.0"
+}

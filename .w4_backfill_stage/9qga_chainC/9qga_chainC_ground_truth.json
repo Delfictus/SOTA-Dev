@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qga_chainC/9qga_chainC.topology.json",
+  "pdb_id": "9qga",
+  "target_chain": "C",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "HEM",
+    "chain": "C",
+    "resnum": 301,
+    "n_atoms": 43,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -3.56093023255814,
+    49.231186046511624,
+    46.85241860465116
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qga.pdb"
+}

@@ -1,0 +1,82 @@
+{
+  "apo_pdb": "6lki",
+  "apo_chain": "A",
+  "holo_pdb": "6lkg",
+  "holo_chain": "A",
+  "ligand_code": "G6P",
+  "ligand_heavy_atoms": 16,
+  "ligand_centroid": [
+    -23.2709375,
+    -72.01100000000001,
+    165.8776875
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 36,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 37,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 63,
+      "resname": "SER"
+    },
+    {
+      "resnum": 64,
+      "resname": "THR"
+    },
+    {
+      "resnum": 85,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 86,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 126,
+      "resname": "MET"
+    },
+    {
+      "resnum": 164,
+      "resname": "THR"
+    },
+    {
+      "resnum": 165,
+      "resname": "THR"
+    },
+    {
+      "resnum": 166,
+      "resname": "THR"
+    },
+    {
+      "resnum": 167,
+      "resname": "THR"
+    },
+    {
+      "resnum": 198,
+      "resname": "THR"
+    },
+    {
+      "resnum": 216,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 242,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 244,
+      "resname": "ASP"
+    }
+  ],
+  "n_binding_residues": 15,
+  "pocket_rmsd": 1.099,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.78,
+  "holo_resolution": 1.95,
+  "uniprot_id": "X5DVD1",
+  "cluster_id_30": "22390.0"
+}

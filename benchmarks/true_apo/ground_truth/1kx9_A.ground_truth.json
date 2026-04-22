@@ -1,0 +1,158 @@
+{
+  "apo_pdb": "1kx9",
+  "apo_chain": "A",
+  "holo_pdb": "1n8u",
+  "holo_chain": "A",
+  "ligand_code": "BDD",
+  "ligand_heavy_atoms": 14,
+  "ligand_centroid": [
+    13.27309523809524,
+    0.8395476190476193,
+    0.847976190476191
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 4,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 8,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 9,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 11,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 13,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 16,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 23,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 26,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 27,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 30,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 39,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 42,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 43,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 46,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 47,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 50,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 51,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 54,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 55,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 58,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 61,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 62,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 65,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 66,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 69,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 70,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 73,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 81,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 84,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 85,
+      "resname": "THR"
+    },
+    {
+      "resnum": 89,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 94,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 95,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 98,
+      "resname": "TYR"
+    }
+  ],
+  "n_binding_residues": 34,
+  "pocket_rmsd": 1.092,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.65,
+  "holo_resolution": 1.8,
+  "uniprot_id": "Q9NG96",
+  "cluster_id_30": "18374.0"
+}

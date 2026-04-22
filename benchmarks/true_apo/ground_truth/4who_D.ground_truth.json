@@ -1,0 +1,82 @@
+{
+  "apo_pdb": "4who",
+  "apo_chain": "D",
+  "holo_pdb": "3lmx",
+  "holo_chain": "M",
+  "ligand_code": "DHB",
+  "ligand_heavy_atoms": 11,
+  "ligand_centroid": [
+    -18.626878787878784,
+    -20.503242424242423,
+    52.89366666666668
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 318,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 320,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 322,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 324,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 328,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 332,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 333,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 408,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 447,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 449,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 457,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 460,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 462,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 477,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 491,
+      "resname": "ILE"
+    }
+  ],
+  "n_binding_residues": 15,
+  "pocket_rmsd": 11.697,
+  "category": "STANDARD",
+  "apo_resolution": 1.83,
+  "holo_resolution": 2.2,
+  "uniprot_id": "P00437",
+  "cluster_id_30": "2845.0"
+}

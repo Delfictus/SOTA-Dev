@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qav_chainA/9qav_chainA.topology.json",
+  "pdb_id": "9qav",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "EAL",
+    "chain": "A",
+    "resnum": 709,
+    "n_atoms": 25,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -0.34668,
+    -14.22804,
+    -22.837600000000002
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qav.pdb"
+}

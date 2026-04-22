@@ -1,0 +1,102 @@
+{
+  "apo_pdb": "6flf",
+  "apo_chain": "A",
+  "holo_pdb": "6fm1",
+  "holo_chain": "A",
+  "ligand_code": "DGP",
+  "ligand_heavy_atoms": 23,
+  "ligand_centroid": [
+    -33.47869565217391,
+    15.261000000000005,
+    -3.667826086956522
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 12,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 13,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 14,
+      "resname": "SER"
+    },
+    {
+      "resnum": 40,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 41,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 118,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 121,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 125,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 126,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 127,
+      "resname": "SER"
+    },
+    {
+      "resnum": 128,
+      "resname": "THR"
+    },
+    {
+      "resnum": 129,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 187,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 191,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 201,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 202,
+      "resname": "THR"
+    },
+    {
+      "resnum": 203,
+      "resname": "SER"
+    },
+    {
+      "resnum": 234,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 236,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 240,
+      "resname": "SER"
+    }
+  ],
+  "n_binding_residues": 20,
+  "pocket_rmsd": 0.43,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.33,
+  "holo_resolution": 2.35,
+  "uniprot_id": "G3FFN6",
+  "cluster_id_30": "18283.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/29aj_chainD/29aj_chainD.topology.json",
+  "pdb_id": "29aj",
+  "target_chain": "D",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "MTE",
+    "chain": "D",
+    "resnum": 601,
+    "n_atoms": 24,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    24.14233333333333,
+    -7.684416666666667,
+    -15.427375
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/29aj.pdb"
+}

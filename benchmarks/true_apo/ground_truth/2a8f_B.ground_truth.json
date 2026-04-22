@@ -1,0 +1,118 @@
+{
+  "apo_pdb": "2a8f",
+  "apo_chain": "B",
+  "holo_pdb": "2aib",
+  "holo_chain": "B",
+  "ligand_code": "ERG",
+  "ligand_heavy_atoms": 29,
+  "ligand_centroid": [
+    24.510137931034482,
+    16.016241379310348,
+    45.13258620689655
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 12,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 15,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 16,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 18,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 24,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 33,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 35,
+      "resname": "MET"
+    },
+    {
+      "resnum": 36,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 41,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 42,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 47,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 50,
+      "resname": "MET"
+    },
+    {
+      "resnum": 59,
+      "resname": "MET"
+    },
+    {
+      "resnum": 60,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 63,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 75,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 76,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 77,
+      "resname": "THR"
+    },
+    {
+      "resnum": 80,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 82,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 84,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 87,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 88,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 91,
+      "resname": "PHE"
+    }
+  ],
+  "n_binding_residues": 24,
+  "pocket_rmsd": 0.751,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.35,
+  "holo_resolution": 1.1,
+  "uniprot_id": "P15569",
+  "cluster_id_30": "7222.0"
+}

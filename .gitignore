@@ -138,3 +138,25 @@ credentials.env
 # Confidential SOP files — NEVER commit
 docs/sops/credentials/CREDENTIAL_REGISTRY.md
 docs/sops/ip/TRADE_SECRET_REGISTRY.md
+
+# === HARD EXCLUDES (DO NOT VERSION) ===
+output/
+logs/
+reports/
+benchmark/
+workers/
+*.arrow
+*.parquet
+*.pt
+*.bin
+*.ckpt
+*.spike_events.*
+*.coupled_spikes.json
+
+# W3b staging/cache
+.w3b_parquet_cache/
+
+# Large experimental dirs
+prism-working/
+prism4d_training/
+

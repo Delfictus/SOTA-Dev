@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "3cye",
+  "apo_chain": "B",
+  "holo_pdb": "2hty",
+  "holo_chain": "A",
+  "ligand_code": "NDG",
+  "ligand_heavy_atoms": 15,
+  "ligand_centroid": [
+    5.6116,
+    69.19633333333333,
+    127.84353333333335
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 146,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 148,
+      "resname": "THR"
+    },
+    {
+      "resnum": 437,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 468,
+      "resname": "ILE"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 4.931,
+  "category": "STANDARD",
+  "apo_resolution": 1.65,
+  "holo_resolution": 2.5,
+  "uniprot_id": "Q9IGQ6",
+  "cluster_id_30": "804.0"
+}

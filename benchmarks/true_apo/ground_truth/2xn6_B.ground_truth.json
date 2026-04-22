@@ -1,0 +1,42 @@
+{
+  "apo_pdb": "2xn6",
+  "apo_chain": "B",
+  "holo_pdb": "4yia",
+  "holo_chain": "B",
+  "ligand_code": "IMN",
+  "ligand_heavy_atoms": 25,
+  "ligand_centroid": [
+    -7.2213199999999995,
+    -23.55072,
+    9.08956
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 376,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 377,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 378,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 381,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 382,
+      "resname": "SER"
+    }
+  ],
+  "n_binding_residues": 5,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.29,
+  "holo_resolution": 1.58,
+  "uniprot_id": "P05543",
+  "cluster_id_30": "15982.0"
+}

@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "6y17",
+  "apo_chain": "A",
+  "holo_pdb": "3lbz",
+  "holo_chain": "A",
+  "ligand_code": "Z88",
+  "ligand_heavy_atoms": 14,
+  "ligand_centroid": [
+    -14.640000000000002,
+    -14.009285714285712,
+    -0.37928571428571417
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 7,
+      "resname": "SER"
+    },
+    {
+      "resnum": 8,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 9,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 10,
+      "resname": "GLN"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.56,
+  "holo_resolution": 2.3,
+  "uniprot_id": "O75376",
+  "cluster_id_30": "738.0"
+}

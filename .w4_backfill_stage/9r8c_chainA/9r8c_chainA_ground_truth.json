@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9r8c_chainA/9r8c_chainA.topology.json",
+  "pdb_id": "9r8c",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "R78",
+    "chain": "A",
+    "resnum": 1001,
+    "n_atoms": 38,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -5.636,
+    24.755921052631578,
+    39.813947368421054
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9r8c.pdb"
+}

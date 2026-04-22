@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "6tbr",
+  "apo_chain": "A",
+  "holo_pdb": "6tc4",
+  "holo_chain": "A",
+  "ligand_code": "PG4",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    57.43515384615383,
+    20.343,
+    49.13661538461538
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 78,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 80,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 138,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 139,
+      "resname": "SER"
+    },
+    {
+      "resnum": 140,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 141,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 198,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 0.16,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.7,
+  "holo_resolution": 2.0,
+  "uniprot_id": "Q2U8Y3",
+  "cluster_id_30": "18272.0"
+}

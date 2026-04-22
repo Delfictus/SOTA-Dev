@@ -1,0 +1,46 @@
+{
+  "apo_pdb": "3bpv",
+  "apo_chain": "A",
+  "holo_pdb": "3bpx",
+  "holo_chain": "B",
+  "ligand_code": "SAL",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    33.86059999999999,
+    -2.5967000000000002,
+    10.118399999999998
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 5,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 6,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 8,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 9,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 12,
+      "resname": "SER"
+    },
+    {
+      "resnum": 16,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 6,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.4,
+  "holo_resolution": 1.95,
+  "uniprot_id": "O26413",
+  "cluster_id_30": "84034.0"
+}

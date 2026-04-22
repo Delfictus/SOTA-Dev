@@ -1,0 +1,78 @@
+{
+  "apo_pdb": "2o1a",
+  "apo_chain": "A",
+  "holo_pdb": "3qzm",
+  "holo_chain": "A",
+  "ligand_code": "HEM",
+  "ligand_heavy_atoms": 43,
+  "ligand_centroid": [
+    10.331447058823532,
+    13.444164705882354,
+    39.92996470588237
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 75,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 82,
+      "resname": "SER"
+    },
+    {
+      "resnum": 83,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 84,
+      "resname": "MET"
+    },
+    {
+      "resnum": 87,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 112,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 113,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 157,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 159,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 161,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 164,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 166,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 170,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 172,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 14,
+  "pocket_rmsd": 0.435,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.6,
+  "holo_resolution": 1.25,
+  "uniprot_id": "Q99UX4",
+  "cluster_id_30": "10249.0"
+}

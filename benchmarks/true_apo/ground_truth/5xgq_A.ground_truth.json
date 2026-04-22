@@ -1,0 +1,134 @@
+{
+  "apo_pdb": "5xgq",
+  "apo_chain": "A",
+  "holo_pdb": "5xet",
+  "holo_chain": "C",
+  "ligand_code": "ME8",
+  "ligand_heavy_atoms": 53,
+  "ligand_centroid": [
+    -22.798169811320744,
+    -34.1853396226415,
+    -3.7321886792452825
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 9,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 10,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 11,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 12,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 18,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 20,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 21,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 23,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 24,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 25,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 49,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 54,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 228,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 231,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 232,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 234,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 235,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 260,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 261,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 262,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 263,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 264,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 268,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 290,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 291,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 292,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 293,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 301,
+      "resname": "SER"
+    }
+  ],
+  "n_binding_residues": 28,
+  "pocket_rmsd": 0.861,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.9,
+  "holo_resolution": 2.38,
+  "uniprot_id": "A5U150",
+  "cluster_id_30": "1306.0"
+}

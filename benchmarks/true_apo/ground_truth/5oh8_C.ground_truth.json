@@ -1,0 +1,54 @@
+{
+  "apo_pdb": "5oh8",
+  "apo_chain": "C",
+  "holo_pdb": "7pjk",
+  "holo_chain": "B",
+  "ligand_code": "7SE",
+  "ligand_heavy_atoms": 17,
+  "ligand_centroid": [
+    23.060941176470592,
+    15.543294117647058,
+    28.04923529411765
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 50,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 51,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 77,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 78,
+      "resname": "SER"
+    },
+    {
+      "resnum": 79,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 85,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 99,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 101,
+      "resname": "TYR"
+    }
+  ],
+  "n_binding_residues": 8,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.95,
+  "holo_resolution": 1.99,
+  "uniprot_id": "A4TVL0",
+  "cluster_id_30": "3177.0"
+}

@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9zb7_chainA/9zb7_chainA.topology.json",
+  "pdb_id": "9zb7",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "AKG",
+    "chain": "A",
+    "resnum": 301,
+    "n_atoms": 12,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    -2.63275,
+    -32.123083333333334,
+    -4.964083333333334
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9zb7.pdb"
+}

@@ -1,0 +1,86 @@
+{
+  "apo_pdb": "5r1l",
+  "apo_chain": "A",
+  "holo_pdb": "7fmi",
+  "holo_chain": "A",
+  "ligand_code": "WBQ",
+  "ligand_heavy_atoms": 18,
+  "ligand_centroid": [
+    54.19419444444444,
+    24.941194444444445,
+    20.868055555555557
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 1840,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 1843,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 1844,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 1961,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 1963,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 2002,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 2005,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 2006,
+      "resname": "SER"
+    },
+    {
+      "resnum": 2009,
+      "resname": "THR"
+    },
+    {
+      "resnum": 2010,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 2056,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 2066,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 2067,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 2068,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 2069,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 2083,
+      "resname": "ILE"
+    }
+  ],
+  "n_binding_residues": 16,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.94,
+  "holo_resolution": 1.34,
+  "uniprot_id": "P33334",
+  "cluster_id_30": "497.0"
+}

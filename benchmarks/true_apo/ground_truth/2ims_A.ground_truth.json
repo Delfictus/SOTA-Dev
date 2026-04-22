@@ -1,0 +1,50 @@
+{
+  "apo_pdb": "2ims",
+  "apo_chain": "A",
+  "holo_pdb": "5vwz",
+  "holo_chain": "C",
+  "ligand_code": "1PG",
+  "ligand_heavy_atoms": 13,
+  "ligand_centroid": [
+    10.2753,
+    -78.2537,
+    17.240999999999996
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 95,
+      "resname": "THR"
+    },
+    {
+      "resnum": 99,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 143,
+      "resname": "TYR"
+    },
+    {
+      "resnum": 144,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 145,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 146,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 148,
+      "resname": "THR"
+    }
+  ],
+  "n_binding_residues": 7,
+  "pocket_rmsd": 2.58,
+  "category": "STANDARD",
+  "apo_resolution": 1.48,
+  "holo_resolution": 1.62,
+  "uniprot_id": "Q16611",
+  "cluster_id_30": "5442.0"
+}

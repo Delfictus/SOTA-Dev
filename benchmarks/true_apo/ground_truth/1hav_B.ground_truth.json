@@ -1,0 +1,86 @@
+{
+  "apo_pdb": "1hav",
+  "apo_chain": "B",
+  "holo_pdb": "1qa7",
+  "holo_chain": "D",
+  "ligand_code": "IVF",
+  "ligand_heavy_atoms": 22,
+  "ligand_centroid": [
+    4.544318181818181,
+    8.095681818181818,
+    103.74745454545454
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 15,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 27,
+      "resname": "TRP"
+    },
+    {
+      "resnum": 28,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 29,
+      "resname": "MET"
+    },
+    {
+      "resnum": 30,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 44,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 122,
+      "resname": "THR"
+    },
+    {
+      "resnum": 124,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 125,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 145,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 146,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 169,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 170,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 171,
+      "resname": "MET"
+    },
+    {
+      "resnum": 172,
+      "resname": "CYS"
+    },
+    {
+      "resnum": 192,
+      "resname": "VAL"
+    }
+  ],
+  "n_binding_residues": 16,
+  "pocket_rmsd": 0.549,
+  "category": "CRYPTIC",
+  "apo_resolution": 2.0,
+  "holo_resolution": 1.9,
+  "uniprot_id": "P08617",
+  "cluster_id_30": "19362.0"
+}

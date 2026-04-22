@@ -1,0 +1,114 @@
+{
+  "apo_pdb": "4ic4",
+  "apo_chain": "A",
+  "holo_pdb": "4inq",
+  "holo_chain": "A",
+  "ligand_code": "PIF",
+  "ligand_heavy_atoms": 43,
+  "ligand_centroid": [
+    -5.728906976744185,
+    11.069883720930237,
+    -5.2416511627906965
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 643,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 655,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 656,
+      "resname": "SER"
+    },
+    {
+      "resnum": 657,
+      "resname": "SER"
+    },
+    {
+      "resnum": 658,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 659,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 660,
+      "resname": "MET"
+    },
+    {
+      "resnum": 665,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 670,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 673,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 717,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 718,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 720,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 745,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 746,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 767,
+      "resname": "PRO"
+    },
+    {
+      "resnum": 769,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 778,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 780,
+      "resname": "ASN"
+    },
+    {
+      "resnum": 941,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 945,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 948,
+      "resname": "GLN"
+    },
+    {
+      "resnum": 949,
+      "resname": "ARG"
+    }
+  ],
+  "n_binding_residues": 23,
+  "pocket_rmsd": 0.166,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.5,
+  "holo_resolution": 2.2,
+  "uniprot_id": "P38713",
+  "cluster_id_30": "4103.0"
+}

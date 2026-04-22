@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9qex_chainB/9qex_chainB.topology.json",
+  "pdb_id": "9qex",
+  "target_chain": "B",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "HEM",
+    "chain": "B",
+    "resnum": 810,
+    "n_atoms": 59,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    11.290745762711865,
+    -8.850389830508474,
+    19.456033898305083
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9qex.pdb"
+}

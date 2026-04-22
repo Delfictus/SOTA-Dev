@@ -1,0 +1,375 @@
+{
+  "config": {
+    "max_site_dist": 12.0,
+    "min_active_steps": 50,
+    "min_lag_corr": 0.2,
+    "min_local_cov": 0.05,
+    "min_weight": -0.25,
+    "max_pair_dist": 9.0,
+    "min_cosine": -0.2,
+    "max_lag_diff": 24.0,
+    "max_corr_diff": 0.35,
+    "min_edge_score": 0.3,
+    "min_cluster_size": 3,
+    "pair_min_dist": 4.0,
+    "pair_max_dist": 14.0,
+    "inward_shift": 2.5,
+    "candidate_merge_radius": 2.0,
+    "max_candidates_per_cluster": 24,
+    "support_shell": 8.0,
+    "candidate_site_max_dist": 12.0,
+    "support_min_cos": -0.2,
+    "support_lag_sigma": 10.0,
+    "support_corr_sigma": 0.25
+  },
+  "n_rows": 424,
+  "n_rows_with_gt": 424,
+  "n_targets_with_gt": 41,
+  "mean_raw_dcc": 22.592827730585206,
+  "mean_void_dcc": 22.82024390568919,
+  "median_raw_dcc": 21.84924301498894,
+  "median_void_dcc": 21.88669148455565,
+  "mean_dcc_gain": -0.22741617510398593,
+  "median_dcc_gain": -0.10502281722952667,
+  "improved_fraction": 0.46226415094339623,
+  "improved_targets_fraction": 0.36585365853658536,
+  "cluster_score_vs_raw_dcc_spearman": -0.0681559400733216,
+  "cluster_score_vs_void_dcc_spearman": -0.06694816583038342,
+  "void_score_vs_void_dcc_spearman": 0.05428081484158658,
+  "top1_raw_hit_dcc_le_5": 0.024390243902439025,
+  "top1_void_hit_dcc_le_5": 0.0,
+  "top3_raw_hit_dcc_le_5": 0.024390243902439025,
+  "top3_void_hit_dcc_le_5": 0.0,
+  "top5_raw_hit_dcc_le_5": 0.024390243902439025,
+  "top5_void_hit_dcc_le_5": 0.0,
+  "per_target_best": [
+    {
+      "target": "9nmx_chainA",
+      "best_raw_dcc": 10.08337768693138,
+      "best_void_dcc": 7.049647988255031,
+      "best_target_gain": 3.033729698676349,
+      "best_raw_site_id": 3522,
+      "best_void_site_id": 4005
+    },
+    {
+      "target": "9qwj_chainT",
+      "best_raw_dcc": 8.684648834501933,
+      "best_void_dcc": 5.8443235857342675,
+      "best_target_gain": 2.840325248767666,
+      "best_raw_site_id": 507,
+      "best_void_site_id": 507
+    },
+    {
+      "target": "9t29_chainA",
+      "best_raw_dcc": 13.807869196346067,
+      "best_void_dcc": 11.739403067277552,
+      "best_target_gain": 2.068466129068515,
+      "best_raw_site_id": 3532,
+      "best_void_site_id": 1518
+    },
+    {
+      "target": "9ig2_chainA",
+      "best_raw_dcc": 8.441084332651679,
+      "best_void_dcc": 6.537838661123521,
+      "best_target_gain": 1.9032456715281576,
+      "best_raw_site_id": 4004,
+      "best_void_site_id": 4004
+    },
+    {
+      "target": "9yc2_chainA",
+      "best_raw_dcc": 24.35384011427759,
+      "best_void_dcc": 22.93039963205937,
+      "best_target_gain": 1.423440482218222,
+      "best_raw_site_id": 4002,
+      "best_void_site_id": 2
+    },
+    {
+      "target": "9nxe_chainA",
+      "best_raw_dcc": 6.988131512940251,
+      "best_void_dcc": 5.639109014077945,
+      "best_target_gain": 1.3490224988623059,
+      "best_raw_site_id": 1524,
+      "best_void_site_id": 1524
+    },
+    {
+      "target": "9ig2_chainB",
+      "best_raw_dcc": 9.03969402902509,
+      "best_void_dcc": 7.958382135787954,
+      "best_target_gain": 1.081311893237137,
+      "best_raw_site_id": 1532,
+      "best_void_site_id": 1532
+    },
+    {
+      "target": "9sic_chainB",
+      "best_raw_dcc": 10.548438612155019,
+      "best_void_dcc": 9.838741918276616,
+      "best_target_gain": 0.7096966938784028,
+      "best_raw_site_id": 4004,
+      "best_void_site_id": 4004
+    },
+    {
+      "target": "9yg3_chainB",
+      "best_raw_dcc": 10.02004314866021,
+      "best_void_dcc": 9.364172185348151,
+      "best_target_gain": 0.6558709633120596,
+      "best_raw_site_id": 1514,
+      "best_void_site_id": 1514
+    },
+    {
+      "target": "9sic_chainC",
+      "best_raw_dcc": 12.640657220377827,
+      "best_void_dcc": 12.034848788895887,
+      "best_target_gain": 0.6058084314819396,
+      "best_raw_site_id": 4008,
+      "best_void_site_id": 4008
+    },
+    {
+      "target": "9tf5_chainB",
+      "best_raw_dcc": 7.694160677826621,
+      "best_void_dcc": 7.227095111930375,
+      "best_target_gain": 0.46706556589624615,
+      "best_raw_site_id": 5,
+      "best_void_site_id": 5
+    },
+    {
+      "target": "9sia_chainB",
+      "best_raw_dcc": 7.218437441124114,
+      "best_void_dcc": 6.885684025710208,
+      "best_target_gain": 0.33275341541390624,
+      "best_raw_site_id": 6,
+      "best_void_site_id": 6
+    },
+    {
+      "target": "9t2g_chainA",
+      "best_raw_dcc": 17.801028398177543,
+      "best_void_dcc": 17.51362922837182,
+      "best_target_gain": 0.2873991698057239,
+      "best_raw_site_id": 1525,
+      "best_void_site_id": 1523
+    },
+    {
+      "target": "9nmx_chainD",
+      "best_raw_dcc": 46.18667205526188,
+      "best_void_dcc": 45.995439600391876,
+      "best_target_gain": 0.19123245487000418,
+      "best_raw_site_id": 504,
+      "best_void_site_id": 504
+    },
+    {
+      "target": "9nr0_chainA",
+      "best_raw_dcc": 6.876152521877588,
+      "best_void_dcc": 6.778124380856622,
+      "best_target_gain": 0.0980281410209658,
+      "best_raw_site_id": 4000,
+      "best_void_site_id": 3517
+    },
+    {
+      "target": "9xji_chainB",
+      "best_raw_dcc": 11.645059093248868,
+      "best_void_dcc": 11.77290929934861,
+      "best_target_gain": -0.12785020609974218,
+      "best_raw_site_id": 4507,
+      "best_void_site_id": 508
+    },
+    {
+      "target": "9t7f_chainB",
+      "best_raw_dcc": 7.843434554651679,
+      "best_void_dcc": 8.016510613469274,
+      "best_target_gain": -0.17307605881759525,
+      "best_raw_site_id": 1,
+      "best_void_site_id": 1
+    },
+    {
+      "target": "9xj0_chainA",
+      "best_raw_dcc": 7.820408622038135,
+      "best_void_dcc": 8.017228886541764,
+      "best_target_gain": -0.19682026450362855,
+      "best_raw_site_id": 3006,
+      "best_void_site_id": 1
+    },
+    {
+      "target": "9qnk_chainA",
+      "best_raw_dcc": 16.789272267491206,
+      "best_void_dcc": 17.07190533715324,
+      "best_target_gain": -0.28263306966203317,
+      "best_raw_site_id": 4514,
+      "best_void_site_id": 4514
+    },
+    {
+      "target": "9qnh_chainA",
+      "best_raw_dcc": 15.789999513049755,
+      "best_void_dcc": 16.081244893610503,
+      "best_target_gain": -0.29124538056074734,
+      "best_raw_site_id": 5,
+      "best_void_site_id": 5
+    },
+    {
+      "target": "9qni_chainA",
+      "best_raw_dcc": 10.209669068744601,
+      "best_void_dcc": 10.55962312832867,
+      "best_target_gain": -0.34995405958406955,
+      "best_raw_site_id": 0,
+      "best_void_site_id": 0
+    },
+    {
+      "target": "9qnj_chainA",
+      "best_raw_dcc": 10.746990940866338,
+      "best_void_dcc": 11.100948574595993,
+      "best_target_gain": -0.35395763372965483,
+      "best_raw_site_id": 6,
+      "best_void_site_id": 6
+    },
+    {
+      "target": "9t7f_chainA",
+      "best_raw_dcc": 10.070102811846015,
+      "best_void_dcc": 10.477968675416228,
+      "best_target_gain": -0.4078658635702137,
+      "best_raw_site_id": 2,
+      "best_void_site_id": 2
+    },
+    {
+      "target": "9ohy_chainB",
+      "best_raw_dcc": 15.018343314168007,
+      "best_void_dcc": 15.52603036622397,
+      "best_target_gain": -0.5076870520559638,
+      "best_raw_site_id": 4002,
+      "best_void_site_id": 4002
+    },
+    {
+      "target": "9sid_chainB",
+      "best_raw_dcc": 17.033888716351,
+      "best_void_dcc": 17.592918589673538,
+      "best_target_gain": -0.5590298733225367,
+      "best_raw_site_id": 1,
+      "best_void_site_id": 4001
+    },
+    {
+      "target": "9tf5_chainA",
+      "best_raw_dcc": 13.102923896791474,
+      "best_void_dcc": 13.707812266633551,
+      "best_target_gain": -0.6048883698420777,
+      "best_raw_site_id": 4009,
+      "best_void_site_id": 4009
+    },
+    {
+      "target": "9sid_chainA",
+      "best_raw_dcc": 7.967011446981919,
+      "best_void_dcc": 8.602811277887787,
+      "best_target_gain": -0.6357998309058672,
+      "best_raw_site_id": 2,
+      "best_void_site_id": 3
+    },
+    {
+      "target": "9u5b_chainA",
+      "best_raw_dcc": 9.559873592721974,
+      "best_void_dcc": 10.373112107096626,
+      "best_target_gain": -0.8132385143746514,
+      "best_raw_site_id": 1511,
+      "best_void_site_id": 1511
+    },
+    {
+      "target": "9nr0_chainB",
+      "best_raw_dcc": 8.629279092064378,
+      "best_void_dcc": 9.575833368771079,
+      "best_target_gain": -0.946554276706701,
+      "best_raw_site_id": 4007,
+      "best_void_site_id": 5
+    },
+    {
+      "target": "9nxn_chainB",
+      "best_raw_dcc": 14.885638375969192,
+      "best_void_dcc": 15.991832897735069,
+      "best_target_gain": -1.106194521765877,
+      "best_raw_site_id": 5,
+      "best_void_site_id": 5
+    },
+    {
+      "target": "9t2f_chainA",
+      "best_raw_dcc": 5.992881929827305,
+      "best_void_dcc": 7.345925811084778,
+      "best_target_gain": -1.3530438812574737,
+      "best_raw_site_id": 3511,
+      "best_void_site_id": 3511
+    },
+    {
+      "target": "9xji_chainA",
+      "best_raw_dcc": 4.83271357574932,
+      "best_void_dcc": 6.420569276194131,
+      "best_target_gain": -1.5878557004448108,
+      "best_raw_site_id": 8,
+      "best_void_site_id": 8
+    },
+    {
+      "target": "9tf5_chainC",
+      "best_raw_dcc": 10.42074684500681,
+      "best_void_dcc": 12.304739471247006,
+      "best_target_gain": -1.883992626240195,
+      "best_raw_site_id": 4000,
+      "best_void_site_id": 4000
+    },
+    {
+      "target": "9nmy_chainD",
+      "best_raw_dcc": 32.53709341498092,
+      "best_void_dcc": 34.510389963382956,
+      "best_target_gain": -1.9732965484020326,
+      "best_raw_site_id": 3,
+      "best_void_site_id": 3
+    },
+    {
+      "target": "9o9i_chainA",
+      "best_raw_dcc": 8.181613960052074,
+      "best_void_dcc": 10.774446777075514,
+      "best_target_gain": -2.5928328170234405,
+      "best_raw_site_id": 4005,
+      "best_void_site_id": 4005
+    },
+    {
+      "target": "9xj0_chainB",
+      "best_raw_dcc": 6.770631856584153,
+      "best_void_dcc": 9.647144954625688,
+      "best_target_gain": -2.876513098041535,
+      "best_raw_site_id": 4004,
+      "best_void_site_id": 4004
+    },
+    {
+      "target": "9upz_chainA",
+      "best_raw_dcc": 5.56932326446752,
+      "best_void_dcc": 8.521426004634167,
+      "best_target_gain": -2.952102740166647,
+      "best_raw_site_id": 504,
+      "best_void_site_id": 504
+    },
+    {
+      "target": "9qnl_chainA",
+      "best_raw_dcc": 14.060269584056911,
+      "best_void_dcc": 17.017229723756543,
+      "best_target_gain": -2.956960139699632,
+      "best_raw_site_id": 3,
+      "best_void_site_id": 3
+    },
+    {
+      "target": "9qng_chainA",
+      "best_raw_dcc": 18.446611752628577,
+      "best_void_dcc": 21.88669148455565,
+      "best_target_gain": -3.4400797319270744,
+      "best_raw_site_id": 507,
+      "best_void_site_id": 507
+    },
+    {
+      "target": "9znb_chainA",
+      "best_raw_dcc": 5.640247313132435,
+      "best_void_dcc": 9.354575269316864,
+      "best_target_gain": -3.7143279561844293,
+      "best_raw_site_id": 1,
+      "best_void_site_id": 1
+    },
+    {
+      "target": "9qwj_chainD",
+      "best_raw_dcc": 6.377121867607087,
+      "best_void_dcc": 10.790452277303842,
+      "best_target_gain": -4.413330409696755,
+      "best_raw_site_id": 1511,
+      "best_void_site_id": 4512
+    }
+  ]
+}

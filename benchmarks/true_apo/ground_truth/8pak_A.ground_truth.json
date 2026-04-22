@@ -1,0 +1,70 @@
+{
+  "apo_pdb": "8pak",
+  "apo_chain": "A",
+  "holo_pdb": "8pak",
+  "holo_chain": "B",
+  "ligand_code": "PG6",
+  "ligand_heavy_atoms": 44,
+  "ligand_centroid": [
+    31.711840909090917,
+    7.426795454545456,
+    40.527863636363634
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 43,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 45,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 46,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 47,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 48,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 49,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 50,
+      "resname": "VAL"
+    },
+    {
+      "resnum": 96,
+      "resname": "ALA"
+    },
+    {
+      "resnum": 97,
+      "resname": "THR"
+    },
+    {
+      "resnum": 154,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 155,
+      "resname": "GLY"
+    },
+    {
+      "resnum": 156,
+      "resname": "TRP"
+    }
+  ],
+  "n_binding_residues": 12,
+  "pocket_rmsd": 0.268,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.42,
+  "holo_resolution": 1.42,
+  "uniprot_id": "A0A250J6H4",
+  "cluster_id_30": "16637.0"
+}

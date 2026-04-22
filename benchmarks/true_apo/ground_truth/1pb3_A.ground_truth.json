@@ -1,0 +1,26 @@
+{
+  "apo_pdb": "1pb3",
+  "apo_chain": "A",
+  "holo_pdb": "4ajs",
+  "holo_chain": "A",
+  "ligand_code": "NMN",
+  "ligand_heavy_atoms": 22,
+  "ligand_centroid": [
+    -35.45272727272728,
+    -12.647272727272728,
+    14.99409090909091
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 344,
+      "resname": "LYS"
+    }
+  ],
+  "n_binding_residues": 1,
+  "pocket_rmsd": 8.346,
+  "category": "STANDARD",
+  "apo_resolution": 1.7,
+  "holo_resolution": 1.8,
+  "uniprot_id": "P08200",
+  "cluster_id_30": "247.0"
+}

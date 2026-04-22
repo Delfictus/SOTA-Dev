@@ -1,0 +1,23 @@
+{
+  "topology": "/mnt/storage/prism-outputs/10k-runs/9ohx_chainA/9ohx_chainA.topology.json",
+  "pdb_id": "9ohx",
+  "target_chain": "A",
+  "valid_for_dcc_validation": true,
+  "skip_reason": null,
+  "ligand": {
+    "resname": "EKG",
+    "chain": "A",
+    "resnum": 305,
+    "n_atoms": 23,
+    "classification": "drug_like"
+  },
+  "ligand_centroid": [
+    3.4342173913043474,
+    -23.159304347826087,
+    -28.969
+  ],
+  "is_pandda_fragment": false,
+  "is_templated_complex": false,
+  "nucleic_chains": [],
+  "holo_source": "/home/diddy/.cache/prism4d/holo_pdbs/9ohx.pdb"
+}

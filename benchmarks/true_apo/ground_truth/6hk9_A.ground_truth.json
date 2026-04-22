@@ -1,0 +1,38 @@
+{
+  "apo_pdb": "6hk9",
+  "apo_chain": "A",
+  "holo_pdb": "6hk9",
+  "holo_chain": "B",
+  "ligand_code": "MRD",
+  "ligand_heavy_atoms": 22,
+  "ligand_centroid": [
+    -8.820863636363637,
+    0.3117272727272727,
+    9.371727272727272
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 111,
+      "resname": "ARG"
+    },
+    {
+      "resnum": 114,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 115,
+      "resname": "THR"
+    },
+    {
+      "resnum": 118,
+      "resname": "ALA"
+    }
+  ],
+  "n_binding_residues": 4,
+  "pocket_rmsd": 1000.0,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.45,
+  "holo_resolution": 1.45,
+  "uniprot_id": "Q9BXU0",
+  "cluster_id_30": "32165.0"
+}

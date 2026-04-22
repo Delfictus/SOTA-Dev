@@ -1,0 +1,30 @@
+{
+  "apo_pdb": "8pn6",
+  "apo_chain": "A",
+  "holo_pdb": "7h22",
+  "holo_chain": "A",
+  "ligand_code": "YX6",
+  "ligand_heavy_atoms": 15,
+  "ligand_centroid": [
+    -8.4612,
+    2.6814000000000004,
+    1.818066666666667
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 80,
+      "resname": "GLU"
+    },
+    {
+      "resnum": 81,
+      "resname": "SER"
+    }
+  ],
+  "n_binding_residues": 2,
+  "pocket_rmsd": 1000.0,
+  "category": "STANDARD",
+  "apo_resolution": 1.61,
+  "holo_resolution": 1.55,
+  "uniprot_id": "Q32ZE1",
+  "cluster_id_30": "1181.0"
+}

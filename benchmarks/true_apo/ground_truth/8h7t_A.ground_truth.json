@@ -1,0 +1,62 @@
+{
+  "apo_pdb": "8h7t",
+  "apo_chain": "A",
+  "holo_pdb": "7dt0",
+  "holo_chain": "H",
+  "ligand_code": "AKG",
+  "ligand_heavy_atoms": 10,
+  "ligand_centroid": [
+    55.141099999999994,
+    -3.9896000000000003,
+    43.283
+  ],
+  "binding_residues_holo": [
+    {
+      "resnum": 99,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 101,
+      "resname": "ILE"
+    },
+    {
+      "resnum": 103,
+      "resname": "LYS"
+    },
+    {
+      "resnum": 114,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 116,
+      "resname": "ASP"
+    },
+    {
+      "resnum": 148,
+      "resname": "LEU"
+    },
+    {
+      "resnum": 208,
+      "resname": "PHE"
+    },
+    {
+      "resnum": 214,
+      "resname": "HIS"
+    },
+    {
+      "resnum": 216,
+      "resname": "SER"
+    },
+    {
+      "resnum": 229,
+      "resname": "LEU"
+    }
+  ],
+  "n_binding_residues": 10,
+  "pocket_rmsd": 0.62,
+  "category": "CRYPTIC",
+  "apo_resolution": 1.88,
+  "holo_resolution": 2.43,
+  "uniprot_id": "S5TUM1",
+  "cluster_id_30": "4779.0"
+}
