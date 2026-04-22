@@ -177,8 +177,8 @@ This is the core "autonomous" piece — the entire protocol runs on the GPU with
 
 ### Pipeline trace (`run_multi_stream_pipeline` at `nhs_rt_full.rs:2980-3850`)
 
-1. CLI `--multi-differential` parsed at `:235`
-2. Routes to multi-stream pipeline at `:565-567`
+1. CLI `--multi-differential` parsed at `:410` [was `:235` — updated 2026-04-21 canonical lockdown]
+2. Routes to multi-stream pipeline at `:967-969` [was `:565-567` — updated 2026-04-21 canonical lockdown]
 3. ASC initialization at `:3159-3177` (atomics + per-group phasor accumulators)
 4. 8 engines spawned, each on its own CUDA stream, each with its own protocol from `twin_differential_set()` at `:3155, 3236-3244, 3268-3320`
 5. Ring buffer exchange wired between groups at `:3186-3203`

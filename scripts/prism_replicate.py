@@ -26,33 +26,30 @@ from pathlib import Path
 from typing import List, Optional
 
 
-def find_engine_binary() -> str:
-    """Find nhs_rt_full binary."""
-    candidates = [
-        Path(__file__).parent.parent / "target" / "release" / "nhs_rt_full",
-        Path.home() / "Desktop" / "Prism4D-bio" / "target" / "release" / "nhs_rt_full",
-    ]
-    for p in candidates:
-        if p.exists():
-            return str(p)
-    raise FileNotFoundError("nhs_rt_full binary not found")
-
-
 def run_engine(
     topology: str, output_dir: str, seed: int = 42, verbose: bool = True
 ) -> bool:
-    """Run the Rust engine once with an explicit seed."""
-    binary = find_engine_binary()
+    """Run the engine once with an explicit seed, via the mandatory wrapper.
+
+    Source of truth: scripts/prism-validate-and-run.sh (mandatory; engine exits 2 without PRISM_VALIDATED=1).
+    Canonical flags: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+    """
+    wrapper = Path(__file__).parent / "prism-validate-and-run.sh"
+    if not wrapper.exists():
+        print(f"    Wrapper not found: {wrapper}", file=sys.stderr)
+        return False
     cmd = [
-        binary,
+        str(wrapper),
         "-t", topology,
         "-o", output_dir,
-        "--fast", "--hysteresis",
+        "--fast", "--hysteresis", "--prism-therm",
         "--multi-stream", "8",
-        "--spike-percentile", "95",
-        "--prism-therm",
-        "--fused-steps", "4",
+        "--spike-percentile", "70",
+        "--fused-steps", "6",
         "--hmr", "--adaptive-dt",
+        "--multi-differential",
+        "--closed-loop-steering", "--asymmetric-steering",
+        "--use-xgb-ranker",
         "--replica-seed", str(seed),
     ]
     if verbose:
@@ -60,9 +57,10 @@ def run_engine(
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
 
+    # Wrapper already tolerates 134/139 (CUDA teardown segfault) internally
+    # and re-exits with the engine's code. We mirror that tolerance here.
     if result.returncode not in (0, 134, 139):
-        # 134/139 = CUDA teardown segfault — output is still valid
-        print(f"    Engine failed with code {result.returncode}", file=sys.stderr)
+        print(f"    Wrapper failed with code {result.returncode}", file=sys.stderr)
         return False
     return True
 

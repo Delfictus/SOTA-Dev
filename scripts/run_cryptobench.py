@@ -37,12 +37,19 @@ PROJECT = Path(__file__).parent.parent
 BENCH_DIR = PROJECT / "benchmarks" / "cryptobench"
 GT_DIR = BENCH_DIR / "ground_truth"
 RESULTS_DIR = BENCH_DIR / "results"
-ENGINE = PROJECT / "target" / "release" / "nhs_rt_full"
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+# Engine is called via mandatory wrapper (direct binary exits 2 without PRISM_VALIDATED=1).
+ENGINE = PROJECT / "scripts" / "prism-validate-and-run.sh"
 
 ENGINE_FLAGS = [
-    "--fast", "--hysteresis", "--multi-stream", "8",
-    "--spike-percentile", "95", "--prism-therm",
-    "--fused-steps", "4", "--hmr", "--adaptive-dt",
+    "--fast", "--hysteresis", "--prism-therm",
+    "--multi-stream", "8",
+    "--spike-percentile", "70",
+    "--fused-steps", "6",
+    "--hmr", "--adaptive-dt",
+    "--multi-differential",
+    "--closed-loop-steering", "--asymmetric-steering",
+    "--use-xgb-ranker",
     "--replica-seed", "42", "-v",
 ]
 

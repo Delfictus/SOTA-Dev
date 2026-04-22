@@ -36,13 +36,21 @@ RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 RESULTS_DIR = ROOT / "benchmarks" / "bench10_results" / "runs" / RUN_ID
 SCRATCH_DIR = Path("/tmp/prism_bench10_scratch")
 
-NHS_BINARY = ROOT / "target" / "release" / "nhs_rt_full"
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+# Engine is called via mandatory wrapper (direct binary exits 2 without PRISM_VALIDATED=1).
+WRAPPER = ROOT / "scripts" / "prism-validate-and-run.sh"
 VALIDATION_SCRIPT = ROOT / "scripts" / "kcc_validation_v2.py"
 
 ENGINE_ARGS = [
-    "--fast", "--hysteresis", "--multi-stream", "8",
-    "--spike-percentile", "95", "--prism-therm",
-    "--fused-steps", "4", "--hmr", "--adaptive-dt", "-v",
+    "--fast", "--hysteresis", "--prism-therm",
+    "--multi-stream", "8",
+    "--spike-percentile", "70",
+    "--fused-steps", "6",
+    "--hmr", "--adaptive-dt",
+    "--multi-differential",
+    "--closed-loop-steering", "--asymmetric-steering",
+    "--use-xgb-ranker",
+    "--replica-seed", "42", "-v",
 ]
 
 # 10-target diverse subset (manually curated)
@@ -155,10 +163,10 @@ def run_engine(target, topo_path, output_dir):
         log(f"  Engine output exists: {bs_json}")
         return
 
-    if not NHS_BINARY.exists():
-        raise RuntimeError(f"NHS binary not found: {NHS_BINARY}")
+    if not WRAPPER.exists():
+        raise RuntimeError(f"Engine wrapper not found: {WRAPPER}")
 
-    cmd = [str(NHS_BINARY), "-t", str(topo_path), "-o", str(output_dir)] + ENGINE_ARGS
+    cmd = [str(WRAPPER), "-t", str(topo_path), "-o", str(output_dir)] + ENGINE_ARGS
     run_cmd(cmd, f"NHS engine for {target['pdb']}")
 
     if not bs_json.exists():
@@ -315,9 +323,9 @@ def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not NHS_BINARY.exists():
-        log(f"NHS binary not found: {NHS_BINARY}", "FATAL")
-        log("Run: cargo build --release -p prism-nhs --features gpu --bin nhs_rt_full")
+    if not WRAPPER.exists():
+        log(f"Engine wrapper not found: {WRAPPER}", "FATAL")
+        log("Expected: scripts/prism-validate-and-run.sh")
         sys.exit(1)
 
     # Write target list and run config
@@ -336,7 +344,7 @@ def main():
     config = {
         "run_id": RUN_ID,
         "git_commit": git_hash,
-        "engine": str(NHS_BINARY),
+        "engine": str(WRAPPER),
         "parameters": {k.lstrip("-"): True for k in ENGINE_ARGS if k.startswith("--")},
         "targets": [t["pdb"] for t in BENCH10_TARGETS],
         "started": datetime.now(timezone.utc).isoformat(),

@@ -334,9 +334,9 @@ def build_json_report(h5_path):
         "protocol": {
             "thermal_protocol": "Cryo-UV: 50K hold → ramp to 300K → 300K hold → ramp to 50K → 50K return",
             "multi_stream": 8,
-            "spike_percentile": 95,
-            "flags": "--fast --hysteresis --multi-stream 8 --spike-percentile 95 --prism-therm --fused-steps 4 --hmr --adaptive-dt --boltzmann-rank",
-            "fused_steps": 4,
+            "spike_percentile": 70,
+            "flags": "--fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v",
+            "fused_steps": 6,
             "hmr": True,
             "adaptive_dt": True,
         },

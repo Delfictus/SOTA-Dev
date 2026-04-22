@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# QUARANTINED 2026-04-21 — uses pre-lockdown canonical.
+# For current canonical, see CLAUDE.md §B or scripts/prism-validate-and-run.sh header.
+# This script is preserved for historical reproduction only.
 # 5-target smoke test for proteome_1000 — STEERING ENABLED variant.
 #
 # Adds --closed-loop-steering (Stage 2 ASC writeback) and --bocpd-chunking

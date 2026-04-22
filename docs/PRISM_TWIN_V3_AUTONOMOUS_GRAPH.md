@@ -251,7 +251,7 @@ initialize from CryoUvProtocol fields, upload once at simulation start.
 
 **Gate criteria**:
 - `cargo test -p prism-nhs --lib` passes
-- 1btl E2E with `--fast --hysteresis --prism-therm --spike-percentile 95 --fused-steps 4 --hmr --adaptive-dt -v`
+- 1btl E2E with §B canonical (`--fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v`)
   produces sites within 1Å DCC of pre-modification baseline
 - Spike counts within 5% of baseline (stochastic variation expected)
 
@@ -259,13 +259,19 @@ initialize from CryoUvProtocol fields, upload once at simulation start.
 ```bash
 # Run BEFORE modification:
 scripts/prism-validate-and-run.sh -t 1btl.topology.json -o /tmp/baseline_1btl \
-    --fast --hysteresis --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt --replica-seed 42 -v
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 --spike-percentile 70 --fused-steps 6 \
+    --hmr --adaptive-dt --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker --replica-seed 42 -v
 
 # Run AFTER modification:
 scripts/prism-validate-and-run.sh -t 1btl.topology.json -o /tmp/modified_1btl \
-    --fast --hysteresis --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt --replica-seed 42 -v
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 --spike-percentile 70 --fused-steps 6 \
+    --hmr --adaptive-dt --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker --replica-seed 42 -v
 
 # Compare:
 python3 -c "
@@ -327,11 +333,14 @@ With the physics running autonomously inside the graph:
 
 ### Gate 4: Full validation on 3 targets (Week 5)
 
-Run 1btl, 4obe, 1w50 with:
+Run 1btl, 4obe, 1w50 with C-twin-graph variant (CUDA-Graph experimental; mutually exclusive with --multi-differential):
 ```bash
---coupled-twin --graph-coupling --multi-stream 8 \
---fast --hysteresis --spike-percentile 95 --prism-therm \
---fused-steps 4 --hmr --adaptive-dt -v
+scripts/prism-validate-and-run.sh -t <topo> -o <out> \
+    --fast --hysteresis --prism-therm \
+    --coupled-twin --graph-coupling \
+    --multi-stream 8 \
+    --spike-percentile 70 --fused-steps 6 \
+    --hmr --adaptive-dt --replica-seed 42 -v
 ```
 
 **Gate criteria**:

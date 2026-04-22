@@ -27,10 +27,15 @@ mkdir -p "$TESTDIR"
 scripts/prism-validate-and-run.sh \
     -t "$TOPO" \
     -o "$TESTDIR" \
-    --fast --hysteresis --multi-stream 8 \
-    --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt \
-    --replica-seed 42 --boltzmann-rank -v \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 \
+    --spike-percentile 70 \
+    --fused-steps 6 \
+    --hmr --adaptive-dt \
+    --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker \
+    --replica-seed 42 -v \
     2>&1 | grep -E "CRYPTIC|completed|Error|PASS|FAIL" | head -10
 
 python3 - << 'PYEOF'

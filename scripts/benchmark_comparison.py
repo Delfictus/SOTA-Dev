@@ -47,7 +47,9 @@ PDB_NAME_MAP = {
 }
 
 # Paths
-PRISM_BINARY = "target/release/nhs_rt_full"
+# Engine is called via mandatory wrapper (direct binary exits 2 without PRISM_VALIDATED=1).
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+PRISM_BINARY = "scripts/prism-validate-and-run.sh"
 TOPO_DIR = Path("e2e_validation_test/prep")
 PDB_CACHE = Path("/tmp/pdb_cache")
 P2RANK_BIN = Path("tools/p2rank/p2rank_2.5.1/prank")
@@ -75,11 +77,18 @@ PRISM_FILENAME_MAP = {
     "1ere_chainA": "1ere_chainA",
 }
 
-# Canonical PRISM flags (all optimizations enabled)
+# Canonical PRISM flags (all optimizations enabled).
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
 PRISM_FLAGS = [
-    "--fast", "--hysteresis", "--multi-stream", "8",
-    "--spike-percentile", "95", "--prism-therm",
-    "--fused-steps", "4", "--hmr", "--adaptive-dt", "-v"
+    "--fast", "--hysteresis", "--prism-therm",
+    "--multi-stream", "8",
+    "--spike-percentile", "70",
+    "--fused-steps", "6",
+    "--hmr", "--adaptive-dt",
+    "--multi-differential",
+    "--closed-loop-steering", "--asymmetric-steering",
+    "--use-xgb-ranker",
+    "--replica-seed", "42", "-v",
 ]
 
 # Additional holo references per target for multi-reference evaluation.

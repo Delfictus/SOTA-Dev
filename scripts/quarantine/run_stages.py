@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# QUARANTINED 2026-04-21 — uses pre-lockdown canonical.
+# For current canonical, see CLAUDE.md §B or scripts/prism-validate-and-run.sh header.
+# This script is preserved for historical reproduction only.
 """
 [STAGE RUNNER - PROVENANCE-WRAPPED]
 

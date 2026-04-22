@@ -55,19 +55,25 @@ TOPO_DIR = BENCH_DIR / "topologies"
 RESULTS_DIR = BENCH_DIR / "results"
 RUN_DIR = Path("/tmp/prism_hard_targets")
 
-NHS_BINARY = ROOT / "target" / "release" / "nhs_rt_full"
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+# Engine is called via mandatory wrapper (direct binary exits 2 without PRISM_VALIDATED=1).
+NHS_BINARY = ROOT / "scripts" / "prism-validate-and-run.sh"
 VALIDATION_SCRIPT = ROOT / "scripts" / "kcc_validation_v2.py"
 
 # Engine parameters (FIXED — identical for all targets)
 ENGINE_ARGS = [
     "--fast",
     "--hysteresis",
-    "--multi-stream", "8",
-    "--spike-percentile", "95",
     "--prism-therm",
-    "--fused-steps", "4",
+    "--multi-stream", "8",
+    "--spike-percentile", "70",
+    "--fused-steps", "6",
     "--hmr",
     "--adaptive-dt",
+    "--multi-differential",
+    "--closed-loop-steering", "--asymmetric-steering",
+    "--use-xgb-ranker",
+    "--replica-seed", "42",
     "-v",
 ]
 
@@ -259,7 +265,7 @@ def run_nhs_engine(topo_path, output_dir, pdb_id):
 
     log(f"  Running NHS engine for {pdb_id}...")
     if not NHS_BINARY.exists():
-        raise BenchmarkError(f"NHS binary not found: {NHS_BINARY}")
+        raise BenchmarkError(f"Engine wrapper not found: {NHS_BINARY}")
 
     cmd = [str(NHS_BINARY), "-t", str(topo_path), "-o", str(output_dir)] + ENGINE_ARGS
     run_cmd(cmd, f"NHS engine for {pdb_id}", timeout=1200)
@@ -430,8 +436,8 @@ def run_pipeline():
 
     # Check NHS binary
     if not NHS_BINARY.exists():
-        log(f"NHS binary not found at {NHS_BINARY}", "FATAL")
-        log("Run: cargo build --release -p prism-nhs --features gpu --bin nhs_rt_full")
+        log(f"Engine wrapper not found at {NHS_BINARY}", "FATAL")
+        log("Expected: scripts/prism-validate-and-run.sh")
         sys.exit(1)
 
     all_metrics = []

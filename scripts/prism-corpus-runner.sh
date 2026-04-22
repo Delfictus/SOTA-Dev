@@ -99,7 +99,10 @@ fi
 # Default engine flags if none provided. The user can override entirely
 # with --engine-flags. These match the canonical TWIN multi-differential
 # corpus generation config.
-DEFAULT_ENGINE_FLAGS="--multi-stream 4 --multi-scale --lining-cutoff 8.0 --fast --hysteresis --prism-therm --spike-percentile 70 --use-tokenized-ranker --replica-seed 42 -v"
+# Canonical TWIN corpus generation flags.
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+# Previous value used --multi-stream 4 --use-tokenized-ranker (superseded; xgb v3 is +11.4 pts SR@1).
+DEFAULT_ENGINE_FLAGS="--fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v"
 ENGINE_FLAGS="${EXTRA_ENGINE_FLAGS:-$DEFAULT_ENGINE_FLAGS}"
 
 mkdir -p "$WORK_DIR_BASE"

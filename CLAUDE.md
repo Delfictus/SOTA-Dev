@@ -23,7 +23,7 @@ python3 scripts/prism_replicate.py \
 6. **Consensus operates on site objects, not ranks.** Clustering by centroid + lining residue overlap.
 7. **Do not touch the GTCKL ranking formula** in Rust without benchmark validation.
 8. **Never use "oracle"** in benchmark reporting.
-9. **OptiX is removed.** Never mention or reference it.
+9. **OptiX is DISABLED on SM120+ (RTX 5080 Blackwell).** The `prism-optix` and `optix-sys` crates still exist in the workspace and are still compiled; the engine detects SM120+ at runtime and falls back to grid clustering (see `nhs_rt_full.rs:5909-5915`). Do NOT pass `--rt-clustering` in canonical runs. Removal of the OptiX crates is tracked as a separate cleanup lane.
 
 ## PIPELINE FLOW
 ```
@@ -70,6 +70,15 @@ site_ranking, design_briefs
 python3 -m pytest tests/test_gating/ tests/test_design/ tests/test_interfaces/ -v
 ```
 
+## CANONICAL COMMAND CLASSES
+
+- **C-canonical** — full TWIN production (default; see §B canonical below)
+- **C-smoke-min** — bounded init check, no benchmark: `--fast-25k --multi-stream 1 -v`
+- **C-smoke-eng** — multi-stream emission exercise: `--fast-25k --multi-stream 2 -v`
+- **C-corpus** — batch corpus generation (uses C-canonical flags via prism-corpus-runner.sh)
+- **C-twin-graph** — CUDA-Graph WHILE experimental (mutually exclusive with --multi-differential): `--coupled-twin --graph-coupling` with canonical base flags
+- **C-replicate** — N-replicate consensus via prism_replicate.py (calls wrapper internally)
+
 ## PRISM-4D ENGINE RUN PROTOCOL — MANDATORY
 
 ### Single entry point
@@ -77,13 +86,22 @@ python3 -m pytest tests/test_gating/ tests/test_design/ tests/test_interfaces/ -
 Direct invocation of `nhs_rt_full` is PROHIBITED in all scripts, Makefiles, and pipelines.
 
 ### Canonical run command
+
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see Provenance Table)
+# Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
+
 ```bash
 scripts/prism-validate-and-run.sh \
     -t <topology.json> \
     -o <output_dir> \
-    --fast --hysteresis --multi-stream 8 \
-    --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 \
+    --spike-percentile 70 \
+    --fused-steps 6 \
+    --hmr --adaptive-dt \
+    --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker \
     --replica-seed 42 -v
 ```
 
@@ -99,12 +117,19 @@ python3 scripts/prism-clean.py xxxx_raw.pdb xxxx_clean.pdb A
 scripts/prism-prep xxxx_clean.pdb xxxx_clean.topology.json
 
 # 4. Run with validation gates
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see Provenance Table)
+# Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
 scripts/prism-validate-and-run.sh \
     -t xxxx_clean.topology.json \
     -o output/xxxx \
-    --fast --hysteresis --multi-stream 8 \
-    --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 \
+    --spike-percentile 70 \
+    --fused-steps 6 \
+    --hmr --adaptive-dt \
+    --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker \
     --replica-seed 42 -v
 
 # 5. (Optional) P2Rank reranking
@@ -168,13 +193,20 @@ python3 scripts/prism-merge-chains.py xxxx_chainA.pdb xxxx_chainB.pdb \
 scripts/prism-prep xxxx_merged.pdb xxxx_merged.topology.json
 
 # 6. Run with chain map passed through
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see Provenance Table)
+# Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
 scripts/prism-validate-and-run.sh \
     -t xxxx_merged.topology.json \
     -o output/xxxx \
     --chain-map xxxx_merged.chain_map.json \
-    --fast --hysteresis --multi-stream 8 \
-    --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 \
+    --spike-percentile 70 \
+    --fused-steps 6 \
+    --hmr --adaptive-dt \
+    --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker \
     --replica-seed 42 -v
 ```
 
@@ -238,3 +270,7 @@ Full text: `docs/PRISM4D_DEV_OPS_FRAMEWORK.md` §1.
 
 Also see `docs/PRISM4D_DEV_OPS_FRAMEWORK.md` §2 for the SOP rule
 (documentation is written as part of the procedure, not after).
+
+## CANONICAL PROVENANCE
+
+All flag values trace to file:line citations in [docs/CANONICAL_PROVENANCE.md](docs/CANONICAL_PROVENANCE.md). Do not edit a canonical block without updating the provenance table.

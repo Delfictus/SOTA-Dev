@@ -10,6 +10,8 @@ last_updated: 2026-04-10T01:35:00Z
 version: 2
 ---
 
+> **NOTE (2026-04-21):** Commands recorded in this log reflect what was actually run at the time. Flag sets here predate the canonical lockdown. For current canonical, see CLAUDE.md §B.
+
 # Sentinel Observation Log — 2026-04-09/10
 
 ## Session Context

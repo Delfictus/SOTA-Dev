@@ -131,8 +131,8 @@ struct Args {
     /// which derives the threshold from the data via Otsu's method (1979)
     /// — no parameters, adapts per target. This flag is preserved for
     /// backward compatibility and is the active filter only when
-    /// `--filter-otsu` is NOT set. The canonical run command in CLAUDE.md
-    /// (`--spike-percentile 95`) continues to work unchanged.
+    /// `--filter-otsu` is NOT set. Default 70 matches the pct70 campaign
+    /// and is the canonical production value (see CLAUDE.md §B).
     #[arg(long, default_value = "70")]
     spike_percentile: u32,
 
@@ -5570,7 +5570,8 @@ fn run_multi_stream_pipeline(
         //
         //   • Default — `--spike-percentile <N>` (magic-constant fallback):
         //     sorts each channel by intensity, keeps the top (100-N)%.
-        //     Used by the canonical run command in CLAUDE.md.
+        //     Used by the canonical run command in CLAUDE.md §B
+        //     (default value 70; see nhs_rt_full.rs:136).
         //
         //   • Opt-in — `--filter-otsu` (data-driven, recommended):
         //     computes Otsu's 1979 threshold per channel from a 256-bin
@@ -6623,8 +6624,8 @@ fn run_multi_stream_pipeline(
             // ─── Breathing: variance of burial across frames = pocket dynamics ───
             let breathing_score = if site_spikes.len() >= 20 {
                 // Finer frame window (200 steps vs 1000) to capture sub-nanosecond
-                // pocket dynamics. With dt=0.002ps and fused_steps=4, 200 steps =
-                // 0.4ps windows — enough to see water entry/exit events.
+                // pocket dynamics. With dt=0.002ps and fused_steps=6 (engine default),
+                // 200 steps ≈ 0.4ps windows — enough to see water entry/exit events.
                 let breath_frame_window = 200i32;
                 let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> = std::collections::HashMap::new();
                 for s in &site_spikes {

@@ -197,8 +197,8 @@ find ~/Desktop/Prism4D-bio/crates -name "*.json" -path "*/data/*" 2>/dev/null
     "optional": [...]
   },
   "run_command": {
-    "canonical": "scripts/prism-validate-and-run.sh -t <topo> -o <dir> --fast --hysteresis --multi-stream 8 --spike-percentile 95 --prism-therm --fused-steps 4 --hmr --adaptive-dt --replica-seed 42 -v",
-    "minimum": "target/release/nhs_rt_full -t <topo> -o <dir>"
+    "canonical": "scripts/prism-validate-and-run.sh -t <topo> -o <dir> --fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v",
+    "minimum": "scripts/prism-validate-and-run.sh -t <topo> -o <dir> --fast-25k --multi-stream 1 -v"
   }
 }
 ```

@@ -195,9 +195,19 @@ crates/prism-nhs/src/
 
 **Command:**
 ```bash
-nhs_rt_full -t <topology>.json -o <output_dir> \
-    --fast --hysteresis --multi-stream 8 \
-    --spike-percentile 95 --prism-therm -v
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md)
+scripts/prism-validate-and-run.sh \
+    -t <topology.json> \
+    -o <output_dir> \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 \
+    --spike-percentile 70 \
+    --fused-steps 6 \
+    --hmr --adaptive-dt \
+    --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker \
+    --replica-seed 42 -v
 ```
 
 **Execution Flow:**
@@ -1118,7 +1128,7 @@ See Section 5.2 above.
 | Adaptive epsilon clustering | nhs_rt_full.rs | multi_scale_cluster_spikes | YES |
 | Mega-cluster subdivision | nhs_rt_full.rs | voxel density peak | YES |
 | Consensus clustering (5.0Å) | nhs_rt_full.rs | build_consensus_sites() | YES |
-| Spike percentile filtering | nhs_rt_full.rs | --spike-percentile 95 | YES |
+| Spike percentile filtering | nhs_rt_full.rs:136 | --spike-percentile 70 (engine default) | YES |
 | Aromatic proximity enrichment | aromatic_proximity.rs | enhance_sites_with_aromatics() | YES |
 | Lining residue computation | nhs_rt_full.rs | compute_lining_residues() | YES |
 | SDST hash insertion | sdst_core.cu | kernel_hash_insert() | YES — 26/26 tests |
@@ -1183,9 +1193,15 @@ See Section 5.2 above.
 
 ### SNDC v9 (commit 3bd5c17 / b7a3617)
 
-**Canonical command:**
+**Canonical command** (benchmark was run under pre-lockdown flags; current canonical in docs/CANONICAL_PROVENANCE.md):
 ```bash
-nhs_rt_full -t <topo>.json -o <dir> --fast --hysteresis --multi-stream 8 --spike-percentile 95 --prism-therm -v
+scripts/prism-validate-and-run.sh \
+    -t <topo>.json -o <dir> \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 --spike-percentile 70 --fused-steps 6 \
+    --hmr --adaptive-dt --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker --replica-seed 42 -v
 ```
 
 | PDB | Target | DCC (Å) | Grade | Sites | Spikes |

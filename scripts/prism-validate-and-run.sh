@@ -11,24 +11,23 @@
 #       -o <output_dir> \
 #       [all other engine flags passed through]
 #
-# CANONICAL PRODUCTION RUN (as of 2026-03-29, Tier 1 targets confirmed):
+# CANONICAL PRODUCTION RUN (as of 2026-04-21, code-verified):
+#
+# Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md)
+# Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
 #
 #   scripts/prism-validate-and-run.sh \
-#       -t data/targets/<pdb>.topology.json \
-#       -o /tmp/prism_<pdb> \
-#       --fast --hysteresis \
-#       --multi-stream 20 \
-#       --spike-percentile 95 \
-#       --prism-therm \
-#       --fused-steps 4 \
-#       --hmr \
-#       --adaptive-dt \
-#       --replica-seed 42 \
-#       --boltzmann-rank \
-#       -v
-#
-# For smaller targets (<200 residues): --multi-stream 8
-# For large targets (>400 residues):   --multi-stream 20
+#       -t <topology.json> \
+#       -o <output_dir> \
+#       --fast --hysteresis --prism-therm \
+#       --multi-stream 8 \
+#       --spike-percentile 70 \
+#       --fused-steps 6 \
+#       --hmr --adaptive-dt \
+#       --multi-differential \
+#       --closed-loop-steering --asymmetric-steering \
+#       --use-xgb-ranker \
+#       --replica-seed 42 -v
 
 set -euo pipefail
 

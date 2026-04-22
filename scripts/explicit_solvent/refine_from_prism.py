@@ -368,15 +368,23 @@ def run_prism_redetect(refined_pdb, topology_json, output_dir, gt_centroid_str=N
     redetect_output = os.path.join(output_dir, "redetect")
     os.makedirs(redetect_output, exist_ok=True)
 
-    # Run PRISM4D pass 2 — shorter run (the pocket is already open)
+    # Run PRISM4D pass 2 — shorter run (the pocket is already open).
+    # Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md).
+    # --cascade is preserved: this is a targeted re-detect, not a canonical full run.
     cmd = [
-        "target/release/nhs_rt_full",
+        "scripts/prism-validate-and-run.sh",
         "-t", redetect_topo,
         "-o", redetect_output,
-        "--fast", "--hysteresis", "--multi-stream", "8",
-        "--spike-percentile", "95", "--prism-therm",
-        "--fused-steps", "4", "--hmr", "--adaptive-dt",
+        "--fast", "--hysteresis", "--prism-therm",
+        "--multi-stream", "8",
+        "--spike-percentile", "70",
+        "--fused-steps", "6",
+        "--hmr", "--adaptive-dt",
+        "--multi-differential",
+        "--closed-loop-steering", "--asymmetric-steering",
+        "--use-xgb-ranker",
         "--cascade",
+        "--replica-seed", "42",
         "-v",
     ]
 

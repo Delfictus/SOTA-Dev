@@ -243,7 +243,7 @@ def report_target_review(ok_targets):
                        if k.endswith(".spike_events.parquet") or k.endswith(".spike_events.arrow")}
         if spike_files:
             # Floor check only: catch truly empty/corrupt files (10 KB).
-            # With --multi-stream 4 --spike-percentile 95, sub-5MB parquets
+            # With canonical --spike-percentile 70, sub-5MB parquets
             # are expected for low-activity pockets — not an integrity issue.
             for fname, size in spike_files.items():
                 if size < 10_000:

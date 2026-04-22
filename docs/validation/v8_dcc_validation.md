@@ -1,3 +1,5 @@
+> **NOTE (2026-04-21):** This validation was run under the pre-lockdown canonical (`--spike-percentile 95`). Re-run under the §B canonical (`--spike-percentile 70`) is tracked separately.
+
 # PRISM-4D v8 DCC Validation Report
 ## Intensity²-Weighted Centroids, Dynamic LIGSITE
 

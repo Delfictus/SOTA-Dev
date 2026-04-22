@@ -1,5 +1,7 @@
 # PRISM-TWIN: Complete Implementation Plan — Phase A through Phase B
 
+> **NOTE (2026-04-21 canonical lockdown):** This implementation plan documents the historical Gate 1→2→3 progression of `--coupled-twin`. The current canonical TWIN command is the 4-group `--multi-differential` path (see CLAUDE.md §B and docs/CANONICAL_PROVENANCE.md). The `--coupled-twin` commands below are preserved for historical context of the implementation path; do NOT use them for new production runs.
+
 **Status**: DRAFT — PRESCRIPTIVE PLAN (not a verification report)  
 **Date**: 2026-04-08  
 **Author**: Ididia Serfaty + Claude  
@@ -1086,7 +1088,7 @@ scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_ring_test \
     --coupled-twin --fast \
-    --fused-steps 4 --hmr --adaptive-dt -v 2>&1 | grep -E "exchange|ring|threshold"
+    --fused-steps 6 --hmr --adaptive-dt -v 2>&1 | grep -E "exchange|ring|threshold"
 # MUST show: ring buffer push/read logs, non-zero exchanges
 # MUST NOT show: any panic or CUDA error
 ```
@@ -1106,7 +1108,7 @@ PRISM_TWIN_DIAG=1 scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_coupling_diag \
     --coupled-twin --fast \
-    --fused-steps 4 --hmr --adaptive-dt -v 2>&1 | \
+    --fused-steps 6 --hmr --adaptive-dt -v 2>&1 | \
     grep "threshold_delta_l2"
 # MUST show: threshold_delta_l2 > 0.001 on at least 50% of logged steps
 # If threshold_delta_l2 ≈ 0 on all steps, coupling is ineffective.
@@ -1324,7 +1326,7 @@ scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_ccf_test \
     --coupled-twin --fast \
-    --fused-steps 4 --hmr --adaptive-dt -v 2>&1 | grep -E "CCF|Tensor"
+    --fused-steps 6 --hmr --adaptive-dt -v 2>&1 | grep -E "CCF|Tensor"
 # MUST show: "CCF matrix: NxN (M non-zero)" with M > 0
 # MUST NOT show: CUDA error, NaN, Inf
 ```
@@ -1563,7 +1565,7 @@ Add flag passthrough in the validation wrapper. Search for the flag parsing sect
 scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_cli_test \
-    --coupled-twin --fast --fused-steps 4 --hmr --adaptive-dt -v
+    --coupled-twin --fast --fused-steps 6 --hmr --adaptive-dt -v
     
 # Output MUST appear in /tmp/twin_cli_test/, NOT /tmp/prism_twin_spikes/
 ls /tmp/twin_cli_test/coupled_twin_result.json
@@ -1715,21 +1717,26 @@ cargo test -p prism-nhs --lib 2>&1 | tail -5
 
 For each target:
 ```bash
-# Non-TWIN baseline (existing multi-stream)
+# Non-TWIN baseline (§B canonical)
 scripts/prism-validate-and-run.sh \
     -t output/$TARGET/$TARGET_clean.topology.json \
     -o output/${TARGET}_baseline \
-    --fast --hysteresis --multi-stream 2 \
-    --spike-percentile 95 --prism-therm \
-    --fused-steps 4 --hmr --adaptive-dt \
+    --fast --hysteresis --prism-therm \
+    --multi-stream 8 \
+    --spike-percentile 70 \
+    --fused-steps 6 \
+    --hmr --adaptive-dt \
+    --multi-differential \
+    --closed-loop-steering --asymmetric-steering \
+    --use-xgb-ranker \
     --replica-seed 42 -v
 
-# TWIN run
+# TWIN run (historical --coupled-twin; see lockdown notice at top)
 scripts/prism-validate-and-run.sh \
     -t output/$TARGET/$TARGET_clean.topology.json \
     -o output/${TARGET}_twin \
     --coupled-twin --fast \
-    --fused-steps 4 --hmr --adaptive-dt \
+    --fused-steps 6 --hmr --adaptive-dt \
     --replica-seed 42 -v
 ```
 
@@ -2043,7 +2050,7 @@ scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_multi8_test \
     --coupled-twin --multi-stream 8 --fast \
-    --fused-steps 4 --hmr --adaptive-dt -v 2>&1 | tee /tmp/twin_multi8.log
+    --fused-steps 6 --hmr --adaptive-dt -v 2>&1 | tee /tmp/twin_multi8.log
 
 grep -c "Engine.*initialized\|Stream.*initialized" /tmp/twin_multi8.log
 # MUST: 8
@@ -2668,7 +2675,7 @@ ls -la target/ptx/twin_transfer_entropy.ptx
 scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_te_test \
-    --coupled-twin --fast --fused-steps 4 --hmr --adaptive-dt -v 2>&1 | grep "transfer_entropy"
+    --coupled-twin --fast --fused-steps 6 --hmr --adaptive-dt -v 2>&1 | grep "transfer_entropy"
 # MUST: non-zero values logged
 
 python3 -c "
@@ -2740,7 +2747,7 @@ print(f'✓ NMA: {data[\"n_modes\"]} modes × {data[\"n_residues\"]} residues')
 scripts/prism-validate-and-run.sh \
     -t tests/fixtures/1btl_clean.topology.json \
     -o /tmp/twin_nma_test \
-    --coupled-twin --fast --fused-steps 4 --hmr --adaptive-dt -v 2>&1 | grep "NMA"
+    --coupled-twin --fast --fused-steps 6 --hmr --adaptive-dt -v 2>&1 | grep "NMA"
 # MUST show: "Auto-generating NMA modes" or "NMA loaded"
 # MUST show: "Stream B: NMA loaded (amplification=3.0)"
 
@@ -2782,7 +2789,7 @@ for target in $(jq -r '.[].pdb_id' benchmarks/prism4d_bench30/benchmark_manifest
         -t output/${target}/${target}_clean.topology.json \
         -o output/twin_bench30/${target} \
         --coupled-twin --multi-stream 8 --fast \
-        --fused-steps 4 --hmr --adaptive-dt -v
+        --fused-steps 6 --hmr --adaptive-dt -v
 done
 ```
 
@@ -2983,5 +2990,5 @@ scripts/prism-validate-and-run.sh \
     -t output/1btl/1btl_clean.topology.json \
     -o /tmp/twin_e2e \
     --coupled-twin --multi-stream 8 --fast \
-    --fused-steps 4 --hmr --adaptive-dt -v
+    --fused-steps 6 --hmr --adaptive-dt -v
 ```
