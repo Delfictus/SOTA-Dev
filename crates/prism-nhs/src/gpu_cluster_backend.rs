@@ -505,18 +505,30 @@ impl GpuSpatialHashBackend {
     }
 }
 
-/// Resolve the selected backend code to a concrete backend-to-use for the
-/// current hardware. This is the single place where "auto" is mapped.
+/// Resolve the selected backend code to a concrete backend-to-use.
 ///
-/// `is_sm120_or_newer`: true if OptiX is NOT available on this device
-/// (runtime-detected upstream). On SM120 OptiX is disabled per IMMUTABLE RULE #9.
-pub fn resolve_auto(selected: u8, is_sm120_or_newer: bool) -> u8 {
+/// Previous revision gated AUTO on an `is_sm120_or_newer` hint derived
+/// from `rt_utils::is_optix_available()`. That hint returned `true`
+/// whenever the device had RT cores (SM >= 7.5), which is true on SM120
+/// Blackwell — so AUTO mis-resolved to OPTIX on exactly the hardware
+/// where IMMUTABLE_RULE #9 disables OptiX. Confirmed failure signature
+/// in the canonical 4lpk run on 2026-04-22: 8×
+/// `POST_MD_CLUSTER_BACKEND_SELECTED backend=optix` followed by
+/// `RT clustering failed (OptiX is disabled on this device)` and a
+/// silent LIGSITE geometric-pocket fallback downstream.
+///
+/// Per IMMUTABLE_RULE #9 in CLAUDE.md, OptiX is disabled unconditionally
+/// in this codebase (`ensure_rt_pipeline` short-circuits to `Ok(false)`
+/// at `persistent_engine.rs`). Consequently AUTO always resolves to
+/// `BACKEND_GPU_HASH` here. The `BACKEND_RT_OPTIX` code remains reachable
+/// ONLY via explicit `--clustering-backend=optix`, where the error is
+/// intended and loud.
+///
+/// The `is_sm120_or_newer` parameter is retained for call-site stability
+/// and future resurrection of an OptiX path; it is ignored today.
+pub fn resolve_auto(selected: u8, _is_sm120_or_newer: bool) -> u8 {
     if selected == BACKEND_UNINIT || selected == BACKEND_AUTO {
-        if is_sm120_or_newer {
-            BACKEND_GPU_HASH
-        } else {
-            BACKEND_RT_OPTIX
-        }
+        BACKEND_GPU_HASH
     } else {
         selected
     }
