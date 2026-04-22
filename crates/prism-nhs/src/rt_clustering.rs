@@ -779,6 +779,33 @@ pub fn find_optixir_path() -> Option<std::path::PathBuf> {
     None
 }
 
+// ─── SpatialNeighborIndex trait impl (Phase 1 LBVH lane) ──────────────────
+
+#[cfg(feature = "gpu")]
+impl crate::spatial_index::SpatialNeighborIndex for RtClusteringEngine {
+    fn backend(&self) -> crate::spatial_index::SpatialBackend {
+        crate::spatial_index::SpatialBackend::OptixRt
+    }
+
+    fn prepare(&mut self, positions: &[f32], max_epsilon: f32) -> anyhow::Result<()> {
+        self.prepare_bvh(positions, max_epsilon)
+    }
+
+    fn query_at_epsilon(
+        &mut self,
+        positions: &[f32],
+        epsilon: f32,
+    ) -> anyhow::Result<crate::spatial_index::NeighborQueryResult> {
+        let r = self.cluster_at_epsilon(positions, epsilon)?;
+        Ok(crate::spatial_index::NeighborQueryResult {
+            cluster_ids: r.cluster_ids,
+            num_clusters: r.num_clusters,
+            total_neighbors: r.total_neighbors,
+            gpu_time_ms: r.gpu_time_ms,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

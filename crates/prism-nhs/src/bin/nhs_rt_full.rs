@@ -418,6 +418,20 @@ struct Args {
     #[arg(long, default_value = "false")]
     multi_differential: bool,
 
+    /// Spatial neighbor-index backend for clustering.
+    ///
+    /// Production (default): `auto` — uses LBVH on SM120+ (when available),
+    /// OptiX elsewhere. Phase 1 lands with `auto` == OptiX or grid depending
+    /// on runtime detection; Phase 2 adds LBVH.
+    ///
+    /// **Debug only:** `grid` selects the degraded grid-LIGSITE path. This
+    /// path skips multi-scale persistence analysis and will ERROR-exit when
+    /// combined with --multi-differential (production rule #10).
+    ///
+    /// Values: `auto` | `optix` | `lbvh` | `grid`
+    #[arg(long, default_value = "auto")]
+    clustering_backend: String,
+
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
     /// temporal persistence, persistent homology, and Boltzmann gap gates.
@@ -789,6 +803,65 @@ fn main() -> Result<()> {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
+
+    // ── Spatial backend dispatch policy (Phase 1 LBVH lane) ───────────────
+    //
+    // Production rule #10 (2026-04-21):
+    //   - auto   → LBVH on SM120+ (Phase 2); falls back to OptiX elsewhere
+    //             (Phase 1: always OptiX since LBVH doesn't exist yet)
+    //   - optix  → explicit OptiX (errors on SM120 with no RT support)
+    //   - lbvh   → explicit LBVH (Phase 1: error "not yet implemented")
+    //   - grid   → debug only; ERROR with --multi-differential
+    //
+    // NOTE: Phase 1 does NOT wire the backend choice into the engine
+    // construction path. It only validates the flag and enforces rule #10.
+    // The actual dispatch of LBVH vs OptiX is done inside the engine (and
+    // Phase 2 adds real LBVH selection). Phase 1's only enforcement job is
+    // the --clustering-backend=grid + --multi-differential hard error.
+    {
+        let backend_str = args.clustering_backend.as_str();
+        let is_grid = backend_str == "grid";
+        let is_multi_diff = args.multi_differential;
+        if is_grid && is_multi_diff {
+            eprintln!(
+                "ERROR: --clustering-backend=grid is forbidden with --multi-differential."
+            );
+            eprintln!(
+                "  Reason: grid path skips multi-scale persistence analysis and degrades"
+            );
+            eprintln!(
+                "  detection quality. See production rule #10 in CLAUDE.md."
+            );
+            eprintln!(
+                "  For debug/bisection, drop --multi-differential or use --clustering-backend=auto."
+            );
+            std::process::exit(3);
+        }
+        // Validate the flag itself.
+        match backend_str {
+            "auto" | "optix" | "lbvh" | "grid" => {
+                log::info!("  [SPATIAL-INDEX] backend request: {}", backend_str);
+                if backend_str == "lbvh" {
+                    log::warn!(
+                        "  [SPATIAL-INDEX] --clustering-backend=lbvh requested, but LBVH \
+                         backend is not yet implemented (arrives in Phase 2). Falling back \
+                         to default dispatch."
+                    );
+                }
+                if backend_str == "grid" {
+                    log::warn!(
+                        "  [SPATIAL-INDEX] --clustering-backend=grid selected. DEBUG ONLY. \
+                         Detection quality will be degraded."
+                    );
+                }
+            }
+            other => {
+                eprintln!("ERROR: unknown --clustering-backend value: {}", other);
+                eprintln!("  Valid: auto | optix | lbvh | grid");
+                std::process::exit(4);
+            }
+        }
+    }
 
     #[cfg(feature = "gpu")]
     {

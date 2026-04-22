@@ -132,6 +132,9 @@ pub mod active_sensing;
 pub mod ultimate_engine;
 #[cfg(feature = "gpu")]
 pub mod rt_clustering;
+pub mod spatial_index;
+#[cfg(feature = "gpu")]
+pub mod grid_debug_backend;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]
