@@ -2174,6 +2174,11 @@ impl PersistentNhsEngine {
     }
 
     /// Fallback grid-based clustering when RT cores unavailable
+    /// CPU grid clustering fallback — public for multi-stream path when RT cores fail
+    pub fn cluster_spikes_cpu_fallback(&self, positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+        self.fallback_grid_cluster(positions)
+    }
+
     fn fallback_grid_cluster(&self, positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
         let num_points = positions.len() / 3;
         let start = Instant::now();

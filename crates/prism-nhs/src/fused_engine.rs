@@ -4133,7 +4133,7 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch init_rng_states")?;
 
-        self.context.synchronize()?;
+        self.stream.synchronize()?;
         Ok(())
     }
 
@@ -4159,7 +4159,7 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch init_lif_state")?;
 
-        self.context.synchronize()?;
+        self.stream.synchronize()?;
         Ok(())
     }
 
@@ -4190,7 +4190,7 @@ impl NhsAmberFusedEngine {
         .context("Failed to launch init_multi_neuron")?;
 
         log::info!("Multi-neuron LIF bank initialized: {} voxels x {} neurons", total_voxels, k_neurons);
-        self.context.synchronize()?;
+        self.stream.synchronize()?;
         Ok(())
     }
 
@@ -4245,7 +4245,7 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch build_aromatic_neighbors")?;
 
-        self.context.synchronize()?;
+        self.stream.synchronize()?;
         log::info!("Built aromatic neighbor lists for {} aromatics (cutoff {:.1}A)",
             self.n_aromatics, neighbor_cutoff);
 
@@ -4300,7 +4300,7 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch compute_ring_normals")?;
 
-        self.context.synchronize()?;
+        self.stream.synchronize()?;
         log::info!("Computed ring normals for {} aromatics", self.n_aromatics);
 
         Ok(())
@@ -4387,7 +4387,7 @@ impl NhsAmberFusedEngine {
 
         // Upload centroids to GPU
         self.stream.memcpy_htod(&centroids_flat, &mut self.d_aromatic_centroids)?;
-        self.context.synchronize()?;  // Ensure upload completes
+        self.stream.synchronize()?;  // Ensure upload completes (per-stream, avoids device-wide serialization)
 
         // Verify upload by reading back
         let mut verify = vec![0.0f32; self.n_aromatics * 3];
@@ -4498,7 +4498,7 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch build_neighbor_list")?;
 
-        self.context.synchronize()?;
+        self.stream.synchronize()?;
         self.steps_since_rebuild = 0;
 
         Ok(())

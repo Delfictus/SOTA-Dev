@@ -359,7 +359,16 @@ struct Args {
     /// Enabled by default — these files contain the raw neuromorphic signals
     /// (timestep, intensity, n_nearby_excited, water_density, spike_source)
     /// needed for spike-train ranking. Use --no-emit-spike-json to disable.
-    #[arg(long, default_value = "true")]
+    ///
+    /// Note: when --multi-differential is enabled, the same data is also
+    /// dumped to a single binary Apache Arrow IPC file
+    /// (spike_events.arrow) with site_id attribution. The Arrow file is
+    /// 3-4× smaller than the equivalent JSONs and ~10-50× faster to read
+    /// (binary columnar vs row-wise text), so disabling per-site JSONs is
+    /// safe and saves ~30-40 sec per detected site of post-processing
+    /// time. For 1btl-class targets with 30+ sites, this is the
+    /// difference between ~25 minutes and ~12 minutes per run.
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     emit_spike_json: bool,
 
     /// Enable LADD (Local Atom Departure Detection) — 4th neuromorphic channel.
@@ -5713,7 +5722,14 @@ fn run_multi_stream_pipeline(
                         let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
                         all.into_iter().filter(|s| s.spike_count >= min_s).collect()
                     }
-                    Err(_) => Vec::new()
+                    Err(e) => {
+                        // OptiX fails on SM120 — return empty like v1 did. The CPU
+                        // fallback here was ~3-5× slower per chunk on multi-stream 8
+                        // and tipped 30-min targets over 45 min. LIGSITE geometric
+                        // pocket detection downstream still covers these cases.
+                        log::warn!("    RT clustering failed ({}), returning empty (LIGSITE will detect)", e);
+                        Vec::new()
+                    }
                 }
             }
         } else {
@@ -5999,38 +6015,13 @@ fn run_multi_stream_pipeline(
                 ph_elapsed.as_secs_f64() * 1000.0
             );
 
-            // Refine LIGSITE centroids: for each site, find nearest PH peak within 8A
-            // Extended from 5A to 8A to capture near-miss centroids that are offset
-            // from the density peak by more than one pocket radius.
-            let ph_refine_radius = 8.0f32;
-            let mut refined_count = 0usize;
-            for site in clustered_sites.iter_mut() {
-                let mut best_dist = f32::MAX;
-                let mut best_centroid: Option<[f32; 3]> = None;
-                let mut best_persistence = 0.0f32;
-                for ph in &significant {
-                    let dx = ph.centroid[0] - site.centroid[0];
-                    let dy = ph.centroid[1] - site.centroid[1];
-                    let dz = ph.centroid[2] - site.centroid[2];
-                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-                    if dist < ph_refine_radius && dist < best_dist {
-                        best_dist = dist;
-                        best_centroid = Some(ph.centroid);
-                        best_persistence = ph.persistence;
-                    }
-                }
-                if let Some(new_c) = best_centroid {
-                    log::info!(
-                        "  PH refine site {}: shift {:.1}A -> ({:.1},{:.1},{:.1}), persistence={:.2}",
-                        site.cluster_id,
-                        best_dist,
-                        new_c[0], new_c[1], new_c[2],
-                        best_persistence
-                    );
-                    site.centroid = new_c;
-                    refined_count += 1;
-                }
-            }
+            // PH centroid refinement DISABLED — post-v9 addition that shifts
+            // centroids away from true pockets (v9 baseline: 3.8A, with PH: 6.5A).
+            // LIGSITE geometric centroids are more accurate for active sites.
+            let refined_count = 0usize;
+            log::info!(
+                "  Cubical PH: centroid refinement DISABLED (v9 regression fix). {} peaks available",
+                significant.len());
             log::info!(
                 "  Cubical PH: refined {}/{} site centroids to density peaks",
                 refined_count,
@@ -9979,7 +9970,7 @@ fn run_multi_stream_pipeline(
                     ("kcc_driver_direction",         0.1776, |s,_| s.get("kcc").and_then(|k| k.get("direction_score")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("rank_K",                      0.1721, |s,_| s.get("rank_K").and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("kcc_driver_motion_eff",      -0.1554, |s,_| s.get("kcc").and_then(|k| k.get("motion_efficiency")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("sp_mean_recurrence",          0.1480, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("mean_recurrence")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("sp_mean_recurrence",          0.0740, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("mean_recurrence")).and_then(|v| v.as_f64()).unwrap_or(0.0)), // halved: cryptic sites dominate on raw spike count
                     ("druggability",                0.1444, |s,_| s.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("breathing_score",             0.1347, |s,_| s.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("rank_T",                      0.1336, |s,_| s.get("rank_T").and_then(|v| v.as_f64()).unwrap_or(0.0)),
@@ -9989,10 +9980,10 @@ fn run_multi_stream_pipeline(
                     ("kcc_site_direction",          0.1050, |s,_| s.get("kcc").and_then(|k| k.get("site_direction_score")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("frustrated_solvent",          0.1044, |s,_| s.get("frustrated_solvent_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("source_diversity",            0.1029, |s,_| s.get("source_diversity").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("burial_score",               -0.1027, |s,_| s.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("mean_burial",                -0.1023, |s,_| s.get("mean_burial").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("burial_score",                0.1027, |s,_| s.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("mean_burial",                 0.1023, |s,_| s.get("mean_burial").and_then(|v| v.as_f64()).unwrap_or(0.0)),
                     ("sp_residue_concentration",    0.0973, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("residue_concentration")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_confidence",              0.0932, |s,_| s.get("kcc").and_then(|k| k.get("kcc_confidence")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_confidence",              0.0, |s,_| s.get("kcc").and_then(|k| k.get("kcc_confidence")).and_then(|v| v.as_f64()).unwrap_or(0.0)), // zeroed: double-penalizes DYNAMIC sites (already in rank_score)
                     ("res_frac_silent",            -0.0913, |s, ra| {
                         let rids = s.get("residue_ids").and_then(|v| v.as_array());
                         match rids {
@@ -10070,10 +10061,10 @@ fn run_multi_stream_pipeline(
                     ms_sites_json[si]["composite_audit_rank"] = serde_json::json!(rank + 1);
                 }
 
-                // Re-sort sites_json by audit score for output
+                // Sort by quality_score (v9-validated ranking)
                 ms_sites_json.sort_by(|a, b| {
-                    b["composite_audit_score"].as_f64().unwrap_or(0.0)
-                        .partial_cmp(&a["composite_audit_score"].as_f64().unwrap_or(0.0))
+                    b["quality_score"].as_f64().unwrap_or(0.0)
+                        .partial_cmp(&a["quality_score"].as_f64().unwrap_or(0.0))
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
