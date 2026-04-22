@@ -917,6 +917,11 @@ pub struct PersistentNhsEngine {
     /// RT-accelerated clustering engine (lazy initialized)
     rt_engine: Option<crate::rt_clustering::RtClusteringEngine>,
 
+    /// GPU spatial-hash CCL clustering backend (lazy initialized; Phase P0x).
+    /// When present, `cluster_spikes` dispatches here on SM120+ instead of
+    /// the `fallback_grid_cluster` CPU path. See `gpu_cluster_backend.rs`.
+    gpu_cluster: Option<crate::gpu_cluster_backend::GpuSpatialHashBackend>,
+
     /// Pre-allocated buffer capacity
     max_atoms: usize,
 
@@ -984,6 +989,7 @@ impl PersistentNhsEngine {
             stream,
             engine: None,
             rt_engine: None,  // Lazy initialized on first use
+            gpu_cluster: None, // Lazy initialized on first cluster_spikes call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
             grid_spacing: config.grid_spacing,
@@ -1012,6 +1018,7 @@ impl PersistentNhsEngine {
             stream,
             engine: None,
             rt_engine: None,
+            gpu_cluster: None, // Lazy initialized on first cluster_spikes call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
             grid_spacing: config.grid_spacing,
@@ -1815,19 +1822,78 @@ impl PersistentNhsEngine {
     /// # Returns
     /// Clustering result with cluster assignments and statistics
     pub fn cluster_spikes(&mut self, spike_positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+        use crate::gpu_cluster_backend as gcb;
         let num_spikes = spike_positions.len() / 3;
 
-        // Try RT-accelerated path
-        if self.ensure_rt_pipeline()? {
-            if let Some(ref mut rt_engine) = self.rt_engine {
-                log::debug!("Using RT-accelerated clustering for {} spikes", num_spikes);
-                return rt_engine.cluster(spike_positions);
-            }
-        }
+        // Resolve auto → concrete backend. On SM120 OptiX is disabled
+        // (IMMUTABLE_RULE #9), so auto maps to gpu-hash.
+        let is_sm120 = !crate::rt_utils::is_optix_available();
+        let backend = gcb::resolve_auto(gcb::current_selection(), is_sm120);
 
-        // Fallback: simple grid-based clustering
-        log::debug!("Using fallback grid clustering for {} spikes", num_spikes);
-        self.fallback_grid_cluster(spike_positions)
+        log::info!(
+            "POST_MD_CLUSTER_BACKEND_SELECTED backend={} spikes={}",
+            gcb::backend_name(backend), num_spikes
+        );
+        log::info!("POST_MD_CLUSTER_START spikes={}", num_spikes);
+        let t_dispatch = std::time::Instant::now();
+
+        let result = match backend {
+            gcb::BACKEND_GPU_HASH => {
+                // Lazy-init the GPU CCL backend once per engine
+                if self.gpu_cluster.is_none() {
+                    let b = gcb::GpuSpatialHashBackend::new(
+                        self.context.clone(), self.stream.clone()
+                    ).context("init GpuSpatialHashBackend")?;
+                    self.gpu_cluster = Some(b);
+                }
+                // Fixed epsilon semantics match the legacy fallback_grid_cluster.
+                // The 5.0 Å value is the established post-MD CCL radius; changing
+                // it would be semantic drift and is forbidden in this lane.
+                let epsilon = 5.0_f32;
+                self.gpu_cluster.as_mut().unwrap().cluster(spike_positions, epsilon)?
+            }
+            gcb::BACKEND_RT_OPTIX => {
+                if self.ensure_rt_pipeline()? {
+                    if let Some(ref mut rt_engine) = self.rt_engine {
+                        log::debug!("Using RT-accelerated clustering for {} spikes", num_spikes);
+                        rt_engine.cluster(spike_positions)?
+                    } else {
+                        anyhow::bail!(
+                            "--clustering-backend=optix requested but rt_engine is None; \
+                             OptiX unavailable on this device (IMMUTABLE RULE #9 — use auto or gpu-hash)"
+                        );
+                    }
+                } else {
+                    anyhow::bail!(
+                        "--clustering-backend=optix requested but OptiX is disabled on this device; \
+                         use --clustering-backend=auto or --clustering-backend=gpu-hash"
+                    );
+                }
+            }
+            gcb::BACKEND_LBVH => {
+                anyhow::bail!(
+                    "--clustering-backend=lbvh selected but LBVH backend is not yet implemented \
+                     (arrives in the Phase-2 LBVH lane). Use auto or gpu-hash."
+                );
+            }
+            gcb::BACKEND_GRID_DEBUG => {
+                log::warn!(
+                    "POST_MD_CLUSTER_BACKEND_DEBUG grid fallback active (debug only — degrades at N>>1M)"
+                );
+                log::debug!("Using fallback grid clustering for {} spikes", num_spikes);
+                self.fallback_grid_cluster(spike_positions)?
+            }
+            other => {
+                anyhow::bail!("Unresolved clustering backend code: {}", other);
+            }
+        };
+
+        log::info!(
+            "POST_MD_CLUSTER_DONE clusters={} elapsed_ms={}",
+            result.num_clusters, t_dispatch.elapsed().as_millis()
+        );
+
+        Ok(result)
     }
 
     /// Re-cluster spikes at a specific epsilon (for mega-cluster subdivision).

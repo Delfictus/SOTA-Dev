@@ -135,6 +135,11 @@ pub mod rt_clustering;
 pub mod spatial_index;
 #[cfg(feature = "gpu")]
 pub mod grid_debug_backend;
+/// GPU spatial-hash CCL backend for post-MD clustering. Replaces the
+/// CPU `fallback_grid_cluster` on SM120+. See `gpu_cluster_backend.rs`
+/// module docs.
+#[cfg(feature = "gpu")]
+pub mod gpu_cluster_backend;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]

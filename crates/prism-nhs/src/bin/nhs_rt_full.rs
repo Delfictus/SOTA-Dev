@@ -804,20 +804,18 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 
-    // ── Spatial backend dispatch policy (Phase 1 LBVH lane) ───────────────
+    // ── Spatial backend dispatch policy (LBVH Phase 1 + P0x post-MD lane) ─
     //
     // Production rule #10 (2026-04-21):
-    //   - auto   → LBVH on SM120+ (Phase 2); falls back to OptiX elsewhere
-    //             (Phase 1: always OptiX since LBVH doesn't exist yet)
-    //   - optix  → explicit OptiX (errors on SM120 with no RT support)
-    //   - lbvh   → explicit LBVH (Phase 1: error "not yet implemented")
-    //   - grid   → debug only; ERROR with --multi-differential
+    //   - auto      → GpuSpatialHash on SM120+ (P0x lane); OptiX elsewhere
+    //   - gpu-hash  → explicit GPU spatial-hash CCL (P0x backend)
+    //   - optix     → explicit OptiX (errors on SM120 with no RT support)
+    //   - lbvh      → explicit LBVH (errors: arrives in LBVH Phase 2 lane)
+    //   - grid      → debug only; ERROR with --multi-differential
     //
-    // NOTE: Phase 1 does NOT wire the backend choice into the engine
-    // construction path. It only validates the flag and enforces rule #10.
-    // The actual dispatch of LBVH vs OptiX is done inside the engine (and
-    // Phase 2 adds real LBVH selection). Phase 1's only enforcement job is
-    // the --clustering-backend=grid + --multi-differential hard error.
+    // The P0x lane ("post-MD clustering unblock", 2026-04-22) wires the
+    // resolved backend into PersistentNhsEngine::cluster_spikes via the
+    // process-global selector in gpu_cluster_backend::SELECTED_BACKEND.
     {
         let backend_str = args.clustering_backend.as_str();
         let is_grid = backend_str == "grid";
@@ -837,28 +835,52 @@ fn main() -> Result<()> {
             );
             std::process::exit(3);
         }
-        // Validate the flag itself.
-        match backend_str {
-            "auto" | "optix" | "lbvh" | "grid" => {
-                log::info!("  [SPATIAL-INDEX] backend request: {}", backend_str);
-                if backend_str == "lbvh" {
-                    log::warn!(
-                        "  [SPATIAL-INDEX] --clustering-backend=lbvh requested, but LBVH \
-                         backend is not yet implemented (arrives in Phase 2). Falling back \
-                         to default dispatch."
-                    );
+        // Validate the flag itself and set the process-global selector.
+        #[cfg(feature = "gpu")]
+        {
+            use prism_nhs::gpu_cluster_backend as gcb;
+            match gcb::parse_backend_str(backend_str) {
+                Some(code) => {
+                    gcb::set_selection(code);
+                    log::info!("  [SPATIAL-INDEX] backend request: {} (code={})", backend_str, code);
+                    if backend_str == "lbvh" {
+                        log::warn!(
+                            "  [SPATIAL-INDEX] --clustering-backend=lbvh requested, but LBVH \
+                             backend is not yet implemented (LBVH Phase 2 lane). \
+                             The engine will error when it reaches cluster_spikes."
+                        );
+                    }
+                    if backend_str == "grid" {
+                        log::warn!(
+                            "  [SPATIAL-INDEX] --clustering-backend=grid selected. DEBUG ONLY. \
+                             Detection quality will be degraded at N>>1M spikes."
+                        );
+                    }
+                    if backend_str == "auto" || backend_str == "gpu-hash" {
+                        log::info!(
+                            "  [SPATIAL-INDEX] P0x GPU spatial-hash CCL backend will be used \
+                             for post-MD clustering on SM120."
+                        );
+                    }
                 }
-                if backend_str == "grid" {
-                    log::warn!(
-                        "  [SPATIAL-INDEX] --clustering-backend=grid selected. DEBUG ONLY. \
-                         Detection quality will be degraded."
-                    );
+                None => {
+                    eprintln!("ERROR: unknown --clustering-backend value: {}", backend_str);
+                    eprintln!("  Valid: auto | gpu-hash | optix | lbvh | grid");
+                    std::process::exit(4);
                 }
             }
-            other => {
-                eprintln!("ERROR: unknown --clustering-backend value: {}", other);
-                eprintln!("  Valid: auto | optix | lbvh | grid");
-                std::process::exit(4);
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            match backend_str {
+                "auto" | "gpu-hash" | "optix" | "lbvh" | "grid" => {
+                    log::info!("  [SPATIAL-INDEX] backend request (no-gpu build): {}", backend_str);
+                }
+                other => {
+                    eprintln!("ERROR: unknown --clustering-backend value: {}", other);
+                    eprintln!("  Valid: auto | gpu-hash | optix | lbvh | grid");
+                    std::process::exit(4);
+                }
             }
         }
     }

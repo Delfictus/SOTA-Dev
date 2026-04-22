@@ -26,7 +26,9 @@ serde_json = "1.0"
 tokio = { version = "1.0", features = ["sync", "macros", "rt-multi-thread"] }
 
 # GPU acceleration - CUDA 12.x for NHS compute kernels
-cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver"], optional = true }
+# `nvrtc` feature enables runtime CUDA source -> PTX compilation, used by
+# gpu_cluster_backend for post-MD clustering on SM120 where OptiX is unavailable.
+cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver", "nvrtc"], optional = true }
 
 # FP16 for TWIN Tensor Core CCF (WMMA input format)
 half = "2"
