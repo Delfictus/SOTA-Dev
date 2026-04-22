@@ -161,3 +161,11 @@ prism-working/
 prism4d_training/
 
 /mnt/storage/prism_state_archive/
+/mnt/storage/prism_state_archive/
+.w2_*
+.w3b_*
+.w4_*
+.batch*
+.pass*
+.stats*
+.snapshot*
