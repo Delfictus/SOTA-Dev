@@ -37,12 +37,137 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+
+
+# ── D4 Arrow-first site loader ──────────────────────────────────────────────
+# Builds a legacy-JSON-shape doc for ONE site_id from the canonical triad:
+#   <stem>.topology.spike_events.arrow  (columnar, all streams)
+# + <stem>.run_metadata.json            (enum decode + master protocol)
+# + <stem>.binding_sites.json           (site centroid + lining_cutoff)
+#
+# Spatial membership rule (Gate-A validated): site_radius = lining_cutoff + 2.0
+# Enum decode: aromatic_type + spike_source via run_metadata tables
+# ccns_phase: recomputed via JSON phase_label closure from master protocol
+#
+# Returns None if any triad member missing — caller falls back to json.load().
+
+
+def _arrow_first_site_doc_from_path(spikes_path: Path):
+    """Detect legacy per-site JSON path '<stem>.site{N}.spike_events.json' and
+    attempt to build the equivalent site doc from the Arrow triad in the same dir.
+    Returns (doc, virtual_source_str) or (None, None) if the triad is absent.
+    """
+    m = re.match(r"(?P<stem>.+)\.site(?P<sid>-?\d+)\.spike_events\.json$", spikes_path.name)
+    if not m:
+        return None, None
+    stem = m.group("stem")
+    sid = int(m.group("sid"))
+    eng = spikes_path.parent
+    return _arrow_first_site_doc(eng, stem, sid)
+
+
+def _arrow_first_site_doc(eng: Path, stem: str, site_id: int):
+    arrow_p = eng / f"{stem}.topology.spike_events.arrow"
+    meta_p = eng / f"{stem}.run_metadata.json"
+    bs_p = eng / f"{stem}.binding_sites.json"
+    if not (arrow_p.exists() and meta_p.exists() and bs_p.exists()):
+        return None, None
+    try:
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+    except Exception:
+        return None, None
+    meta = json.loads(meta_p.read_text())
+    proto = meta.get("reference_protocol_for_json_phase_label") or {}
+    if "error" in proto:
+        return None, None
+    p1 = proto["cold_hold_steps"]
+    p2 = p1 + proto["ramp_steps"]
+    p3 = p2 + proto["warm_hold_steps"]
+    p4 = p3 + proto.get("ramp_down_steps", 0)
+    def _phase(ts):
+        if ts < p1: return "cold_hold"
+        if ts < p2: return "heating"
+        if ts < p3: return "warm_hold"
+        if ts < p4: return "cooling"
+        return "cold_return"
+    arom_enum = {int(k): v for k, v in meta["aromatic_type_enum"].items()}
+    arom_default = meta.get("aromatic_type_default", "UNK")
+    src_enum = {int(k): v for k, v in meta["spike_source_enum"].items()}
+    src_default = meta.get("spike_source_default", "LIF")
+    lining_cutoff = meta.get("lining_cutoff", 8.0)
+    site_radius_sq = (float(lining_cutoff) + 2.0) ** 2
+
+    bs = json.loads(bs_p.read_text())
+    site = None
+    for s in (bs.get("sites") or []):
+        if isinstance(s, dict) and s.get("id") == site_id:
+            site = s; break
+    if site is None or not site.get("centroid"):
+        return None, None
+    cx, cy, cz = site["centroid"]
+
+    with arrow_p.open("rb") as f:
+        magic = f.read(8)
+    opener = ipc.open_file if magic.startswith(b"ARROW1") else ipc.open_stream
+    with arrow_p.open("rb") as f:
+        table = opener(f).read_all()
+    x_full = table.column("x").to_numpy()
+    y_full = table.column("y").to_numpy()
+    z_full = table.column("z").to_numpy()
+    d2 = (x_full - cx) ** 2 + (y_full - cy) ** 2 + (z_full - cz) ** 2
+    mask_np = d2 <= site_radius_sq
+    mask = pa.array(mask_np)
+    sub = table.filter(mask)
+    n_rows = len(sub)
+    frame_col = sub.column("frame_index").to_pylist() if n_rows else []
+    if n_rows:
+        unique_frames = len(set(frame_col))
+        max_frame = max(frame_col)
+        total_frames = max(max_frame + 1, 1)
+        open_frequency = unique_frames / total_frames
+    else:
+        open_frequency = 0.0
+
+    spikes = []
+    if n_rows:
+        cols = {name: sub.column(name).to_pylist() for name in
+                ["x","y","z","intensity","aromatic_type","wavelength_nm","spike_source",
+                 "aromatic_residue_id","water_density","vibrational_energy","n_nearby_excited",
+                 "timestep","frame_index","stream_id"]}
+        for i in range(n_rows):
+            ts = cols["timestep"][i]
+            spikes.append({
+                "x": cols["x"][i], "y": cols["y"][i], "z": cols["z"][i],
+                "intensity": cols["intensity"][i],
+                "type": arom_enum.get(int(cols["aromatic_type"][i]), arom_default),
+                "wavelength_nm": cols["wavelength_nm"][i],
+                "spike_source": src_enum.get(int(cols["spike_source"][i]), src_default),
+                "aromatic_residue_id": cols["aromatic_residue_id"][i],
+                "water_density": cols["water_density"][i],
+                "vibrational_energy": cols["vibrational_energy"][i],
+                "n_nearby_excited": cols["n_nearby_excited"][i],
+                "timestep": ts,
+                "frame_index": int(cols["frame_index"][i]),
+                "ccns_phase": _phase(int(ts)),
+                "stream_id": int(cols["stream_id"][i]),
+            })
+    doc = {
+        "site_id": site_id,
+        "centroid": site["centroid"],
+        "n_spikes": n_rows,
+        "lining_cutoff": lining_cutoff,
+        "open_frequency": open_frequency,
+        "spikes": spikes,
+    }
+    return doc, f"arrow+meta+bs:{arrow_p.name}#site{site_id}"
 
 
 # ── Spike type → molecular interaction mapping ────────────────────────────
@@ -577,27 +702,67 @@ def main():
     print("PRISM4D Spike Pharmacophore Mapper")
     print("=" * 60)
 
-    # Load spike events
+    # Load spike events — D5 view-first: if the triad <stem>.topology.spike_events.arrow +
+    # <stem>.run_metadata.json + <stem>.binding_sites.json is present in the same dir
+    # as the --spikes path, open a SiteSpikeView and use its vectorized methods.
+    # Fall back to legacy JSON load if triad absent (JSON fallback preserved).
     print(f"\n[1/4] Loading spike events from {args.spikes}...")
-    with open(args.spikes) as f:
-        data = json.load(f)
+    spikes_path = Path(args.spikes)
+    view_slice = None
+    try:
+        # Derive target_dir + stem from per-site JSON filename: <stem>.site{N}.spike_events.json
+        m = re.match(r"(?P<stem>.+)\.site(?P<sid>-?\d+)\.spike_events\.json$", spikes_path.name)
+        if m:
+            stem = m.group("stem")
+            sid = int(m.group("sid"))
+            eng = spikes_path.parent
+            # eng == <target>/artifacts/5_engine — climb 2 to reach target root
+            if eng.name == "5_engine":
+                target_dir = eng.parent.parent
+            else:
+                target_dir = eng
+            from scripts.interfaces.site_spike_view import SiteSpikeView
+            view = SiteSpikeView.from_target_dir(target_dir, stem)
+            if view is not None and view.has_site(sid):
+                view_slice = view.site(sid)
+    except Exception:
+        view_slice = None
 
-    spikes = data["spikes"]
-    centroid = data["centroid"]
-    n_spikes = data["n_spikes"]
-    print(f"  {n_spikes:,} spikes at centroid ({centroid[0]:.1f}, {centroid[1]:.1f}, {centroid[2]:.1f})")
+    if view_slice is not None:
+        n_spikes = view_slice.n_spikes()
+        centroid = view_slice.centroid()
+        print(f"  [D5 view] source: arrow+meta+bs, site_id={view_slice.site_id()}")
+        print(f"  {n_spikes:,} spikes at centroid ({centroid[0]:.1f}, {centroid[1]:.1f}, {centroid[2]:.1f})")
+    else:
+        with open(args.spikes) as f:
+            data = json.load(f)
+        spikes = data["spikes"]
+        centroid = data["centroid"]
+        n_spikes = data["n_spikes"]
+        print(f"  [JSON fallback] source: {args.spikes}")
+        print(f"  {n_spikes:,} spikes at centroid ({centroid[0]:.1f}, {centroid[1]:.1f}, {centroid[2]:.1f})")
 
-    # Type summary
-    types = Counter(s["type"] for s in spikes)
-    for t, c in types.most_common():
-        pct = 100 * c / n_spikes
-        ints = [s["intensity"] for s in spikes if s["type"] == t]
-        pharma = SPIKE_TO_PHARMACOPHORE.get(t, {})
-        print(f"  {t:8s}: {c:>8,} ({pct:5.1f}%)  mean_I={np.mean(ints):.3f}  → {pharma.get('feature', '?')}")
+    # Type summary — vectorized via view when available, legacy scan otherwise.
+    if view_slice is not None:
+        type_stats = view_slice.type_intensity_stats()  # {name: (count, mean_intensity)}
+        for t, (c, mean_i) in sorted(type_stats.items(), key=lambda kv: -kv[1][0]):
+            pct = 100 * c / max(n_spikes, 1)
+            pharma = SPIKE_TO_PHARMACOPHORE.get(t, {})
+            print(f"  {t:8s}: {c:>8,} ({pct:5.1f}%)  mean_I={mean_i:.3f}  → {pharma.get('feature', '?')}")
+    else:
+        types = Counter(s["type"] for s in spikes)
+        for t, c in types.most_common():
+            pct = 100 * c / n_spikes
+            ints = [s["intensity"] for s in spikes if s["type"] == t]
+            pharma = SPIKE_TO_PHARMACOPHORE.get(t, {})
+            print(f"  {t:8s}: {c:>8,} ({pct:5.1f}%)  mean_I={np.mean(ints):.3f}  → {pharma.get('feature', '?')}")
 
-    # Voxelize
+    # Voxelize — vectorized via view.voxel_aggregate when available.
     print(f"\n[2/4] Voxelizing at {args.grid_spacing}A resolution...")
-    voxels = voxelize_spikes(spikes, grid_spacing=args.grid_spacing)
+    if view_slice is not None:
+        voxels = view_slice.voxel_aggregate(grid_spacing=args.grid_spacing)
+    else:
+        voxels = voxelize_spikes(spikes, grid_spacing=args.grid_spacing)
     print(f"  {len(voxels)} voxels with spike data")
 
     # Extract pharmacophore features

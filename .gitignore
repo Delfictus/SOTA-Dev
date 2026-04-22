@@ -88,7 +88,7 @@ benchmarks/prism4d_bench30/*.csv
 benchmarks/prism4d_bench30/xgb_*.json
 
 # RunPod unpacked training data (use tar.gz)
-runpod_training/bench60_data/
+runpod_training/bench_data/
 
 # Loose scratch scripts in project root
 apply_ai_ranker.py

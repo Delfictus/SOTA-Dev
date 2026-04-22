@@ -60,6 +60,7 @@ from typing import Optional
 WATCH_DIRS = [
     "/mnt/storage/prism-outputs/runs",
     "/mnt/storage/prism-outputs/twin-runs",
+    "/mnt/storage/prism-outputs/10k-runs",
     "/tmp",
 ]
 

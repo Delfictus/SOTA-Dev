@@ -2,14 +2,22 @@
 """PRISM-4D Output Postflight Validator.
 
 Validates engine output after a run completes. Catches missing files,
-empty results, and malformed output.
+empty results, and malformed output. Also computes DCC validation
+against ground truth (if a <prefix>_ground_truth.json sidecar is
+present in the output dir, written by prism-ground-truth.py during
+Phase 1.2).
 
 Usage:
     python3 scripts/prism-postflight.py <output_dir> <prefix>
 
 Exit 0 = PASS, Exit 1 = FAIL.
+
+Ground truth DCC validation never causes FAIL — invalid/missing
+ground truth is reported as a SKIP, not a failure. Only file-level
+problems (missing required output, empty sites array) fail postflight.
 """
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -186,6 +194,16 @@ def postflight(output_dir, prefix):
                                 for r in lining[:5])
             print(f"  Top lining (first 5): {res_str}")
 
+    # ── Ground truth DCC validation (Phase 1.2 sidecar consumption) ──
+    # If prism-ground-truth.py wrote a sidecar to this output dir, read
+    # it and compute DCC against engine site centroids. Never fails the
+    # postflight — invalid/missing GT is reported as SKIP.
+    gt_sidecar = od / f"{prefix}_ground_truth.json"
+    if gt_sidecar.exists():
+        run_dcc_validation(gt_sidecar, sites)
+    else:
+        print(f"  GT validation: no sidecar at {gt_sidecar.name} (skipped)")
+
     for w in warns:
         print(f"  WARN: {w}")
 
@@ -197,6 +215,129 @@ def postflight(output_dir, prefix):
 
     print("POSTFLIGHT: PASS")
     return 0
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Ground truth DCC validation
+# ─────────────────────────────────────────────────────────────────────
+
+def _site_centroid(site):
+    """Extract a (x, y, z) tuple from any of the centroid encodings the engine emits."""
+    sc = site.get("centroid") or site.get("center") or site.get("position")
+    if sc is None:
+        return None
+    if isinstance(sc, dict):
+        return (sc.get("x", 0.0), sc.get("y", 0.0), sc.get("z", 0.0))
+    try:
+        return (float(sc[0]), float(sc[1]), float(sc[2]))
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def _euclid(a, b):
+    return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
+
+
+def _grade(d):
+    if d is None:
+        return "N/A"
+    if d < 5.0:
+        return "EXCELLENT"
+    if d < 8.0:
+        return "GOOD"
+    if d < 10.0:
+        return "MARGINAL"
+    return "POOR"
+
+
+def run_dcc_validation(sidecar_path, sites):
+    """
+    Read ground-truth sidecar and compute DCC against engine sites.
+
+    Always prints a GT VALIDATION block. Never fails postflight — invalid
+    ground truth is a normal "skip" outcome, not a regression.
+    """
+    try:
+        with open(sidecar_path) as f:
+            gt = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"  GT validation: ERROR reading sidecar — {e}")
+        return
+
+    valid = gt.get("valid_for_dcc_validation", False)
+    pdb_id = gt.get("pdb_id", "?")
+    target_chain = gt.get("target_chain", "?")
+
+    print(f"  ── GT VALIDATION ──")
+    print(f"  PDB: {pdb_id} chain {target_chain}")
+
+    if not valid:
+        reason = gt.get("skip_reason", "unknown")
+        print(f"  Status: SKIP ({reason})")
+        if gt.get("is_pandda_fragment"):
+            print(f"  Note: PanDDA fragment screen — fragments bind shallow")
+            print(f"        surface hotspots, not real drug pockets. DCC vs")
+            print(f"        the fragment is methodologically wrong.")
+        if gt.get("is_templated_complex"):
+            chains = gt.get("nucleic_chains", [])
+            print(f"  Note: templated complex (DNA/RNA chains: {chains}).")
+            print(f"        Engine ran on protein only — ligand position is")
+            print(f"        templated by partner chains the engine never saw.")
+        return
+
+    ligand = gt.get("ligand", {})
+    lig_centroid = gt.get("ligand_centroid")
+    if not ligand or not lig_centroid:
+        print(f"  Status: SKIP (sidecar marked valid but missing ligand data)")
+        return
+
+    print(
+        f"  Ligand: {ligand.get('resname', '?')} "
+        f"({ligand.get('classification', '?')}, "
+        f"chain {ligand.get('chain', '?')}, "
+        f"{ligand.get('n_atoms', 0)} atoms)"
+    )
+    print(
+        f"  Centroid: ({lig_centroid[0]:7.2f}, {lig_centroid[1]:7.2f}, "
+        f"{lig_centroid[2]:7.2f})"
+    )
+
+    if not sites:
+        print(f"  Status: ENGINE_FOUND_NO_SITES (cannot compute DCC)")
+        return
+
+    # Collect all engine site centroids with rank info
+    enriched = []
+    for i, site in enumerate(sites):
+        sc = _site_centroid(site)
+        if sc is None:
+            continue
+        rank = site.get("rank", i + 1)
+        cls = (
+            site.get("classification")
+            or site.get("class")
+            or site.get("therm_class")
+            or "?"
+        )
+        d = _euclid(sc, tuple(lig_centroid))
+        enriched.append((rank, i, sc, cls, d))
+
+    if not enriched:
+        print(f"  Status: NO_VALID_SITE_CENTROIDS (engine sites missing centroid field)")
+        return
+
+    by_rank = sorted(enriched, key=lambda r: r[0])
+    by_dcc = sorted(enriched, key=lambda r: r[4])
+    rank1 = by_rank[0]
+    best = by_dcc[0]
+
+    print(f"  Sites detected     : {len(enriched)}")
+    print(f"  DCC at engine #1   : {rank1[4]:6.2f}A  (class {rank1[3]})")
+    print(
+        f"  Best DCC anywhere  : {best[4]:6.2f}A  "
+        f"(engine rank {best[0]}, class {best[3]})"
+    )
+    print(f"  Grade              : {_grade(best[4])}")
 
 
 def translate_residues(output_dir, prefix, chain_map_path):

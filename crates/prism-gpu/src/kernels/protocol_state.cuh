@@ -134,7 +134,7 @@ struct ProtocolState {
     // ## Layout
     //
     // The capacity of 64 is enough to cover the cryptic-pocket-relevant
-    // surface of any reasonable target (the largest BENCH60 protein has
+    // surface of any reasonable target (the largest benchmark protein has
     // ~500 residues; even if a quarter are coordination centers, 64 is
     // a generous slice). Inactive slots have residue_id = -1.
 

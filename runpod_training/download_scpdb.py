@@ -11,7 +11,7 @@ We download structures from RCSB, create pseudo-apo (strip ligand),
 and compute ground truth centroids from crystal ligand coordinates.
 All in the same coordinate frame = perfect alignment (rmsd=0.0).
 
-This is identical to how BENCH60 is constructed.
+This is identical to how BENCH30 is constructed.
 """
 
 import json
@@ -158,7 +158,7 @@ def download_pdb(pdb_id, output_path):
 def extract_ligand_and_protein(pdb_path, pdb_id):
     """Extract largest ligand centroid and create pseudo-apo.
 
-    Same method as BENCH60: strip ligand from holo → pseudo-apo.
+    Same method as BENCH30: strip ligand from holo → pseudo-apo.
     Centroid computed from crystal ligand coordinates.
     alignment_rmsd = 0.0 by construction.
     """

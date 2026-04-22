@@ -10,7 +10,11 @@ import json
 from pathlib import Path
 
 BLIND_MANIFEST = Path("/mnt/storage/prism-outputs/ml/blind_validation/blind_100_manifest.json")
-PANEL_BASE = Path("/mnt/storage/prism-outputs/m1-strict-dcc-panel")
+# Panel output root redirected 2026-04-18 to avoid /mnt/storage ENOSPC during
+# in-flight R2 offload. See scripts/quarantine/PANEL_OUTPUT_ROOT.md for the
+# full script inventory. The old root remains the READ path for already-
+# completed targets; this is the WRITE path for NEW panel runs.
+PANEL_BASE = Path.home() / "prism-working" / "m1-strict-dcc-panel"
 LAUNCHER = Path("/tmp/m1_strict_panel_launcher.sh")
 MANIFEST_OUT = Path("/tmp/m1_strict_panel_manifest.json")
 REPO = "/home/diddy/Desktop/Prism4D-bio"
@@ -65,7 +69,7 @@ def main() -> None:
             "ligand": rec["ligand"], "blocker": "none",
             "source": "blind_validation_100 (CryptoBench)",
             "runtime_estimate_min": 60,
-            "target_dir": f"/mnt/storage/prism-outputs/m1-strict-dcc-panel/m1_{apo_id}",
+            "target_dir": str(PANEL_BASE / f"m1_{apo_id}"),
             "apo_chain": rec.get("apo_chain", "A"),
             "holo_chain": rec.get("holo_chain", "A"),
             "pRMSD": rec.get("pRMSD"),

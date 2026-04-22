@@ -21,7 +21,7 @@ python3 scripts/prism_replicate.py \
 4. **Gating stack order is fixed:** Therm → Coherence(soft) → Localization → Contact Reorg → Response Selectivity.
 5. **Coherence never blocks alone.** It is advisory only.
 6. **Consensus operates on site objects, not ranks.** Clustering by centroid + lining residue overlap.
-7. **Do not touch the GTCKL ranking formula** in Rust without BENCH60 validation.
+7. **Do not touch the GTCKL ranking formula** in Rust without benchmark validation.
 8. **Never use "oracle"** in benchmark reporting.
 9. **OptiX is removed.** Never mention or reference it.
 

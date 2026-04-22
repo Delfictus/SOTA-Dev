@@ -11,7 +11,9 @@ REPO = Path(__file__).resolve().parents[2]
 def test_event_schema_loadable():
     y = yaml.safe_load((REPO / "docs/contracts/event_schema_v1.yaml").read_text())
     assert y["schema_name"] == "event_schema_v1"
-    assert y["schema_version"] == "1.0.0"
+    # v1.1: minor-bumped per the YAML's own version_bump_rules when
+    # PHE/TYR/TRP were added to the open-enum `type` field.
+    assert y["schema_version"] in {"1.0.0", "1.1.0"}
 
 
 def test_ccns_phase_is_closed_enum():

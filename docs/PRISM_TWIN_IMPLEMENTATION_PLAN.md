@@ -2780,7 +2780,7 @@ Run TWIN Phase B on all 60 BENCH30 targets:
 for target in $(jq -r '.[].pdb_id' benchmarks/prism4d_bench30/benchmark_manifest.json); do
     scripts/prism-validate-and-run.sh \
         -t output/${target}/${target}_clean.topology.json \
-        -o output/twin_bench60/${target} \
+        -o output/twin_bench30/${target} \
         --coupled-twin --multi-stream 8 --fast \
         --fused-steps 4 --hmr --adaptive-dt -v
 done
@@ -2863,7 +2863,7 @@ From project memory: "teacher on 143/199 CB targets, all CB benchmarks contamina
 
 #### 18.2 Define clean target set
 
-Use BENCH60 (60 targets, zero SNDC overlap, zero CryptoBench overlap) as the clean training set. TWIN features from these targets are uncontaminated because:
+Use BENCH30 (30 targets, zero SNDC overlap, zero CryptoBench overlap) as the clean training set. TWIN features from these targets are uncontaminated because:
 - TWIN coupling produces features the teacher never generated
 - The 50 interferometric features (CCF, TE, consensus, differential) are physically grounded
 - Within-group consensus filters stochastic noise the teacher couldn't filter
@@ -2871,10 +2871,10 @@ Use BENCH60 (60 targets, zero SNDC overlap, zero CryptoBench overlap) as the cle
 #### 18.3 Retrain pipeline
 
 ```bash
-# 1. TWIN features are already generated in Step 17 (BENCH60 runs)
+# 1. TWIN features are already generated in Step 17 (BENCH30 runs)
 # 2. Extract per-residue features as training labels
 python3 scripts/extract_prism_ai_training_data.py \
-    --twin-results output/twin_bench60/ \
+    --twin-results output/twin_bench30/ \
     --ground-truth benchmarks/prism4d_bench30/ground_truth/ligand_centroids.json \
     --output prism-ai-inference/data/twin_training_v001.parquet
 
@@ -2902,7 +2902,7 @@ The current model uses 216 engine features (from `feature_registry_216.md` in me
 | Metric | Target |
 |--------|--------|
 | AUC on held-out targets | > 0.639 (v002 cold baseline) |
-| SR@1 on BENCH60 | > 25% (XGBoost baseline from Step 17) |
+| SR@1 on BENCH30 | > 25% (XGBoost baseline from Step 17) |
 | No target regression | Zero EXCELLENT targets made worse |
 | TWIN feature importance | ≥ 3 TWIN features in top 20 |
 
@@ -2917,7 +2917,7 @@ python3 prism-ai-inference/evaluate.py \
 # MUST: feature importance shows TWIN features contributing
 
 # Verify no regression
-python3 scripts/twin_nonregression.py output/twin_bench60
+python3 scripts/twin_nonregression.py output/twin_bench30
 # MUST: "No regressions on EXCELLENT targets"
 ```
 

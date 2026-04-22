@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run P2Rank and fpocket on the BENCH60 benchmark for head-to-head comparison.
+Run P2Rank and fpocket on the BENCH30 benchmark for head-to-head comparison.
 
 Outputs per-target DCC, DCA, DVO, SR@N for each method alongside PRISM4D.
 """
@@ -19,8 +19,8 @@ MANIFEST = f"{BENCH_DIR}/benchmark_manifest.json"
 GT_PATH = f"{BENCH_DIR}/ground_truth/ligand_centroids.json"
 
 PRANK = "tools/p2rank/p2rank_2.5.1/prank"
-P2RANK_OUT = "/tmp/p2rank_bench60"
-FPOCKET_OUT = "/tmp/fpocket_bench60"
+P2RANK_OUT = "/tmp/p2rank_bench30"
+FPOCKET_OUT = "/tmp/fpocket_bench30"
 
 
 def run_p2rank(apo_pdb, output_dir):

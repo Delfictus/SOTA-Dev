@@ -232,7 +232,7 @@ initialize from CryoUvProtocol fields, upload once at simulation start.
 **This is the FROZEN kernel modification.** Justification:
 - Zero physics change — same math, same forces, same integration
 - Only the parameter delivery mechanism changes
-- Validated by running BENCH60 subset before/after and diffing DCC scores
+- Validated by running benchmark subset before/after and diffing DCC scores
 
 **Changes to nhs_amber_fused.cu (lines 894-898, 932-942)**:
 - Replace 5 temperature scalar params with `const ProtocolState*`

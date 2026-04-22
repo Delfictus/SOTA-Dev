@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-PRISM-AI Cryptic Pocket Predictor — Self-Contained Inference
+PRISM-AI Cryptic Pocket Predictor v004 — Zero-Shot Inference
 =============================================================
 
 Predicts cryptic binding site residues from a single PDB file.
-No engine run required. No topology. No spike data.
+No engine run required. No topology. No spike data. No ESM-2.
+
+Pipeline:
+    PDB → structural(25) + NMA(26) + perturbedNMA(5) = 56 dims
+        → SpikeBERT v002 (all-masked) → 512-dim spike embeddings
+        → VN-EGNN v004 → atom logits + VN positions + confidence
+        → clustered ranked binding sites
 
 Usage:
     python predict.py input.pdb --output results.json
@@ -15,10 +21,11 @@ Input:  Any PDB file (apo structure preferred)
 Output: JSON with per-residue probabilities + ranked binding sites
 
 Requirements:
-    pip install torch esm prody scipy scikit-learn mdtraj biopython
+    pip install torch scipy scikit-learn
 
-Model: 109-fold ensemble distilled from PRISM-4D neuromorphic engine
-       trained on 3.6 billion spike events across 174 protein targets.
+Model: SpikeBERT v002 (22M param transformer, teacher-distilled from v005)
+       + VN-EGNN v004 (587K params, 92.7% SR@8 on 372 targets)
+       Trained on 3.6 billion spike events. Zero ESM-2 dependency.
 """
 
 import argparse
@@ -53,6 +60,8 @@ HYDROPHOBICITY = {
 }
 
 MODEL_DIR = Path(__file__).parent / "models"
+SPIKEBERT_PT = Path(__file__).parent / "models_v004" / "spike_bert_v002.pt"
+VNEGNN_ONNX = Path(__file__).parent / "models_v004" / "vnegnn_v004.onnx"
 
 
 def _robust_normalize(feat):
@@ -318,85 +327,107 @@ def extract_nma_features(parsed_pdb):
     return feat
 
 
-def extract_esm_embeddings(parsed_pdb):
-    """Extract 1280-dim ESM-2 embeddings.
+def _build_spikebert():
+    """Build SpikeBERT v002 architecture (must match training)."""
+    import torch.nn as nn
+    HIDDEN, STRUCT, NHEADS, NLAYERS = 512, 56, 8, 6
+    PAD_TOKEN, VOCAB = 2049, 2050
 
-    Downloads the model on first use (~2.5GB).
-    """
+    class SpikeBERT(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.token_embed = nn.Embedding(VOCAB, HIDDEN, padding_idx=PAD_TOKEN)
+            self.struct_proj = nn.Linear(STRUCT, HIDDEN)
+            self.pos_embed = nn.Embedding(2048, HIDDEN)
+            self.input_norm = nn.LayerNorm(HIDDEN)
+            self.input_dropout = nn.Dropout(0.15)
+            layer = nn.TransformerEncoderLayer(
+                d_model=HIDDEN, nhead=NHEADS, dim_feedforward=2048,
+                dropout=0.15, activation="gelu", batch_first=True, norm_first=True)
+            self.encoder = nn.TransformerEncoder(layer, num_layers=NLAYERS)
+            self.mlm_norm = nn.LayerNorm(HIDDEN)
+            self.mlm_head = nn.Linear(HIDDEN, 2048)
+            self.distill_head = nn.Sequential(
+                nn.LayerNorm(HIDDEN), nn.Linear(HIDDEN, 128),
+                nn.GELU(), nn.Linear(128, 1))
+            self.physics_head = nn.Sequential(
+                nn.LayerNorm(HIDDEN), nn.Linear(HIDDEN, 256),
+                nn.GELU(), nn.Linear(256, 216))
+    return SpikeBERT
+
+
+def extract_spikebert_embeddings(structural_feats):
+    """Extract 512-dim spike embeddings. No ESM-2. No spike data."""
     import torch
-    import esm
 
-    sequence = parsed_pdb["sequence"].replace("X", "A")
-    n = parsed_pdb["n_residues"]
-
-    model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-    batch_converter = alphabet.get_batch_converter()
+    MASK_TOKEN = 2048
+    SpikeBERT = _build_spikebert()
+    model = SpikeBERT()
+    state = torch.load(SPIKEBERT_PT, map_location="cpu", weights_only=True)
+    model.load_state_dict(state)
     model.eval()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    data = [("protein", sequence)]
-    _, _, batch_tokens = batch_converter(data)
-    batch_tokens = batch_tokens.to(device)
+    N = structural_feats.shape[0]
+    ids = torch.full((1, N), MASK_TOKEN, dtype=torch.long)
+    sf = torch.tensor(structural_feats, dtype=torch.float32).unsqueeze(0)
+    pm = torch.zeros(1, N, dtype=torch.bool)
+    pos = torch.arange(N).unsqueeze(0)
 
     with torch.no_grad():
-        out = model(batch_tokens, repr_layers=[33])
-        embeddings = out["representations"][33][0, 1:-1, :].cpu().numpy()
+        x = model.token_embed(ids) + model.struct_proj(sf) + model.pos_embed(pos)
+        x = model.input_dropout(model.input_norm(x))
+        h = model.encoder(x, src_key_padding_mask=pm)
 
-    # Pad or truncate to match residue count
-    result = np.zeros((n, 1280), dtype=np.float32)
-    result[:min(n, len(embeddings))] = embeddings[:n]
-    return result
+    return h.squeeze(0).numpy().astype(np.float32)
 
 
-# ═══════════════════════════════════════════════════════════
-# MODEL
-# ═══════════════════════════════════════════════════════════
-
-def load_ensemble():
-    """Load the 109-fold student ensemble."""
+def run_vnegnn(atom_features, atom_coords):
+    """Run VN-EGNN v004 via ONNX Runtime → atom logits, VN coords, VN confidence."""
     import torch
-    import torch.nn as nn
+    import onnxruntime as ort
 
-    class StudentModel(nn.Module):
-        def __init__(self, input_dim=1332, hd=512):
-            super().__init__()
-            self.backbone = nn.Sequential(
-                nn.Linear(input_dim, hd), nn.GELU(), nn.Dropout(0.1),
-                nn.Linear(hd, hd), nn.GELU(), nn.Dropout(0.1),
-            )
-            self.binding_head = nn.Sequential(
-                nn.Linear(hd, hd // 2), nn.GELU(), nn.Dropout(0.1),
-                nn.Linear(hd // 2, 1),
-            )
-            # These heads exist in saved weights but aren't used for inference
-            self.physics_head = nn.Sequential(
-                nn.Linear(hd, hd), nn.GELU(), nn.Linear(hd, 216),
-            )
-            self.proj_head = nn.Sequential(
-                nn.Linear(hd, 256), nn.GELU(), nn.Linear(256, 256),
-            )
+    # Build edges + init VNs (same as training)
+    K = 16
+    coords_t = torch.tensor(atom_coords, dtype=torch.float32)
+    N = len(atom_coords)
 
-        def forward(self, x):
-            h = self.backbone(x)
-            return self.binding_head(h).squeeze(-1)
+    # Protein-protein edges within 8A
+    d2 = torch.cdist(coords_t, coords_t)
+    mask = (d2 < 8.0) & (d2 > 1e-6)
+    pp = mask.nonzero(as_tuple=False).t()
+    # VN-atom bipartite
+    vn_ids = torch.arange(N, N + K)
+    atom_ids = torch.arange(0, N)
+    va = torch.stack([vn_ids.unsqueeze(1).expand(K, N).reshape(-1),
+                      atom_ids.unsqueeze(0).expand(K, N).reshape(-1)])
+    av = torch.stack([va[1], va[0]])
+    edge_index = torch.cat([pp, va, av], dim=1).numpy().astype(np.int64)
 
-    fold_files = sorted(MODEL_DIR.glob("student_fold_*.pt"))
-    if not fold_files:
-        raise FileNotFoundError(f"No model files found in {MODEL_DIR}. "
-                               f"Expected student_fold_*.pt files.")
+    # Fibonacci sphere VN init
+    phi = math.pi * (3.0 - math.sqrt(5.0))
+    i_arr = np.arange(K, dtype=np.float32)
+    y = 1.0 - 2.0 * i_arr / (K - 1) if K > 1 else np.zeros_like(i_arr)
+    r_xy = np.sqrt(np.maximum(1.0 - y * y, 0.0))
+    theta = phi * i_arr
+    center = atom_coords.mean(axis=0)
+    radius = np.linalg.norm(atom_coords - center, axis=1).max()
+    vn_init = radius * np.stack([np.cos(theta) * r_xy, y, np.sin(theta) * r_xy], axis=1)
+    vn_init = vn_init + center
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    models = []
-    for fp in fold_files:
-        model = StudentModel()
-        sd = torch.load(fp, map_location="cpu", weights_only=False)["state_dict"]
-        model.load_state_dict(sd, strict=False)
-        model.eval().to(device)
-        models.append(model)
+    sess = ort.InferenceSession(str(VNEGNN_ONNX), providers=["CPUExecutionProvider"])
+    feeds = {}
+    for inp in sess.get_inputs():
+        if inp.name == "atom_features":
+            feeds[inp.name] = atom_features.astype(np.float32)
+        elif inp.name == "atom_coords":
+            feeds[inp.name] = atom_coords.astype(np.float32)
+        elif inp.name == "edge_index":
+            feeds[inp.name] = edge_index
+        elif inp.name == "vn_init_coords":
+            feeds[inp.name] = vn_init.astype(np.float32)
 
-    return models, device
+    results = sess.run(None, feeds)
+    return results[0], results[1], results[2]  # atom_logits, vn_coords, vn_confidence
 
 
 # ═══════════════════════════════════════════════════════════
@@ -645,54 +676,157 @@ def predict(pdb_path, chain=None, top_k=5, output=None, visualize=None, verbose=
     import torch
 
     if verbose:
-        print(f"PRISM-AI Cryptic Pocket Predictor")
+        print(f"PRISM-AI v004 — Zero-Shot Predictor (no ESM-2, no engine)")
         print(f"Input: {pdb_path}")
 
     # Step 1: Parse PDB
-    if verbose: print("  [1/5] Parsing PDB...")
+    if verbose: print("  [1/4] Parsing PDB...")
     parsed = parse_pdb(pdb_path, chain=chain)
     if verbose: print(f"        {parsed['n_residues']} residues, chain {parsed['chain_id']}")
 
-    # Step 2: Extract features
-    if verbose: print("  [2/5] Extracting structural features (26 dims)...")
-    struct_feat = extract_structural_features(parsed)
+    # Step 2: Extract structural features (56 dims)
+    # Must match training extractor EXACTLY: 20 AA one-hot (3-letter alphabetical)
+    # + 3 DSSP + SASA + hydrophobicity = 25 dims + 31 zeros (NMA/pertNMA)
+    if verbose: print("  [2/4] Structural features (25d + 31d zeros = 56d)...")
+    n_res = parsed["n_residues"]
+    ca_pos = np.array([parsed["ca_positions"][r["resid"]] for r in parsed["residues"]
+                       if r["resid"] in parsed["ca_positions"]])
 
-    if verbose: print("  [3/5] Computing NMA features (26 dims)...")
-    nma_feat = extract_nma_features(parsed)
+    # Training AA ordering (3-letter alphabetical — NOT 1-letter!)
+    TRAIN_AA = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+                "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL"]
+    TRAIN_AA_IDX = {a: i for i, a in enumerate(TRAIN_AA)}
+    TRAIN_HYDRO = {
+        "ALA": 1.8, "ARG": -4.5, "ASN": -3.5, "ASP": -3.5, "CYS": 2.5,
+        "GLN": -3.5, "GLU": -3.5, "GLY": -0.4, "HIS": -3.2, "ILE": 4.5,
+        "LEU": 3.8, "LYS": -3.9, "MET": 1.9, "PHE": 2.8, "PRO": -1.6,
+        "SER": -0.8, "THR": -0.7, "TRP": -0.9, "TYR": -1.3, "VAL": 4.2}
 
-    if verbose: print("  [4/5] Computing ESM-2 embeddings (1280 dims)...")
-    esm_feat = extract_esm_embeddings(parsed)
+    # DSSP + SASA (match training extractor: freesasa + mkdssp)
+    dssp_map = {}
+    sasa_map = {}
+    try:
+        import freesasa
+        structure = freesasa.Structure(str(pdb_path))
+        result = freesasa.Calc().calculate(structure)
+        for chain, per_res in result.residueAreas().items():
+            for resnum_str, area in per_res.items():
+                try:
+                    sasa_map[int(resnum_str)] = float(area.total)
+                except (ValueError, AttributeError):
+                    pass
+    except Exception:
+        pass
+    try:
+        import subprocess, tempfile
+        with tempfile.NamedTemporaryFile(suffix=".pdb", mode="w") as tmp:
+            with open(pdb_path) as f:
+                content = f.read()
+            if not content.startswith("HEADER"):
+                tmp.write("HEADER\n")
+            tmp.write(content)
+            tmp.flush()
+            proc = subprocess.run(["mkdssp", "-i", tmp.name], capture_output=True, text=True, timeout=30)
+            in_residues = False
+            for line in proc.stdout.split("\n"):
+                if "  #  RESIDUE" in line:
+                    in_residues = True
+                    continue
+                if in_residues and len(line) > 16:
+                    try:
+                        resid = int(line[5:10].strip())
+                        ss = line[16] if len(line) > 16 else "-"
+                        dssp_map[resid] = ss
+                    except (ValueError, IndexError):
+                        pass
+    except Exception:
+        pass
 
-    # Normalize structural + NMA features (must match training pipeline)
-    raw_52 = np.concatenate([struct_feat, nma_feat], axis=1)
-    norm_52 = _robust_normalize(raw_52)
-    features = np.concatenate([norm_52, esm_feat], axis=1)
-    if verbose: print(f"        Feature vector: {features.shape}")
+    struct_25 = np.zeros((n_res, 25), dtype=np.float32)
+    for i, r in enumerate(parsed["residues"]):
+        resname = r["resname"]
+        resid = r["resid"]
+        if resname in TRAIN_AA_IDX:
+            struct_25[i, TRAIN_AA_IDX[resname]] = 1.0
+        # DSSP (3): H/G/I→helix, E/B→sheet, else→coil
+        ss = dssp_map.get(resid, "-")
+        if ss in ("H", "G", "I"):
+            struct_25[i, 20] = 1.0
+        elif ss in ("E", "B"):
+            struct_25[i, 21] = 1.0
+        else:
+            struct_25[i, 22] = 1.0
+        # SASA normalized to max ~220A²
+        struct_25[i, 23] = sasa_map.get(resid, 0.0) / 220.0
+        # Hydrophobicity /5.0 (matches training extractor)
+        struct_25[i, 24] = TRAIN_HYDRO.get(resname, 0.0) / 5.0
 
-    # Step 3: Run ensemble
-    if verbose: print("  [5/5] Running 109-model ensemble...")
-    models, device = load_ensemble()
-    input_tensor = torch.tensor(features, dtype=torch.float32).to(device)
+    structural_feats = np.concatenate([
+        struct_25,
+        np.zeros((n_res, 26), dtype=np.float32),  # NMA zeros (matches training)
+        np.zeros((n_res, 5), dtype=np.float32),    # pertNMA zeros (matches training)
+    ], axis=1)
+    if verbose: print(f"        Structural: {structural_feats.shape}")
 
-    preds_sum = np.zeros(parsed["n_residues"])
-    for model in models:
-        with torch.no_grad():
-            logits = model(input_tensor)
-            preds_sum += torch.sigmoid(logits).cpu().numpy()
-    probabilities = preds_sum / len(models)
+    # Step 3: SpikeBERT → 512-dim spike embeddings
+    if verbose: print("  [3/4] SpikeBERT v002 (all-masked) → 512-dim embeddings...")
+    spike_emb = extract_spikebert_embeddings(structural_feats)
+    if verbose: print(f"        SpikeBERT: {spike_emb.shape}")
+
+    # Step 4: VN-EGNN v004
+    atom_features = np.concatenate([structural_feats, spike_emb], axis=1)
+    if verbose: print(f"  [4/4] VN-EGNN v004 ({atom_features.shape[1]}d) → binding sites...")
+    atom_logits, vn_coords, vn_confidence = run_vnegnn(atom_features, ca_pos)
+    probabilities = 1.0 / (1.0 + np.exp(-atom_logits.squeeze()))
 
     if verbose:
         print(f"        Probability range: [{probabilities.min():.3f}, {probabilities.max():.3f}]")
 
-    # Step 4: Cluster into sites
+    # Cluster VN positions by confidence (primary output)
+    vn_probs = 1.0 / (1.0 + np.exp(-vn_confidence.squeeze()))
+    vn_order = np.argsort(-vn_probs)
+    vn_sites = []
+    used = set()
+    for idx in vn_order:
+        if idx in used:
+            continue
+        center = vn_coords[idx]
+        members = [idx]
+        for j in vn_order:
+            if j in used or j == idx:
+                continue
+            if np.linalg.norm(vn_coords[j] - center) < 4.0:
+                members.append(j)
+                used.add(j)
+        used.add(idx)
+        site_center = vn_coords[members].mean(axis=0)
+        site_conf = float(vn_probs[members].max())
+        # Find nearby residues
+        res_dists = np.linalg.norm(ca_pos - site_center, axis=1)
+        nearby = np.where(res_dists < 8.0)[0]
+        nearby_resids = [parsed["residues"][k]["resid"] for k in nearby if k < len(parsed["residues"])]
+        nearby_probs = [float(probabilities[k]) for k in nearby if k < len(probabilities)]
+        vn_sites.append({
+            "rank": len(vn_sites) + 1,
+            "centroid": [round(float(x), 2) for x in site_center],
+            "confidence": round(site_conf, 4),
+            "n_vns": len(members),
+            "n_residues": len(nearby_resids),
+            "mean_prob": round(float(np.mean(nearby_probs)) if nearby_probs else 0, 3),
+            "residue_ids": nearby_resids[:20],
+            "spatial_extent": f"{np.ptp(ca_pos[nearby], axis=0).max():.0f}" if len(nearby) > 1 else "0",
+        })
+
+    # Also run residue-based clustering as secondary output
     sites = cluster_to_sites(probabilities, parsed["residues"],
                             parsed["ca_positions"], top_pct=0.20)
 
     if verbose:
-        print(f"\n  Found {len(sites)} candidate sites")
-        for s in sites[:top_k]:
-            print(f"    Site {s['rank']}: {s['n_residues']} residues, "
-                  f"prob={s['mean_prob']:.3f}, extent={s['spatial_extent']}Å")
+        print(f"\n  Found {len(vn_sites)} VN-predicted sites")
+        for s in vn_sites[:top_k]:
+            print(f"    Site {s['rank']}: centroid={s['centroid']}  "
+                  f"conf={s['confidence']:.1%}  residues={s['n_residues']}  "
+                  f"prob={s['mean_prob']:.3f}")
 
     # Build output
     resids = [r["resid"] for r in parsed["residues"]]
@@ -700,15 +834,17 @@ def predict(pdb_path, chain=None, top_k=5, output=None, visualize=None, verbose=
         "input_pdb": str(pdb_path),
         "chain": parsed["chain_id"],
         "n_residues": parsed["n_residues"],
-        "n_ensemble_models": len(models),
-        "n_sites_found": len(sites),
-        "top_sites": sites[:top_k],
+        "n_vn_sites": len(vn_sites),
+        "vn_sites": vn_sites[:top_k],
+        "n_residue_sites": len(sites),
+        "residue_sites": sites[:top_k],
         "per_residue_probabilities": {
             int(resids[i]): round(float(probabilities[i]), 4)
             for i in range(len(resids))
         },
-        "model_version": "prism-ai-student-v002",
-        "note": "Distilled from PRISM-4D neuromorphic engine (3.6B spike events)",
+        "model_version": "prism-ai-v004",
+        "note": "SpikeBERT v002 + VN-EGNN v004. Zero ESM-2. Zero engine.",
+        "esm2_used": False,
     }
 
     # Save output

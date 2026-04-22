@@ -1,5 +1,5 @@
 schema_name: event_schema_v1
-schema_version: "1.0.0"
+schema_version: "1.1.0"
 description: >
   Event-level schema contract for PRISM-4D spike events.  Defines the
   inner `spikes[]` row contract for the .site*.spike_events.{json,parquet}
@@ -56,10 +56,12 @@ event_fields:
   type:
     dtype: string
     nullable: false
-    enum: [BNZ, UNK, ANION, CATION]
+    enum: [BNZ, UNK, ANION, CATION, PHE, TYR, TRP]   # v1.1: +PHE/TYR/TRP
     enum_open: true
     unknown_policy: bucket_as_OTHER
     quarantine_threshold_fraction: 0.01       # 1% — open enum, more tolerant
+    widened_from_values_observed_in_corpus: [PHE, TYR, TRP]
+    confirmation_ticket: OPEN__type_enum_widened_v1_1
 
 aggregation_rules:
   permutation_invariant:

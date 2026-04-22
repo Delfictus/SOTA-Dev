@@ -36,6 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENGINE="$PROJECT_DIR/target/release/nhs_rt_full"
 PREFLIGHT="$SCRIPT_DIR/prism-preflight.py"
+GROUND_TRUTH="$SCRIPT_DIR/prism-ground-truth.py"
 POSTFLIGHT="$SCRIPT_DIR/prism-postflight.py"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -138,6 +139,22 @@ if ! python3 "$PREFLIGHT" "${PREFLIGHT_ARGS[@]}"; then
     exit 1
 fi
 
+# Phase 1.2: Ground truth resolution
+# Resolves the holo PDB on RCSB (cached), classifies the deposit, and
+# writes <output_dir>/<prefix>_ground_truth.json. This sidecar is read
+# by Phase 3 postflight to compute DCC validation against the published
+# ligand centroid. Filters out PanDDA fragment hits and templated
+# ternary complexes — those are not appropriate orthosteric ground
+# truths and would produce false-negative validation results.
+#
+# This phase NEVER fails the run. If the holo PDB is unavailable or
+# the deposit is filtered, ground truth becomes "skip" and DCC
+# validation is bypassed in postflight. The engine still runs.
+mkdir -p "$OUTPUT_DIR"
+echo ""
+echo "[Phase 1.2] Ground truth resolution"
+python3 "$GROUND_TRUTH" "$TOPOLOGY" "$OUTPUT_DIR" || true
+
 # Phase 1.5: Auto-generate NMA modes for TWIN (Layer 4 differential perturbation)
 # When --coupled-twin is set, Group B needs NMA modes for barrier measurement.
 # If no --nma-perturb was explicitly provided and no modes file exists, generate one.
@@ -193,8 +210,7 @@ echo "║         RUNNING PRISM-4D ENGINE                         ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
-# Phase 2: Create output dir and run engine
-mkdir -p "$OUTPUT_DIR"
+# Phase 2: Run engine (output dir was created in Phase 1.2)
 ENGINE_EXIT=0
 PRISM_VALIDATED=1 RUST_LOG=info "$ENGINE" "${ENGINE_ARGS[@]}" || ENGINE_EXIT=$?
 

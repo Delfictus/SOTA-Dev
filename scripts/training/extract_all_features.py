@@ -390,6 +390,46 @@ def _read_spike_phases(path: Path) -> Optional[np.ndarray]:
     return rec
 
 
+def _read_spike_phases_from_view(slice_obj) -> Optional[np.ndarray]:
+    """D5 view equivalent of _read_spike_phases: returns structured (xyz,phase)
+    from a SiteSpikeView.SiteSlice. Stays in numpy; no per-spike dict.
+    """
+    if slice_obj is None or slice_obj.n_spikes() == 0:
+        return None
+    x = slice_obj.x()
+    y = slice_obj.y()
+    z = slice_obj.z()
+    xyz = np.column_stack([x, y, z]).astype(np.float32)
+    phases = slice_obj.ccns_phase().astype("U20")
+    rec = np.empty(len(xyz), dtype=[("xyz", "f4", 3), ("phase", "U20")])
+    rec["xyz"] = xyz
+    rec["phase"] = phases
+    return rec
+
+
+def _try_open_view_for_run_dir(run_dir: Path):
+    """Locate the Arrow+run_metadata+binding_sites triad in run_dir. Returns a
+    SiteSpikeView or None. Supports both canonical layout (run_dir is the
+    engine artifacts/5_engine folder) and the R2-sync flat layout (run_dir
+    contains triad files directly). Identical triad-discovery rules as Step B.
+    """
+    import re
+    arrows = sorted(run_dir.glob("*.topology.spike_events.arrow"))
+    if not arrows:
+        return None
+    arrow_p = arrows[0]
+    stem = arrow_p.name[:-len(".topology.spike_events.arrow")]
+    meta_p = run_dir / f"{stem}.run_metadata.json"
+    bs_p = run_dir / f"{stem}.binding_sites.json"
+    if not (meta_p.exists() and bs_p.exists()):
+        return None
+    try:
+        from scripts.interfaces.site_spike_view import SiteSpikeView
+        return SiteSpikeView.from_triad(arrow_p, meta_p, bs_p, stem=stem)
+    except Exception:
+        return None
+
+
 def compute_temporal_features(run_dir: Path, ca_coords: np.ndarray,
                               resid_list: List[int], bs_sites: List[Dict[str, Any]]
                               ) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
@@ -410,8 +450,23 @@ def compute_temporal_features(run_dir: Path, ca_coords: np.ndarray,
     per_site: Dict[str, Dict[str, float]] = {}
 
     spike_files = sorted(run_dir.glob("*.spike_events.parquet"))
+    json_files = sorted(run_dir.glob("*.spike_events.json"))
+    # D5 tier: used only when parquet is absent (parquet remains primary
+    # fast path). When triad is resolvable, the D5 view replaces the JSON
+    # fallback with a lossless vectorized read of (xyz, ccns_phase).
+    view = None
+    using_view = False
+    if not spike_files and json_files:
+        view = _try_open_view_for_run_dir(run_dir)
+        if view is not None:
+            using_view = True
+            # Build a virtual spike_files list: one entry per view site so
+            # downstream iteration remains structurally identical. The entries
+            # are synthetic PosixPath-shaped tokens; they are not read directly.
+            spike_files = [run_dir / f"__d5_view_site_{sid}__"
+                           for sid in view.available_site_ids()]
     if not spike_files:
-        spike_files = sorted(run_dir.glob("*.spike_events.json"))
+        spike_files = json_files
     if not spike_files:
         # Mark all per-site as NaN
         for s in bs_sites:
@@ -422,30 +477,34 @@ def compute_temporal_features(run_dir: Path, ca_coords: np.ndarray,
             }
         return per_res, per_site
 
-    # Map site_id → parquet filename pattern:  {target}.site{id}.spike_events.*
+    # Map site_id → filename pattern (or synthetic view-token path).
     site_file_map: Dict[Any, Path] = {}
     for sf in spike_files:
         stem = sf.name
-        # Pattern: <target>.site<ID>.spike_events.<ext>
         try:
-            site_part = stem.split(".site", 1)[1].split(".spike_events", 1)[0]
-            sid = int(site_part)
+            if using_view and stem.startswith("__d5_view_site_"):
+                sid = int(stem[len("__d5_view_site_"):-len("__")])
+            else:
+                site_part = stem.split(".site", 1)[1].split(".spike_events", 1)[0]
+                sid = int(site_part)
         except (IndexError, ValueError):
             continue
         site_file_map[sid] = sf
+
+    def _read_rec_for_sid(sid):
+        """Dispatch: view → rec (D5) | legacy _read_spike_phases (parquet/JSON)."""
+        if using_view and view is not None and view.has_site(sid):
+            return _read_spike_phases_from_view(view.site(sid))
+        sf = site_file_map.get(sid)
+        if sf is None:
+            return None
+        return _read_spike_phases(sf)
 
     # Per-site ratios
     for s in bs_sites:
         sid = s.get("id", "unknown")
         name = f"site{sid}"
-        sf = site_file_map.get(sid)
-        if sf is None:
-            per_site[name] = {
-                "phase_transition_ratio": float("nan"),
-                "warm_hold_spike_fraction": float("nan"),
-            }
-            continue
-        rec = _read_spike_phases(sf)
+        rec = _read_rec_for_sid(sid)
         if rec is None or len(rec) == 0:
             per_site[name] = {
                 "phase_transition_ratio": float("nan"),
@@ -461,15 +520,16 @@ def compute_temporal_features(run_dir: Path, ca_coords: np.ndarray,
             "warm_hold_spike_fraction": float(n_warm / max(n_tot, 1)),
         }
 
-    # Per-residue ratios — aggregate ALL spike files, assign to nearest Cα
-    # within 5 Å. Iterate per file to keep memory bounded.
+    # Per-residue ratios — aggregate ALL spike files (or all view sites),
+    # assign to nearest Cα within 5 Å. Iterate per source to keep memory bounded.
     warm_counts = np.zeros(n, dtype=np.int64)
     cold_counts = np.zeros(n, dtype=np.int64)
     total_counts = np.zeros(n, dtype=np.int64)
     r2 = TEMPORAL_NEAR_R ** 2
 
-    for sf in spike_files:
-        rec = _read_spike_phases(sf)
+    iter_sids = (view.available_site_ids() if using_view else list(site_file_map.keys()))
+    for sid in iter_sids:
+        rec = _read_rec_for_sid(sid)
         if rec is None or len(rec) == 0:
             continue
         xyz = rec["xyz"]

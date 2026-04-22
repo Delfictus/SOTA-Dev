@@ -11,7 +11,7 @@
 #   4. Run: cd /workspace/runpod_training && bash setup_and_train.sh
 #
 # B200 specs: 192GB HBM3e, sm_120, ~2.5 PFLOPS FP16
-# Expected time: scPDB pretrain ~45min, BENCH60 fine-tune ~15min
+# Expected time: scPDB pretrain ~45min, BENCH30 fine-tune ~15min
 
 set -e
 
@@ -59,9 +59,9 @@ python3 egnn_pocket_ranker_v4.py train \
     --model-dir pretrained_models \
     --esm-model esm2_t33_650M_UR50D 2>&1 | tee pretrain.log
 
-# ── Step 4: Fine-tune on BENCH60 ──
-echo "[4/5] Fine-tuning on BENCH60..."
-if [ -d "bench60_data" ]; then
+# ── Step 4: Fine-tune on BENCH30 ──
+echo "[4/5] Fine-tuning on BENCH30..."
+if [ -d "bench30_data" ]; then
     # Initialize from pretrained weights if available
     if [ -d "pretrained_models" ]; then
         echo "  Loading pretrained weights..."
@@ -69,10 +69,10 @@ if [ -d "bench60_data" ]; then
     fi
 
     python3 egnn_pocket_ranker_v4.py train \
-        --manifest bench60_data/benchmark_manifest.json \
-        --gt bench60_data/ligand_centroids.json \
-        --sites-dir bench60_data/results \
-        --apo-dir bench60_data/apo \
+        --manifest bench30_data/benchmark_manifest.json \
+        --gt bench30_data/ligand_centroids.json \
+        --sites-dir bench30_data/results \
+        --apo-dir bench30_data/apo \
         --epochs 300 \
         --lr 1e-4 \
         --dcc-threshold 8.0 \
@@ -80,10 +80,10 @@ if [ -d "bench60_data" ]; then
         --model-dir final_models \
         --esm-model esm2_t33_650M_UR50D 2>&1 | tee finetune.log
 else
-    echo "  SKIP: bench60_data/ not found."
-    echo "  Package it locally: bash package_bench60.sh"
-    echo "  Then upload: scp -P <port> bench60_data.tar.gz root@<pod-ip>:/workspace/runpod_training/"
-    echo "  Then: cd /workspace/runpod_training && tar xzf bench60_data.tar.gz && bash setup_and_train.sh"
+    echo "  SKIP: bench30_data/ not found."
+    echo "  Package it locally: bash package_bench30.sh"
+    echo "  Then upload: scp -P <port> bench30_data.tar.gz root@<pod-ip>:/workspace/runpod_training/"
+    echo "  Then: cd /workspace/runpod_training && tar xzf bench30_data.tar.gz && bash setup_and_train.sh"
 fi
 
 # ── Step 5: Package results for download ──

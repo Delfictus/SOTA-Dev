@@ -32,7 +32,12 @@ from scripts.interfaces.anchor_point import (
     AnchorPoint,
     AnchorPointMap,
 )
-from scripts.response_selectivity import load_spike_events
+from scripts.response_selectivity import (
+    _arrow_first_triad_paths,
+    load_spike_events,
+)
+
+import numpy as np
 
 
 # ---------------------------------------------------------------------------
@@ -280,16 +285,228 @@ class AnchorPointMapper:
             anchor_density=round(density, 4),
         )
 
+    def compute_vectorized(
+        self,
+        site: Dict[str, Any],
+        slice_obj,  # SiteSpikeView.SiteSlice
+    ) -> AnchorPointMap:
+        """Vectorized compute using SiteSpikeView.SiteSlice (no per-spike dicts).
+
+        Parity target: self.compute(site, spikes_list). Stays in numpy space.
+        """
+        site_id = site.get("id", -1)
+        centroid_list = site.get("centroid", [0.0, 0.0, 0.0])
+        centroid = (centroid_list[0], centroid_list[1], centroid_list[2])
+        cx, cy, cz = centroid
+        lining = site.get("lining_residues", [])
+
+        if not lining or slice_obj.n_spikes() == 0:
+            return AnchorPointMap(
+                site_id=site_id, pocket_centroid=centroid, anchors=[],
+                n_anchors=0, anchor_density=0.0,
+            )
+
+        x = slice_obj.x()
+        y = slice_obj.y()
+        z = slice_obj.z()
+        intensity = slice_obj.intensity()
+        frame_index = slice_obj.frame_index()
+        arom_decoded = slice_obj.aromatic_type_decoded()
+
+        strong = intensity >= self.cfg.min_spike_intensity
+        if not strong.any():
+            return AnchorPointMap(
+                site_id=site_id, pocket_centroid=centroid, anchors=[],
+                n_anchors=0, anchor_density=0.0,
+            )
+
+        # Pocket-radius gate (d_centroid <= 15 Å)
+        dx_c = x - cx
+        dy_c = y - cy
+        dz_c = z - cz
+        d_centroid = np.sqrt(dx_c * dx_c + dy_c * dy_c + dz_c * dz_c)
+        pocket_mask = (d_centroid <= 15.0) & strong
+
+        # Indices into the full site arrays for pocket-eligible strong spikes.
+        pocket_idx = np.where(pocket_mask)[0]
+        if pocket_idx.size == 0:
+            return AnchorPointMap(
+                site_id=site_id, pocket_centroid=centroid, anchors=[],
+                n_anchors=0, anchor_density=0.0,
+            )
+
+        # For per-candidate temporal persistence check we also need the full
+        # strong-spike set (not pocket-restricted) since legacy code uses
+        # all strong_spikes grouped by frame.
+        strong_idx = np.where(strong)[0]
+        n_frames = max(int(np.unique(frame_index[strong_idx]).size), 1)
+
+        # Pre-materialize numpy arrays for the strong spike set (speed up
+        # per-candidate distance loop).
+        sx_all = x[strong_idx]
+        sy_all = y[strong_idx]
+        sz_all = z[strong_idx]
+        sf_all = frame_index[strong_idx]
+
+        # Sort pocket-eligible spikes by intensity DESC for top-N selection.
+        pocket_intensity = intensity[pocket_idx]
+        pocket_sort = np.argsort(-pocket_intensity, kind="stable")
+        pocket_idx_sorted = pocket_idx[pocket_sort]
+        top_n = int(self.cfg.top_n_spikes_per_residue)
+
+        anchors: List[AnchorPoint] = []
+
+        # Legacy logic: for each lining residue, pick the top-N strong spikes
+        # within 15Å of centroid (SAME ranking across residues — duplicates
+        # deduped later). We precompute the top-N set once and reuse.
+        top_global = pocket_idx_sorted[: top_n]  # indices (into full site) of top-N candidates
+
+        match_r2 = 3.0 * 3.0
+        match_r = 3.0
+
+        # Precompute per-candidate persistence + stability in numpy:
+        persistence_per_cand = []
+        stability_per_cand = []
+        for ci in top_global.tolist():
+            sx_c = float(x[ci]); sy_c = float(y[ci]); sz_c = float(z[ci])
+            dxc = sx_all - sx_c
+            dyc = sy_all - sy_c
+            dzc = sz_all - sz_c
+            d2 = dxc * dxc + dyc * dyc + dzc * dzc
+            within = d2 < match_r2
+            if not within.any():
+                persistence_per_cand.append(0.0)
+                stability_per_cand.append(0.0)
+                continue
+            # For each frame present, take the FIRST match (legacy break-on-first).
+            # Vectorized equivalent: unique frames where any match exists.
+            frames_with_any = np.unique(sf_all[within])
+            frames_with_match = int(frames_with_any.size)
+            # Distances recorded: legacy appends ONE distance per frame (the first
+            # matching spike in that frame). Vectorized equivalent: for each matching
+            # frame, take one representative distance (min over within-mask rows in
+            # that frame — identical to legacy's "first in frame" up to arbitrary
+            # tie-break, both have stddev tolerance).
+            # Use np.minimum.reduceat over sorted (frame, d) pairs:
+            if frames_with_match >= 2:
+                # Sort the within-subset by (frame, d) then pick first per frame
+                wi = np.where(within)[0]
+                wi_frames = sf_all[wi]
+                wi_d = np.sqrt(d2[wi])
+                order = np.argsort(wi_frames, kind="stable")
+                wi_frames_sorted = wi_frames[order]
+                wi_d_sorted = wi_d[order]
+                # group-first-distance: np.unique returns sorted unique with first index
+                _, first_idx = np.unique(wi_frames_sorted, return_index=True)
+                distances_over_frames = wi_d_sorted[first_idx]
+                mean_d = float(distances_over_frames.mean())
+                var = float(((distances_over_frames - mean_d) ** 2).mean())
+                stddev = float(math.sqrt(var))
+            else:
+                stddev = 0.0
+            persistence = frames_with_match / n_frames
+            persistence_per_cand.append(persistence)
+            stability_per_cand.append(stddev)
+
+        kcc_drivers = site.get("kcc_driver_residues", [])
+        kcc_weights = site.get("kcc_driver_weights", [])
+
+        # Iterate lining residues (small N). For each, pick top-N (same set
+        # as top_global), apply filters, and emit anchors.
+        for res in lining:
+            rid = res.get("resid", -1)
+            rname = res.get("resname", "UNK")
+            chain = res.get("chain", "_")
+
+            for cand_i, ci in enumerate(top_global.tolist()):
+                persistence = persistence_per_cand[cand_i]
+                stddev = stability_per_cand[cand_i]
+                if persistence < self.cfg.min_temporal_persistence:
+                    continue
+                if stddev > self.cfg.max_stability_stddev:
+                    continue
+                spike_type = str(arom_decoded[ci])
+                interaction = SPIKE_TYPE_TO_INTERACTION.get(
+                    spike_type, "HYDROPHOBIC"
+                )
+                sx_c = float(x[ci]); sy_c = float(y[ci]); sz_c = float(z[ci])
+                d_cent = float(d_centroid[ci])
+                intens_c = float(intensity[ci])
+                alignment = _geometric_alignment(d_cent, interaction)
+                confidence = (
+                    intens_c * persistence * alignment / max(d_cent, 0.1)
+                )
+                if rid in kcc_drivers:
+                    idx = kcc_drivers.index(rid)
+                    driver_w = kcc_weights[idx] if idx < len(kcc_weights) else 0.5
+                    confidence *= (1.0 + driver_w)
+                atom_label = f"{rname}{rid}_{spike_type}"
+                anchors.append(AnchorPoint(
+                    residue_name=rname, residue_id=rid, chain=chain,
+                    atom_label=atom_label, interaction_type=interaction,
+                    x=round(sx_c, 3), y=round(sy_c, 3), z=round(sz_c, 3),
+                    distance_to_centroid=round(d_cent, 3),
+                    spike_intensity=round(intens_c, 4),
+                    temporal_persistence=round(persistence, 4),
+                    geometric_alignment=round(alignment, 4),
+                    stability_stddev=round(stddev, 4),
+                    confidence=round(confidence, 6),
+                ))
+
+        anchors.sort(key=lambda a: a.confidence, reverse=True)
+        deduped: List[AnchorPoint] = []
+        seen: set = set()
+        for a in anchors:
+            rkey = f"{a.chain}:{a.residue_id}"
+            if rkey not in seen:
+                deduped.append(a)
+                seen.add(rkey)
+        n_lining = len(lining) if lining else 1
+        density = len(deduped) / n_lining
+        return AnchorPointMap(
+            site_id=site_id, pocket_centroid=centroid,
+            anchors=deduped, n_anchors=len(deduped),
+            anchor_density=round(density, 4),
+        )
+
     def compute_all(
         self,
         sites: List[Dict[str, Any]],
         spike_events_dir: Optional[str] = None,
     ) -> Dict[int, AnchorPointMap]:
-        """Compute anchor point maps for all sites."""
+        """Compute anchor point maps for all sites.
+
+        D5_V2 Arrow-first: when the triad is present in spike_events_dir, open
+        a SiteSpikeView once and dispatch to compute_vectorized per site.
+        Falls back to per-site JSON load + compute(dict-list) when triad absent.
+        """
         results: Dict[int, AnchorPointMap] = {}
+
+        view = None
+        view_sids: set = set()
+        if spike_events_dir and Path(spike_events_dir).exists():
+            try:
+                from scripts.interfaces.site_spike_view import SiteSpikeView
+                eng, stem = _arrow_first_triad_paths(Path(spike_events_dir))
+                if eng is not None and stem is not None:
+                    if eng.name == "5_engine":
+                        target_dir = eng.parent.parent
+                    else:
+                        target_dir = eng
+                    view = SiteSpikeView.from_target_dir(target_dir, stem)
+                    if view is not None:
+                        view_sids = set(view.available_site_ids())
+            except Exception:
+                view = None
+                view_sids = set()
 
         for i, site in enumerate(sites):
             site_id = site.get("id", i)
+
+            if view is not None and site_id in view_sids:
+                slice_obj = view.site(site_id)
+                results[site_id] = self.compute_vectorized(site, slice_obj)
+                continue
 
             spikes: List[Dict[str, Any]] = []
             if spike_events_dir and Path(spike_events_dir).exists():

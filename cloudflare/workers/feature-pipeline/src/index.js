@@ -31,7 +31,7 @@
 export { CampaignTracker } from './campaign_tracker.js';
 
 const FEATURE_CONTRACT_VERSION = "v4.1";
-const EVENT_CONTRACT_VERSION   = "event_schema_v1";
+const EVENT_CONTRACT_VERSION   = "event_schema_v1.1";
 
 // Closed enums (per v4_feature_contract.yaml)
 const CLASSIFICATION_ENUM = new Set([
@@ -392,6 +392,99 @@ export default {
                 target,
             ).run();
             return Response.json({ target, runtime_updated: true });
+        }
+
+        // ── W6: stale-row purge endpoint ──
+        // DELETE-only; authoritative-set gated; child-first atomic batch.
+        // Never writes to retained rows.  See scripts/production/stale_row_purge.py.
+        if (request.method === 'POST'
+            && path.startsWith('/targets/')
+            && path.endsWith('/purge-stale')) {
+            const target = path.substring('/targets/'.length, path.length - '/purge-stale'.length);
+            const body = await safeJson(request);
+            if (!body || typeof body !== 'object' || !Array.isArray(body.authoritative_site_names)) {
+                return Response.json({ error: "authoritative_site_names must be array" }, { status: 400 });
+            }
+            const names = body.authoritative_site_names;
+            // R3 empty-set rejection
+            if (names.length < 1) {
+                return Response.json({ error: "empty authoritative set rejected (would wipe target)" },
+                                     { status: 400 });
+            }
+            // R4 defensive upper bound
+            if (names.length > 1024) {
+                return Response.json({ error: "authoritative set too large (cap=1024)" },
+                                     { status: 400 });
+            }
+            // R5 malformed name detection
+            const sitePat = /^site[0-9]+$/;
+            const bad = names.find(n => typeof n !== "string" || !sitePat.test(n));
+            if (bad !== undefined) {
+                return Response.json({ error: `malformed site name: ${JSON.stringify(bad)}` },
+                                     { status: 400 });
+            }
+            // R6 duplicate detection
+            if (new Set(names).size !== names.length) {
+                const seen = new Set();
+                const dupes = [];
+                for (const n of names) {
+                    if (seen.has(n)) dupes.push(n);
+                    seen.add(n);
+                }
+                return Response.json({ error: `duplicate site names: ${JSON.stringify(dupes)}` },
+                                     { status: 400 });
+            }
+            // R7 target regex (same as W1 queue)
+            if (!/^[0-9a-z]{4}_chain[A-Z0-9]$/i.test(target)) {
+                return Response.json({ error: "invalid target name" }, { status: 400 });
+            }
+            // R8 pct70 scope confinement
+            const scope = await env.DB.prepare(
+                "SELECT COUNT(*) AS n FROM targets WHERE target = ? AND spike_percentile = 70"
+            ).bind(target).first();
+            if (!scope || !scope.n) {
+                return Response.json({ error: "target outside active pct70 cleanup scope" },
+                                     { status: 404 });
+            }
+
+            // Placeholder list (?, ?, ..., ?) for NOT IN predicate.
+            const qmarks = names.map(() => '?').join(',');
+            const children = [
+                ["site_lining_residues",        "DELETE FROM site_lining_residues           WHERE target=? AND site_name NOT IN (" + qmarks + ")"],
+                ["site_kcc_candidates",         "DELETE FROM site_kcc_candidates            WHERE target=? AND site_name NOT IN (" + qmarks + ")"],
+                ["site_event_aggregates",       "DELETE FROM site_event_aggregates          WHERE target=? AND site_name NOT IN (" + qmarks + ")"],
+                ["quarantined_event_aggregates","DELETE FROM quarantined_event_aggregates   WHERE target=? AND site_name NOT IN (" + qmarks + ")"],
+                ["site_features",               "DELETE FROM site_features                  WHERE target=? AND site_name NOT IN (" + qmarks + ")"],
+            ];
+            const stmts = children.map(([_, sql]) => env.DB.prepare(sql).bind(target, ...names));
+            const results = await env.DB.batch(stmts);
+
+            const deleted = {};
+            for (let i = 0; i < children.length; i++) {
+                deleted[children[i][0]] = results[i]?.meta?.changes ?? 0;
+            }
+            const post = await env.DB.prepare(
+                "SELECT COUNT(*) AS n FROM site_features WHERE target=?"
+            ).bind(target).first();
+
+            if (env.ANALYTICS) {
+                const total_deleted = Object.values(deleted).reduce((a,b) => a+b, 0);
+                env.ANALYTICS.writeDataPoint({
+                    blobs: ["w6_purge", target, String(names.length), String(total_deleted)],
+                    doubles: [
+                        deleted.site_features, deleted.site_lining_residues,
+                        deleted.site_kcc_candidates, deleted.site_event_aggregates,
+                        deleted.quarantined_event_aggregates,
+                    ],
+                    indexes: [target],
+                });
+            }
+            return Response.json({
+                target,
+                authoritative_count: names.length,
+                deleted,
+                post_state: { site_features_count: post?.n ?? 0 },
+            });
         }
 
         // ── Features (legacy residue_features table, unchanged) ──
@@ -844,17 +937,25 @@ async function processEventAggregates(env, target, rows) {
 
         if (quarantineReasons.length > 0) {
             quarantined++;
+            // v1.1: partition-cleanup — any prior accepted row for this
+            // (target, site_name) must be removed so the site is not
+            // counted in both tables after re-ingest.
+            stmts.push(env.DB.prepare(
+                `DELETE FROM site_event_aggregates WHERE target = ? AND site_name = ?`
+            ).bind(target, r.site_name));
             stmts.push(env.DB.prepare(
                 `INSERT OR REPLACE INTO quarantined_event_aggregates (
                     target, site_name, event_contract_version, n_events,
                     count_phase_unknown, count_source_other, count_type_other,
+                    count_type_phe, count_type_tyr, count_type_trp,
                     quarantine_reason, quarantine_detail_json, computed_at
-                ) VALUES (?,?,?,?, ?,?,?, ?,?,?)`
+                ) VALUES (?,?,?,?, ?,?,?, ?,?,?, ?,?,?)`
             ).bind(
                 target, r.site_name,
                 str(r.event_contract_version) ?? EVENT_CONTRACT_VERSION,
                 n_events,
                 unknownPhase, unknownSource, unknownType,
+                int(r.count_type_phe), int(r.count_type_tyr), int(r.count_type_trp),
                 quarantineReasons.join("; "),
                 JSON.stringify({ phaseFrac, sourceFrac, typeFrac }),
                 nowIso,
@@ -863,6 +964,12 @@ async function processEventAggregates(env, target, rows) {
         }
 
         accepted++;
+        // v1.1: partition-cleanup — any prior quarantine row for this
+        // (target, site_name) must be removed so the site is not
+        // counted in both tables after re-ingest under the widened enum.
+        stmts.push(env.DB.prepare(
+            `DELETE FROM quarantined_event_aggregates WHERE target = ? AND site_name = ?`
+        ).bind(target, r.site_name));
         // site_event_aggregates is single-owner (W3b). INSERT OR REPLACE is permitted here.
         stmts.push(env.DB.prepare(
             `INSERT OR REPLACE INTO site_event_aggregates (
@@ -870,13 +977,15 @@ async function processEventAggregates(env, target, rows) {
                 count_phase_cold_hold, count_phase_warm_hold, count_phase_heating,
                 count_phase_cooling, count_phase_cold_return, count_phase_unknown,
                 count_source_uv, count_source_lif, count_source_efp, count_source_other,
-                count_type_bnz, count_type_unk, count_type_anion, count_type_cation, count_type_other,
+                count_type_bnz, count_type_unk, count_type_anion, count_type_cation,
+                count_type_phe, count_type_tyr, count_type_trp,
+                count_type_other,
                 mean_intensity, std_intensity, mean_vibrational_energy, mean_water_density,
                 mean_n_nearby_excited, nonzero_wavelength_count, aromatic_attribution_count,
                 source_entropy_nat,
                 phase_transition_ratio, warm_hold_spike_fraction,
                 computed_at
-            ) VALUES (?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?,?, ?, ?,?, ?)`
+            ) VALUES (?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?, ?, ?,?,?,?,?,?,?, ?, ?,?, ?)`
         ).bind(
             target, r.site_name,
             str(r.event_contract_version) ?? EVENT_CONTRACT_VERSION,
@@ -886,7 +995,9 @@ async function processEventAggregates(env, target, rows) {
             int(r.count_phase_cold_return), unknownPhase,
             int(r.count_source_uv), int(r.count_source_lif), int(r.count_source_efp), unknownSource,
             int(r.count_type_bnz), int(r.count_type_unk), int(r.count_type_anion),
-            int(r.count_type_cation), unknownType,
+            int(r.count_type_cation),
+            int(r.count_type_phe), int(r.count_type_tyr), int(r.count_type_trp),
+            unknownType,
             num(r.mean_intensity), num(r.std_intensity),
             num(r.mean_vibrational_energy), num(r.mean_water_density),
             num(r.mean_n_nearby_excited),

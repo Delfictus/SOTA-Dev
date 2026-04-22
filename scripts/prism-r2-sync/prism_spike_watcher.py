@@ -297,6 +297,129 @@ def rclone_ls_check(r2_path: str) -> bool:
 # Parquet conversion
 # ---------------------------------------------------------------------------
 
+def convert_arrow_to_parquet_per_site(json_path: str, dry_run: bool = False) -> Optional[str]:
+    """Step E / D5_V2: per-site parquet via canonical Arrow triad.
+
+    Preconditions (ALL must hold, else return None → caller falls back):
+      1. json_path name matches `<stem>.site<N>.spike_events.json`
+      2. `<stem>.topology.spike_events.arrow`   is in the same directory
+      3. `<stem>.run_metadata.json`              is in the same directory
+      4. `<stem>.binding_sites.json`             is in the same directory
+
+    Output schema is BYTE-IDENTICAL to `convert_json_to_parquet` for the same
+    site: same column names, same column order, same dtypes (int16/int8 casts
+    preserved), same decoded string values (spike_source/type/ccns_phase).
+    site_id is injected as a constant column from the parsed filename.
+
+    Returns the written parquet path or None on any failure (triad missing,
+    schema/ingest error, view open failure). Caller falls back to the legacy
+    `convert_json_to_parquet` path on None.
+    """
+    parquet_path = json_path.replace(".json", ".parquet")
+    if os.path.exists(parquet_path):
+        logger.info(f"  PARQUET EXISTS: {parquet_path}")
+        return parquet_path
+    if dry_run:
+        logger.info(f"  [DRY-RUN] Would convert (D5 Arrow): {json_path} → {parquet_path}")
+        return parquet_path
+
+    jp = Path(json_path)
+    m = re.match(r'^(?P<stem>.+)\.site(?P<sid>-?\d+)\.spike_events\.json$', jp.name)
+    if not m:
+        return None
+    stem = m.group("stem")
+    sid = int(m.group("sid"))
+    parent = jp.parent
+    arrow_p = parent / f"{stem}.topology.spike_events.arrow"
+    meta_p = parent / f"{stem}.run_metadata.json"
+    bs_p = parent / f"{stem}.binding_sites.json"
+    if not (arrow_p.exists() and meta_p.exists() and bs_p.exists()):
+        return None
+
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        # Add the repo root to sys.path so we can import the shared view
+        # (this sync daemon sits outside the scripts/ package).
+        import sys as _sys
+        repo_root = str(Path(__file__).resolve().parents[2])
+        if repo_root not in _sys.path:
+            _sys.path.insert(0, repo_root)
+        from scripts.interfaces.site_spike_view import SiteSpikeView, SiteSpikeViewError
+    except ImportError as e:
+        logger.error(f"  pyarrow/view import failed: {e}")
+        return None
+
+    try:
+        view = SiteSpikeView.from_triad(arrow_p, meta_p, bs_p, stem=stem)
+    except SiteSpikeViewError as e:
+        logger.warning(f"  D5 view open failed for {jp.name}: {e} — falling back to JSON")
+        return None
+
+    if not view.has_site(sid):
+        logger.warning(f"  D5 view has no site_id={sid} (from {jp.name}) — falling back to JSON")
+        return None
+
+    sl = view.site(sid)
+    n = sl.n_spikes()
+    logger.info(f"  CONVERTING (D5 Arrow): {json_path} → Parquet (zstd) — {n} spikes")
+
+    # Build typed arrays matching convert_json_to_parquet schema EXACTLY.
+    if n == 0:
+        schema = pa.schema([
+            ('timestep', pa.int32()), ('frame_index', pa.int32()),
+            ('site_id', pa.int32()), ('spike_source', pa.utf8()),
+            ('intensity', pa.float32()),
+        ])
+        pq.write_table(pa.table({f.name: pa.array([], type=f.type) for f in schema}, schema=schema),
+                       parquet_path, compression="zstd")
+        return parquet_path
+
+    arrays = {
+        'timestep':            pa.array(sl.timestep().astype('int32', copy=False),          type=pa.int32()),
+        'frame_index':         pa.array(sl.frame_index().astype('int32', copy=False),       type=pa.int32()),
+        'site_id':             pa.array([sid] * n,                                           type=pa.int32()),
+        'spike_source':        pa.array(sl.spike_source_decoded().astype(str),               type=pa.utf8()),
+        'ccns_phase':          pa.array(sl.ccns_phase().astype(str),                         type=pa.utf8()),
+        'intensity':           pa.array(sl.intensity().astype('float32', copy=False),        type=pa.float32()),
+        'vibrational_energy':  pa.array(sl.vibrational_energy().astype('float32', copy=False), type=pa.float32()),
+        'n_nearby_excited':    pa.array(sl.n_nearby_excited().astype('int16', copy=False),   type=pa.int16()),
+        'stream_id':           pa.array(sl.stream_id().astype('int8', copy=False),           type=pa.int8()),
+        'aromatic_residue_id': pa.array(sl.aromatic_residue_id().astype('int32', copy=False), type=pa.int32()),
+        'type':                pa.array(sl.aromatic_type_decoded().astype(str),              type=pa.utf8()),
+        'water_density':       pa.array(sl.water_density().astype('float32', copy=False),    type=pa.float32()),
+        'x':                   pa.array(sl.x().astype('float32', copy=False),                type=pa.float32()),
+        'y':                   pa.array(sl.y().astype('float32', copy=False),                type=pa.float32()),
+        'z':                   pa.array(sl.z().astype('float32', copy=False),                type=pa.float32()),
+        'wavelength_nm':       pa.array(sl.wavelength_nm().astype('float32', copy=False),    type=pa.float32()),
+    }
+    table = pa.table(arrays)
+    pq.write_table(
+        table, parquet_path,
+        compression="zstd", compression_level=3,
+        use_dictionary=True, write_statistics=True,
+    )
+
+    # Verify row count round-trip
+    pt = pq.read_table(parquet_path)
+    if pt.num_rows != n:
+        logger.error(
+            f"  D5 ROW COUNT MISMATCH: view={n}, parquet={pt.num_rows} — "
+            f"KEEPING BOTH, not deleting anything"
+        )
+        return None
+
+    json_size = os.path.getsize(json_path) if os.path.exists(json_path) else 0
+    parquet_size = os.path.getsize(parquet_path)
+    ratio = json_size / parquet_size if parquet_size > 0 else 0
+    logger.info(
+        f"  PARQUET OK (D5 Arrow): {pt.num_rows} rows, "
+        f"{json_size / 1e9:.2f} GB → {parquet_size / 1e6:.1f} MB "
+        f"({ratio:.1f}x compression)"
+    )
+    return parquet_path
+
+
 def convert_json_to_parquet(json_path: str, dry_run: bool = False) -> Optional[str]:
     """
     Convert spike JSON to Parquet with zstd compression.
@@ -471,7 +594,11 @@ def process_spike_file(json_path: str, dry_run: bool = False) -> bool:
             return False
 
     # ---- Step 2: Convert to Parquet ----
-    parquet_path = convert_json_to_parquet(json_path, dry_run=dry_run)
+    # D5 Arrow-first path (Step E). Falls back to legacy JSON converter when
+    # triad is absent or site is outside binding_sites. Schema is byte-identical.
+    parquet_path = convert_arrow_to_parquet_per_site(json_path, dry_run=dry_run)
+    if parquet_path is None:
+        parquet_path = convert_json_to_parquet(json_path, dry_run=dry_run)
     if parquet_path is None:
         logger.error(f"  ABORT: Parquet conversion failed, keeping local JSON: {json_path}")
         return False

@@ -44,6 +44,12 @@ rand_distr = "0.4"
 # Statistical analysis for CCNS power-law fitting
 statrs = { workspace = true }
 
+# ONNX Runtime via ort crate — loads XGBoost v3 binding-site ranker for
+# production inference inside the engine. Uses `download-binaries` feature
+# to fetch pre-built onnxruntime at build time (no system lib dependency).
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls"] }
+ndarray = "0.16"
+
 # Apache Arrow IPC streaming for per-spike training data export (Stage 1B-1).
 # Pure Rust implementation; no system dependencies. Used by spike_arrow_writer
 # to produce columnar per-target Arrow IPC files with full per-spike tagging

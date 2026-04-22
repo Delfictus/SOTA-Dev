@@ -16,7 +16,7 @@ Architecture (no shortcuts):
     6. GVP-GNN with full scalar+vector dual-track on BOTH nodes and edges
     7. Multi-head attention readout with structural gating
     8. 5-model ensemble with different seeds, averaged at inference
-    9. scPDB pretraining + fine-tuning on BENCH60
+    9. scPDB pretraining + fine-tuning on BENCH30
 
 References:
     Jing et al. "Learning from Protein Structure with Geometric Vector

@@ -1732,10 +1732,27 @@ impl PersistentNhsEngine {
     ///
     /// Call this explicitly to pre-warm the pipeline, or let it initialize
     /// lazily on first `cluster_spikes()` call.
+    #[allow(unreachable_code)]
     pub fn ensure_rt_pipeline(&mut self) -> Result<bool> {
         if self.rt_engine.is_some() {
             return Ok(true);  // Already initialized
         }
+
+        // ════════════════════════════════════════════════════════════
+        // E2E UNBLOCK LANE (2026-04-21): OptiX RT clustering disabled.
+        // rt_clustering.rs::load_pipeline() at lines 185-246 is
+        // structurally incomplete — it never assigns self.pipeline and
+        // never constructs a Pipeline, yet returns Ok(()). Routing
+        // through it produced `WARN Clustering failed: Pipeline not
+        // loaded` followed by SIGSEGV on engine shutdown. Per
+        // CLAUDE.md IMMUTABLE_RULE #9 ("OptiX is removed"), we
+        // short-circuit here so cluster_spikes falls through to
+        // fallback_grid_cluster. No OptiX context is created,
+        // eliminating the teardown crash path. To re-enable a future
+        // working OptiX path, delete the next two lines.
+        // ════════════════════════════════════════════════════════════
+        log::info!("RT clustering disabled (OptiX path unavailable); using grid fallback");
+        return Ok(false);
 
         if !self.has_rt_clustering() {
             log::debug!("RT clustering not available (no RT cores or OptiX)");

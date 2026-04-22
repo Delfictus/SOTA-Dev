@@ -150,9 +150,8 @@ def distillation_loss(student_logits: torch.Tensor,
 def train_epoch(model, samples, optimizer, device, edge_cutoff, eval_seed=0):
     model.train()
     total_loss = 0.0
-    rng = None  # use default generator (compatible with any device)
 
-    for s in samples:
+    for i, s in enumerate(samples):
         X = torch.tensor(s.X, dtype=torch.float32, device=device)
         coords = torch.tensor(s.coords, dtype=torch.float32, device=device)
         labels = torch.tensor(s.labels, dtype=torch.float32, device=device)
@@ -160,7 +159,8 @@ def train_epoch(model, samples, optimizer, device, edge_cutoff, eval_seed=0):
         gt_center = torch.tensor(s.ligand_centroid, dtype=torch.float32, device=device).unsqueeze(0)
 
         edge_index = build_edge_index(coords, N_VNS, cutoff=edge_cutoff).to(device)
-        vn_init = init_virtual_nodes(coords, N_VNS).to(device)
+        rng = torch.Generator(device="cpu").manual_seed(eval_seed * 10000 + i)
+        vn_init = init_virtual_nodes(coords.cpu(), N_VNS, rng=rng).to(device)
 
         atom_logits, vn_coords, vn_conf = model(X, coords, edge_index, None, vn_init)
         vn_coords = vn_coords.clamp(-200, 200)
@@ -184,18 +184,18 @@ def train_epoch(model, samples, optimizer, device, edge_cutoff, eval_seed=0):
 @torch.no_grad()
 def eval_samples(model, samples, device, edge_cutoff, eval_seed=42):
     model.eval()
-    rng = None  # use default generator (compatible with any device)
 
     sr = {4: 0, 8: 0}
     dccs = []
 
-    for s in samples:
+    for i, s in enumerate(samples):
         X = torch.tensor(s.X, dtype=torch.float32, device=device)
         coords = torch.tensor(s.coords, dtype=torch.float32, device=device)
         gt = torch.tensor(s.ligand_centroid, dtype=torch.float32, device=device)
 
         edge_index = build_edge_index(coords, N_VNS, cutoff=edge_cutoff).to(device)
-        vn_init = init_virtual_nodes(coords, N_VNS).to(device)
+        rng = torch.Generator(device="cpu").manual_seed(eval_seed + i)
+        vn_init = init_virtual_nodes(coords.cpu(), N_VNS, rng=rng).to(device)
 
         atom_logits, vn_coords, vn_conf = model(X, coords, edge_index, None, vn_init)
 
