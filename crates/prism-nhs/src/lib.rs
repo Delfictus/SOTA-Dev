@@ -147,6 +147,12 @@ pub mod gpu_cluster_backend;
 /// representation. No hidden default. Module is always compiled
 /// (no `gpu` gate) because the types are pure data.
 pub mod spatial_view;
+/// Phase 2 audit spine — [`transform::AuditedTransform`] trait plus
+/// the typed vocabulary (`DeterminismClass`, `TolerancePolicy`,
+/// `TransformViolation`, `AuditOutcome`) every governed transform
+/// uses. The framework module is feature-agnostic; individual
+/// concrete transforms may be feature-gated on their dependencies.
+pub mod transform;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]

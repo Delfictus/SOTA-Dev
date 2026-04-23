@@ -1528,8 +1528,34 @@ impl PersistentNhsEngine {
         // Cluster using RT cores or fallback
         let used_rt = self.has_rt_clustering();
         let result = self.cluster_spikes(&positions)?;
+        // Phase 2: route the canonical site-construction boundary through
+        // the `ClusteringToClusteredSites` transform so the GVM-populated
+        // (L1) and emission-compat-matches-GVM (L2) laws are enforced on
+        // every output of this path. An abort-routed violation here is a
+        // structural-corruption failure of the construction invariant and
+        // must surface as a run error, not a silent fallback.
         #[cfg(feature = "gpu")]
-        let sites = build_clustered_sites(&spike_events, &result, self.engine.as_ref());
+        let sites = {
+            use crate::transform::clustering_to_clustered_sites::{
+                ClusteringInput, ClusteringToClusteredSites,
+            };
+            use crate::transform::AuditedTransform;
+            let outcome = ClusteringToClusteredSites::new().apply(ClusteringInput {
+                spike_events: &spike_events,
+                clustering_result: &result,
+                engine: self.engine.as_ref(),
+            });
+            let (sites, quarantined) = outcome
+                .into_result()
+                .map_err(|aborted| anyhow::anyhow!("{aborted}"))?;
+            if !quarantined.is_empty() {
+                log::warn!(
+                    "transform clustering_to_clustered_sites: {} quarantined site(s) in run_and_cluster",
+                    quarantined.len()
+                );
+            }
+            sites
+        };
         #[cfg(not(feature = "gpu"))]
         let sites = build_clustered_sites(&spike_events, &result, None);
         let stats = ClusteringStats {
@@ -2417,9 +2443,13 @@ pub struct PersistentEngineStats {
     pub overhead_saved_ms: u64,
 }
 
-/// Convert RT clustering results into binding site structures
+/// Convert RT clustering results into binding site structures.
+///
+/// Crate-visible so `crate::transform::clustering_to_clustered_sites`
+/// can wrap this function under the Phase 2 audit spine. Not `pub` —
+/// external callers go through the transform, not directly.
 #[cfg(feature = "gpu")]
-fn build_clustered_sites(
+pub(crate) fn build_clustered_sites(
     spike_events: &[SpikeEvent],
     clustering_result: &crate::rt_clustering::RtClusteringResult,
     #[cfg(feature = "gpu")]
@@ -3178,8 +3208,33 @@ impl BatchProcessor {
                 let used_rt = self.engine.has_rt_clustering();
                 match self.engine.cluster_spikes(&spike_positions) {
                     Ok(result) => {
+                        // Phase 2: route batch-mode site construction through
+                        // the same audit-spine transform as the single-structure
+                        // path above. Abort violations propagate out of
+                        // `process_batch` as a run error; quarantine violations
+                        // are logged and the output is accepted.
                         #[cfg(feature = "gpu")]
-                        let sites = build_clustered_sites(&spike_events, &result, self.engine.engine.as_ref());
+                        let sites = {
+                            use crate::transform::clustering_to_clustered_sites::{
+                                ClusteringInput, ClusteringToClusteredSites,
+                            };
+                            use crate::transform::AuditedTransform;
+                            let outcome = ClusteringToClusteredSites::new().apply(ClusteringInput {
+                                spike_events: &spike_events,
+                                clustering_result: &result,
+                                engine: self.engine.engine.as_ref(),
+                            });
+                            let (sites, quarantined) = outcome
+                                .into_result()
+                                .map_err(|aborted| anyhow::anyhow!("{aborted}"))?;
+                            if !quarantined.is_empty() {
+                                log::warn!(
+                                    "transform clustering_to_clustered_sites: {} quarantined site(s) in process_batch",
+                                    quarantined.len()
+                                );
+                            }
+                            sites
+                        };
                         #[cfg(not(feature = "gpu"))]
                         let sites = build_clustered_sites(&spike_events, &result, None);
                         let stats = ClusteringStats {
