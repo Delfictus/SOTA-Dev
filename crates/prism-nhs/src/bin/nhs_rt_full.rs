@@ -2362,10 +2362,11 @@ fn run_full_pipeline_internal(
             let catalytic_count = site.lining_residues.iter()
                 .filter(|r| catalytic_residues.contains(&r.resname.as_str()))
                 .count();
+            let _c = site.emission_compat_centroid();
             log::info!("    #{}: {:?} at ({:.1}, {:.1}, {:.1}), quality={:.2}, druggable={}",
                 i + 1,
                 site.classification,
-                site.centroid[0], site.centroid[1], site.centroid[2],
+                _c[0], _c[1], _c[2],
                 site.quality_score,
                 site.druggability.is_druggable);
             log::info!("        Residues ({}, {} catalytic): {}",
@@ -2422,9 +2423,9 @@ fn run_full_pipeline_internal(
         let mut cryptic_sites_json = Vec::new();
 
         for site in clustered_sites.iter().take(100) {
-            let cx = site.centroid[0];
-            let cy = site.centroid[1];
-            let cz = site.centroid[2];
+            let cx = site.geometric_voxel_mass_centroid()[0];
+            let cy = site.geometric_voxel_mass_centroid()[1];
+            let cz = site.geometric_voxel_mass_centroid()[2];
 
             // Use cluster-assigned spikes (frame-aligned with sites[].spike_count)
             let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = if !site.spike_indices.is_empty() {
@@ -2471,7 +2472,7 @@ fn run_full_pipeline_internal(
 
             all_pockets_json.push(serde_json::json!({
                 "site_id": site.cluster_id,
-                "centroid": site.centroid,
+                "centroid": site.emission_compat_centroid(),
                 "mean_volume": mean_volume,
                 "cv_volume": cv_volume,
                 "n_frames": n_frames,
@@ -2497,7 +2498,7 @@ fn run_full_pipeline_internal(
 
             cryptic_sites_json.push(serde_json::json!({
                 "site_id": site.cluster_id,
-                "centroid": site.centroid,
+                "centroid": site.emission_compat_centroid(),
                 "spike_count": site_spikes.len(),
                 "consensus_spike_count": site.spike_count,
                 "spike_source": if !site.spike_indices.is_empty() { "cluster_assigned" } else { "radius_fallback" },
@@ -2554,7 +2555,7 @@ fn run_full_pipeline_internal(
                 .count();
             serde_json::json!({
                 "id": s.cluster_id,
-                "centroid": s.centroid,
+                "centroid": s.emission_compat_centroid(),
                 "volume": s.estimated_volume,
                 "spike_count": s.spike_count,
                 "quality_score": s.quality_score,
@@ -2653,7 +2654,7 @@ fn run_full_pipeline_internal(
         // ── PRISM-Therm standalone report ──
         if let Some(ref analysis) = prism_therm_result {
             let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
-                .map(|s| (s.centroid, s.cluster_id))
+                .map(|s| (s.emission_compat_centroid(), s.cluster_id))
                 .collect();
             let report = sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
             sdst_report::print_summary_table(&report);
@@ -3157,7 +3158,7 @@ fn run_batch_gpu_concurrent(
                         .count();
                     serde_json::json!({
                         "id": s.cluster_id,
-                        "centroid": s.centroid,
+                        "centroid": s.emission_compat_centroid(),
                         "volume": s.estimated_volume,
                         "spike_count": s.spike_count,
                         "quality_score": s.quality_score,
@@ -5924,8 +5925,9 @@ fn run_multi_stream_pipeline(
     // DEBUG: Log per-stream site centroids
     for (i, sites) in per_stream_sites.iter().enumerate() {
         for (j, site) in sites.iter().enumerate() {
+            let _c = site.emission_compat_centroid();
             log::info!("    Stream {} site {}: centroid=[{:.1}, {:.1}, {:.1}], spikes={}, intensity={:.3}",
-                i, j, site.centroid[0], site.centroid[1], site.centroid[2],
+                i, j, _c[0], _c[1], _c[2],
                 site.spike_count, site.avg_intensity);
         }
     }
@@ -5950,8 +5952,8 @@ fn run_multi_stream_pipeline(
             'outer: for i in 0..clustered_sites.len() {
                 for j in (i+1)..clustered_sites.len() {
                     // Spatial guard: centroid distance ≤ 20Å
-                    let ci = clustered_sites[i].centroid;
-                    let cj = clustered_sites[j].centroid;
+                    let ci = clustered_sites[i].geometric_voxel_mass_centroid();
+                    let cj = clustered_sites[j].geometric_voxel_mass_centroid();
                     let dist = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
                     if dist > 20.0 { continue; }
 
@@ -5994,11 +5996,11 @@ fn run_multi_stream_pipeline(
                             }
                         }
                         if n > 0 {
-                            clustered_sites[winner].centroid = [
+                            clustered_sites[winner].set_geometric_voxel_mass_centroid([
                                 (sx / n as f64) as f32,
                                 (sy / n as f64) as f32,
                                 (sz / n as f64) as f32,
-                            ];
+                            ]);
                         }
 
                         log::info!("  Overlap merge: site {} + site {} → site {} (J={:.2} C={:.2} d={:.1}Å)",
@@ -6136,9 +6138,9 @@ fn run_multi_stream_pipeline(
                 let mut nearest_dist = f32::MAX;
                 let mut nearest_idx: Option<usize> = None;
                 for (si, site) in clustered_sites.iter().enumerate() {
-                    let dx = ph.centroid[0] - site.centroid[0];
-                    let dy = ph.centroid[1] - site.centroid[1];
-                    let dz = ph.centroid[2] - site.centroid[2];
+                    let dx = ph.centroid[0] - site.geometric_voxel_mass_centroid()[0];
+                    let dy = ph.centroid[1] - site.geometric_voxel_mass_centroid()[1];
+                    let dz = ph.centroid[2] - site.geometric_voxel_mass_centroid()[2];
                     let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                     if dist < 10.0 && dist < nearest_dist {
                         nearest_dist = dist;
@@ -6151,7 +6153,7 @@ fn run_multi_stream_pipeline(
                         let parent = &clustered_sites[ni];
                         let mut ph_site = parent.clone();
                         ph_site.cluster_id = next_ph_id;
-                        ph_site.centroid = ph.centroid;
+                        ph_site.set_geometric_voxel_mass_centroid(ph.centroid);
                         ph_site.quality_score = parent.quality_score * 0.90;
                         ph_site.classification = SiteClassification::Cryptic; // mark as PH-derived
                         log::info!("  PH peak site {}: centroid ({:.1},{:.1},{:.1}), {:.1}A from site {}, q={:.3}",
@@ -6258,9 +6260,9 @@ fn run_multi_stream_pipeline(
                 let bb = site.bounding_box;
                 let half_diag = (bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]).sqrt() / 2.0;
                 site_radii.push((half_diag + 2.0).clamp(3.0, max_dist));
-                let cx = (site.centroid[0] / CELL_SIZE).floor() as i32;
-                let cy = (site.centroid[1] / CELL_SIZE).floor() as i32;
-                let cz = (site.centroid[2] / CELL_SIZE).floor() as i32;
+                let cx = (site.geometric_voxel_mass_centroid()[0] / CELL_SIZE).floor() as i32;
+                let cy = (site.geometric_voxel_mass_centroid()[1] / CELL_SIZE).floor() as i32;
+                let cz = (site.geometric_voxel_mass_centroid()[2] / CELL_SIZE).floor() as i32;
                 for dx in -1..=1 {
                     for dy in -1..=1 {
                         for dz in -1..=1 {
@@ -6281,9 +6283,9 @@ fn run_multi_stream_pipeline(
                     let mut best_site = usize::MAX;
                     let mut best_d2 = f32::MAX;
                     for &si in nearby {
-                        let dx = spike.position[0] - clustered_sites[si].centroid[0];
-                        let dy = spike.position[1] - clustered_sites[si].centroid[1];
-                        let dz = spike.position[2] - clustered_sites[si].centroid[2];
+                        let dx = spike.position[0] - clustered_sites[si].geometric_voxel_mass_centroid()[0];
+                        let dy = spike.position[1] - clustered_sites[si].geometric_voxel_mass_centroid()[1];
+                        let dz = spike.position[2] - clustered_sites[si].geometric_voxel_mass_centroid()[2];
                         let d2 = dx*dx + dy*dy + dz*dz;
                         let r = site_radii[si];
                         if d2 < r*r && d2 < best_d2 {
@@ -6311,7 +6313,7 @@ fn run_multi_stream_pipeline(
             let mut refined = 0usize;
             for si in 0..n_sites {
                 if site_spike_assignments[si].len() < 10 { continue; }
-                let old_c = clustered_sites[si].centroid;
+                let old_c = clustered_sites[si].geometric_voxel_mass_centroid();
                 let mut wx = 0.0f64;
                 let mut wy = 0.0f64;
                 let mut wz = 0.0f64;
@@ -6336,7 +6338,7 @@ fn run_multi_stream_pipeline(
                         + (new_c[2] - old_c[2]).powi(2)).sqrt();
                     // Cap shift at 6A to avoid centroid flying off into solvent
                     if shift <= 6.0 {
-                        clustered_sites[si].centroid = new_c;
+                        clustered_sites[si].set_geometric_voxel_mass_centroid(new_c);
                         if shift > 0.5 {
                             log::info!("  IDC refine site {}: shift {:.1}Å → ({:.1},{:.1},{:.1})",
                                 clustered_sites[si].cluster_id, shift,
@@ -6416,9 +6418,9 @@ fn run_multi_stream_pipeline(
         let mut spatial_signals: std::collections::HashMap<i32, (f32, f32, f32)> = std::collections::HashMap::new();
 
         for (site_idx, site) in clustered_sites.iter_mut().take(100).enumerate() {
-            let cx = site.centroid[0];
-            let cy = site.centroid[1];
-            let cz = site.centroid[2];
+            let cx = site.geometric_voxel_mass_centroid()[0];
+            let cy = site.geometric_voxel_mass_centroid()[1];
+            let cz = site.geometric_voxel_mass_centroid()[2];
 
             // Collect cluster-assigned spikes for this site (frame-aligned)
             let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> =
@@ -6607,7 +6609,7 @@ fn run_multi_stream_pipeline(
 
             all_pockets_json.push(serde_json::json!({
                 "site_id": site.cluster_id,
-                "centroid": site.centroid,
+                "centroid": site.emission_compat_centroid(),
                 "mean_volume": mean_volume,
                 "cv_volume": cv_volume,
                 "n_frames": n_frames,
@@ -6891,7 +6893,7 @@ fn run_multi_stream_pipeline(
                     if dist > 2.0 && dist < max_shift {
                         log::info!("  Site {}: peak centroid shift {:.1}Å (vol={:.0}Å³, {} top spikes)",
                             site.cluster_id, dist, site.estimated_volume, top_spikes.len());
-                        site.centroid = pc;
+                        site.set_geometric_voxel_mass_centroid(pc);
                     }
                 }
             }
@@ -6922,7 +6924,7 @@ fn run_multi_stream_pipeline(
 
             cryptic_sites_json.push(serde_json::json!({
                 "site_id": site.cluster_id,
-                "centroid": site.centroid,
+                "centroid": site.emission_compat_centroid(),
                 "spike_count": site_spikes.len(),
                 "consensus_spike_count": site.spike_count,
                 "spike_source": if !site.spike_indices.is_empty() { "cluster_assigned" } else { "radius_fallback" },
@@ -6986,7 +6988,7 @@ fn run_multi_stream_pipeline(
                     let spike_frac = counts[ki] as f32 / total_spikes as f32;
                     let mut sub_site = site.clone();
                     sub_site.cluster_id = next_sub_id;
-                    sub_site.centroid = *center;
+                    sub_site.set_geometric_voxel_mass_centroid(*center);
                     sub_site.estimated_volume = site.estimated_volume / 3.0;
                     sub_site.spike_count = counts[ki];
                     sub_site.quality_score = site.quality_score * spike_frac;
@@ -7046,15 +7048,15 @@ fn run_multi_stream_pipeline(
                     (pw[1] / pws) as f32,
                     (pw[2] / pws) as f32,
                 ];
-                let dist = ((pc[0] - site.centroid[0]).powi(2)
-                    + (pc[1] - site.centroid[1]).powi(2)
-                    + (pc[2] - site.centroid[2]).powi(2)).sqrt();
+                let dist = ((pc[0] - site.geometric_voxel_mass_centroid()[0]).powi(2)
+                    + (pc[1] - site.geometric_voxel_mass_centroid()[1]).powi(2)
+                    + (pc[2] - site.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
 
                 // Only emit if peak centroid differs by > 2A from original
                 if dist > 2.0 {
                     let mut peak_site = site.clone();
                     peak_site.cluster_id = next_peak_id;
-                    peak_site.centroid = pc;
+                    peak_site.set_geometric_voxel_mass_centroid(pc);
                     peak_site.quality_score = site.quality_score * 0.95;
                     peak_site.classification = SiteClassification::Cryptic;
                     log::info!("  Dual centroid site {}: peak centroid ({:.1},{:.1},{:.1}), {:.1}A from original site {}, q={:.3}",
@@ -7082,9 +7084,9 @@ fn run_multi_stream_pipeline(
                     continue; // skip sites with few residues and existing tri-sites
                 }
 
-                let cx = site.centroid[0];
-                let cy = site.centroid[1];
-                let cz = site.centroid[2];
+                let cx = site.geometric_voxel_mass_centroid()[0];
+                let cy = site.geometric_voxel_mass_centroid()[1];
+                let cz = site.geometric_voxel_mass_centroid()[2];
 
                 // Collect lining residue positions (use the closest atom position
                 // from each residue, projected toward the pocket centroid)
@@ -7160,7 +7162,7 @@ fn run_multi_stream_pipeline(
                     if shift > 1.5 && shift < 15.0 {
                         let mut tri_site = site.clone();
                         tri_site.cluster_id = site.cluster_id + 3000;
-                        tri_site.centroid = tri_centroid;
+                        tri_site.set_geometric_voxel_mass_centroid(tri_centroid);
                         tri_site.quality_score *= 0.93; // slight discount
                         tri_site.classification = SiteClassification::from_properties(
                             site.spike_count, site.estimated_volume, site.avg_intensity);
@@ -7249,15 +7251,15 @@ fn run_multi_stream_pipeline(
                         (fw[2] / fws) as f32,
                     ];
 
-                    let cx = site.centroid[0];
-                    let cy = site.centroid[1];
-                    let cz = site.centroid[2];
+                    let cx = site.geometric_voxel_mass_centroid()[0];
+                    let cy = site.geometric_voxel_mass_centroid()[1];
+                    let cz = site.geometric_voxel_mass_centroid()[2];
                     let shift = ((fc[0] - cx).powi(2) + (fc[1] - cy).powi(2) + (fc[2] - cz).powi(2)).sqrt();
 
                     if shift > 1.0 && shift < 20.0 {
                         let mut fs_site = site.clone();
                         fs_site.cluster_id = site.cluster_id + 4000;
-                        fs_site.centroid = fc;
+                        fs_site.set_geometric_voxel_mass_centroid(fc);
                         fs_site.quality_score *= 0.92;
 
                         log::info!("  Frustrated solvent centroid {}: ({:.1},{:.1},{:.1}), {:.1}A from site {}, {} frustrated spikes (of {}), q={:.3}",
@@ -7286,11 +7288,11 @@ fn run_multi_stream_pipeline(
         {
             let consensus_radius = 4.0f32;
             for i in 0..clustered_sites.len() {
-                let ci = clustered_sites[i].centroid;
+                let ci = clustered_sites[i].geometric_voxel_mass_centroid();
                 let mut n_nearby = 0u32;
                 for j in 0..clustered_sites.len() {
                     if i == j { continue; }
-                    let cj = clustered_sites[j].centroid;
+                    let cj = clustered_sites[j].geometric_voxel_mass_centroid();
                     let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
                     if d < consensus_radius { n_nearby += 1; }
                 }
@@ -7319,9 +7321,9 @@ fn run_multi_stream_pipeline(
             for site in clustered_sites.iter_mut() {
                 if site.spike_indices.len() < 10 { continue; }
 
-                let mut cx = site.centroid[0];
-                let mut cy = site.centroid[1];
-                let mut cz = site.centroid[2];
+                let mut cx = site.geometric_voxel_mass_centroid()[0];
+                let mut cy = site.geometric_voxel_mass_centroid()[1];
+                let mut cz = site.geometric_voxel_mass_centroid()[2];
 
                 for _ in 0..n_iters {
                     let mut wx = 0.0f64;
@@ -7355,16 +7357,16 @@ fn run_multi_stream_pipeline(
                     }
                 }
 
-                let shift = ((cx - site.centroid[0]).powi(2)
-                    + (cy - site.centroid[1]).powi(2)
-                    + (cz - site.centroid[2]).powi(2)).sqrt();
+                let shift = ((cx - site.geometric_voxel_mass_centroid()[0]).powi(2)
+                    + (cy - site.geometric_voxel_mass_centroid()[1]).powi(2)
+                    + (cz - site.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
                 // Only apply if shift is meaningful (>0.5Å) but not excessive (<3Å)
                 // Large shifts indicate the spike cloud is far from the centroid,
                 // which usually means the centroid is better as-is.
                 if shift > 0.5 && shift < 3.0 {
                     total_shift += shift;
                     n_shifted += 1;
-                    site.centroid = [cx, cy, cz];
+                    site.set_geometric_voxel_mass_centroid([cx, cy, cz]);
                 }
             }
             if n_shifted > 0 {
@@ -7408,9 +7410,9 @@ fn run_multi_stream_pipeline(
                             else if oid >= 2000 { 3 } else if oid >= 1000 { 2 }
                             else if oid >= 500 { 1 } else { 0 };
                         if otype == my_type { continue; }
-                        let d = ((site.centroid[0]-other.centroid[0]).powi(2)
-                               + (site.centroid[1]-other.centroid[1]).powi(2)
-                               + (site.centroid[2]-other.centroid[2]).powi(2)).sqrt();
+                        let d = ((site.geometric_voxel_mass_centroid()[0]-other.geometric_voxel_mass_centroid()[0]).powi(2)
+                               + (site.geometric_voxel_mass_centroid()[1]-other.geometric_voxel_mass_centroid()[1]).powi(2)
+                               + (site.geometric_voxel_mass_centroid()[2]-other.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
                         if d < 4.0 { orthogonal_types.insert(otype); }
                     }
                     let vcs = match orthogonal_types.len() {
@@ -7433,9 +7435,9 @@ fn run_multi_stream_pipeline(
             }).collect();
 
             for (site_idx, site) in clustered_sites.iter_mut().enumerate() {
-                let cx = site.centroid[0];
-                let cy = site.centroid[1];
-                let cz = site.centroid[2];
+                let cx = site.geometric_voxel_mass_centroid()[0];
+                let cy = site.geometric_voxel_mass_centroid()[1];
+                let cz = site.geometric_voxel_mass_centroid()[2];
 
                 // ── ENGINE 1: Geometric (LAO + Ray-Length Entropy) ──
                 let mut hit_distances: Vec<f32> = Vec::with_capacity(n_rays);
@@ -7766,8 +7768,8 @@ fn run_multi_stream_pipeline(
                 for &j in &indices {
                     if i == j || !keep[j] { continue; }
                     if clustered_sites[j].quality_score >= clustered_sites[i].quality_score { continue; }
-                    let ci = clustered_sites[i].centroid;
-                    let cj = clustered_sites[j].centroid;
+                    let ci = clustered_sites[i].geometric_voxel_mass_centroid();
+                    let cj = clustered_sites[j].geometric_voxel_mass_centroid();
                     let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
 
                     // Volumetric NMS: two pruning criteria
@@ -7826,7 +7828,7 @@ fn run_multi_stream_pipeline(
             let reap_radius = 8.0f32;
             for site in clustered_sites.iter_mut() {
                 let lp = compute_local_physics(
-                    site.centroid,
+                    site.geometric_voxel_mass_centroid(),
                     &all_stream_spikes,
                     reap_radius,
                     site.lining_residues.len(),
@@ -7912,9 +7914,9 @@ fn run_multi_stream_pipeline(
                 // Collect local spike intensities
                 let mut local_spikes: Vec<(f32, [f32; 3])> = Vec::new();
                 for spike in &all_stream_spikes {
-                    let dx = spike.position[0] - site.centroid[0];
-                    let dy = spike.position[1] - site.centroid[1];
-                    let dz = spike.position[2] - site.centroid[2];
+                    let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                    let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                    let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
                     if dx*dx + dy*dy + dz*dz <= tq_radius_sq {
                         local_spikes.push((spike.intensity, spike.position));
                     }
@@ -7948,11 +7950,11 @@ fn run_multi_stream_pipeline(
                         (wp[2] / ws) as f32,
                     ];
                     // Only apply if shift is meaningful but not pathological
-                    let shift = ((new_c[0] - site.centroid[0]).powi(2)
-                        + (new_c[1] - site.centroid[1]).powi(2)
-                        + (new_c[2] - site.centroid[2]).powi(2)).sqrt();
+                    let shift = ((new_c[0] - site.geometric_voxel_mass_centroid()[0]).powi(2)
+                        + (new_c[1] - site.geometric_voxel_mass_centroid()[1]).powi(2)
+                        + (new_c[2] - site.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
                     if shift > 0.5 && shift < 6.0 {
-                        site.centroid = new_c;
+                        site.set_geometric_voxel_mass_centroid(new_c);
                         n_refined += 1;
                     }
                 }
@@ -7990,9 +7992,9 @@ fn run_multi_stream_pipeline(
             // Hash: (ix, iy, iz) → vec of site indices
             let mut site_grid: std::collections::HashMap<(i32, i32, i32), Vec<usize>> = std::collections::HashMap::new();
             for (site_idx, site) in clustered_sites.iter().enumerate() {
-                let ix = (site.centroid[0] * inv_cell).floor() as i32;
-                let iy = (site.centroid[1] * inv_cell).floor() as i32;
-                let iz = (site.centroid[2] * inv_cell).floor() as i32;
+                let ix = (site.geometric_voxel_mass_centroid()[0] * inv_cell).floor() as i32;
+                let iy = (site.geometric_voxel_mass_centroid()[1] * inv_cell).floor() as i32;
+                let iz = (site.geometric_voxel_mass_centroid()[2] * inv_cell).floor() as i32;
                 site_grid.entry((ix, iy, iz)).or_default().push(site_idx);
             }
 
@@ -8041,9 +8043,9 @@ fn run_multi_stream_pipeline(
                     if let Some(sites_in_cell) = site_grid.get(&(sx+dx, sy+dy, sz+dz)) {
                         for &site_idx in sites_in_cell {
                             let site = &clustered_sites[site_idx];
-                            let ddx = spike.position[0] - site.centroid[0];
-                            let ddy = spike.position[1] - site.centroid[1];
-                            let ddz = spike.position[2] - site.centroid[2];
+                            let ddx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                            let ddy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                            let ddz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
                             let d2 = ddx*ddx + ddy*ddy + ddz*ddz;
                             if d2 < nearest_dist_sq {
                                 nearest_dist_sq = d2;
@@ -8175,7 +8177,7 @@ fn run_multi_stream_pipeline(
             // centroid shifts to where the pocket ACTUALLY opens.
             for site in clustered_sites.iter_mut() {
                 if site.spike_indices.len() < 10 { continue; }
-                let old_c = site.centroid;
+                let old_c = site.geometric_voxel_mass_centroid();
                 let mut wx = 0.0f64;
                 let mut wy = 0.0f64;
                 let mut wz = 0.0f64;
@@ -8200,7 +8202,7 @@ fn run_multi_stream_pipeline(
                         log::info!("    Site {}: centroid refined {:.1}A → ({:.1},{:.1},{:.1})",
                             site.cluster_id, shift, new_c[0], new_c[1], new_c[2]);
                     }
-                    site.centroid = new_c;
+                    site.set_geometric_voxel_mass_centroid(new_c);
                 }
             }
 
@@ -8265,9 +8267,9 @@ fn run_multi_stream_pipeline(
             let lining_cutoff = args.lining_cutoff;
             let lining_cutoff_sq = lining_cutoff * lining_cutoff;
             for (site_idx, site) in clustered_sites.iter_mut().enumerate() {
-                let cx = site.centroid[0];
-                let cy = site.centroid[1];
-                let cz = site.centroid[2];
+                let cx = site.geometric_voxel_mass_centroid()[0];
+                let cy = site.geometric_voxel_mass_centroid()[1];
+                let cz = site.geometric_voxel_mass_centroid()[2];
 
                 let attrib = match site_spike_attribution.get(site_idx) {
                     Some(m) if !m.is_empty() => m,
@@ -8379,9 +8381,10 @@ fn run_multi_stream_pipeline(
                     let top_res: String = site.lining_residues.iter().take(5)
                         .map(|r| format!("r{}({})", r.resid, r.n_atoms_in_pocket))
                         .collect::<Vec<_>>().join(",");
+                    let _c = site.emission_compat_centroid();
                     log::info!("    Site {}: {} spikes, centroid=({:.1},{:.1},{:.1}), lining=[{}]",
                         site.cluster_id, site.spike_count,
-                        site.centroid[0], site.centroid[1], site.centroid[2], top_res);
+                        _c[0], _c[1], _c[2], top_res);
                 }
             }
         }
@@ -8769,9 +8772,9 @@ fn run_multi_stream_pipeline(
                     let group_idx = stream_idx / engines_per_group;
                     if group_idx >= n_groups { continue; }
                     for spike in &all_stream_spikes[offset..next_offset] {
-                        let dx = spike.position[0] - site.centroid[0];
-                        let dy = spike.position[1] - site.centroid[1];
-                        let dz = spike.position[2] - site.centroid[2];
+                        let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                        let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                        let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
                         if dx*dx + dy*dy + dz*dz <= radius_sq {
                             group_counts[group_idx] += 1;
                         }
@@ -8980,9 +8983,9 @@ fn run_multi_stream_pipeline(
                         let mut has_ramp = false;
                         let mut has_warm = false;
                         for spike in &all_stream_spikes {
-                            let dx = spike.position[0] - site.centroid[0];
-                            let dy = spike.position[1] - site.centroid[1];
-                            let dz = spike.position[2] - site.centroid[2];
+                            let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                            let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                            let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
                             if dx*dx + dy*dy + dz*dz > radius_sq { continue; }
                             if spike.timestep < p1 { has_cold = true; }
                             else if spike.timestep < p2 { has_ramp = true; }
@@ -9014,18 +9017,18 @@ fn run_multi_stream_pipeline(
                         let margin = 2.0f32;
                         let grid_half = local_radius + margin;
                         let origin = [
-                            site.centroid[0] - grid_half,
-                            site.centroid[1] - grid_half,
-                            site.centroid[2] - grid_half,
+                            site.geometric_voxel_mass_centroid()[0] - grid_half,
+                            site.geometric_voxel_mass_centroid()[1] - grid_half,
+                            site.geometric_voxel_mass_centroid()[2] - grid_half,
                         ];
                         let dim = ((2.0 * grid_half) / local_spacing).ceil() as usize;
                         let mut density = vec![0.0f32; dim * dim * dim];
 
                         // Gaussian splat local spikes
                         for spike in &all_stream_spikes {
-                            let dx = spike.position[0] - site.centroid[0];
-                            let dy = spike.position[1] - site.centroid[1];
-                            let dz = spike.position[2] - site.centroid[2];
+                            let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                            let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                            let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
                             if dx*dx + dy*dy + dz*dz > local_radius * local_radius { continue; }
 
                             let ix = ((spike.position[0] - origin[0]) / local_spacing) as i32;
@@ -9136,9 +9139,9 @@ fn run_multi_stream_pipeline(
                 let mut local_wd: Vec<f32> = Vec::new();
 
                 for spike in &all_stream_spikes {
-                    let dx = spike.position[0] - site.centroid[0];
-                    let dy = spike.position[1] - site.centroid[1];
-                    let dz = spike.position[2] - site.centroid[2];
+                    let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                    let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                    let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
                     if dx*dx + dy*dy + dz*dz <= neuro_radius_sq {
                         local_ts.push(spike.timestep);
                         local_sources.push(spike.spike_source);
@@ -9633,9 +9636,9 @@ fn run_multi_stream_pipeline(
                 // Neighborhood: all voxels within R=6Å of centroid, excluding site voxels
                 let r = 6.0f32;
                 let r2 = r * r;
-                let cx = site.centroid[0];
-                let cy = site.centroid[1];
-                let cz = site.centroid[2];
+                let cx = site.geometric_voxel_mass_centroid()[0];
+                let cy = site.geometric_voxel_mass_centroid()[1];
+                let cz = site.geometric_voxel_mass_centroid()[2];
 
                 let mut c_out: i64 = 0;
                 for (&vid, pos) in &voxel_positions {
@@ -9791,7 +9794,7 @@ fn run_multi_stream_pipeline(
                 physics_signals.get(&s.cluster_id).copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
             serde_json::json!({
                 "id": s.cluster_id,
-                "centroid": s.centroid,
+                "centroid": s.emission_compat_centroid(),
                 "volume": s.estimated_volume,
                 "spike_count": s.spike_count,
                 "quality_score": s.quality_score,
@@ -10827,7 +10830,7 @@ fn run_multi_stream_pipeline(
         // ── PRISM-Therm standalone report (multi-stream) ──
         if let Some(ref analysis) = prism_therm_result {
             let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
-                .map(|s| (s.centroid, s.cluster_id))
+                .map(|s| (s.emission_compat_centroid(), s.cluster_id))
                 .collect();
             let report = sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
             sdst_report::print_summary_table(&report);
@@ -10886,9 +10889,9 @@ fn run_multi_stream_pipeline(
         let lining_cutoff = args.lining_cutoff;
         for site in &clustered_sites {
             let site_radius = lining_cutoff + 2.0;
-            let cx = site.centroid[0];
-            let cy = site.centroid[1];
-            let cz = site.centroid[2];
+            let cx = site.geometric_voxel_mass_centroid()[0];
+            let cy = site.geometric_voxel_mass_centroid()[1];
+            let cz = site.geometric_voxel_mass_centroid()[2];
             // Collect raw spikes for this site (with flat index for stream_id lookup)
             let raw_site_spikes: Vec<_> = all_stream_spikes.iter().enumerate()
                 .filter(|(_, s)| {
@@ -10939,7 +10942,7 @@ fn run_multi_stream_pipeline(
                 .collect();
             let spike_json = serde_json::json!({
                 "site_id": site.cluster_id,
-                "centroid": site.centroid,
+                "centroid": site.emission_compat_centroid(),
                 "n_spikes": site_spikes.len(),
                 "lining_cutoff": args.lining_cutoff,
                 "open_frequency": open_frequency,
@@ -11594,20 +11597,23 @@ fn build_sites_from_clustering(
         let intensity_quality = (avg_intensity / 64.0).clamp(0.0, 1.0);
         let quality_score = 0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
 
-        sites.push(ClusteredBindingSite {
+        // Canonical construction through the Phase 1 typed entry point.
+        // legacy_emission_centroid is module-private; external call
+        // sites MUST go through new_with_geometric_voxel_mass, which
+        // populates the legacy scalar and the GeometricVoxelMass view
+        // of the localization manifold atomically.
+        sites.push(ClusteredBindingSite::new_with_geometric_voxel_mass(
             cluster_id,
             centroid,
             spike_count,
-            spike_indices: spikes.iter().map(|(idx, _)| *idx).collect(),
+            spikes.iter().map(|(idx, _)| *idx).collect(),
             avg_intensity,
             estimated_volume,
             bounding_box,
             quality_score,
             druggability,
             classification,
-            aromatic_proximity: None,
-            lining_residues: Vec::new(),  // Computed later when topology available
-        });
+        ));
     }
 
     sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
@@ -11709,9 +11715,11 @@ fn merge_symmetric_sites(
         for j in (i + 1)..n {
             if merged.contains(&j) { continue; }
 
-            let dx = sites[i].centroid[0] - sites[j].centroid[0];
-            let dy = sites[i].centroid[1] - sites[j].centroid[1];
-            let dz = sites[i].centroid[2] - sites[j].centroid[2];
+            let ci = sites[i].geometric_voxel_mass_centroid();
+            let cj = sites[j].geometric_voxel_mass_centroid();
+            let dx = ci[0] - cj[0];
+            let dy = ci[1] - cj[1];
+            let dz = ci[2] - cj[2];
             let dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
             if dist > merge_radius { continue; }
@@ -11776,7 +11784,7 @@ fn merge_symmetric_sites(
             new_centroid[1] /= n;
             new_centroid[2] /= n;
         }
-        sites[*i].centroid = new_centroid;
+        sites[*i].set_geometric_voxel_mass_centroid(new_centroid);
 
         to_remove.insert(*j);
     }
@@ -11840,8 +11848,8 @@ fn build_consensus_sites(
             }
 
             let dist = {
-                let c1 = all_sites[i].1.centroid;
-                let c2 = all_sites[j].1.centroid;
+                let c1 = all_sites[i].1.geometric_voxel_mass_centroid();
+                let c2 = all_sites[j].1.geometric_voxel_mass_centroid();
                 ((c1[0] - c2[0]).powi(2) + (c1[1] - c2[1]).powi(2) + (c1[2] - c2[2]).powi(2)).sqrt()
             };
 
@@ -11874,9 +11882,9 @@ fn build_consensus_sites(
         let mut total_quality = 0.0;
 
         for (_, site) in cluster {
-            centroid[0] += site.centroid[0];
-            centroid[1] += site.centroid[1];
-            centroid[2] += site.centroid[2];
+            centroid[0] += site.geometric_voxel_mass_centroid()[0];
+            centroid[1] += site.geometric_voxel_mass_centroid()[1];
+            centroid[2] += site.geometric_voxel_mass_centroid()[2];
             total_spike_count += site.spike_count;
             total_intensity += site.avg_intensity;
             total_volume += site.estimated_volume;
@@ -11927,20 +11935,18 @@ fn build_consensus_sites(
             Vec::new() // No offsets available; downstream uses nearest-centroid fallback
         };
 
-        consensus_sites.push(ClusteredBindingSite {
-            cluster_id: cluster_id as i32,
+        consensus_sites.push(ClusteredBindingSite::new_with_geometric_voxel_mass(
+            cluster_id as i32,
             centroid,
-            spike_count: avg_spike_count,
-            spike_indices: merged_indices,
+            avg_spike_count,
+            merged_indices,
             avg_intensity,
-            estimated_volume: avg_volume,
+            avg_volume,
             bounding_box,
-            quality_score: avg_quality,
+            avg_quality,
             druggability,
             classification,
-            aromatic_proximity: None,
-            lining_residues: Vec::new(),
-        });
+        ));
     }
 
     consensus_sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
@@ -13547,20 +13553,18 @@ fn recalculate_enclosure_volume(
         } else {
             final_centroid
         };
-        sites.push(ClusteredBindingSite {
-            cluster_id: pi as i32,
-            centroid: use_centroid,
-            spike_count: stat.spike_count as usize,
-            spike_indices: std::mem::take(&mut stat.spike_indices),
+        sites.push(ClusteredBindingSite::new_with_geometric_voxel_mass(
+            pi as i32,
+            use_centroid,
+            stat.spike_count as usize,
+            std::mem::take(&mut stat.spike_indices),
             avg_intensity,
-            estimated_volume: pocket.volume,
-            bounding_box: bbox_extents,
+            pocket.volume,
+            bbox_extents,
             quality_score,
             druggability,
             classification,
-            aromatic_proximity: None,
-            lining_residues: Vec::new(),
-        });
+        ));
     }
 
     // Sort by quality descending (NaN-safe)

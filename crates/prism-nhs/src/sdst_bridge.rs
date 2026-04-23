@@ -401,9 +401,20 @@ impl SdstBridge {
         let event_count = self.sdst.event_count()
             .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e))?;
 
-        // Collect all site regions for batched GPU CCNS
+        // Collect all site regions for batched GPU CCNS. PRISM-Therm
+        // CCNS is evaluated at the GeometricVoxelMass view — the
+        // spike-mass center of the cluster is the appropriate region
+        // anchor for thermodynamic sampling. Other views (lining,
+        // driver, hot/cold phase) represent different physical
+        // neighborhoods; if we later want CCNS at those, the call
+        // must pass the view explicitly.
         let regions: Vec<SpatialRegion> = sites.iter()
-            .map(|site| self.centroid_to_region(&site.centroid))
+            .map(|site| {
+                let gvm = site
+                    .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+                    .expect("ClusteredBindingSite always carries GeometricVoxelMass view");
+                self.centroid_to_region(&gvm)
+            })
             .collect();
 
         // One batched GPU call for all per-site CCNS (CSN estimator, not Hill MLE)

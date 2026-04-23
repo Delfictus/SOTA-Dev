@@ -140,6 +140,13 @@ pub mod grid_debug_backend;
 /// module docs.
 #[cfg(feature = "gpu")]
 pub mod gpu_cluster_backend;
+/// Typed multi-view localization layer (Phase 1 of the
+/// post-05dbc3dc canonical architecture lane). Introduces
+/// [`spatial_view::SpatialView`] + [`spatial_view::CentroidManifold`]
+/// so that canonical site/localization access must name the physical
+/// representation. No hidden default. Module is always compiled
+/// (no `gpu` gate) because the types are pure data.
+pub mod spatial_view;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]

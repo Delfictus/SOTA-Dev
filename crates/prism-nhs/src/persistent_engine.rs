@@ -118,13 +118,45 @@ pub struct LiningResidue {
     pub spike_attribution_count: u32,
 }
 
-/// A clustered binding site detected from spike spatial patterns
+/// A clustered binding site detected from spike spatial patterns.
+///
+/// # Spatial representation contract (Phase 1 post-05dbc3dc lane)
+///
+/// Every canonical site carries a typed multi-view localization
+/// [`CentroidManifold`][crate::spatial_view::CentroidManifold] in
+/// `localization`. Canonical-logic callers MUST access site centroids
+/// through [`ClusteredBindingSite::view`] / [`ClusteredBindingSite::distance_to`] /
+/// [`ClusteredBindingSite::dcc`] / [`ClusteredBindingSite::distance_to_ligand`]
+/// naming the physical representation they want. There is no hidden
+/// default; absent views return `None`.
+///
+/// The `legacy_emission_centroid` field is retained in module-private
+/// visibility (`pub(in crate::persistent_engine)`) only for the
+/// serialization / logging compatibility path exposed via
+/// [`ClusteredBindingSite::emission_compat_centroid`]. It must not be
+/// used for merge, attribution, ranking, validation, or any canonical
+/// logic — those must call the typed view API.
+///
+/// Writes to the geometric-voxel-mass centroid must go through
+/// [`ClusteredBindingSite::set_geometric_voxel_mass_centroid`], which
+/// updates both the legacy emission field and the manifold's
+/// GeometricVoxelMass view atomically. Other views are written via
+/// `localization.set(SpatialView::...)` directly.
 #[derive(Debug, Clone)]
 pub struct ClusteredBindingSite {
     /// Cluster ID (unique per analysis run)
     pub cluster_id: i32,
-    /// Centroid position [x, y, z] in Angstroms
-    pub centroid: [f32; 3],
+    /// Legacy single-scalar centroid retained solely for emission /
+    /// logging / serialization compatibility. **DO NOT read this in
+    /// canonical logic** — use [`ClusteredBindingSite::view`] or the
+    /// other typed accessors. The field is module-private so that
+    /// external consumers (bin/nhs_rt_full.rs, etc.) cannot touch
+    /// the ambiguous scalar without going through an explicit shim.
+    pub(in crate::persistent_engine) legacy_emission_centroid: [f32; 3],
+    /// Multi-view localization manifold. Always contains at least
+    /// the `GeometricVoxelMass` view when constructed through the
+    /// canonical site-building paths.
+    pub localization: crate::spatial_view::CentroidManifold,
     /// Number of spikes in this cluster
     pub spike_count: usize,
     /// Spike indices belonging to this cluster
@@ -747,7 +779,14 @@ impl SitePersistenceTracker {
                     continue;
                 }
 
-                let dist = Self::distance(&site.centroid, &tracked.avg_centroid);
+                // Site tracker matches on GeometricVoxelMass: the tracked
+                // average centroid is computed from successive
+                // GeometricVoxelMass views (see update_tracked_site). No
+                // hidden default; view is explicit.
+                let site_gvm = site
+                    .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+                    .expect("ClusteredBindingSite always carries GeometricVoxelMass view");
+                let dist = Self::distance(&site_gvm, &tracked.avg_centroid);
                 if dist < self.match_threshold && dist < best_dist {
                     best_match = Some(idx);
                     best_dist = dist;
@@ -779,11 +818,16 @@ impl SitePersistenceTracker {
     fn update_tracked_site(&mut self, idx: usize, site: &ClusteredBindingSite, frame: usize) {
         let tracked = &mut self.tracked_sites[idx];
 
-        // Update running averages
+        // Update running averages over the GeometricVoxelMass view —
+        // the tracker explicitly averages that representation; no
+        // implicit view selection.
         let n = tracked.frame_count as f32;
-        tracked.avg_centroid[0] = (tracked.avg_centroid[0] * n + site.centroid[0]) / (n + 1.0);
-        tracked.avg_centroid[1] = (tracked.avg_centroid[1] * n + site.centroid[1]) / (n + 1.0);
-        tracked.avg_centroid[2] = (tracked.avg_centroid[2] * n + site.centroid[2]) / (n + 1.0);
+        let site_gvm = site
+            .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+            .expect("ClusteredBindingSite always carries GeometricVoxelMass view");
+        tracked.avg_centroid[0] = (tracked.avg_centroid[0] * n + site_gvm[0]) / (n + 1.0);
+        tracked.avg_centroid[1] = (tracked.avg_centroid[1] * n + site_gvm[1]) / (n + 1.0);
+        tracked.avg_centroid[2] = (tracked.avg_centroid[2] * n + site_gvm[2]) / (n + 1.0);
         tracked.avg_volume = (tracked.avg_volume * n + site.estimated_volume) / (n + 1.0);
         tracked.avg_spike_count = (tracked.avg_spike_count * n + site.spike_count as f32) / (n + 1.0);
         tracked.avg_quality = (tracked.avg_quality * n + site.quality_score) / (n + 1.0);
@@ -805,9 +849,13 @@ impl SitePersistenceTracker {
         let site_id = self.next_site_id;
         self.next_site_id += 1;
 
+        let site_gvm = site
+            .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+            .expect("ClusteredBindingSite always carries GeometricVoxelMass view");
         self.tracked_sites.push(TrackedSite {
             site_id,
-            avg_centroid: site.centroid,
+            // Seed tracker average from the GeometricVoxelMass view.
+            avg_centroid: site_gvm,
             avg_volume: site.estimated_volume,
             frame_count: 1,
             first_frame: frame,
@@ -1460,7 +1508,8 @@ impl PersistentNhsEngine {
     /// ```ignore
     /// let (summary, sites, stats) = engine.run_and_cluster(1_000_000)?;
     /// for site in &sites {
-    ///     println!("Binding site at {:?} with {} spikes", site.centroid, site.spike_count);
+    ///     let c = site.view(prism_nhs::spatial_view::SpatialView::GeometricVoxelMass).unwrap();
+    ///     println!("Binding site at {:?} with {} spikes", c, site.spike_count);
     /// }
     /// ```
     pub fn run_and_cluster(&mut self, n_steps: i32) -> Result<(RunSummary, Vec<ClusteredBindingSite>, Option<ClusteringStats>)> {
@@ -2593,20 +2642,21 @@ fn build_clustered_sites(
         let intensity_quality = (avg_intensity / 10.0).clamp(0.0, 1.0);
         let quality_score = 0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
 
-        sites.push(ClusteredBindingSite {
+        sites.push(ClusteredBindingSite::new_with_geometric_voxel_mass(
             cluster_id,
             centroid,
             spike_count,
-            spike_indices: spikes.iter().map(|(idx, _)| *idx).collect(),
+            spikes.iter().map(|(idx, _)| *idx).collect(),
             avg_intensity,
             estimated_volume,
             bounding_box,
             quality_score,
             druggability,
             classification,
-            aromatic_proximity: None,  // Computed separately when aromatic positions available
-            lining_residues: Vec::new(),  // Computed separately when topology available
-        });
+        ));
+        // aromatic_proximity: None, lining_residues: Vec::new() are
+        // set by new_with_geometric_voxel_mass and populated later
+        // by compute_aromatic_proximity / compute_lining_residues.
     }
 
     // Sort by spike count (most significant first)
@@ -2615,6 +2665,169 @@ fn build_clustered_sites(
 }
 
 impl ClusteredBindingSite {
+    // ================================================================
+    // Phase 1 canonical spatial-view API — post-05dbc3dc lane.
+    //
+    // Every canonical reader of a site centroid must use one of the
+    // typed methods below, naming the physical representation it wants.
+    // The `legacy_emission_centroid` field is module-private; external
+    // crates and binary targets must go through `emission_compat_centroid`
+    // for emission/logging or through `view` / `distance_to` / `dcc` /
+    // `distance_to_ligand` for canonical logic.
+    //
+    // No method in this group admits a default. `view(v)` returns
+    // `None` when the view is not derivable for this site, and the
+    // caller must decide explicitly — silent fallback is forbidden
+    // (Rule A of the lane doctrine).
+    // ================================================================
+
+    /// Canonical external constructor. Initializes both the legacy
+    /// emission-compat scalar and the `GeometricVoxelMass` view of
+    /// the localization manifold from the same input. All other
+    /// views start `None`; later pipeline stages populate them.
+    ///
+    /// `geometric_voxel_mass_centroid` is the intensity²- or
+    /// voxel-mass-weighted centroid produced by the clustering stage.
+    /// Callers that need to track a different representation should
+    /// first build the site here and then call `localization.set(...)`
+    /// for each additional view.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_geometric_voxel_mass(
+        cluster_id: i32,
+        geometric_voxel_mass_centroid: [f32; 3],
+        spike_count: usize,
+        spike_indices: Vec<usize>,
+        avg_intensity: f32,
+        estimated_volume: f32,
+        bounding_box: [f32; 3],
+        quality_score: f32,
+        druggability: DruggabilityScore,
+        classification: SiteClassification,
+    ) -> Self {
+        Self {
+            cluster_id,
+            legacy_emission_centroid: geometric_voxel_mass_centroid,
+            localization: crate::spatial_view::CentroidManifold::with_geometric_voxel_mass(
+                geometric_voxel_mass_centroid,
+            ),
+            spike_count,
+            spike_indices,
+            avg_intensity,
+            estimated_volume,
+            bounding_box,
+            quality_score,
+            druggability,
+            classification,
+            aromatic_proximity: None,
+            lining_residues: Vec::new(),
+        }
+    }
+
+    /// Retrieve the requested spatial view. Returns `None` if the
+    /// view is not derivable for this site — no silent fallback.
+    #[inline]
+    pub fn view(&self, which: crate::spatial_view::SpatialView) -> Option<[f32; 3]> {
+        self.localization.view(which)
+    }
+
+    /// Euclidean distance from this site's named view to a point.
+    /// `None` when the view is unpopulated.
+    #[inline]
+    pub fn distance_to(
+        &self,
+        target: [f32; 3],
+        view: crate::spatial_view::SpatialView,
+    ) -> Option<f32> {
+        self.localization.distance_to(target, view)
+    }
+
+    /// DCC — distance to a ground-truth reference point under the
+    /// named view. Typed alias for [`distance_to`] that documents
+    /// intent at the call site. `None` when the view is unpopulated.
+    #[inline]
+    pub fn dcc(
+        &self,
+        ground_truth: [f32; 3],
+        view: crate::spatial_view::SpatialView,
+    ) -> Option<f32> {
+        self.localization.dcc(ground_truth, view)
+    }
+
+    /// Distance to a ligand center under the named view. Typed alias
+    /// for [`distance_to`] that documents intent. `None` when the
+    /// view is unpopulated.
+    #[inline]
+    pub fn distance_to_ligand(
+        &self,
+        ligand: [f32; 3],
+        view: crate::spatial_view::SpatialView,
+    ) -> Option<f32> {
+        self.localization.distance_to_ligand(ligand, view)
+    }
+
+    /// Compatibility scalar accessor for serialization, logging, and
+    /// external report generators that need a single 3-vector to
+    /// write into a PDB/PyMOL/ChimeraX/Markdown/JSON field. **This is
+    /// not a canonical-logic accessor.** Calling this from merge,
+    /// attribution, refinement, ranking, or validation code is a
+    /// scalar-collapse violation (Rule A). Use [`view`] (named
+    /// representation) or [`geometric_voxel_mass_centroid`] (named
+    /// shortcut for the most common canonical-logic case).
+    ///
+    /// The name is intentionally long and lane-specific — it should
+    /// stand out in code review when misused.
+    #[inline]
+    pub fn emission_compat_centroid(&self) -> [f32; 3] {
+        self.legacy_emission_centroid
+    }
+
+    /// Explicit named accessor for the `GeometricVoxelMass` view.
+    /// Equivalent to `site.view(SpatialView::GeometricVoxelMass).expect(...)`
+    /// but far more readable at canonical call sites that index the
+    /// result as `[0] / [1] / [2]` (merge, grid-bin, spike attribution,
+    /// refinement).
+    ///
+    /// This is NOT a default or fallback — the method name states the
+    /// view. Using this method at a site where a different physical
+    /// representation is the right one (e.g., LiningResidues for
+    /// lining-focused math) is a semantic bug and must be caught in
+    /// code review.
+    ///
+    /// Panics if the GeometricVoxelMass view is somehow absent
+    /// (`ClusteredBindingSite` construction paths always populate it,
+    /// so this should be unreachable).
+    #[inline]
+    pub fn geometric_voxel_mass_centroid(&self) -> [f32; 3] {
+        self.view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+            .expect(
+                "ClusteredBindingSite invariant violated: \
+                 GeometricVoxelMass view must always be populated by \
+                 new_with_geometric_voxel_mass / set_geometric_voxel_mass_centroid",
+            )
+    }
+
+    /// Canonical write path for the geometric-voxel-mass centroid.
+    /// Updates both the legacy emission scalar and the manifold's
+    /// `GeometricVoxelMass` view in one atomic operation so the two
+    /// can never drift.
+    ///
+    /// Callers that need to set a *different* view (LiningResidues,
+    /// HotPhase, etc.) must write to `self.localization.set(view, c)`
+    /// directly — this method deliberately does not take a view
+    /// parameter, because the legacy emission-compat scalar
+    /// represents the geometric-voxel-mass view only.
+    pub fn set_geometric_voxel_mass_centroid(&mut self, centroid: [f32; 3]) {
+        self.legacy_emission_centroid = centroid;
+        self.localization.set(
+            crate::spatial_view::SpatialView::GeometricVoxelMass,
+            centroid,
+        );
+    }
+
+    // ================================================================
+    // End Phase 1 canonical spatial-view API. Legacy methods below.
+    // ================================================================
+
     /// Enhance this binding site with aromatic proximity analysis
     ///
     /// Updates the aromatic_proximity field and recalculates druggability score.
@@ -2623,7 +2836,13 @@ impl ClusteredBindingSite {
     /// * `aromatic_positions` - List of (residue_id, aromatic_type, [x, y, z])
     ///   - aromatic_type: 0=TRP, 1=TYR, 2=PHE
     pub fn compute_aromatic_proximity(&mut self, aromatic_positions: &[(u32, u8, [f32; 3])]) {
-        let info = AromaticProximityInfo::compute(&self.centroid, aromatic_positions);
+        // Aromatic proximity is computed against the GeometricVoxelMass
+        // view — the spike-weighted center of the cluster is the
+        // appropriate reference for "aromatics near this pocket."
+        let gvm = self
+            .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+            .expect("ClusteredBindingSite always carries GeometricVoxelMass view");
+        let info = AromaticProximityInfo::compute(&gvm, aromatic_positions);
 
         // Recalculate druggability with aromatic info
         self.druggability = DruggabilityScore::from_site_with_aromatics(
@@ -2680,9 +2899,16 @@ impl ClusteredBindingSite {
         use std::collections::HashMap;
 
         let n_atoms = positions.len() / 3;
-        let cx = self.centroid[0];
-        let cy = self.centroid[1];
-        let cz = self.centroid[2];
+        // Lining residues are computed in the neighborhood of the
+        // site's GeometricVoxelMass view. Using a different view here
+        // would change the definition of "lining" and must be an
+        // explicit, reviewed decision — not a silent default.
+        let gvm = self
+            .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
+            .expect("ClusteredBindingSite always carries GeometricVoxelMass view");
+        let cx = gvm[0];
+        let cy = gvm[1];
+        let cz = gvm[2];
         let cutoff_sq = cutoff * cutoff;
 
         // Track per-residue: (chain, resname, min_distance, atom_count)
@@ -2781,9 +3007,19 @@ impl ClusteredBindingSite {
                     // Shift proportional to asymmetry; max 4Å.
                     let shift = (asymmetry * 10.0).clamp(0.0, 4.0);
                     if shift > 0.1 {
-                        self.centroid[0] += (ux * shift) as f32;
-                        self.centroid[1] += (uy * shift) as f32;
-                        self.centroid[2] += (uz * shift) as f32;
+                        // Refine the GeometricVoxelMass centroid only;
+                        // the manifold's GVM view tracks lockstep via
+                        // set_geometric_voxel_mass_centroid. Other
+                        // views (LiningResidues, HotPhase, ...) are NOT
+                        // touched here — they represent different
+                        // physical quantities and must be set
+                        // separately by their producing stage.
+                        let new_gvm = [
+                            gvm[0] + (ux * shift) as f32,
+                            gvm[1] + (uy * shift) as f32,
+                            gvm[2] + (uz * shift) as f32,
+                        ];
+                        self.set_geometric_voxel_mass_centroid(new_gvm);
                     }
                 }
             }
@@ -3037,14 +3273,20 @@ impl BindingSiteFormatter {
 
             // PDB HETATM format
             // HETATM    1  BS  DRG A   1      10.000  20.000  30.000  0.80 50.00
+            // Emission-compat path: PDB HETATM record uses the
+            // legacy emission centroid scalar. Canonical multi-view
+            // adjudication is handled by Phase 4; this serializer
+            // stays on the compat accessor for backward compatibility
+            // with external PDB consumers.
+            let c = site.emission_compat_centroid();
             pdb.push_str(&format!(
                 "HETATM{:5}  BS  {} A{:4}    {:8.3}{:8.3}{:8.3}{:6.2}{:6.2}\n",
                 atom_num,
                 res_name,
                 atom_num,
-                site.centroid[0],
-                site.centroid[1],
-                site.centroid[2],
+                c[0],
+                c[1],
+                c[2],
                 site.druggability.overall,
                 site.quality_score * 100.0,
             ));
@@ -3083,10 +3325,11 @@ impl BindingSiteFormatter {
             script.push_str("# color gray80, protein\n\n");
         }
 
-        // Process each binding site
+        // Process each binding site — emission layer (PyMOL/ChimeraX).
         for (idx, site) in sites.iter().enumerate() {
             let site_num = idx + 1;
-            let [x, y, z] = site.centroid;
+            // Emission-compat scalar for pseudoatom placement.
+            let [x, y, z] = site.emission_compat_centroid();
             let druggable_tag = if site.druggability.is_druggable { " [DRUGGABLE]" } else { "" };
 
             script.push_str(&format!("# ========== Site {} ({:?}){} ==========\n",
@@ -3240,10 +3483,11 @@ impl BindingSiteFormatter {
             script.push_str("# color #1 gray80\n\n");
         }
 
-        // Process each binding site
+        // Process each binding site — emission layer (PyMOL/ChimeraX).
         for (idx, site) in sites.iter().enumerate() {
             let site_num = idx + 1;
-            let [x, y, z] = site.centroid;
+            // Emission-compat scalar for pseudoatom placement.
+            let [x, y, z] = site.emission_compat_centroid();
             let druggable_tag = if site.druggability.is_druggable { " [DRUGGABLE]" } else { "" };
 
             script.push_str(&format!("# ========== Site {} ({:?}){} ==========\n",
@@ -3387,10 +3631,11 @@ impl BindingSiteFormatter {
         report.push_str("|------|--------------|-------------|--------|---------|-----------|-------|\n");
 
         for (idx, site) in sites.iter().take(10).enumerate() {
+            let c = site.emission_compat_centroid();
             report.push_str(&format!(
                 "| {} | ({:.1}, {:.1}, {:.1}) | {:.0} | {} | {:.2} | {} | {:?} |\n",
                 idx + 1,
-                site.centroid[0], site.centroid[1], site.centroid[2],
+                c[0], c[1], c[2],
                 site.estimated_volume,
                 site.spike_count,
                 site.quality_score,
