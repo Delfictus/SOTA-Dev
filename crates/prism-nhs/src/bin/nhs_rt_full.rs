@@ -2109,7 +2109,7 @@ fn run_full_pipeline_internal(
                     };
 
                     // Build clustered binding sites
-                    let all_sites = build_sites_from_clustering(&accumulated_spikes, &fake_result);
+                    let all_sites = build_sites_from_clustering(&accumulated_spikes, &fake_result)?;
 
                     // Post-filter: keep only significant clusters (min 2% of total spikes)
                     // Adaptive min-spikes: scale with aromatic count so that
@@ -2284,7 +2284,7 @@ fn run_full_pipeline_internal(
                     }
 
                     // Build clustered binding sites
-                    let all_sites = build_sites_from_clustering(&accumulated_spikes, &result);
+                    let all_sites = build_sites_from_clustering(&accumulated_spikes, &result)?;
 
                     // Post-filter: keep only significant clusters (min 2% of total spikes)
                     // Adaptive min-spikes: scale with aromatic count so that
@@ -3015,7 +3015,7 @@ fn run_batch_gpu_concurrent(
                                 gpu_time_ms: 0.0,
                             };
 
-                            let all_sites = build_sites_from_clustering(&filtered_spikes, &fake_result);
+                            let all_sites = build_sites_from_clustering(&filtered_spikes, &fake_result)?;
                             let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
                             all_sites.into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
@@ -3026,7 +3026,7 @@ fn run_batch_gpu_concurrent(
                 } else {
                     match engine.cluster_spikes(&positions) {
                         Ok(result) => {
-                            let all_sites = build_sites_from_clustering(&filtered_spikes, &result);
+                            let all_sites = build_sites_from_clustering(&filtered_spikes, &result)?;
                             let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
                             all_sites.into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
@@ -3057,7 +3057,7 @@ fn run_batch_gpu_concurrent(
         // Note: batch/manifest mode doesn't have global spike offsets; consensus
         // spike_indices will be empty and the nearest-centroid fallback is used.
         let empty_offsets: Vec<usize> = Vec::new();
-        let clustered_sites = build_consensus_sites(&per_replica_sites, consensus_threshold, 5.0, &empty_offsets);
+        let clustered_sites = build_consensus_sites(&per_replica_sites, consensus_threshold, 5.0, &empty_offsets)?;
         log::info!("      Consensus sites: {}", clustered_sites.len());
 
         // Prepare per-replica stats BEFORE moving per_replica_sites
@@ -5805,7 +5805,7 @@ fn run_multi_stream_pipeline(
                             cluster_ids: ids, num_clusters: ms.num_clusters(),
                             total_neighbors: 0, gpu_time_ms: 0.0,
                         };
-                        let all = build_sites_from_clustering(&filtered, &fake);
+                        let all = build_sites_from_clustering(&filtered, &fake)?;
                         let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
                         all.into_iter().filter(|s| s.spike_count >= min_s).collect()
                     }
@@ -5814,7 +5814,7 @@ fn run_multi_stream_pipeline(
             } else {
                 match cluster_engine.cluster_spikes(&positions) {
                     Ok(r) => {
-                        let all = build_sites_from_clustering(&filtered, &r);
+                        let all = build_sites_from_clustering(&filtered, &r)?;
                         let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
                         all.into_iter().filter(|s| s.spike_count >= min_s).collect()
                     }
@@ -5932,10 +5932,10 @@ fn run_multi_stream_pipeline(
         }
     }
 
-    let mut clustered_sites = if n_streams == 1 && !per_stream_sites.is_empty() {
+    let mut clustered_sites: Vec<ClusteredBindingSite> = if n_streams == 1 && !per_stream_sites.is_empty() {
         per_stream_sites.into_iter().next().unwrap_or_default()
     } else {
-        build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0, &stream_spike_offsets)
+        build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0, &stream_spike_offsets)?
     };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
@@ -6032,7 +6032,7 @@ fn run_multi_stream_pipeline(
     // Dynamic LIGSITE: Geometry proposes pockets, physics scores them.
     // Runs unconditionally — geometry finds pockets independent of spike-cluster sites.
     log::info!("  Running Dynamic LIGSITE pocket detection...");
-    recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions);
+    recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions)?;
 
     // ========== Cubical PH: density-peak centroid refinement ==========
     // Build a spike density grid and run 0-dim persistent homology to find
@@ -11395,12 +11395,18 @@ fn extract_aromatic_positions(topology: &PrismPrepTopology) -> Vec<(u32, u8, [f3
     aromatics
 }
 
-/// Build ClusteredBindingSite from clustering result
+/// Build ClusteredBindingSite from clustering result.
+///
+/// Phase 2.1: the final `sites` vec is routed through the
+/// `ClusteringToClusteredSites` audit transform before return. An
+/// `Aborted` outcome surfaces as an `Err` here and must propagate via
+/// `?` at the caller. R4/R5 already hold structurally by construction,
+/// so baseline runs are expected to produce only `Accepted` outcomes.
 #[cfg(feature = "gpu")]
 fn build_sites_from_clustering(
     spike_events: &[prism_nhs::fused_engine::GpuSpikeEvent],
     result: &prism_nhs::rt_clustering::RtClusteringResult,
-) -> Vec<ClusteredBindingSite> {
+) -> anyhow::Result<Vec<ClusteredBindingSite>> {
     use std::collections::HashMap;
     use prism_nhs::{DruggabilityScore, SiteClassification};
 
@@ -11617,7 +11623,29 @@ fn build_sites_from_clustering(
     }
 
     sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
-    sites
+
+    // Phase 2.1: audit-spine adjudication.
+    use prism_nhs::transform::AuditedTransform;
+    use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+    let n_in = sites.len();
+    log::debug!("audit spine entry: build_sites_from_clustering N={}", n_in);
+    let (accepted, quarantined) = ClusteringToClusteredSites::new()
+        .adjudicate(sites)
+        .into_result()
+        .map_err(|aborted| {
+            anyhow::anyhow!("build_sites_from_clustering: {aborted}")
+        })?;
+    if !quarantined.is_empty() {
+        log::warn!(
+            "audit spine build_sites_from_clustering: {} quarantined site(s)",
+            quarantined.len()
+        );
+    }
+    log::debug!(
+        "audit spine exit: build_sites_from_clustering Accepted={}",
+        accepted.len()
+    );
+    Ok(accepted)
 }
 
 /// Merge symmetric binding sites for multi-chain (dimer) proteins.
@@ -11805,16 +11833,19 @@ fn merge_symmetric_sites(
 /// `stream_spike_offsets`: offset into the concatenated all_stream_spikes for each stream,
 /// used to remap per-stream spike_indices to global indices for frame-aligned analysis.
 #[cfg(feature = "gpu")]
+/// Phase 2.1: final output routed through `ClusteringToClusteredSites`
+/// audit adjudication. `Aborted` surfaces as `Err`. Baseline is expected
+/// to produce only `Accepted`.
 fn build_consensus_sites(
     per_replica_sites: &[Vec<ClusteredBindingSite>],
     threshold: usize,
     spatial_tolerance: f32,
     stream_spike_offsets: &[usize],
-) -> Vec<ClusteredBindingSite> {
+) -> anyhow::Result<Vec<ClusteredBindingSite>> {
     use prism_nhs::{DruggabilityScore, SiteClassification};
 
     if per_replica_sites.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     // Collect all sites from all replicas
@@ -11826,7 +11857,7 @@ fn build_consensus_sites(
     }
 
     if all_sites.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     // Cluster sites spatially across replicas
@@ -11950,7 +11981,27 @@ fn build_consensus_sites(
     }
 
     consensus_sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
-    consensus_sites
+
+    // Phase 2.1: audit-spine adjudication.
+    use prism_nhs::transform::AuditedTransform;
+    use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+    let n_in = consensus_sites.len();
+    log::debug!("audit spine entry: build_consensus_sites N={}", n_in);
+    let (accepted, quarantined) = ClusteringToClusteredSites::new()
+        .adjudicate(consensus_sites)
+        .into_result()
+        .map_err(|aborted| anyhow::anyhow!("build_consensus_sites: {aborted}"))?;
+    if !quarantined.is_empty() {
+        log::warn!(
+            "audit spine build_consensus_sites: {} quarantined site(s)",
+            quarantined.len()
+        );
+    }
+    log::debug!(
+        "audit spine exit: build_consensus_sites Accepted={}",
+        accepted.len()
+    );
+    Ok(accepted)
 }
 
 /// "Dynamic LIGSITE" — Geometry-first pocket detection with spike scoring.
@@ -12393,11 +12444,16 @@ fn kmeans_split(positions: &[[f32; 3]], k: usize, iters: usize) -> Vec<[f32; 3]>
 /// Negative controls (convex rocks): zero enclosed components → zero sites
 /// Positive controls (pockets/grooves): enclosed voids with high spike density
 #[cfg(feature = "gpu")]
+/// Phase 2.1: on normal return, the rebuilt `sites` vec is routed
+/// through `ClusteringToClusteredSites` audit adjudication. `Aborted`
+/// surfaces as `Err`. Early-clear branches (no atoms / no enclosed
+/// voxels / no surviving pockets) produce an empty `sites` and return
+/// `Ok(())` directly — an empty output trivially satisfies L1 and L2.
 fn recalculate_enclosure_volume(
     sites: &mut Vec<ClusteredBindingSite>,
     all_spikes: &[prism_nhs::fused_engine::GpuSpikeEvent],
     atom_positions: &[f32],
-) {
+) -> anyhow::Result<()> {
     use prism_nhs::{DruggabilityScore, SiteClassification};
     use std::collections::VecDeque;
 
@@ -12425,7 +12481,7 @@ fn recalculate_enclosure_volume(
 
     if n_atoms == 0 {
         sites.clear();
-        return;
+        return Ok(());
     }
 
     // ---- Build GLOBAL grid over entire protein ----
@@ -12616,7 +12672,7 @@ fn recalculate_enclosure_volume(
     if total_enclosed == 0 {
         sites.clear();
         log::info!("  No enclosed voxels — zero geometric pockets (negative control behavior)");
-        return;
+        return Ok(());
     }
 
     // ---- Stage 3.5: DAH "Lid-Seeding" Distance Transform ----
@@ -12768,7 +12824,7 @@ fn recalculate_enclosure_volume(
     if surviving.is_empty() {
         sites.clear();
         log::info!("  No pockets above size threshold — clearing all sites");
-        return;
+        return Ok(());
     }
 
     // ---- Stage 5: Build pocket metadata from surviving components ----
@@ -13571,6 +13627,31 @@ fn recalculate_enclosure_volume(
     sites.sort_by(|a, b| b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
 
     log::info!("  Dynamic LIGSITE complete: {} geometric pockets", sites.len());
+
+    // Phase 2.1: audit-spine adjudication on the rebuilt sites vec.
+    // `sites` is a `&mut Vec<_>` out-parameter; take it out, run the
+    // transform, and put the accepted output back. Abort propagates.
+    use prism_nhs::transform::AuditedTransform;
+    use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+    let produced = std::mem::take(sites);
+    let n_in = produced.len();
+    log::debug!("audit spine entry: recalculate_enclosure_volume N={}", n_in);
+    let (accepted, quarantined) = ClusteringToClusteredSites::new()
+        .adjudicate(produced)
+        .into_result()
+        .map_err(|aborted| anyhow::anyhow!("recalculate_enclosure_volume: {aborted}"))?;
+    if !quarantined.is_empty() {
+        log::warn!(
+            "audit spine recalculate_enclosure_volume: {} quarantined site(s)",
+            quarantined.len()
+        );
+    }
+    log::debug!(
+        "audit spine exit: recalculate_enclosure_volume Accepted={}",
+        accepted.len()
+    );
+    *sites = accepted;
+    Ok(())
 }
 
 /// Write ensemble trajectory as multi-MODEL PDB file
