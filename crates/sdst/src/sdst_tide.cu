@@ -34,13 +34,51 @@
  * Compute transfer entropy from source residue spike train to target pocket spike train.
  *
  * Uses binary spike trains (spike present/absent per bin) with k=l=1.
+ *
+ * Honest TE contract (post producer-repair-causal-truthing):
+ *   - n_bins < 3: not computable → NaN
+ *   - source or target saturated (all 0s or all 1s): TE is undefined
+ *     because the marginal entropy collapses to 0; conditioning on a
+ *     constant signal yields a constant log-ratio of 0. Returning 0.0f
+ *     here was the root cause of "TE = 0.0 everywhere": with binary
+ *     binning at TE_BIN_WIDTH=100 and ~89M events / ~1024 bins, pocket
+ *     and active-residue trains saturate to all-1s ⇒ TE collapses to
+ *     0 for every site×residue pair. NaN is the on-device contract for
+ *     "not honestly computable"; consumer (sdst_bridge.rs / serde JSON)
+ *     maps to None / null.
+ *   - finite TE in [0, ∞): computed normally.
  */
 static float compute_transfer_entropy(
     const uint8_t* source_train, /* [n_bins] binary: 1 = spike in this bin */
     const uint8_t* target_train, /* [n_bins] binary */
     uint32_t n_bins
 ) {
-    if (n_bins < 3) return 0.0f;
+    if (n_bins < 3) return nanf("");
+
+    /* Saturation guard: if either train's occupancy is outside
+     * (SAT_LO, SAT_HI), TE collapses (Markov-1 conditional ≈ marginal,
+     * log-ratio → 0).  The partial-saturation case is the dominant
+     * failure mode in PRISM-Therm: with TE_BIN_WIDTH=100 and ~89M
+     * events / ~1024 bins, active residue and pocket trains push to
+     * ~100% occupancy and TE drops to literal 0.0 across the board.
+     * NaN is the on-device contract for "not honestly computable".
+     *
+     * Bounds (5%/95%) are conservative: well outside the regime where
+     * Bernoulli-pair Markov-1 TE is statistically resolvable, and well
+     * inside the regime where saturation is deterministic. */
+    uint32_t source_active = 0, target_active = 0;
+    for (uint32_t t = 0; t < n_bins; t++) {
+        if (source_train[t]) source_active++;
+        if (target_train[t]) target_active++;
+    }
+    const double SAT_LO = 0.05;
+    const double SAT_HI = 0.95;
+    double src_occ = (double)source_active / (double)n_bins;
+    double tgt_occ = (double)target_active / (double)n_bins;
+    if (src_occ <= SAT_LO || src_occ >= SAT_HI ||
+        tgt_occ <= SAT_LO || tgt_occ >= SAT_HI) {
+        return nanf("");
+    }
 
     /* Count joint and marginal probabilities for:
      *   p(y_{t+1}, y_t, x_t)  - 2x2x2 = 8 entries
@@ -64,7 +102,7 @@ static float compute_transfer_entropy(
         total++;
     }
 
-    if (total == 0) return 0.0f;
+    if (total == 0) return nanf("");
 
     double te = 0.0;
     double inv_total = 1.0 / (double)total;
@@ -111,13 +149,16 @@ static float compute_fisher_info(
     uint32_t n_bins,
     uint32_t window_size /* bins per window */
 ) {
-    if (n_bins < window_size * 2) return 0.0f;
+    if (n_bins < window_size * 2) return nanf("");
 
     uint32_t n_windows = n_bins / window_size;
-    if (n_windows < 2) return 0.0f;
+    if (n_windows < 2) return nanf("");
 
     float* window_te = (float*)calloc(n_windows, sizeof(float));
 
+    /* If any per-window TE is NaN (degenerate), Fisher info is also undefined.
+     * Counting valid windows lets us distinguish "no signal" from "no data". */
+    uint32_t valid_windows = 0;
     for (uint32_t w = 0; w < n_windows; w++) {
         uint32_t start = w * window_size;
         uint32_t end = start + window_size;
@@ -129,19 +170,28 @@ static float compute_fisher_info(
             target_train + start,
             len
         );
+        if (!isnan(window_te[w])) valid_windows++;
     }
 
-    /* Compute variance */
+    if (valid_windows < 2) {
+        free(window_te);
+        return nanf("");
+    }
+
+    /* Compute variance over valid (non-NaN) windows only. */
     double mean = 0;
-    for (uint32_t w = 0; w < n_windows; w++) mean += window_te[w];
-    mean /= n_windows;
+    for (uint32_t w = 0; w < n_windows; w++) {
+        if (!isnan(window_te[w])) mean += window_te[w];
+    }
+    mean /= (double)valid_windows;
 
     double var = 0;
     for (uint32_t w = 0; w < n_windows; w++) {
+        if (isnan(window_te[w])) continue;
         double diff = window_te[w] - mean;
         var += diff * diff;
     }
-    var /= (n_windows - 1);
+    var /= (double)(valid_windows - 1);
 
     free(window_te);
     return (float)var;
@@ -358,11 +408,20 @@ SdstError sdst_tide_decomposition(
          * Formula: -TE × log(1 + n_causal_spikes) × RT (kcal/mol at 300K).
          * TE measures information flow (bits), log(1+n) compresses the huge
          * dynamic range of spike counts (10 → 100K+), RT converts to energy.
-         * Range: roughly -2 to 0 kcal/mol for active TRIGGER residues. */
+         * Range: roughly -2 to 0 kcal/mol for active TRIGGER residues.
+         *
+         * NaN propagation: if TE is undefined (saturated trains) we cannot
+         * honestly compute ΔG. Previously this multiplied through to -0.0,
+         * which masquerades as "computed and small" — now NaN. Consumer
+         * (sdst_bridge → JSON) maps to None / null. */
         float RT = 0.596f;  /* kcal/mol at 300K */
-        td->causal_dG = -td->transfer_entropy
-                         * logf(1.0f + (float)residue_causal_counts[r])
-                         * RT;
+        if (isnan(td->transfer_entropy)) {
+            td->causal_dG = nanf("");
+        } else {
+            td->causal_dG = -td->transfer_entropy
+                             * logf(1.0f + (float)residue_causal_counts[r])
+                             * RT;
+        }
 
         active_count++;
     }

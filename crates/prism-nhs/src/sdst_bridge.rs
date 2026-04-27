@@ -442,8 +442,12 @@ impl SdstBridge {
         } else { 0.01 };
         let std_asym = var_asym.sqrt().max(0.001);
 
+        // NaN-safe median: TE may be NaN (kernel marks "not honestly computable"
+        // when source/target trains saturate). Drop NaN before sorting so the
+        // median lands on a real value.
         let mut all_te: Vec<f32> = site_results.iter()
             .flat_map(|r| r.tide_decomposition.iter().map(|t| t.transfer_entropy))
+            .filter(|te| te.is_finite())
             .collect();
         all_te.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median_te = if all_te.is_empty() { 0.0 } else { all_te[all_te.len() / 2] };
@@ -451,7 +455,11 @@ impl SdstBridge {
         for sr in site_results.iter_mut() {
             let z = (sr.asymmetry_score - mean_asym) / std_asym;
             sr.relative_asymmetry = z;
-            let top_te = sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0);
+            // NaN-safe top_te: 0.0 fallback collapses tide_enriched to false honestly.
+            let top_te = sr.tide_decomposition.first()
+                .map(|t| t.transfer_entropy)
+                .filter(|te| te.is_finite())
+                .unwrap_or(0.0);
             let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
             let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
             sr.therm_class = if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
@@ -468,22 +476,28 @@ impl SdstBridge {
         log::info!("  PRISM-Therm classification: mean_asym={:.4}, std={:.4}, median_TE={:.5}",
             mean_asym, std_asym, median_te);
         for sr in &site_results {
-            log::info!("    Site {}: z={:+.2} -> {}  (asym={:.4}, tau={:.2}, topTE={:.4})",
+            // Log "n/a" when TE is honestly undefined; never fabricate a 0.0.
+            let top_te_str = sr.tide_decomposition.first()
+                .and_then(|t| if t.transfer_entropy.is_finite() {
+                    Some(format!("{:.4}", t.transfer_entropy))
+                } else { None })
+                .unwrap_or_else(|| "n/a".to_string());
+            log::info!("    Site {}: z={:+.2} -> {}  (asym={:.4}, tau={:.2}, topTE={})",
                 sr.site_id, sr.relative_asymmetry, sr.therm_class,
-                sr.asymmetry_score, sr.tau,
-                sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0));
+                sr.asymmetry_score, sr.tau, top_te_str);
         }
 
         let hysteretic_count = site_results.iter().filter(|r| r.is_hysteretic).count();
 
-        // Log TIDE summary
+        // Log TIDE summary; honest n/a for undefined TE / dG.
         for sr in &site_results {
             if !sr.tide_decomposition.is_empty() {
-                log::info!("  TIDE Site {}: {} active residues, top TE={:.4}, top dG={:.3}",
-                    sr.site_id,
-                    sr.tide_decomposition.len(),
-                    sr.tide_decomposition[0].transfer_entropy,
-                    sr.tide_decomposition[0].causal_dg);
+                let te = sr.tide_decomposition[0].transfer_entropy;
+                let dg = sr.tide_decomposition[0].causal_dg;
+                let te_s = if te.is_finite() { format!("{:.4}", te) } else { "n/a".into() };
+                let dg_s = if dg.is_finite() { format!("{:.3}", dg) } else { "n/a".into() };
+                log::info!("  TIDE Site {}: {} active residues, top TE={}, top dG={}",
+                    sr.site_id, sr.tide_decomposition.len(), te_s, dg_s);
             }
         }
 
@@ -597,8 +611,10 @@ pub fn merge_per_group_analyses(
     } else { 0.01 };
     let std_asym = var_asym.sqrt().max(0.001);
 
+    // NaN-safe median: drop NaN before sorting (TE may be NaN per producer-repair).
     let mut all_te: Vec<f32> = merged_sites.iter()
         .flat_map(|r| r.tide_decomposition.iter().map(|t| t.transfer_entropy))
+        .filter(|te| te.is_finite())
         .collect();
     all_te.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median_te = if all_te.is_empty() { 0.0 } else { all_te[all_te.len() / 2] };
@@ -607,7 +623,10 @@ pub fn merge_per_group_analyses(
     for sr in merged_sites.iter_mut() {
         let z = (sr.asymmetry_score - mean_asym) / std_asym;
         sr.relative_asymmetry = z;
-        let top_te = sr.tide_decomposition.first().map(|t| t.transfer_entropy).unwrap_or(0.0);
+        let top_te = sr.tide_decomposition.first()
+            .map(|t| t.transfer_entropy)
+            .filter(|te| te.is_finite())
+            .unwrap_or(0.0);
         let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
         let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
         sr.therm_class = if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
@@ -826,9 +845,16 @@ impl SdstBridge {
             return Vec::new();
         }
 
-        // Convert to output format, sort by TE descending, take top N
+        // Convert to output format, sort by TE descending, take top N.
+        // Honest filter: keep entries with real causal-spike support OR
+        // honestly-computed positive TE. Entries with TE=NaN AND zero
+        // causal spikes carry no signal and are dropped. Entries with
+        // TE=NaN but n_causal_spikes>0 are preserved — the residue has
+        // pocket activity even if the binned TE collapsed under
+        // saturation (downstream consumer maps NaN to null).
         let mut results: Vec<TideResidueResult> = decomp.into_iter()
-            .filter(|d| d.transfer_entropy > 0.0 || d.n_causal_spikes > 0)
+            .filter(|d| (d.transfer_entropy.is_finite() && d.transfer_entropy > 0.0)
+                       || d.n_causal_spikes > 0)
             .map(|d| TideResidueResult {
                 residue_id: d.residue_id,
                 causal_dg: d.causal_dg,
@@ -839,10 +865,17 @@ impl SdstBridge {
             })
             .collect();
 
-        results.sort_unstable_by(|a, b|
-            b.transfer_entropy.partial_cmp(&a.transfer_entropy)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        );
+        // NaN-aware descending sort: NaN entries sort to the end (least
+        // informative), finite entries sort by TE descending.
+        results.sort_unstable_by(|a, b| {
+            match (a.transfer_entropy.is_finite(), b.transfer_entropy.is_finite()) {
+                (true, true)  => b.transfer_entropy.partial_cmp(&a.transfer_entropy)
+                                    .unwrap_or(std::cmp::Ordering::Equal),
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                (false, false) => std::cmp::Ordering::Equal,
+            }
+        });
         results.truncate(TIDE_TOP_RESIDUES);
         results
     }

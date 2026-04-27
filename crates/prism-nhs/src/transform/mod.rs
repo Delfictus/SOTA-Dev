@@ -59,6 +59,14 @@ pub mod clustering_to_clustered_sites;
 #[cfg(feature = "gpu")]
 pub mod cluster_to_causome;
 
+/// Producer-repair lane: `CausalTruthingAudit` is a downstream audit
+/// that observes the per-site causal-truthing summaries (post KCC +
+/// post TIDE) and quarantines any non-inert site whose causal math is
+/// entirely undefined (every candidate's `causal_lag` AND every TE
+/// projection is `NaN`).  Routes to `Quarantine`.  Not feature-gated:
+/// the audit operates on plain scalar summaries.
+pub mod causal_truthing_audit;
+
 use std::error::Error;
 use std::fmt;
 
@@ -357,6 +365,27 @@ pub enum ViolationEvidence {
         site_id: i32,
         candidate_id: i32,
         lining_set_size: usize,
+    },
+    /// Law `l4_causal_math_meaningful_or_absent`: a non-inert site (one
+    /// with non-trivial spike support) has all its causal-truthing
+    /// fields collapsed to "not honestly computable" (NaN ⇒ JSON null).
+    /// In other words: the site has spikes, but every candidate's
+    /// `causal_lag` AND every candidate's `transfer_entropy` are
+    /// undefined. This signals dead causal-math producers (kernel
+    /// degeneracy, saturated TE binning, etc.) on a site that should
+    /// have a real signal — the kind of failure that previously hid
+    /// behind sentinel `-5.0` lags or `0.0` TE values.
+    DeadCausalMathOnMeaningfulSite {
+        site_id: i32,
+        /// Number of spike events attributed to this site.
+        spike_support: usize,
+        /// Number of KCC candidate residues considered.
+        candidate_count: usize,
+        /// True if every candidate's `causal_lag` is non-finite.
+        all_lag_undefined: bool,
+        /// True if every candidate's `transfer_entropy` is non-finite
+        /// or the per-site TIDE projection is empty/all-undefined.
+        all_te_undefined: bool,
     },
     /// Synthetic test evidence used only by the Phase 2 mock transform
     /// in the test harness. Never emitted by production transforms.

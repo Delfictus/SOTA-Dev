@@ -3,12 +3,24 @@
 //! Converts `PrismThermAnalysis` into publication-ready output files and
 //! a human-readable ranked pocket summary for the log.
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use std::io::Write;
 use std::path::Path;
 
 use crate::input::PrismPrepTopology;
 use crate::sdst_bridge::{PrismThermAnalysis, PrismThermSiteResult, TideResidueResult};
+
+/// Serialize an `f32` honestly: finite values become numbers; NaN/Inf become
+/// JSON `null`. Producer-repair contract: NaN means "not honestly computable"
+/// (e.g. saturated TE/Fisher trains, undefined causal lag), and the on-disk
+/// representation must distinguish that from a real `0.0`.
+fn serialize_finite_or_null<S: Serializer>(v: &f32, s: S) -> Result<S::Ok, S::Error> {
+    if v.is_finite() {
+        s.serialize_f32(*v)
+    } else {
+        s.serialize_none()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // ResidueRole classification
@@ -66,9 +78,17 @@ fn classify_residue(r: &TideResidueResult) -> ResidueRole {
 pub struct ResidueContribution {
     pub residue_id: u32,
     pub residue_name: String,
+    /// Transfer entropy in bits. NaN ⇒ undefined (saturated trains) ⇒ JSON `null`.
+    #[serde(serialize_with = "serialize_finite_or_null")]
     pub transfer_entropy: f32,
+    /// Causal ΔG in kcal/mol. NaN ⇒ undefined (TE undefined) ⇒ JSON `null`.
+    #[serde(serialize_with = "serialize_finite_or_null")]
     pub causal_dg: f32,
+    /// Fisher information. NaN ⇒ undefined ⇒ JSON `null`.
+    #[serde(serialize_with = "serialize_finite_or_null")]
     pub fisher_info: f32,
+    /// KL divergence between heating/cooling Bernoulli rates.
+    #[serde(serialize_with = "serialize_finite_or_null")]
     pub kl_divergence: f32,
     pub role: String,
     pub n_causal_spikes: u32,

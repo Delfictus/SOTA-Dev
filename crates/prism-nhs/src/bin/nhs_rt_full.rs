@@ -9576,21 +9576,65 @@ fn run_multi_stream_pipeline(
                 }).collect();
 
             // Site-level weighted KCC: K(site) = Σ w_i * K(residue_i)
+            //
+            // Honest causal-lag aggregation (post producer-repair-causal-truthing):
+            //   - candidate_lag entries may be NaN (kernel marks "not honestly
+            //     computable" with NaN: insufficient events, or no lag had >2
+            //     cross-paired events with j!=i)
+            //   - lag_corr_peak from kernel may also be NaN (same reason)
+            //   - site_causal_lag is the weight-renormalized mean over the
+            //     valid (finite) candidates; if all candidates are NaN, the
+            //     site's lag is NaN (honest "not computable")
+            //   - other KCC fields stay numeric (their kernel paths never NaN)
             let mut site_direction = 0.0f32;
             let mut site_motion_eff = 0.0f32;
             let mut site_burst = 0.0f32;
-            let mut site_lag_corr = 0.0f32;
             let mut site_local_cov = 0.0f32;
-            let mut site_causal_lag = 0.0f32;
+            let mut site_causal_lag_num = 0.0f32;       // Σ w_i * cl_i over valid i
+            let mut site_causal_lag_w   = 0.0f32;       // Σ w_i over valid i
+            let mut site_lag_corr_num   = 0.0f32;
+            let mut site_lag_corr_w     = 0.0f32;
             for (ci, &rid) in candidate_ids.iter().enumerate() {
                 let w = causal_weights[ci];
                 site_direction += w * candidate_direction[ci];
                 site_motion_eff += w * kcc_ref.motion_efficiency.get(rid as usize).copied().unwrap_or(0.0);
                 site_burst += w * candidate_burst[ci];
-                site_lag_corr += w * kcc_ref.lag_corr_peak.get(rid as usize).copied().unwrap_or(0.0);
                 site_local_cov += w * candidate_local_cov[ci];
-                site_causal_lag += w * candidate_lag[ci];
+
+                let cl = candidate_lag[ci];
+                if cl.is_finite() {
+                    site_causal_lag_num += w * cl;
+                    site_causal_lag_w   += w;
+                }
+                let lcp = kcc_ref.lag_corr_peak.get(rid as usize).copied().unwrap_or(f32::NAN);
+                if lcp.is_finite() {
+                    site_lag_corr_num += w * lcp;
+                    site_lag_corr_w   += w;
+                }
             }
+            let site_causal_lag_v: serde_json::Value = if site_causal_lag_w > 0.0 {
+                serde_json::json!(site_causal_lag_num / site_causal_lag_w)
+            } else {
+                serde_json::Value::Null
+            };
+            let site_lag_corr_v: serde_json::Value = if site_lag_corr_w > 0.0 {
+                serde_json::json!(site_lag_corr_num / site_lag_corr_w)
+            } else {
+                serde_json::Value::Null
+            };
+
+            // Per-candidate JSON: NaN → null
+            let candidate_lag_json: Vec<serde_json::Value> = candidate_lag.iter()
+                .map(|&v| if v.is_finite() { serde_json::json!(v) } else { serde_json::Value::Null })
+                .collect();
+
+            // Best-candidate scalar fields: NaN → null for lag_corr_peak too
+            let br_lag_corr = kcc_ref.lag_corr_peak.get(br).copied().unwrap_or(f32::NAN);
+            let br_lag_corr_v: serde_json::Value = if br_lag_corr.is_finite() {
+                serde_json::json!(br_lag_corr)
+            } else {
+                serde_json::Value::Null
+            };
 
             serde_json::json!({
                 // Site-level weighted KCC (for G×T×C×K formula)
@@ -9598,15 +9642,15 @@ fn run_multi_stream_pipeline(
                 "site_direction_score": site_direction,
                 "site_motion_efficiency": site_motion_eff,
                 "site_burst_motion": site_burst,
-                "site_lag_corr_peak": site_lag_corr,
+                "site_lag_corr_peak": site_lag_corr_v,
                 "site_local_cov": site_local_cov,
-                "site_causal_lag": site_causal_lag,
+                "site_causal_lag": site_causal_lag_v,
                 // Best candidate (preserved for debugging)
                 "temporal_corr": kcc_ref.temporal_corr.get(br).copied().unwrap_or(0.0),
                 "direction_score": kcc_ref.direction_score.get(br).copied().unwrap_or(0.0),
                 "motion_efficiency": kcc_ref.motion_efficiency.get(br).copied().unwrap_or(0.0),
                 "burst_motion": kcc_ref.burst_motion.get(br).copied().unwrap_or(0.0),
-                "lag_corr_peak": kcc_ref.lag_corr_peak.get(br).copied().unwrap_or(0.0),
+                "lag_corr_peak": br_lag_corr_v,
                 "local_cov": kcc_ref.local_cov.get(br).copied().unwrap_or(0.0),
                 "active_causal_steps": kcc_ref.active_causal.get(br).copied().unwrap_or(0),
                 "total_steps": kcc_ref.residue_count.get(br).copied().unwrap_or(0),
@@ -9620,7 +9664,7 @@ fn run_multi_stream_pipeline(
                 "candidate_kcc_confidence": candidate_confidence,
                 "candidate_kcc_direction_score": candidate_direction,
                 "candidate_kcc_burst_motion": candidate_burst,
-                "candidate_kcc_causal_lag": candidate_lag,
+                "candidate_kcc_causal_lag": candidate_lag_json,
                 "candidate_kcc_local_cov": candidate_local_cov,
             })
         }).collect();
@@ -10406,6 +10450,89 @@ fn run_multi_stream_pipeline(
             ]
         };
 
+        // ── Producer-repair lane: CausalTruthingAudit (L4) ──
+        //
+        // Build per-site causal summaries from the already-emitted KCC +
+        // (optional) TIDE projections, then run the audit once over the
+        // whole batch.  Violations land per-site in `phase3_l4_violations`
+        // keyed by site_id and are spliced into each site's audit[] block
+        // below.
+        //
+        // Read order:
+        //   - site_id ← site_json["id"]
+        //   - spike_support ← phase3_sites_by_id[site_id].spike_indices.len()
+        //   - candidate_causal_lag ← site_json["kcc"]["candidate_kcc_causal_lag"]
+        //     (NaN-equivalent JSON nulls from the producer-repair pass at
+        //     ~line 9663 are rehydrated as f32::NAN here)
+        //   - candidate_transfer_entropy ← prism_therm_result.sites[].
+        //     tide_decomposition (NaN already preserved through f32 FFI)
+        let phase3_l4_violations: std::collections::HashMap<i32, prism_nhs::transform::TransformViolation> = {
+            use prism_nhs::transform::AuditedTransform;
+            use prism_nhs::transform::causal_truthing_audit::{
+                CausalTruthingAudit, SiteCausalSummary,
+            };
+            use prism_nhs::transform::AuditOutcome;
+
+            let mut summaries: Vec<SiteCausalSummary> = Vec::with_capacity(ms_sites_json.len());
+            for site_json in ms_sites_json.iter() {
+                let sid = site_json.get("id").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
+                let spike_support = phase3_sites_by_id
+                    .get(&sid)
+                    .map(|s| s.spike_indices.len())
+                    .unwrap_or(0);
+
+                // Rehydrate JSON null entries to NaN for audit input.
+                let candidate_causal_lag: Vec<f32> = site_json
+                    .get("kcc")
+                    .and_then(|k| k.get("candidate_kcc_causal_lag"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .map(|v| v.as_f64().map(|x| x as f32).unwrap_or(f32::NAN))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // TE projections come from the prism_therm_result, not the
+                // JSON (TIDE typed projection onto CausomeBlock is Phase 4;
+                // for now we read the in-memory TideResidueResult).
+                let candidate_transfer_entropy: Vec<f32> = prism_therm_result
+                    .as_ref()
+                    .and_then(|a| a.sites.iter().find(|s| s.site_id == sid))
+                    .map(|ts| ts.tide_decomposition.iter()
+                        .map(|t| t.transfer_entropy)
+                        .collect::<Vec<f32>>())
+                    .unwrap_or_default();
+
+                summaries.push(SiteCausalSummary {
+                    site_id: sid,
+                    spike_support,
+                    candidate_causal_lag,
+                    candidate_transfer_entropy,
+                });
+            }
+
+            let audit = CausalTruthingAudit::new();
+            let outcome = audit.apply(&summaries);
+
+            let mut map = std::collections::HashMap::new();
+            if let AuditOutcome::Quarantined { violations, .. } = outcome {
+                for v in violations {
+                    if let prism_nhs::transform::ViolationEvidence::DeadCausalMathOnMeaningfulSite {
+                        site_id, ..
+                    } = &v.evidence
+                    {
+                        map.insert(*site_id, v);
+                    }
+                }
+            }
+            log::info!(
+                "  Phase 3.5 CausalTruthingAudit: {} sites scanned, {} quarantined",
+                summaries.len(), map.len()
+            );
+            map
+        };
+
         // Per-site enrichment pass.
         for site_json in ms_sites_json.iter_mut() {
             let sid = site_json.get("id").and_then(|v| v.as_i64()).unwrap_or(-1) as i32;
@@ -10595,7 +10722,65 @@ fn run_multi_stream_pipeline(
             }
 
             // ────────── audit[] block (synthesized static metadata) ─────
-            site_json["audit"] = serde_json::Value::Array(phase3_audit_blocks.clone());
+            //
+            // Static phase3_audit_blocks: per-transform static metadata
+            // (Accepted by construction since reaching this point implies
+            // no Abort fired upstream).
+            //
+            // Per-site L4 entry: appended last; carries Quarantined +
+            // structured DeadCausalMathOnMeaningfulSite evidence when the
+            // site's causal math is entirely dead AND the site is not
+            // inert.  Otherwise carries Accepted with the same shape so
+            // downstream consumers see L4 in every site's audit[] block
+            // and can tell "audit ran, signal was honest" apart from
+            // "audit didn't run".
+            let mut audit_blocks = phase3_audit_blocks.clone();
+            let l4_now_iso = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+            let l4_block = if let Some(viol) = phase3_l4_violations.get(&sid) {
+                let evidence_json = match &viol.evidence {
+                    prism_nhs::transform::ViolationEvidence::DeadCausalMathOnMeaningfulSite {
+                        site_id, spike_support, candidate_count,
+                        all_lag_undefined, all_te_undefined,
+                    } => serde_json::json!({
+                        "kind":              "DeadCausalMathOnMeaningfulSite",
+                        "site_id":           *site_id,
+                        "spike_support":     *spike_support,
+                        "candidate_count":   *candidate_count,
+                        "all_lag_undefined": *all_lag_undefined,
+                        "all_te_undefined":  *all_te_undefined,
+                    }),
+                    other => serde_json::json!({ "kind": format!("{:?}", other) }),
+                };
+                serde_json::json!({
+                    "transform":         viol.transform.0,
+                    "determinism":       "BitExact",
+                    "tolerance":         "BitExact",
+                    "tolerance_epsilon": serde_json::Value::Null,
+                    "laws_declared":     [viol.law.key],
+                    "laws_passed":       serde_json::Value::Array(Vec::new()),
+                    "laws_violated":     [viol.law.key],
+                    "law_family":        "algebraic",
+                    "outcome":           "Quarantined",
+                    "routing":           "quarantine",
+                    "evidence":          evidence_json,
+                    "verified_at":       l4_now_iso,
+                })
+            } else {
+                serde_json::json!({
+                    "transform":         "causal_truthing_audit",
+                    "determinism":       "BitExact",
+                    "tolerance":         "BitExact",
+                    "tolerance_epsilon": serde_json::Value::Null,
+                    "laws_declared":     ["l4_causal_math_meaningful_or_absent"],
+                    "laws_passed":       ["l4_causal_math_meaningful_or_absent"],
+                    "laws_violated":     serde_json::Value::Array(Vec::new()),
+                    "law_family":        "algebraic",
+                    "outcome":           "Accepted",
+                    "verified_at":       l4_now_iso,
+                })
+            };
+            audit_blocks.push(l4_block);
+            site_json["audit"] = serde_json::Value::Array(audit_blocks);
 
             // ────────── phase{} block (12 mandatory fields per H4) ──────
             // CCNS protocol-phase fractions (4-way, aggregated from
@@ -10811,7 +10996,16 @@ fn run_multi_stream_pipeline(
                 // for every residue regardless of causal activity.
                 // Composite KCC score: weighted combination of motion metrics
                 // Higher = more causally active residue
-                let lc = kcc.lag_corr_peak[r];
+                // Honest causal-lag contract: kcc.lag_corr_peak[r] and
+                // kcc.causal_lag[r] may be NaN (kernel marks "not honestly
+                // computable"). For the kcc_score arithmetic formula, NaN
+                // collapses to 0.0 (no lag-corr contribution); for JSON
+                // emission we map NaN → null so serde does not panic on
+                // non-finite numbers and the downstream consumer sees
+                // honest absence-of-signal rather than a falsified 0.0.
+                let lc_raw = kcc.lag_corr_peak[r];
+                let cl_raw = kcc.causal_lag[r];
+                let lc = if lc_raw.is_finite() { lc_raw } else { 0.0 };
                 let bm = kcc.burst_motion[r];
                 let me = kcc.motion_efficiency[r];
                 let ds = kcc.direction_score[r];
@@ -10820,6 +11014,12 @@ fn run_multi_stream_pipeline(
                 } else { 0.0 };
                 let kcc_score = 0.3 * lc + 0.25 * causality_frac + 0.2 * bm.min(3.0) / 3.0
                     + 0.15 * me.min(0.01) / 0.01 + 0.1 * ds;
+                let lc_json: serde_json::Value = if lc_raw.is_finite() {
+                    serde_json::json!(lc_raw)
+                } else { serde_json::Value::Null };
+                let cl_json: serde_json::Value = if cl_raw.is_finite() {
+                    serde_json::json!(cl_raw)
+                } else { serde_json::Value::Null };
                 // Map internal index → PDB resid via pdb_id_map
                 res_json.push(serde_json::json!({
                     "residue_id": map_resid(r as i32),
@@ -10831,9 +11031,9 @@ fn run_multi_stream_pipeline(
                     "motion_efficiency": kcc.motion_efficiency[r],
                     "direction_score": kcc.direction_score[r],
                     "burst_motion": kcc.burst_motion[r],
-                    "lag_corr_peak": kcc.lag_corr_peak[r],
+                    "lag_corr_peak": lc_json,
                     "local_cov": kcc.local_cov[r],
-                    "causal_lag": kcc.causal_lag[r],
+                    "causal_lag": cl_json,
                     "active_causal_steps": kcc.active_causal[r],
                     "total_steps": kcc.residue_count[r],
                 }));
@@ -10942,7 +11142,9 @@ fn run_multi_stream_pipeline(
                         let ca = ca_pos[rid];
                         let kcc_ref = merged_kcc.as_ref().unwrap();
                         let me = kcc_ref.motion_efficiency.get(rid).copied().unwrap_or(0.0) as f64;
-                        let lc = kcc_ref.lag_corr_peak.get(rid).copied().unwrap_or(0.0) as f64;
+                        // NaN-safe read (kernel may emit NaN for "lag not honestly computable").
+                        let lc_raw_f32 = kcc_ref.lag_corr_peak.get(rid).copied().unwrap_or(0.0);
+                        let lc = if lc_raw_f32.is_finite() { lc_raw_f32 as f64 } else { 0.0 };
                         let bm = kcc_ref.burst_motion.get(rid).copied().unwrap_or(0.0) as f64;
                         let lcv = kcc_ref.local_cov.get(rid).copied().unwrap_or(0.0) as f64;
                         let ndx = kcc_ref.net_dx.get(rid).copied().unwrap_or(0.0) as f64;

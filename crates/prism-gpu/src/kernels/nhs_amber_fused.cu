@@ -3886,8 +3886,10 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
     if (n_events < 4) {
         kcc_burst_motion_score[rid] = 0.0f;
         kcc_phase_shift_score[rid] = 0.0f;
-        kcc_causal_lag[rid] = 0.0f;
-        kcc_lag_corr_peak[rid] = 0.0f;
+        // Honest "not computable": insufficient events for cross-correlation.
+        // NaN is the on-device contract; consumer (Rust + JSON emit) maps to None / null.
+        kcc_causal_lag[rid] = nanf("");
+        kcc_lag_corr_peak[rid] = nanf("");
         kcc_local_cov_score[rid] = 0.0f;
         return;
     }
@@ -3931,8 +3933,22 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
     kcc_phase_shift_score[rid] = (la - ea) / (ea + la + 1e-6f);
 
     // === Causal lag: cross-correlate c and m at real timestep offsets ===
-    float best_corr = -1.0f;
-    int best_lag = 0;
+    //
+    // Honest cross-correlation contract (post producer-repair-causal-truthing):
+    //   - j != i is required: self-matching is not a causal-lag signal.
+    //     Allowing j == i made every residue's lag-search converge to a
+    //     uniform self-correlation across all lags whose tolerance permitted
+    //     j == i (lag in {-5, 0, 5}); strict `>` then locked in lag = -5
+    //     because the loop walks lags from negative to positive and -5 was
+    //     the first lag to qualify under the bd <= 5 self-match.
+    //   - tie-break prefers smaller |lag|: an unbiased symmetric tie-break
+    //     instead of "first lag wins".
+    //   - n_valid_lags == 0 (no lag had >2 cross-paired events) writes NaN
+    //     to both kcc_causal_lag and kcc_lag_corr_peak. NaN is the on-device
+    //     contract for "not honestly computable"; consumer maps to None / null.
+    float best_corr = -2.0f;       // distinct sentinel; valid corr ∈ [-1, 1]
+    int   best_lag  = 0;
+    int   n_valid_lags = 0;
     for (int lag = -50; lag <= 50; lag += 5) {
         float scm = 0.0f, scc = 0.0f, smm = 0.0f;
         int cnt = 0;
@@ -3940,6 +3956,7 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
             int target = (int)ev_step[i] + lag;
             int bj = -1; int bd = 100000;
             for (int j = 0; j < n_events; j++) {
+                if (j == i) continue;          // forbid self-match
                 int d = abs((int)ev_step[j] - target);
                 if (d < bd) { bd = d; bj = j; }
             }
@@ -3953,11 +3970,21 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
         if (cnt > 2) {
             float d = sqrtf(fmaxf(scc * smm, 1e-12f));
             float corr = scm / d;
-            if (corr > best_corr) { best_corr = corr; best_lag = lag; }
+            n_valid_lags++;
+            if (corr > best_corr ||
+                (corr == best_corr && abs(lag) < abs(best_lag))) {
+                best_corr = corr;
+                best_lag  = lag;
+            }
         }
     }
-    kcc_causal_lag[rid] = (float)best_lag;
-    kcc_lag_corr_peak[rid] = best_corr;
+    if (n_valid_lags == 0) {
+        kcc_causal_lag[rid]    = nanf("");
+        kcc_lag_corr_peak[rid] = nanf("");
+    } else {
+        kcc_causal_lag[rid]    = (float)best_lag;
+        kcc_lag_corr_peak[rid] = best_corr;
+    }
 
     // === Local covariance: sliding windows in real timestep space ===
     unsigned int span = step_max - step_min;
