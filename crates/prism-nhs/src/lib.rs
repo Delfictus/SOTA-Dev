@@ -153,6 +153,9 @@ pub mod spatial_view;
 /// uses. The framework module is feature-agnostic; individual
 /// concrete transforms may be feature-gated on their dependencies.
 pub mod transform;
+/// Phase 3 — Pillar 2 typed block.  See [`causome::CausomeBlock`].
+/// The producer is `transform::cluster_to_causome::ClusterToCausome`.
+pub mod causome;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]

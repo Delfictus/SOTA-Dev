@@ -51,6 +51,14 @@
 #[cfg(feature = "gpu")]
 pub mod clustering_to_clustered_sites;
 
+/// Phase 3 second wrap: `ClusterToCausome` consumes the
+/// `ClusteredBindingSite` output of Phase 2 + KCC per-site data and
+/// emits typed `CausomeBlock` (Pillar 2) under
+/// `LAW_L3_DRIVER_SUBSET_OF_LINING`.  Feature-gated on `gpu` because
+/// it consumes `ClusteredBindingSite` (which is gpu-gated).
+#[cfg(feature = "gpu")]
+pub mod cluster_to_causome;
+
 use std::error::Error;
 use std::fmt;
 
@@ -75,16 +83,62 @@ impl fmt::Display for TransformId {
     }
 }
 
-/// Stable string identifier for a single law. Laws are numbered within
-/// their transform (`l1_...`, `l2_...`) and named by what they enforce,
-/// not by what they forbid. A law id is unique within a transform and
-/// stable across releases so violation logs are comparable over time.
+/// Family classification of a law, used to keep local algebraic
+/// conservation laws (verified per-output, post-transform) cleanly
+/// separated from population-level order-theoretic invariants
+/// (verified across slices of outputs, comparative).
+///
+/// Phase 2/3 laws are all `Algebraic`. Phase 9 introduces
+/// `OrderTheoretic` laws (rank monotonicity, contradiction detection,
+/// quorum consistency). The split exists so a transform's `verify`
+/// implementation cannot accidentally mix species — a `LawId` carries
+/// its family, and downstream consumers can group violations by
+/// family without inspecting law text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LawId(pub &'static str);
+pub enum LawFamily {
+    /// Local, post-transform conservation laws. Verified on a single
+    /// emitted output. Phase 2: `l1_gvm_populated`, `l2_emission_compat`.
+    /// Phase 3: `l3_driver_subset_of_lining`.
+    Algebraic,
+    /// Population-level / comparative invariants. Verified across
+    /// slices of outputs (rank monotonicity, quorum consistency,
+    /// contradiction detection). Reserved — no Phase 2/3 emitter.
+    OrderTheoretic,
+}
+
+impl fmt::Display for LawFamily {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            LawFamily::Algebraic => "algebraic",
+            LawFamily::OrderTheoretic => "order_theoretic",
+        })
+    }
+}
+
+/// Stable identifier for a single law. Laws are numbered within their
+/// transform (`l1_...`, `l2_...`) and named by what they enforce, not
+/// by what they forbid. A law id is unique within a transform and
+/// stable across releases so violation logs are comparable over time.
+///
+/// Phase 3 added `family` so a violation's family is recoverable from
+/// the law id alone. Use [`LawId::new`] to construct in `const`
+/// position (the field-init form `LawId { key, family }` works too).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LawId {
+    pub key: &'static str,
+    pub family: LawFamily,
+}
+
+impl LawId {
+    /// `const` constructor for declaring `LawId` constants.
+    pub const fn new(key: &'static str, family: LawFamily) -> Self {
+        LawId { key, family }
+    }
+}
 
 impl fmt::Display for LawId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
+        f.write_str(self.key)
     }
 }
 
@@ -152,6 +206,12 @@ pub enum TolerancePolicy {
     /// Absolute-magnitude L2 tolerance: `‖a - b‖₂ <= epsilon`.
     /// Reserved for later phases; not used by Phase 2 laws.
     AbsL2 { epsilon: f32 },
+    /// Relative-magnitude tolerance: `|a - b| / max(|a|, |b|, ε_floor)
+    /// <= eps`. The right encoding for CUDA-atomics-affected FP
+    /// outputs whose magnitude spans many orders (KCC `burst_motion`,
+    /// `lag_corr_peak`, etc.). Phase 3 `cluster_to_causome` declares
+    /// this with `eps = 1e-4`.
+    RelativeEpsilon { eps: f64 },
 }
 
 impl fmt::Display for TolerancePolicy {
@@ -159,6 +219,59 @@ impl fmt::Display for TolerancePolicy {
         match self {
             TolerancePolicy::BitExact => f.write_str("bit_exact"),
             TolerancePolicy::AbsL2 { epsilon } => write!(f, "abs_l2(eps={epsilon:e})"),
+            TolerancePolicy::RelativeEpsilon { eps } => write!(f, "relative_epsilon(eps={eps:e})"),
+        }
+    }
+}
+
+impl TolerancePolicy {
+    /// Short JSON-friendly key (no parameters) — used in the per-site
+    /// `audit{}` block emitted to `binding_sites.json`. Pair with
+    /// [`Self::epsilon_value`] to recover the parameter.
+    pub fn json_kind(&self) -> &'static str {
+        match self {
+            TolerancePolicy::BitExact => "bit_exact",
+            TolerancePolicy::AbsL2 { .. } => "abs_l2",
+            TolerancePolicy::RelativeEpsilon { .. } => "relative_epsilon",
+        }
+    }
+
+    /// `Some(epsilon)` for parameterized policies; `None` for `BitExact`.
+    pub fn epsilon_value(&self) -> Option<f64> {
+        match self {
+            TolerancePolicy::BitExact => None,
+            TolerancePolicy::AbsL2 { epsilon } => Some(*epsilon as f64),
+            TolerancePolicy::RelativeEpsilon { eps } => Some(*eps),
+        }
+    }
+
+    /// Scalar comparison helper: returns `true` iff `a` and `b` are
+    /// equivalent under this policy. For 3-component vectors use
+    /// [`Self::approx_eq_vec3`].
+    pub fn approx_eq(&self, a: f64, b: f64) -> bool {
+        match self {
+            TolerancePolicy::BitExact => a.to_bits() == b.to_bits(),
+            TolerancePolicy::AbsL2 { epsilon } => (a - b).abs() <= *epsilon as f64,
+            TolerancePolicy::RelativeEpsilon { eps } => {
+                let denom = a.abs().max(b.abs()).max(1.0e-12);
+                (a - b).abs() / denom <= *eps
+            }
+        }
+    }
+
+    /// 3-vector L2-or-relative comparison: behaves like `approx_eq`
+    /// but compares Euclidean distance for AbsL2 and component-max
+    /// relative error for RelativeEpsilon.
+    pub fn approx_eq_vec3(&self, a: [f32; 3], b: [f32; 3]) -> bool {
+        match self {
+            TolerancePolicy::BitExact => a == b,
+            TolerancePolicy::AbsL2 { epsilon } => {
+                let d2 = (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2);
+                d2.sqrt() <= *epsilon
+            }
+            TolerancePolicy::RelativeEpsilon { eps } => {
+                (0..3).all(|i| self.approx_eq(a[i] as f64, b[i] as f64))
+            }
         }
     }
 }
@@ -227,6 +340,23 @@ pub enum ViolationEvidence {
         cluster_id: i32,
         emission_compat: [f32; 3],
         gvm_view: [f32; 3],
+    },
+    /// Law `l3_driver_subset_of_lining`: the
+    /// `CausomeBlock.driver_residue_id` is not a member of the
+    /// site's `lining_residues[].resid` set.  Phase 3 Family-A
+    /// Conservation of Locality.
+    DriverNotInLining {
+        site_id: i32,
+        driver_id: i32,
+        lining_set_size: usize,
+    },
+    /// Law `l3_driver_subset_of_lining` (extension): one of the
+    /// `CausomeBlock.candidate_residue_ids` is not a member of the
+    /// site's `lining_residues[].resid` set.
+    CandidateNotInLining {
+        site_id: i32,
+        candidate_id: i32,
+        lining_set_size: usize,
     },
     /// Synthetic test evidence used only by the Phase 2 mock transform
     /// in the test harness. Never emitted by production transforms.

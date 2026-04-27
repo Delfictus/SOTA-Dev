@@ -44,8 +44,8 @@
 //!   semantics; there is no tolerance knob to tune here.
 
 use super::{
-    AuditOutcome, AuditRouting, AuditedTransform, DeterminismClass, LawId, TolerancePolicy,
-    TransformId, TransformViolation, ViolationEvidence,
+    AuditOutcome, AuditRouting, AuditedTransform, DeterminismClass, LawFamily, LawId,
+    TolerancePolicy, TransformId, TransformViolation, ViolationEvidence,
 };
 use crate::fused_engine::{NhsAmberFusedEngine, SpikeEvent};
 use crate::persistent_engine::{build_clustered_sites, ClusteredBindingSite};
@@ -59,8 +59,10 @@ use crate::spatial_view::SpatialView;
 pub const TRANSFORM_CLUSTERING_TO_CLUSTERED_SITES: TransformId =
     TransformId("clustering_to_clustered_sites");
 
-pub const LAW_L1_GVM_POPULATED: LawId = LawId("l1_gvm_populated");
-pub const LAW_L2_EMISSION_COMPAT_MATCHES_GVM: LawId = LawId("l2_emission_compat_matches_gvm");
+pub const LAW_L1_GVM_POPULATED: LawId =
+    LawId::new("l1_gvm_populated", LawFamily::Algebraic);
+pub const LAW_L2_EMISSION_COMPAT_MATCHES_GVM: LawId =
+    LawId::new("l2_emission_compat_matches_gvm", LawFamily::Algebraic);
 
 /// Full declared law set for this transform. Returned from
 /// `AuditedTransform::laws`. Extending this array is a deliberate API
@@ -257,7 +259,7 @@ mod tests {
     }
     impl MockTransform {
         const ID: TransformId = TransformId("mock_transform_for_test");
-        const LAW: LawId = LawId("mock_law");
+        const LAW: LawId = LawId::new("mock_law", LawFamily::Algebraic);
         const LAWS: &'static [LawId] = &[Self::LAW];
         fn with_violations(violations: Vec<TransformViolation>) -> Self {
             MockTransform { violations_to_emit: violations }
