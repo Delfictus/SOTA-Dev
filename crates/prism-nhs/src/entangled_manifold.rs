@@ -97,8 +97,8 @@ pub enum CausalSignal {
 
 impl CausalSignal {
     /// Stable snake_case identifier for provenance / JSON labels.
-    /// Pinned by [`tests::causal_signal_label_is_stable`]; downstream
-    /// auditors depend on the exact strings.
+    /// Pinned by the `causal_signal_label_is_stable` unit test;
+    /// downstream auditors depend on the exact strings.
     pub fn as_str(&self) -> &'static str {
         match self {
             CausalSignal::SpikeAttributionCount => "spike_attribution_count",
@@ -150,7 +150,7 @@ pub enum TieBreakerPolicy {
 
 impl TieBreakerPolicy {
     /// Stable snake_case identifier for provenance / JSON labels.
-    /// Pinned by [`tests::deterministic_tie_breaker_policy_label_is_stable`].
+    /// Pinned by the `deterministic_tie_breaker_policy_label_is_stable` unit test.
     pub fn as_str(&self) -> &'static str {
         match self {
             TieBreakerPolicy::CausalThenResid => "causal_then_resid",
