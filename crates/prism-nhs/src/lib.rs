@@ -156,6 +156,14 @@ pub mod transform;
 /// Phase 3 — Pillar 2 typed block.  See [`causome::CausomeBlock`].
 /// The producer is `transform::cluster_to_causome::ClusterToCausome`.
 pub mod causome;
+/// Entangled Transform — typed manifold views with strict AABBs.
+/// Implements blueprint mandates M4 (strict struct typing for the
+/// 2+2+2+2 graph) and M5 (LBVH-ready, support-only AABBs). See
+/// [`docs/PRISM4D_ENTANGLED_TRANSFORM_BLUEPRINT.md`](../docs/PRISM4D_ENTANGLED_TRANSFORM_BLUEPRINT.md)
+/// for the binding contract. This module is type-definitions-only;
+/// the on-device producer (`SpikeToCluster4D`, M1) and CUDA / FFI
+/// shims land in subsequent commits.
+pub mod entangled_manifold;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]
