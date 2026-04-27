@@ -48,7 +48,7 @@ The Entangled Graph and the Phase Manifold MUST be constructed natively in VRAM 
 
 ## M2. Anti-Legacy-Centroid Rule
 
-When the Rust runtime constructs `CentroidManifold` views (or selects residues for any internal truthing step), it MUST NOT rank, filter, or seed those selections by spatial distance to the legacy top-level scalar centroid.
+When the Rust runtime constructs `EntangledManifold` views (or selects residues for any internal truthing step), it MUST NOT rank, filter, or seed those selections by spatial distance to the legacy top-level scalar centroid.
 
 - The legacy scalar centroid is poisoned by megacluster collapse under PBC.
 - Any selection that uses "distance to legacy centroid" as an ordering or thresholding key is a regression and MUST be removed.
@@ -100,6 +100,15 @@ Each view struct MUST carry:
 These four (or more) typed views are the four "2"s in the 2+2+2+2 graph: each pair-channel binds two role-typed views. Untyped collections cannot make this binding compile-time-safe and are therefore forbidden.
 
 **Conformance:** the public API of the in-flight construction module exposes only typed view structs. Any helper that returns `Vec<Residue>` for downstream graph use is non-conformant.
+
+### M4 amendment — 2026-04-27: canonical container name is `EntangledManifold`
+
+The canonical, LBVH-aware top-level container holding the role-typed views (`CausalDriverView`, `LiningContactView`, `LocalizedSubclusterView`, …) is **`EntangledManifold`**, defined in `crates/prism-nhs/src/entangled_manifold.rs`. Earlier prose elsewhere in this document referred to the container as "CentroidManifold"; that name was already taken in the codebase by `crate::spatial_view::CentroidManifold`, a Phase-1 per-site **point-centroid** container that is M5-non-conformant by design (point-centroids are insufficient for LBVH). The two types are intentionally distinct:
+
+- `EntangledManifold` — canonical, M4 + M5 conformant; carries support sets, AABBs, and per-view provenance; the type the producer (M1) emits and the LBVH / 2+2+2+2 graph kernels consume.
+- `spatial_view::CentroidManifold` — legacy point-centroid container retained for backward compatibility through the next release cycle. It is consumed by the Phase-1 readers migrated in `persistent_engine.rs` (lines 159, 2740) and is *not* used by any new code on this lane. It will receive a `#[deprecated(since=…, note="use EntangledManifold")]` attribute in a separate POST-M1 commit, once the M1 producer makes its callsites real-migratable to `EntangledManifold` rather than papered over with `#[allow(deprecated)]`.
+
+This sub-section is the only authorized blueprint amendment in this lane. Future amendments require explicit operator sign-off per §Authority.
 
 ---
 
