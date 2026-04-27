@@ -87,7 +87,7 @@ Implement distinct, strictly typed Rust structs to enforce role separation at co
 ```rust
 pub struct CausalDriverView   { /* support set + AABB + provenance */ }
 pub struct LiningContactView  { /* support set + AABB + provenance */ }
-pub struct LocalizedRoleView  { /* support set + AABB + provenance */ }
+pub struct LocalizedSubclusterView  { /* support set + AABB + provenance */ }
 pub struct PhaseManifoldView  { /* support set + AABB + provenance */ }
 ```
 
@@ -175,6 +175,57 @@ The implementer is forbidden from creating new branches, "lanes," or Git worktre
 - Abandoning a branch and spawning a new one to hide a regression is forbidden.
 
 **Conformance:** `git branch` shows only the designated branch (and `main`/release branches that pre-existed) for the duration of this lane.
+
+---
+
+## M9. Closed-Loop Steering and ASC Integration
+
+*(Conventional reference in operator directives: "Mandate #8". Numbered M9 in this document because §M8 is occupied by Strict Git & Branching Policy. The colloquial "#8" label is preserved here for cross-reference; section numbers are sequential within the document.)*
+
+### Rationale (physics-correctness, not benchmark-accuracy)
+
+The active MD steering subsystems — `--closed-loop-steering`, `--asymmetric-steering`, `--multi-differential` — consume centroid / geometry inputs at runtime. If those inputs are sourced from the **legacy scalar centroid** (the megacluster-poisoned centroid this lane was opened to escape; see §M2), steering forces are applied to empty solvent space rather than to the causal manifold. The 4LPK Site 1 case is the canonical illustration: the legacy centroid sits at Y = 4.80 while the actual causal driver (VAL8) is at Y ≈ −8.5. Steered MD with a poisoned target produces dynamics that diverge from the true causal manifold and may, as a secondary effect, induce numerical instability in atomic update kernels.
+
+This is a physics-correctness concern, not a benchmark-accuracy one. A steered run reading the wrong target is not "less accurate" — it is simulating a different physical system.
+
+### Rules
+
+1. **Source.** Active steering inputs (closed-loop, asymmetric, multi-differential) MUST source their target from `EntangledManifold` views — specifically `CausalDriverView` and `LiningContactView` AABBs.
+2. **Forbidden source.** Active steering MUST NOT consume the legacy scalar centroid as a target under any flag combination.
+3. **WHILE-graph execution.** The native GPU 2+2+2+2 graph operates within a CUDA WHILE execution graph that captures multi-differential state dynamically and feeds the causal topology back into the MD engine's adaptive tuning loop on-device, without round-trip to CPU.
+4. **Transition HALT predicate (M1 → post-M1 steering lane window).** During the transition window between M1 (clustering kernel + manifold construction lands; steering kernels still read the legacy centroid) and the post-M1 steering wiring lane (steering kernels migrated to read from `EntangledManifold` AABBs), the dual-path state is illegal. The HALT predicate is, verbatim:
+
+   ```
+   IF  entangled_manifold.is_populated()
+   AND steering_target_source == LegacyScalarCentroid
+   THEN abort_with(LANE_BLOCKED)
+   ```
+
+   This is the **strict abort** form: no soft transition window, no warn-only mode. The predicate fires exactly when (a) M1 has landed (so `EntangledManifold` can be populated by the producer) AND (b) the steering kernel is still reading the legacy centroid (because the post-M1 steering lane has not yet migrated it). Any of `--closed-loop-steering`, `--asymmetric-steering`, `--multi-differential` enabling steering execution in this state is a `LANE_BLOCKED` event regardless of which flag is responsible. Pre-M1 runs are unaffected (manifold is not populated; predicate never fires). Post-post-M1-steering-lane runs are unaffected (steering target source is no longer the legacy centroid; predicate never fires).
+
+### FFI surface for steering consumption (locked at amendment time, no impl-time decision)
+
+The post-M1 steering lane will consume per-view AABBs through three named extern-C accessors at the FFI boundary:
+
+- `prism_get_causal_driver_aabb`
+- `prism_get_lining_contact_aabb`
+- `prism_get_localized_subcluster_aabb`
+
+**Per-view discrimination at the FFI symbol-name level, not in the Rust type system.** The Rust-side geometric `Aabb` struct (`#[repr(C)] { min: [f32; 3], max: [f32; 3] }`) stays a pure POD geometric type with no provenance metadata, preserving its direct consumability by the LBVH Morton encoder which has no use for `support_count` or `frame`. The provenance fields required by the steering subsystem (`support_count: u32`, `frame: u32`) cross the FFI as a **sibling FFI-only `#[repr(C)]` struct** that bundles the geometric AABB with its provenance, returned by the three accessors above. This keeps the LBVH consumer free of fields it does not use, and gives the steering subsystem a self-contained per-call payload.
+
+The exact name of the sibling struct is an implementation-time detail (M1's job); the *shape* — `{ aabb: Aabb, support_count: u32, frame: u32 }` or its in-line equivalent — is locked here.
+
+**Frame width.** The MD engine carries `FrameIndex = u64` internally. The FFI surface narrows it to `u32`. The narrowing is safe by construction: at typical 4 fs MD step sizes, `u32::MAX` ≈ 4.29 × 10⁹ steps corresponds to ≈ 1.72 × 10⁴ ns ≈ 17.16 μs of simulated time, several orders of magnitude above any single canonical-verification or campaign-scale run that PRISM-4D performs (typical horizon: tens to hundreds of nanoseconds). The downcast site MUST carry an inline code comment that states this headroom calculation explicitly, so a future reader sees the intentional narrowing rather than a bug.
+
+### Hypothesis flagged (not asserted)
+
+The v2 / v2.1 livelock pattern observed pre-rollback (commits `c4e80a35`, `7c606988`, `be2db48f`, `bd10e9c7`, all reverted) may have a partial root cause in steering-induced numerical instability when the target coordinate sits in solvent space rather than on the causal manifold. **This is a hypothesis, not a verified diagnosis.** Investigation is deferred to the post-M1 steering lane, where it can be tested empirically against the new manifold-driven steering: does steering with a non-poisoned target eliminate the spin pattern? Pre-M1 work MUST NOT pursue this investigation; the legacy livelock is a known property of the `2416bf6a` baseline that is out of scope because the path it lives in is being torn out by M1 + post-M1 steering.
+
+### Conformance
+
+- The post-M1 steering lane is the single authorized site for migrating steering kernels off the legacy centroid.
+- M1 itself MUST NOT modify steering kernels, MUST NOT change which centroid steering currently reads, and MUST NOT produce a WHILE-graph execution path. If during M1 the implementer discovers steering kernels coupled to manifold construction such that landing M1 requires touching them, M1 HALTS with `LANE_BLOCKED`.
+- Once the steering lane lands, the transition HALT predicate above is permanent: any run combining a populated `EntangledManifold` with legacy-centroid steering reads is a `LANE_BLOCKED` event regardless of how rare. The dual-path window cannot be re-opened.
 
 ---
 
