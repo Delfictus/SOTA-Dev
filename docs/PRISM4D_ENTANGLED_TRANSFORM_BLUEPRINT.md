@@ -235,7 +235,7 @@ The v2 / v2.1 livelock pattern observed pre-rollback (commits `c4e80a35`, `7c606
 - **Manifold view** — a typed, role-aware subset of the system (residues + AABB + provenance) that participates in the 2+2+2+2 graph.
 - **CausalDriverView** — residues with the highest causal attribution (drivers of the dynamics under inspection).
 - **LiningContactView** — residues forming the lining/contact set around the driver region, selected by causal contact participation, not geometric proximity to a legacy centroid.
-- **LocalizedRoleView** — residues confined to a localized, causally-coherent subregion (e.g., a cryptic-pocket lining or a coupled-motion lobe).
+- **LocalizedSubclusterView** — residues confined to a localized, causally-coherent subregion (e.g., a cryptic-pocket lining or a coupled-motion lobe). *(Renamed from `LocalizedRoleView` in commit `4a87b21e` to match the implementation in `crates/prism-nhs/src/entangled_manifold.rs`.)*
 - **PhaseManifoldView** — residues participating in the same phase manifold (e.g., synchronized phase under the engine's phase model).
 - **AABB** — axis-aligned bounding box `(min_xyz, max_xyz)` over a view's support set in the simulation frame.
 - **LBVH** — Linear Bounding Volume Hierarchy; GPU-native BVH constructed by sorting Morton codes of AABB centroids; consumed by the 2+2+2+2 graph kernel.
