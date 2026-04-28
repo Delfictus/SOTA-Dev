@@ -170,6 +170,13 @@ pub mod entangled_manifold;
 /// and the supporting identity newtypes. See module docs for the
 /// per-site / frame-level / 8-slot-projection layering.
 pub mod site_manifest;
+/// Gate G1 — Multi-seed Arrow file merger. Concatenates per-seed
+/// `<prefix>.topology.spike_events.arrow` files into a single
+/// multi-seed stream while preserving per-spike `replica_seed`
+/// provenance through the existing schema column. Pure Rust IPC
+/// reader/writer; no Python in the data plane.
+pub mod multi_seed_merger;
+
 /// Gate G3 — `phase_bits: u32` (per-spike Arrow column) layout decoder.
 /// Documents and decodes the bit-packed CCNS phase information emitted
 /// per-spike. Layout: bits 0–9 = 10-bit CCNS phase index (0–1023);
