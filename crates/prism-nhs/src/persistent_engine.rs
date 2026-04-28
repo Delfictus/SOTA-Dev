@@ -1441,6 +1441,19 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Gate G2 — Configure interval-based ensemble snapshot capture on
+    /// the wrapped fused engine. When `n > 0`, the engine's `step()`
+    /// end-of-step barrier captures an [`crate::fused_engine::EnsembleSnapshot`]
+    /// every `n` MD steps tagged
+    /// [`crate::fused_engine::SnapshotTrigger::IntervalScheduled`].
+    /// When `n == 0` (default), only the existing activity-driven
+    /// trigger paths fire. No-op when no topology has been loaded.
+    pub fn set_snapshot_interval(&mut self, n: u32) {
+        if let Some(ref mut engine) = self.engine {
+            engine.set_snapshot_interval(n);
+        }
+    }
+
     /// Set the integration timestep. Use 0.004 (4fs) with HMR masses.
     pub fn set_dt(&mut self, dt: f64) -> Result<()> {
         if let Some(ref mut engine) = self.engine {

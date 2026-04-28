@@ -86,6 +86,19 @@ struct Args {
     #[arg(long, default_value = "42")]
     replica_seed: u64,
 
+    /// Gate G2 — Save trajectory frames every N MD steps to a binary
+    /// sidecar `<output>.frames.bin` (24-byte header + raw f32 LE
+    /// `[n_frames, n_atoms, 3]` body). Default 0 = disabled. When N > 0,
+    /// `engine.set_snapshot_interval(N)` is wired before each per-stream
+    /// `engine.run(...)` so the engine captures `IntervalScheduled`
+    /// `EnsembleSnapshot`s at the end-of-step barrier of every Nth step
+    /// in addition to the existing activity-driven trigger paths.
+    /// See `docs/phase_bits_schema.md` is not the relevant doc — see
+    /// `crates/prism-nhs/src/gpu.rs` `TrajectoryWriter` for the file
+    /// format, and the G2 verification gate for the loader contract.
+    #[arg(long, default_value = "0")]
+    save_trajectory_interval: u32,
+
     /// Enable multi-scale clustering for structure-agnostic detection
     /// Runs clustering at multiple epsilon values and finds persistent sites
     #[arg(long, default_value = "false")]
@@ -1313,6 +1326,8 @@ fn run_coupled_twin_multi_pipeline(
         if args.hmr { engine.set_dt(0.004)?; }
         if args.fused_steps > 1 { engine.set_fused_inner_steps(args.fused_steps)?; }
         if args.adaptive_dt { engine.set_adaptive_dt(true)?; }
+        // Gate G2 — interval-based snapshot capture
+        engine.set_snapshot_interval(args.save_trajectory_interval);
         if args.ladd { engine.set_ladd_enabled(true); }
         engine.set_cryo_uv_protocol(prot.clone())?;
         engine.set_spike_accumulation(true);
@@ -1663,6 +1678,9 @@ fn run_full_pipeline_internal(
     if args.fused_steps > 1 {
         engine.set_fused_inner_steps(args.fused_steps)?;
     }
+
+    // Gate G2 — interval-based snapshot capture (binary frames.bin).
+    engine.set_snapshot_interval(args.save_trajectory_interval);
 
     // Apply adaptive dt if requested
     if args.adaptive_dt {
@@ -11848,6 +11866,60 @@ fn run_multi_stream_pipeline(
             let stream_base = args.output.join(format!("{}_stream{:02}", stem, i));
             write_ensemble_trajectory(snapshots, &topology, &stream_base)?;
             log::info!("  ✓ Trajectory stream {}: {} frames", i, snapshots.len());
+
+            // Gate G2 — also emit binary <stem>_streamNN.frames.bin sidecar
+            // when --save-trajectory-interval > 0. Reuses the same
+            // EnsembleSnapshot.positions data the PDB writer uses; format
+            // documented in `crates/prism-nhs/src/gpu.rs` TrajectoryWriter.
+            if args.save_trajectory_interval > 0 {
+                let frames_path = stream_base.with_extension("frames.bin");
+                // dt_ps follows the engine's per-step time. Mirrors the
+                // engine.set_dt(0.004) call gated on args.hmr earlier in
+                // this file: 0.004 ps (4 fs) with HMR, 0.002 ps (2 fs)
+                // otherwise. Recorded in the binary header for downstream
+                // wall-time reconstruction.
+                let dt_ps: f32 = if args.hmr { 0.004 } else { 0.002 };
+                match prism_nhs::gpu::TrajectoryWriter::create(
+                    &frames_path,
+                    topology.n_atoms as u32,
+                    args.save_trajectory_interval,
+                    dt_ps,
+                ) {
+                    Ok(mut tw) => {
+                        let mut wrote_count = 0u64;
+                        let mut had_err = false;
+                        for snap in snapshots.iter() {
+                            if let Err(e) = tw.write_frame(&snap.positions) {
+                                log::warn!(
+                                    "  frames.bin write_frame failed on stream {} frame {}: {}",
+                                    i, wrote_count, e
+                                );
+                                had_err = true;
+                                break;
+                            }
+                            wrote_count += 1;
+                        }
+                        match tw.finish() {
+                            Ok(n) => {
+                                if !had_err {
+                                    log::info!(
+                                        "  ✓ frames.bin stream {}: {} frames -> {}",
+                                        i, n, frames_path.display()
+                                    );
+                                }
+                            }
+                            Err(e) => log::warn!(
+                                "  frames.bin finish() failed on stream {}: {}",
+                                i, e
+                            ),
+                        }
+                    }
+                    Err(e) => log::warn!(
+                        "  frames.bin create failed for stream {}: {}",
+                        i, e
+                    ),
+                }
+            }
         }
     }
 

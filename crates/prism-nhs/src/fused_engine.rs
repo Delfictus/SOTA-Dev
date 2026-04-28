@@ -897,7 +897,7 @@ pub struct SpikeEvent {
     pub uv_burst_active: bool,
 }
 
-/// Reason why a snapshot was captured (activity-based triggers)
+/// Reason why a snapshot was captured (activity-based or interval-based triggers)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SnapshotTrigger {
     /// Spike count exceeded threshold
@@ -912,6 +912,10 @@ pub enum SnapshotTrigger {
     TemperatureTransition,
     /// High residue RMSF (flexibility)
     ResidueFlexibility,
+    /// Periodic interval-based capture (Gate G2). Fires at the end-of-step
+    /// barrier of `step()` whenever `snapshot_interval_steps > 0` and
+    /// `timestep % snapshot_interval_steps == 0`.
+    IntervalScheduled,
 }
 
 /// Ensemble snapshot triggered by activity (not interval)
@@ -1716,6 +1720,13 @@ pub struct NhsAmberFusedEngine {
     build_uv_targets_kernel: CudaFunction,
     kde_density_peak_kernel: Option<CudaFunction>,
     burial_centroid_kernel: Option<CudaFunction>,
+
+    // Gate G2 — interval-based ensemble snapshot capture. When > 0, the
+    // end-of-step barrier in `step()` calls
+    // `capture_ensemble_snapshot_with_trigger(temp, IntervalScheduled)`
+    // every `snapshot_interval_steps` MD steps. Default 0 = disabled
+    // (existing activity-driven trigger paths still fire independently).
+    snapshot_interval_steps: u32,
 
     // Atom state buffers (float3 = 3 contiguous floats)
     d_positions: CudaSlice<f32>,
@@ -3124,6 +3135,11 @@ impl NhsAmberFusedEngine {
             neighbor_list_rebuild_interval: 20,  // Rebuild every 20 steps
             steps_since_rebuild: 0,
             use_neighbor_list,
+
+            // Gate G2 — interval-based snapshot capture; disabled by default,
+            // enabled by `set_snapshot_interval(N)` from the canonical bin
+            // when `--save-trajectory-interval N` is passed.
+            snapshot_interval_steps: 0,
 
             spike_events: Vec::new(),
             ensemble_snapshots: Vec::new(),
@@ -6178,6 +6194,23 @@ impl NhsAmberFusedEngine {
         // Update live monitor (rate-limited to ~30 FPS internally)
         self.update_live_monitor(current_temp)?;
 
+        // Gate G2 — interval-based ensemble snapshot capture. End-of-step
+        // barrier (after all inner-loop AMBER substeps + multi-LIF
+        // observation, before returning the StepResult). Coordinates are
+        // not torn because we are past the integrator's per-step write
+        // and any GPU kernel launches above have completed (the multi-LIF
+        // observation forces a stream sync earlier in this function).
+        // No-op when `snapshot_interval_steps == 0` (the default).
+        if self.snapshot_interval_steps > 0
+            && self.timestep > 0
+            && (self.timestep % self.snapshot_interval_steps as i32) == 0
+        {
+            self.capture_ensemble_snapshot_with_trigger(
+                current_temp,
+                SnapshotTrigger::IntervalScheduled,
+            )?;
+        }
+
         Ok(StepResult {
             timestep: self.timestep,
             temperature: current_temp,
@@ -6189,6 +6222,27 @@ impl NhsAmberFusedEngine {
                 None
             },
         })
+    }
+
+    /// Gate G2 — Configure interval-based ensemble snapshot capture.
+    ///
+    /// When `n > 0`, the engine's `step()` end-of-step barrier captures
+    /// an [`EnsembleSnapshot`] every `n` MD steps tagged
+    /// [`SnapshotTrigger::IntervalScheduled`]. When `n == 0` (the default),
+    /// only the existing activity-driven trigger paths fire (spike
+    /// activity, UV response, temperature transition, SASA change,
+    /// conformational change, residue flexibility).
+    ///
+    /// Wired from the canonical bin's `--save-trajectory-interval N` flag
+    /// (see `crates/prism-nhs/src/bin/nhs_rt_full.rs`).
+    pub fn set_snapshot_interval(&mut self, n: u32) {
+        self.snapshot_interval_steps = n;
+    }
+
+    /// Returns the configured interval-based snapshot capture stride
+    /// in MD steps (0 = disabled).
+    pub fn snapshot_interval(&self) -> u32 {
+        self.snapshot_interval_steps
     }
 
     /// Run N steps without any CPU-GPU synchronization (maximum throughput)

@@ -31,6 +31,7 @@ use cudarc::driver::{
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
+use std::io::Write;
 use std::sync::Arc;
 
 // ============================================================================
@@ -898,6 +899,183 @@ impl NhsGpuEngine {
     }
 }
 
+// ============================================================================
+// Gate G2 — TrajectoryWriter (binary frames.bin emit)
+// ============================================================================
+//
+// Produces a sidecar `<output>.frames.bin` alongside the existing
+// multi-model PDB ensemble trajectory (`fn write_ensemble_trajectory`
+// at `crates/prism-nhs/src/bin/nhs_rt_full.rs:14339`). The binary
+// format is designed for fast `numpy.fromfile` (or `np.memmap`)
+// loading from Python post-processing tools — the multi-model PDB
+// is human-readable / MDAnalysis-compatible but slow to parse on
+// large ensembles.
+//
+// File format (little-endian throughout):
+//
+//     bytes  0..8  : magic "PRISM4D\0"        ([u8; 8])
+//     bytes  8..12 : version                   (u32, currently 1)
+//     bytes 12..16 : n_atoms                   (u32)
+//     bytes 16..20 : save_interval             (u32; in MD steps)
+//     bytes 20..24 : dt_ps                     (f32)
+//     bytes 24..   : raw frames, [n_frames, n_atoms, 3] f32 LE
+//
+// `n_frames` is implicit from file size:
+//     n_frames = (file_size - 24) / (n_atoms * 3 * 4)
+//
+// Python loader (reference):
+//
+//     import numpy as np
+//     header_dt = np.dtype([
+//         ('magic', 'S8'), ('version', '<u4'), ('n_atoms', '<u4'),
+//         ('save_interval', '<u4'), ('dt_ps', '<f4'),
+//     ])
+//     with open("4lpk.frames.bin", "rb") as fh:
+//         hdr = np.fromfile(fh, dtype=header_dt, count=1)[0]
+//         n_atoms = int(hdr['n_atoms'])
+//         frames = np.fromfile(fh, dtype='<f4').reshape(-1, n_atoms, 3)
+
+/// Magic header for the `frames.bin` format. Pinned by
+/// [`TrajectoryWriter::write_header`] and the Python decoder reference
+/// in the module-level documentation.
+pub const FRAMES_BIN_MAGIC: [u8; 8] = *b"PRISM4D\0";
+
+/// Format version emitted by [`TrajectoryWriter`]. Bump in the same
+/// commit as any header-layout change. Consumers MUST refuse to load
+/// files whose version does not match their expected version.
+pub const FRAMES_BIN_VERSION: u32 = 1;
+
+/// Buffered writer for the binary `<output>.frames.bin` ensemble
+/// trajectory format. One writer per output stream. Writes the
+/// 24-byte header on construction; `write_frame` appends a single
+/// `[n_atoms × 3] f32 LE` frame per call. `finish` flushes the
+/// underlying [`std::io::BufWriter`].
+///
+/// # Determinism
+///
+/// Each `write_frame` call emits `n_atoms * 3 * 4` bytes — same input,
+/// same output, byte-for-byte. No timestamps in the file body, no
+/// hash. The header is stamped once at construction and immutable
+/// thereafter.
+///
+/// # Errors
+///
+/// Returns the underlying [`std::io::Error`] on any I/O failure
+/// (file-create, write, flush). The struct holds the file handle for
+/// the lifetime of the writer; `finish` flushes and closes.
+pub struct TrajectoryWriter {
+    writer: std::io::BufWriter<std::fs::File>,
+    n_atoms: u32,
+    save_interval: u32,
+    dt_ps: f32,
+    frames_written: u64,
+    expected_floats_per_frame: usize,
+}
+
+impl TrajectoryWriter {
+    /// Open `path` for writing, write the 24-byte header, and return
+    /// a writer ready to accept frames via [`Self::write_frame`].
+    ///
+    /// `n_atoms` MUST match every subsequent frame's atom count.
+    /// `save_interval` is recorded in the header for downstream tools
+    /// (Python post-processing typically needs it to recover wall-time
+    /// stride between frames). `dt_ps` is the simulator's per-step time
+    /// in picoseconds at the time of capture; for engines with adaptive
+    /// timestepping, callers SHOULD record the dt at the start of
+    /// capture and accept that downstream-time scaling assumes constant
+    /// dt over the captured window.
+    pub fn create(
+        path: impl AsRef<std::path::Path>,
+        n_atoms: u32,
+        save_interval: u32,
+        dt_ps: f32,
+    ) -> std::io::Result<Self> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        Self::write_header(&mut writer, n_atoms, save_interval, dt_ps)?;
+        Ok(Self {
+            writer,
+            n_atoms,
+            save_interval,
+            dt_ps,
+            frames_written: 0,
+            expected_floats_per_frame: (n_atoms as usize) * 3,
+        })
+    }
+
+    /// Internal: write the 24-byte header to a fresh writer. Pinned
+    /// by `tests::trajectory_writer_header_layout`.
+    fn write_header(
+        w: &mut impl std::io::Write,
+        n_atoms: u32,
+        save_interval: u32,
+        dt_ps: f32,
+    ) -> std::io::Result<()> {
+        w.write_all(&FRAMES_BIN_MAGIC)?;
+        w.write_all(&FRAMES_BIN_VERSION.to_le_bytes())?;
+        w.write_all(&n_atoms.to_le_bytes())?;
+        w.write_all(&save_interval.to_le_bytes())?;
+        w.write_all(&dt_ps.to_le_bytes())?;
+        Ok(())
+    }
+
+    /// Append a single frame's worth of atom positions. `positions`
+    /// MUST be flat `[x0, y0, z0, x1, y1, z1, …]` of length
+    /// `n_atoms * 3` — same convention as
+    /// `crate::fused_engine::EnsembleSnapshot::positions` and
+    /// `crate::input::PrismPrepTopology::positions`. Mismatched length
+    /// returns [`std::io::ErrorKind::InvalidInput`] without writing
+    /// any partial frame.
+    pub fn write_frame(&mut self, positions: &[f32]) -> std::io::Result<()> {
+        if positions.len() != self.expected_floats_per_frame {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "TrajectoryWriter expects {} floats per frame ({} atoms × 3), got {}",
+                    self.expected_floats_per_frame, self.n_atoms, positions.len()
+                ),
+            ));
+        }
+        // Per-float `to_le_bytes` write. The BufWriter batches these
+        // small writes into a single underlying syscall per fill of
+        // the 8 KB default buffer. Avoids an external bytemuck dep
+        // and is portable across endianness without ifdef.
+        for &f in positions {
+            self.writer.write_all(&f.to_le_bytes())?;
+        }
+        self.frames_written += 1;
+        Ok(())
+    }
+
+    /// Number of frames written so far (excluding the header).
+    pub fn frames_written(&self) -> u64 {
+        self.frames_written
+    }
+
+    /// Atoms-per-frame this writer expects.
+    pub fn n_atoms(&self) -> u32 {
+        self.n_atoms
+    }
+
+    /// Save interval in MD steps that the writer was constructed with.
+    pub fn save_interval(&self) -> u32 {
+        self.save_interval
+    }
+
+    /// Per-step time in picoseconds recorded in the header.
+    pub fn dt_ps(&self) -> f32 {
+        self.dt_ps
+    }
+
+    /// Flush the underlying buffer and consume the writer. Call this
+    /// at the end of the run; the file is closed when the writer is
+    /// dropped.
+    pub fn finish(mut self) -> std::io::Result<u64> {
+        self.writer.flush()?;
+        Ok(self.frames_written)
+    }
+}
+
 /// Result from processing a single frame
 #[derive(Debug, Clone)]
 pub struct FrameResult {
@@ -930,7 +1108,139 @@ impl NhsGpuEngine {
 }
 
 // ============================================================================
-// TESTS
+// TESTS — TrajectoryWriter (Gate G2). Not GPU-gated; pure I/O.
+// ============================================================================
+
+#[cfg(test)]
+mod trajectory_writer_tests {
+    use super::*;
+    use std::io::Read;
+
+    /// Build a trivial 3-atom topology: 3 atoms × 3 floats = 9 f32 = 36 bytes/frame.
+    fn synth_positions(seed: f32, n_atoms: u32) -> Vec<f32> {
+        (0..(n_atoms as usize) * 3)
+            .map(|i| seed + (i as f32) * 0.1)
+            .collect()
+    }
+
+    #[test]
+    fn header_layout_pinned() {
+        // Pin every byte of the 24-byte header against the documented
+        // schema. Any change to FRAMES_BIN_MAGIC, FRAMES_BIN_VERSION,
+        // or the field order is a schema-drift bug and will fail this
+        // test.
+        let path = std::env::temp_dir().join(format!(
+            "g2_trajectory_writer_header_{}.bin",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let writer = TrajectoryWriter::create(&path, 2467, 100, 0.004).unwrap();
+        // Drop without writing frames; just header.
+        let frames = writer.finish().unwrap();
+        assert_eq!(frames, 0);
+
+        let mut bytes = Vec::new();
+        std::fs::File::open(&path)
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert_eq!(bytes.len(), 24, "header must be exactly 24 bytes");
+        assert_eq!(&bytes[0..8], FRAMES_BIN_MAGIC.as_slice());
+        assert_eq!(&bytes[8..12], &FRAMES_BIN_VERSION.to_le_bytes());
+        assert_eq!(&bytes[12..16], &2467u32.to_le_bytes());
+        assert_eq!(&bytes[16..20], &100u32.to_le_bytes());
+        assert_eq!(&bytes[20..24], &0.004f32.to_le_bytes());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_frame_roundtrip() {
+        // Write 3 frames of a 5-atom system (15 floats per frame =
+        // 60 bytes). Verify file size, verify each frame's bytes
+        // round-trip back to the original f32 values.
+        let path = std::env::temp_dir().join(format!(
+            "g2_trajectory_writer_roundtrip_{}.bin",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let n_atoms = 5u32;
+        let mut writer = TrajectoryWriter::create(&path, n_atoms, 200, 0.002).unwrap();
+        let f0 = synth_positions(0.0, n_atoms);
+        let f1 = synth_positions(10.0, n_atoms);
+        let f2 = synth_positions(-5.5, n_atoms);
+        writer.write_frame(&f0).unwrap();
+        writer.write_frame(&f1).unwrap();
+        writer.write_frame(&f2).unwrap();
+        let frames = writer.finish().unwrap();
+        assert_eq!(frames, 3);
+
+        let bytes = std::fs::read(&path).unwrap();
+        // 24 (header) + 3 frames × 5 atoms × 3 × 4 bytes = 24 + 180 = 204
+        assert_eq!(bytes.len(), 24 + 3 * (n_atoms as usize) * 3 * 4);
+
+        // Decode each frame.
+        let frame_bytes_each = (n_atoms as usize) * 3 * 4;
+        let mut cursor = 24usize;
+        for expected in [&f0, &f1, &f2] {
+            let mut decoded = Vec::with_capacity(expected.len());
+            for i in 0..expected.len() {
+                let off = cursor + i * 4;
+                let arr = [bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]];
+                decoded.push(f32::from_le_bytes(arr));
+            }
+            assert_eq!(&decoded, expected);
+            cursor += frame_bytes_each;
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn write_frame_rejects_wrong_length() {
+        let path = std::env::temp_dir().join(format!(
+            "g2_trajectory_writer_wrong_len_{}.bin",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut writer = TrajectoryWriter::create(&path, 4, 1, 0.002).unwrap();
+        // Expect 12 floats; supply 11.
+        let bad = vec![0.0f32; 11];
+        let err = writer.write_frame(&bad).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(writer.frames_written(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn writer_introspectors_pin_constructor_args() {
+        let path = std::env::temp_dir().join(format!(
+            "g2_trajectory_writer_introspect_{}.bin",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let writer = TrajectoryWriter::create(&path, 12345, 999, 0.0040).unwrap();
+        assert_eq!(writer.n_atoms(), 12345);
+        assert_eq!(writer.save_interval(), 999);
+        assert_eq!(writer.dt_ps(), 0.0040);
+        assert_eq!(writer.frames_written(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn frames_bin_constants_pinned() {
+        // Schema-drift guard. Any change to magic / version requires
+        // updating docs/phase_bits_schema.md (no, wrong doc) — actually
+        // requires updating the format-decoder reference in the
+        // module-level docstring of the TrajectoryWriter region, plus
+        // the Python loader pseudocode there.
+        assert_eq!(FRAMES_BIN_MAGIC, *b"PRISM4D\0");
+        assert_eq!(FRAMES_BIN_VERSION, 1);
+    }
+}
+
+// ============================================================================
+// TESTS — GPU engine (require GPU; ignored in CI)
 // ============================================================================
 
 #[cfg(all(test, feature = "gpu"))]
