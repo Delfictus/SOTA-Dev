@@ -680,6 +680,22 @@ def prepare_topology(
         })
     output["residues"] = residue_metadata
 
+    # Gate G4 — Build residue → [atom_indices] inverse mapping.
+    # `residue_ids` (constructed above as the per-atom array of residue
+    # indices) is the atom→residue map; this is its inverse: per-residue,
+    # the list of atom indices that belong to that residue. Trivially
+    # derivable but emitted explicitly so the Python bridge / trajectory
+    # post-processing can consume it without per-atom scan.
+    #
+    # JSON object keys are strings; consumer parses back to int.
+    residue_to_atom_indices = {}
+    for atom_idx, ridx in enumerate(residue_ids):
+        residue_to_atom_indices.setdefault(int(ridx), []).append(atom_idx)
+    output["residue_to_atom_indices"] = {
+        str(k): residue_to_atom_indices[k]
+        for k in sorted(residue_to_atom_indices.keys())
+    }
+
     # Detect aromatic targets for UV pump (Cryo-UV pipeline)
     aromatic_targets = detect_aromatic_targets(
         atom_names, residue_names, residue_ids, pos_flat, verbose
@@ -693,6 +709,27 @@ def prepare_topology(
 
     with open(output_path, 'w') as f:
         json.dump(output, f)  # No indent for smaller file size
+
+    # Gate G2 sidecar — atom_to_residue.json. Per-atom residue index
+    # array, written as a separate sidecar so trajectory post-processing
+    # (which reads frames.bin from gpu.rs's TrajectoryWriter) does not
+    # need to load the full topology JSON to map atom indices back to
+    # residues. Identical to topology.residue_ids but in its own file
+    # for cheap-load access.
+    atom_to_residue_path = str(output_path).replace('.topology.json', '.atom_to_residue.json')
+    if atom_to_residue_path == str(output_path):
+        atom_to_residue_path = str(output_path) + '.atom_to_residue.json'
+    atom_to_residue_doc = {
+        "schema_version": "1.0.0",
+        "source_topology": str(output_path),
+        "n_atoms": n_atoms,
+        "n_residues": len(set(residue_ids)),
+        "atom_to_residue": [int(r) for r in residue_ids],
+    }
+    with open(atom_to_residue_path, 'w') as f:
+        json.dump(atom_to_residue_doc, f)
+    if verbose:
+        print(f"  wrote {atom_to_residue_path}")
 
     # Write standalone residue_map.json alongside topology
     residue_map_path = str(output_path).replace('.topology.json', '.residue_map.json')

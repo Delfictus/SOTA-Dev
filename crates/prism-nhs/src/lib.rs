@@ -170,6 +170,11 @@ pub mod entangled_manifold;
 /// and the supporting identity newtypes. See module docs for the
 /// per-site / frame-level / 8-slot-projection layering.
 pub mod site_manifest;
+/// Gate G3 — `phase_bits: u32` (per-spike Arrow column) layout decoder.
+/// Documents and decodes the bit-packed CCNS phase information emitted
+/// per-spike. Layout: bits 0–9 = 10-bit CCNS phase index (0–1023);
+/// bits 10–31 = reserved/unused. Schema doc: `docs/phase_bits_schema.md`.
+pub mod phase_bits;
 /// M1.1 — `SpikeToCluster4D` transform type-definitions:
 /// [`spike_to_cluster_4d::SpikeToCluster4DInput`],
 /// [`spike_to_cluster_4d::SpikeToCluster4DOutput`],
