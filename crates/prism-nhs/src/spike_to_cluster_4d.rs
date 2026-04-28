@@ -71,6 +71,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::entangled_manifold::{Aabb, EntangledManifold};
+use crate::transform::{LawFamily, LawId, TransformId};
 
 // ============================================================================
 // Input — borrowed shape for SpikeToCluster4D::apply (M1.2)
@@ -261,6 +262,258 @@ pub struct ManifoldViewAabbFfi {
     pub frame: u32,
 }
 
+// ============================================================================
+// M1.2.1 — AuditedTransform identity, FFI extern surface, accessor exports
+// ============================================================================
+
+/// Stable identity for the M1 producer transform. Appears in every
+/// audit record and every violation emitted by the M1 lane's
+/// `AuditedTransform::verify` impl. The transform impl lands in a
+/// subsequent M1.2.x commit alongside the real CUDA kernel.
+pub const TRANSFORM_M1_SPIKE_TO_CLUSTER_4D: TransformId =
+    TransformId("m1_spike_to_cluster_4d");
+
+/// M1 algebraic conservation-of-mass law:
+///
+/// ```text
+///     total_attributed + background_count == total_input_spikes
+/// ```
+///
+/// Family A (Algebraic local). Routed `AuditRouting::Abort` on
+/// violation: a conservation failure indicates engine-wide accounting
+/// corruption and the run dies before any downstream consumer sees
+/// the corrupted manifold.
+pub const LAW_M1_CONSERVATION_OF_MASS: LawId =
+    LawId::new("m1_conservation_of_mass", LawFamily::Algebraic);
+
+/// Full declared law set for the M1 producer transform.
+pub const DECLARED_LAWS_M1: &[LawId] = &[LAW_M1_CONSERVATION_OF_MASS];
+
+/// M1 producer transform — the on-device counterpart to the legacy
+/// post-MD `clustering_to_clustered_sites::ClusteringToClusteredSites`.
+///
+/// Zero-sized singleton. State-free — all governance lives in the
+/// future `AuditedTransform` trait impl (lands in a subsequent M1.2.x
+/// commit alongside the real CUDA kernel; at M1.2.1 this struct is
+/// the type-only scaffold that downstream-facing code can already
+/// name in signatures).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpikeToCluster4D;
+
+impl SpikeToCluster4D {
+    /// Construct the singleton.
+    pub const fn new() -> Self {
+        SpikeToCluster4D
+    }
+}
+
+// ============================================================================
+// FFI: extern "C" declarations bound to the static archive built from
+// crates/prism-nhs/src/cuda/spike_to_cluster_4d.cu (see build.rs's
+// `compile_to_static_archive` call).
+//
+// At M1.2.1 only the link probe is real. `prism_m1_spike_to_cluster_4d_run`
+// is declared with its full signature so the symbol shape is locked in
+// from day one (changing the signature later would force the static
+// archive to be re-built and the linker to re-resolve every callsite).
+// The C-side stub returns cudaSuccess immediately without launching
+// kernels.
+// ============================================================================
+
+#[cfg(feature = "gpu")]
+#[allow(dead_code)] // The full extern "C" surface is declared at M1.2.1
+                    // (foundation) but only the link-probe symbol is
+                    // currently consumed. The remaining symbols are used
+                    // by the AuditedTransform::apply impl that lands in a
+                    // subsequent M1.2.x commit. Declaring them here locks
+                    // the symbol shape from day one so the static archive
+                    // does not need to be re-built / re-resolved later.
+mod ffi {
+    use super::Aabb;
+
+    /// FFI mirror of `crate::cuda::spike_to_cluster_4d::SpatialHashParams`
+    /// per the C++ side `.cuh`. Layout is `#[repr(C)]` and matches
+    /// byte-for-byte. The C++ side has a `static_assert` on `sizeof(Aabb)`;
+    /// the Rust side has a `mem::size_of::<...>()` test in the unit test
+    /// module that pins the layout.
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct SpatialHashParams {
+        pub bbox_min: [f32; 3],
+        pub bbox_max: [f32; 3],
+        pub cell_size: f32,
+        pub grid_dim: [i32; 3],
+        pub num_cells: u32,
+    }
+
+    /// `cudaError_t` opaque alias for the FFI return type. The full
+    /// CUDA runtime type is `int32_t` in the ABI; cudarc exposes
+    /// richer wrappers. M1.2.1 uses the raw int32 form because the
+    /// safe wrapper that converts it lands in the same M1.2.x commit
+    /// as the real `apply` impl.
+    pub type CudaError = i32;
+    pub const CUDA_SUCCESS: CudaError = 0;
+
+    extern "C" {
+        /// Link-probe function. Returns `0xC0FFEE`. Used by the
+        /// `link_probe_returns_sentinel` unit test to confirm the
+        /// static archive linked correctly and the FFI ABI is
+        /// round-tripping.
+        pub fn prism_m1_link_probe() -> u32;
+
+        /// Run the M1 producer kernel sequence on the given stream.
+        /// At M1.2.1 the C-side body is a stub returning
+        /// `cudaSuccess` without launching any kernels. The full
+        /// signature is locked here so subsequent M1.2.x commits
+        /// fill in the body without changing the symbol shape.
+        ///
+        /// Safety: every pointer must be valid for the lifetime of
+        /// the call; `stream` is a valid `cudaStream_t` (or 0 for
+        /// the default stream — though the M1.2 contract §4c
+        /// forbids default-stream launches once the body lands).
+        pub fn prism_m1_spike_to_cluster_4d_run(
+            d_spike_positions: *const f32,
+            num_spikes: u32,
+            h_params: *const SpatialHashParams,
+            stream: usize, // cudaStream_t is typedef'd to a pointer
+            d_cluster_id_per_spike: *mut u32,
+            d_per_cluster_count: *mut u64,
+            d_total_attributed_scalar: *mut u64,
+            d_background_count_scalar: *mut u64,
+            d_per_cluster_aabb: *mut Aabb,
+            num_clusters: u32,
+        ) -> CudaError;
+    }
+}
+
+/// Safe Rust wrapper around the FFI link-probe function. Returns
+/// the sentinel value the C-side `prism_m1_link_probe` returns; tests
+/// pin this at `0xC0FFEE`. Confirms (a) the static archive linked
+/// correctly, (b) the FFI ABI is round-tripping, (c) the `gpu`
+/// feature is enabled (this function does not exist otherwise).
+#[cfg(feature = "gpu")]
+pub fn link_probe() -> u32 {
+    // SAFETY: the FFI function is a pure value-returning probe; no
+    // pointer arguments, no global mutable state, no allocations.
+    // Calling it from any thread, in any context, is safe.
+    unsafe { ffi::prism_m1_link_probe() }
+}
+
+// ============================================================================
+// extern "C" accessors for steering subsystem (post-M1) consumption
+// ============================================================================
+//
+// Per blueprint §M9 (Mandate #8) FFI surface clause, the steering
+// subsystem consumes per-view AABBs through three named extern-C
+// accessors. Per-view discrimination at the FFI symbol-name level;
+// the underlying Rust-side `Aabb` stays a pure POD geometric type for
+// direct LBVH consumption.
+//
+// These are pure-Rust accessors that read from a Rust-owned
+// `EntangledManifold`. They have no CUDA dependency and are available
+// regardless of the `gpu` feature flag.
+//
+// Frame width: every accessor narrows the engine-side `FrameIndex = u64`
+// to `u32` at the boundary. The narrowing is safe by construction —
+// at typical 4 fs MD step sizes, `u32::MAX` ≈ 4.29 × 10⁹ steps
+// corresponds to ≈ 17.16 μs of simulated time, several orders of
+// magnitude above any single PRISM run (typical horizon: tens to
+// hundreds of nanoseconds). `try_into().unwrap_or(u32::MAX)` is used
+// rather than `as u32` so an overflow surfaces as the `u32::MAX`
+// sentinel rather than wrapping silently to a small value that
+// would alias an early frame.
+
+/// Return code: success.
+pub const PRISM_AABB_OK: i32 = 0;
+/// Return code: a required pointer argument was null.
+pub const PRISM_AABB_ERR_NULL_POINTER: i32 = -1;
+
+/// Internal helper — narrow a `u64` frame to `u32` with overflow
+/// surfaced as `u32::MAX` rather than silently wrapping.
+#[inline]
+fn frame_u64_to_u32_narrow(f: u64) -> u32 {
+    // FRAME WIDTH DOWNCAST (per blueprint §M9 / Mandate #8):
+    // engine carries FrameIndex = u64; FFI exposes u32. Safe by
+    // construction: at typical 4 fs MD step sizes, u32::MAX = 4.29e9
+    // steps = 1.72e4 ns = 17.16 us simulated time, several orders
+    // of magnitude above any single PRISM run. `try_into` returns
+    // Err on overflow; we map that to u32::MAX as the documented
+    // overflow sentinel rather than wrapping silently to a
+    // small-frame alias. This is intentional narrowing, not a bug.
+    u32::try_from(f).unwrap_or(u32::MAX)
+}
+
+/// Read the `CausalDriverView` AABB + provenance from an
+/// `EntangledManifold` owned by the caller, projecting it into a
+/// `ManifoldViewAabbFfi` on the supplied output pointer.
+///
+/// # Safety
+///
+/// `manifold` must point to a valid `EntangledManifold` for the
+/// duration of the call. `out` must point to writable memory of at
+/// least `size_of::<ManifoldViewAabbFfi>()` bytes, properly aligned.
+/// Returns `PRISM_AABB_OK` on success, `PRISM_AABB_ERR_NULL_POINTER`
+/// if either pointer is null.
+#[no_mangle]
+pub unsafe extern "C" fn prism_get_causal_driver_aabb(
+    manifold: *const EntangledManifold,
+    out: *mut ManifoldViewAabbFfi,
+) -> i32 {
+    if manifold.is_null() || out.is_null() {
+        return PRISM_AABB_ERR_NULL_POINTER;
+    }
+    let m = &*manifold;
+    let view = m.driver.data();
+    *out = ManifoldViewAabbFfi {
+        aabb: view.aabb,
+        support_count: view.support.len() as u32,
+        frame: frame_u64_to_u32_narrow(view.provenance.frame),
+    };
+    PRISM_AABB_OK
+}
+
+/// Read the `LiningContactView` AABB + provenance from an
+/// `EntangledManifold`. See [`prism_get_causal_driver_aabb`] for
+/// the full safety contract.
+#[no_mangle]
+pub unsafe extern "C" fn prism_get_lining_contact_aabb(
+    manifold: *const EntangledManifold,
+    out: *mut ManifoldViewAabbFfi,
+) -> i32 {
+    if manifold.is_null() || out.is_null() {
+        return PRISM_AABB_ERR_NULL_POINTER;
+    }
+    let m = &*manifold;
+    let view = m.lining.data();
+    *out = ManifoldViewAabbFfi {
+        aabb: view.aabb,
+        support_count: view.support.len() as u32,
+        frame: frame_u64_to_u32_narrow(view.provenance.frame),
+    };
+    PRISM_AABB_OK
+}
+
+/// Read the `LocalizedSubclusterView` AABB + provenance from an
+/// `EntangledManifold`. See [`prism_get_causal_driver_aabb`] for
+/// the full safety contract.
+#[no_mangle]
+pub unsafe extern "C" fn prism_get_localized_subcluster_aabb(
+    manifold: *const EntangledManifold,
+    out: *mut ManifoldViewAabbFfi,
+) -> i32 {
+    if manifold.is_null() || out.is_null() {
+        return PRISM_AABB_ERR_NULL_POINTER;
+    }
+    let m = &*manifold;
+    let view = m.localized.data();
+    *out = ManifoldViewAabbFfi {
+        aabb: view.aabb,
+        support_count: view.support.len() as u32,
+        frame: frame_u64_to_u32_narrow(view.provenance.frame),
+    };
+    PRISM_AABB_OK
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +591,197 @@ mod tests {
         // steering kernel's C-side struct definition must agree.
         assert_eq!(std::mem::size_of::<ManifoldViewAabbFfi>(), 32);
         assert_eq!(std::mem::align_of::<ManifoldViewAabbFfi>(), 4);
+    }
+
+    // ========================================================================
+    // M1.2.1: extern "C" accessor + frame-width-narrowing tests
+    // ========================================================================
+
+    use crate::entangled_manifold::{
+        CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
+        LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy,
+        ViewProvenance,
+    };
+
+    #[allow(deprecated)]
+    fn provenance(frame: u64) -> ViewProvenance {
+        ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: 3 },
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame,
+        }
+    }
+
+    fn build_manifold(frame: u64) -> EntangledManifold {
+        let coords = vec![[0.0f32; 3]; 8];
+        let driver = CausalDriverView::new(
+            &coords,
+            vec![0, 1],
+            vec![10.0, 9.0],
+            provenance(frame),
+        )
+        .unwrap();
+        let lining = LiningContactView::new(
+            &coords,
+            vec![2, 3, 4],
+            vec![5.0, 4.0, 3.0],
+            provenance(frame),
+        )
+        .unwrap();
+        let localized = LocalizedSubclusterView::new(
+            &coords,
+            vec![5],
+            vec![1.0],
+            provenance(frame),
+        )
+        .unwrap();
+        EntangledManifold::new(driver, lining, localized).unwrap()
+    }
+
+    #[test]
+    fn frame_width_narrow_u64_to_u32_below_limit_is_identity() {
+        // Per-§M9 headroom calculation: at 4 fs/step, u32::MAX
+        // corresponds to ~17.16 us simulated time, vastly above any
+        // single PRISM run. For any realistic frame value the narrow
+        // is identity.
+        for f in [0u64, 1, 100, 4_000_000_000, u32::MAX as u64] {
+            assert_eq!(super::frame_u64_to_u32_narrow(f), f as u32);
+        }
+    }
+
+    #[test]
+    fn frame_width_narrow_overflow_yields_u32_max_sentinel() {
+        // Beyond u32::MAX, the documented overflow sentinel is
+        // u32::MAX rather than a silently-wrapped small value that
+        // would alias an early frame.
+        let beyond = (u32::MAX as u64) + 1;
+        assert_eq!(super::frame_u64_to_u32_narrow(beyond), u32::MAX);
+        assert_eq!(super::frame_u64_to_u32_narrow(u64::MAX), u32::MAX);
+    }
+
+    #[test]
+    fn prism_get_causal_driver_aabb_reads_from_manifold() {
+        let m = build_manifold(7);
+        let mut out = ManifoldViewAabbFfi {
+            aabb: Aabb { min: [-1.0; 3], max: [-1.0; 3] },
+            support_count: 999,
+            frame: 999,
+        };
+        let rc = unsafe {
+            super::prism_get_causal_driver_aabb(&m as *const _, &mut out as *mut _)
+        };
+        assert_eq!(rc, super::PRISM_AABB_OK);
+        assert_eq!(out.support_count, 2);   // driver: 2 residues
+        assert_eq!(out.frame, 7);
+    }
+
+    #[test]
+    fn prism_get_lining_contact_aabb_reads_from_manifold() {
+        let m = build_manifold(7);
+        let mut out = ManifoldViewAabbFfi {
+            aabb: Aabb { min: [-1.0; 3], max: [-1.0; 3] },
+            support_count: 999,
+            frame: 999,
+        };
+        let rc = unsafe {
+            super::prism_get_lining_contact_aabb(&m as *const _, &mut out as *mut _)
+        };
+        assert_eq!(rc, super::PRISM_AABB_OK);
+        assert_eq!(out.support_count, 3);   // lining: 3 residues
+        assert_eq!(out.frame, 7);
+    }
+
+    #[test]
+    fn prism_get_localized_subcluster_aabb_reads_from_manifold() {
+        let m = build_manifold(7);
+        let mut out = ManifoldViewAabbFfi {
+            aabb: Aabb { min: [-1.0; 3], max: [-1.0; 3] },
+            support_count: 999,
+            frame: 999,
+        };
+        let rc = unsafe {
+            super::prism_get_localized_subcluster_aabb(&m as *const _, &mut out as *mut _)
+        };
+        assert_eq!(rc, super::PRISM_AABB_OK);
+        assert_eq!(out.support_count, 1);   // localized: 1 residue
+        assert_eq!(out.frame, 7);
+    }
+
+    #[test]
+    fn prism_get_aabb_accessors_reject_null_pointers() {
+        let m = build_manifold(7);
+        let mut out = ManifoldViewAabbFfi {
+            aabb: Aabb { min: [0.0; 3], max: [0.0; 3] },
+            support_count: 0,
+            frame: 0,
+        };
+        // Null manifold → error code, no write to out.
+        unsafe {
+            assert_eq!(
+                super::prism_get_causal_driver_aabb(std::ptr::null(), &mut out),
+                super::PRISM_AABB_ERR_NULL_POINTER
+            );
+            assert_eq!(
+                super::prism_get_lining_contact_aabb(std::ptr::null(), &mut out),
+                super::PRISM_AABB_ERR_NULL_POINTER
+            );
+            assert_eq!(
+                super::prism_get_localized_subcluster_aabb(std::ptr::null(), &mut out),
+                super::PRISM_AABB_ERR_NULL_POINTER
+            );
+            // Null out → error code on a valid manifold.
+            assert_eq!(
+                super::prism_get_causal_driver_aabb(&m, std::ptr::null_mut()),
+                super::PRISM_AABB_ERR_NULL_POINTER
+            );
+        }
+    }
+
+    #[test]
+    fn prism_get_aabb_accessors_narrow_overflowing_frame_to_u32_max() {
+        // M1.2.1 contract: frame > u32::MAX is narrowed to u32::MAX
+        // rather than wrapping. Build a manifold at frame = u32::MAX + 1
+        // and verify all three accessors return u32::MAX.
+        let f: u64 = (u32::MAX as u64) + 1;
+        let m = build_manifold(f);
+        let mut out = ManifoldViewAabbFfi {
+            aabb: Aabb { min: [0.0; 3], max: [0.0; 3] },
+            support_count: 0,
+            frame: 0,
+        };
+        unsafe {
+            super::prism_get_causal_driver_aabb(&m, &mut out);
+        }
+        assert_eq!(out.frame, u32::MAX);
+        unsafe {
+            super::prism_get_lining_contact_aabb(&m, &mut out);
+        }
+        assert_eq!(out.frame, u32::MAX);
+        unsafe {
+            super::prism_get_localized_subcluster_aabb(&m, &mut out);
+        }
+        assert_eq!(out.frame, u32::MAX);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn link_probe_returns_sentinel() {
+        // Confirms the static archive built from
+        // crates/prism-nhs/src/cuda/spike_to_cluster_4d.cu linked
+        // correctly and the FFI ABI is round-tripping. Sentinel
+        // pinned at 0xC0FFEE on the C++ side.
+        assert_eq!(super::link_probe(), 0x00C0_FFEE);
+    }
+
+    #[test]
+    fn law_m1_conservation_of_mass_identity_is_pinned() {
+        assert_eq!(LAW_M1_CONSERVATION_OF_MASS.key, "m1_conservation_of_mass");
+        assert_eq!(LAW_M1_CONSERVATION_OF_MASS.family, LawFamily::Algebraic);
+    }
+
+    #[test]
+    fn transform_id_is_pinned() {
+        assert_eq!(TRANSFORM_M1_SPIKE_TO_CLUSTER_4D.0, "m1_spike_to_cluster_4d");
     }
 }
