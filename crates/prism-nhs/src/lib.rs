@@ -164,6 +164,19 @@ pub mod causome;
 /// the on-device producer (`SpikeToCluster4D`, M1) and CUDA / FFI
 /// shims land in subsequent commits.
 pub mod entangled_manifold;
+/// M1.1 — Per-site canonical container types: [`site_manifest::SiteManifest`],
+/// [`site_manifest::CentroidManifold`] (8-slot, named-accessor-only),
+/// [`site_manifest::Centroid3D`] (4D-aware), [`site_manifest::CausalScalars`],
+/// and the supporting identity newtypes. See module docs for the
+/// per-site / frame-level / 8-slot-projection layering.
+pub mod site_manifest;
+/// M1.1 — `SpikeToCluster4D` transform type-definitions:
+/// [`spike_to_cluster_4d::SpikeToCluster4DInput`],
+/// [`spike_to_cluster_4d::SpikeToCluster4DOutput`],
+/// [`spike_to_cluster_4d::ConservationScalars`] (Family-A audit payload),
+/// [`spike_to_cluster_4d::ManifoldViewAabbFfi`] (`#[repr(C)]` FFI sibling).
+/// FFI extern declarations and the `AuditedTransform` impl land in M1.2.
+pub mod spike_to_cluster_4d;
 #[cfg(feature = "gpu")]
 pub mod spike_density;
 #[cfg(feature = "gpu")]

@@ -176,6 +176,12 @@ impl SpatialView {
 /// [`CentroidManifold::with_geometric_voxel_mass`] is the canonical
 /// constructor because every site produced by the clustering path has
 /// a geometric-voxel-mass centroid by construction.
+#[deprecated(
+    since = "M1.1",
+    note = "Use the new 8-slot CentroidManifold in crate::site_manifest. \
+            Migration of persistent_engine.rs callsites is POST-M1 per COMMIT B's \
+            deferred deprecation."
+)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CentroidManifold {
     /// See [`SpatialView::GeometricVoxelMass`].
@@ -196,6 +202,11 @@ pub struct CentroidManifold {
     pub burst_motion: Option<[f32; 3]>,
 }
 
+#[allow(deprecated)] // CentroidManifold is itself #[deprecated] as of M1.1; the
+                     // legacy callsites in persistent_engine.rs:159, :2740 still
+                     // compile against this impl with deprecation warnings, by
+                     // design. POST-M1 steering lane migrates them to the new
+                     // crate::site_manifest::CentroidManifold.
 impl CentroidManifold {
     /// Construct a manifold with every view `None`.
     ///
@@ -323,6 +334,11 @@ impl CentroidManifold {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // these tests exercise the legacy CentroidManifold which
+                     // is #[deprecated] as of M1.1; tests are retained
+                     // (per M1.1 hard constraint that all 12 entangled_manifold
+                     // tests pass and that the legacy type stays functional)
+                     // until POST-M1 callsite migration retires the type.
 mod tests {
     use super::*;
 

@@ -131,6 +131,15 @@ pub enum SelectionPolicy {
 ///
 /// Per blueprint **M6**, every sort site MUST use a named, deterministic
 /// tie-breaker so Morton codes are stable across runs.
+///
+/// # Deprecation status (M1.1)
+///
+/// Both variants are `#[deprecated]` as of M1.1 in favor of the new
+/// [`IdentityTieBreaker::ChainResidAtom`] variant carried on
+/// [`CausalSortKey`]. The variants are retained (not removed) so that
+/// existing producer paths and the 12 unit tests in this module
+/// continue to compile and pass; their removal is staged for the
+/// POST-M3 cleanup lane. New code MUST use [`IdentityTieBreaker`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TieBreakerPolicy {
@@ -138,6 +147,10 @@ pub enum TieBreakerPolicy {
     /// (ascending). This is the default policy for all single-chain
     /// targets and any merged-topology target whose engine residue
     /// ids are globally unique.
+    #[deprecated(
+        since = "M1.1",
+        note = "use IdentityTieBreaker::ChainResidAtom; legacy variants will be removed in POST-M3"
+    )]
     CausalThenResid,
     /// Primary: signal value (descending). Secondary: residue id
     /// (ascending). Tertiary: chain id (ascending). For multichain
@@ -145,17 +158,221 @@ pub enum TieBreakerPolicy {
     /// Implementations MAY treat this as identical to
     /// [`Self::CausalThenResid`] when the topology has no chain
     /// information.
+    #[deprecated(
+        since = "M1.1",
+        note = "use IdentityTieBreaker::ChainResidAtom; legacy variants will be removed in POST-M3"
+    )]
     CausalThenResidThenChain,
 }
 
 impl TieBreakerPolicy {
     /// Stable snake_case identifier for provenance / JSON labels.
     /// Pinned by the `deterministic_tie_breaker_policy_label_is_stable` unit test.
+    #[allow(deprecated)] // legacy variants are retained for backward compat in M1.1
     pub fn as_str(&self) -> &'static str {
         match self {
             TieBreakerPolicy::CausalThenResid => "causal_then_resid",
             TieBreakerPolicy::CausalThenResidThenChain => "causal_then_resid_then_chain",
         }
+    }
+}
+
+// ============================================================================
+// M1.1: Role-aware composite causal sort infrastructure
+// ============================================================================
+//
+// Per the M1 execution contract §6 and the §6.A architectural
+// constraint: the sort fields available to manifold-view constructors
+// are encoded as a strict enum. The compiler enforces the
+// anti-legacy-centroid rule (blueprint §M2) by the *absence* of any
+// spatial-distance variant — there is no `MinDistanceToCentroid`,
+// `LegacyCentroidProximity`, or geometric-jitter variant, so callsites
+// cannot select one even by mistake.
+//
+// At M1, only `SpikeAttributionCount` carries honest values across the
+// support set. The four causal floating-point fields
+// (`KccScore`, `TransferEntropy`, `CausalLag`, `CausalDg`) are
+// initialized to `f64::NAN` by the M1 producer; they become honest as
+// M2 / M3 land. The progressive-population semantics
+// (see [`CausalSortKey`]) walk the priority list and select the first
+// field where ALL residues in the support set have non-NaN values, so
+// the NaN sentinel doubles as the activation gate for higher-priority
+// sort fields. No code change is required to "turn on" causal sorting
+// later — the data becoming honest is the activation mechanism.
+
+/// Strictly typed enumeration of authoritative sort fields available
+/// to manifold-view constructors.
+///
+/// Per the M1 contract §6.A:
+///
+/// > The valid sort fields are encoded as an enum with variants for
+/// > each information-theoretic, kinematic, and thermodynamic signal
+/// > the engine produces. The enum MUST NOT contain a variant for
+/// > spatial distance to the legacy scalar centroid. There is no
+/// > `MinDistanceToCentroid` variant. The compiler enforces the
+/// > anti-legacy-centroid rule (blueprint §M2) by the absence of this
+/// > variant.
+///
+/// Adding a geometric / spatial-distance variant to this enum is a
+/// blueprint §M2 violation and a M1 §3.2 HALT condition. The CI
+/// grep gate `scripts/sort_field_grep.sh` (M1.x) will flag any
+/// addition that matches the forbidden patterns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortField {
+    /// Directed transfer entropy magnitude. Honest as of M3; NaN at
+    /// M1 / M2.
+    TransferEntropy,
+    /// KCC (kinetic-causal contribution) score per residue. Honest as
+    /// of M2; NaN at M1.
+    KccScore,
+    /// Causal lag (peak-correlation lag in time units). Honest as of
+    /// M3; NaN at M1 / M2.
+    CausalLag,
+    /// Causal Δ-G (Gibbs-style energy contribution). Honest as of M3;
+    /// NaN at M1 / M2.
+    CausalDg,
+    /// Count of spike events for which this residue is in the
+    /// attributed support set. The only sort field with honest values
+    /// across the support set at M1.
+    SpikeAttributionCount,
+    // [Extensibility hooks for M3+ are intentionally NOT present at
+    //  M1.1 — adding a variant is a deliberate API change that the
+    //  CI grep gate must inspect for blueprint §M2 conformance.
+    //  Candidates listed in the M1 contract §6.A but not yet wired:
+    //  LbvhAabbDensity, MortonLocality, KccConfidence.]
+}
+
+impl SortField {
+    /// Stable snake_case identifier for provenance / JSON labels.
+    /// Pinned by the `sort_field_label_is_stable` unit test.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SortField::TransferEntropy => "transfer_entropy",
+            SortField::KccScore => "kcc_score",
+            SortField::CausalLag => "causal_lag",
+            SortField::CausalDg => "causal_dg",
+            SortField::SpikeAttributionCount => "spike_attribution_count",
+        }
+    }
+}
+
+/// Stable identity tie-breaker policy for residue-level sorts.
+///
+/// Per the M1 contract B1 §3 binding spec, the canonical tuple
+/// ordering is `(chain_id, residue_id, atom_index)` — three fields,
+/// not two. At residue-level sort (where [`CausalSortKey`] operates
+/// in the manifold-view constructors that land in M1.3),
+/// `atom_index` is unused but the type still encodes it for
+/// consistency with spike-level sort paths that will use it.
+///
+/// Geometric or floating-point tie-breakers are forbidden by type:
+/// no `Geometric*` or `Distance*` variant exists, so a sort site
+/// cannot select one even by mistake. This is the M1 §3.2 HALT
+/// predicate's compile-time enforcement layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentityTieBreaker {
+    /// Tuple ordering `(chain_id, residue_id, atom_index)` ascending.
+    /// The "Atom" in the variant name refers to `atom_index` in the
+    /// tuple; the variant name encodes the resolution policy, the
+    /// actual tuple comparison happens inside the sort
+    /// implementation that lands in M1.3.
+    ChainResidAtom,
+}
+
+impl IdentityTieBreaker {
+    /// Stable snake_case identifier for provenance / JSON labels.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IdentityTieBreaker::ChainResidAtom => "chain_resid_atom",
+        }
+    }
+}
+
+/// Sort priority specification for a manifold-view's residue ordering.
+///
+/// Per the M1 contract §6.B, each role-typed view
+/// (`CausalDriverView`, `LiningContactView`,
+/// `LocalizedSubclusterView`) has its own role-specific priority list.
+/// At construction time (M1.3), the sort algorithm walks
+/// [`Self::priorities`] in order and selects the first field where
+/// ALL residues in the support set have honest (non-NaN) values;
+/// subsequent fields resolve nothing. [`Self::identity_tiebreaker`]
+/// is the always-applied final tie-breaker.
+///
+/// # Progressive population at M1 / M2 / M3
+///
+/// At M1, only [`SortField::SpikeAttributionCount`] carries honest
+/// values across the support set; every higher-priority field is
+/// initialized to `f64::NAN` by the producer. The walk falls through
+/// to `SpikeAttributionCount`. As M2 fills `KccScore` and M3 fills
+/// `TransferEntropy` / `CausalLag` / `CausalDg`, the same priority
+/// list automatically upgrades — the data becoming honest is the
+/// activation mechanism. No constructor signature changes between
+/// lanes.
+///
+/// # Multi-objective extensibility (post-M1)
+///
+/// The M1.1 shape is "ordered priority list, walk-and-pick-first."
+/// The M1 contract §6.F requires this design to be extensible to
+/// multi-objective scoring (linear combinations or learned
+/// weightings of multiple fields) for the future 2+2+2+2 graph and
+/// Manifold-Aware Ranker work. M1 ships with priority-list ordering
+/// only; the type architecture allows a future
+/// `weights: Option<Vec<f32>>` field or a richer policy enum to be
+/// added additively without breaking constructors. M1.1 does not
+/// pre-design that field — adding it later is one ALTER, not a
+/// retroactive refactor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CausalSortKey {
+    /// Ordered priority list. Sort uses the first field where every
+    /// residue's value is non-NaN; subsequent fields are unused.
+    pub priorities: Vec<SortField>,
+    /// Stable identity tie-breaker policy. Always applied as the
+    /// final resort. Geometric / floating-point tie-breakers are
+    /// forbidden by type (see [`IdentityTieBreaker`]).
+    pub identity_tiebreaker: IdentityTieBreaker,
+}
+
+impl CausalSortKey {
+    /// Construct a sort key with an explicit priority list and the
+    /// canonical [`IdentityTieBreaker::ChainResidAtom`] tie-breaker.
+    pub fn new(priorities: Vec<SortField>) -> Self {
+        Self {
+            priorities,
+            identity_tiebreaker: IdentityTieBreaker::ChainResidAtom,
+        }
+    }
+
+    /// Default priority list for `CausalDriverView` per M1 contract
+    /// §6.B: information-theoretic and kinematic signals dominate;
+    /// spike-attribution count is the M1 fallback.
+    pub fn driver_default() -> Self {
+        Self::new(vec![
+            SortField::TransferEntropy,
+            SortField::KccScore,
+            SortField::CausalLag,
+            SortField::SpikeAttributionCount,
+        ])
+    }
+
+    /// Default priority list for `LiningContactView` per M1 contract
+    /// §6.B: spike-attribution count (mass anchor) leads, then
+    /// energy-transfer-flavored fields.
+    pub fn lining_default() -> Self {
+        Self::new(vec![
+            SortField::SpikeAttributionCount,
+            SortField::CausalDg,
+            SortField::KccScore,
+        ])
+    }
+
+    /// Default priority list for `LocalizedSubclusterView` per M1
+    /// contract §6.B: operator-specifiable per construction; the
+    /// blueprint default falls through to driver priority.
+    pub fn localized_default() -> Self {
+        Self::driver_default()
     }
 }
 
@@ -577,6 +794,9 @@ impl std::fmt::Display for ManifoldFrameMismatch {
 impl std::error::Error for ManifoldFrameMismatch {}
 
 #[cfg(test)]
+#[allow(deprecated)] // existing tests reference the deprecated TieBreakerPolicy
+                     // variants; deprecation warnings are expected per M1.1
+                     // contract, the variants stay alive until POST-M3 cleanup.
 mod tests {
     use super::*;
 
@@ -757,5 +977,112 @@ mod tests {
                 s
             );
         }
+    }
+
+    // ========================================================================
+    // M1.1 — role-aware composite causal sort infrastructure tests
+    // ========================================================================
+
+    #[test]
+    fn sort_field_label_is_stable() {
+        // M3 / M6 audit: the SortField name is part of provenance and
+        // appears in JSON. Pin the exact strings.
+        assert_eq!(SortField::TransferEntropy.as_str(), "transfer_entropy");
+        assert_eq!(SortField::KccScore.as_str(), "kcc_score");
+        assert_eq!(SortField::CausalLag.as_str(), "causal_lag");
+        assert_eq!(SortField::CausalDg.as_str(), "causal_dg");
+        assert_eq!(
+            SortField::SpikeAttributionCount.as_str(),
+            "spike_attribution_count"
+        );
+    }
+
+    #[test]
+    fn no_geometric_sort_field_variant_exists() {
+        // Blueprint M2 + M1 contract §6.A compile-time enforcement:
+        // SortField MUST NOT carry a spatial-distance variant. The
+        // CI grep gate inspects the source for added forbidden
+        // variants; this test pins the current variant set. If you
+        // are tempted to add a geometric signal, re-read blueprint
+        // M2 + M1 contract §6.A first.
+        let all_variants = [
+            SortField::TransferEntropy,
+            SortField::KccScore,
+            SortField::CausalLag,
+            SortField::CausalDg,
+            SortField::SpikeAttributionCount,
+        ];
+        for v in all_variants {
+            let s = v.as_str();
+            assert!(
+                !s.contains("distance")
+                    && !s.contains("centroid")
+                    && !s.contains("proximity")
+                    && !s.contains("min_dist"),
+                "SortField variant {:?} has geometric label '{}' — violates blueprint §M2 / M1 contract §6.A",
+                v,
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn identity_tie_breaker_label_is_stable() {
+        assert_eq!(
+            IdentityTieBreaker::ChainResidAtom.as_str(),
+            "chain_resid_atom"
+        );
+    }
+
+    #[test]
+    fn causal_sort_key_new_uses_canonical_tiebreaker() {
+        let key = CausalSortKey::new(vec![SortField::SpikeAttributionCount]);
+        assert_eq!(key.identity_tiebreaker, IdentityTieBreaker::ChainResidAtom);
+        assert_eq!(key.priorities.len(), 1);
+        assert_eq!(key.priorities[0], SortField::SpikeAttributionCount);
+    }
+
+    #[test]
+    fn causal_sort_key_driver_default_priorities_match_contract() {
+        // Per M1 contract §6.B, CausalDriverView priorities (descending):
+        //   TransferEntropy > KccScore > CausalLag > SpikeAttributionCount
+        let key = CausalSortKey::driver_default();
+        assert_eq!(
+            key.priorities,
+            vec![
+                SortField::TransferEntropy,
+                SortField::KccScore,
+                SortField::CausalLag,
+                SortField::SpikeAttributionCount,
+            ]
+        );
+        assert_eq!(key.identity_tiebreaker, IdentityTieBreaker::ChainResidAtom);
+    }
+
+    #[test]
+    fn causal_sort_key_lining_default_priorities_match_contract() {
+        // Per M1 contract §6.B, LiningContactView priorities (descending):
+        //   SpikeAttributionCount > CausalDg > KccScore
+        let key = CausalSortKey::lining_default();
+        assert_eq!(
+            key.priorities,
+            vec![
+                SortField::SpikeAttributionCount,
+                SortField::CausalDg,
+                SortField::KccScore,
+            ]
+        );
+        assert_eq!(key.identity_tiebreaker, IdentityTieBreaker::ChainResidAtom);
+    }
+
+    #[test]
+    fn causal_sort_key_localized_default_falls_back_to_driver_priority() {
+        // Per M1 contract §6.B, LocalizedSubclusterView priority is
+        // operator-specifiable per construction; the blueprint default
+        // falls through to driver priority.
+        assert_eq!(
+            CausalSortKey::localized_default().priorities,
+            CausalSortKey::driver_default().priorities
+        );
     }
 }
