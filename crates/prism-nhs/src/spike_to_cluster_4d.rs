@@ -386,6 +386,13 @@ mod ffi {
     }
 }
 
+/// Public re-export of the FFI mirror struct so external bins (V3
+/// synthetic test) can construct a `SpikeToCluster4DGpuInput` without
+/// reaching into the private `ffi` module. Layout-pinned by the FFI
+/// ABI; matches the C-side `struct SpatialHashParams` in the .cuh.
+#[cfg(feature = "gpu")]
+pub use ffi::SpatialHashParams;
+
 /// Safe Rust wrapper around the FFI link-probe function. Returns
 /// the sentinel value the C-side `prism_m1_link_probe` returns; tests
 /// pin this at `0xC0FFEE`. Confirms (a) the static archive linked

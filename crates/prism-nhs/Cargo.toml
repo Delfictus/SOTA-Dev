@@ -165,3 +165,8 @@ required-features = ["gpu"]
 [[bin]]
 name = "ccns-analyze"
 path = "src/bin/ccns_analyze.rs"
+
+[[bin]]
+name = "m1_v3_synthetic"
+path = "src/bin/m1_v3_synthetic.rs"
+required-features = ["gpu"]
