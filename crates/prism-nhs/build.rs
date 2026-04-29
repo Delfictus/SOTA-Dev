@@ -18,6 +18,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/gpu_invariant.cuh");
     println!("cargo:rerun-if-changed=src/cuda/pre_rank.cu");
     println!("cargo:rerun-if-changed=src/cuda/pre_rank.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/rich_spike.cu");
+    println!("cargo:rerun-if-changed=src/cuda/rich_spike.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -100,6 +102,17 @@ fn main() {
         &nvcc,
         "src/cuda/gpu_invariant.cu",
         "gpu_invariant",
+        &out_dir,
+    );
+
+    // Continuous Learning Architecture Phase 1: RichSpike 64-byte
+    // schema. Header-only struct + helpers; .cu is the link-probe
+    // anchor. Future kernels (Morton encoder upgrade, telemetry
+    // compression) extend this archive.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/rich_spike.cu",
+        "rich_spike",
         &out_dir,
     );
 

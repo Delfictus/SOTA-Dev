@@ -199,6 +199,14 @@ pub mod gpu_invariant;
 /// late-stage adjudication with early-stage classification, dropping
 /// noise clusters before any expensive TIDE / KCC kernel runs.
 pub mod pre_rank;
+/// Continuous Learning Architecture Phase 1 — RichSpike 64-byte
+/// cache-line-aligned event record. Replaces the legacy 16-byte
+/// spike with a four-plane schema (spatiotemporal / thermodynamic
+/// / causal-neuromorphic / provenance) that captures the full
+/// emission state for the closed-loop knowledge-distillation
+/// pipeline. See module docs for layout + composite-sort-key
+/// design.
+pub mod rich_spike;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it
