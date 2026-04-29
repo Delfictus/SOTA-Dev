@@ -35,3 +35,17 @@ references:
     het: F0K
     site: Switch-I/II
     mechanism: allosteric_pan_KRAS
+
+visualization:
+  region_colors:
+    P-loop:       green
+    Switch-I:     blue
+    Switch-II:    orange
+    alpha3/H3-H4: purple
+  reference_palette: [yellow, magenta, cyan, salmon]
+  pocket_palette:
+    novel:                  cyan
+    known_ligand_proximal:  yellow
+    reference_hit:          gold
+    megacluster_collapse:   gray50
+    default:                white

@@ -66,8 +66,11 @@ def test_4lpk_regression():
     return True, "4LPK regression PASS (P4 BI-2852 hit preserved)"
 
 
-def test_9m3p_substrate_only():
-    """9M3P with empty references: must run substrate-only cleanly."""
+def test_9m3p_reference_populated():
+    """9M3P now has a populated reference (SZ6 from 9M3P). The dossier
+    must run, and E11 must NOT report the substrate-only gate (it may
+    still BLOCK for other reasons such as insufficient overlap, but the
+    blocker should not be 'no references configured')."""
     candidates = list(PRISM_ROOT.glob(
         "output/**/9m3p*topology.spike_events.arrow"
     ))
@@ -83,24 +86,22 @@ def test_9m3p_substrate_only():
         return False, "9M3P produced zero pockets"
 
     p0_enh = p[0]["enhancements"]
-    e11_status = p0_enh["E11_multi_view_dcc"].get("status")
     e1_status = p0_enh["E1_ccns_lifecycle"].get("status")
-    e11_gate = p0_enh["E11_multi_view_dcc"].get("gate", "")
+    e11_gate = p0_enh["E11_multi_view_dcc"].get("gate", "") or ""
 
     checks = [
         ("pockets_present", len(p) > 0),
         ("e1_substrate_internal_OK", e1_status == "OK"),
-        ("e11_blocked", e11_status == "BLOCKED"),
-        ("e11_gate_substrate_only", "Substrate-only" in e11_gate),
+        ("e11_not_substrate_only", "Substrate-only" not in e11_gate),
     ]
     failures = [name for name, ok in checks if not ok]
     if failures:
-        return False, f"9M3P substrate-only failed: {failures}"
-    return True, "9M3P substrate-only PASS"
+        return False, f"9M3P reference-populated check failed: {failures}"
+    return True, "9M3P reference-populated PASS (E11 not substrate-only)"
 
 
 if __name__ == "__main__":
-    tests = [test_4lpk_regression, test_9m3p_substrate_only]
+    tests = [test_4lpk_regression, test_9m3p_reference_populated]
     results = []
     for t in tests:
         ok, msg = t()

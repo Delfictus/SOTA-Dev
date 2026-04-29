@@ -28,3 +28,22 @@ references:
     het: <string>                # 3-char HET ID (verified)
     site: <string>               # functional region this binds
     mechanism: <string>          # binding mode descriptor
+
+# Visualization conventions for `scripts/visualize_dossier.py`.
+# All values are PyMOL color names (https://pymolwiki.org/index.php/Color)
+# or hex strings. The renderer reads only from this section — there is
+# zero protein-specific knowledge in the script.
+visualization:
+  region_colors:                # one entry per canonical_regions key
+    <region_name>: <pymol_color>
+  reference_palette:            # cycled in YAML order
+    - yellow
+    - magenta
+    - cyan
+    - salmon
+  pocket_palette:               # selected per pocket flags / E18 interpretation
+    novel:                  cyan
+    known_ligand_proximal:  yellow
+    reference_hit:          gold
+    megacluster_collapse:   gray50
+    default:                white

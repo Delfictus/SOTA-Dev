@@ -16,7 +16,32 @@ canonical_regions:
   regulatory_C_terminus:
     ranges: [[281, 372]]
 
-# References left empty: Roche Bioorg Med Chem Lett 122:130190 (2025)
-# co-crystals 9M3O/P/R/T/U exist but HET IDs need verification before
-# populating. Substrate-only mode is the correct interim state.
-references: []
+# References — verified via RCSB chemical-component API (handoff 2 phase 5).
+# 9M3O/9M3R/9M3T/9M3U return 404 from files.rcsb.org (likely not yet
+# publicly released); 9M3P verified.
+references:
+  - pdb_id: 9M3P
+    name: PDHK1_inhibitor_SZ6
+    het: SZ6
+    site: ATP_binding_site
+    mechanism: ATP_competitive
+    # SZ6 chemical name: N-[4-(2-chloro-5-methylpyrimidin-4-yl)phenyl]
+    #                    -N-(4-{[(difluoroacetyl)amino]methyl}benzyl)
+    #                    -2,4-dihydroxybenzamide
+    # Formula: C28 H23 Cl F2 N4 O4 · MW 552.956 · 78 atoms in PDB.
+    # Verified via curl https://data.rcsb.org/rest/v1/core/chemcomp/SZ6.
+
+visualization:
+  region_colors:
+    N_lobe:                 green
+    hinge_region:           yellow
+    ATP_binding_site:       red
+    C_lobe:                 blue
+    regulatory_C_terminus:  purple
+  reference_palette: [yellow, magenta, cyan, salmon, orange]
+  pocket_palette:
+    novel:                  cyan
+    known_ligand_proximal:  yellow
+    reference_hit:          gold
+    megacluster_collapse:   gray50
+    default:                white

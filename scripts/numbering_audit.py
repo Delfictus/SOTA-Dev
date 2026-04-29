@@ -1,48 +1,50 @@
 #!/usr/bin/env python3
 """
-Numbering audit — characterize engine_id → pdb_resseq mapping for a
-PRISM-4D substrate.
+PRISM-4D numbering audit — single coordinate frame (post-MD) comparison.
 
-For each topology residue_id (engine numbering, 0-based in the JSON):
-  1. Compute the centroid of the engine-mapped atoms via the topology
-     `residue_to_atom_indices` map and the topology `positions` array.
-  2. Find every PDB resseq within ±10 of the engine_id and grab its
-     CA position (chain A, alt-loc A or blank).
-  3. Pick the PDB resseq whose CA is closest to the engine-atom centroid.
-  4. Classify CLEAN / AMBIGUOUS / BROKEN.
+Compares engine residue centroids (computed from topology JSON's
+residue_to_atom_indices applied to post-MD PDB atom positions) vs
+post-MD PDB CA atom positions. Both come from the same coordinate
+frame, eliminating the pre-MD-vs-post-MD conflation that produced
+156/156 BROKEN in the prior version.
 
-Output: CSV with columns
-  engine_id, best_pdb_resseq, distance_A, alternate_pdb_resseqs, status
-plus a leading summary block (commented-out lines starting with `#`)
-that reports counts and the modal offset.
+Output:
+  <output_csv>
+    Header: # Numbering audit metadata
+    Columns: engine_id, best_pdb_resseq, distance_A,
+             alt_pdb_resseqs (within 1A), status
 
-Pure post-processor. NO_POST_MD_LOOPS-compliant.
+Status thresholds:
+  CLEAN              — best match within 2.0A, no alternatives within 1.0A
+  AMBIGUOUS          — best match within 2.0A, with >=1 alternative within 1.0A
+  BROKEN_loose_match — match between 2.0 and 5.0A
+  BROKEN_no_match    — no match within 5.0A
+  BROKEN_no_atoms    — engine residue has no atoms in post-MD PDB
 """
 import argparse
+import csv
 import json
 import sys
-from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
 
 
-def load_topology(topology_json_path):
-    with open(topology_json_path) as f:
-        topo = json.load(f)
-    positions = np.asarray(topo["positions"], dtype=np.float64)
-    rai = {int(k): list(v) for k, v in topo["residue_to_atom_indices"].items()}
-    return positions, rai
+def parse_pdb_atoms(pdb_path, chain_filter="A"):
+    """Returns (atoms_by_idx, cas_by_resseq).
 
-
-def load_pdb_ca(pdb_path, chain_filter="A"):
-    """Returns dict resseq -> np.array([x,y,z]) (CA only, alt-loc A/blank)."""
-    out = {}
+      atoms_by_idx: {atom_serial: {"resseq": int, "xyz": np.ndarray(3)}}
+      cas_by_resseq: {resseq: np.ndarray(3)}
+    Only ATOM records, alt-loc {blank, A}, matching chain_filter.
+    """
+    atoms = {}
+    cas = {}
     with open(pdb_path) as f:
         for line in f:
             if not line.startswith("ATOM"):
                 continue
             try:
+                atom_index = int(line[6:11])
                 atom_name = line[12:16].strip()
                 alt_loc = line[16:17].strip()
                 chain = line[21:22].strip()
@@ -52,159 +54,142 @@ def load_pdb_ca(pdb_path, chain_filter="A"):
                 z = float(line[46:54])
             except (ValueError, IndexError):
                 continue
-            if atom_name != "CA":
-                continue
             if alt_loc not in ("", "A"):
                 continue
             if chain != chain_filter:
                 continue
-            out[resseq] = np.array([x, y, z])
-    return out
+            atoms[atom_index] = {"resseq": resseq, "xyz": np.array([x, y, z])}
+            if atom_name == "CA":
+                cas[resseq] = np.array([x, y, z])
+    return atoms, cas
 
 
-def audit(topology_json, md_pdb, output_csv, search_radius=10):
-    positions, rai = load_topology(topology_json)
-    pdb_ca = load_pdb_ca(md_pdb)
+def audit_numbering(topology_path, md_pdb_path, output_csv,
+                    chain_id="A", clean_thresh=2.0,
+                    ambiguous_thresh=1.0, broken_thresh=5.0):
+    topo = json.load(open(topology_path))
+    res_to_atoms = topo.get("residue_to_atom_indices", {})
+    if not res_to_atoms:
+        print(f"FATAL: residue_to_atom_indices empty in {topology_path}")
+        print(f"  This target requires G4 producer-side population.")
+        return False
+
+    atoms_by_idx, cas_by_resseq = parse_pdb_atoms(md_pdb_path, chain_id)
+    if not atoms_by_idx or not cas_by_resseq:
+        print(f"FATAL: no atoms parsed from {md_pdb_path} (chain={chain_id})")
+        return False
 
     rows = []
-    offset_counter = Counter()
-    statuses = Counter()
+    summary = {"CLEAN": 0, "AMBIGUOUS": 0, "BROKEN": 0}
 
-    for engine_id, atom_idxs in sorted(rai.items()):
-        if not atom_idxs:
+    for engine_id_str, atom_indices in res_to_atoms.items():
+        engine_id = int(engine_id_str)
+        atom_xyz = []
+        for idx in atom_indices:
+            if idx in atoms_by_idx:
+                atom_xyz.append(atoms_by_idx[idx]["xyz"])
+        if not atom_xyz:
             rows.append({
-                "engine_id": engine_id,
-                "best_pdb_resseq": None,
-                "distance_A": float("nan"),
-                "alternate_pdb_resseqs": "",
-                "status": "BROKEN",
-                "broken_reason": "no_atoms_in_topology",
+                "engine_id": engine_id, "best_pdb_resseq": "",
+                "distance_A": "", "alt_pdb_resseqs": "",
+                "status": "BROKEN_no_atoms",
             })
-            statuses["BROKEN"] += 1
+            summary["BROKEN"] += 1
             continue
+        engine_centroid = np.mean(atom_xyz, axis=0)
 
-        coords = positions[np.asarray(atom_idxs)]
-        centroid = coords.mean(axis=0)
+        ca_distances = {
+            resseq: float(np.linalg.norm(ca - engine_centroid))
+            for resseq, ca in cas_by_resseq.items()
+        }
+        sorted_cas = sorted(ca_distances.items(), key=lambda x: x[1])
+        best_resseq, best_d = sorted_cas[0]
+        alts = [str(r) for r, d in sorted_cas[1:5] if d <= ambiguous_thresh]
 
-        candidates = []
-        for off in range(-search_radius, search_radius + 1):
-            target = engine_id + off
-            if target in pdb_ca:
-                d = float(np.linalg.norm(pdb_ca[target] - centroid))
-                candidates.append((d, target))
-        candidates.sort()
-
-        if not candidates:
-            rows.append({
-                "engine_id": engine_id,
-                "best_pdb_resseq": None,
-                "distance_A": float("nan"),
-                "alternate_pdb_resseqs": "",
-                "status": "BROKEN",
-                "broken_reason": "no_pdb_ca_within_search_radius",
-            })
-            statuses["BROKEN"] += 1
-            continue
-
-        best_d, best_pdb = candidates[0]
-        within_1A = [t for d, t in candidates[1:] if d - best_d < 1.0]
-
-        if best_d > 5.0:
-            status = "BROKEN"
-            broken_reason = f"closest_ca_{best_d:.2f}A_exceeds_5A"
-        elif within_1A:
-            status = "AMBIGUOUS"
-            broken_reason = ""
-        elif best_d <= 2.0:
+        if best_d > broken_thresh:
+            status = "BROKEN_no_match"
+            summary["BROKEN"] += 1
+        elif best_d <= clean_thresh and not alts:
             status = "CLEAN"
-            broken_reason = ""
-        else:
+            summary["CLEAN"] += 1
+        elif best_d <= clean_thresh and alts:
             status = "AMBIGUOUS"
-            broken_reason = f"closest_ca_{best_d:.2f}A_in_2-5A_band"
+            summary["AMBIGUOUS"] += 1
+        else:
+            status = "BROKEN_loose_match"
+            summary["BROKEN"] += 1
 
-        statuses[status] += 1
-        offset_counter[best_pdb - engine_id] += 1
         rows.append({
             "engine_id": engine_id,
-            "best_pdb_resseq": best_pdb,
-            "distance_A": best_d,
-            "alternate_pdb_resseqs": ";".join(str(t) for t in within_1A),
+            "best_pdb_resseq": best_resseq,
+            "distance_A": round(best_d, 3),
+            "alt_pdb_resseqs": ";".join(alts),
             "status": status,
-            "broken_reason": broken_reason,
         })
 
-    modal_offset, modal_count = (
-        offset_counter.most_common(1)[0]
-        if offset_counter else (None, 0)
-    )
-
-    by_offset = defaultdict(list)
-    for r in rows:
-        if r["best_pdb_resseq"] is not None:
-            off = r["best_pdb_resseq"] - r["engine_id"]
-            by_offset[off].append(r["engine_id"])
-    non_modal = sorted(
-        (off, ids) for off, ids in by_offset.items()
-        if off != modal_offset
-    )
-
-    summary_lines = [
-        f"# topology_json     : {topology_json}",
-        f"# md_pdb            : {md_pdb}",
-        f"# search_radius     : ±{search_radius}",
-        f"# n_engine_residues : {len(rai)}",
-        f"# n_pdb_ca          : {len(pdb_ca)}",
-        f"# CLEAN             : {statuses['CLEAN']}",
-        f"# AMBIGUOUS         : {statuses['AMBIGUOUS']}",
-        f"# BROKEN            : {statuses['BROKEN']}",
-        f"# modal_offset      : {modal_offset:+d} ({modal_count} residues)"
-        if modal_offset is not None else "# modal_offset      : (none)",
+    clean_offsets = [
+        r["best_pdb_resseq"] - r["engine_id"]
+        for r in rows if r["status"] == "CLEAN"
     ]
-    if non_modal:
-        summary_lines.append(
-            f"# non_modal_offsets : "
-            + ", ".join(
-                f"{off:+d}:{len(ids)}res(eg.{ids[:3]})"
-                for off, ids in non_modal[:10]
-            )
+    if clean_offsets:
+        modal_offset = max(set(clean_offsets), key=clean_offsets.count)
+        modal_count = clean_offsets.count(modal_offset)
+    else:
+        modal_offset = None
+        modal_count = 0
+
+    output_csv = Path(output_csv)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_csv, "w", newline="") as f:
+        f.write(f"# Numbering audit (single-frame post-MD)\n")
+        f.write(f"# Topology: {topology_path}\n")
+        f.write(f"# MD PDB: {md_pdb_path}\n")
+        f.write(f"# Chain: {chain_id}\n")
+        f.write(f"# Total engine residues: {len(rows)}\n")
+        f.write(
+            f"# CLEAN: {summary['CLEAN']}, "
+            f"AMBIGUOUS: {summary['AMBIGUOUS']}, "
+            f"BROKEN: {summary['BROKEN']}\n"
         )
-    summary_lines.append("#" + "-" * 80)
+        if modal_offset is not None:
+            f.write(
+                f"# Modal offset (CLEAN residues): "
+                f"{modal_offset:+d} ({modal_count} residues)\n"
+            )
+        else:
+            f.write("# Modal offset: undetermined (no CLEAN matches)\n")
+        f.write(
+            f"# Thresholds: CLEAN<={clean_thresh}A, BROKEN>{broken_thresh}A, "
+            f"AMBIGUOUS_alt<={ambiguous_thresh}A\n"
+        )
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "engine_id", "best_pdb_resseq", "distance_A",
+                "alt_pdb_resseqs", "status",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
 
-    headers = [
-        "engine_id", "best_pdb_resseq", "distance_A",
-        "alternate_pdb_resseqs", "status", "broken_reason",
-    ]
-    with open(output_csv, "w") as f:
-        for line in summary_lines:
-            f.write(line + "\n")
-        f.write(",".join(headers) + "\n")
-        for r in rows:
-            d = r["distance_A"]
-            d_str = "" if d != d else f"{d:.4f}"  # NaN handling
-            f.write(",".join([
-                str(r["engine_id"]),
-                "" if r["best_pdb_resseq"] is None else str(r["best_pdb_resseq"]),
-                d_str,
-                r["alternate_pdb_resseqs"],
-                r["status"],
-                r["broken_reason"],
-            ]) + "\n")
-
-    print("\n".join(summary_lines))
-    print(f"\nWrote {output_csv}: {len(rows)} rows")
-    return statuses, modal_offset, non_modal
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--topology-json", required=True)
-    ap.add_argument("--md-pdb", required=True)
-    ap.add_argument("--output-csv", required=True)
-    ap.add_argument("--search-radius", type=int, default=10)
-    args = ap.parse_args()
-    audit(args.topology_json, args.md_pdb, args.output_csv, args.search_radius)
-    return 0
+    print(f"Audit complete: {len(rows)} engine residues")
+    print(f"  CLEAN:     {summary['CLEAN']}")
+    print(f"  AMBIGUOUS: {summary['AMBIGUOUS']}")
+    print(f"  BROKEN:    {summary['BROKEN']}")
+    if modal_offset is not None:
+        print(f"  Modal offset: {modal_offset:+d} ({modal_count} residues)")
+    print(f"  Output: {output_csv}")
+    return True
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--topology", required=True)
+    parser.add_argument("--md-pdb", required=True)
+    parser.add_argument("--output-csv", required=True)
+    parser.add_argument("--chain", default="A")
+    args = parser.parse_args()
+    ok = audit_numbering(
+        args.topology, args.md_pdb, args.output_csv, chain_id=args.chain,
+    )
+    sys.exit(0 if ok else 1)
