@@ -10,6 +10,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/spike_density.cu");
     println!("cargo:rerun-if-changed=src/cuda/spike_to_cluster_4d.cu");
     println!("cargo:rerun-if-changed=src/cuda/spike_to_cluster_4d.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/lbvh_morton.cu");
+    println!("cargo:rerun-if-changed=src/cuda/lbvh_morton.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -55,6 +57,18 @@ fn main() {
         &nvcc,
         "src/cuda/spike_to_cluster_4d.cu",
         "spike_to_cluster_4d",
+        &out_dir,
+    );
+
+    // LBVH lane Phase 1: Morton 30-bit encoder. Same static-archive
+    // path as the M1 producer — the .cu defines a __global__ kernel
+    // launched from an extern "C" host orchestrator. No CUB usage in
+    // this archive (Phase 1 is a single kernel). Phase 2 (Karras
+    // tree builder + sort) will land alongside.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/lbvh_morton.cu",
+        "lbvh_morton",
         &out_dir,
     );
 }

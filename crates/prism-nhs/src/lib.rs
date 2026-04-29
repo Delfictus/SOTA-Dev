@@ -164,6 +164,24 @@ pub mod causome;
 /// the on-device producer (`SpikeToCluster4D`, M1) and CUDA / FFI
 /// shims land in subsequent commits.
 pub mod entangled_manifold;
+/// LBVH lane Phase 1 — Morton 30-bit encoder + (subsequent commits)
+/// Karras 2012 parallel binary radix-tree construction + per-node
+/// AABB bottom-up reduce. The output of this lane replaces the
+/// M1.2.5a placeholder synthetic support set in
+/// [`spike_to_cluster_4d::SpikeToCluster4D::apply`] with native LBVH
+/// AABBs populated into the 8-slot
+/// [`site_manifest::CentroidManifold`]. Per Mandate §M5 the AABB is
+/// derived only from the support set; LBVH gives that derivation a
+/// real algorithmic backing.
+pub mod lbvh;
+/// M1.2.5b — typed-producer differential protocol implementation.
+/// Pure-logic comparison helpers (data structures + classification +
+/// rollup) for cross-checking the M1 [`spike_to_cluster_4d::SpikeToCluster4D`]
+/// producer against the legacy `cluster_spikes` path. The reference spec
+/// is `docs/M1_DIFFERENTIAL_PROTOCOL.md`. The GPU-side helper that drives
+/// it lives in [`spike_to_cluster_4d::side_channel`] (existing-file edit
+/// territory; this module is data-structures + pure logic only).
+pub mod m1_differential;
 /// M1.1 — Per-site canonical container types: [`site_manifest::SiteManifest`],
 /// [`site_manifest::CentroidManifold`] (8-slot, named-accessor-only),
 /// [`site_manifest::Centroid3D`] (4D-aware), [`site_manifest::CausalScalars`],
