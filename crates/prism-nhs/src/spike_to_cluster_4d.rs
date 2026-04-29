@@ -400,6 +400,224 @@ pub fn link_probe() -> u32 {
 }
 
 // ============================================================================
+// M1.2.4 — Captured CUDA Graph wrapper
+// ============================================================================
+
+/// Captured-graph wrapper around `prism_m1_spike_to_cluster_4d_run`.
+///
+/// On first invocation (or after a shape change) the producer's kernel
+/// sequence is recorded into a `cudarc::driver::safe::CudaGraph` via
+/// `cudaStreamBeginCapture` / `cudaStreamEndCapture`; subsequent
+/// invocations with the SAME shape AND the SAME device-pointer values
+/// replay the cached graph via `cudaGraphLaunch`, eliminating the
+/// per-launch overhead of the kernel sequence (kernel + 4× CUB calls
+/// = 5 launches → 1 graph launch).
+///
+/// Per blueprint §M9 (Mandate #8) and the M1.2.4 sub-lane contract:
+///   - `cudaStreamBeginCapture` mode: `RELAXED`. Pattern-replicated
+///     from `coupled_md.rs:2549` and `graph_capture.rs:133`. The
+///     handoff prose specified `ThreadLocal` but the live codebase
+///     uses `RELAXED` for all captured nodes; a deviation from the
+///     prose to match the codebase pattern is recorded in the
+///     M1.2.4 §8 report.
+///   - `cudaGraphInstantiate` flags: `AUTO_FREE_ON_LAUNCH`. This is
+///     load-bearing — the producer's FFI uses `cudaMallocAsync` for
+///     CUB scratch buffers; AUTO_FREE_ON_LAUNCH lets the captured
+///     graph cycle those mempool allocations across replays.
+///   - Shape key: `(num_spikes, num_clusters)`. A shape change
+///     destroys the old `CudaGraph` (Drop) and re-captures.
+///
+/// This struct does NOT pin host memory or wire conservation-scalar
+/// D2H copies into the captured graph — both land in M1.2.5 alongside
+/// the `impl AuditedTransform` block.
+#[cfg(feature = "gpu")]
+pub struct M1ProducerGraph {
+    cache: Option<CachedGraph>,
+}
+
+#[cfg(feature = "gpu")]
+struct CachedGraph {
+    graph: cudarc::driver::safe::CudaGraph,
+    num_spikes: u32,
+    num_clusters: u32,
+}
+
+#[cfg(feature = "gpu")]
+impl Default for M1ProducerGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "gpu")]
+impl M1ProducerGraph {
+    /// Construct an empty cache. The first call to
+    /// [`Self::run_or_replay`] captures the kernel sequence.
+    pub const fn new() -> Self {
+        Self { cache: None }
+    }
+
+    /// Returns true iff the cache holds a graph captured at the given
+    /// shape. Used by tests to assert capture/replay state without
+    /// reaching into private fields.
+    pub fn cached_shape(&self) -> Option<(u32, u32)> {
+        self.cache.as_ref().map(|c| (c.num_spikes, c.num_clusters))
+    }
+
+    /// Drop the cached graph (if any). Forces the next call to
+    /// [`Self::run_or_replay`] to re-capture.
+    pub fn invalidate(&mut self) {
+        self.cache = None;
+    }
+
+    /// Run the M1 producer, capturing on first call (or shape change)
+    /// and replaying the cached graph thereafter.
+    ///
+    /// # Safety
+    ///
+    /// All device pointers MUST be valid for the duration of the call
+    /// AND for every subsequent call that reuses the cached graph
+    /// (CUDA Graphs bake the pointer values into their captured kernel
+    /// nodes; freeing or relocating a buffer between captures while
+    /// reusing the cached graph yields undefined behavior). The
+    /// caller is responsible for invalidating the cache (via
+    /// [`Self::invalidate`]) when the device buffers change. Shape
+    /// changes (different `num_spikes` or `num_clusters`) are
+    /// auto-detected and force a re-capture.
+    ///
+    /// `h_params` must point to a valid `SpatialHashParams` for the
+    /// duration of the call. The C-side orchestration passes the
+    /// params by value into the kernel, so the host pointer's
+    /// lifetime is bounded by the FFI call (not by the cached graph).
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn run_or_replay(
+        &mut self,
+        stream: &std::sync::Arc<cudarc::driver::CudaStream>,
+        positions_dev: u64,
+        num_spikes: u32,
+        h_params: *const ffi::SpatialHashParams,
+        cluster_ids_dev: u64,
+        per_cluster_count_dev: u64,
+        total_attributed_dev: u64,
+        background_count_dev: u64,
+        per_cluster_aabb_dev: u64,
+        num_clusters: u32,
+    ) -> Result<(), CapturedGraphError> {
+        use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
+
+        let needs_capture = match &self.cache {
+            None => true,
+            Some(c) => c.num_spikes != num_spikes || c.num_clusters != num_clusters,
+        };
+
+        if needs_capture {
+            // Drop any prior graph BEFORE beginning a new capture so
+            // we don't accumulate two CudaGraphExec handles.
+            self.cache = None;
+
+            stream
+                .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+                .map_err(|e| CapturedGraphError::BeginCapture(format!("{:?}", e)))?;
+
+            let raw_stream_usize = stream.cu_stream() as usize;
+            let rc = unsafe {
+                ffi::prism_m1_spike_to_cluster_4d_run(
+                    positions_dev          as *const f32,
+                    num_spikes,
+                    h_params,
+                    raw_stream_usize,
+                    cluster_ids_dev        as *mut u32,
+                    per_cluster_count_dev  as *mut u64,
+                    total_attributed_dev   as *mut u64,
+                    background_count_dev   as *mut u64,
+                    per_cluster_aabb_dev   as *mut Aabb,
+                    num_clusters,
+                )
+            };
+
+            if rc != ffi::CUDA_SUCCESS {
+                // Restore the stream to non-capture mode before
+                // bailing — leaving capture mode dangling poisons
+                // subsequent operations on the same stream.
+                let _ = stream.end_capture(
+                    CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+                );
+                return Err(CapturedGraphError::FfiInsideCapture(rc));
+            }
+
+            let graph = stream
+                .end_capture(
+                    CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+                )
+                .map_err(|e| CapturedGraphError::EndCapture(format!("{:?}", e)))?
+                .ok_or(CapturedGraphError::NullGraph)?;
+
+            // The captured stream operations between begin_capture and
+            // end_capture are RECORDED, not executed. To make the
+            // first-invocation path produce output (rather than just
+            // building the graph and producing nothing), launch the
+            // captured graph immediately. Subsequent invocations on
+            // the same shape skip the begin/end_capture round-trip
+            // and only call `graph.launch()`.
+            graph
+                .launch()
+                .map_err(|e| CapturedGraphError::Launch(format!("{:?}", e)))?;
+
+            self.cache = Some(CachedGraph {
+                graph,
+                num_spikes,
+                num_clusters,
+            });
+        } else {
+            // SAFETY: cache.is_some() because needs_capture is false.
+            let cached = self.cache.as_ref().unwrap();
+            cached
+                .graph
+                .launch()
+                .map_err(|e| CapturedGraphError::Launch(format!("{:?}", e)))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Errors surfaced by [`M1ProducerGraph::run_or_replay`].
+#[cfg(feature = "gpu")]
+#[derive(Debug)]
+pub enum CapturedGraphError {
+    /// `cudaStreamBeginCapture` returned non-success.
+    BeginCapture(String),
+    /// The FFI orchestration entry point returned non-success while
+    /// the stream was in capture mode.
+    FfiInsideCapture(ffi::CudaError),
+    /// `cudaStreamEndCapture` returned non-success.
+    EndCapture(String),
+    /// `cudaStreamEndCapture` reported success but produced a null
+    /// graph (no operations were captured).
+    NullGraph,
+    /// `cudaGraphLaunch` returned non-success on cached replay.
+    Launch(String),
+}
+
+#[cfg(feature = "gpu")]
+impl std::fmt::Display for CapturedGraphError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BeginCapture(e) => write!(f, "begin_capture: {}", e),
+            Self::FfiInsideCapture(rc) => {
+                write!(f, "FFI returned cuda error {} during capture", rc)
+            }
+            Self::EndCapture(e) => write!(f, "end_capture: {}", e),
+            Self::NullGraph => write!(f, "end_capture produced null graph"),
+            Self::Launch(e) => write!(f, "graph.launch(): {}", e),
+        }
+    }
+}
+
+#[cfg(feature = "gpu")]
+impl std::error::Error for CapturedGraphError {}
+
+// ============================================================================
 // extern "C" accessors for steering subsystem (post-M1) consumption
 // ============================================================================
 //
@@ -1030,5 +1248,306 @@ mod tests {
             assert_eq!(out_aabb_flat[c * 6 + 5], ez,
                 "M1.2.3: AABB.max[2] cluster {} mismatch", c);
         }
+    }
+
+    // ========================================================================
+    // M1.2.4 — captured-graph replay & shape-change
+    // ========================================================================
+    //
+    // Drives `M1ProducerGraph::run_or_replay` against the same 100-spike
+    // synthetic stream as the M1.2.2/M1.2.3 test. Asserts:
+    //   (a) First-invocation correctness — captured graph produces the
+    //       same outputs as the M1.2.3 uncaptured baseline.
+    //   (b) Cached-replay correctness — second call (with no host-side
+    //       buffer changes) replays and produces BIT-IDENTICAL outputs
+    //       to the first invocation. Integer counts are BitExact by
+    //       AtomicsAffected determinism + atomicAdd commutativity;
+    //       AABB f32 values are bit-exact for fixed sorted input
+    //       (min/max are commutative + associative + idempotent).
+    //   (c) Re-capture correctness — after `invalidate()` the cache is
+    //       empty and the next call re-captures, producing outputs
+    //       identical to the first capture.
+    //   (d) Shape-change correctness — invoking with a different
+    //       (num_spikes, num_clusters) auto-invalidates and re-captures.
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn m1_2_4_captured_graph_replay_and_recapture() {
+        use cudarc::driver::{CudaContext, DevicePtr};
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[m1_2_4] CUDA context creation failed: {:?} — skipping", e);
+                return;
+            }
+        };
+        // CUDA forbids `cudaStreamBeginCapture` on the legacy default
+        // stream (`CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED`). Use an
+        // explicitly-created non-default stream — same pattern as
+        // `coupled_md.rs:756 / :2818` and `graph_capture.rs`.
+        let stream = ctx.new_stream().expect("create non-default stream");
+
+        // Same synthetic geometry as the M1.2.2/M1.2.3 test.
+        const GRID_X: i32 = 4;
+        const GRID_Y: i32 = 4;
+        const GRID_Z: i32 = 4;
+        const CELL_SIZE: f32 = 1.0;
+        const NUM_CLUSTERS: u32 = (GRID_X * GRID_Y * GRID_Z) as u32;
+        const NUM_SPIKES: u32 = 100;
+        const NUM_INBOUND: u32 = 80;
+        const NUM_BACKGROUND: u32 = 20;
+
+        let bbox_min = [0.0f32, 0.0, 0.0];
+        let bbox_max = [GRID_X as f32, GRID_Y as f32, GRID_Z as f32];
+
+        let mut positions: Vec<f32> = Vec::with_capacity(NUM_SPIKES as usize * 3);
+        let mut cpu_cluster_ids: Vec<u32> = Vec::with_capacity(NUM_SPIKES as usize);
+        for i in 0..NUM_INBOUND as i32 {
+            let cx = i % GRID_X;
+            let cy = (i / GRID_X) % GRID_Y;
+            let cz = (i / (GRID_X * GRID_Y)) % GRID_Z;
+            positions.push(cx as f32 + 0.5);
+            positions.push(cy as f32 + 0.5);
+            positions.push(cz as f32 + 0.5);
+            cpu_cluster_ids.push((cz * GRID_X * GRID_Y + cy * GRID_X + cx) as u32);
+        }
+        for i in 0..NUM_BACKGROUND {
+            positions.push(-100.0 - i as f32);
+            positions.push(0.5);
+            positions.push(0.5);
+            cpu_cluster_ids.push(u32::MAX);
+        }
+
+        let mut d_positions = stream
+            .alloc_zeros::<f32>(positions.len())
+            .expect("alloc d_positions");
+        stream
+            .memcpy_htod(&positions, &mut d_positions)
+            .expect("htod positions");
+
+        let d_cluster_ids = stream
+            .alloc_zeros::<u32>(NUM_SPIKES as usize)
+            .expect("alloc d_cluster_ids");
+        let d_per_cluster_count = stream
+            .alloc_zeros::<u64>(NUM_CLUSTERS as usize)
+            .expect("alloc d_per_cluster_count");
+        let d_total_attributed = stream
+            .alloc_zeros::<u64>(1)
+            .expect("alloc d_total_attributed");
+        let d_background_count = stream
+            .alloc_zeros::<u64>(1)
+            .expect("alloc d_background_count");
+        let d_per_cluster_aabb = stream
+            .alloc_zeros::<f32>(NUM_CLUSTERS as usize * 6)
+            .expect("alloc d_per_cluster_aabb");
+
+        let params = ffi::SpatialHashParams {
+            bbox_min,
+            bbox_max,
+            cell_size: CELL_SIZE,
+            grid_dim: [GRID_X, GRID_Y, GRID_Z],
+            num_cells: NUM_CLUSTERS,
+        };
+
+        let (positions_dev,    _g_pos)  = d_positions.device_ptr(&stream);
+        let (cluster_ids_dev,  _g_cid)  = d_cluster_ids.device_ptr(&stream);
+        let (count_dev,        _g_cnt)  = d_per_cluster_count.device_ptr(&stream);
+        let (total_dev,        _g_tot)  = d_total_attributed.device_ptr(&stream);
+        let (bg_dev,           _g_bg)   = d_background_count.device_ptr(&stream);
+        let (aabb_dev,         _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
+
+        // Helper: run the producer through the graph wrapper and dtoh
+        // every output buffer. Returns (cluster_ids, per_cluster_count,
+        // total_attributed, background_count, per_cluster_aabb).
+        let mut graph = super::M1ProducerGraph::new();
+        let invoke = |graph: &mut super::M1ProducerGraph| {
+            let result = unsafe {
+                graph.run_or_replay(
+                    &stream,
+                    positions_dev,
+                    NUM_SPIKES,
+                    &params as *const ffi::SpatialHashParams,
+                    cluster_ids_dev,
+                    count_dev,
+                    total_dev,
+                    bg_dev,
+                    aabb_dev,
+                    NUM_CLUSTERS,
+                )
+            };
+            result.expect("M1ProducerGraph::run_or_replay failed");
+            stream.synchronize().expect("stream sync");
+
+            let mut cluster_ids = vec![0u32; NUM_SPIKES as usize];
+            stream.memcpy_dtoh(&d_cluster_ids, &mut cluster_ids).expect("dtoh cid");
+            let mut count = vec![0u64; NUM_CLUSTERS as usize];
+            stream.memcpy_dtoh(&d_per_cluster_count, &mut count).expect("dtoh count");
+            let mut total = vec![0u64; 1];
+            stream.memcpy_dtoh(&d_total_attributed, &mut total).expect("dtoh total");
+            let mut bg = vec![0u64; 1];
+            stream.memcpy_dtoh(&d_background_count, &mut bg).expect("dtoh bg");
+            let mut aabb = vec![0.0f32; NUM_CLUSTERS as usize * 6];
+            stream.memcpy_dtoh(&d_per_cluster_aabb, &mut aabb).expect("dtoh aabb");
+            (cluster_ids, count, total[0], bg[0], aabb)
+        };
+
+        // Pre-capture: cache empty.
+        assert_eq!(graph.cached_shape(), None,
+            "M1.2.4: cache should be empty before first invocation");
+
+        // (a) First invocation — captures.
+        let outputs_first = invoke(&mut graph);
+        assert_eq!(graph.cached_shape(), Some((NUM_SPIKES, NUM_CLUSTERS)),
+            "M1.2.4: cache should hold the captured shape after first invocation");
+
+        // First-invocation correctness vs CPU reference.
+        assert_eq!(outputs_first.0, cpu_cluster_ids,
+            "M1.2.4: first capture cluster_ids differ from CPU reference");
+        assert_eq!(outputs_first.2, NUM_INBOUND as u64,
+            "M1.2.4: first capture total_attributed != NUM_INBOUND");
+        assert_eq!(outputs_first.3, NUM_BACKGROUND as u64,
+            "M1.2.4: first capture background_count != NUM_BACKGROUND");
+
+        // (b) Cached-replay — same shape, same buffers; replays cached graph.
+        let outputs_replay = invoke(&mut graph);
+        assert_eq!(graph.cached_shape(), Some((NUM_SPIKES, NUM_CLUSTERS)),
+            "M1.2.4: cache should be unchanged after a same-shape replay");
+
+        assert_eq!(outputs_replay.0, outputs_first.0,
+            "M1.2.4: cached replay cluster_ids differ from first capture");
+        assert_eq!(outputs_replay.1, outputs_first.1,
+            "M1.2.4: cached replay per_cluster_count differs (BitExact violation)");
+        assert_eq!(outputs_replay.2, outputs_first.2,
+            "M1.2.4: cached replay total_attributed differs");
+        assert_eq!(outputs_replay.3, outputs_first.3,
+            "M1.2.4: cached replay background_count differs");
+        assert_eq!(outputs_replay.4, outputs_first.4,
+            "M1.2.4: cached replay per_cluster_aabb differs (deterministic-min/max violation)");
+
+        // (c) Re-capture after explicit invalidate.
+        graph.invalidate();
+        assert_eq!(graph.cached_shape(), None,
+            "M1.2.4: invalidate() should drop the cached graph");
+
+        let outputs_recapture = invoke(&mut graph);
+        assert_eq!(graph.cached_shape(), Some((NUM_SPIKES, NUM_CLUSTERS)),
+            "M1.2.4: recapture should refill the cache");
+        assert_eq!(outputs_recapture.0, outputs_first.0,
+            "M1.2.4: recapture cluster_ids differ from first capture");
+        assert_eq!(outputs_recapture.1, outputs_first.1,
+            "M1.2.4: recapture per_cluster_count differs");
+        assert_eq!(outputs_recapture.4, outputs_first.4,
+            "M1.2.4: recapture per_cluster_aabb differs");
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn m1_2_4_captured_graph_shape_change_auto_recaptures() {
+        use cudarc::driver::{CudaContext, DevicePtr};
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[m1_2_4-shape] CUDA context creation failed: {:?} — skipping", e);
+                return;
+            }
+        };
+        // Non-default stream is required for stream capture (see
+        // m1_2_4_captured_graph_replay_and_recapture for the rationale).
+        let stream = ctx.new_stream().expect("create non-default stream");
+
+        // Run twice with two different shapes. Same M1ProducerGraph
+        // instance — the second invocation must auto-detect the shape
+        // change and re-capture.
+        let run_once = |graph: &mut super::M1ProducerGraph,
+                        n_spikes: u32,
+                        grid_dim: [i32; 3]| {
+            let num_clusters = (grid_dim[0] * grid_dim[1] * grid_dim[2]) as u32;
+            let bbox_min = [0.0f32, 0.0, 0.0];
+            let bbox_max = [grid_dim[0] as f32, grid_dim[1] as f32, grid_dim[2] as f32];
+
+            // Synthetic positions: every spike at the (0,0,0) cell center
+            // for simplicity — only the (n_spikes, num_clusters) shape
+            // matters for the capture-key test, not output values.
+            let positions: Vec<f32> = (0..n_spikes)
+                .flat_map(|_| [0.5f32, 0.5, 0.5])
+                .collect();
+
+            let mut d_positions = stream
+                .alloc_zeros::<f32>(positions.len())
+                .expect("alloc d_positions");
+            stream
+                .memcpy_htod(&positions, &mut d_positions)
+                .expect("htod positions");
+
+            let d_cluster_ids = stream
+                .alloc_zeros::<u32>(n_spikes as usize)
+                .expect("alloc d_cluster_ids");
+            let d_per_cluster_count = stream
+                .alloc_zeros::<u64>(num_clusters as usize)
+                .expect("alloc d_per_cluster_count");
+            let d_total_attributed = stream.alloc_zeros::<u64>(1).expect("alloc total");
+            let d_background_count = stream.alloc_zeros::<u64>(1).expect("alloc bg");
+            let d_per_cluster_aabb = stream
+                .alloc_zeros::<f32>(num_clusters as usize * 6)
+                .expect("alloc aabb");
+
+            let params = ffi::SpatialHashParams {
+                bbox_min,
+                bbox_max,
+                cell_size: 1.0,
+                grid_dim,
+                num_cells: num_clusters,
+            };
+
+            let (positions_dev, _g_pos)    = d_positions.device_ptr(&stream);
+            let (cluster_ids_dev, _g_cid)  = d_cluster_ids.device_ptr(&stream);
+            let (count_dev, _g_cnt)        = d_per_cluster_count.device_ptr(&stream);
+            let (total_dev, _g_tot)        = d_total_attributed.device_ptr(&stream);
+            let (bg_dev, _g_bg)            = d_background_count.device_ptr(&stream);
+            let (aabb_dev, _g_aabb)        = d_per_cluster_aabb.device_ptr(&stream);
+
+            unsafe {
+                graph.run_or_replay(
+                    &stream,
+                    positions_dev,
+                    n_spikes,
+                    &params as *const ffi::SpatialHashParams,
+                    cluster_ids_dev,
+                    count_dev,
+                    total_dev,
+                    bg_dev,
+                    aabb_dev,
+                    num_clusters,
+                )
+            }
+            .expect("run_or_replay");
+            stream.synchronize().expect("stream sync");
+
+            // Read total_attributed back so the buffers stay alive
+            // through the FFI call (the _g_* guards expire here).
+            let mut total = vec![0u64; 1];
+            stream
+                .memcpy_dtoh(&d_total_attributed, &mut total)
+                .expect("dtoh total");
+            total[0]
+        };
+
+        let mut graph = super::M1ProducerGraph::new();
+
+        // Shape A: 50 spikes on a 3×3×3 grid (27 clusters).
+        let total_a = run_once(&mut graph, 50, [3, 3, 3]);
+        assert_eq!(graph.cached_shape(), Some((50, 27)),
+            "M1.2.4: cache should hold shape A after first invocation");
+        assert_eq!(total_a, 50,
+            "M1.2.4 shape A: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed");
+
+        // Shape B: 200 spikes on a 5×5×5 grid (125 clusters).
+        let total_b = run_once(&mut graph, 200, [5, 5, 5]);
+        assert_eq!(graph.cached_shape(), Some((200, 125)),
+            "M1.2.4: shape change should auto-invalidate the cache and re-capture");
+        assert_eq!(total_b, 200,
+            "M1.2.4 shape B: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed");
     }
 }
