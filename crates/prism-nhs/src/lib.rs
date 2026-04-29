@@ -207,6 +207,14 @@ pub mod pre_rank;
 /// pipeline. See module docs for layout + composite-sort-key
 /// design.
 pub mod rich_spike;
+/// LBVH Phase 2 — Karras 2012 radix-tree builder + bottom-up AABB
+/// reduce via the last-arrival atomic-flag pattern. Consumes the
+/// sorted 64-bit composite keys (Morton + residue_id) produced by
+/// the upstream sort node and the leaf positions; produces a tree
+/// of `n_leaves - 1` 64-byte cache-line-aligned [`LBVHNode`]s with
+/// per-node AABBs propagated from the leaves to the root. See
+/// module docs for the Karras encoding and AABB reduce contracts.
+pub mod lbvh_tree;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it

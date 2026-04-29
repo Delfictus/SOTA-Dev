@@ -20,6 +20,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/pre_rank.cuh");
     println!("cargo:rerun-if-changed=src/cuda/rich_spike.cu");
     println!("cargo:rerun-if-changed=src/cuda/rich_spike.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/lbvh_tree.cu");
+    println!("cargo:rerun-if-changed=src/cuda/lbvh_tree.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -113,6 +115,18 @@ fn main() {
         &nvcc,
         "src/cuda/rich_spike.cu",
         "rich_spike",
+        &out_dir,
+    );
+
+    // LBVH Phase 2: Karras 2012 radix-tree builder + last-arrival
+    // atomic-flag bottom-up AABB reduce. Two kernels + one init
+    // kernel + extern "C" host orchestration. 64-byte cache-line-
+    // aligned LBVHNode for line-aligned LDG.E.128 access during the
+    // reduce.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/lbvh_tree.cu",
+        "lbvh_tree",
         &out_dir,
     );
 
