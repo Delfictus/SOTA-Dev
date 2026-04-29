@@ -784,4 +784,206 @@ mod tests {
     fn transform_id_is_pinned() {
         assert_eq!(TRANSFORM_M1_SPIKE_TO_CLUSTER_4D.0, "m1_spike_to_cluster_4d");
     }
+
+    // ========================================================================
+    // M1.2.2 — synthetic-input verification of the per-spike kernel
+    // ========================================================================
+    //
+    // Drives the M1.2.1-locked FFI surface (`prism_m1_spike_to_cluster_4d_run`)
+    // with a 100-spike synthetic stream whose CPU-side ground-truth
+    // assignment is known by construction. Asserts:
+    //   (a) cluster_id_per_spike[i] equals the CPU reference for every i.
+    //   (b) per_cluster_count[c] is BitExact equal to the CPU reference
+    //       count for every cluster c.
+    //   (c) background_count is BitExact equal to the CPU reference
+    //       out-of-bbox count.
+    //   (d) total_attributed_scalar is the documented M1.2.2 placeholder
+    //       (zero); CUB DeviceReduce::Sum fills it in M1.2.3, which will
+    //       force this assertion to be updated alongside the CUB wire-in.
+    // AABB validation is owned by M1.2.3 per M1.2 contract §6.
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn m1_2_2_assign_clusters_synthetic_100_voxel_grid() {
+        use cudarc::driver::{CudaContext, DevicePtr};
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[m1_2_2] CUDA context creation failed: {:?} — skipping", e);
+                return;
+            }
+        };
+        let stream = ctx.default_stream();
+
+        // 4×4×4 voxel grid, cell_size = 1 Å, bbox = [0, 4]³. 100 spikes:
+        //   - 80 in-bbox at integer-cell centers (cycle through cells)
+        //   - 20 out-of-bbox (UNCLUSTERED)
+        const GRID_X: i32 = 4;
+        const GRID_Y: i32 = 4;
+        const GRID_Z: i32 = 4;
+        const CELL_SIZE: f32 = 1.0;
+        const NUM_CLUSTERS: u32 = (GRID_X * GRID_Y * GRID_Z) as u32; // 64
+        const NUM_SPIKES: u32 = 100;
+        const NUM_INBOUND: u32 = 80;
+        const NUM_BACKGROUND: u32 = 20;
+
+        let bbox_min = [0.0f32, 0.0, 0.0];
+        let bbox_max = [GRID_X as f32, GRID_Y as f32, GRID_Z as f32];
+
+        let mut positions: Vec<f32> = Vec::with_capacity(NUM_SPIKES as usize * 3);
+        let mut cpu_cluster_ids: Vec<u32> = Vec::with_capacity(NUM_SPIKES as usize);
+
+        for i in 0..NUM_INBOUND as i32 {
+            // Cycle through 64 cells; first 16 cells get 2 spikes each
+            // (i ∈ {0..16, 64..80}), remaining 48 cells get 1 each.
+            let cx = i % GRID_X;
+            let cy = (i / GRID_X) % GRID_Y;
+            let cz = (i / (GRID_X * GRID_Y)) % GRID_Z;
+            positions.push(cx as f32 + 0.5);
+            positions.push(cy as f32 + 0.5);
+            positions.push(cz as f32 + 0.5);
+            let cell_id = (cz * GRID_X * GRID_Y + cy * GRID_X + cx) as u32;
+            cpu_cluster_ids.push(cell_id);
+        }
+        for i in 0..NUM_BACKGROUND {
+            // Out-of-bbox: x < 0 forces UNCLUSTERED.
+            positions.push(-100.0 - i as f32);
+            positions.push(0.5);
+            positions.push(0.5);
+            cpu_cluster_ids.push(u32::MAX);
+        }
+        assert_eq!(positions.len(), NUM_SPIKES as usize * 3);
+        assert_eq!(cpu_cluster_ids.len(), NUM_SPIKES as usize);
+
+        // CPU ground-truth aggregate counts.
+        let mut cpu_per_cluster_count = vec![0u64; NUM_CLUSTERS as usize];
+        let mut cpu_background_count: u64 = 0;
+        for &cid in &cpu_cluster_ids {
+            if cid == u32::MAX {
+                cpu_background_count += 1;
+            } else {
+                cpu_per_cluster_count[cid as usize] += 1;
+            }
+        }
+
+        // Device-side allocation + H2D.
+        let mut d_positions = stream
+            .alloc_zeros::<f32>(positions.len())
+            .expect("alloc d_positions");
+        stream
+            .memcpy_htod(&positions, &mut d_positions)
+            .expect("htod positions");
+
+        let d_cluster_ids = stream
+            .alloc_zeros::<u32>(NUM_SPIKES as usize)
+            .expect("alloc d_cluster_ids");
+        let d_per_cluster_count = stream
+            .alloc_zeros::<u64>(NUM_CLUSTERS as usize)
+            .expect("alloc d_per_cluster_count");
+        let d_total_attributed = stream
+            .alloc_zeros::<u64>(1)
+            .expect("alloc d_total_attributed");
+        let d_background_count = stream
+            .alloc_zeros::<u64>(1)
+            .expect("alloc d_background_count");
+        // d_per_cluster_aabb is part of the M1.2.1-locked FFI surface
+        // but not consumed by M1.2.2. Allocate as a u32 scratch buffer
+        // matching the byte size of [Aabb; NUM_CLUSTERS] (24 B/Aabb =
+        // 6 × u32) and reinterpret-cast at the FFI boundary.
+        let d_aabb_scratch = stream
+            .alloc_zeros::<u32>(NUM_CLUSTERS as usize * 6)
+            .expect("alloc d_aabb_scratch");
+
+        let params = ffi::SpatialHashParams {
+            bbox_min,
+            bbox_max,
+            cell_size: CELL_SIZE,
+            grid_dim: [GRID_X, GRID_Y, GRID_Z],
+            num_cells: NUM_CLUSTERS,
+        };
+
+        // Raw stream + raw device pointers for the C ABI.
+        let raw_stream = stream.cu_stream() as usize;
+        let (positions_dev,    _g_pos)  = d_positions.device_ptr(&stream);
+        let (cluster_ids_dev,  _g_cid)  = d_cluster_ids.device_ptr(&stream);
+        let (count_dev,        _g_cnt)  = d_per_cluster_count.device_ptr(&stream);
+        let (total_dev,        _g_tot)  = d_total_attributed.device_ptr(&stream);
+        let (bg_dev,           _g_bg)   = d_background_count.device_ptr(&stream);
+        let (aabb_dev,         _g_aabb) = d_aabb_scratch.device_ptr(&stream);
+
+        // SAFETY: every pointer was obtained from a live CudaSlice whose
+        // _g_* guards are held until end of function; raw_stream is the
+        // active default stream; params is a stack-allocated #[repr(C)]
+        // struct living for the duration of the call (synchronous FFI
+        // entry — kernel launches are queued onto stream and the FFI
+        // returns; stream.synchronize() below blocks until completion
+        // before any guard drops).
+        let rc = unsafe {
+            ffi::prism_m1_spike_to_cluster_4d_run(
+                positions_dev   as *const f32,
+                NUM_SPIKES,
+                &params as *const ffi::SpatialHashParams,
+                raw_stream,
+                cluster_ids_dev as *mut u32,
+                count_dev       as *mut u64,
+                total_dev       as *mut u64,
+                bg_dev          as *mut u64,
+                aabb_dev        as *mut Aabb,
+                NUM_CLUSTERS,
+            )
+        };
+        assert_eq!(
+            rc,
+            ffi::CUDA_SUCCESS,
+            "prism_m1_spike_to_cluster_4d_run returned non-success: {}",
+            rc
+        );
+
+        stream.synchronize().expect("stream sync");
+
+        // D2H + assertions.
+        let mut out_cluster_ids = vec![0u32; NUM_SPIKES as usize];
+        stream
+            .memcpy_dtoh(&d_cluster_ids, &mut out_cluster_ids)
+            .expect("dtoh cluster_ids");
+
+        let mut out_per_cluster_count = vec![0u64; NUM_CLUSTERS as usize];
+        stream
+            .memcpy_dtoh(&d_per_cluster_count, &mut out_per_cluster_count)
+            .expect("dtoh per_cluster_count");
+
+        let mut out_background_count = vec![0u64; 1];
+        stream
+            .memcpy_dtoh(&d_background_count, &mut out_background_count)
+            .expect("dtoh background_count");
+
+        let mut out_total_attributed = vec![0u64; 1];
+        stream
+            .memcpy_dtoh(&d_total_attributed, &mut out_total_attributed)
+            .expect("dtoh total_attributed");
+
+        // (a) Per-spike cluster_id matches CPU reference exactly.
+        assert_eq!(
+            out_cluster_ids, cpu_cluster_ids,
+            "M1.2.2: cluster_id_per_spike differs from CPU reference"
+        );
+        // (b) Per-cluster count BitExact.
+        assert_eq!(
+            out_per_cluster_count, cpu_per_cluster_count,
+            "M1.2.2: per_cluster_count differs from CPU reference (BitExact violation)"
+        );
+        // (c) Background count BitExact.
+        assert_eq!(
+            out_background_count[0], cpu_background_count,
+            "M1.2.2: background_count differs from CPU reference (BitExact violation)"
+        );
+        // (d) total_attributed placeholder pinned at 0 — forces M1.2.3
+        // to update this assertion when CUB DeviceReduce::Sum lands.
+        assert_eq!(
+            out_total_attributed[0], 0,
+            "M1.2.2 placeholder violated: total_attributed_scalar must be 0 \
+             until M1.2.3 wires CUB DeviceReduce::Sum"
+        );
+    }
 }
