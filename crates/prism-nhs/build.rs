@@ -16,6 +16,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/vram_pool.cuh");
     println!("cargo:rerun-if-changed=src/cuda/gpu_invariant.cu");
     println!("cargo:rerun-if-changed=src/cuda/gpu_invariant.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/pre_rank.cu");
+    println!("cargo:rerun-if-changed=src/cuda/pre_rank.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -98,6 +100,20 @@ fn main() {
         &nvcc,
         "src/cuda/gpu_invariant.cu",
         "gpu_invariant",
+        &out_dir,
+    );
+
+    // Rectification Phase 2: shift-left MAR pre-rank adjudicator.
+    // Three single-purpose kernels (compute_aabb_volumes,
+    // compute_energy_density, pre_rank_adjudicator) plus host
+    // orchestrators. The adjudicator's 3-way output is the
+    // cudaGraphConditionalNode SWITCH selector. Includes the §2.3
+    // SAD-PATH guard: NaN/Inf observables route to Case 2
+    // (Violation).
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/pre_rank.cu",
+        "pre_rank",
         &out_dir,
     );
 }

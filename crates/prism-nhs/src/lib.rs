@@ -191,6 +191,14 @@ pub mod vram_pool;
 /// stream-synchronize. See module docs for the §9 ESCALATION
 /// posture and verification contract.
 pub mod gpu_invariant;
+/// Rectification Phase 2 — shift-left MAR pre-rank adjudicator.
+/// Computes per-cluster Pruning Observables (energy density,
+/// solvation flux) and writes a 3-way `AdjudicationCode` (Prune /
+/// Construct / Violation) that the cudaGraphConditionalNode (F1)
+/// SWITCH variant consumes as its branch selector. Replaces
+/// late-stage adjudication with early-stage classification, dropping
+/// noise clusters before any expensive TIDE / KCC kernel runs.
+pub mod pre_rank;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it
