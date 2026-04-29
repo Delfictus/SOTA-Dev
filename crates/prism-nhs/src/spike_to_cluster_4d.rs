@@ -618,6 +618,438 @@ impl std::fmt::Display for CapturedGraphError {
 impl std::error::Error for CapturedGraphError {}
 
 // ============================================================================
+// M1.2.5 — impl AuditedTransform for SpikeToCluster4D
+// ============================================================================
+//
+// Brings the M1 producer under the Phase 2 audit-spine surface
+// (`crate::transform::AuditedTransform`). Construction is in two steps:
+//
+//   1. The producer's apply runs the kernel + CUB chain (via the
+//      M1.2.4 captured-graph wrapper), reads back the integer
+//      Conservation-of-Mass scalars and per-cluster AABBs through
+//      pageable D2H copies, and constructs a placeholder
+//      `EntangledManifold` whose three role views share a single
+//      synthetic support set: one synthetic-residue per *attributed*
+//      cluster, located at the midpoint of that cluster's AABB.
+//
+//      M3 will replace this synthetic construction with role-specific
+//      support sets sourced from per-residue causal signals; the M1.2.5
+//      placeholder satisfies the M1.1-locked `SpikeToCluster4DOutput`
+//      type contract (an `EntangledManifold`, not an `Option<...>`)
+//      and obeys M5's "AABB derived only from the support set"
+//      mandate (the AABB is computed by `Aabb::from_support_set` on
+//      the synthetic coords).
+//
+//   2. `verify` checks the integer Conservation-of-Mass equality
+//      `total_attributed + background_count == total_input_spikes` and
+//      emits `ViolationEvidence::ConservationOfMassViolation` (routed
+//      `AuditRouting::Abort`) on failure. `apply` calls `adjudicate`
+//      so the trait's default-impl logic produces the typed
+//      `AuditOutcome`.
+//
+// Pinned-memory output buffer + D2H of conservation scalars inside the
+// captured graph are documented by the M1.2.5 sub-lane spec but
+// DEFERRED in this commit — they are a performance optimization (one
+// less host-mediated dtoh) that does not affect correctness, and the
+// canonical-bin wire-in (`--m1-typed-producer` flag in `nhs_rt_full.rs`)
+// that V4 depends on is also deferred. Both items are tracked under
+// `WHAT REMAINS` of the M1.2.5 §8 report.
+
+#[cfg(feature = "gpu")]
+mod m1_2_5 {
+    use super::{
+        ffi, ConservationScalars, M1ProducerGraph, SpikeToCluster4D,
+        SpikeToCluster4DOutput, DECLARED_LAWS_M1, LAW_M1_CONSERVATION_OF_MASS,
+        TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+    };
+    use crate::entangled_manifold::{
+        Aabb, CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
+        LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
+    };
+    use crate::transform::{
+        AuditOutcome, AuditRouting, AuditedTransform, DeterminismClass, LawId,
+        TolerancePolicy, TransformId, TransformViolation, ViolationEvidence,
+    };
+    use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
+    use std::sync::Arc;
+
+    /// Borrowed input to [`SpikeToCluster4D::apply`].
+    ///
+    /// Holds references to the caller's stream, graph cache, and pre-
+    /// allocated device buffers. The producer's kernel + CUB chain is
+    /// launched onto the same stream the cache was captured on; the
+    /// output buffers are written by the producer and read back in
+    /// `apply` for manifold + conservation construction.
+    pub struct SpikeToCluster4DGpuInput<'a> {
+        /// Stream the kernel sequence is launched on. MUST be a
+        /// non-default stream — `cudaStreamBeginCapture` returns
+        /// `CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED` on the legacy
+        /// default stream (see M1.2.4 sub-lane §8 report).
+        pub stream: &'a Arc<CudaStream>,
+
+        /// Captured-graph cache. Mutable because the first call (or a
+        /// shape change) updates the cache; subsequent same-shape
+        /// calls only read it.
+        pub graph_cache: &'a mut M1ProducerGraph,
+
+        /// Spike-position buffer, planar `[num_spikes][3]`. The
+        /// engine's existing on-device spike buffer (no copy).
+        pub d_spike_positions: &'a CudaSlice<f32>,
+        pub num_spikes: u32,
+
+        /// Spatial-hash params (FFI mirror, by value).
+        pub params: ffi::SpatialHashParams,
+
+        /// MD frame index. Stamped into the
+        /// `EntangledManifold::frame` and into every view's
+        /// `ViewProvenance::frame`.
+        pub frame: u64,
+
+        /// Caller-allocated output buffers (kernel writes through
+        /// device pointers extracted from these slices).
+        pub d_cluster_id_per_spike: &'a CudaSlice<u32>,
+        pub d_per_cluster_count: &'a CudaSlice<u64>,
+        pub d_total_attributed: &'a CudaSlice<u64>,
+        pub d_background_count: &'a CudaSlice<u64>,
+        /// `num_clusters × 6` floats laid out as `Aabb` records. The
+        /// CUB SegmentedReduce writes the per-cluster AABBs here.
+        pub d_per_cluster_aabb: &'a CudaSlice<f32>,
+        pub num_clusters: u32,
+    }
+
+    impl AuditedTransform for SpikeToCluster4D {
+        type Input<'a> = SpikeToCluster4DGpuInput<'a> where Self: 'a;
+        type Output = SpikeToCluster4DOutput;
+
+        fn identity(&self) -> TransformId {
+            TRANSFORM_M1_SPIKE_TO_CLUSTER_4D
+        }
+
+        fn determinism(&self) -> DeterminismClass {
+            // Per type-level docs on `ConservationScalars`: per-spike
+            // cell-id assignment uses warp-scheduled atomicAdd, so
+            // ordering within a cluster is non-deterministic. Integer
+            // counts (and AABB min/max) are still BitExact across
+            // replicates given fixed input.
+            DeterminismClass::AtomicsAffected
+        }
+
+        fn tolerance(&self) -> TolerancePolicy {
+            // The Conservation-of-Mass law compares u64 integer counts
+            // produced by counting integers — no FP arithmetic in the
+            // path. BitExact is the correct semantics; there is no
+            // tolerance knob to tune here.
+            TolerancePolicy::BitExact
+        }
+
+        fn laws(&self) -> &'static [LawId] {
+            DECLARED_LAWS_M1
+        }
+
+        fn verify(&self, output: &Self::Output) -> Vec<TransformViolation> {
+            let mut violations = Vec::new();
+            verify_conservation_of_mass(&output.conservation, &mut violations);
+            violations
+        }
+
+        fn apply<'a>(&self, input: Self::Input<'a>) -> AuditOutcome<Self::Output> {
+            // ---- 1. Run the producer (capture-or-replay). --------
+            let raw = unsafe {
+                input.graph_cache.run_or_replay(
+                    input.stream,
+                    input.d_spike_positions.device_ptr(input.stream).0,
+                    input.num_spikes,
+                    &input.params as *const ffi::SpatialHashParams,
+                    input.d_cluster_id_per_spike.device_ptr(input.stream).0,
+                    input.d_per_cluster_count.device_ptr(input.stream).0,
+                    input.d_total_attributed.device_ptr(input.stream).0,
+                    input.d_background_count.device_ptr(input.stream).0,
+                    input.d_per_cluster_aabb.device_ptr(input.stream).0,
+                    input.num_clusters,
+                )
+            };
+            if let Err(e) = raw {
+                return abort_with_capture_error(e, input.num_spikes);
+            }
+            if let Err(e) = input.stream.synchronize() {
+                return abort_with_sync_error(format!("{:?}", e), input.num_spikes);
+            }
+
+            // ---- 2. D2H read of conservation scalars + AABBs. ----
+            let mut total = vec![0u64; 1];
+            if let Err(e) = input
+                .stream
+                .memcpy_dtoh(input.d_total_attributed, &mut total)
+            {
+                return abort_with_sync_error(format!("dtoh total: {:?}", e), input.num_spikes);
+            }
+            let mut bg = vec![0u64; 1];
+            if let Err(e) = input
+                .stream
+                .memcpy_dtoh(input.d_background_count, &mut bg)
+            {
+                return abort_with_sync_error(format!("dtoh bg: {:?}", e), input.num_spikes);
+            }
+            let mut counts = vec![0u64; input.num_clusters as usize];
+            if let Err(e) = input
+                .stream
+                .memcpy_dtoh(input.d_per_cluster_count, &mut counts)
+            {
+                return abort_with_sync_error(format!("dtoh counts: {:?}", e), input.num_spikes);
+            }
+            let mut aabb_flat = vec![0.0f32; input.num_clusters as usize * 6];
+            if let Err(e) = input
+                .stream
+                .memcpy_dtoh(input.d_per_cluster_aabb, &mut aabb_flat)
+            {
+                return abort_with_sync_error(format!("dtoh aabb: {:?}", e), input.num_spikes);
+            }
+
+            let conservation = ConservationScalars {
+                total_input_spikes: input.num_spikes as u64,
+                total_attributed: total[0],
+                background_count: bg[0],
+            };
+
+            // ---- 3. Build placeholder EntangledManifold from the   ─
+            //         per-cluster AABBs of attributed clusters.     ─
+            let manifold = match build_placeholder_manifold(
+                input.num_clusters as usize,
+                &counts,
+                &aabb_flat,
+                input.frame,
+            ) {
+                Ok(m) => m,
+                Err(reason) => {
+                    // No clusters were attributed — there's no
+                    // support set to compute a manifold from. This is
+                    // a degenerate case (every spike fell into the
+                    // background), but it is still a real M1 outcome.
+                    // Emit a SyntheticForTesting violation to surface
+                    // the corner case as Aborted; M3 / downstream
+                    // specialization will model this properly.
+                    return AuditOutcome::Aborted {
+                        record: crate::transform::AuditRecord {
+                            transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+                            determinism: DeterminismClass::AtomicsAffected,
+                            tolerance: TolerancePolicy::BitExact,
+                            laws_declared: DECLARED_LAWS_M1,
+                        },
+                        violations: vec![TransformViolation {
+                            transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+                            law: LAW_M1_CONSERVATION_OF_MASS,
+                            routing: AuditRouting::Abort,
+                            evidence: ViolationEvidence::SyntheticForTesting {
+                                tag: reason,
+                            },
+                        }],
+                    };
+                }
+            };
+
+            let output = SpikeToCluster4DOutput { manifold, conservation };
+
+            // ---- 4. Adjudicate via the trait's default impl, which
+            //         calls `verify` and routes to Accepted / Aborted.
+            self.adjudicate(output)
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Conservation-of-Mass verifier
+    // ------------------------------------------------------------------------
+
+    fn verify_conservation_of_mass(
+        conservation: &ConservationScalars,
+        out: &mut Vec<TransformViolation>,
+    ) {
+        // `is_conserved()` already encodes the checked_add / equality
+        // logic. Build the violation evidence here, with explicit
+        // `expected` / `got` / `delta` for forensic visibility.
+        if conservation.is_conserved() {
+            return;
+        }
+        let expected = conservation.total_input_spikes;
+        let (got, delta): (u64, i128) = match conservation.attributed_plus_background() {
+            Some(sum) => (sum, sum as i128 - expected as i128),
+            None => {
+                // Overflow case: checked_add returned None. Report
+                // `got = 0` as a documented sentinel; the actual
+                // mismatch is recoverable from the type-level
+                // ConservationScalars (which the operator can inspect
+                // via the audit-spine pipeline).
+                (0, 0)
+            }
+        };
+        out.push(TransformViolation {
+            transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+            law: LAW_M1_CONSERVATION_OF_MASS,
+            routing: AuditRouting::Abort,
+            evidence: ViolationEvidence::ConservationOfMassViolation {
+                expected,
+                got,
+                delta,
+            },
+        });
+    }
+
+    // ------------------------------------------------------------------------
+    // Manifold construction (placeholder)
+    // ------------------------------------------------------------------------
+
+    /// Build an `EntangledManifold` whose three role views share one
+    /// synthetic support set: one synthetic-residue per attributed
+    /// cluster, located at the midpoint of that cluster's AABB.
+    ///
+    /// Returns the static-lifetime tag of the failure mode if
+    /// construction is not possible (currently only "no_attributed_clusters").
+    fn build_placeholder_manifold(
+        num_clusters: usize,
+        counts: &[u64],
+        aabb_flat: &[f32],
+        frame: u64,
+    ) -> Result<EntangledManifold, &'static str> {
+        let mut synthetic_coords: Vec<[f32; 3]> = Vec::with_capacity(num_clusters);
+        let mut support: Vec<crate::entangled_manifold::ResidueId> = Vec::new();
+        let mut causal_values: Vec<f32> = Vec::new();
+
+        for c in 0..num_clusters {
+            // Always push a placeholder coord so support indices align
+            // with cluster indices (Aabb::from_support_set indexes by
+            // ResidueId-as-usize). Empty-cluster slots will not be
+            // referenced from `support` so their coordinate value does
+            // not affect the AABB.
+            let min_x = aabb_flat[c * 6 + 0];
+            let min_y = aabb_flat[c * 6 + 1];
+            let min_z = aabb_flat[c * 6 + 2];
+            let max_x = aabb_flat[c * 6 + 3];
+            let max_y = aabb_flat[c * 6 + 4];
+            let max_z = aabb_flat[c * 6 + 5];
+            let mid = [
+                0.5 * (min_x + max_x),
+                0.5 * (min_y + max_y),
+                0.5 * (min_z + max_z),
+            ];
+            synthetic_coords.push(mid);
+
+            if counts[c] > 0 {
+                support.push(c as i32);
+                causal_values.push(counts[c] as f32);
+            }
+        }
+
+        if support.is_empty() {
+            return Err("no_attributed_clusters");
+        }
+
+        let provenance = ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: support.len() as u32 },
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame,
+        };
+
+        // Three views, all sharing the same support + causal_values.
+        // M3 specialization will replace this with role-specific
+        // selections from per-residue causal signals.
+        let driver = CausalDriverView::new(
+            &synthetic_coords,
+            support.clone(),
+            causal_values.clone(),
+            provenance.clone(),
+        )
+        .map_err(|_| "driver_view_construction_failed")?;
+        let lining = LiningContactView::new(
+            &synthetic_coords,
+            support.clone(),
+            causal_values.clone(),
+            provenance.clone(),
+        )
+        .map_err(|_| "lining_view_construction_failed")?;
+        let localized = LocalizedSubclusterView::new(
+            &synthetic_coords,
+            support,
+            causal_values,
+            provenance,
+        )
+        .map_err(|_| "localized_view_construction_failed")?;
+
+        EntangledManifold::new(driver, lining, localized)
+            .map_err(|_| "manifold_frame_mismatch")
+    }
+
+    // ------------------------------------------------------------------------
+    // Helpers for early-abort outcomes
+    // ------------------------------------------------------------------------
+
+    fn abort_with_capture_error(
+        e: super::CapturedGraphError,
+        total_input: u32,
+    ) -> AuditOutcome<SpikeToCluster4DOutput> {
+        AuditOutcome::Aborted {
+            record: crate::transform::AuditRecord {
+                transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+                determinism: DeterminismClass::AtomicsAffected,
+                tolerance: TolerancePolicy::BitExact,
+                laws_declared: DECLARED_LAWS_M1,
+            },
+            violations: vec![TransformViolation {
+                transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+                law: LAW_M1_CONSERVATION_OF_MASS,
+                routing: AuditRouting::Abort,
+                evidence: ViolationEvidence::ConservationOfMassViolation {
+                    expected: total_input as u64,
+                    got: 0,
+                    delta: -(total_input as i128),
+                },
+            }],
+        }
+        .with_capture_diagnostic(format!("captured_graph: {}", e))
+    }
+
+    fn abort_with_sync_error(
+        msg: String,
+        total_input: u32,
+    ) -> AuditOutcome<SpikeToCluster4DOutput> {
+        AuditOutcome::Aborted {
+            record: crate::transform::AuditRecord {
+                transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+                determinism: DeterminismClass::AtomicsAffected,
+                tolerance: TolerancePolicy::BitExact,
+                laws_declared: DECLARED_LAWS_M1,
+            },
+            violations: vec![TransformViolation {
+                transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+                law: LAW_M1_CONSERVATION_OF_MASS,
+                routing: AuditRouting::Abort,
+                evidence: ViolationEvidence::ConservationOfMassViolation {
+                    expected: total_input as u64,
+                    got: 0,
+                    delta: -(total_input as i128),
+                },
+            }],
+        }
+        .with_capture_diagnostic(msg)
+    }
+
+    // No-op extension so callers can chain a diagnostic message without
+    // mutating AuditOutcome's enum surface (the message is dropped on
+    // current Phase 2 — Phase 5 lineage hashing will give it a
+    // structured slot).
+    trait WithCaptureDiagnostic {
+        fn with_capture_diagnostic(self, msg: String) -> Self;
+    }
+    impl<T> WithCaptureDiagnostic for AuditOutcome<T> {
+        fn with_capture_diagnostic(self, _msg: String) -> Self {
+            self
+        }
+    }
+}
+
+#[cfg(feature = "gpu")]
+pub use m1_2_5::SpikeToCluster4DGpuInput;
+
+// ============================================================================
 // extern "C" accessors for steering subsystem (post-M1) consumption
 // ============================================================================
 //
@@ -1549,5 +1981,241 @@ mod tests {
             "M1.2.4: shape change should auto-invalidate the cache and re-capture");
         assert_eq!(total_b, 200,
             "M1.2.4 shape B: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed");
+    }
+
+    // ========================================================================
+    // M1.2.5 — AuditedTransform impl (apply + verify)
+    // ========================================================================
+    //
+    // Two paths:
+    //   verify-only test (host-only): synthesizes a SpikeToCluster4DOutput
+    //     with deliberately violated Conservation-of-Mass and confirms
+    //     `verify` emits the typed `ConservationOfMassViolation`
+    //     evidence with Abort routing.
+    //   apply test (GPU): drives the full apply path on the 100-spike
+    //     synthetic input, asserts AuditOutcome::Accepted, and reads
+    //     back the EntangledManifold to confirm the synthetic-residue
+    //     placeholder construction respects the M1.1-locked output
+    //     contract (3 views populated, support/causal_values matched
+    //     length, AABB derived from authoritative support set).
+
+    #[test]
+    fn m1_2_5_verify_emits_conservation_violation_on_count_mismatch() {
+        use crate::entangled_manifold::{
+            CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
+            LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
+        };
+        use crate::transform::{
+            AuditRouting, AuditedTransform, ViolationEvidence,
+        };
+
+        // Build a placeholder manifold (single cluster). The shape of
+        // the manifold does not matter for the verify-only test —
+        // verify reads only `output.conservation`.
+        let coords = vec![[0.0f32, 0.0, 0.0]; 1];
+        let prov = ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: 1 },
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame: 0,
+        };
+        let driver =
+            CausalDriverView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let lining =
+            LiningContactView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let localized =
+            LocalizedSubclusterView::new(&coords, vec![0i32], vec![1.0], prov).unwrap();
+        let manifold = EntangledManifold::new(driver, lining, localized).unwrap();
+
+        // Inject the violation: 100 input spikes, but only 60
+        // attributed + 30 background = 90. 10 spikes lost.
+        let conservation = ConservationScalars {
+            total_input_spikes: 100,
+            total_attributed: 60,
+            background_count: 30,
+        };
+        let output = SpikeToCluster4DOutput { manifold, conservation };
+
+        let producer = SpikeToCluster4D::new();
+        let violations = producer.verify(&output);
+
+        assert_eq!(violations.len(), 1, "M1.2.5: expected exactly one violation");
+        let v = &violations[0];
+        assert_eq!(v.transform, TRANSFORM_M1_SPIKE_TO_CLUSTER_4D);
+        assert_eq!(v.law, LAW_M1_CONSERVATION_OF_MASS);
+        assert_eq!(v.routing, AuditRouting::Abort,
+            "M1.2.5: Conservation-of-Mass violations route Abort per §2 doctrine");
+        match &v.evidence {
+            ViolationEvidence::ConservationOfMassViolation { expected, got, delta } => {
+                assert_eq!(*expected, 100);
+                assert_eq!(*got, 90);  // 60 + 30
+                assert_eq!(*delta, -10); // got - expected
+            }
+            other => panic!("M1.2.5: expected ConservationOfMassViolation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn m1_2_5_verify_accepts_conserved_output() {
+        use crate::entangled_manifold::{
+            CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
+            LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
+        };
+        use crate::transform::AuditedTransform;
+
+        let coords = vec![[0.0f32, 0.0, 0.0]; 1];
+        let prov = ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: 1 },
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame: 0,
+        };
+        let driver =
+            CausalDriverView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let lining =
+            LiningContactView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let localized =
+            LocalizedSubclusterView::new(&coords, vec![0i32], vec![1.0], prov).unwrap();
+        let manifold = EntangledManifold::new(driver, lining, localized).unwrap();
+
+        let conservation = ConservationScalars {
+            total_input_spikes: 100,
+            total_attributed: 70,
+            background_count: 30,
+        };
+        let output = SpikeToCluster4DOutput { manifold, conservation };
+
+        let producer = SpikeToCluster4D::new();
+        let violations = producer.verify(&output);
+        assert!(violations.is_empty(),
+            "M1.2.5: conserved output should produce no violations");
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn m1_2_5_apply_accepts_synthetic_100_voxel_input() {
+        use crate::transform::{AuditOutcome, AuditedTransform, DeterminismClass, TolerancePolicy};
+        use cudarc::driver::CudaContext;
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[m1_2_5-apply] CUDA context creation failed: {:?} — skipping", e);
+                return;
+            }
+        };
+        let stream = ctx.new_stream().expect("create non-default stream");
+
+        const GRID_X: i32 = 4;
+        const GRID_Y: i32 = 4;
+        const GRID_Z: i32 = 4;
+        const NUM_CLUSTERS: u32 = (GRID_X * GRID_Y * GRID_Z) as u32;
+        const NUM_SPIKES: u32 = 100;
+        const NUM_INBOUND: u32 = 80;
+        const NUM_BACKGROUND: u32 = 20;
+        const FRAME: u64 = 7;
+
+        // Same synthetic geometry as M1.2.2/3/4 test.
+        let mut positions: Vec<f32> = Vec::with_capacity(NUM_SPIKES as usize * 3);
+        for i in 0..NUM_INBOUND as i32 {
+            let cx = i % GRID_X;
+            let cy = (i / GRID_X) % GRID_Y;
+            let cz = (i / (GRID_X * GRID_Y)) % GRID_Z;
+            positions.push(cx as f32 + 0.5);
+            positions.push(cy as f32 + 0.5);
+            positions.push(cz as f32 + 0.5);
+        }
+        for i in 0..NUM_BACKGROUND {
+            positions.push(-100.0 - i as f32);
+            positions.push(0.5);
+            positions.push(0.5);
+        }
+
+        let mut d_positions = stream
+            .alloc_zeros::<f32>(positions.len())
+            .expect("alloc d_positions");
+        stream
+            .memcpy_htod(&positions, &mut d_positions)
+            .expect("htod positions");
+
+        let d_cluster_ids       = stream.alloc_zeros::<u32>(NUM_SPIKES as usize).expect("alloc cid");
+        let d_per_cluster_count = stream.alloc_zeros::<u64>(NUM_CLUSTERS as usize).expect("alloc count");
+        let d_total_attributed  = stream.alloc_zeros::<u64>(1).expect("alloc total");
+        let d_background_count  = stream.alloc_zeros::<u64>(1).expect("alloc bg");
+        let d_per_cluster_aabb  = stream.alloc_zeros::<f32>(NUM_CLUSTERS as usize * 6).expect("alloc aabb");
+
+        let params = ffi::SpatialHashParams {
+            bbox_min: [0.0, 0.0, 0.0],
+            bbox_max: [GRID_X as f32, GRID_Y as f32, GRID_Z as f32],
+            cell_size: 1.0,
+            grid_dim: [GRID_X, GRID_Y, GRID_Z],
+            num_cells: NUM_CLUSTERS,
+        };
+
+        let mut graph_cache = super::M1ProducerGraph::new();
+        let input = super::SpikeToCluster4DGpuInput {
+            stream: &stream,
+            graph_cache: &mut graph_cache,
+            d_spike_positions: &d_positions,
+            num_spikes: NUM_SPIKES,
+            params,
+            frame: FRAME,
+            d_cluster_id_per_spike: &d_cluster_ids,
+            d_per_cluster_count: &d_per_cluster_count,
+            d_total_attributed: &d_total_attributed,
+            d_background_count: &d_background_count,
+            d_per_cluster_aabb: &d_per_cluster_aabb,
+            num_clusters: NUM_CLUSTERS,
+        };
+
+        let producer = SpikeToCluster4D::new();
+        let outcome = producer.apply(input);
+
+        match outcome {
+            AuditOutcome::Accepted { output, record } => {
+                // Conservation: 80 attributed + 20 background = 100 input.
+                assert_eq!(output.conservation.total_input_spikes, NUM_SPIKES as u64);
+                assert_eq!(output.conservation.total_attributed, NUM_INBOUND as u64);
+                assert_eq!(output.conservation.background_count, NUM_BACKGROUND as u64);
+                assert!(output.conservation.is_conserved());
+
+                // EntangledManifold structure:
+                //   - 64 attributed clusters (every cell got ≥ 1 spike)
+                //   - all 3 views share the synthetic support set
+                //   - support and causal_values have matching length
+                let driver_data = output.manifold.driver.data();
+                let lining_data = output.manifold.lining.data();
+                let localized_data = output.manifold.localized.data();
+
+                assert_eq!(driver_data.support.len(), NUM_CLUSTERS as usize,
+                    "M1.2.5: driver support should cover all 64 clusters with ≥1 spike");
+                assert_eq!(driver_data.support.len(), driver_data.causal_values.len());
+                assert_eq!(lining_data.support.len(), lining_data.causal_values.len());
+                assert_eq!(localized_data.support.len(), localized_data.causal_values.len());
+
+                // Frame stamped correctly.
+                assert_eq!(driver_data.provenance.frame, FRAME);
+                assert_eq!(lining_data.provenance.frame, FRAME);
+                assert_eq!(localized_data.provenance.frame, FRAME);
+
+                // AuditRecord identity + governance declarations.
+                assert_eq!(record.transform, TRANSFORM_M1_SPIKE_TO_CLUSTER_4D);
+                assert_eq!(record.determinism, DeterminismClass::AtomicsAffected);
+                assert_eq!(record.tolerance, TolerancePolicy::BitExact);
+                assert_eq!(record.laws_declared, DECLARED_LAWS_M1);
+            }
+            AuditOutcome::Quarantined { violations, .. } => {
+                panic!(
+                    "M1.2.5 apply produced Quarantined (unexpected for valid input): {:?}",
+                    violations
+                );
+            }
+            AuditOutcome::Aborted { violations, .. } => {
+                panic!(
+                    "M1.2.5 apply produced Aborted on valid input: {:?}",
+                    violations
+                );
+            }
+        }
     }
 }

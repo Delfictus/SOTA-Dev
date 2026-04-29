@@ -387,6 +387,36 @@ pub enum ViolationEvidence {
         /// or the per-site TIDE projection is empty/all-undefined.
         all_te_undefined: bool,
     },
+    /// Law `m1_conservation_of_mass`: the M1
+    /// [`crate::spike_to_cluster_4d::SpikeToCluster4D`] producer's
+    /// integer Conservation-of-Mass equality
+    ///
+    /// ```text
+    ///     total_attributed + background_count == total_input_spikes
+    /// ```
+    ///
+    /// did not hold. `delta` is `(attributed + background) − input` as
+    /// a signed `i128` so the sign of the imbalance is preserved across
+    /// the reporting path; an overflow-class violation (`checked_add`
+    /// returning `None`) is reported as `delta = 0` and the diagnostic
+    /// is recoverable from the `expected` / `got` mismatch (which is
+    /// also `0 != input`).
+    ///
+    /// Routed `AuditRouting::Abort` per M1.2 contract §2: a
+    /// conservation failure on Transform 1 indicates engine-wide
+    /// accounting corruption and the run dies before any downstream
+    /// consumer sees the corrupted manifold.
+    ConservationOfMassViolation {
+        /// Expected: `total_input_spikes` (the engine's pre-kernel
+        /// spike-buffer count).
+        expected: u64,
+        /// Got: `total_attributed + background_count`. Equal to
+        /// `expected` iff the law holds.
+        got: u64,
+        /// `got - expected` as a signed delta. `0` for the overflow
+        /// case (`checked_add` returned `None`) — see type-level docs.
+        delta: i128,
+    },
     /// Synthetic test evidence used only by the Phase 2 mock transform
     /// in the test harness. Never emitted by production transforms.
     /// Present as a typed variant (rather than a string) to keep the
