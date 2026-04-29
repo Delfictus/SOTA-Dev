@@ -162,6 +162,11 @@ fn compile_to_static_archive(
         .arg("-std=c++17")
         .arg("--expt-relaxed-constexpr")
         .arg("-I/usr/local/cuda/include")
+        // CUDA 13+ ships CUB and Thrust under the CCCL umbrella at
+        // include/cccl/{cub,thrust,cuda}/. Earlier toolkits had them
+        // directly under include/. The extra include path lets
+        // `#include <cub/cub.cuh>` resolve under either layout.
+        .arg("-I/usr/local/cuda/include/cccl")
         .arg("-Isrc/cuda")
         .arg("-o").arg(&obj_path)
         .arg(source)

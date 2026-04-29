@@ -786,21 +786,28 @@ mod tests {
     }
 
     // ========================================================================
-    // M1.2.2 — synthetic-input verification of the per-spike kernel
+    // M1.2.2 + M1.2.3 — synthetic verification of the kernel + CUB chain
     // ========================================================================
     //
     // Drives the M1.2.1-locked FFI surface (`prism_m1_spike_to_cluster_4d_run`)
     // with a 100-spike synthetic stream whose CPU-side ground-truth
-    // assignment is known by construction. Asserts:
+    // assignment is known by construction.
+    //
+    // M1.2.2 assertions (kernel-only, originally landed in commit 7dc778b0):
     //   (a) cluster_id_per_spike[i] equals the CPU reference for every i.
     //   (b) per_cluster_count[c] is BitExact equal to the CPU reference
     //       count for every cluster c.
     //   (c) background_count is BitExact equal to the CPU reference
     //       out-of-bbox count.
-    //   (d) total_attributed_scalar is the documented M1.2.2 placeholder
-    //       (zero); CUB DeviceReduce::Sum fills it in M1.2.3, which will
-    //       force this assertion to be updated alongside the CUB wire-in.
-    // AABB validation is owned by M1.2.3 per M1.2 contract §6.
+    //
+    // M1.2.3 extensions (CUB chain — SortPairs + Reduce::Sum + Scan +
+    // SegmentedReduce::Reduce<AabbUnion>):
+    //   (d) total_attributed_scalar equals the sum of per_cluster_count
+    //       (= NUM_INBOUND in this test) — flips from the M1.2.2
+    //       placeholder of zero.
+    //   (e) per_cluster_aabb BitExact matches the CPU reference for every
+    //       cluster — owned by cub::DeviceSegmentedReduce per §6, no
+    //       atomicMin/atomicMax loops.
 
     #[cfg(feature = "gpu")]
     #[test]
@@ -887,13 +894,16 @@ mod tests {
         let d_background_count = stream
             .alloc_zeros::<u64>(1)
             .expect("alloc d_background_count");
-        // d_per_cluster_aabb is part of the M1.2.1-locked FFI surface
-        // but not consumed by M1.2.2. Allocate as a u32 scratch buffer
-        // matching the byte size of [Aabb; NUM_CLUSTERS] (24 B/Aabb =
-        // 6 × u32) and reinterpret-cast at the FFI boundary.
-        let d_aabb_scratch = stream
-            .alloc_zeros::<u32>(NUM_CLUSTERS as usize * 6)
-            .expect("alloc d_aabb_scratch");
+        // d_per_cluster_aabb backing store: f32 array of size
+        // NUM_CLUSTERS × 6 (matches Aabb { min: [f32;3], max: [f32;3] }
+        // = 24 B). Reinterpret-cast at the FFI boundary to *mut Aabb;
+        // the C-side `struct Aabb` and Rust-side `entangled_manifold::Aabb`
+        // are both `#[repr(C)]` with identical 6×f32 layout (see the
+        // `ffi_aabb_struct_layout_size_is_32_bytes_on_x86_64` test for
+        // the layout pin on the FFI sibling struct that wraps Aabb).
+        let d_per_cluster_aabb = stream
+            .alloc_zeros::<f32>(NUM_CLUSTERS as usize * 6)
+            .expect("alloc d_per_cluster_aabb");
 
         let params = ffi::SpatialHashParams {
             bbox_min,
@@ -910,7 +920,7 @@ mod tests {
         let (count_dev,        _g_cnt)  = d_per_cluster_count.device_ptr(&stream);
         let (total_dev,        _g_tot)  = d_total_attributed.device_ptr(&stream);
         let (bg_dev,           _g_bg)   = d_background_count.device_ptr(&stream);
-        let (aabb_dev,         _g_aabb) = d_aabb_scratch.device_ptr(&stream);
+        let (aabb_dev,         _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
 
         // SAFETY: every pointer was obtained from a live CudaSlice whose
         // _g_* guards are held until end of function; raw_stream is the
@@ -978,12 +988,47 @@ mod tests {
             out_background_count[0], cpu_background_count,
             "M1.2.2: background_count differs from CPU reference (BitExact violation)"
         );
-        // (d) total_attributed placeholder pinned at 0 — forces M1.2.3
-        // to update this assertion when CUB DeviceReduce::Sum lands.
+        // (d) total_attributed_scalar = NUM_INBOUND (sum of per_cluster_count).
+        // M1.2.3 wires cub::DeviceReduce::Sum on per_cluster_count,
+        // replacing the M1.2.2 placeholder of zero.
         assert_eq!(
-            out_total_attributed[0], 0,
-            "M1.2.2 placeholder violated: total_attributed_scalar must be 0 \
-             until M1.2.3 wires CUB DeviceReduce::Sum"
+            out_total_attributed[0],
+            NUM_INBOUND as u64,
+            "M1.2.3: total_attributed_scalar should equal Σ per_cluster_count"
         );
+
+        // (e) Per-cluster AABB BitExact match against CPU reference.
+        // CUB DeviceSegmentedReduce produces a deterministic min/max
+        // per segment for fixed sorted input (min/max are commutative
+        // + associative + idempotent on duplicates). In this synthetic
+        // test every spike for a given cluster lives at the same
+        // integer-cell-center point (cx+0.5, cy+0.5, cz+0.5), so each
+        // cluster's AABB collapses to that single point — both min and
+        // max equal the position.
+        let mut out_aabb_flat = vec![0.0f32; NUM_CLUSTERS as usize * 6];
+        stream
+            .memcpy_dtoh(&d_per_cluster_aabb, &mut out_aabb_flat)
+            .expect("dtoh per_cluster_aabb");
+
+        for c in 0..NUM_CLUSTERS as usize {
+            let cx = (c as i32) % GRID_X;
+            let cy = ((c as i32) / GRID_X) % GRID_Y;
+            let cz = ((c as i32) / (GRID_X * GRID_Y)) % GRID_Z;
+            let ex = cx as f32 + 0.5;
+            let ey = cy as f32 + 0.5;
+            let ez = cz as f32 + 0.5;
+            assert_eq!(out_aabb_flat[c * 6 + 0], ex,
+                "M1.2.3: AABB.min[0] cluster {} mismatch", c);
+            assert_eq!(out_aabb_flat[c * 6 + 1], ey,
+                "M1.2.3: AABB.min[1] cluster {} mismatch", c);
+            assert_eq!(out_aabb_flat[c * 6 + 2], ez,
+                "M1.2.3: AABB.min[2] cluster {} mismatch", c);
+            assert_eq!(out_aabb_flat[c * 6 + 3], ex,
+                "M1.2.3: AABB.max[0] cluster {} mismatch", c);
+            assert_eq!(out_aabb_flat[c * 6 + 4], ey,
+                "M1.2.3: AABB.max[1] cluster {} mismatch", c);
+            assert_eq!(out_aabb_flat[c * 6 + 5], ez,
+                "M1.2.3: AABB.max[2] cluster {} mismatch", c);
+        }
     }
 }
