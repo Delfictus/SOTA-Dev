@@ -183,6 +183,14 @@ pub mod lbvh;
 /// Adjudicator's SWITCH node consumes as the Case-2 Violation
 /// trigger. See module docs for the caller contract.
 pub mod vram_pool;
+/// Rectification Phase 1 — hard-trap GPU invariant enforcement.
+/// Provides the `gpu_hard_assert` device helper (PTX `trap`
+/// instruction) and the M1 Conservation-of-Mass audit kernel. On
+/// invariant violation the device terminates the warp and the
+/// driver returns a non-recoverable CUDA error from the host's
+/// stream-synchronize. See module docs for the §9 ESCALATION
+/// posture and verification contract.
+pub mod gpu_invariant;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it

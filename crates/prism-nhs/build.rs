@@ -14,6 +14,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/lbvh_morton.cuh");
     println!("cargo:rerun-if-changed=src/cuda/vram_pool.cu");
     println!("cargo:rerun-if-changed=src/cuda/vram_pool.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/gpu_invariant.cu");
+    println!("cargo:rerun-if-changed=src/cuda/gpu_invariant.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -84,6 +86,18 @@ fn main() {
         &nvcc,
         "src/cuda/vram_pool.cu",
         "vram_pool",
+        &out_dir,
+    );
+
+    // Rectification Phase 1: hard-trap GPU invariant enforcement.
+    // Single audit kernel + gpu_hard_assert __device__ helper that
+    // fires the PTX `trap` instruction on invariant violation. The
+    // M1 Conservation-of-Mass audit is the first consumer; future
+    // M1 / M2 invariants follow the same pattern.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/gpu_invariant.cu",
+        "gpu_invariant",
         &out_dir,
     );
 }
