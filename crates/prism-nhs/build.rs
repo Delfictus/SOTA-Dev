@@ -22,6 +22,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/rich_spike.cuh");
     println!("cargo:rerun-if-changed=src/cuda/lbvh_tree.cu");
     println!("cargo:rerun-if-changed=src/cuda/lbvh_tree.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/sh_basis.cu");
+    println!("cargo:rerun-if-changed=src/cuda/sh_basis.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -141,6 +143,18 @@ fn main() {
         &nvcc,
         "src/cuda/pre_rank.cu",
         "pre_rank",
+        &out_dir,
+    );
+
+    // RECT-3.1.a: Spherical Harmonics Y_lm evaluator (Lmax=5).
+    // Straight-line PTX device helper + init kernel that populates
+    // the device-side K_LM normalization table. Feeds RECT-3.1.b
+    // (so3_project_manifold_kernel) which accumulates a_lm via WMMA
+    // Tensor Core fragments.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/sh_basis.cu",
+        "sh_basis",
         &out_dir,
     );
 }

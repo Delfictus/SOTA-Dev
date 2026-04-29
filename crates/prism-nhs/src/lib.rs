@@ -215,6 +215,15 @@ pub mod rich_spike;
 /// per-node AABBs propagated from the leaves to the root. See
 /// module docs for the Karras encoding and AABB reduce contracts.
 pub mod lbvh_tree;
+/// RECT-3.1 — Spherical Harmonics Y_lm evaluator (Lmax=5).
+/// Straight-line PTX evaluator (no recursion, no per-thread
+/// branching) that produces 36 real Y_lm values per (θ, φ) input.
+/// Feeds the SO(3) projection kernel (RECT-3.1.b) which accumulates
+/// the per-spike `Y_lm * intensity` contributions into `a_lm`
+/// coefficients via WMMA Tensor Core fragments. The
+/// rotationally-invariant power spectrum `C_l = Σ_m |a_lm|²` is the
+/// F1 SWITCH selector for the Kabsch-purged adjudicator.
+pub mod sh_basis;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it
