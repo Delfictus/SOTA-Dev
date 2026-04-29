@@ -218,6 +218,16 @@ cudaError_t prism_sh_eval_run(
     cudaStream_t stream
 );
 
+/// Retrieve a device pointer to the K_LM[36] normalization table
+/// populated by `prism_sh_basis_init`. The pointer is stable for the
+/// process lifetime and may be passed to downstream kernels (e.g.
+/// `prism_so3_project_run`) that need to evaluate Y_lm in their own
+/// translation units.
+///
+/// Returns `cudaErrorInvalidValue` if `out_dev_ptr` is null;
+/// otherwise the result of `cudaGetSymbolAddress`.
+cudaError_t prism_sh_basis_get_k_lm_dev_ptr(const float** out_dev_ptr);
+
 }  // extern "C"
 
 }}  // namespace prism_nhs::sh_basis

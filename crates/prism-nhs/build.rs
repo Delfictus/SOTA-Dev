@@ -24,6 +24,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/lbvh_tree.cuh");
     println!("cargo:rerun-if-changed=src/cuda/sh_basis.cu");
     println!("cargo:rerun-if-changed=src/cuda/sh_basis.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/so3_project.cu");
+    println!("cargo:rerun-if-changed=src/cuda/so3_project.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -155,6 +157,20 @@ fn main() {
         &nvcc,
         "src/cuda/sh_basis.cu",
         "sh_basis",
+        &out_dir,
+    );
+
+    // RECT-3.1.b: SO(3) projection kernel + ContactShellTile
+    // (alignas(128), 384 B). Consumes RichSpike clusters, evaluates
+    // Y_lm per spike via the inline helper from sh_basis.cuh,
+    // accumulates per-cluster a_lm via warp-shuffle reduce, computes
+    // C_l = Σ_m |a_lm|², writes one ContactShellTile per cluster.
+    // RECT-3.1.c will replace the warp-shuffle reduction with WMMA
+    // Tensor Core fragments without changing the on-tile layout.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/so3_project.cu",
+        "so3_project",
         &out_dir,
     );
 }

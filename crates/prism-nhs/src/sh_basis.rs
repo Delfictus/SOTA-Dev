@@ -197,7 +197,7 @@ impl LMIndex {
 
 #[cfg(feature = "gpu")]
 #[allow(dead_code)]
-mod ffi {
+pub(crate) mod ffi {
     pub type CudaError = i32;
     pub const CUDA_SUCCESS: CudaError = 0;
 
@@ -212,7 +212,23 @@ mod ffi {
             d_Y_out: *mut f32,
             stream: *mut std::ffi::c_void,
         ) -> CudaError;
+
+        pub fn prism_sh_basis_get_k_lm_dev_ptr(out_dev_ptr: *mut *const f32) -> CudaError;
     }
+}
+
+/// Retrieve the device-side pointer to the K_LM[36] normalization
+/// table populated by `prism_sh_basis_init`. Caller MUST have
+/// invoked `prism_sh_basis_init` once before this call. Returns
+/// `Err(cuda_error_code)` on failure.
+#[cfg(feature = "gpu")]
+pub fn k_lm_device_ptr() -> Result<*const f32, i32> {
+    let mut ptr: *const f32 = std::ptr::null();
+    let rc = unsafe { ffi::prism_sh_basis_get_k_lm_dev_ptr(&mut ptr as *mut _) };
+    if rc != ffi::CUDA_SUCCESS {
+        return Err(rc);
+    }
+    Ok(ptr)
 }
 
 #[cfg(feature = "gpu")]

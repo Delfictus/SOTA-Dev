@@ -116,6 +116,15 @@ cudaError_t prism_sh_eval_run(
     return cudaGetLastError();
 }
 
+cudaError_t prism_sh_basis_get_k_lm_dev_ptr(const float** out_dev_ptr) {
+    if (out_dev_ptr == nullptr) return cudaErrorInvalidValue;
+    void* sym = nullptr;
+    const cudaError_t rc = cudaGetSymbolAddress(&sym, K_LM);
+    if (rc != cudaSuccess) return rc;
+    *out_dev_ptr = static_cast<const float*>(sym);
+    return cudaSuccess;
+}
+
 }  // extern "C"
 
 }}  // namespace prism_nhs::sh_basis

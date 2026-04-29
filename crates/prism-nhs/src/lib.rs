@@ -224,6 +224,17 @@ pub mod lbvh_tree;
 /// rotationally-invariant power spectrum `C_l = Σ_m |a_lm|²` is the
 /// F1 SWITCH selector for the Kabsch-purged adjudicator.
 pub mod sh_basis;
+/// RECT-3.1.b — SO(3) projection kernel + [`so3_project::ContactShellTile`].
+/// Consumes RichSpike clusters, evaluates Y_lm per spike (relative
+/// to the cluster centroid), accumulates per-cluster `a_lm` via
+/// warp-shuffle reduce, and writes a 384-byte, 128-byte-aligned
+/// hardware execution tile with the rotation-invariant power
+/// spectrum `C_l = Σ_m |a_lm|²`. The `g11_rotation_invariance`
+/// test pins the SO(3)-invariance contract within 1e-3 relative
+/// tolerance over 10 random rotations. RECT-3.1.c will refactor
+/// the inner accumulator to `nvcuda::wmma::fragment` matmul without
+/// changing the on-tile layout.
+pub mod so3_project;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it
