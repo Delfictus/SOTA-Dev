@@ -8,8 +8,21 @@ license = "Proprietary"
 readme = "README.md"
 
 [features]
-default = ["gpu"]
+# `diagnostic` is in `default` so the bin's `--m1-typed-producer`
+# wire-in continues to compile against the migrated
+# `diagnostic::m1_differential` module without scattering
+# `#[cfg]` gates throughout `bin/nhs_rt_full.rs`. Production lockdown
+# excludes it explicitly:
+#   cargo build --release -p prism-nhs --no-default-features --features gpu
+default = ["gpu", "diagnostic"]
 gpu = ["cudarc"]
+# Diagnostic / informational modules. Per Blackwell Convergence
+# mandate §2 the M1.2.5b typed-producer differential
+# (`src/diagnostic/m1_differential.rs`) is no longer a closure gate
+# — it survives only as an opt-out feature. The cfg gate makes the
+# diagnostic surface excludable from production builds without
+# touching source.
+diagnostic = []
 
 [dependencies]
 # PRISM-Therm: SDST thermodynamic analysis pipeline

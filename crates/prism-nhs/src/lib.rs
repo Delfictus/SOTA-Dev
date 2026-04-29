@@ -174,14 +174,13 @@ pub mod entangled_manifold;
 /// derived only from the support set; LBVH gives that derivation a
 /// real algorithmic backing.
 pub mod lbvh;
-/// M1.2.5b — typed-producer differential protocol implementation.
-/// Pure-logic comparison helpers (data structures + classification +
-/// rollup) for cross-checking the M1 [`spike_to_cluster_4d::SpikeToCluster4D`]
-/// producer against the legacy `cluster_spikes` path. The reference spec
-/// is `docs/M1_DIFFERENTIAL_PROTOCOL.md`. The GPU-side helper that drives
-/// it lives in [`spike_to_cluster_4d::side_channel`] (existing-file edit
-/// territory; this module is data-structures + pure logic only).
-pub mod m1_differential;
+/// Diagnostic / informational modules — opt-in via the `diagnostic`
+/// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
+/// typed-producer differential is no longer a closure gate; it
+/// survives here as an informational tool only. See
+/// [`diagnostic`] module docs for the full deprecation rationale.
+#[cfg(feature = "diagnostic")]
+pub mod diagnostic;
 /// M1.1 — Per-site canonical container types: [`site_manifest::SiteManifest`],
 /// [`site_manifest::CentroidManifold`] (8-slot, named-accessor-only),
 /// [`site_manifest::Centroid3D`] (4D-aware), [`site_manifest::CausalScalars`],

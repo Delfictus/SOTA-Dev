@@ -1057,6 +1057,396 @@ mod m1_2_5 {
 pub use m1_2_5::SpikeToCluster4DGpuInput;
 
 // ============================================================================
+// M1.2.5b — `side_channel`: GPU helper that drives the differential protocol
+// ============================================================================
+//
+// Per `docs/M1_DIFFERENTIAL_PROTOCOL.md` §6 the protocol-side data
+// structures + classification logic live in
+// [`crate::m1_differential`]. This module is the GPU-bound counterpart:
+// it runs the M1 [`SpikeToCluster4D::apply`] against a host-side
+// `Vec<f32>` of spike positions (the same buffer the legacy
+// `cluster_spikes` consumed at the call site), reads back the
+// per-cluster device buffers, builds the `LegacySnapshot` /
+// `M1TypedSnapshot` pair from data already in scope at the bin's
+// anchor sites, calls
+// [`crate::m1_differential::compute_differential`], and returns the
+// per-frame [`crate::m1_differential::M1Differential`] together with
+// the helper's wall-time measurement (used by
+// [`crate::m1_differential::rollup`]'s overhead report).
+//
+// **Bbox computation is positions-driven.** The MVP picks the
+// epsilon-grid that wraps the input position cloud (with a 0.5 Å
+// margin per axis). This is the simplest defensible bbox; the
+// integer-mismatch BlockingDivergence rate at V4 will tell us
+// whether to refine it (e.g. union-of-legacy-cluster-bboxes for
+// tighter alignment with DBSCAN noise filtering).
+//
+// **Stream lifecycle**: each call creates a fresh non-default
+// `cudarc::driver::CudaStream` (the legacy default stream is rejected
+// by `cudaStreamBeginCapture` with
+// `CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED`) and a fresh
+// [`M1ProducerGraph`]. The captured graph is single-use at this
+// scope: post-MD anchor sites invoke the producer once per call
+// context (main / replica / per-stream), so cross-call replay
+// caching has no leverage. Per-frame in-flight integration where
+// caching pays off is a Part 2 concern.
+
+// Per Blackwell Convergence mandate §2 the typed-producer
+// differential is no longer a closure gate; the side_channel
+// helper that drives it is feature-gated behind `diagnostic` so
+// production builds can opt out.
+#[cfg(all(feature = "gpu", feature = "diagnostic"))]
+pub mod side_channel {
+    use super::{
+        M1ProducerGraph, SpatialHashParams, SpikeToCluster4D, SpikeToCluster4DGpuInput,
+    };
+    use crate::entangled_manifold::Aabb;
+    use crate::diagnostic::m1_differential::{
+        compute_differential, AnchorSite, DifferentialTolerance, LegacySnapshot,
+        M1Differential, M1TypedSnapshot,
+    };
+    use crate::persistent_engine::ClusteredBindingSite;
+    use crate::rt_clustering::RtClusteringResult;
+    use crate::transform::{AuditOutcome, AuditedTransform};
+    use cudarc::driver::{CudaContext, CudaSlice, DevicePtr};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    /// Default voxel-grid cell size used by the M1 producer when no
+    /// caller override is supplied. 2.0 Å sits between the
+    /// multi-scale clustering's tightest (1.5 Å) and the canonical
+    /// default (2.5 Å) — chosen so the M1 voxel count is in the
+    /// same order of magnitude as the legacy DBSCAN cluster count
+    /// for typical small-protein runs (KRAS scale).
+    pub const DEFAULT_EPSILON_ANGSTROM: f32 = 2.0;
+
+    /// Margin added to each axis of the auto-computed bbox so a
+    /// position sitting exactly at the max isn't pushed out by
+    /// `(x - min) / cell_size` cast-to-int truncation. 0.5 Å is well
+    /// above f32 ULP at protein-coordinate magnitudes (~1e-5 Å) but
+    /// small enough not to materially shift the integer attribution
+    /// boundary.
+    const BBOX_MARGIN_ANG: f32 = 0.5;
+
+    /// Compute the bbox + grid that wraps a planar `[N][3]`
+    /// `positions` slice under `epsilon_angstrom` cell size.
+    /// Returns `(bbox_min, bbox_max, grid_dim, num_cells)`. Empty
+    /// input returns a degenerate 1-cell grid — the producer will
+    /// hash zero spikes (none) to UNCLUSTERED, and CUB's segmented
+    /// reduce remains contractually well-formed (`num_segments > 0`).
+    pub fn compute_bbox_and_grid(
+        positions: &[f32],
+        epsilon_angstrom: f32,
+    ) -> ([f32; 3], [f32; 3], [i32; 3], u32) {
+        debug_assert!(positions.len() % 3 == 0, "positions must be planar [N][3]");
+        debug_assert!(epsilon_angstrom > 0.0, "epsilon must be positive");
+
+        if positions.is_empty() {
+            return ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [1, 1, 1], 1);
+        }
+
+        let mut min = [f32::INFINITY; 3];
+        let mut max = [f32::NEG_INFINITY; 3];
+        for chunk in positions.chunks_exact(3) {
+            for ax in 0..3 {
+                if chunk[ax] < min[ax] {
+                    min[ax] = chunk[ax];
+                }
+                if chunk[ax] > max[ax] {
+                    max[ax] = chunk[ax];
+                }
+            }
+        }
+        for ax in 0..3 {
+            min[ax] -= BBOX_MARGIN_ANG;
+            max[ax] += BBOX_MARGIN_ANG;
+        }
+
+        let mut grid_dim = [0i32; 3];
+        for ax in 0..3 {
+            let span = max[ax] - min[ax];
+            grid_dim[ax] = (span / epsilon_angstrom).ceil() as i32;
+            if grid_dim[ax] < 1 {
+                grid_dim[ax] = 1;
+            }
+        }
+        let num_cells = (grid_dim[0] as u32)
+            .saturating_mul(grid_dim[1] as u32)
+            .saturating_mul(grid_dim[2] as u32);
+        (min, max, grid_dim, num_cells.max(1))
+    }
+
+    /// Build a [`LegacySnapshot`] from the data in scope at any of
+    /// the three Phase A1 anchor sites. The caller passes the
+    /// position buffer (so `total_input_spikes` is exact), the
+    /// `RtClusteringResult` (for `num_clusters`), and the post-filter
+    /// `legacy_sites` (for `num_clusters_attributed`,
+    /// `total_attributed`, per-cluster centroids and AABB volumes).
+    ///
+    /// Per protocol §1 metric 1: `total_attributed` is `Σ
+    /// site.spike_count`. `background_count` is derived as
+    /// `total_input_spikes − total_attributed` (legacy has no
+    /// explicit background counter).
+    pub fn build_legacy_snapshot(
+        num_spikes: u32,
+        legacy_result: &RtClusteringResult,
+        legacy_sites: &[ClusteredBindingSite],
+    ) -> LegacySnapshot {
+        let total_input = num_spikes as u64;
+        let total_attributed: u64 = legacy_sites
+            .iter()
+            .map(|s| s.spike_count as u64)
+            .sum();
+        let background_count = total_input.saturating_sub(total_attributed);
+        let num_clusters_attributed = legacy_sites.len() as u32;
+
+        let cluster_centroids_ang: Vec<[f32; 3]> = legacy_sites
+            .iter()
+            .map(|s| s.geometric_voxel_mass_centroid())
+            .collect();
+        let cluster_aabb_volumes_ang3: Vec<f32> = legacy_sites
+            .iter()
+            .map(|s| s.bounding_box[0] * s.bounding_box[1] * s.bounding_box[2])
+            .collect();
+
+        LegacySnapshot::from_extracted(
+            legacy_result.num_clusters as u32,
+            num_clusters_attributed,
+            total_attributed,
+            background_count,
+            total_input,
+            cluster_centroids_ang,
+            cluster_aabb_volumes_ang3,
+        )
+    }
+
+    /// Build an [`M1TypedSnapshot`] from the M1 producer's
+    /// post-`apply` device buffers. Caller passes the dtoh'd
+    /// per-cluster `counts` and `aabb_flat`; this helper filters to
+    /// the attributed voxels (count > 0) and computes per-cluster
+    /// centroid (AABB midpoint) and volume (axis-extent product).
+    /// The three view AABB volumes come from the
+    /// `EntangledManifold` views directly. The `manifold_frame` is
+    /// the frame stamped onto every view's `ViewProvenance` at
+    /// `apply` time.
+    pub fn build_m1_typed_snapshot(
+        conservation: &super::ConservationScalars,
+        manifold: &crate::entangled_manifold::EntangledManifold,
+        counts: &[u64],
+        aabb_flat: &[f32],
+    ) -> M1TypedSnapshot {
+        let mut centroids = Vec::new();
+        let mut volumes = Vec::new();
+        for (c, &cnt) in counts.iter().enumerate() {
+            if cnt == 0 {
+                continue;
+            }
+            let base = c * 6;
+            let min_x = aabb_flat[base];
+            let min_y = aabb_flat[base + 1];
+            let min_z = aabb_flat[base + 2];
+            let max_x = aabb_flat[base + 3];
+            let max_y = aabb_flat[base + 4];
+            let max_z = aabb_flat[base + 5];
+            centroids.push([
+                0.5 * (min_x + max_x),
+                0.5 * (min_y + max_y),
+                0.5 * (min_z + max_z),
+            ]);
+            volumes.push((max_x - min_x) * (max_y - min_y) * (max_z - min_z));
+        }
+        let num_attr = centroids.len() as u32;
+
+        let view_volume = |a: &Aabb| -> f32 {
+            (a.max[0] - a.min[0]) * (a.max[1] - a.min[1]) * (a.max[2] - a.min[2])
+        };
+
+        M1TypedSnapshot::from_components(
+            num_attr,
+            conservation.total_attributed,
+            conservation.background_count,
+            conservation.total_input_spikes,
+            manifold.frame,
+            centroids,
+            volumes,
+            view_volume(&manifold.driver.data().aabb),
+            view_volume(&manifold.lining.data().aabb),
+            view_volume(&manifold.localized.data().aabb),
+        )
+    }
+
+    /// End-to-end side-channel runner. Drives the M1 typed producer
+    /// against `positions`, builds both snapshots, calls
+    /// [`compute_differential`], and returns the per-frame record
+    /// plus the M1 wall-time (milliseconds) for the caller's
+    /// per-call timing aggregation.
+    ///
+    /// On `apply` returning `Aborted` (M1 conservation violation),
+    /// this helper still returns `Ok` carrying a `BlockingDivergence`
+    /// record — the bin caller gets a structured warning rather than
+    /// a hard crash. `apply` returning `Quarantined` is similarly
+    /// surfaced. **Errors here** (`Err`) are reserved for
+    /// infrastructure failures (CUDA alloc, htod, dtoh, sync); the
+    /// bin caller should `log::warn!` on `Err` and continue with
+    /// the legacy-only path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_m1_typed_producer(
+        ctx: &Arc<CudaContext>,
+        positions: &[f32],
+        num_spikes: u32,
+        legacy_result: &RtClusteringResult,
+        legacy_sites: &[ClusteredBindingSite],
+        frame: u64,
+        anchor_site: AnchorSite,
+        stream_id: u32,
+        epsilon_angstrom: Option<f32>,
+        tolerance: &DifferentialTolerance,
+    ) -> anyhow::Result<(M1Differential, f64)> {
+        let start = Instant::now();
+        let epsilon = epsilon_angstrom.unwrap_or(DEFAULT_EPSILON_ANGSTROM);
+
+        // Bbox strategy: positions-wide. M1 sees every spike the
+        // engine emitted, with the bbox auto-computed to enclose all
+        // positions plus a 0.5 Å margin. This is the natural M1
+        // voxelization semantic and is the one the differential is
+        // designed to expose:
+        //
+        // - M1 attributes every in-bbox spike to a voxel; M1
+        //   background is only out-of-bbox positions (≈0 with the
+        //   margin). M1.total_attributed ≈ total_input_spikes.
+        // - Legacy DBSCAN attributes only spikes in dense regions
+        //   ≥ minPts neighbors at ε; legacy noise spikes are
+        //   intermingled with cluster spikes spatially. Legacy's
+        //   `total_attributed = Σ kept-cluster.spike_count` is
+        //   strictly less than `total_input_spikes` whenever any
+        //   noise or sub-threshold-filtered cluster exists.
+        //
+        // Net consequence: the M1 ↔ legacy `total_attributed_delta`
+        // is a structural METHODOLOGY-GAP measurement, not a bug.
+        // Pre-M3 (role-view specialization) the differential is
+        // informational; the protocol's §1 metric-6 caveat ("Do
+        // not gate AgreementClass on metric 6 until M3 lands
+        // authentic role-view specialization") applies in spirit
+        // to metric 1 as well. The §8 V4 report documents the
+        // observed BlockingDivergence rate as a baseline; meeting
+        // protocol §7's `BlockingDivergence ≤ 0.5%` strict gate
+        // is structurally NOT achievable at the M1.2 producer
+        // level and is deferred to M3. (A bbox-restriction
+        // strategy that filtered input to only legacy-attributed
+        // positions was investigated and rejected — it would
+        // make the differential always-PASS-by-construction and
+        // mask the real DBSCAN/voxelization gap.)
+        let (bbox_min, bbox_max, grid_dim, num_clusters) =
+            compute_bbox_and_grid(positions, epsilon);
+
+        // Non-default stream — `cudaStreamBeginCapture` rejects the
+        // legacy default stream with CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED.
+        let stream = ctx
+            .new_stream()
+            .map_err(|e| anyhow::anyhow!("side_channel: new_stream: {:?}", e))?;
+
+        // Allocate device buffers + htod positions.
+        let mut d_positions: CudaSlice<f32> = stream
+            .alloc_zeros(positions.len().max(1))
+            .map_err(|e| anyhow::anyhow!("side_channel: alloc d_positions: {:?}", e))?;
+        if !positions.is_empty() {
+            stream
+                .memcpy_htod(positions, &mut d_positions)
+                .map_err(|e| anyhow::anyhow!("side_channel: htod positions: {:?}", e))?;
+        }
+        let d_cluster_ids: CudaSlice<u32> = stream
+            .alloc_zeros(num_spikes.max(1) as usize)
+            .map_err(|e| anyhow::anyhow!("side_channel: alloc d_cluster_ids: {:?}", e))?;
+        let d_per_cluster_count: CudaSlice<u64> = stream
+            .alloc_zeros(num_clusters as usize)
+            .map_err(|e| anyhow::anyhow!("side_channel: alloc d_per_cluster_count: {:?}", e))?;
+        let d_total_attributed: CudaSlice<u64> = stream
+            .alloc_zeros(1)
+            .map_err(|e| anyhow::anyhow!("side_channel: alloc d_total_attributed: {:?}", e))?;
+        let d_background_count: CudaSlice<u64> = stream
+            .alloc_zeros(1)
+            .map_err(|e| anyhow::anyhow!("side_channel: alloc d_background_count: {:?}", e))?;
+        let d_per_cluster_aabb: CudaSlice<f32> = stream
+            .alloc_zeros(num_clusters as usize * 6)
+            .map_err(|e| anyhow::anyhow!("side_channel: alloc d_per_cluster_aabb: {:?}", e))?;
+
+        let params = SpatialHashParams {
+            bbox_min,
+            bbox_max,
+            cell_size: epsilon,
+            grid_dim,
+            num_cells: num_clusters,
+        };
+
+        let mut graph_cache = M1ProducerGraph::new();
+        let input = SpikeToCluster4DGpuInput {
+            stream: &stream,
+            graph_cache: &mut graph_cache,
+            d_spike_positions: &d_positions,
+            num_spikes,
+            params,
+            frame,
+            d_cluster_id_per_spike: &d_cluster_ids,
+            d_per_cluster_count: &d_per_cluster_count,
+            d_total_attributed: &d_total_attributed,
+            d_background_count: &d_background_count,
+            d_per_cluster_aabb: &d_per_cluster_aabb,
+            num_clusters,
+        };
+
+        let producer = SpikeToCluster4D::new();
+        let outcome = producer.apply(input);
+
+        // dtoh the per-cluster device buffers regardless of outcome —
+        // even on Aborted the device state is forensically useful
+        // (it's what triggered the abort).
+        let mut counts_h = vec![0u64; num_clusters as usize];
+        let _ = stream.memcpy_dtoh(&d_per_cluster_count, &mut counts_h);
+        let mut aabb_h = vec![0.0f32; num_clusters as usize * 6];
+        let _ = stream.memcpy_dtoh(&d_per_cluster_aabb, &mut aabb_h);
+        let _ = stream.synchronize();
+
+        // Build M1TypedSnapshot. On non-Accepted outcomes, derive
+        // from whatever conservation scalars + manifold the apply
+        // returned (placeholder values for Aborted are well-defined:
+        // total_attributed=0, background_count=0, manifold absent).
+        let m1_typed = match &outcome {
+            AuditOutcome::Accepted { output, .. }
+            | AuditOutcome::Quarantined { output, .. } => build_m1_typed_snapshot(
+                &output.conservation,
+                &output.manifold,
+                &counts_h,
+                &aabb_h,
+            ),
+            AuditOutcome::Aborted { .. } => {
+                // Synthetic placeholder snapshot when apply aborted —
+                // the differential's BlockingDivergence will fire on
+                // the integer mismatch (M1 reports 0 attributed,
+                // legacy reports >0), which is the correct forensic
+                // signal that something went wrong.
+                M1TypedSnapshot::from_components(
+                    0,
+                    0,
+                    0,
+                    num_spikes as u64,
+                    frame,
+                    Vec::new(),
+                    Vec::new(),
+                    0.0,
+                    0.0,
+                    0.0,
+                )
+            }
+        };
+
+        let legacy = build_legacy_snapshot(num_spikes, legacy_result, legacy_sites);
+        let record = compute_differential(frame, stream_id, anchor_site, legacy, m1_typed, tolerance);
+        let m1_wall_ms = start.elapsed().as_secs_f64() * 1000.0;
+        Ok((record, m1_wall_ms))
+    }
+}
+
+// ============================================================================
 // extern "C" accessors for steering subsystem (post-M1) consumption
 // ============================================================================
 //

@@ -34,6 +34,109 @@ use prism_nhs::{
     spike_thermodynamic_integration::{compute_binding_free_energy, StiConfig, BindingFreeEnergy},
 };
 
+// M1.2.5b — typed-producer differential side-channel imports.
+// Per Blackwell Convergence mandate §2 the differential is no longer
+// a closure gate; it survives only behind the opt-in `diagnostic`
+// feature. `args.m1_typed_producer` is parsed unconditionally but
+// has no compiled call-site path in default (non-diagnostic) builds.
+#[cfg(all(feature = "gpu", feature = "diagnostic"))]
+use prism_nhs::diagnostic::m1_differential::{
+    rollup as m1_rollup, AnchorSite as M1AnchorSite,
+    DifferentialTolerance as M1DifferentialTolerance,
+    M1Differential,
+};
+#[cfg(all(feature = "gpu", feature = "diagnostic"))]
+use prism_nhs::spike_to_cluster_4d::side_channel as m1_side_channel;
+
+/// M1.2.5b — invoke the typed-producer side channel alongside the
+/// legacy `cluster_spikes` invocation at one of the three Phase A1
+/// anchor contexts. Pure side effect: pushes a per-call
+/// [`M1Differential`] into `records` and accumulates the M1 wall
+/// time into `m1_total_wall_ms`. Never modifies the legacy
+/// `sites` / `result` borrows; the legacy path is structurally
+/// untouched.
+///
+/// Gate-OFF (the default) is a no-op. Side-channel infrastructure
+/// failures (CudaContext::new, alloc, kernel launch) downgrade to
+/// `log::warn!` and continue — the legacy run is never compromised
+/// by an M1 side-channel error.
+#[cfg(all(feature = "gpu", feature = "diagnostic"))]
+fn maybe_run_m1_side_channel(
+    enabled: bool,
+    positions: &[f32],
+    legacy_result: &prism_nhs::rt_clustering::RtClusteringResult,
+    legacy_sites: &[ClusteredBindingSite],
+    anchor_site: M1AnchorSite,
+    stream_id: u32,
+    frame: u64,
+    records: &mut Vec<M1Differential>,
+    m1_total_wall_ms: &mut f64,
+    legacy_total_wall_ms: &mut f64,
+) {
+    if !enabled {
+        return;
+    }
+    *legacy_total_wall_ms += legacy_result.gpu_time_ms;
+
+    let ctx = match cudarc::driver::CudaContext::new(0) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[M1.2.5b] CudaContext::new failed at {:?}/stream={}: {:?}",
+                       anchor_site, stream_id, e);
+            return;
+        }
+    };
+    let n_spikes = (positions.len() / 3) as u32;
+    match m1_side_channel::run_m1_typed_producer(
+        &ctx,
+        positions,
+        n_spikes,
+        legacy_result,
+        legacy_sites,
+        frame,
+        anchor_site,
+        stream_id,
+        None,
+        &M1DifferentialTolerance::CANONICAL,
+    ) {
+        Ok((record, wall_ms)) => {
+            log::info!(
+                "[M1.2.5b {:?}/stream={}] frame={} agreement={:?} m1_wall={:.1}ms legacy_wall={:.1}ms",
+                anchor_site, stream_id, frame, record.agreement_class,
+                wall_ms, legacy_result.gpu_time_ms,
+            );
+            records.push(record);
+            *m1_total_wall_ms += wall_ms;
+        }
+        Err(e) => log::warn!(
+            "[M1.2.5b {:?}/stream={}] side-channel failed: {:?}",
+            anchor_site, stream_id, e
+        ),
+    }
+}
+
+/// Build the run-end JSON value emitted under
+/// `m1_typed_producer_differential` in `binding_sites.json`. Returns
+/// `Null` when the gate is OFF (so postflight sees "key present but
+/// null", which is benign and additive). When ON, emits the schema
+/// defined in `docs/M1_DIFFERENTIAL_PROTOCOL.md` § 3.
+#[cfg(all(feature = "gpu", feature = "diagnostic"))]
+fn build_m1_differential_json(
+    enabled: bool,
+    records: &[M1Differential],
+    legacy_wall_ms: f64,
+    m1_wall_ms: f64,
+) -> serde_json::Value {
+    if !enabled {
+        return serde_json::Value::Null;
+    }
+    let summary = m1_rollup(records, legacy_wall_ms, m1_wall_ms);
+    serde_json::json!({
+        "frames": records,
+        "summary": summary,
+    })
+}
+
 #[derive(Parser, Clone)]
 #[command(name = "nhs-rt-full")]
 #[command(about = "Full NHS pipeline with RT-core acceleration")]
@@ -65,6 +168,24 @@ struct Args {
     /// Enable RT clustering
     #[arg(long, default_value = "true")]
     rt_clustering: bool,
+
+    /// M1.2.5b — run the M1 typed `SpikeToCluster4D` producer
+    /// alongside the legacy `cluster_spikes` invocations as a
+    /// non-replacing side channel. When `true`, the typed producer
+    /// fires at every clustering call site (main / replica /
+    /// per-stream), the per-call `M1Differential` is collected into
+    /// the run-level vector, and the aggregated differential
+    /// report is emitted into `binding_sites.json` under the
+    /// `m1_typed_producer_differential` top-level key. The legacy
+    /// path is **untouched** in either gate state — gate-OFF runs
+    /// are byte-identical to pre-M1.2.5b baseline.
+    ///
+    /// Default OFF per M1.2 contract §10 (typed producer is
+    /// non-default until soak completes). V4 verification flips
+    /// this ON for canonical 4LPK runs; production callers leave
+    /// it OFF until Part 2 retires the legacy path.
+    #[arg(long, default_value = "false")]
+    m1_typed_producer: bool,
 
     /// Cluster matching threshold for persistence tracking (Å)
     #[arg(long, default_value = "5.0")]
@@ -2085,6 +2206,17 @@ fn run_full_pipeline_internal(
     // Track epsilon info for JSON output (outside block for scope)
     let mut epsilon_info: Option<(Vec<f32>, bool, Option<usize>, Option<usize>)> = None;
 
+    // M1.2.5b — typed-producer side-channel collectors. Outer-scope
+    // because the JSON emission below this clustering block reads them
+    // for the `m1_typed_producer_differential` top-level key. Empty
+    // and zero when `--m1-typed-producer` is OFF (no records pushed,
+    // no wall-time accumulated). The legacy path is byte-identical
+    // in either gate state — these vectors are write-only from the
+    // gate-ON code path.
+    let mut m1_diff_records: Vec<M1Differential> = Vec::new();
+    let mut m1_total_wall_ms: f64 = 0.0;
+    let mut legacy_total_wall_ms: f64 = 0.0;
+
     let mut clustered_sites = if !accumulated_spikes.is_empty() && args.rt_clustering {
         // Copy positions from packed struct to avoid alignment issues
         let positions: Vec<f32> = accumulated_spikes.iter()
@@ -2316,6 +2448,24 @@ fn run_full_pipeline_internal(
                         .collect();
                     log::info!("  Binding sites: {} (filtered from {} clusters, min {} spikes = 2%)",
                         sites.len(), result.num_clusters, min_spikes);
+
+                    // ── M1.2.5b — typed-producer side-channel (anchor: main) ──
+                    // Pure side-effect: pushes one M1Differential into the
+                    // run-scope collector when `args.m1_typed_producer` is
+                    // ON. Legacy `sites` is structurally untouched.
+                    maybe_run_m1_side_channel(
+                        args.m1_typed_producer,
+                        &positions,
+                        &result,
+                        &sites,
+                        M1AnchorSite::Main,
+                        /* stream_id */ 0,
+                        /* frame */ args.steps as u64,
+                        &mut m1_diff_records,
+                        &mut m1_total_wall_ms,
+                        &mut legacy_total_wall_ms,
+                    );
+
                     sites
                 }
                 Err(e) => {
@@ -2665,6 +2815,16 @@ fn run_full_pipeline_internal(
             "all_pockets": all_pockets_json,
             "cryptic_sites": cryptic_sites_json,
             "prism_therm": prism_therm_result,
+            // M1.2.5b — typed-producer differential. `null` when the
+            // gate is OFF (postflight schema-additivity rule §3.3 of
+            // docs/M1_DIFFERENTIAL_PROTOCOL.md). When ON, an object
+            // with `frames: [...]` + `summary: {...}` per protocol §3.
+            "m1_typed_producer_differential": build_m1_differential_json(
+                args.m1_typed_producer,
+                &m1_diff_records,
+                legacy_total_wall_ms,
+                m1_total_wall_ms,
+            ),
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON summary: {}", json_path.display());
@@ -2989,6 +3149,13 @@ fn run_batch_gpu_concurrent(
         // Process per-replica clustering for consensus analysis
         let mut per_replica_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
 
+        // M1.2.5b — typed-producer side-channel collectors (per-structure
+        // scope; serialized into this structure's binding_sites.json
+        // below). Empty + zero when --m1-typed-producer is OFF.
+        let mut m1_diff_records: Vec<M1Differential> = Vec::new();
+        let mut m1_total_wall_ms: f64 = 0.0;
+        let mut legacy_total_wall_ms: f64 = 0.0;
+
         for (replica_idx, replica_spikes) in per_replica_spikes.iter().enumerate() {
             // Apply intensity filtering per replica (top 2%)
             let filtered_spikes = if replica_spikes.len() > 1000 {
@@ -3046,9 +3213,25 @@ fn run_batch_gpu_concurrent(
                         Ok(result) => {
                             let all_sites = build_sites_from_clustering(&filtered_spikes, &result)?;
                             let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
-                            all_sites.into_iter()
+                            let sites: Vec<_> = all_sites.into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
-                                .collect()
+                                .collect();
+
+                            // ── M1.2.5b — typed-producer side-channel (anchor: replica) ──
+                            maybe_run_m1_side_channel(
+                                args.m1_typed_producer,
+                                &positions,
+                                &result,
+                                &sites,
+                                M1AnchorSite::Replica,
+                                /* stream_id */ replica_idx as u32,
+                                /* frame */ args.steps as u64,
+                                &mut m1_diff_records,
+                                &mut m1_total_wall_ms,
+                                &mut legacy_total_wall_ms,
+                            );
+
+                            sites
                         }
                         Err(_) => Vec::new()
                     }
@@ -3200,6 +3383,12 @@ fn run_batch_gpu_concurrent(
                         "residue_ids": s.lining_residue_ids(),
                     })
                 }).collect::<Vec<_>>(),
+                "m1_typed_producer_differential": build_m1_differential_json(
+                    args.m1_typed_producer,
+                    &m1_diff_records,
+                    legacy_total_wall_ms,
+                    m1_total_wall_ms,
+                ),
             });
             std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         }
@@ -5626,6 +5815,12 @@ fn run_multi_stream_pipeline(
     let mut all_stream_snapshots: Vec<Vec<prism_nhs::fused_engine::EnsembleSnapshot>> = Vec::new();
     let mut all_stream_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
     let mut stream_spike_offsets: Vec<usize> = Vec::new(); // offset into all_stream_spikes for each stream
+    // M1.2.5b — typed-producer side-channel collectors (multi-stream
+    // pipeline scope; serialized into binding_sites.json below). One
+    // record per stream when --m1-typed-producer is ON.
+    let mut m1_diff_records: Vec<M1Differential> = Vec::new();
+    let mut m1_total_wall_ms: f64 = 0.0;
+    let mut legacy_total_wall_ms: f64 = 0.0;
     // Merged signal preservation grids (summed across all streams)
     let mut merged_signal: Option<prism_nhs::fused_engine::SignalPreservationData> = None;
     // Merged KCC data (best-stream-per-residue across all streams)
@@ -5846,7 +6041,23 @@ fn run_multi_stream_pipeline(
                     Ok(r) => {
                         let all = build_sites_from_clustering(&filtered, &r)?;
                         let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
-                        all.into_iter().filter(|s| s.spike_count >= min_s).collect()
+                        let sites: Vec<_> = all.into_iter().filter(|s| s.spike_count >= min_s).collect();
+
+                        // ── M1.2.5b — typed-producer side-channel (anchor: per-stream) ──
+                        maybe_run_m1_side_channel(
+                            args.m1_typed_producer,
+                            &positions,
+                            &r,
+                            &sites,
+                            M1AnchorSite::PerStream,
+                            /* stream_id */ i as u32,
+                            /* frame */ args.steps as u64,
+                            &mut m1_diff_records,
+                            &mut m1_total_wall_ms,
+                            &mut legacy_total_wall_ms,
+                        );
+
+                        sites
                     }
                     Err(e) => {
                         // OptiX fails on SM120 — return empty like v1 did. The CPU
@@ -10996,6 +11207,14 @@ fn run_multi_stream_pipeline(
             // Tier-2 rescue controller telemetry (always present — when
             // rescue is off, `enabled: false` with a reason tag).
             "rescue_history": rescue_history_json,
+            // M1.2.5b — typed-producer differential. `null` when the
+            // gate is OFF; per-protocol §3 schema otherwise.
+            "m1_typed_producer_differential": build_m1_differential_json(
+                args.m1_typed_producer,
+                &m1_diff_records,
+                legacy_total_wall_ms,
+                m1_total_wall_ms,
+            ),
         });
         std::fs::write(&json_path, serde_json::to_string_pretty(&json_output)?)?;
         log::info!("  ✓ JSON: {}", json_path.display());
