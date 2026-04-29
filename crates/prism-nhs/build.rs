@@ -12,6 +12,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/spike_to_cluster_4d.cuh");
     println!("cargo:rerun-if-changed=src/cuda/lbvh_morton.cu");
     println!("cargo:rerun-if-changed=src/cuda/lbvh_morton.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/vram_pool.cu");
+    println!("cargo:rerun-if-changed=src/cuda/vram_pool.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -69,6 +71,19 @@ fn main() {
         &nvcc,
         "src/cuda/lbvh_morton.cu",
         "lbvh_morton",
+        &out_dir,
+    );
+
+    // F2 lane: stream-ordered memory pool (cudaMemPool_t-backed) +
+    // VRAM audit telemetry struct. Three single-thread atomic
+    // kernels (init / record_alloc / record_free) plus four host
+    // orchestrators that wrap cudaMemPool runtime API calls. Static
+    // archive so the cudaMemPool_t / cudaMallocFromPoolAsync runtime
+    // calls link in.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/vram_pool.cu",
+        "vram_pool",
         &out_dir,
     );
 }

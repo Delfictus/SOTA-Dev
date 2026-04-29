@@ -174,6 +174,15 @@ pub mod entangled_manifold;
 /// derived only from the support set; LBVH gives that derivation a
 /// real algorithmic backing.
 pub mod lbvh;
+/// F2 lane (Blackwell Convergence mandate §3) — stream-ordered
+/// memory pool wrapper around `cudaMemPool_t` + VRAM audit telemetry
+/// struct. Replaces static "worst-case" pre-allocation with
+/// `cudaMallocFromPoolAsync` / `cudaFreeAsync` and a 24-byte
+/// device-side audit (`current_allocated_bytes`,
+/// `peak_high_water_mark`, `pool_exhaustion_flag`) that the F1
+/// Adjudicator's SWITCH node consumes as the Case-2 Violation
+/// trigger. See module docs for the caller contract.
+pub mod vram_pool;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it
