@@ -1,0 +1,30 @@
+# Target config schema for PRISM-4D unified dossier
+# Filename convention: <target_id>.yaml where target_id matches the
+# stem of the Arrow filename (e.g. 4lpk_clean.topology.spike_events.arrow → 4lpk).
+
+target_id: <string>           # required; must match filename stem
+target_name: <string>         # required; human-readable
+protein_class: <string>       # required; e.g. "small_GTPase", "serine_protease"
+chain_id: <string>            # required; chain to align against (typically "A")
+protein_residue_range: [int, int]   # required; [first, last] PDB resseq
+
+# Functional regions for canonical-yield labeling.
+# Each region is one or more contiguous residue ranges (inclusive).
+canonical_regions:
+  <region_name>:
+    ranges: [[int, int], ...]   # list of [start, end] inclusive
+  # Example for KRAS:
+  # P-loop:
+  #   ranges: [[8, 18]]
+  # Switch-I:
+  #   ranges: [[25, 40]]
+
+# Reference holo PDBs for E11 multi-view DCC, E15 Hellinger, E16
+# Wasserstein, and Stage-5 Kabsch alignment.
+# Empty list → substrate-only mode (E11/E15/E16 BLOCKED with informative gate).
+references:
+  - pdb_id: <string>            # 4-char PDB ID (will be downloaded if missing)
+    name: <string>               # human-readable inhibitor name
+    het: <string>                # 3-char HET ID (verified)
+    site: <string>               # functional region this binds
+    mechanism: <string>          # binding mode descriptor

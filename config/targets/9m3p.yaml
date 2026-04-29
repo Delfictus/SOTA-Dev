@@ -1,0 +1,22 @@
+target_id: 9m3p
+target_name: PDHK1_catalytic_domain
+protein_class: serine_threonine_kinase
+chain_id: A
+protein_residue_range: [1, 372]
+
+canonical_regions:
+  N_lobe:
+    ranges: [[1, 90]]
+  hinge_region:
+    ranges: [[91, 110]]
+  ATP_binding_site:
+    ranges: [[40, 70], [120, 145]]   # discontinuous
+  C_lobe:
+    ranges: [[111, 280]]
+  regulatory_C_terminus:
+    ranges: [[281, 372]]
+
+# References left empty: Roche Bioorg Med Chem Lett 122:130190 (2025)
+# co-crystals 9M3O/P/R/T/U exist but HET IDs need verification before
+# populating. Substrate-only mode is the correct interim state.
+references: []

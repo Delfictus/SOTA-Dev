@@ -1,0 +1,17 @@
+target_id: 1hhp
+target_name: HIV1_protease_apo
+protein_class: aspartic_protease
+chain_id: A
+protein_residue_range: [1, 99]
+
+canonical_regions:
+  flap:
+    ranges: [[44, 56]]
+  active_site_D25:
+    ranges: [[24, 28]]
+  hydrophobic_pocket:
+    ranges: [[80, 90]]
+
+# saquinavir (ROC), indinavir (MK1), nelfinavir (1UN), etc. — populate
+# after HET ID verification.
+references: []

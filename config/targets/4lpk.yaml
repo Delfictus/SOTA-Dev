@@ -1,0 +1,37 @@
+target_id: 4lpk
+target_name: KRAS_GDP_apo
+protein_class: small_GTPase
+chain_id: A
+protein_residue_range: [1, 169]
+
+canonical_regions:
+  P-loop:
+    ranges: [[8, 18]]
+  Switch-I:
+    ranges: [[25, 40]]
+  Switch-II:
+    ranges: [[55, 76]]
+  alpha3/H3-H4:
+    ranges: [[95, 134]]
+
+references:
+  - pdb_id: 6OIM
+    name: Sotorasib (AMG-510)
+    het: MOV
+    site: Switch-II
+    mechanism: covalent_G12C
+  - pdb_id: 6UT0
+    name: Adagrasib (MRTX849)
+    het: M1X
+    site: Switch-II
+    mechanism: covalent_G12C
+  - pdb_id: 7RPZ
+    name: MRTX1133
+    het: 6IC
+    site: Switch-II
+    mechanism: non_covalent_G12D
+  - pdb_id: 6GJ8
+    name: BI-2852
+    het: F0K
+    site: Switch-I/II
+    mechanism: allosteric_pan_KRAS

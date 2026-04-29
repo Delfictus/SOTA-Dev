@@ -1,0 +1,21 @@
+target_id: 1btl
+target_name: TEM-1_beta_lactamase
+protein_class: serine_beta_lactamase_class_A
+chain_id: A
+protein_residue_range: [26, 290]
+
+canonical_regions:
+  S70_Omega_loop:
+    ranges: [[164, 179]]
+  SXXK_motif:
+    ranges: [[70, 73]]
+  SDN_loop:
+    ranges: [[130, 132]]
+  KTG_motif:
+    ranges: [[234, 236]]
+  active_site_S70:
+    ranges: [[70, 73], [130, 132], [234, 236]]   # composite
+
+# avibactam (NXL), tazobactam, sulbactam, etc. — populate after HET ID
+# verification.
+references: []
