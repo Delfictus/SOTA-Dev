@@ -579,6 +579,168 @@ mod transform_impl {
 pub use transform_impl::{So3ProjectInput, So3ProjectOutput};
 
 // ============================================================================
+// RECT-4 — per-frame stamping of geometry-plane C_l into the canonical
+// per-site SiteManifest array.
+// ============================================================================
+
+/// Per-cluster geometry-plane power spectrum staged on the host
+/// after the D2H copy. Length is exactly `LMAX + 1 = 6` floats per
+/// cluster; the host indexes by `cluster_id`.
+///
+/// Expressed as a free type alias rather than a newtype so the
+/// downstream Adjudicator and JSON serializer can consume it
+/// uniformly with the existing `[f32; 6]` slot in `SiteManifest`.
+pub type GeoPowerSpectrum = [f32; LMAX + 1];
+
+/// RECT-4 stamping result: how many sites had their
+/// `contact_shell_geo_power_spectrum` populated and the maximum
+/// observed `Σ C_l - 1.0` magnitude (a cheap sanity scalar for the
+/// audit spine — the per-cluster L2-normalization invariant should
+/// hold within ~1e-2 after tf32 round-trip).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StampReport {
+    /// Number of sites whose `contact_shell_geo_power_spectrum` field
+    /// transitioned from `None` to `Some`. Equal to
+    /// `min(n_clusters, sites.len())`.
+    pub sites_stamped: u32,
+    /// Number of clusters present in the manifest that had no
+    /// matching site index in `sites`. Reported, not asserted —
+    /// allows callers to operate on partial site lists during
+    /// staged builds without aborting.
+    pub clusters_skipped: u32,
+    /// `max_l (|Σ_l C_l - 1.0|)` across every stamped site's
+    /// geometry plane. Should be ≤ ~1e-2 (post-L2-norm tf32 budget;
+    /// see RECT-3.1.c G11 docs).
+    pub max_norm_drift: f32,
+}
+
+#[cfg(feature = "gpu")]
+mod stamp_impl {
+    use super::*;
+    use crate::site_manifest::SiteManifest;
+
+    /// Copy the `geo_power_spectrum[0..6]` slice of every tile in the
+    /// `SiteManifestFfi`-backed device array into the corresponding
+    /// per-site `SiteManifest::contact_shell_geo_power_spectrum`
+    /// field on the host.
+    ///
+    /// # Surgical contract (Anti-Greenfield §2.3)
+    ///
+    /// * Input host array `sites` is mutated **in place** — caller
+    ///   owns the SiteManifest array and its allocation. We do not
+    ///   construct a parallel "StampedSiteManifest" type; the existing
+    ///   optional field on `SiteManifest` is the surgical extension
+    ///   already authorized at Task #21.
+    /// * The cluster-to-site mapping is `cluster_id == site_array_index`
+    ///   — matches the M1 producer's invariant that the per-cluster
+    ///   AABB column at index `i` corresponds to `cluster_id == i`.
+    /// * Clusters beyond `sites.len()` are reported in
+    ///   [`StampReport::clusters_skipped`] but do not abort.
+    /// * Sites beyond `manifest.n_clusters` retain whatever value was
+    ///   already in `contact_shell_geo_power_spectrum` (not reset).
+    ///
+    /// # CUDA error handling
+    ///
+    /// The single `cuMemcpyDtoH_v2` call copies all `n_clusters`
+    /// tiles in one transaction. Returns the raw `CUresult` on
+    /// failure so callers can route the error through the audit
+    /// spine. Stream synchronization is the caller's responsibility
+    /// (the stream-handle is threaded through but not synchronized
+    /// here, mirroring the pattern in `So3ProjectTransform::apply`).
+    ///
+    /// # Performance
+    ///
+    /// 1280 B per tile × N clusters = ~1.25 KB per cluster D2H. A
+    /// PCIe Gen5 16-lane host link sustains ~63 GB/s; for typical
+    /// N = 100 clusters this is ~125 KB total → ~2 μs. Well under
+    /// the < 10 μs ASC-update latency invariant.
+    pub fn stamp_geo_power_spectrum_into_sites(
+        manifest: &SiteManifestFfi,
+        sites: &mut [SiteManifest],
+    ) -> Result<StampReport, i32> {
+        if manifest.is_null() {
+            return Err(cudarc::driver::sys::CUresult::CUDA_ERROR_INVALID_VALUE as i32);
+        }
+        let n = manifest.n_clusters as usize;
+        if n == 0 {
+            return Ok(StampReport {
+                sites_stamped: 0,
+                clusters_skipped: 0,
+                max_norm_drift: 0.0,
+            });
+        }
+
+        // D2H the entire tile array via a byte-level cuMemcpyDtoH_v2.
+        // This avoids requiring DeviceRepr / ValidAsZeroBits on
+        // ContactShellTile (matches the byte-allocation pattern used
+        // throughout this crate's GPU tests).
+        let tile_bytes = std::mem::size_of::<ContactShellTile>();
+        let total_bytes = tile_bytes.checked_mul(n)
+            .expect("ContactShellTile array size overflow");
+        let mut host_bytes = vec![0u8; total_bytes];
+
+        let rc = unsafe {
+            cudarc::driver::sys::cuMemcpyDtoH_v2(
+                host_bytes.as_mut_ptr() as *mut std::ffi::c_void,
+                manifest.tiles_dev_ptr as cudarc::driver::sys::CUdeviceptr,
+                total_bytes,
+            )
+        };
+        if !matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS) {
+            return Err(rc as i32);
+        }
+
+        // Walk the host buffer + populate the matching SiteManifests.
+        let mut sites_stamped: u32 = 0;
+        let mut clusters_skipped: u32 = 0;
+        let mut max_drift: f32 = 0.0;
+
+        for cluster_id in 0..n {
+            let tile: ContactShellTile = unsafe {
+                std::ptr::read_unaligned(
+                    host_bytes.as_ptr().add(cluster_id * tile_bytes)
+                        as *const ContactShellTile,
+                )
+            };
+
+            // Cluster index out of host site range — record + skip.
+            if cluster_id >= sites.len() {
+                clusters_skipped += 1;
+                continue;
+            }
+
+            // Slice + copy the geometry plane's first 6 C_l values
+            // into a stack-allocated [f32; 6]; this is the canonical
+            // type carried in SiteManifest::contact_shell_geo_power_spectrum.
+            let cl_slice = tile.cl(PLANE_GEO);
+            let mut c_l: GeoPowerSpectrum = [0.0; LMAX + 1];
+            c_l.copy_from_slice(cl_slice);
+
+            // L2-normalization sanity (echo of RECT-3.1.c kernel
+            // invariant). Every C_l should be ≥ KL_EPS = 1e-7 and
+            // Σ_l C_l ≈ 1.0 for non-empty planes.
+            let sum: f32 = c_l.iter().sum();
+            let drift = (sum - 1.0).abs();
+            if drift > max_drift {
+                max_drift = drift;
+            }
+
+            sites[cluster_id].contact_shell_geo_power_spectrum = Some(c_l);
+            sites_stamped += 1;
+        }
+
+        Ok(StampReport {
+            sites_stamped,
+            clusters_skipped,
+            max_norm_drift: max_drift,
+        })
+    }
+}
+
+#[cfg(feature = "gpu")]
+pub use stamp_impl::stamp_geo_power_spectrum_into_sites;
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1265,5 +1427,339 @@ mod tests {
                   F2 alloc → AuditedTransform::apply → D2H tile read; \
                   tile.frame={}, tile.spike_count={}, Σ C_l (geo) = {:.6}",
                   tile.frame, tile.spike_count, cl_g_sum);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // RECT-4 + LBVH-3 — end-to-end integration test
+    //
+    // Stresses the full pipeline:
+    //   per-cluster AABB (LBVH-3) → SiteManifest::from_lbvh_cluster_aabb
+    //                            → so3_project kernel (RECT-3.1.c)
+    //                            → stamp_geo_power_spectrum_into_sites (RECT-4)
+    // Verifies:
+    //   * 3 of 8 CentroidManifold slots populated per site
+    //   * SiteManifest::source_manifold_id = EntangledManifoldId(frame)
+    //     (spatial provenance preserved through every hop)
+    //   * contact_shell_geo_power_spectrum stamped Some(_) per site
+    //   * Σ_l C_l ≈ 1.0 per site (L2-norm survives the D2H copy)
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn rect4_lbvh3_end_to_end_morton_to_manifold_stamp() {
+        use crate::entangled_manifold::{
+            Aabb, CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField,
+            TieBreakerPolicy, ViewProvenance,
+        };
+        use crate::entangled_manifold::CausalSortKey;
+        use crate::rich_spike::RichSpike;
+        use crate::site_manifest::{
+            ClusterId, EntangledManifoldId, SiteId, SiteManifest,
+        };
+        use crate::transform::{AuditOutcome, AuditedTransform};
+        use crate::vram_pool::VramPool;
+        use cudarc::driver::{CudaContext, DevicePtr};
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[rect4/lbvh3] CUDA unavailable: {:?} — skipping", e);
+                return;
+            }
+        };
+        let stream = ctx.new_stream().expect("stream");
+        let raw_stream = stream.cu_stream() as usize;
+
+        let rc = unsafe {
+            crate::sh_basis::ffi::prism_sh_basis_init(
+                raw_stream as *mut std::ffi::c_void,
+            )
+        };
+        assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS);
+        stream.synchronize().expect("post-sh-init sync");
+        let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
+
+        let pool = match VramPool::new(0) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[rect4/lbvh3] VramPool::new failed: {} — skipping", e);
+                return;
+            }
+        };
+
+        // ── Build TWO clusters, each with 16 spikes on its own sphere shell.
+        // Cluster 0: shell radius 4, centered at (10, 10, 10).
+        // Cluster 1: shell radius 3, centered at (-5, -5, -5).
+        // The per-cluster AABB centers should reflect those centers
+        // (LBVH-3 spatial-provenance preservation).
+        const N_CLUSTERS: usize = 2;
+        const PER_CLUSTER: usize = 16;
+        let centers = [[10.0_f32, 10.0, 10.0], [-5.0, -5.0, -5.0]];
+        let radii = [4.0_f32, 3.0];
+        let frame: u64 = 1234;
+
+        let mut spikes: Vec<RichSpike> = Vec::with_capacity(N_CLUSTERS * PER_CLUSTER);
+        let mut per_cluster_aabbs: Vec<Aabb> = Vec::with_capacity(N_CLUSTERS);
+        for c in 0..N_CLUSTERS {
+            let mut min = [f32::INFINITY; 3];
+            let mut max = [f32::NEG_INFINITY; 3];
+            for i in 0..PER_CLUSTER {
+                let theta = 0.3 + (i as f32) * 0.2;
+                let phi   = 0.4 + (i as f32) * 0.3;
+                let pos = [
+                    centers[c][0] + radii[c] * theta.sin() * phi.cos(),
+                    centers[c][1] + radii[c] * theta.sin() * phi.sin(),
+                    centers[c][2] + radii[c] * theta.cos(),
+                ];
+                let mut s = RichSpike::zero();
+                s.x = pos[0]; s.y = pos[1]; s.z = pos[2];
+                s.cluster_id = c as i32;
+                s.residue_id = (c * PER_CLUSTER + i) as i32;
+                spikes.push(s);
+                for d in 0..3 {
+                    if pos[d] < min[d] { min[d] = pos[d]; }
+                    if pos[d] > max[d] { max[d] = pos[d]; }
+                }
+            }
+            per_cluster_aabbs.push(Aabb { min, max });
+        }
+        let offsets: Vec<u32> = vec![0u32, PER_CLUSTER as u32, (2 * PER_CLUSTER) as u32];
+
+        // ── LBVH-3: build a Vec<SiteManifest> from the per-cluster AABBs.
+        // This is the canonical bridge from LBVH output → SiteManifest 8-slot.
+        let provenance = ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: 3 },
+            #[allow(deprecated)]
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame,
+        };
+        let sort_lineage = CausalSortKey::new(vec![SortField::SpikeAttributionCount]);
+        let mut sites: Vec<SiteManifest> = (0..N_CLUSTERS).map(|c| {
+            SiteManifest::from_lbvh_cluster_aabb(
+                SiteId(c as u32),
+                ClusterId(c as u32),
+                &per_cluster_aabbs[c],
+                EntangledManifoldId(frame),
+                provenance.clone(),
+                sort_lineage.clone(),
+                PER_CLUSTER as u64,
+                frame,
+            )
+        }).collect();
+
+        // Spatial provenance preserved: every site's geometric centroid
+        // ≈ its LBVH AABB center (= cluster physical center within
+        // the sampling discretization).
+        for (c, site) in sites.iter().enumerate() {
+            assert_eq!(site.centroids.populated_count(), 3,
+                "LBVH-3: 3 of 8 slots honest at M1");
+            let g = site.centroids.geometric().unwrap();
+            for d in 0..3 {
+                assert!((g.pos[d] - centers[c][d]).abs() < radii[c],
+                    "LBVH-3 cluster {} geometric centroid drifted from physical \
+                     center: g={:?}, expected≈{:?}", c, g.pos, centers[c]);
+            }
+            assert_eq!(site.source_manifold_id.0, frame);
+            // Stamping fields start as None.
+            assert!(site.contact_shell_geo_power_spectrum.is_none());
+        }
+
+        // ── RECT-3.1.c via the AuditedTransform: produce ContactShellTiles.
+        let alloc_bytes = SiteManifestFfi::alloc_bytes(N_CLUSTERS as u32);
+        let tiles_ptr_u = pool.alloc_async(alloc_bytes, raw_stream).expect("F2 alloc");
+        stream.synchronize().expect("post-alloc sync");
+
+        let mut manifest = SiteManifestFfi {
+            tiles_dev_ptr: tiles_ptr_u as *mut ContactShellTile,
+            n_clusters: N_CLUSTERS as u32,
+            frame_id: 0,
+            _reserved: [0; 2],
+        };
+
+        let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
+        let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc spikes");
+        let spikes_bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
+        };
+        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
+        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
+        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+
+        let (sp_dev,  _g1) = d_spikes_b.device_ptr(&stream);
+        let (off_dev, _g2) = d_offsets.device_ptr(&stream);
+
+        let xform = So3ProjectTransform::new();
+        let outcome = xform.apply(So3ProjectInput {
+            pool_handle: pool.raw_handle(),
+            stream_handle: raw_stream,
+            d_spikes: sp_dev as *const RichSpike,
+            d_cluster_offsets: off_dev as *const u32,
+            n_clusters: N_CLUSTERS as u32,
+            d_k_lm: k_lm_dev,
+            frame_id: frame as u32,
+            manifest: &mut manifest,
+        });
+        stream.synchronize().expect("post-apply sync");
+        match outcome {
+            AuditOutcome::Accepted { .. } => (),
+            AuditOutcome::Quarantined { violations, .. } |
+            AuditOutcome::Aborted    { violations, .. } => {
+                pool.free_async(tiles_ptr_u, raw_stream).ok();
+                panic!("AuditedTransform rejected SO(3): {:?}", violations);
+            }
+        }
+
+        // ── RECT-4: stamp the geo C_l into the per-site manifests.
+        let report = stamp_geo_power_spectrum_into_sites(&manifest, &mut sites)
+            .expect("stamp returned cuda error");
+
+        assert_eq!(report.sites_stamped, N_CLUSTERS as u32);
+        assert_eq!(report.clusters_skipped, 0);
+        assert!(report.max_norm_drift < 5e-2,
+            "RECT-4: post-D2H L2-norm drift {} exceeds tolerance",
+            report.max_norm_drift);
+
+        // Every site now has a populated power spectrum that is
+        // (a) Some, (b) of length 6, (c) sums to ≈1, (d) has every
+        // C_l ≥ KL_EPS so log() is finite for the Adjudicator.
+        for (c, site) in sites.iter().enumerate() {
+            let cl = site.contact_shell_geo_power_spectrum
+                .expect("RECT-4: stamping must populate contact_shell_geo_power_spectrum");
+            assert_eq!(cl.len(), 6);
+            let sum: f32 = cl.iter().sum();
+            assert!((sum - 1.0).abs() < 1e-2,
+                "site {}: Σ C_l = {:.6}", c, sum);
+            for (l, &v) in cl.iter().enumerate() {
+                assert!(v >= 1e-7,
+                    "site {}: C_{} = {:.3e} below KL_EPS — Adjudicator log would -Inf",
+                    c, l, v);
+            }
+        }
+
+        // Spatial provenance still preserved post-stamp.
+        for (c, site) in sites.iter().enumerate() {
+            assert_eq!(site.identity.cluster_id.0, c as u32);
+            assert_eq!(site.source_manifold_id.0, frame);
+        }
+
+        pool.free_async(tiles_ptr_u, raw_stream).expect("F2 free");
+        stream.synchronize().expect("post-free sync");
+
+        eprintln!("[rect4/lbvh3] full pipeline OK: {} sites stamped, max norm drift = {:.2e}",
+                  report.sites_stamped, report.max_norm_drift);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn rect4_stamp_skips_clusters_beyond_site_array() {
+        // RECT-4 partial-stamp behaviour: when the device-side manifest
+        // has more clusters than the host-side site array, the extras
+        // are reported in `clusters_skipped`, not aborted.
+        use crate::entangled_manifold::{
+            Aabb, CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField,
+            TieBreakerPolicy, ViewProvenance,
+        };
+        use crate::entangled_manifold::CausalSortKey;
+        use crate::rich_spike::RichSpike;
+        use crate::site_manifest::{
+            ClusterId, EntangledManifoldId, SiteId, SiteManifest,
+        };
+        use crate::transform::AuditedTransform;
+        use crate::vram_pool::VramPool;
+        use cudarc::driver::{CudaContext, DevicePtr};
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let stream = ctx.new_stream().expect("stream");
+        let raw_stream = stream.cu_stream() as usize;
+        unsafe {
+            let _ = crate::sh_basis::ffi::prism_sh_basis_init(
+                raw_stream as *mut std::ffi::c_void,
+            );
+        }
+        stream.synchronize().expect("sync");
+        let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
+        let pool = match VramPool::new(0) {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+
+        // 3 clusters on device, but only 1 host site → 2 should skip.
+        const N_CLUSTERS: usize = 3;
+        let mut spikes = Vec::new();
+        let mut offsets = vec![0u32];
+        for c in 0..N_CLUSTERS {
+            for i in 0..16 {
+                let mut s = RichSpike::zero();
+                let theta = 0.3 + (i as f32) * 0.2;
+                let phi   = 0.4 + (i as f32) * 0.3;
+                s.x = (c as f32 * 10.0) + 4.0 * theta.sin() * phi.cos();
+                s.y = (c as f32 * 10.0) + 4.0 * theta.sin() * phi.sin();
+                s.z = 4.0 * theta.cos();
+                s.cluster_id = c as i32;
+                spikes.push(s);
+            }
+            offsets.push(((c + 1) * 16) as u32);
+        }
+
+        let alloc_bytes = SiteManifestFfi::alloc_bytes(N_CLUSTERS as u32);
+        let tiles_ptr_u = pool.alloc_async(alloc_bytes, raw_stream).expect("alloc");
+        stream.synchronize().expect("sync");
+        let mut manifest = SiteManifestFfi {
+            tiles_dev_ptr: tiles_ptr_u as *mut ContactShellTile,
+            n_clusters: N_CLUSTERS as u32,
+            frame_id: 0,
+            _reserved: [0; 2],
+        };
+
+        let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
+        let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc spikes");
+        let spikes_bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
+        };
+        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offs");
+        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offs");
+        let (sp_dev, _g1)  = d_spikes_b.device_ptr(&stream);
+        let (off_dev, _g2) = d_offsets.device_ptr(&stream);
+
+        let _ = So3ProjectTransform::new().apply(So3ProjectInput {
+            pool_handle: pool.raw_handle(),
+            stream_handle: raw_stream,
+            d_spikes: sp_dev as *const RichSpike,
+            d_cluster_offsets: off_dev as *const u32,
+            n_clusters: N_CLUSTERS as u32,
+            d_k_lm: k_lm_dev,
+            frame_id: 1,
+            manifest: &mut manifest,
+        });
+        stream.synchronize().expect("sync");
+
+        // Only 1 site on host.
+        let provenance = ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: 1 },
+            #[allow(deprecated)]
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame: 0,
+        };
+        let sort_lineage = CausalSortKey::new(vec![SortField::SpikeAttributionCount]);
+        let aabb = Aabb { min: [0.0; 3], max: [1.0; 3] };
+        let mut sites = vec![SiteManifest::from_lbvh_cluster_aabb(
+            SiteId(0), ClusterId(0), &aabb,
+            EntangledManifoldId(0), provenance, sort_lineage, 16, 0,
+        )];
+
+        let report = stamp_geo_power_spectrum_into_sites(&manifest, &mut sites)
+            .expect("stamp");
+        assert_eq!(report.sites_stamped, 1);
+        assert_eq!(report.clusters_skipped, 2,
+            "2 of 3 device clusters should be reported as skipped");
+
+        pool.free_async(tiles_ptr_u, raw_stream).ok();
+        stream.synchronize().expect("sync");
     }
 }

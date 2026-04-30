@@ -64,7 +64,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::entangled_manifold::{CausalSortKey, ViewProvenance};
+use crate::entangled_manifold::{Aabb, CausalSortKey, ViewProvenance};
 use crate::spatial_view::SpatialView;
 
 // ============================================================================
@@ -458,6 +458,87 @@ pub struct SiteManifest {
     pub adjudicator_elapsed_ns: Option<u64>,
 }
 
+impl SiteManifest {
+    /// LBVH-3 constructor — build a per-site manifest from the cluster's
+    /// LBVH-derived AABB.
+    ///
+    /// Per the operator's RECT-4 / LBVH-3 mandate (2026-04-29) and
+    /// Anti-Greenfield Doctrine §2.3 (extend, don't duplicate): this is
+    /// the canonical bridge from the M1 producer's per-cluster AABB
+    /// (output of [`crate::lbvh_tree`]'s bottom-up reduce, or
+    /// equivalently the per-cluster AABB column from the M1 producer's
+    /// CUB SegmentedReduce) to the per-site
+    /// [`CentroidManifold`] 8-slot canonical container.
+    ///
+    /// # Slot population (M1 honest)
+    ///
+    /// Three slots are populated from the same LBVH AABB at M1 (per
+    /// the [`SiteManifest`] type-level docs):
+    ///
+    /// | Slot | Value | View tag |
+    /// |---|---|---|
+    /// | `geometric` | `aabb.center()` | [`SpatialView::GeometricVoxelMass`] |
+    /// | `lining`    | `aabb.center()` | [`SpatialView::LiningResidues`] |
+    /// | `driver`    | `aabb.center()` | [`SpatialView::DriverResidues`] |
+    ///
+    /// The remaining 5 slots are intentionally `None` and are populated
+    /// by later transforms (M2: hot/cold-phase, validation_structural,
+    /// ligand_adjacent_subcluster; M3: burst_motion).
+    ///
+    /// # Spatial provenance preservation
+    ///
+    /// `source_manifold_id` carries the frame-level
+    /// [`crate::entangled_manifold::EntangledManifold`] handle so the
+    /// site can be back-referenced during audit. `sort_lineage` carries
+    /// the [`CausalSortKey`] used to order the role-view residues at
+    /// frame-build time — preserves the LBVH's spatial-provenance chain
+    /// from Morton encoding through cluster assignment to site.
+    ///
+    /// # The 4 RECT-3 / Adjudicator extension fields
+    ///
+    /// `contact_shell_geo_power_spectrum`, `adjudicator_divergence`,
+    /// `adjudicator_code`, `adjudicator_elapsed_ns` default to `None`.
+    /// They are populated post-construction by the SO(3) stamping pass
+    /// (`stamp_geo_power_spectrum_into_sites` in `so3_project.rs`) and
+    /// by the Adjudicator (Claude-2 lane).
+    pub fn from_lbvh_cluster_aabb(
+        site_id: SiteId,
+        cluster_id: ClusterId,
+        aabb: &Aabb,
+        source_manifold_id: EntangledManifoldId,
+        provenance: ViewProvenance,
+        sort_lineage: CausalSortKey,
+        spike_attribution_count: u64,
+        frame: u64,
+    ) -> Self {
+        let center = aabb.center();
+        let mut centroids = CentroidManifold::new();
+        centroids.set_geometric(Centroid3D::new(center, SpatialView::GeometricVoxelMass, frame));
+        centroids.set_lining   (Centroid3D::new(center, SpatialView::LiningResidues,     frame));
+        centroids.set_driver   (Centroid3D::new(center, SpatialView::DriverResidues,     frame));
+
+        Self {
+            identity: SiteIdentity {
+                site_id,
+                cluster_id,
+                provenance,
+            },
+            centroids,
+            causal_scalars: CausalScalars::new_m1(spike_attribution_count),
+            frame,
+            source_manifold_id,
+            sort_lineage,
+            // RECT-3 extension defaults — populated by the SO(3)
+            // stamping pass (`crate::so3_project::stamp_geo_power_spectrum_into_sites`)
+            // and the Adjudicator (Claude-2 lane).
+            contact_shell_geo_power_spectrum: None,
+            adjudicator_divergence: None,
+            adjudicator_code: None,
+            adjudicator_elapsed_ns: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,5 +691,83 @@ mod tests {
         assert_eq!(m.source_manifold_id.0, 42);
         assert_eq!(m.causal_scalars.spike_attribution_count, 100);
         assert_eq!(m.centroids.populated_count(), 0);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // LBVH-3 — from_lbvh_cluster_aabb constructor pins the M1
+    // 3-honest-slot population from a per-cluster AABB.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn lbvh3_from_cluster_aabb_populates_three_m1_honest_slots() {
+        let aabb = Aabb { min: [0.0, -2.0, 1.0], max: [4.0, 2.0, 5.0] };
+        let m = SiteManifest::from_lbvh_cluster_aabb(
+            SiteId(11),
+            ClusterId(11),
+            &aabb,
+            EntangledManifoldId(123),
+            provenance(),
+            sort_key(),
+            42,
+            7,
+        );
+
+        // Identity round-trips.
+        assert_eq!(m.identity.site_id.0, 11);
+        assert_eq!(m.identity.cluster_id.0, 11);
+        assert_eq!(m.frame, 7);
+        assert_eq!(m.source_manifold_id.0, 123);
+        assert_eq!(m.causal_scalars.spike_attribution_count, 42);
+
+        // 3 of 8 slots honest at M1.
+        assert_eq!(m.centroids.populated_count(), 3);
+
+        // Centre of [0, -2, 1]..[4, 2, 5] = (2, 0, 3). All 3 M1 slots
+        // share the same value at M1 (per the type-level docs); the
+        // per-view discrimination is in the SpatialView tag.
+        let expected = [2.0_f32, 0.0, 3.0];
+        let g = m.centroids.geometric().unwrap();
+        let l = m.centroids.lining().unwrap();
+        let d = m.centroids.driver().unwrap();
+        assert_eq!(g.pos, expected);
+        assert_eq!(l.pos, expected);
+        assert_eq!(d.pos, expected);
+        assert_eq!(g.view, SpatialView::GeometricVoxelMass);
+        assert_eq!(l.view, SpatialView::LiningResidues);
+        assert_eq!(d.view, SpatialView::DriverResidues);
+        assert_eq!(g.frame, 7);
+        assert_eq!(l.frame, 7);
+        assert_eq!(d.frame, 7);
+
+        // RECT-3 / Adjudicator extension fields default to None.
+        assert!(m.contact_shell_geo_power_spectrum.is_none());
+        assert!(m.adjudicator_divergence.is_none());
+        assert!(m.adjudicator_code.is_none());
+        assert!(m.adjudicator_elapsed_ns.is_none());
+
+        // 5 of 8 slots remain unset — populated by M2 / M3 transforms.
+        assert!(m.centroids.hot_phase().is_none());
+        assert!(m.centroids.cold_phase().is_none());
+        assert!(m.centroids.burst_motion().is_none());
+        assert!(m.centroids.validation_structural().is_none());
+        assert!(m.centroids.ligand_adjacent_subcluster().is_none());
+    }
+
+    #[test]
+    fn lbvh3_point_cluster_aabb_round_trips_centroid() {
+        // Degenerate point AABB (single-spike cluster) → centroid is
+        // the spike position itself.
+        let aabb = Aabb { min: [3.5, -1.0, 7.25], max: [3.5, -1.0, 7.25] };
+        let m = SiteManifest::from_lbvh_cluster_aabb(
+            SiteId(0),
+            ClusterId(0),
+            &aabb,
+            EntangledManifoldId(0),
+            provenance(),
+            sort_key(),
+            1,
+            0,
+        );
+        assert_eq!(m.centroids.geometric().unwrap().pos, [3.5, -1.0, 7.25]);
     }
 }
