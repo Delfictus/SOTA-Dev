@@ -708,3 +708,53 @@ extern "C" int prism_wire_f1_switch_ffi(
 }
 
 #endif  // CUDART_VERSION >= 12060
+
+// ════════════════════════════════════════════════════════════════════
+// T7 — Noise-floor calibration writeback
+// ════════════════════════════════════════════════════════════════════
+//
+// Two stream-ordered cudaMemcpyAsync(H2D) into the adjudicator
+// struct's noise-floor fields. No kernel launch — the runtime API
+// itself is captured-graph-compatible (memcpy-async nodes).
+//
+// Field layout (per CSR-C invariants in interferometric_adjudicator.rs):
+//   noise_floor_mu     [f32; 6]  offset  0..24    24 B
+//   noise_floor_sigma  [f32; 6]  offset 24..48    24 B
+
+extern "C" int prism_adj_set_noise_floor_constants(
+    InterferometricAdjudicatorFfi* adj,
+    const float*                   mu_host,
+    const float*                   sigma_host,
+    void*                          stream_v
+) {
+    if (adj == nullptr || mu_host == nullptr || sigma_host == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+
+    cudaStream_t stream = static_cast<cudaStream_t>(stream_v);
+
+    // Step 1: μ[6] → adj->noise_floor_mu (struct offset 0).
+    cudaError_t err = cudaMemcpyAsync(
+        &adj->noise_floor_mu[0],
+        mu_host,
+        sizeof(float) * 6,
+        cudaMemcpyHostToDevice,
+        stream);
+    if (err != cudaSuccess) {
+        return static_cast<int>(err);
+    }
+
+    // Step 2: σ[6] → adj->noise_floor_sigma (struct offset 24).
+    // Same stream ⇒ ordered after the μ copy.
+    err = cudaMemcpyAsync(
+        &adj->noise_floor_sigma[0],
+        sigma_host,
+        sizeof(float) * 6,
+        cudaMemcpyHostToDevice,
+        stream);
+    if (err != cudaSuccess) {
+        return static_cast<int>(err);
+    }
+
+    return static_cast<int>(cudaSuccess);
+}

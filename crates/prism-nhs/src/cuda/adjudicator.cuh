@@ -312,4 +312,42 @@ int prism_wire_f1_switch_ffi(
     const uint32_t*  predicate_dev_ptr,
     cudaGraphNode_t* out_conditional_node);
 
+// ════════════════════════════════════════════════════════════════════
+// T7 — Noise-floor calibration writeback
+// ════════════════════════════════════════════════════════════════════
+
+/// Writes the calibrated 3-σ noise-floor priors (`μ_l`, `σ_l` for
+/// `l = 0..5`) into the device-side `InterferometricAdjudicatorFfi`
+/// after the T7 cold_hold calibration run. Avoids the need to
+/// recompile with hardcoded constants — Claude-1's calibration script
+/// captures the measured priors and writes them back via this setter.
+///
+/// Internally performs TWO stream-ordered host-to-device copies:
+///   1. `mu_host[6]`    → `adj->noise_floor_mu`    (struct offset 0,  24 B)
+///   2. `sigma_host[6]` → `adj->noise_floor_sigma` (struct offset 24, 24 B)
+///
+/// **Lifecycle**: typically called ONCE per MD campaign, AFTER the
+/// adjudicator struct is created via `prism_interferometric_adjudicator_create`
+/// and BEFORE the first captured-graph launch. May also be called
+/// between captured-graph launches to recalibrate without rebuilding
+/// the graph (the struct is pointer-stable per F2 pool guarantees).
+///
+/// **Caller-pointer contract**:
+///   - `adj` must be a valid F2-pool-allocated InterferometricAdjudicatorFfi
+///     device pointer.
+///   - `mu_host` and `sigma_host` must each point to 6 contiguous f32
+///     values. The runtime MAY synchronously stage from pageable host
+///     memory; for true async behavior, callers should pass pinned
+///     host memory (`cudaMallocHost`).
+///   - `stream` is the F2-pool stream the adjudicator was created on
+///     (or any stream — the writes are stream-ordered against
+///     subsequent kernel launches on the same stream).
+///
+/// Returns 0 on success; CUDA error code cast to int otherwise.
+int prism_adj_set_noise_floor_constants(
+    InterferometricAdjudicatorFfi* adj,
+    const float*                   mu_host,    /* [6] */
+    const float*                   sigma_host, /* [6] */
+    void*                          stream);
+
 }  // extern "C"

@@ -407,6 +407,23 @@ pub(crate) mod ffi {
             adj: *const InterferometricAdjudicatorFfi,
             stream: *mut c_void,
         ) -> CudaError;
+
+        // ─── T7 — Noise-floor calibration writeback ─────────────────
+        /// Two stream-ordered `cudaMemcpyAsync(HostToDevice)` operations
+        /// that write the calibrated `μ[6]` / `σ[6]` priors into the
+        /// adjudicator's noise-floor fields. Avoids recompilation;
+        /// Claude-1's T7 calibration script captures the cold_hold
+        /// equilibrium and writes back via this setter.
+        ///
+        /// `mu_host` / `sigma_host` are each pointers to 6 contiguous
+        /// `f32` values. Pageable host memory may stage synchronously;
+        /// pinned host memory (`cudaMallocHost`) is truly async.
+        pub fn prism_adj_set_noise_floor_constants(
+            adj: *mut InterferometricAdjudicatorFfi,
+            mu_host: *const f32,
+            sigma_host: *const f32,
+            stream: *mut c_void,
+        ) -> CudaError;
     }
 }
 
@@ -692,6 +709,66 @@ pub fn cycles_to_ns(cycles: u64) -> f64 {
 pub fn pipeline_elapsed(adj: &InterferometricAdjudicatorFfi) -> (u64, f64) {
     let cycles = adj.stop_clock.saturating_sub(adj.start_clock);
     (cycles, cycles_to_ns(cycles))
+}
+
+// ============================================================================
+// T7 — Noise-floor calibration setter (safe Rust wrapper)
+// ============================================================================
+
+/// Safe wrapper over `prism_adj_set_noise_floor_constants` FFI.
+///
+/// Writes the calibrated `μ[6]` and `σ[6]` priors into the device-side
+/// adjudicator state via two stream-ordered `cudaMemcpyAsync(H2D)`
+/// operations. Returns `0` on success, otherwise the CUDA error code.
+///
+/// **Lifecycle**: call ONCE per MD campaign after T7 cold_hold
+/// calibration completes, BEFORE the first captured-graph launch.
+/// May also be re-called between launches to recalibrate without
+/// rebuilding the captured graph (the adjudicator pointer is stable
+/// per the F2-pool `ReleaseThreshold = UINT64_MAX` invariant).
+///
+/// **Safety contract:**
+///   - `adj` must be a valid F2-pool-allocated
+///     [`InterferometricAdjudicatorFfi`] device pointer whose lifetime
+///     spans every captured-graph replay that follows.
+///   - `stream` must be a valid `cudaStream_t`.
+///   - For truly async writes, `mu` and `sigma` should reside in
+///     pinned host memory (`cudaMallocHost`); pageable host memory
+///     may force a synchronous staging copy.
+///   - Caller is responsible for any sync that must precede a
+///     subsequent device read of the noise-floor fields (typically
+///     a `stream.synchronize()` or downstream graph-edge dependency).
+///
+/// Example calibration flow (Claude-1 T7 calibration script):
+///
+/// ```ignore
+/// // 1. Run 500-frame cold_hold; collect per-band Σ KL contributions.
+/// let (mu_calibrated, sigma_calibrated) = run_t7_calibration(...)?;
+/// // 2. Write back to the adjudicator's device state.
+/// let rc = unsafe {
+///     set_noise_floor_constants(
+///         adj_dev_ptr,
+///         &mu_calibrated,
+///         &sigma_calibrated,
+///         stream.as_raw() as *mut std::ffi::c_void,
+///     )
+/// };
+/// assert_eq!(rc, CUDA_SUCCESS, "T7 calibration writeback failed");
+/// stream.synchronize()?;
+/// ```
+#[cfg(feature = "gpu")]
+pub unsafe fn set_noise_floor_constants(
+    adj: *mut InterferometricAdjudicatorFfi,
+    mu: &[f32; 6],
+    sigma: &[f32; 6],
+    stream: *mut std::ffi::c_void,
+) -> CudaError {
+    ffi::prism_adj_set_noise_floor_constants(
+        adj,
+        mu.as_ptr(),
+        sigma.as_ptr(),
+        stream,
+    )
 }
 
 // ============================================================================
