@@ -23,6 +23,16 @@ gpu = ["cudarc"]
 # diagnostic surface excludable from production builds without
 # touching source.
 diagnostic = []
+# T5/T6 Production Splice — strictly opt-in (operator directive
+# 2026-04-29). Routes the per-chunk MD path in `nhs_rt_full.rs`
+# through `prism_nhs::captured_pipeline::CapturedAdjudicationPipeline`
+# (captured graph + native C-ABI F1 SWITCH bypass via Claude-2's
+# `prism_wire_f1_switch_ffi`). Default OFF until T7 noise-floor
+# calibration + P3 SM-saturation (>60%) metrics close the
+# Autonomous Discovery Robot validation loop. Enable with
+#   cargo build --release -p prism-nhs --features=v2_ignition
+# Implies `gpu` (the captured pipeline is CUDA-only).
+v2_ignition = ["gpu"]
 
 [dependencies]
 # PRISM-Therm: SDST thermodynamic analysis pipeline

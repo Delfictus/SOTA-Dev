@@ -4540,18 +4540,67 @@ fn run_multi_stream_pipeline(
                                 }
                             } else { None };
 
+                        // T5 PRODUCTION SPLICE — V2 IGNITION (operator
+                        // directive 2026-04-29). Strictly opt-in via
+                        // `--features=v2_ignition`. Default OFF so the
+                        // legacy MD path remains bit-identical until
+                        // the T7 noise-floor calibration + P3 SM
+                        // saturation (>60%) metrics close the
+                        // Autonomous Discovery Robot validation loop.
+                        //
+                        // The pipeline build itself requires upstream
+                        // clustered RichSpike pointers + cluster_offsets
+                        // + n_clusters which the existing engine state
+                        // doesn't expose at this splice point. The
+                        // build wire-in lands in the immediate
+                        // follow-up commit; this commit lays down the
+                        // launch site so the binary's hot loop has
+                        // a concrete `pipeline.launch()` to invoke
+                        // the moment the build prerequisites are
+                        // plumbed through.
+                        #[cfg(feature = "v2_ignition")]
+                        let v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
+
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
-                                // Use CUDA Graph replay if available, fallback to engine.run()
-                                if let Some(ref graph) = captured_graph {
-                                    // Graph replay: Director→Physics→MultiLIF→Housekeeping in one launch
-                                    graph.run_chunk(this_chunk as u32)?;
-                                    // Sync the CUDA context to ensure graph execution completes
-                                    engine.cuda_context().synchronize()
-                                        .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
-                                } else {
-                                    engine.run(this_chunk)?;
+
+                                // ── T5 V2 IGNITION launch site ─────────
+                                // When --features=v2_ignition is set AND
+                                // the captured adjudication pipeline was
+                                // built, route the chunk through it
+                                // (Simulate→Cluster→Adjudicate→Steer in
+                                // one launch). Per operator directive:
+                                // no stream.synchronize, no println,
+                                // no host-side stamping inside this
+                                // branch — the CPU's only role is to
+                                // increment the chunk counter.
+                                #[cfg(feature = "v2_ignition")]
+                                let v2_handled = if let Some(ref pipeline) = v2_pipeline {
+                                    for _ in 0..this_chunk {
+                                        pipeline.launch().map_err(|e|
+                                            anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                    }
+                                    true
+                                } else { false };
+                                #[cfg(not(feature = "v2_ignition"))]
+                                let v2_handled: bool = false;
+
+                                // Legacy path — entirely bypassed when
+                                // v2_handled. The `if !v2_handled` guard
+                                // is a no-op cost in legacy builds (the
+                                // compiler folds the constant-false).
+                                if !v2_handled {
+                                    // Use CUDA Graph replay if available, fallback to engine.run()
+                                    if let Some(ref graph) = captured_graph {
+                                        // Graph replay: Director→Physics→MultiLIF→Housekeeping in one launch
+                                        graph.run_chunk(this_chunk as u32)?;
+                                        // Sync the CUDA context to ensure graph execution completes
+                                        engine.cuda_context().synchronize()
+                                            .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
+                                    } else {
+                                        engine.run(this_chunk)?;
+                                    }
                                 }
 
                                 // ══════════════════════════════════════════════════════

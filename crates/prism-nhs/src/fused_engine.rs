@@ -2058,6 +2058,40 @@ pub struct NhsAmberFusedEngine {
 
 #[cfg(feature = "gpu")]
 impl NhsAmberFusedEngine {
+    /// T6 ASC Force Bridge — raw device pointer to the `d_forces`
+    /// buffer that the Velocity Verlet integrator reads each MD step.
+    ///
+    /// Per operator directive 2026-04-29 (T6): exposed for Claude-2's
+    /// `steering_potential_updater` kernel to inject the
+    /// Omnidirectional Expansion Vector via `atomicAdd_v4_f32` —
+    /// `F_total = F_newtonian + (α · Δ_AB · V_expansion)`.
+    ///
+    /// # Safety / lifetime
+    ///
+    /// The returned `CUdeviceptr` (as `u64`) is stable for the
+    /// lifetime of `&self`. The caller MUST hold this reference (or
+    /// an `Arc` around the engine) until the last kernel that
+    /// dereferences the pointer has retired. Dereferencing on the
+    /// host is forbidden.
+    ///
+    /// # Layout
+    ///
+    /// `d_forces` is laid out as `n_atoms × 3` contiguous `f32` —
+    /// `[fx_0, fy_0, fz_0, fx_1, fy_1, fz_1, ...]`. Use
+    /// [`Self::d_forces_n_floats`] to get the element count.
+    pub fn d_forces_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_forces.device_ptr(stream);
+        ptr
+    }
+
+    /// Number of f32 elements in the force buffer (`n_atoms × 3`).
+    /// Companion to [`Self::d_forces_dev_ptr`] — the ASC kernel uses
+    /// this to bound its `atomicAdd` loop.
+    pub fn d_forces_n_floats(&self) -> usize {
+        self.d_forces.len()
+    }
+
     /// Create new fused engine from PRISM-PREP topology
     pub fn new(
         context: Arc<CudaContext>,
