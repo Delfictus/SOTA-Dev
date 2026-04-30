@@ -67,6 +67,33 @@ use crate::so3_project::{ContactShellTile, SiteManifestFfi};
 use crate::vram_pool::VramPool;
 
 // ============================================================================
+// V2 IGNITION FFI — Claude-2's Native C-ABI Bypass (Lane 2 commit 9a90a9c6)
+// ============================================================================
+//
+// Bypasses the cudarc 0.18.2 conditional-node binding bug by calling
+// the CUDA Runtime API directly from C++. Operator directive
+// 2026-04-29 ("V2 IGNITION").
+//
+// Contract (mirrors src/cuda/adjudicator.cuh:309):
+//   - Creates a `cudaGraphConditionalHandle` bound to `graph`.
+//   - Adds a `cudaGraphNodeTypeConditional` IF-node with one body
+//     subgraph, downstream of `adjudicator_node`.
+//   - Adds an explicit `cudaGraphAddDependencies` edge from
+//     `adjudicator_node` to the conditional node (Gate G19 happens-
+//     before lock).
+//   - Writes the new conditional-node handle into `*out_conditional_node`.
+//
+// Returns 0 on cudaSuccess, otherwise the cudaError_t cast to int.
+extern "C" {
+    fn prism_wire_f1_switch_ffi(
+        graph: CUgraph,
+        adjudicator_node: CUgraphNode,
+        predicate_dev_ptr: *const u32,
+        out_conditional_node: *mut CUgraphNode,
+    ) -> i32;
+}
+
+// ============================================================================
 // Public surface
 // ============================================================================
 
@@ -1225,6 +1252,154 @@ mod tests {
             Err(other) => panic!("expected V2HookFailed{{rc=700}}, got {:?}", other),
             Ok(_) => panic!("hook returned Err but build claimed Ok"),
         }
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // V2 IGNITION — END-TO-END.
+    //
+    // Full DAG-COND-WIRE: SO(3) → Adjudicator → cross-stream telemetry
+    // DMA → JOIN → cuStreamEndCapture → prism_wire_f1_switch_ffi (the
+    // C-ABI bypass that creates the F1 SWITCH conditional node + the
+    // explicit cuGraphAddDependencies edge from Node C → Node D) →
+    // cuGraphInstantiate → cuGraphLaunch.
+    //
+    // If this test passes, the captured graph contains a real
+    // cudaGraphNodeTypeConditional node, the operator's §2.3 explicit
+    // dependency edge is wired natively in C++, the captured graph
+    // instantiates, AND we can launch it on the MD stream without
+    // CUDA errors. This is the "We are going to light up the RTX 5080"
+    // moment — the autonomous WHILE loop's structural ignition.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn v2_ignition_wires_and_launches() {
+        use crate::interferometric_adjudicator::ffi as adj_ffi;
+        use crate::interferometric_adjudicator::InterferometricAdjudicatorFfi;
+
+        let Some((ctx, _drop_pipeline_skip, _, _, _, _, stream)) = build_test_pipeline() else { return; };
+        // Drop the no-op pipeline; we'll rebuild with the V2 hook.
+        drop(_drop_pipeline_skip);
+
+        // Re-stage spikes (helper doesn't expose a re-build entry).
+        let raw = stream.cu_stream() as usize;
+        unsafe {
+            let _ = crate::sh_basis::ffi::prism_sh_basis_init(raw as *mut c_void);
+        }
+        stream.synchronize().expect("sync");
+        let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
+
+        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
+            let mut s = RichSpike::zero();
+            let t = 0.3 + (i as f32) * 0.2;
+            let p = 0.4 + (i as f32) * 0.3;
+            s.x = 4.0 * t.sin() * p.cos();
+            s.y = 4.0 * t.sin() * p.sin();
+            s.z = 4.0 * t.cos();
+            s.cluster_id = 0;
+            s
+        }).collect();
+        let offsets: Vec<u32> = vec![0, spikes.len() as u32];
+        let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
+        let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc");
+        let spikes_bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
+        };
+        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
+        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
+        use cudarc::driver::DevicePtr;
+        let (sp_dev, off_dev) = {
+            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (off, _g2) = d_offsets.device_ptr(&stream);
+            (sp, off)
+        };
+        stream.synchronize().expect("sync");
+
+        let cfg = PipelineConfig {
+            d_spikes: sp_dev as *const RichSpike,
+            d_cluster_offsets: off_dev as *const u32,
+            n_clusters: 1,
+            d_k_lm: k_lm_dev,
+            initial_frame_id: 0,
+        };
+
+        // Closure that captures the conditional-node handle written
+        // by Claude-2's bypass so the test can attest its non-null-ness.
+        use std::cell::Cell;
+        let observed_cond_node: Cell<usize> = Cell::new(0);
+
+        // V2 IGNITION HOOK — the moment of fusion.
+        let pipeline = CapturedAdjudicationPipeline::build_with_v2_hook(
+            &ctx, &stream, &cfg,
+            |raw_graph, adj_nodes, adj_dev_ptr| {
+                assert!(!raw_graph.is_null(), "hook received null CUgraph");
+                assert_eq!(adj_nodes.len(), 1,
+                    "operator §2.3 dependency frontier must hold exactly the Adjudicator node");
+                assert_eq!(adj_dev_ptr % 128, 0,
+                    "adj_dev_ptr {:#x} not 128-byte aligned (CSR §M)",
+                    adj_dev_ptr);
+
+                // Predicate device pointer: Claude-2's existing FFI
+                // helper that returns &adj->adjudication_code at byte
+                // offset 52.
+                let predicate_ptr = unsafe {
+                    adj_ffi::prism_get_adjudication_code_devptr(
+                        adj_dev_ptr as *const InterferometricAdjudicatorFfi,
+                    )
+                };
+                assert!(!predicate_ptr.is_null(),
+                    "prism_get_adjudication_code_devptr returned null");
+
+                // The C-ABI bypass.
+                let mut cond_node: CUgraphNode = ptr::null_mut();
+                let rc = unsafe {
+                    super::prism_wire_f1_switch_ffi(
+                        raw_graph,
+                        adj_nodes[0],
+                        predicate_ptr,
+                        &mut cond_node as *mut _,
+                    )
+                };
+                if rc != 0 {
+                    eprintln!("[v2-ignition] prism_wire_f1_switch_ffi returned cudaError {}", rc);
+                    return Err(rc);
+                }
+                if cond_node.is_null() {
+                    eprintln!("[v2-ignition] prism_wire_f1_switch_ffi succeeded but \
+                              left out_conditional_node = null");
+                    return Err(-1);
+                }
+                observed_cond_node.set(cond_node as usize);
+                Ok(())
+            },
+        ).expect("V2 IGNITION build_with_v2_hook must succeed");
+
+        // The bypass populated the conditional node handle.
+        let cond_node = observed_cond_node.get();
+        assert!(cond_node != 0,
+            "V2 IGNITION: conditional-node handle was not populated by the C-ABI bypass");
+
+        // Pipeline instantiated (hook returned Ok, so build did
+        // cuGraphInstantiate). Launch must succeed end-to-end.
+        for frame in 0..3u64 {
+            pipeline.launch().unwrap_or_else(|e| {
+                panic!("cuGraphLaunch (frame {}) failed: {:?}", frame, e);
+            });
+        }
+        stream.synchronize().expect("post-launch sync");
+
+        // Marker readable post-launch (semantic value depends on the
+        // Adjudicator's noise-floor calibration; here we only attest
+        // the read path is intact — V2 IGNITION's structural success).
+        let marker = pipeline.read_burst_marker().expect("read burst_marker");
+
+        eprintln!("[v2-ignition] LIVE: CUgraph=0x{:x}, cond_node=0x{:x}, \
+                  predicate_ptr OK (128-aligned), 3 launches OK, \
+                  burst_marker={} (route attestation)",
+                  pipeline.cu_graph_raw() as usize,
+                  cond_node,
+                  marker);
     }
 
     #[test]
