@@ -1,0 +1,1324 @@
+//! # Interferometric Adjudicator — the F1 SWITCH brain
+//!
+//! Implements the **Brain** of the PRISM-4D Digital Spatiotemporal
+//! Interferometer (per the Claude-2 Architectural Mandate, Blackwell
+//! Convergence Project). The Adjudicator computes the Kullback-Leibler
+//! divergence Δ_AB between the Relaxed (P) and UV-Perturbed (Q) SO(3)
+//! power spectra produced by Claude-1's WMMA tensor-core kernels
+//! ([`crate::so3_project`]), thresholds the result against a running
+//! 3-sigma thermal noise floor, and writes a 32-bit `adjudication_code`
+//! into pinned device memory. The Blackwell `sm_120` hardware
+//! scheduler reads that code and routes the F1 `cudaGraphConditionalNode`
+//! to one of three sub-graphs:
+//!
+//! | code | route                             | trigger                                       |
+//! |------|-----------------------------------|-----------------------------------------------|
+//! | `0`  | Prune Noise                       | Δ_AB ≤ μ_noise + 3σ                            |
+//! | `1`  | Burst Detected — heavy bisimulation| Δ_AB > μ_noise + 3σ                            |
+//! | `2`  | Hard Trap — invariant violation   | NaN / Inf / non-positive ratio in log argument|
+//!
+//! The Adjudicator is a **Total Function**: every 32-bit bit-pattern
+//! at the kernel input maps to exactly one valid `adjudication_code`
+//! ∈ {0, 1, 2}. Inline PTX guards (see [`Self::APPLY_GUARD_DOC`])
+//! prevent any `NaN` from leaving the kernel.
+//!
+//! ## Memory layout — 128-byte invariant
+//!
+//! Per CSR-section C of the mandate, `sizeof::<InterferometricAdjudicatorFfi>()`
+//! must equal **128 bytes exactly** (one Blackwell L1 sector). The
+//! Anti-Greenfield Doctrine § 6.2 mandates a `legacy_centroid_fallback`
+//! field for backward-compatible nhs_rt_full.rs logging. Honouring both
+//! constraints simultaneously: 88 B of "live" fields + 12 B fallback
+//! + 28 B reserved tail = 128 B exactly:
+//!
+//! ```text
+//! noise_floor_mu          [f32; 6]  offset   0..24    24 B
+//! noise_floor_sigma       [f32; 6]  offset  24..48    24 B
+//! current_divergence      f32       offset  48..52     4 B
+//! adjudication_code       u32       offset  52..56     4 B  (pre_rank::AdjudicationCode-compatible)
+//! relaxed_manifold_ptr    ptr       offset  56..64     8 B
+//! perturbed_manifold_ptr  ptr       offset  64..72     8 B
+//! start_clock             u64       offset  72..80     8 B
+//! stop_clock              u64       offset  80..88     8 B
+//! legacy_centroid_fallback [f32;3]  offset  88..100   12 B  (Anti-Greenfield § 6.2)
+//! _reserved               [u32; 7]  offset 100..128   28 B
+//! ─────────────────────────────────────────────────────────
+//! TOTAL                                                128 B
+//! ```
+//!
+//! ## Anti-Greenfield § 6.2 — `legacy_centroid_fallback`
+//!
+//! Stores a single `[f32; 3]` representative centroid that legacy
+//! `nhs_rt_full.rs` site-logging can read without understanding the
+//! full SO(3) manifold. Populated by the Adjudicator kernel from
+//! `relaxed_manifold_ptr->aabb` mid-point at every step. This lets
+//! the legacy diagnostic-script path observe site coordinates
+//! through the same ABI it always used; new code reads the full
+//! manifold via the typed pointers above. **Surgical extension, not
+//! parallel type.**
+//!
+//! ## Anti-Greenfield § 5 — adjudication-code reuse
+//!
+//! The `adjudication_code` field stores values from the existing
+//! [`crate::pre_rank::AdjudicationCode`] enum (RECT-2, commit
+//! `0993bf9b`). T0 originally defined parallel `ADJUDICATION_PRUNE /
+//! _BURST / _ABORT` constants on this type — those have been removed
+//! per the Anti-Greenfield Scavenge-Before-Code rule. Decode raw u32
+//! values via [`crate::pre_rank::AdjudicationCode::from_raw`].
+//!
+//! The compile-time `const _: () = { assert!(...) }` block at the foot
+//! of this file enforces the invariant; the runtime test module
+//! pins every field's byte-offset.
+//!
+//! ## F2 pool allocation requirement
+//!
+//! Per the F2 mandate, `InterferometricAdjudicatorFfi` instances MUST
+//! be allocated via [`crate::vram_pool::VramPool::alloc_async`]
+//! (`cudaMallocFromPoolAsync`) and remain pointer-stable for the
+//! entire MD campaign. `cudaMalloc` and static `__device__` arrays
+//! are **forbidden** — the former host-syncs (breaking captured-graph
+//! replay), the latter limits multi-stream scalability and would
+//! exceed the 164 KB shared-memory limit on `sm_120`.
+//!
+//! ## F1 race-condition prevention (CSR-D)
+//!
+//! Within the Adjudicator kernel, the writes to `current_divergence`
+//! and `adjudication_code` happen on the same single thread in
+//! program order. A `__threadfence()` immediately before the
+//! `adjudication_code` store flushes the divergence write to L2
+//! before the SWITCH-node read can observe a stale value. The kernel
+//! launches as `<<<1, 1, 0, stream>>>` so the only ordering question
+//! is between the kernel's exit and the SWITCH-node's next read,
+//! which the captured-graph topology already serialises (the SWITCH
+//! node is downstream of the Adjudicator node in the same stream).
+//!
+//! ## Wavelength encoding — open question for T1
+//!
+//! The mandate's T1 spec calls for ingesting `wavelength_nm` from
+//! [`crate::rich_spike::RichSpike`]. The CLA-1 schema as committed
+//! at `40c4db10` does **not** include a `wavelength_nm` field. Two
+//! resolution paths are tractable without an FFI break:
+//!
+//!   1. Pack the 4 authorised wavelengths into the
+//!      `RichSpike::spike_source` enum (currently `LIF / UV / EFP /
+//!      LADD / COFIRE`) by adding `UV_260`, `UV_280`, `UV_305`,
+//!      `UV_320` discriminants.
+//!   2. Pack the wavelength index (2 bits) into the high bits of
+//!      `RichSpike::intensity_packed`.
+//!
+//! T1 is blocked on operator decision. Option (1) is preferred —
+//! the wavelength is a property of the perturbation source, and
+//! the source enum is the natural carrier.
+
+#![allow(dead_code)]
+
+use crate::so3_project::ContactShellTile;
+
+// ============================================================================
+// InterferometricAdjudicatorFfi — 128-byte FFI struct (one Blackwell L1 sector)
+// ============================================================================
+
+/// Per-stream Adjudicator state. Allocated once via the F2 pool at
+/// MD-campaign init; pointer-stable for the entire campaign.
+///
+/// **Layout invariants** — enforced at compile time below; see
+/// module-level docs for the full byte-offset table.
+///
+/// * `sizeof == 128`
+/// * `alignof == 128`
+/// * Field order matches the C-side mirror in
+///   `cuda/interferometric_adjudicator.cuh` byte-for-byte.
+#[repr(C, align(128))]
+#[derive(Debug)]
+pub struct InterferometricAdjudicatorFfi {
+    /// Running mean of the thermal noise floor, per SH band
+    /// (l = 0..5). Updated once per "Cool" frame by the Adjudicator
+    /// kernel itself. **Offset 0 — must remain offset 0 for the
+    /// Adjudicator kernel's `LDG.E.128` aligned-load path.**
+    pub noise_floor_mu: [f32; 6],
+
+    /// Running stddev of the thermal noise floor, per SH band. The
+    /// Burst threshold is `mu + 3*sigma` per band (see kernel doc
+    /// for the per-band-vs-aggregate decision).
+    pub noise_floor_sigma: [f32; 6],
+
+    /// Latest computed Σ KL-divergence Δ_AB between the relaxed
+    /// (P) and perturbed (Q) `ContactShellTile`s. Written by the
+    /// Adjudicator kernel **before** [`Self::adjudication_code`]
+    /// (program order + `__threadfence()` ⇒ no race vs SWITCH-node
+    /// read).
+    pub current_divergence: f32,
+
+    /// F1 SWITCH selector. **Offset 52** — pinned. The Blackwell
+    /// hardware scheduler reads this 4-byte word to route the
+    /// `cudaGraphConditionalNode`. Values are
+    /// [`crate::pre_rank::AdjudicationCode`]-compatible:
+    ///
+    /// * `0` — `Prune` (Δ_AB below 3-σ threshold; site dropped)
+    /// * `1` — `Construct` (Δ_AB above threshold; bisimulation path)
+    /// * `2` — `Violation` (NaN / Inf / non-positive ratio; SAD-PATH abort)
+    ///
+    /// **The Adjudicator is a Total Function**: any 32-bit input
+    /// pattern produces exactly one of these three values. The
+    /// inline PTX guards in the kernel ensure no NaN escapes.
+    /// Decode via `AdjudicationCode::from_raw(self.adjudication_code)`.
+    pub adjudication_code: u32,
+
+    /// F2-pool-allocated pointer to the relaxed-state manifold (P).
+    /// Lifetime: the `ContactShellTile` referenced here must outlive
+    /// every Adjudicator-kernel launch in the captured graph.
+    pub relaxed_manifold_ptr: *const ContactShellTile,
+
+    /// F2-pool-allocated pointer to the perturbed-state manifold (Q).
+    /// Same lifetime contract as `relaxed_manifold_ptr`.
+    pub perturbed_manifold_ptr: *const ContactShellTile,
+
+    /// Hardware clock at Adjudicator-kernel entry, captured via
+    /// `clock64()` PTX. Used by the T4 telemetry harness to verify
+    /// the < 10 μs ASC-update latency invariant (CSR-H section).
+    pub start_clock: u64,
+
+    /// Hardware clock at Adjudicator-kernel exit. `(stop - start)`
+    /// in ns is exported to `SiteManifest::hardware_telemetry` (T4).
+    pub stop_clock: u64,
+
+    /// **Anti-Greenfield § 6.2 backward-compatibility shim.** Single
+    /// representative centroid (`x`, `y`, `z` in Å) the legacy
+    /// `nhs_rt_full.rs` site-logging path can read through its
+    /// existing 3-float ABI. Populated by the Adjudicator kernel
+    /// from `relaxed_manifold_ptr->aabb` mid-point at every step;
+    /// **never** participates in the F1 SWITCH decision. This lets
+    /// legacy diagnostics observe coordinates without understanding
+    /// the full SO(3) manifold.
+    pub legacy_centroid_fallback: [f32; 3],
+
+    /// Forward-compatible reserved tail. Sized to make
+    /// `sizeof::<InterferometricAdjudicatorFfi>() == 128` after
+    /// the legacy_centroid_fallback addition: 88 B live + 12 B
+    /// fallback + 28 B reserved = 128 B. Future fields may consume
+    /// this slot without changing layout.
+    pub _reserved: [u32; 7],
+}
+
+impl InterferometricAdjudicatorFfi {
+    /// All-zero initial state. Equivalent to the C-side
+    /// `interferometric_adjudicator_zero_kernel`'s effect.
+    /// `cluster_id`-style sentinels are not used — every numeric
+    /// field has a meaningful zero (no allocations, no decisions
+    /// made yet).
+    ///
+    /// `relaxed_manifold_ptr` and `perturbed_manifold_ptr` are
+    /// initialised to `null`; the wire-in code (T2 integration)
+    /// **must** populate them before the first kernel launch.
+    pub const fn zero() -> Self {
+        Self {
+            noise_floor_mu: [0.0; 6],
+            noise_floor_sigma: [0.0; 6],
+            current_divergence: 0.0,
+            adjudication_code: 0,
+            relaxed_manifold_ptr: std::ptr::null(),
+            perturbed_manifold_ptr: std::ptr::null(),
+            start_clock: 0,
+            stop_clock: 0,
+            legacy_centroid_fallback: [0.0; 3],
+            _reserved: [0; 7],
+        }
+    }
+
+    /// Documented PTX guard sequence used by the Adjudicator kernel
+    /// before every `flog2.approx`. Reproduced here as a string
+    /// constant so the Rust-side test of CSR-section B can verify
+    /// the .cu file matches.
+    ///
+    /// Failure modes routed to `ADJUDICATION_ABORT`:
+    ///   - `setp.nan.f32 p, %ratio` — NaN input.
+    ///   - `setp.le.f32 p, %ratio, 0f00000000` — non-positive ratio.
+    ///   - `setp.gtu.f32 p, %ratio, 0f7f800000` — ratio > +Inf
+    ///     (sentinel; never fires under IEEE 754).
+    pub const APPLY_GUARD_DOC: &'static str = "\
+        setp.nan.f32 p_nan, %ratio;\n\
+        setp.le.f32  p_le0, %ratio, 0f00000000;\n\
+        @p_nan mov.u32 %code, 2;\n\
+        @p_le0 mov.u32 %code, 2;\n\
+        @p_nan @p_le0 bra ABORT_PATH;\n";
+}
+
+// SAFETY: `InterferometricAdjudicatorFfi` is a POD struct whose
+// pointer fields are owned by the F2 pool and managed by the
+// kernel-launch contract — never dereferenced from Rust on the host
+// side. Send + Sync are sound because every field is either Copy or
+// a raw pointer the host treats as opaque.
+unsafe impl Send for InterferometricAdjudicatorFfi {}
+unsafe impl Sync for InterferometricAdjudicatorFfi {}
+
+// ============================================================================
+// Compile-time layout invariants (CSR-C)
+// ============================================================================
+
+const _: () = {
+    use std::mem::{align_of, size_of};
+
+    // sizeof == 128 — operator CSR-C strict invariant.
+    assert!(size_of::<InterferometricAdjudicatorFfi>() == 128);
+
+    // alignof == 128 — Blackwell L1 sector boundary.
+    assert!(align_of::<InterferometricAdjudicatorFfi>() == 128);
+
+    // The pointer width must be 8 — the byte-offset table assumes
+    // a 64-bit target.  Any target where size_of::<*const T>() != 8
+    // would need a layout audit before this struct can be used.
+    assert!(size_of::<*const ContactShellTile>() == 8);
+};
+
+// ============================================================================
+// FFI — extern "C" forward declarations for the C-side kernels
+// ============================================================================
+
+/// Public type alias for the CUDA error code at the FFI boundary.
+/// Mirrors the C-side `cudaError_t` (an `int` enum).
+pub type CudaError = i32;
+
+/// `cudaSuccess` (= 0). Every public FFI call returns this on success.
+pub const CUDA_SUCCESS: CudaError = 0;
+
+#[cfg(feature = "gpu")]
+pub(crate) mod ffi {
+    use super::{CudaError, InterferometricAdjudicatorFfi};
+    use std::ffi::c_void;
+
+    extern "C" {
+        /// Sentinel `0xADJ1`. Confirms the static archive containing
+        /// the Adjudicator's CUDA TUs linked correctly and that the
+        /// FFI ABI is round-tripping through the build pipeline.
+        ///
+        /// The Rust-side wrapper [`super::link_probe`] returns this
+        /// value verbatim; tests assert the exact constant.
+        pub fn prism_interferometric_adjudicator_link_probe() -> u32;
+
+        /// Allocate one [`InterferometricAdjudicatorFfi`] from the
+        /// F2 pool, zero-initialise it on the supplied stream, and
+        /// return the device-side pointer.
+        ///
+        /// **Pointer-stable:** the returned pointer remains valid
+        /// for the entire MD campaign. The caller MUST free via
+        /// [`prism_interferometric_adjudicator_destroy`] before the
+        /// pool is destroyed.
+        ///
+        /// `pool` is the `cudaMemPool_t` handle from
+        /// [`crate::vram_pool::VramPool`].
+        /// `stream` is a non-default `cudaStream_t`.
+        pub fn prism_interferometric_adjudicator_create(
+            pool: *mut c_void,
+            stream: *mut c_void,
+            out_ptr: *mut *mut InterferometricAdjudicatorFfi,
+        ) -> CudaError;
+
+        /// Free the F2-pool-backed adjudicator allocation. Must be
+        /// called before [`crate::vram_pool::VramPool`] is dropped.
+        pub fn prism_interferometric_adjudicator_destroy(
+            ptr: *mut InterferometricAdjudicatorFfi,
+            stream: *mut c_void,
+        ) -> CudaError;
+
+        /// Run the KL-divergence Adjudicator kernel against the
+        /// (relaxed, perturbed) `ContactShellTile` pair currently
+        /// pointed-to by `adj`. Updates `current_divergence`,
+        /// `adjudication_code`, `start_clock`, `stop_clock` in place.
+        ///
+        /// **Determinism:** the kernel launches as `<<<1, 1, 0,
+        /// stream>>>`; integer outputs (`adjudication_code`) are
+        /// BitExact across replays of the same input.
+        ///
+        /// **Race-freedom:** internal `__threadfence()` orders the
+        /// `current_divergence` write before the `adjudication_code`
+        /// write. The captured-graph topology orders this kernel
+        /// before the F1 SWITCH node's read.
+        ///
+        /// Captured into the F1 conditional graph node's predicate
+        /// evaluator — must NOT be invoked outside a captured graph
+        /// in production paths.
+        pub fn prism_interferometric_adjudicator_step(
+            adj: *mut InterferometricAdjudicatorFfi,
+            stream: *mut c_void,
+        ) -> CudaError;
+
+        /// Update the running noise-floor estimates (mu, sigma) from
+        /// the latest "Cool" frame's power spectrum. Captured into
+        /// the graph; runs as `<<<1, 1, 0, stream>>>` — single
+        /// thread, no atomic contention.
+        pub fn prism_interferometric_adjudicator_update_noise_floor(
+            adj: *mut InterferometricAdjudicatorFfi,
+            cool_power_spectrum: *const f32, // 6 floats, l=0..5
+            stream: *mut c_void,
+        ) -> CudaError;
+
+        // ─── T3 — ASC Boundary Repulsion Tensor ─────────────────────
+        /// Per-atom F_i = α · Δ_AB · (x_i − X_c) atomicAdded into
+        /// the existing `fused_engine.rs::d_forces` buffer
+        /// (Anti-Greenfield § 2.1). Pointer-stability invariant on
+        /// every device pointer.
+        pub fn prism_asc_apply(
+            adj: *const InterferometricAdjudicatorFfi,
+            d_forces: *mut f32,
+            d_atom_positions: *const f32,
+            d_atom_in_cluster: *const u32,
+            n_atoms: i32,
+            steering_gain_alpha: f32,
+            stream: *mut c_void,
+        ) -> CudaError;
+
+        // ─── T4 — clock64 pipeline timing bookends ──────────────────
+        /// FIRST kernel in the captured pipeline. Stamps adj->start_clock.
+        pub fn prism_pipeline_clock_start(
+            adj: *mut InterferometricAdjudicatorFfi,
+            stream: *mut c_void,
+        ) -> CudaError;
+        /// LAST kernel in the captured pipeline. Stamps adj->stop_clock.
+        pub fn prism_pipeline_clock_stop(
+            adj: *mut InterferometricAdjudicatorFfi,
+            stream: *mut c_void,
+        ) -> CudaError;
+
+        // ─── DAG-COND-WIRE — F1 SWITCH bridge ───────────────────────
+        /// Returns a stable `*const u32` to the `adjudication_code`
+        /// field at byte-offset 52. Pointer-stable for the campaign
+        /// (G19 invariant). Use as the predicate-pointer argument to
+        /// `cudaGraphConditionalHandleCreate` (memory-pointer model)
+        /// or as input to [`prism_adj_set_conditional`] for the
+        /// CUDA 12.4+ handle-based conditional-node model.
+        pub fn prism_get_adjudication_code_devptr(
+            adj: *const InterferometricAdjudicatorFfi,
+        ) -> *const u32;
+
+        /// Single-thread bridge kernel: reads the memory-resident
+        /// `adj->adjudication_code` and forwards it via device-side
+        /// `cudaGraphSetConditional(handle, code)` to the F1 SWITCH
+        /// node. Place this kernel DOWNSTREAM of the adjudicator-step
+        /// node and UPSTREAM of the conditional node, with explicit
+        /// `cudaGraphAddDependencies` edges (operator mandate § 2.3).
+        ///
+        /// `handle` is `cudaGraphConditionalHandle` = `unsigned long long`
+        /// (`driver_types.h:3229`), passed by value across FFI.
+        ///
+        /// Returns `cudaErrorNotSupported` (= 801) if the toolkit is
+        /// pre-CUDA-12.4; in production (CUDA 13.x) this is always live.
+        pub fn prism_adj_set_conditional(
+            handle: u64,                                /* cudaGraphConditionalHandle */
+            adj: *const InterferometricAdjudicatorFfi,
+            stream: *mut c_void,
+        ) -> CudaError;
+    }
+}
+
+/// Safe wrapper over the FFI link-probe. Returns `0xADJ1`
+/// (= 0x_AD_J1 ≅ 0xAD_31_in_hex_from_glyph_proxy = 0xAD31).
+///
+/// In hex the sentinel is `0xADJ1` per spec, but `J` isn't a hex
+/// digit; the canonical numeric value is `0xAD31` (a-d-3-1, with
+/// the `J → 31` alphabet position). Tests pin the numeric value.
+#[cfg(feature = "gpu")]
+pub fn link_probe() -> u32 {
+    unsafe { ffi::prism_interferometric_adjudicator_link_probe() }
+}
+
+/// Same numeric value the C-side kernel returns. Used by the link
+/// probe and by integration tests to detect ABI drift.
+pub const LINK_PROBE_SENTINEL: u32 = 0xAD31;
+
+// ============================================================================
+// T1 — UV-code / intensity bitwise extraction (CPU mirrors of the
+//      __device__ helpers in cuda/adjudicator.cuh). Branchless. Tested
+//      for round-trip with known producer-side encodings.
+// ============================================================================
+
+/// Bit shift of the 2-bit Quantum Identifier inside `intensity_packed`.
+/// Mirrors `PRISM_QI_SHIFT` in `cuda/adjudicator.cuh`.
+pub const QI_SHIFT: u32 = 30;
+
+/// Mask for the lower-30-bit intensity payload.
+/// Mirrors `PRISM_INTENSITY_PAYLOAD_MASK` in `cuda/adjudicator.cuh`.
+pub const INTENSITY_PAYLOAD_MASK: u32 = 0x3FFF_FFFF;
+
+/// μ_01² LUT canonical values — derived from `crate::config` extinction
+/// coefficients per the Anti-Greenfield § 5 scavenging audit. Indexed
+/// by the 2-bit UV code (0=260, 1=280, 2=305, 3=320 nm). MUST match
+/// the C-side `c_mu_01_sq` initializer in `cuda/adjudicator.cu`.
+pub const MU_01_SQ_LUT: [f32; 4] = [
+    0.0343,    // 260 nm — PHE-dominant
+    1.0000,    // 280 nm — TRP primary
+    0.0621,    // 305 nm — TRP gaussian tail
+    0.000_810, // 320 nm — TRP control / baseline
+];
+
+/// Extract the 2-bit UV code from `RichSpike::intensity_packed`.
+#[inline]
+pub fn extract_uv_code(intensity_packed: u32) -> u32 {
+    (intensity_packed >> QI_SHIFT) & 0x3
+}
+
+/// Extract the lower-30-bit intensity payload as f32.
+///
+/// **Producer contract:** intensities must be encoded in `[0, 2.0)`
+/// before packing. Values `≥ 2.0` lose bit 30 of the IEEE-754
+/// exponent (biased exponent ≥ 128 ⇒ actual exponent ≥ 1) and
+/// round-trip incorrectly. The producer side MUST clamp before
+/// `intensity_packed = (uv_code << 30) | (intensity_bits & 0x3FFF_FFFF)`.
+#[inline]
+pub fn extract_intensity(intensity_packed: u32) -> f32 {
+    f32::from_bits(intensity_packed & INTENSITY_PAYLOAD_MASK)
+}
+
+/// CPU mirror of `__device__ prism_compute_quantum_weight`. Returns
+/// `Q_s = μ_01²(λ) · I` for the (UV-code, intensity) pair carried by
+/// `intensity_packed`. **Bit-exact with the GPU kernel** for any input
+/// that round-trips through the producer contract.
+#[inline]
+pub fn compute_quantum_weight(intensity_packed: u32) -> f32 {
+    let uv_code = extract_uv_code(intensity_packed) as usize;
+    MU_01_SQ_LUT[uv_code & 0x3] * extract_intensity(intensity_packed)
+}
+
+// ============================================================================
+// T2 — CPU reference for the KL-divergence Adjudicator kernel.
+//      Mirrors the algorithm in `cuda/adjudicator.cu::prism_inter
+//      ferometric_adjudicator_step_kernel` so the dirty-tile synthetic
+//      proof can run host-side without GPU execution.
+// ============================================================================
+
+/// Defensive epsilon — clamps zeros / negative finite values away
+/// from the log singularity. Mirrors the C-side `epsilon` in
+/// `prism_interferometric_adjudicator_step_kernel`.
+pub const ADJUDICATOR_EPSILON: f32 = 1.0e-7;
+
+/// CPU reference output: `(divergence, adjudication_code)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CpuAdjudicatorOutput {
+    pub divergence: f32,
+    pub adjudication_code: u32,
+    pub violation_count: u32,
+}
+
+/// CPU mirror of the T2 KL-divergence kernel. Pure-logic, deterministic,
+/// no I/O. The dirty-tile synthetic proof exercises all 64
+/// combinations of edge-case inputs against this function.
+///
+/// Algorithm (matches GPU kernel byte-for-byte modulo
+/// `lg2.approx.f32` rounding tolerance):
+///
+/// 1. For each band l = 0..6:
+///    a. Detect dirty raw input (`!isfinite(p) || !isfinite(q)`),
+///       increment `violation_count`, substitute `epsilon` for
+///       non-finite raw values.
+///    b. Defensive clamp: `p = max(p_raw, epsilon)`,
+///       `q = max(q_raw, epsilon)`.
+///    c. `ratio = p / q`; if `ratio.is_nan() || ratio <= 0.0` set
+///       `log_ratio = 0.0`, else `log_ratio = ratio.log2()`.
+///    d. Accumulate `total += p * log_ratio`.
+/// 2. Final code:
+///    - `violation_count > 0` ⇒ `Violation` (2)
+///    - `total > μ_noise + 3σ` ⇒ `Construct` (1)
+///    - else ⇒ `Prune` (0)
+pub fn cpu_adjudicator_reference(
+    p_spectrum: &[f32; 6],
+    q_spectrum: &[f32; 6],
+    noise_mu_l0: f32,
+    noise_sigma_l0: f32,
+) -> CpuAdjudicatorOutput {
+    let mut total_kl_div = 0.0_f32;
+    let mut violation_count: u32 = 0;
+    let eps = ADJUDICATOR_EPSILON;
+
+    for l in 0..6 {
+        let mut p_raw = p_spectrum[l];
+        let mut q_raw = q_spectrum[l];
+
+        if !p_raw.is_finite() || !q_raw.is_finite() {
+            violation_count += 1;
+            if !p_raw.is_finite() {
+                p_raw = eps;
+            }
+            if !q_raw.is_finite() {
+                q_raw = eps;
+            }
+        }
+
+        let p = p_raw.max(eps);
+        let q = q_raw.max(eps);
+        let ratio = p / q;
+
+        // PTX-guard mirror: NaN OR ≤ 0 ⇒ log_ratio = 0.0.
+        let log_ratio = if ratio.is_nan() || ratio <= 0.0 {
+            0.0
+        } else {
+            ratio.log2()
+        };
+
+        total_kl_div += p * log_ratio;
+    }
+
+    let adjudication_code = if violation_count > 0 {
+        2 // Violation
+    } else {
+        let threshold = noise_mu_l0 + 3.0 * noise_sigma_l0;
+        if total_kl_div > threshold {
+            1 // Construct
+        } else {
+            0 // Prune
+        }
+    };
+
+    CpuAdjudicatorOutput {
+        divergence: total_kl_div,
+        adjudication_code,
+        violation_count,
+    }
+}
+
+// ============================================================================
+// T3 — ASC Boundary Repulsion Tensor (CPU reference + Section-K helpers)
+// ============================================================================
+
+/// Per-atom force-vector contribution from the ASC kernel. Mirrors
+/// the GPU kernel's per-atom output BEFORE the atomicAdd into the
+/// shared `d_forces` buffer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AscForceContribution {
+    pub fx: f32,
+    pub fy: f32,
+    pub fz: f32,
+}
+
+impl AscForceContribution {
+    /// Squared L2 magnitude of the force vector.
+    #[inline]
+    pub fn magnitude_sq(&self) -> f32 {
+        self.fx * self.fx + self.fy * self.fy + self.fz * self.fz
+    }
+
+    /// L2 magnitude of the force vector.
+    #[inline]
+    pub fn magnitude(&self) -> f32 {
+        self.magnitude_sq().sqrt()
+    }
+
+    /// Dot product with another vector (useful for outward-direction tests).
+    #[inline]
+    pub fn dot(&self, other: [f32; 3]) -> f32 {
+        self.fx * other[0] + self.fy * other[1] + self.fz * other[2]
+    }
+}
+
+/// CPU reference for the T3 ASC kernel. Returns per-atom force
+/// vectors WITHOUT performing atomicAdd. Pure-logic mirror of
+/// `prism_asc_apply_kernel` in `cuda/adjudicator.cu`:
+///
+/// * `adjudication_code == 1` (Construct) and `in_cluster_mask[i]`
+///   ⇒ `F_i = α · Δ_AB · (x_i − X_c)`, where `X_c` is the AABB midpoint.
+/// * Otherwise ⇒ `F_i = (0, 0, 0)`.
+///
+/// Used by Section-K (Steering Coherence) tests + pre-integration
+/// host-side validation.
+pub fn cpu_asc_reference(
+    aabb_min: [f32; 3],
+    aabb_max: [f32; 3],
+    atom_positions: &[[f32; 3]],
+    in_cluster_mask: &[bool],
+    kl_divergence: f32,
+    steering_gain_alpha: f32,
+    adjudication_code: u32,
+) -> Vec<AscForceContribution> {
+    assert_eq!(
+        atom_positions.len(),
+        in_cluster_mask.len(),
+        "atom_positions and in_cluster_mask must be parallel arrays",
+    );
+
+    let zero = AscForceContribution { fx: 0.0, fy: 0.0, fz: 0.0 };
+
+    // Only Construct triggers the force apply (matches kernel's
+    // `if (code != PRISM_ADJ_CONSTRUCT) return;` guard).
+    if adjudication_code != 1 {
+        return vec![zero; atom_positions.len()];
+    }
+
+    let xc = [
+        0.5 * (aabb_min[0] + aabb_max[0]),
+        0.5 * (aabb_min[1] + aabb_max[1]),
+        0.5 * (aabb_min[2] + aabb_max[2]),
+    ];
+    let scale_base = steering_gain_alpha * kl_divergence;
+
+    atom_positions
+        .iter()
+        .zip(in_cluster_mask.iter())
+        .map(|(xi, &in_cluster)| {
+            let mask = if in_cluster { 1.0 } else { 0.0 };
+            let scale = scale_base * mask;
+            AscForceContribution {
+                fx: scale * (xi[0] - xc[0]),
+                fy: scale * (xi[1] - xc[1]),
+                fz: scale * (xi[2] - xc[2]),
+            }
+        })
+        .collect()
+}
+
+// ============================================================================
+// T4 — clock64 cycles ↔ nanoseconds conversion (sm_120 boost = 2.977 GHz)
+// ============================================================================
+
+/// Blackwell sm_120 boost clock in GHz, per operator tech spec
+/// (2.977 GHz / 2977 MHz). Used to convert `clock64()` cycle counts
+/// to nanoseconds for the < 10 μs CSR-H gate.
+pub const BLACKWELL_BOOST_GHZ: f64 = 2.977;
+
+/// Convert SM cycle count to nanoseconds at Blackwell boost.
+///
+/// `1 ns ≈ 2.977 cycles` ⇒ `cycles ≈ ns × 2.977` ⇒
+/// `ns ≈ cycles / 2.977`.
+#[inline]
+pub fn cycles_to_ns(cycles: u64) -> f64 {
+    (cycles as f64) / BLACKWELL_BOOST_GHZ
+}
+
+/// Pipeline-elapsed time, computed from the `start_clock` /
+/// `stop_clock` bookend timestamps written by
+/// `prism_pipeline_clock_start` / `_stop` kernels.
+///
+/// Returns `(cycles, ns)`.
+///
+/// **CSR-H gate**: `ns < 10_000.0` (i.e., the full
+/// SO(3) → KL-Div → ASC pipeline must complete in < 10 μs).
+pub fn pipeline_elapsed(adj: &InterferometricAdjudicatorFfi) -> (u64, f64) {
+    let cycles = adj.stop_clock.saturating_sub(adj.start_clock);
+    (cycles, cycles_to_ns(cycles))
+}
+
+// ============================================================================
+// DAG-COND-WIRE — F1 SWITCH predicate-handle accessor (G19 surface)
+// ============================================================================
+
+/// Byte offset of the `adjudication_code` field within
+/// [`InterferometricAdjudicatorFfi`]. Pinned at 52 by the
+/// CSR-C invariant (verified by `tests::ffi_field_offsets_match_csr_c_table`).
+///
+/// Used by:
+///   - The F1 SWITCH wiring code that creates a
+///     `cudaGraphConditionalHandle` bound to this address.
+///   - The G19 sub-byte address-stability test below.
+pub const ADJUDICATION_CODE_OFFSET: usize = 52;
+
+/// Returns a stable raw pointer to the `adjudication_code` field
+/// suitable for the F1 SWITCH predicate handle.
+///
+/// **Safety contract:**
+///   - `adj` must be a valid pointer to a properly-aligned
+///     [`InterferometricAdjudicatorFfi`] whose lifetime spans the
+///     entire captured-graph WHILE region.
+///   - The caller MUST NOT free the underlying allocation while any
+///     graph launch references the predicate.
+///
+/// The returned pointer is:
+///   - **4-byte aligned** (sufficient for atomic LDG.E.32 read).
+///   - Within the same 128-byte L1 sector as the struct head
+///     (no split-load penalty on the F1 hardware-scheduler read).
+///   - **Pointer-stable** for the campaign per the F2 pool's
+///     `ReleaseThreshold = UINT64_MAX` guarantee.
+///
+/// Usage with CUDA 12.4+ `cudaGraphConditionalHandleCreate`:
+///
+/// ```ignore
+/// let predicate = adjudication_code_devptr(adj);
+/// // Pass predicate as the device-side address bound to the handle,
+/// // OR launch prism_adj_set_conditional to forward via cudaGraphSetConditional.
+/// ```
+#[inline]
+pub unsafe fn adjudication_code_devptr(
+    adj: *const InterferometricAdjudicatorFfi,
+) -> *const u32 {
+    // Use addr_of! to compute the field address without dereferencing
+    // (place expression). The cast back via byte_offset is equivalent
+    // and confirms the offset matches the CSR-C invariant.
+    std::ptr::addr_of!((*adj).adjudication_code)
+}
+
+// ============================================================================
+// Pointer-stability lifecycle contract (operator mandate § 4)
+// ============================================================================
+
+/// **Lifecycle invariant** for every captured-graph WHILE iteration:
+///
+/// 1. Call `prism_interferometric_adjudicator_create` ONCE per
+///    stream at MD-campaign init — **OUTSIDE** the
+///    `cudaStreamBeginCapture` block.
+/// 2. The returned `InterferometricAdjudicatorFfi*` pointer remains
+///    valid for the entire campaign. The F2 mempool's
+///    `ReleaseThreshold = UINT64_MAX` keeps it stable across
+///    every replay.
+/// 3. Inside the captured WHILE region: NEVER call create/destroy.
+///    NEVER cudaMalloc/cudaFree. Doing so triggers an illegal memory
+///    access in the Blackwell hardware scheduler on first replay
+///    and (per operator warning) "the workstation will require a
+///    hard reset."
+/// 4. Update `relaxed_manifold_ptr` / `perturbed_manifold_ptr` via
+///    `cudaGraphKernelNodeSetParams` (the parameter-update API
+///    that's safe to call between captures).
+pub const POINTER_STABILITY_CONTRACT: &str =
+    "create() OUTSIDE capture; destroy() OUTSIDE capture; \
+     no malloc/free inside the captured WHILE region.";
+
+// ============================================================================
+// Tests — runtime layout pins (CSR-C explicit byte-offsets)
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::{align_of, size_of};
+
+    /// `offset_of!` polyfill — `std::mem::offset_of!` stabilised in
+    /// Rust 1.77 (March 2024). If the workspace toolchain is older,
+    /// swap this for the `memoffset` crate without touching call
+    /// sites.
+    macro_rules! offset_of {
+        ($t:ty, $f:tt) => {{
+            // Construct a typed null pointer, project to the field,
+            // and read its byte offset via wrapping pointer arithmetic.
+            // SAFETY: never dereferenced; only the pointer offset is
+            // taken.
+            let base: *const $t = std::ptr::null();
+            unsafe {
+                (std::ptr::addr_of!((*base).$f) as *const u8)
+                    .offset_from(base as *const u8) as usize
+            }
+        }};
+    }
+
+    #[test]
+    fn ffi_struct_size_is_128_bytes() {
+        assert_eq!(
+            size_of::<InterferometricAdjudicatorFfi>(),
+            128,
+            "InterferometricAdjudicatorFfi MUST be 128 bytes (one Blackwell L1 sector); \
+             CSR-C invariant. If this fails, the Adjudicator's LDG.E.128 alignment \
+             is broken and the F1 SWITCH read will fault."
+        );
+    }
+
+    #[test]
+    fn ffi_struct_alignment_is_128_bytes() {
+        assert_eq!(
+            align_of::<InterferometricAdjudicatorFfi>(),
+            128,
+            "InterferometricAdjudicatorFfi MUST be 128-byte aligned (Blackwell L1 sector \
+             boundary). Failure here means one of two things: the #[repr(C, align(128))] \
+             attribute was removed, or the toolchain doesn't honour it on this target."
+        );
+    }
+
+    #[test]
+    fn ffi_field_offsets_match_csr_c_table() {
+        // Explicit byte-offsets per CSR-section C requirement.
+        // Operator-mandated: list noise_floor and adjudication_code.
+        // Updated post-Anti-Greenfield retrofit to include
+        // legacy_centroid_fallback at 88 and _reserved (now [u32; 7])
+        // at 100.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_mu), 0);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma), 24);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, current_divergence), 48);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, adjudication_code), 52);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, relaxed_manifold_ptr), 56);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, perturbed_manifold_ptr), 64);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, start_clock), 72);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, stop_clock), 80);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback), 88);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved), 100);
+    }
+
+    #[test]
+    fn zero_constructor_yields_all_zero_state() {
+        let z = InterferometricAdjudicatorFfi::zero();
+        assert_eq!(z.noise_floor_mu, [0.0; 6]);
+        assert_eq!(z.noise_floor_sigma, [0.0; 6]);
+        assert_eq!(z.current_divergence, 0.0);
+        assert_eq!(z.adjudication_code, 0);
+        assert!(z.relaxed_manifold_ptr.is_null());
+        assert!(z.perturbed_manifold_ptr.is_null());
+        assert_eq!(z.start_clock, 0);
+        assert_eq!(z.stop_clock, 0);
+        assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
+        assert_eq!(z._reserved, [0; 7]);
+    }
+
+    #[test]
+    fn adjudication_code_uses_pre_rank_canonical_enum() {
+        // Anti-Greenfield § 5: the F1 SWITCH selector reuses the
+        // existing AdjudicationCode enum from RECT-2 (commit
+        // `0993bf9b`) — Prune=0, Construct=1, Violation=2 — rather
+        // than defining parallel constants. Test pins the integer
+        // mapping so that an FFI drift on EITHER side surfaces here.
+        use crate::pre_rank::AdjudicationCode;
+        assert_eq!(AdjudicationCode::Prune as u32, 0);
+        assert_eq!(AdjudicationCode::Construct as u32, 1);
+        assert_eq!(AdjudicationCode::Violation as u32, 2);
+
+        // Round-trip through the field. The Adjudicator kernel
+        // writes one of {0, 1, 2} into adjudication_code; host
+        // decodes via from_raw.
+        let mut adj = InterferometricAdjudicatorFfi::zero();
+        adj.adjudication_code = 1;
+        assert_eq!(
+            AdjudicationCode::from_raw(adj.adjudication_code),
+            Some(AdjudicationCode::Construct),
+        );
+        adj.adjudication_code = 2;
+        assert_eq!(
+            AdjudicationCode::from_raw(adj.adjudication_code),
+            Some(AdjudicationCode::Violation),
+        );
+    }
+
+    #[test]
+    fn link_probe_sentinel_is_pinned() {
+        // A drift here means the FFI ABI changed without a C-side
+        // bump.  See `prism_interferometric_adjudicator_link_probe`.
+        assert_eq!(LINK_PROBE_SENTINEL, 0xAD31);
+    }
+
+    // ─── T1 bitwise extraction round-trip ──────────────────────────────
+
+    #[test]
+    fn uv_code_extraction_is_branchless_and_correct() {
+        // Bit pattern: top 2 bits = uv_code, lower 30 = intensity bits.
+        // Encode intensity 1.0 (f32 bits 0x3F800000) with uv_code=2 (305 nm).
+        let intensity_1_bits = 1.0_f32.to_bits(); // 0x3F80_0000
+        // intensity 1.0 fits in lower 30 bits because its IEEE-754 bits
+        // 0x3F800000 already have bits 30-31 == 00 (sign=0, exp top=0).
+        let packed = (2_u32 << QI_SHIFT) | (intensity_1_bits & INTENSITY_PAYLOAD_MASK);
+        assert_eq!(extract_uv_code(packed), 2);
+        assert_eq!(extract_intensity(packed), 1.0);
+    }
+
+    #[test]
+    fn quantum_weight_matches_lut() {
+        // Pack intensity 1.0 with uv_code=1 (280 nm — TRP primary).
+        // Q_s should equal MU_01_SQ_LUT[1] * 1.0 = 1.0000.
+        let intensity_1_bits = 1.0_f32.to_bits();
+        let packed_280 = (1_u32 << QI_SHIFT) | (intensity_1_bits & INTENSITY_PAYLOAD_MASK);
+        let weight_280 = compute_quantum_weight(packed_280);
+        assert!((weight_280 - 1.0).abs() < 1e-6);
+
+        // Pack intensity 1.0 with uv_code=3 (320 nm — control). Should
+        // be the smallest weight.
+        let packed_320 = (3_u32 << QI_SHIFT) | (intensity_1_bits & INTENSITY_PAYLOAD_MASK);
+        let weight_320 = compute_quantum_weight(packed_320);
+        assert!(weight_320 < weight_280);
+        assert!((weight_320 - 0.000_810).abs() < 1e-6);
+
+        // Wavelength ordering invariant: 280 > 305 > 260 > 320.
+        let packed_260 = (0_u32 << QI_SHIFT) | (intensity_1_bits & INTENSITY_PAYLOAD_MASK);
+        let packed_305 = (2_u32 << QI_SHIFT) | (intensity_1_bits & INTENSITY_PAYLOAD_MASK);
+        let w_260 = compute_quantum_weight(packed_260);
+        let w_305 = compute_quantum_weight(packed_305);
+        assert!(weight_280 > w_305, "TRP λ_max should outweigh tail");
+        assert!(w_305 > w_260,      "TRP tail at 305 should outweigh PHE at 260");
+        assert!(w_260 > weight_320, "PHE at 260 should outweigh control at 320");
+    }
+
+    // ─── T2 dirty-tile 64-combination Total Function proof ──────────────
+
+    /// The 8 edge-case values per the directive's § 3.3 test matrix.
+    const EDGE_CASES: [f32; 8] = [
+        0.0,
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        1.0e-30,
+        1.0e+30,
+        1.0,
+        -1.0,
+    ];
+
+    #[test]
+    fn dirty_tile_64_combination_total_function_proof() {
+        // Operator directive § 3.3: for every (P, Q) ∈ EDGE_CASES²,
+        // the Adjudicator MUST produce adjudication_code ∈ {0, 1, 2}.
+        // The Total Function guarantee is what makes the F1 SWITCH
+        // routing safe — no input pattern can produce an out-of-range
+        // code that would crash the hardware scheduler.
+        let mut violation_count_combos = 0;
+        let mut prune_combos = 0;
+        let mut construct_combos = 0;
+
+        for &p_val in EDGE_CASES.iter() {
+            for &q_val in EDGE_CASES.iter() {
+                // All 6 bands populated with the same edge-case
+                // value — worst case for the violation accumulator
+                // (every band counts).
+                let p_spec = [p_val; 6];
+                let q_spec = [q_val; 6];
+
+                let out = cpu_adjudicator_reference(
+                    &p_spec, &q_spec, 0.0, 1.0,
+                );
+
+                // Total Function: code MUST be in {0, 1, 2}.
+                assert!(
+                    out.adjudication_code <= 2,
+                    "Total-Function violation: P={:?} Q={:?} → code={}",
+                    p_val, q_val, out.adjudication_code,
+                );
+
+                match out.adjudication_code {
+                    0 => prune_combos += 1,
+                    1 => construct_combos += 1,
+                    2 => violation_count_combos += 1,
+                    _ => unreachable!("guarded by assert above"),
+                }
+            }
+        }
+
+        // Sanity bounds — at least one combination of each class.
+        // Specifically: combinations involving NaN / Inf / -Inf must
+        // produce Violation (5 dirty values × 8 partners + 8 partners
+        // × 5 dirty values − 5×5 dup = 39 dirty-touching combos).
+        // Clean ∩ small or equal pairs go to Prune.
+        // Clean ∩ large-asymmetry pairs go to Construct.
+        assert_eq!(prune_combos + construct_combos + violation_count_combos, 64);
+        assert!(violation_count_combos >= 39,
+                "expected ≥ 39 Violation combos (any NaN/Inf/-Inf touch); got {}",
+                violation_count_combos);
+        assert!(prune_combos > 0,    "expected ≥ 1 Prune combo");
+        assert!(construct_combos > 0, "expected ≥ 1 Construct combo");
+    }
+
+    #[test]
+    fn dirty_tile_specific_extreme_inputs_route_correctly() {
+        // CSR-section D.2 Table — operator-mandated explicit cases.
+        // Each row: (description, p_val, q_val, expected_code).
+        let cases: &[(&str, f32, f32, u32)] = &[
+            ("P=Inf  Q=NaN  → Violation",       f32::INFINITY,     f32::NAN,           2),
+            ("P=NaN  Q=Inf  → Violation",       f32::NAN,          f32::INFINITY,      2),
+            ("P=-Inf Q=1.0  → Violation",       f32::NEG_INFINITY, 1.0,                2),
+            ("P=NaN  Q=NaN  → Violation",       f32::NAN,          f32::NAN,           2),
+            ("P=0.0  Q=0.0  → Prune (clean)",   0.0,               0.0,                0),
+            ("P=1.0  Q=1.0  → Prune (equal)",   1.0,               1.0,                0),
+            ("P=-1.0 Q=1.0  → Prune (clamped)", -1.0,              1.0,                0),
+            ("P=1e+30 Q=1.0 → Construct",       1.0e+30,           1.0,                1),
+        ];
+        for &(desc, p, q, expected_code) in cases {
+            let out = cpu_adjudicator_reference(&[p; 6], &[q; 6], 0.0, 1.0);
+            assert_eq!(
+                out.adjudication_code, expected_code,
+                "case `{}`: got code={} (divergence={})",
+                desc, out.adjudication_code, out.divergence,
+            );
+        }
+    }
+
+    #[test]
+    fn deterministic_across_100_replays_per_combination() {
+        // The Adjudicator is deterministic — feeding the same
+        // (P, Q) pair 100 times MUST produce the same divergence
+        // and the same adjudication_code every time.  This is
+        // CSR-section D's gate.
+        for &p_val in EDGE_CASES.iter() {
+            for &q_val in EDGE_CASES.iter() {
+                let p_spec = [p_val; 6];
+                let q_spec = [q_val; 6];
+                let first = cpu_adjudicator_reference(
+                    &p_spec, &q_spec, 0.0, 1.0,
+                );
+                for replay in 0..100 {
+                    let again = cpu_adjudicator_reference(
+                        &p_spec, &q_spec, 0.0, 1.0,
+                    );
+                    assert_eq!(
+                        first.adjudication_code, again.adjudication_code,
+                        "P={:?} Q={:?} replay {} drifted code: {} vs {}",
+                        p_val, q_val, replay,
+                        first.adjudication_code, again.adjudication_code,
+                    );
+                    // Divergence: NaN ≠ NaN per IEEE-754, so compare
+                    // bit patterns when either is non-finite.
+                    if first.divergence.is_finite() && again.divergence.is_finite() {
+                        assert_eq!(
+                            first.divergence, again.divergence,
+                            "P={:?} Q={:?} replay {} divergence drift",
+                            p_val, q_val, replay,
+                        );
+                    } else {
+                        assert_eq!(
+                            first.divergence.to_bits(), again.divergence.to_bits(),
+                            "P={:?} Q={:?} replay {} non-finite divergence drift",
+                            p_val, q_val, replay,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // ─── T2 clean-input sanity checks ───────────────────────────────────
+
+    #[test]
+    fn equal_distributions_yield_zero_divergence() {
+        // KL(P || P) = 0 for any non-degenerate P. The CPU reference
+        // should produce exactly 0 (both sides clamp to the same
+        // epsilon-padded value, ratio = 1, log = 0).
+        let p_spec = [1.0; 6];
+        let out = cpu_adjudicator_reference(&p_spec, &p_spec, 0.0, 1.0);
+        assert_eq!(out.divergence, 0.0);
+        assert_eq!(out.violation_count, 0);
+        assert_eq!(out.adjudication_code, 0); // Prune (below threshold)
+    }
+
+    #[test]
+    fn high_asymmetry_yields_construct_above_threshold() {
+        // P >> Q in every band ⇒ KL > 0 ⇒ Construct above 3-σ.
+        let p_spec = [10.0_f32; 6];
+        let q_spec = [0.001_f32; 6];
+        let out = cpu_adjudicator_reference(&p_spec, &q_spec, 0.0, 1.0);
+        assert!(out.divergence > 3.0,
+            "expected KL > threshold (3.0), got {}", out.divergence);
+        assert_eq!(out.violation_count, 0);
+        assert_eq!(out.adjudication_code, 1); // Construct
+    }
+
+    // ─── Section K — ASC Steering Coherence (per directive § 5) ─────────
+
+    /// **Section K.1 — vector plot.** Eight atoms at the eight corners
+    /// of a unit cube centred on origin. AABB centroid is origin. The
+    /// ASC kernel must produce a force vector for each atom that
+    /// points OUTWARD — i.e., `dot((atom − X_c), F) > 0` for every
+    /// atom. This is the "Gasp" invariant: the simulation is being
+    /// driven to expand the cluster envelope, not contract it.
+    #[test]
+    fn asc_section_k1_eight_octant_outward_forces() {
+        let aabb_min = [-1.0_f32, -1.0, -1.0];
+        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let atoms: Vec<[f32; 3]> = vec![
+            [ 1.0,  1.0,  1.0],  // octant +++
+            [-1.0,  1.0,  1.0],  // octant -++
+            [ 1.0, -1.0,  1.0],  // octant +-+
+            [-1.0, -1.0,  1.0],  // octant --+
+            [ 1.0,  1.0, -1.0],  // octant ++-
+            [-1.0,  1.0, -1.0],  // octant -+-
+            [ 1.0, -1.0, -1.0],  // octant +--
+            [-1.0, -1.0, -1.0],  // octant ---
+        ];
+        let mask = vec![true; 8];
+        let kl = 1.0_f32;
+        let alpha = 1.0_f32;
+        let forces = cpu_asc_reference(
+            aabb_min, aabb_max, &atoms, &mask, kl, alpha, 1,
+        );
+
+        // Coordinate list — every (atom, force) pair has positive
+        // outward-direction dot product. Print on failure for the
+        // CSR-K coordinate table.
+        for (i, (atom, f)) in atoms.iter().zip(forces.iter()).enumerate() {
+            let outward_dot = f.dot(*atom); // X_c is origin so atom_vec == atom
+            assert!(
+                outward_dot > 0.0,
+                "octant {} NOT outward: atom={:?} force=({:.3},{:.3},{:.3}) dot={:.3}",
+                i, atom, f.fx, f.fy, f.fz, outward_dot,
+            );
+            // Stronger: for this symmetric setup, force vector should
+            // be exactly proportional to the atom vector.
+            assert_eq!(f.fx.signum(), atom[0].signum(), "octant {} fx sign", i);
+            assert_eq!(f.fy.signum(), atom[1].signum(), "octant {} fy sign", i);
+            assert_eq!(f.fz.signum(), atom[2].signum(), "octant {} fz sign", i);
+        }
+    }
+
+    /// **Section K.2 — linear scaling with KL divergence.** Force
+    /// magnitude must scale linearly with `Δ_AB` for the same atom
+    /// configuration. This is the "magnitude modulation" invariant
+    /// (operator directive § 2.1: spring constant k ∝ KL-Divergence).
+    #[test]
+    fn asc_section_k2_force_magnitude_linear_in_kl_divergence() {
+        let aabb_min = [-1.0_f32, -1.0, -1.0];
+        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let atom = [1.0_f32, 0.0, 0.0]; // single atom on +x axis
+        let alpha = 1.0_f32;
+
+        // Expected magnitude per kl: |F| = α · Δ_AB · |x_i − X_c|
+        //                               = 1   · Δ_AB · 1
+        //                               = Δ_AB.
+        let kl_values: [f32; 5] = [0.1, 1.0, 5.0, 10.0, 100.0];
+        let mut prev_kl: Option<f32> = None;
+        let mut prev_mag: Option<f32> = None;
+        for &kl in kl_values.iter() {
+            let forces = cpu_asc_reference(
+                aabb_min, aabb_max, &[atom], &[true], kl, alpha, 1,
+            );
+            let mag = forces[0].magnitude();
+            assert!(
+                (mag - kl).abs() < 1e-5,
+                "expected |F| = Δ_AB ({}) for unit-distance atom, got {}",
+                kl, mag,
+            );
+            if let (Some(p_kl), Some(p_mag)) = (prev_kl, prev_mag) {
+                let kl_ratio = kl / p_kl;
+                let mag_ratio = mag / p_mag;
+                assert!(
+                    (kl_ratio - mag_ratio).abs() < 1e-4,
+                    "non-linear scaling: kl_ratio={}, mag_ratio={}",
+                    kl_ratio, mag_ratio,
+                );
+            }
+            prev_kl = Some(kl);
+            prev_mag = Some(mag);
+        }
+    }
+
+    /// **Section K.3 — Prune / Violation codes produce zero force.**
+    /// Defense in depth: even if the ASC kernel runs by mistake on a
+    /// non-Construct route, no atomicAdds happen.
+    #[test]
+    fn asc_section_k3_inactive_for_prune_and_violation() {
+        let aabb_min = [-1.0_f32, -1.0, -1.0];
+        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let atom = [1.0_f32, 0.0, 0.0];
+        for &code in &[0_u32, 2_u32] {
+            let forces = cpu_asc_reference(
+                aabb_min, aabb_max, &[atom], &[true], 1.0, 1.0, code,
+            );
+            assert_eq!(forces[0].fx, 0.0, "code {} fx", code);
+            assert_eq!(forces[0].fy, 0.0, "code {} fy", code);
+            assert_eq!(forces[0].fz, 0.0, "code {} fz", code);
+        }
+    }
+
+    /// **Section K.4 — cluster mask exclusion.** Atoms not in the
+    /// cluster receive zero force (branchless mask multiply, no
+    /// warp divergence on the GPU side).
+    #[test]
+    fn asc_section_k4_mask_excludes_non_cluster_atoms() {
+        let aabb_min = [-1.0_f32, -1.0, -1.0];
+        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let atoms: Vec<[f32; 3]> = vec![
+            [1.0, 0.0, 0.0], // in cluster
+            [0.0, 1.0, 0.0], // NOT in cluster
+        ];
+        let mask = [true, false];
+        let forces = cpu_asc_reference(
+            aabb_min, aabb_max, &atoms, &mask, 1.0, 1.0, 1,
+        );
+        assert!(forces[0].fx > 0.0, "in-cluster atom must get nonzero force");
+        assert_eq!(forces[1].fx, 0.0);
+        assert_eq!(forces[1].fy, 0.0);
+        assert_eq!(forces[1].fz, 0.0);
+    }
+
+    // ─── T4 — clock64 conversion + pipeline elapsed ─────────────────────
+
+    #[test]
+    fn cycles_to_ns_at_blackwell_boost() {
+        // 2977 cycles at 2.977 GHz ≈ 1000 ns. Tolerance: 1 ns.
+        let ns = cycles_to_ns(2977);
+        assert!((ns - 1000.0).abs() < 1.0,
+            "2977 cycles → {} ns (expected ≈1000)", ns);
+
+        // Round-trip via pipeline_elapsed.
+        let mut adj = InterferometricAdjudicatorFfi::zero();
+        adj.start_clock = 1_000;
+        adj.stop_clock = 30_770; // 29770-cycle window
+        let (cycles, ns) = pipeline_elapsed(&adj);
+        assert_eq!(cycles, 29_770);
+        // 29770 / 2.977 ≈ 9_999.66 ns — just under the 10 μs gate.
+        assert!((ns - 9_999.66).abs() < 1.0,
+            "29770 cycles → {} ns (expected ≈9999.66)", ns);
+    }
+
+    #[test]
+    fn pipeline_elapsed_saturates_on_clock_wraparound() {
+        // If stop_clock < start_clock (clock wrap or out-of-order
+        // bookend launch), saturating_sub returns 0 — never panics.
+        let mut adj = InterferometricAdjudicatorFfi::zero();
+        adj.start_clock = 10_000;
+        adj.stop_clock = 5_000; // out of order
+        let (cycles, ns) = pipeline_elapsed(&adj);
+        assert_eq!(cycles, 0);
+        assert_eq!(ns, 0.0);
+    }
+
+    #[test]
+    fn pointer_stability_contract_documents_lifecycle() {
+        // Sanity: the contract string is non-empty and references the
+        // create / destroy / capture-region invariant.
+        assert!(POINTER_STABILITY_CONTRACT.contains("OUTSIDE"));
+        assert!(POINTER_STABILITY_CONTRACT.contains("create"));
+        assert!(POINTER_STABILITY_CONTRACT.contains("malloc"));
+    }
+
+    // ─── G19 — F1 SWITCH predicate sub-byte address invariants ──────────
+
+    #[test]
+    fn g19_adjudication_code_offset_is_pinned_at_52() {
+        // The F1 SWITCH predicate address = struct_base + 52. This
+        // offset is the FFI contract; drift here would mean the
+        // hardware scheduler reads the wrong word.
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, adjudication_code),
+            ADJUDICATION_CODE_OFFSET,
+            "G19 invariant: adjudication_code MUST remain at byte offset 52"
+        );
+        assert_eq!(ADJUDICATION_CODE_OFFSET, 52);
+    }
+
+    #[test]
+    fn g19_predicate_address_4_byte_aligned() {
+        // 52 % 4 == 0 ⇒ the field address is 4-aligned regardless of
+        // the struct's 128-byte base alignment. Required for atomic
+        // LDG.E.32 read by the hardware scheduler.
+        assert_eq!(ADJUDICATION_CODE_OFFSET % 4, 0);
+    }
+
+    #[test]
+    fn g19_predicate_within_one_l1_sector() {
+        // The struct is 128 bytes, fits entirely in one Blackwell L1
+        // sector starting at the struct's 128-aligned base address.
+        // The field at offset 52 + its 4 bytes (ending at 56) is well
+        // within the 0..128 sector range. NO split-load penalty.
+        let field_end = ADJUDICATION_CODE_OFFSET + std::mem::size_of::<u32>();
+        assert!(field_end <= 128,
+            "adjudication_code (offset {}, size 4) MUST NOT cross the 128-byte sector boundary (would force split-load)",
+            ADJUDICATION_CODE_OFFSET);
+    }
+
+    #[test]
+    fn g19_devptr_returns_field_address() {
+        // adjudication_code_devptr(&adj) must return adj_base + 52.
+        let mut adj = InterferometricAdjudicatorFfi::zero();
+        let base = &adj as *const _ as usize;
+        let field_addr = unsafe {
+            adjudication_code_devptr(&adj as *const _) as usize
+        };
+        assert_eq!(
+            field_addr - base,
+            ADJUDICATION_CODE_OFFSET,
+            "devptr offset drift: got {} expected {}",
+            field_addr - base,
+            ADJUDICATION_CODE_OFFSET,
+        );
+        // The devptr lets the caller actually read the value.
+        adj.adjudication_code = 1; // Construct
+        let read_back = unsafe {
+            *adjudication_code_devptr(&adj as *const _)
+        };
+        assert_eq!(read_back, 1);
+    }
+
+    #[test]
+    fn g19_predicate_address_stable_across_repeated_access() {
+        // Pointer stability: repeated calls to adjudication_code_devptr
+        // on the same struct return the same address. (Trivially true
+        // for a fixed allocation, but pinned here as the contract.)
+        let adj = InterferometricAdjudicatorFfi::zero();
+        let p1 = unsafe { adjudication_code_devptr(&adj as *const _) };
+        let p2 = unsafe { adjudication_code_devptr(&adj as *const _) };
+        assert_eq!(p1, p2, "predicate address drifted between calls");
+    }
+}

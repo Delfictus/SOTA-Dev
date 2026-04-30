@@ -26,6 +26,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/sh_basis.cuh");
     println!("cargo:rerun-if-changed=src/cuda/so3_project.cu");
     println!("cargo:rerun-if-changed=src/cuda/so3_project.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/adjudicator.cu");
+    println!("cargo:rerun-if-changed=src/cuda/adjudicator.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -171,6 +173,20 @@ fn main() {
         &nvcc,
         "src/cuda/so3_project.cu",
         "so3_project",
+        &out_dir,
+    );
+
+    // T0/T1/T2/T3/T4: InterferometricAdjudicator + Quantum-Photonic
+    // Bridge + KL-Divergence + ASC + clock64 telemetry (Blackwell
+    // Convergence directive). Single 128-byte FFI struct, __constant__
+    // μ_01² LUT derived from `crate::config` extinction coefficients,
+    // PTX NaN/le0 guards make the kernel a Total Function over all
+    // 32-bit f32 inputs. ASC kernel atomicAdds into the existing
+    // `fused_engine.rs::d_forces` buffer (Anti-Greenfield § 2.1).
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/adjudicator.cu",
+        "adjudicator",
         &out_dir,
     );
 }
