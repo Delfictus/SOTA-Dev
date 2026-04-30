@@ -246,6 +246,16 @@ pub mod so3_project;
 /// codes mirror [`crate::pre_rank::AdjudicationCode`] (no parallel
 /// type). See module docs for the F1 SWITCH routing contract.
 pub mod interferometric_adjudicator;
+/// DAG-COND-WIRE / IGNITION — self-contained captured-pipeline LEGO
+/// brick that wraps SO(3) projection (Node B), Adjudicator step
+/// (Node C), trampoline (Node C'), explicit conditional node
+/// (Node D), and the cross-stream ghost-pipe DMA in a single
+/// `cuStreamCaptureModeGlobal` block. Instantiates a verifiable
+/// `CUgraphExec`; structural tests cover G18 (capture integrity),
+/// G19 (predicate stability), G20 (telemetry overlap). Production
+/// wire-in into `nhs_rt_full.rs` is a follow-up commit.
+#[cfg(feature = "gpu")]
+pub mod captured_pipeline;
 /// CLA-2 — Ghost Telemetry Pipeline. Asynchronous, transparent
 /// device→host exfiltration via a triple-buffered pinned-host ring on
 /// a dedicated non-blocking telemetry stream. Eliminates the

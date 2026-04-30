@@ -185,7 +185,7 @@ impl Default for ContactShellTile {
 
 #[cfg(feature = "gpu")]
 #[allow(dead_code)]
-mod ffi {
+pub(crate) mod ffi {
     use super::ContactShellTile;
     use crate::rich_spike::RichSpike;
 
