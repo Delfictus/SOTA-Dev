@@ -235,6 +235,26 @@ pub mod sh_basis;
 /// the inner accumulator to `nvcuda::wmma::fragment` matmul without
 /// changing the on-tile layout.
 pub mod so3_project;
+/// T0/T1/T2/T3/T4 — InterferometricAdjudicator (Blackwell Convergence
+/// directive). FFI struct (128 B / align(128)), Quantum-Photonic
+/// Bridge LUT (μ_01² derived from `crate::config` extinction
+/// coefficients), KL-divergence Adjudicator with PTX NaN/le0 guards
+/// (Total Function over all 32-bit f32 inputs), ASC Boundary
+/// Repulsion Tensor (T3, atomicAdds into the existing
+/// `fused_engine.rs::d_forces` buffer per Anti-Greenfield § 2.1),
+/// and clock64-based pipeline timing bookends (T4). Adjudication
+/// codes mirror [`crate::pre_rank::AdjudicationCode`] (no parallel
+/// type). See module docs for the F1 SWITCH routing contract.
+pub mod interferometric_adjudicator;
+/// CLA-2 — Ghost Telemetry Pipeline. Asynchronous, transparent
+/// device→host exfiltration via a triple-buffered pinned-host ring on
+/// a dedicated non-blocking telemetry stream. Eliminates the
+/// Host-Sync Fallacy (synchronous `cuMemcpyDtoH` on the critical
+/// path) per the operator directive 2026-04-29 Part 2. The host
+/// observes the simulation's metadata at a 2-frame lag without
+/// gating in-flight physics or the F1 SWITCH adjudication.
+#[cfg(feature = "gpu")]
+pub mod ghost_telemetry;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it

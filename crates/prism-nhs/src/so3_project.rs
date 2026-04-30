@@ -217,61 +217,95 @@ pub fn link_probe() -> u32 {
 // ContactShellTile array (Task #21, RECT-3 Phase 3).
 // ============================================================================
 
-/// Persistent, Virtual-Pointer-Stable handle to the per-cluster
-/// `ContactShellTile` array that lives in the F2 stream-ordered pool.
+/// Pure VRAM Pointer Registry handed to the downstream Adjudicator
+/// (Claude-2 lane) for direct in-VRAM consumption.
 ///
-/// Per the Cross-Agent FFI Mandate (operator directive 2026-04-29
-/// Part 2 §2 + Part 3): `SiteManifestFfi` is allocated once at the
-/// start of the MD campaign via [`crate::vram_pool::VramPool::alloc_async`]
-/// and remains pointer-stable for the entire campaign. The downstream
-/// Adjudicator (`crate::interferometric_adjudicator`) consumes the
-/// `tiles_dev_ptr` field as `*const ContactShellTile` for its
-/// `relaxed_manifold_ptr` / `perturbed_manifold_ptr` slots.
+/// **Per the Host-Sync-Fallacy mandate (operator directive 2026-04-29
+/// Part 3.1):** `SiteManifestFfi` is no longer a container for
+/// host-side results. It is a pre-allocated, virtual-pointer-stable
+/// pointer registry that lives for the lifetime of the MD campaign.
+/// The Adjudicator reads `tiles_dev_ptr` directly in VRAM; the host
+/// never dereferences it. Host-side stamping (RECT-4) is now a
+/// Pillar-5 (reporting) concern that runs OFF the critical path via
+/// the [`crate::ghost_telemetry`] pipeline.
 ///
 /// # Layout
 ///
-/// `#[repr(C)]` so the struct is FFI-stable. 24 bytes; the 8-byte
-/// trailing pad is intentional so the struct embeds cleanly in a
-/// 32-byte cache line for diagnostic-side reads.
-#[repr(C)]
+/// `#[repr(C, align(16))]`, exactly 32 bytes (two 16-byte cache
+/// sectors on Blackwell). Field offsets:
+///
+/// | Offset | Field                       | Size |
+/// |---|---|---|
+/// | 0   | `total_sites`               | 4 B  |
+/// | 4   | `_pad0` (alignment filler)  | 4 B  |
+/// | 8   | `tiles_dev_ptr`             | 8 B  |
+/// | 16  | `vram_high_water_mark`      | 8 B  |
+/// | 24  | `adjudication_trigger_ptr`  | 8 B  |
+///
+/// # Virtual-Pointer Stability (Cross-Agent §3.2)
+///
+/// `tiles_dev_ptr` MUST be allocated from the F2 stream-ordered pool
+/// during MD-campaign init and remain valid for the lifetime of the
+/// captured graph. `cudaMallocAsync` calls inside the capture block
+/// would invalidate the pointer between launches and trigger an
+/// invalid-memory-access trap on Blackwell. The orchestrator is
+/// responsible for ensuring the allocator never grows.
+///
+/// # 128-byte alignment of the underlying tile array (CSR §M)
+///
+/// While the registry struct itself is 16-byte aligned, the array it
+/// points to (`*mut ContactShellTile`) inherits the 128-byte
+/// alignment of `ContactShellTile`. The `verify_tile_alignment` test
+/// + the runtime [`Self::tile_alignment_ok`] helper attest that
+/// `tiles_dev_ptr % 128 == 0`, which is the precondition for the
+/// Adjudicator's `LDG.E.128` peak-bandwidth path.
+#[repr(C, align(16))]
 #[derive(Debug, Clone, Copy)]
 pub struct SiteManifestFfi {
-    /// Device pointer to the contiguous `ContactShellTile[n_clusters]`
+    /// Number of `ContactShellTile`s the registry's array holds.
+    /// Pinned by the Adjudicator's per-cluster loop bound.
+    pub total_sites: u32,
+
+    /// 4-byte padding so `tiles_dev_ptr` lands at the natural
+    /// 8-byte alignment for a `*mut` pointer. Kept explicit so the
+    /// FFI layout is auditable from the source rather than inferred
+    /// from compiler padding rules.
+    pub _pad0: u32,
+
+    /// Device pointer to the contiguous `ContactShellTile[total_sites]`
     /// array. Allocated from the F2 pool; lifecycle managed by the
     /// caller (see [`Self::null`] for the unset state).
     ///
-    /// SAFETY: dereferencing on the host is forbidden. Pass this
-    /// pointer into `prism_so3_project_run`, the Adjudicator, or any
-    /// other GPU consumer; never read it from CPU code.
+    /// SAFETY: never dereference on the host. Pass to
+    /// `prism_so3_project_run`, the Adjudicator, or other VRAM
+    /// consumers as the data source.
     pub tiles_dev_ptr: *mut ContactShellTile,
 
-    /// Number of `ContactShellTile`s the array holds. The kernel writes
-    /// exactly `n_clusters` records; the Adjudicator reads them in
-    /// pairs (relaxed P + perturbed Q).
-    pub n_clusters: u32,
+    /// VRAM high-water mark in bytes for the F2 pool serving this
+    /// registry. Surfaced for the Adjudicator's budget-overflow guard
+    /// and the audit spine's resource report. Updated by the
+    /// orchestrator after each (re)allocation.
+    pub vram_high_water_mark: u64,
 
-    /// MD frame index the manifest reflects. Stamped by the
-    /// orchestrator at every kernel launch; the GPU kernel echoes it
-    /// into each tile's `frame` header for cross-validation.
-    pub frame_id: u32,
-
-    /// 8 bytes of reserved space for future expansion (e.g. a second
-    /// pointer for the perturbed manifold without bumping struct size
-    /// past one cache line). Kept zero on init.
-    pub _reserved: [u32; 2],
+    /// Device pointer to the `u32` F1 SWITCH selector that the
+    /// Adjudicator writes (0 = Prune, 1 = Construct/Burst, 2 =
+    /// Violation/Trap). The conditional CUDA graph node reads this
+    /// to route the next iteration of the WHILE loop. The
+    /// orchestrator pre-allocates a single 4-byte scratch in the
+    /// F2 pool and stamps the pointer here at init.
+    pub adjudication_trigger_ptr: *mut u32,
 }
 
 impl SiteManifestFfi {
     /// Unset / pre-allocation handle. `tiles_dev_ptr.is_null() == true`
-    /// is the canonical "not allocated yet" sentinel. Used by
-    /// [`SpikeToCluster4DOutput::default`] and as the initial state of
-    /// every persistent manifest before the F2 alloc lands.
+    /// is the canonical "not allocated yet" sentinel.
     pub const fn null() -> Self {
         Self {
+            total_sites: 0,
+            _pad0: 0,
             tiles_dev_ptr: std::ptr::null_mut(),
-            n_clusters: 0,
-            frame_id: 0,
-            _reserved: [0; 2],
+            vram_high_water_mark: 0,
+            adjudication_trigger_ptr: std::ptr::null_mut(),
         }
     }
 
@@ -281,37 +315,45 @@ impl SiteManifestFfi {
         self.tiles_dev_ptr.is_null()
     }
 
-    /// Total bytes the F2 pool must allocate to back this handle's
-    /// tile array. Useful for the call to
-    /// [`crate::vram_pool::VramPool::alloc_async`].
+    /// Total bytes the F2 pool must allocate to back the tile array
+    /// for `total_sites` clusters.
     #[inline]
-    pub const fn alloc_bytes(n_clusters: u32) -> u64 {
-        (n_clusters as u64) * (std::mem::size_of::<ContactShellTile>() as u64)
+    pub const fn alloc_bytes(total_sites: u32) -> u64 {
+        (total_sites as u64) * (std::mem::size_of::<ContactShellTile>() as u64)
+    }
+
+    /// CSR §M check: `tiles_dev_ptr % 128 == 0`. Returns `true` for
+    /// the null pointer (interpreted as "not yet allocated") and
+    /// for any allocation whose alignment matches `ContactShellTile`'s
+    /// 128-byte requirement. Intended for assertion at the FFI
+    /// handshake site, not as a per-frame hot-path check.
+    #[inline]
+    pub fn tile_alignment_ok(&self) -> bool {
+        let p = self.tiles_dev_ptr as usize;
+        p == 0 || (p % 128 == 0)
     }
 }
 
-// SAFETY: the struct holds an opaque device pointer that the host never
+// SAFETY: the struct holds opaque device pointers that the host never
 // dereferences. Send + Sync are sound because every field is either
-// Copy POD or a raw pointer the host treats as opaque. Mirrors the
-// pattern used by `InterferometricAdjudicatorFfi` in the same crate.
+// Copy POD or a raw pointer the host treats as opaque.
 unsafe impl Send for SiteManifestFfi {}
 unsafe impl Sync for SiteManifestFfi {}
 
-// Compile-time invariants. Anti-Greenfield Audit Gate G14 / Cross-Agent
-// FFI §3.1 ABI Stability: detect any C-ABI padding drift at compile time.
+// Compile-time invariants per operator §3.1 + Anti-Greenfield Gate G14.
 const _: () = {
     use std::mem::{align_of, size_of};
-    // 24 bytes: 8 (ptr) + 4 (n_clusters) + 4 (frame_id) + 8 (reserved).
-    assert!(size_of::<SiteManifestFfi>() == 24);
-    // 8-byte alignment from the embedded *mut pointer; sufficient for
-    // any host-side passing. Larger alignment isn't needed because the
-    // struct is moved by value, not stored at a 128-byte boundary.
-    assert!(align_of::<SiteManifestFfi>() == 8);
-    // ContactShellTile alignment must remain at 128 bytes — the
-    // Adjudicator's LDG.E.128 path depends on it. Re-asserted here
-    // (in addition to the so3_project.cuh static_assert) so a future
-    // edit that loosens the alignment is caught at the FFI boundary
-    // before it can poison Claude-2's downstream consumers.
+    // sizeof = 32 (two Blackwell L1 sectors). Layout:
+    //   0..4  total_sites (u32)
+    //   4..8  _pad0       (u32)
+    //   8..16 tiles_dev_ptr (*mut, 8B)
+    //  16..24 vram_high_water_mark (u64)
+    //  24..32 adjudication_trigger_ptr (*mut, 8B)
+    assert!(size_of::<SiteManifestFfi>() == 32);
+    // align(16) per operator mandate §3.1 — fits cleanly in a
+    // 16-byte sector boundary for cross-agent access.
+    assert!(align_of::<SiteManifestFfi>() == 16);
+    // ContactShellTile invariants pinned at the FFI boundary.
     assert!(align_of::<ContactShellTile>() == 128);
     assert!(size_of::<ContactShellTile>()  == 1280);
 };
@@ -396,7 +438,7 @@ mod transform_impl {
         pub d_cluster_offsets: *const u32,
 
         /// Number of clusters / equivalently the number of tiles to
-        /// produce. Must equal `manifest.n_clusters`.
+        /// produce. Must equal `manifest.total_sites`.
         pub n_clusters: u32,
 
         /// Device pointer to the K_LM[36] table populated by
@@ -533,7 +575,7 @@ mod transform_impl {
                     }],
                 };
             }
-            if input.manifest.n_clusters != input.n_clusters {
+            if input.manifest.total_sites != input.n_clusters {
                 return AuditOutcome::Aborted {
                     record: AuditRecord {
                         transform: self.identity(),
@@ -546,14 +588,39 @@ mod transform_impl {
                         law: LAW_RECT_3_1_C_TILE_LAYOUT,
                         routing: AuditRouting::Abort,
                         evidence: ViolationEvidence::SyntheticForTesting {
-                            tag: "SiteManifestFfi.n_clusters != input.n_clusters",
+                            tag: "SiteManifestFfi.total_sites != input.n_clusters",
+                        },
+                    }],
+                };
+            }
+            // CSR §M cross-lane pointer verification: the F2-pool
+            // allocation MUST land on a 128-byte boundary so the
+            // Adjudicator's LDG.E.128 path is bandwidth-optimal.
+            if !input.manifest.tile_alignment_ok() {
+                return AuditOutcome::Aborted {
+                    record: AuditRecord {
+                        transform: self.identity(),
+                        determinism: self.determinism(),
+                        tolerance: self.tolerance(),
+                        laws_declared: self.laws(),
+                    },
+                    violations: vec![TransformViolation {
+                        transform: self.identity(),
+                        law: LAW_RECT_3_1_C_TILE_LAYOUT,
+                        routing: AuditRouting::Abort,
+                        evidence: ViolationEvidence::SyntheticForTesting {
+                            tag: "tiles_dev_ptr not 128-byte aligned",
                         },
                     }],
                 };
             }
 
-            // Stamp the frame id then launch.
-            input.manifest.frame_id = input.frame_id;
+            // Frame id is stamped into each tile by the kernel itself
+            // (passed via the `frame_id` arg below); the registry no
+            // longer carries a per-launch frame field — keeping that
+            // here would have been a host-side write for a host-side
+            // read, the exact pattern the Host-Sync-Fallacy mandate
+            // forbids.
             let rc = unsafe {
                 ffi::prism_so3_project_run(
                     input.d_spikes,
@@ -636,7 +703,7 @@ mod stamp_impl {
     ///   AABB column at index `i` corresponds to `cluster_id == i`.
     /// * Clusters beyond `sites.len()` are reported in
     ///   [`StampReport::clusters_skipped`] but do not abort.
-    /// * Sites beyond `manifest.n_clusters` retain whatever value was
+    /// * Sites beyond `manifest.total_sites` retain whatever value was
     ///   already in `contact_shell_geo_power_spectrum` (not reset).
     ///
     /// # CUDA error handling
@@ -661,7 +728,7 @@ mod stamp_impl {
         if manifest.is_null() {
             return Err(cudarc::driver::sys::CUresult::CUDA_ERROR_INVALID_VALUE as i32);
         }
-        let n = manifest.n_clusters as usize;
+        let n = manifest.total_sites as usize;
         if n == 0 {
             return Ok(StampReport {
                 sites_stamped: 0,
@@ -1230,8 +1297,15 @@ mod tests {
     fn site_manifest_ffi_null_handle_is_null() {
         let h = SiteManifestFfi::null();
         assert!(h.is_null());
-        assert_eq!(h.n_clusters, 0);
-        assert_eq!(h.frame_id, 0);
+        assert_eq!(h.total_sites, 0);
+        assert_eq!(h.vram_high_water_mark, 0);
+        assert!(h.adjudication_trigger_ptr.is_null());
+        // CSR §M: null pointer is "alignment OK" (interpreted as
+        // pre-allocation state).
+        assert!(h.tile_alignment_ok());
+        // Operator §3.1 layout invariants.
+        assert_eq!(std::mem::size_of::<SiteManifestFfi>(),  32);
+        assert_eq!(std::mem::align_of::<SiteManifestFfi>(), 16);
     }
 
     #[test]
@@ -1344,11 +1418,16 @@ mod tests {
         stream.synchronize().expect("post-alloc sync");
 
         let mut manifest = SiteManifestFfi {
+            total_sites: n_clusters,
+            _pad0: 0,
             tiles_dev_ptr: tiles_ptr_u as *mut ContactShellTile,
-            n_clusters,
-            frame_id: 0, // will be stamped by apply()
-            _reserved: [0; 2],
+            vram_high_water_mark: alloc_bytes,
+            adjudication_trigger_ptr: std::ptr::null_mut(),
         };
+        // CSR §M: F2-pool allocation must be 128-byte aligned.
+        assert!(manifest.tile_alignment_ok(),
+            "F2 pool returned non-128-byte-aligned tiles_dev_ptr = {:p}",
+            manifest.tiles_dev_ptr);
 
         // Stage the per-cluster inputs (spike buffer + CSR offsets) on
         // device. We use the byte-allocation pattern already used by
@@ -1393,7 +1472,9 @@ mod tests {
         };
         assert_eq!(output.cuda_error, 0);
         assert!(!output.manifest.is_null());
-        assert_eq!(output.manifest.frame_id, frame_id);
+        assert_eq!(output.manifest.total_sites, n_clusters);
+        // The kernel stamps frame_id into each tile header (verified
+        // below via the D2H read); the registry no longer carries it.
 
         // Read the tile back from the F2-pool buffer (D2H via byte cast).
         let tile_bytes = std::mem::size_of::<ContactShellTile>();
@@ -1571,10 +1652,11 @@ mod tests {
         stream.synchronize().expect("post-alloc sync");
 
         let mut manifest = SiteManifestFfi {
+            total_sites: N_CLUSTERS as u32,
+            _pad0: 0,
             tiles_dev_ptr: tiles_ptr_u as *mut ContactShellTile,
-            n_clusters: N_CLUSTERS as u32,
-            frame_id: 0,
-            _reserved: [0; 2],
+            vram_high_water_mark: alloc_bytes,
+            adjudication_trigger_ptr: std::ptr::null_mut(),
         };
 
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
@@ -1709,10 +1791,11 @@ mod tests {
         let tiles_ptr_u = pool.alloc_async(alloc_bytes, raw_stream).expect("alloc");
         stream.synchronize().expect("sync");
         let mut manifest = SiteManifestFfi {
+            total_sites: N_CLUSTERS as u32,
+            _pad0: 0,
             tiles_dev_ptr: tiles_ptr_u as *mut ContactShellTile,
-            n_clusters: N_CLUSTERS as u32,
-            frame_id: 0,
-            _reserved: [0; 2],
+            vram_high_water_mark: alloc_bytes,
+            adjudication_trigger_ptr: std::ptr::null_mut(),
         };
 
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
