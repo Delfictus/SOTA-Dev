@@ -422,6 +422,40 @@ pub struct SiteManifest {
     /// Sort key used to order the constituent role-view residues at
     /// view-construction time. Audit-trail field.
     pub sort_lineage: CausalSortKey,
+
+    // ─── Anti-Greenfield § 3 — Spatiotemporal Interferometer extension ────
+    // Surgically additive, all `Option`-typed with `serde(skip_serializing
+    // _if = None)`. Legacy consumers (Python reporting, static PDB viewers,
+    // existing JSON schema readers) see the same shape they always saw on
+    // the legacy clustering path; `None` everywhere ⇒ no key emitted.
+    // Populated only when the InterferometricAdjudicator (T0/T2) is wired
+    // into the post-clustering path of the captured WHILE graph.
+
+    /// SO(3) geometry-plane power spectrum `C_l` for `l = 0..5`,
+    /// rotationally invariant (RECT-3.1.b output). The KL divergence
+    /// in the Adjudicator kernel reads these values from the relaxed
+    /// and perturbed `ContactShellTile`s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_shell_geo_power_spectrum: Option<[f32; 6]>,
+
+    /// Latest computed Δ_AB KL divergence between the relaxed (P)
+    /// and perturbed (Q) manifolds (T2 output). `None` on the
+    /// legacy path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjudicator_divergence: Option<f32>,
+
+    /// F1 SWITCH selector — [`crate::pre_rank::AdjudicationCode`]-compatible
+    /// integer (0=Prune, 1=Construct, 2=Violation). `None` on the
+    /// legacy path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjudicator_code: Option<u32>,
+
+    /// Adjudicator-kernel elapsed time in nanoseconds, computed as
+    /// `stop_clock - start_clock` from the CudaEvent harness (T4).
+    /// Gating threshold: the < 5 μs CSR-H invariant. `None` if the
+    /// telemetry harness is not active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjudicator_elapsed_ns: Option<u64>,
 }
 
 #[cfg(test)]
@@ -565,6 +599,10 @@ mod tests {
             frame: 7,
             source_manifold_id: EntangledManifoldId(42),
             sort_lineage: sort_key(),
+            contact_shell_geo_power_spectrum: None,
+            adjudicator_divergence: None,
+            adjudicator_code: None,
+            adjudicator_elapsed_ns: None,
         };
         assert_eq!(m.identity.site_id.0, 0);
         assert_eq!(m.identity.cluster_id.0, 7);

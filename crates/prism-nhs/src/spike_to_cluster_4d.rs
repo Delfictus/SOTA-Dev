@@ -141,6 +141,18 @@ pub struct SpikeToCluster4DOutput {
     pub manifold: EntangledManifold,
     /// Three-scalar conservation-of-mass audit payload.
     pub conservation: ConservationScalars,
+    /// **RECT-3 / Task #21 extension.** Persistent F2-pool-backed
+    /// handle to the per-cluster `ContactShellTile` array produced by
+    /// the SO(3) projection transform
+    /// ([`crate::so3_project::So3ProjectTransform`]). `None` for
+    /// pipelines that do not run RECT-3 (legacy producer-only paths
+    /// remain bit-identical). When `Some`, downstream consumers
+    /// (Adjudicator, ASC writeback) read tiles from
+    /// `site_manifest_ffi.tiles_dev_ptr` directly — the host never
+    /// touches the on-device array. See the Anti-Greenfield Doctrine
+    /// (operator directive 2026-04-29 §2.3) — this is the surgical
+    /// extension of the existing struct rather than a parallel type.
+    pub site_manifest_ffi: Option<crate::so3_project::SiteManifestFfi>,
 }
 
 // ============================================================================
@@ -854,7 +866,7 @@ mod m1_2_5 {
                 }
             };
 
-            let output = SpikeToCluster4DOutput { manifold, conservation };
+            let output = SpikeToCluster4DOutput { manifold, conservation, site_manifest_ffi: None };
 
             // ---- 4. Adjudicate via the trait's default impl, which
             //         calls `verify` and routes to Accepted / Aborted.
@@ -2431,7 +2443,7 @@ mod tests {
             total_attributed: 60,
             background_count: 30,
         };
-        let output = SpikeToCluster4DOutput { manifold, conservation };
+        let output = SpikeToCluster4DOutput { manifold, conservation, site_manifest_ffi: None };
 
         let producer = SpikeToCluster4D::new();
         let violations = producer.verify(&output);
@@ -2480,7 +2492,7 @@ mod tests {
             total_attributed: 70,
             background_count: 30,
         };
-        let output = SpikeToCluster4DOutput { manifold, conservation };
+        let output = SpikeToCluster4DOutput { manifold, conservation, site_manifest_ffi: None };
 
         let producer = SpikeToCluster4D::new();
         let violations = producer.verify(&output);

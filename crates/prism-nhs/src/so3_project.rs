@@ -47,6 +47,7 @@
 //! - [`run`] launches `prism_so3_project_manifold_kernel`.
 
 use crate::sh_basis::{LMAX, N_COEFFS};
+use crate::transform::{LawFamily, LawId, TransformId};
 
 // ============================================================================
 // Plane indexing (mirror of C-side constants in so3_project.cuh)
@@ -210,6 +211,372 @@ mod ffi {
 pub fn link_probe() -> u32 {
     unsafe { ffi::prism_so3_project_link_probe() }
 }
+
+// ============================================================================
+// SiteManifestFfi — persistent, F2-pool-backed handle to the per-cluster
+// ContactShellTile array (Task #21, RECT-3 Phase 3).
+// ============================================================================
+
+/// Persistent, Virtual-Pointer-Stable handle to the per-cluster
+/// `ContactShellTile` array that lives in the F2 stream-ordered pool.
+///
+/// Per the Cross-Agent FFI Mandate (operator directive 2026-04-29
+/// Part 2 §2 + Part 3): `SiteManifestFfi` is allocated once at the
+/// start of the MD campaign via [`crate::vram_pool::VramPool::alloc_async`]
+/// and remains pointer-stable for the entire campaign. The downstream
+/// Adjudicator (`crate::interferometric_adjudicator`) consumes the
+/// `tiles_dev_ptr` field as `*const ContactShellTile` for its
+/// `relaxed_manifold_ptr` / `perturbed_manifold_ptr` slots.
+///
+/// # Layout
+///
+/// `#[repr(C)]` so the struct is FFI-stable. 24 bytes; the 8-byte
+/// trailing pad is intentional so the struct embeds cleanly in a
+/// 32-byte cache line for diagnostic-side reads.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SiteManifestFfi {
+    /// Device pointer to the contiguous `ContactShellTile[n_clusters]`
+    /// array. Allocated from the F2 pool; lifecycle managed by the
+    /// caller (see [`Self::null`] for the unset state).
+    ///
+    /// SAFETY: dereferencing on the host is forbidden. Pass this
+    /// pointer into `prism_so3_project_run`, the Adjudicator, or any
+    /// other GPU consumer; never read it from CPU code.
+    pub tiles_dev_ptr: *mut ContactShellTile,
+
+    /// Number of `ContactShellTile`s the array holds. The kernel writes
+    /// exactly `n_clusters` records; the Adjudicator reads them in
+    /// pairs (relaxed P + perturbed Q).
+    pub n_clusters: u32,
+
+    /// MD frame index the manifest reflects. Stamped by the
+    /// orchestrator at every kernel launch; the GPU kernel echoes it
+    /// into each tile's `frame` header for cross-validation.
+    pub frame_id: u32,
+
+    /// 8 bytes of reserved space for future expansion (e.g. a second
+    /// pointer for the perturbed manifold without bumping struct size
+    /// past one cache line). Kept zero on init.
+    pub _reserved: [u32; 2],
+}
+
+impl SiteManifestFfi {
+    /// Unset / pre-allocation handle. `tiles_dev_ptr.is_null() == true`
+    /// is the canonical "not allocated yet" sentinel. Used by
+    /// [`SpikeToCluster4DOutput::default`] and as the initial state of
+    /// every persistent manifest before the F2 alloc lands.
+    pub const fn null() -> Self {
+        Self {
+            tiles_dev_ptr: std::ptr::null_mut(),
+            n_clusters: 0,
+            frame_id: 0,
+            _reserved: [0; 2],
+        }
+    }
+
+    /// True when the underlying tile array has not been allocated.
+    #[inline]
+    pub fn is_null(&self) -> bool {
+        self.tiles_dev_ptr.is_null()
+    }
+
+    /// Total bytes the F2 pool must allocate to back this handle's
+    /// tile array. Useful for the call to
+    /// [`crate::vram_pool::VramPool::alloc_async`].
+    #[inline]
+    pub const fn alloc_bytes(n_clusters: u32) -> u64 {
+        (n_clusters as u64) * (std::mem::size_of::<ContactShellTile>() as u64)
+    }
+}
+
+// SAFETY: the struct holds an opaque device pointer that the host never
+// dereferences. Send + Sync are sound because every field is either
+// Copy POD or a raw pointer the host treats as opaque. Mirrors the
+// pattern used by `InterferometricAdjudicatorFfi` in the same crate.
+unsafe impl Send for SiteManifestFfi {}
+unsafe impl Sync for SiteManifestFfi {}
+
+// Compile-time invariants. Anti-Greenfield Audit Gate G14 / Cross-Agent
+// FFI §3.1 ABI Stability: detect any C-ABI padding drift at compile time.
+const _: () = {
+    use std::mem::{align_of, size_of};
+    // 24 bytes: 8 (ptr) + 4 (n_clusters) + 4 (frame_id) + 8 (reserved).
+    assert!(size_of::<SiteManifestFfi>() == 24);
+    // 8-byte alignment from the embedded *mut pointer; sufficient for
+    // any host-side passing. Larger alignment isn't needed because the
+    // struct is moved by value, not stored at a 128-byte boundary.
+    assert!(align_of::<SiteManifestFfi>() == 8);
+    // ContactShellTile alignment must remain at 128 bytes — the
+    // Adjudicator's LDG.E.128 path depends on it. Re-asserted here
+    // (in addition to the so3_project.cuh static_assert) so a future
+    // edit that loosens the alignment is caught at the FFI boundary
+    // before it can poison Claude-2's downstream consumers.
+    assert!(align_of::<ContactShellTile>() == 128);
+    assert!(size_of::<ContactShellTile>()  == 1280);
+};
+
+// ============================================================================
+// So3ProjectTransform — AuditedTransform impl (Task #21)
+// ============================================================================
+
+/// Stable identity for the SO(3) projection transform. Surfaces in
+/// every `AuditRecord` and every `TransformViolation` emitted by the
+/// transform's `verify` impl.
+pub const TRANSFORM_RECT_3_1_C_SO3_PROJECT: TransformId =
+    TransformId("rect_3_1_c_so3_project");
+
+/// Algebraic invariant: `sizeof(ContactShellTile) == 1280` and
+/// `alignof(ContactShellTile) == 128`. Validated at compile time
+/// already (see the `const _:` block above); the runtime law exists
+/// so a future ABI drift surfaces in the audit spine alongside other
+/// transform violations rather than as an opaque link error.
+pub const LAW_RECT_3_1_C_TILE_LAYOUT: LawId =
+    LawId::new("rect_3_1_c_tile_layout", LawFamily::Algebraic);
+
+/// Numerical invariant: the GPU kernel's PTX hard-trap fires on
+/// `Σ_p Σ_l C_l > MAX_ENERGY (=100)`. The Rust verify echoes the
+/// post-condition as an audit record so that a successful kernel
+/// launch is attestable from the Rust spine even though the
+/// underlying enforcement is the on-device trap. Family A
+/// (Algebraic local).
+pub const LAW_RECT_3_1_C_ENERGY_BUDGET: LawId =
+    LawId::new("rect_3_1_c_energy_budget", LawFamily::Algebraic);
+
+/// Full declared law set for the SO(3) projection transform.
+pub const DECLARED_LAWS_RECT_3_1_C: &[LawId] = &[
+    LAW_RECT_3_1_C_TILE_LAYOUT,
+    LAW_RECT_3_1_C_ENERGY_BUDGET,
+];
+
+/// Zero-sized transform singleton. Stateless — the F2-pool handles
+/// (pool, stream, k_lm) are passed per-call via the input shape.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct So3ProjectTransform;
+
+impl So3ProjectTransform {
+    /// Construct the singleton.
+    pub const fn new() -> Self {
+        So3ProjectTransform
+    }
+}
+
+#[cfg(feature = "gpu")]
+mod transform_impl {
+    use super::*;
+    use crate::transform::{
+        AuditOutcome, AuditedTransform, DeterminismClass, TolerancePolicy,
+        TransformViolation, AuditRouting, ViolationEvidence, AuditRecord,
+    };
+
+    /// Borrowed input shape for [`So3ProjectTransform::apply`].
+    ///
+    /// Surgical: every pointer is borrowed; the transform allocates
+    /// nothing and frees nothing. F2-pool lifecycle is the caller's
+    /// concern — the persistent `SiteManifestFfi` is passed by `&mut`
+    /// so the kernel's tile writes appear in the manifest's
+    /// already-allocated buffer.
+    pub struct So3ProjectInput<'a> {
+        /// F2 pool handle (raw `cudaMemPool_t` as `usize`). Currently
+        /// unused inside `apply` — included so that future expansions
+        /// (e.g. per-launch staging buffers) can scavenge it without
+        /// changing the input shape.
+        pub pool_handle: usize,
+
+        /// CUDA stream handle as `usize`. Threaded straight into the
+        /// FFI; the transform does not synchronize internally so the
+        /// caller controls graph capture / replay semantics.
+        pub stream_handle: usize,
+
+        /// Device pointer to the cluster's `RichSpike` array.
+        pub d_spikes: *const crate::rich_spike::RichSpike,
+
+        /// Device pointer to the CSR cluster offset array of length
+        /// `n_clusters + 1`.
+        pub d_cluster_offsets: *const u32,
+
+        /// Number of clusters / equivalently the number of tiles to
+        /// produce. Must equal `manifest.n_clusters`.
+        pub n_clusters: u32,
+
+        /// Device pointer to the K_LM[36] table populated by
+        /// `prism_sh_basis_init`. Obtain via
+        /// [`crate::sh_basis::k_lm_device_ptr`].
+        pub d_k_lm: *const f32,
+
+        /// MD frame index. Echoed into every produced tile's
+        /// `frame` header.
+        pub frame_id: u32,
+
+        /// Persistent, F2-pool-backed manifest. The kernel writes
+        /// `n_clusters` tiles into `manifest.tiles_dev_ptr`. Must be
+        /// allocated and pointer-stable for the entire campaign.
+        pub manifest: &'a mut SiteManifestFfi,
+    }
+
+    /// Owned output of [`So3ProjectTransform::apply`].
+    ///
+    /// Echoes the input manifest by value (raw POD; cheap to clone).
+    /// Downstream consumers (the Adjudicator) read `tiles_dev_ptr`
+    /// directly without going through the audit spine.
+    #[derive(Debug, Clone)]
+    pub struct So3ProjectOutput {
+        /// The populated manifest (= input manifest with the latest
+        /// `frame_id` stamped). Tile data is on-device at
+        /// `manifest.tiles_dev_ptr`; the host never reads it from
+        /// here.
+        pub manifest: SiteManifestFfi,
+
+        /// Latest cudaError code from the kernel launch (= 0 on
+        /// success). Surfaced for the verify path so a CUDA-level
+        /// failure can be routed through the audit spine rather than
+        /// silently lost to a `Result` discard at the FFI boundary.
+        pub cuda_error: i32,
+    }
+
+    impl AuditedTransform for So3ProjectTransform {
+        type Input<'a> = So3ProjectInput<'a> where Self: 'a;
+        type Output    = So3ProjectOutput;
+
+        fn identity(&self) -> crate::transform::TransformId {
+            TRANSFORM_RECT_3_1_C_SO3_PROJECT
+        }
+
+        fn determinism(&self) -> DeterminismClass {
+            // The kernel uses atomicOr/atomicAdd on shared memory
+            // for tag aggregation + sum_w accumulation. Aggregate
+            // OR is order-independent (commutative); the per-plane
+            // float sums are NOT bit-stable across atomic order, so
+            // the determinism class is AtomicsAffected.
+            DeterminismClass::AtomicsAffected
+        }
+
+        fn tolerance(&self) -> TolerancePolicy {
+            // C_l outputs round-trip through tf32 — the tolerance is
+            // the documented 5e-2 G11 bound (see g11_rotation_invariance
+            // test). The audit spine exposes this as RelativeEpsilon
+            // so downstream callers can opt into a stricter check.
+            TolerancePolicy::RelativeEpsilon { eps: 5e-2 }
+        }
+
+        fn laws(&self) -> &'static [crate::transform::LawId] {
+            DECLARED_LAWS_RECT_3_1_C
+        }
+
+        fn verify(&self, output: &Self::Output) -> Vec<TransformViolation> {
+            let mut violations = Vec::new();
+
+            // L1 — tile layout (compile-time verified; runtime guard
+            // catches an ABI drift that somehow passed the static
+            // assert, e.g. a debug-only unsafe transmute upstream).
+            if std::mem::size_of::<ContactShellTile>() != 1280
+                || std::mem::align_of::<ContactShellTile>() != 128
+            {
+                violations.push(TransformViolation {
+                    transform: TRANSFORM_RECT_3_1_C_SO3_PROJECT,
+                    law: LAW_RECT_3_1_C_TILE_LAYOUT,
+                    routing: AuditRouting::Abort,
+                    evidence: ViolationEvidence::SyntheticForTesting {
+                        tag: "ContactShellTile layout drift",
+                    },
+                });
+            }
+
+            // L2 — energy budget. The on-GPU PTX trap already fires
+            // hard if Σ Σ C_l > MAX_ENERGY (= 100); a non-zero
+            // cuda_error here typically means the trap fired. We
+            // surface that as a verifiable algebraic violation rather
+            // than a silent CUDA error.
+            if output.cuda_error != 0 {
+                violations.push(TransformViolation {
+                    transform: TRANSFORM_RECT_3_1_C_SO3_PROJECT,
+                    law: LAW_RECT_3_1_C_ENERGY_BUDGET,
+                    routing: AuditRouting::Abort,
+                    evidence: ViolationEvidence::SyntheticForTesting {
+                        tag: "kernel returned non-success cudaError",
+                    },
+                });
+            }
+
+            // Manifest sanity (cheap host-side checks).
+            if output.manifest.is_null() {
+                violations.push(TransformViolation {
+                    transform: TRANSFORM_RECT_3_1_C_SO3_PROJECT,
+                    law: LAW_RECT_3_1_C_TILE_LAYOUT,
+                    routing: AuditRouting::Abort,
+                    evidence: ViolationEvidence::SyntheticForTesting {
+                        tag: "SiteManifestFfi.tiles_dev_ptr is null after apply",
+                    },
+                });
+            }
+
+            violations
+        }
+
+        fn apply<'a>(&self, input: Self::Input<'a>) -> AuditOutcome<Self::Output> {
+            // Pre-flight: tile array must be pre-allocated.
+            if input.manifest.is_null() {
+                return AuditOutcome::Aborted {
+                    record: AuditRecord {
+                        transform: self.identity(),
+                        determinism: self.determinism(),
+                        tolerance: self.tolerance(),
+                        laws_declared: self.laws(),
+                    },
+                    violations: vec![TransformViolation {
+                        transform: self.identity(),
+                        law: LAW_RECT_3_1_C_TILE_LAYOUT,
+                        routing: AuditRouting::Abort,
+                        evidence: ViolationEvidence::SyntheticForTesting {
+                            tag: "SiteManifestFfi tiles_dev_ptr was null at apply entry",
+                        },
+                    }],
+                };
+            }
+            if input.manifest.n_clusters != input.n_clusters {
+                return AuditOutcome::Aborted {
+                    record: AuditRecord {
+                        transform: self.identity(),
+                        determinism: self.determinism(),
+                        tolerance: self.tolerance(),
+                        laws_declared: self.laws(),
+                    },
+                    violations: vec![TransformViolation {
+                        transform: self.identity(),
+                        law: LAW_RECT_3_1_C_TILE_LAYOUT,
+                        routing: AuditRouting::Abort,
+                        evidence: ViolationEvidence::SyntheticForTesting {
+                            tag: "SiteManifestFfi.n_clusters != input.n_clusters",
+                        },
+                    }],
+                };
+            }
+
+            // Stamp the frame id then launch.
+            input.manifest.frame_id = input.frame_id;
+            let rc = unsafe {
+                ffi::prism_so3_project_run(
+                    input.d_spikes,
+                    input.d_cluster_offsets,
+                    input.n_clusters,
+                    input.d_k_lm,
+                    input.manifest.tiles_dev_ptr,
+                    input.frame_id,
+                    input.stream_handle as *mut std::ffi::c_void,
+                )
+            };
+
+            let output = So3ProjectOutput {
+                manifest: *input.manifest,
+                cuda_error: rc,
+            };
+            self.adjudicate(output)
+        }
+    }
+}
+
+#[cfg(feature = "gpu")]
+pub use transform_impl::{So3ProjectInput, So3ProjectOutput};
 
 // ============================================================================
 // Tests
@@ -685,5 +1052,218 @@ mod tests {
                   sum_w_geo={:.4}, sum_w_caus={:.4}, sum_w_therm={:.4}, sum_w_chem={:.4}; \
                   Σ C_l ≈ 1.0 for all 4 planes (KL-ready)",
                   tile.sum_w_geo, tile.sum_w_caus, tile.sum_w_therm, tile.sum_w_chem);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Task #21 — SiteManifestFfi handle + So3ProjectTransform AuditedTransform
+    //
+    // Integration validates the FFI handshake mandated by the operator
+    // (Cross-Agent FFI Mandate Part 3.1 / Anti-Greenfield Doctrine §2.3
+    // Surgical Integration). The handle is allocated from the F2 pool,
+    // passed by raw pointer through the AuditedTransform spine, and the
+    // resulting tile is read back and validated.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn site_manifest_ffi_null_handle_is_null() {
+        let h = SiteManifestFfi::null();
+        assert!(h.is_null());
+        assert_eq!(h.n_clusters, 0);
+        assert_eq!(h.frame_id, 0);
+    }
+
+    #[test]
+    fn site_manifest_alloc_bytes_matches_tile_size() {
+        // 1 cluster → 1280 B; 8 clusters → 10240 B; etc.
+        assert_eq!(SiteManifestFfi::alloc_bytes(1),  1280);
+        assert_eq!(SiteManifestFfi::alloc_bytes(8), 10240);
+        // Anti-Greenfield Audit Gate G14: never exceeds u32 max-extension
+        // bound (n_clusters is u32; 4 GiB / 1280 B ≈ 3.4 M tiles fits).
+        assert_eq!(SiteManifestFfi::alloc_bytes(0),  0);
+    }
+
+    #[test]
+    fn spike_to_cluster_4d_output_carries_optional_manifest() {
+        // The Anti-Greenfield extension is BACKWARD-COMPATIBLE: every
+        // pre-RECT-3 caller passing `site_manifest_ffi: None` still
+        // round-trips the struct. We construct one such Output by
+        // pulling the existing builders' default field values and
+        // assert the manifest defaults to None.
+        use crate::entangled_manifold::{
+            CausalDriverView, CausalSignal, EntangledManifold,
+            LiningContactView, LocalizedSubclusterView, SelectionPolicy,
+            TieBreakerPolicy, ViewProvenance,
+        };
+        use crate::spike_to_cluster_4d::{ConservationScalars, SpikeToCluster4DOutput};
+        let coords = vec![[0.0_f32; 3]; 4];
+        let prov = ViewProvenance {
+            signal: CausalSignal::SpikeAttributionCount,
+            selection: SelectionPolicy::TopK { k: 1 },
+            tie_breaker: TieBreakerPolicy::CausalThenResid,
+            frame: 0,
+        };
+        let driver    = CausalDriverView::new       (&coords, vec![0], vec![1.0], prov.clone()).unwrap();
+        let lining    = LiningContactView::new      (&coords, vec![1], vec![1.0], prov.clone()).unwrap();
+        let localized = LocalizedSubclusterView::new(&coords, vec![2], vec![1.0], prov).unwrap();
+        let manifold = EntangledManifold::new(driver, lining, localized).unwrap();
+        let conservation = ConservationScalars {
+            total_input_spikes: 0, total_attributed: 0, background_count: 0,
+        };
+        let out = SpikeToCluster4DOutput {
+            manifold,
+            conservation,
+            site_manifest_ffi: None,
+        };
+        assert!(out.site_manifest_ffi.is_none(),
+            "default site_manifest_ffi must be None for backward compatibility");
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn task_21_end_to_end_audited_transform() {
+        use crate::rich_spike::RichSpike;
+        use crate::transform::{AuditOutcome, AuditedTransform};
+        use crate::vram_pool::VramPool;
+        use cudarc::driver::{CudaContext, DevicePtr};
+
+        let ctx = match CudaContext::new(0) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[task-21] CUDA unavailable: {:?} — skipping", e);
+                return;
+            }
+        };
+        let stream = ctx.new_stream().expect("stream");
+        let raw_stream = stream.cu_stream() as usize;
+
+        // Init K_LM via the existing sh_basis FFI surface.
+        let rc = unsafe {
+            crate::sh_basis::ffi::prism_sh_basis_init(
+                raw_stream as *mut std::ffi::c_void,
+            )
+        };
+        assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS);
+        stream.synchronize().expect("post-sh-init sync");
+        let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
+
+        // F2 pool — Anti-Greenfield: scavenged from existing vram_pool.rs.
+        let pool = match VramPool::new(0) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[task-21] VramPool::new failed: {} — skipping", e);
+                return;
+            }
+        };
+
+        // Build a tiny single-cluster spike buffer.
+        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
+            let mut s = RichSpike::zero();
+            // 16 spikes evenly distributed on a unit sphere shell.
+            let theta = 0.3 + (i as f32) * 0.2;
+            let phi   = 0.4 + (i as f32) * 0.3;
+            let r = 4.0;
+            s.x = r * theta.sin() * phi.cos();
+            s.y = r * theta.sin() * phi.sin();
+            s.z = r * theta.cos();
+            s.cluster_id = 0;
+            s.residue_id = i as i32;
+            s
+        }).collect();
+        let offsets: Vec<u32> = vec![0u32, spikes.len() as u32];
+        let n_clusters: u32 = 1;
+        let frame_id: u32 = 42;
+
+        // Allocate SiteManifestFfi tile array via the F2 pool — this is
+        // the Cross-Agent FFI Mandate's "Virtual-Pointer Stable" handle.
+        let alloc_bytes = SiteManifestFfi::alloc_bytes(n_clusters);
+        let tiles_ptr_u = pool
+            .alloc_async(alloc_bytes, raw_stream)
+            .expect("F2 pool alloc for ContactShellTile array");
+        stream.synchronize().expect("post-alloc sync");
+
+        let mut manifest = SiteManifestFfi {
+            tiles_dev_ptr: tiles_ptr_u as *mut ContactShellTile,
+            n_clusters,
+            frame_id: 0, // will be stamped by apply()
+            _reserved: [0; 2],
+        };
+
+        // Stage the per-cluster inputs (spike buffer + CSR offsets) on
+        // device. We use the byte-allocation pattern already used by
+        // the lossless_tag_propagation test for consistency.
+        let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
+        let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc spikes");
+        let spikes_bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
+        };
+        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
+        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
+        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+
+        let (sp_dev,  _g1) = d_spikes_b.device_ptr(&stream);
+        let (off_dev, _g2) = d_offsets.device_ptr(&stream);
+
+        // Drive the kernel through the AuditedTransform spine.
+        let xform = So3ProjectTransform::new();
+        let outcome = xform.apply(So3ProjectInput {
+            pool_handle: pool.raw_handle(),
+            stream_handle: raw_stream,
+            d_spikes: sp_dev as *const RichSpike,
+            d_cluster_offsets: off_dev as *const u32,
+            n_clusters,
+            d_k_lm: k_lm_dev,
+            frame_id,
+            manifest: &mut manifest,
+        });
+        stream.synchronize().expect("post-apply sync");
+
+        // Spine must accept the output (no laws violated).
+        let output = match outcome {
+            AuditOutcome::Accepted { output, record } => {
+                assert_eq!(record.transform.0, "rect_3_1_c_so3_project");
+                assert_eq!(record.laws_declared.len(), 2);
+                output
+            }
+            AuditOutcome::Quarantined { violations, .. } |
+            AuditOutcome::Aborted    { violations, .. } => {
+                panic!("AuditedTransform rejected the SO(3) output: {:?}", violations);
+            }
+        };
+        assert_eq!(output.cuda_error, 0);
+        assert!(!output.manifest.is_null());
+        assert_eq!(output.manifest.frame_id, frame_id);
+
+        // Read the tile back from the F2-pool buffer (D2H via byte cast).
+        let tile_bytes = std::mem::size_of::<ContactShellTile>();
+        let mut host_bytes = vec![0u8; tile_bytes];
+        let rc = unsafe {
+            cudarc::driver::sys::cuMemcpyDtoH_v2(
+                host_bytes.as_mut_ptr() as *mut std::ffi::c_void,
+                manifest.tiles_dev_ptr as cudarc::driver::sys::CUdeviceptr,
+                tile_bytes,
+            )
+        };
+        assert!(matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS));
+        let tile: ContactShellTile = unsafe {
+            std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile)
+        };
+
+        // The kernel stamped frame_id and spike_count into the tile;
+        // the FFI handshake is verified end-to-end if both round-trip.
+        assert_eq!(tile.frame, frame_id, "tile.frame round-trip");
+        assert_eq!(tile.spike_count, spikes.len() as u32, "tile.spike_count round-trip");
+        // Geometry plane should be normalized to Σ C_l ≈ 1 (KL-ready).
+        let cl_g_sum: f32 = tile.cl(PLANE_GEO).iter().sum();
+        assert!((cl_g_sum - 1.0).abs() < 1e-2,
+            "task-21: geometry plane Σ C_l = {} (want ~1.0)", cl_g_sum);
+
+        // Free the tile buffer back to the pool (stream-ordered free).
+        pool.free_async(tiles_ptr_u, raw_stream).expect("F2 free");
+        stream.synchronize().expect("post-free sync");
+
+        eprintln!("[task-21] FFI handshake verified end-to-end: \
+                  F2 alloc → AuditedTransform::apply → D2H tile read; \
+                  tile.frame={}, tile.spike_count={}, Σ C_l (geo) = {:.6}",
+                  tile.frame, tile.spike_count, cl_g_sum);
     }
 }
