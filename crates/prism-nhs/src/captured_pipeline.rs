@@ -180,11 +180,69 @@ impl CapturedAdjudicationPipeline {
     ///      into the body sub-graph — bumps `burst_marker` when the
     ///      Adjudicator routes Case 1 (Burst).
     /// 9. `cuGraphInstantiate(G)` → CUgraphExec.
+    /// Convenience wrapper around [`Self::build_with_v2_hook`] with a
+    /// no-op hook. V1 callers — and tests that don't need the V2
+    /// IGNITION conditional-node injection — should use this method.
     pub fn build(
         ctx: &Arc<CudaContext>,
         md_stream: &Arc<CudaStream>,
         cfg: &PipelineConfig,
     ) -> Result<Self, BuildError> {
+        Self::build_with_v2_hook(ctx, md_stream, cfg, |_, _, _| Ok(()))
+    }
+
+    /// V2 IGNITION variant. Identical to [`Self::build`] except a
+    /// caller-provided closure is invoked between `cuStreamEndCapture`
+    /// and `cuGraphInstantiate`. The hook receives:
+    ///
+    /// 1. The raw `CUgraph` handle (writable — caller may invoke
+    ///    `cuGraphAddNode_v2`, `cuGraphAddDependencies`, etc. via
+    ///    raw FFI to inject the F1 SWITCH conditional node).
+    /// 2. A snapshot of the Adjudicator's captured node handles
+    ///    (`&[CUgraphNode]` of length 1 in the V1 baseline). This
+    ///    is the operator §2.3 explicit-edge dependency target.
+    /// 3. The device pointer (as `usize`) to the
+    ///    [`InterferometricAdjudicatorFfi`] — caller can derive
+    ///    `predicate_dev_ptr` via Claude-2's FFI
+    ///    `prism_get_adjudication_code_devptr(adj_dev_ptr as *const _)`.
+    ///
+    /// If the hook returns `Err(rc)`, build aborts cleanly: the raw
+    /// graph + F2 allocations + ring + streams + events are all
+    /// released and a `BuildError::V2HookFailed { rc }` is bubbled.
+    ///
+    /// # Intended V2 wire-in
+    ///
+    /// ```ignore
+    /// let pipeline = CapturedAdjudicationPipeline::build_with_v2_hook(
+    ///     &ctx, &md_stream, &cfg,
+    ///     |raw_graph, adj_nodes, adj_dev_ptr| {
+    ///         let predicate_ptr = unsafe {
+    ///             prism_get_adjudication_code_devptr(
+    ///                 adj_dev_ptr as *const InterferometricAdjudicatorFfi,
+    ///             )
+    ///         };
+    ///         let mut cond_node: CUgraphNode = ptr::null_mut();
+    ///         let rc = unsafe {
+    ///             prism_wire_f1_switch_ffi(
+    ///                 raw_graph,
+    ///                 adj_nodes[0],
+    ///                 predicate_ptr,
+    ///                 &mut cond_node as *mut _,
+    ///             )
+    ///         };
+    ///         if rc != 0 { Err(rc) } else { Ok(()) }
+    ///     },
+    /// )?;
+    /// ```
+    pub fn build_with_v2_hook<F>(
+        ctx: &Arc<CudaContext>,
+        md_stream: &Arc<CudaStream>,
+        cfg: &PipelineConfig,
+        hook: F,
+    ) -> Result<Self, BuildError>
+    where
+        F: FnOnce(CUgraph, &[CUgraphNode], usize) -> Result<(), i32>,
+    {
         if cfg.n_clusters == 0 {
             return Err(BuildError::InvalidConfig {
                 reason: "n_clusters must be > 0",
@@ -383,6 +441,41 @@ impl CapturedAdjudicationPipeline {
             return Err(BuildError::Cuda { stage: "Node C (Adjudicator)", rc });
         }
 
+        // ── 6.b' V2 IGNITION prep: snapshot the Adjudicator's captured
+        // node handle BEFORE any cross-stream events confuse the
+        // dependency frontier. The V2 hook (Claude-2's
+        // `prism_wire_f1_switch_ffi`) consumes this handle as the
+        // explicit dependency for the conditional node — operator's
+        // §2.3 mandate ("explicit cuGraphAddDependencies edge from
+        // Node C to Node D"). At this point in the capture sequence
+        // the dependency frontier is exactly {adjudicator_node}.
+        let mut adj_node_set: Vec<CUgraphNode> = Vec::new();
+        unsafe {
+            let mut cap_status: CUstreamCaptureStatus =
+                CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+            let mut cap_id: cuuint64_t = 0;
+            let mut graph_now: CUgraph = ptr::null_mut();
+            let mut deps_ptr: *const CUgraphNode = ptr::null();
+            let mut n_deps: usize = 0;
+            let rc = cuStreamGetCaptureInfo_v2(
+                md_stream.cu_stream(),
+                &mut cap_status as *mut _,
+                &mut cap_id as *mut _,
+                &mut graph_now as *mut _,
+                &mut deps_ptr as *mut _,
+                &mut n_deps as *mut _,
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "cuStreamGetCaptureInfo_v2 (post-Adjudicator snapshot)",
+                    rc: rc as i32,
+                });
+            }
+            if n_deps > 0 {
+                adj_node_set = std::slice::from_raw_parts(deps_ptr, n_deps).to_vec();
+            }
+        }
+
         // ── 6.c Cross-stream FORK: MD → telemetry ────────────────────
         // After Node C completes on md_stream, fire the
         // md_to_telemetry_event; telemetry_stream waits on it before
@@ -492,6 +585,23 @@ impl CapturedAdjudicationPipeline {
                 Err(e) => return Err(BuildError::Driver(e)),
             }
         };
+
+        // ── 7.5 V2 IGNITION HOOK ────────────────────────────────────
+        // Invoke the caller-provided hook between end_capture and
+        // cuGraphInstantiate. The V1 wrapper passes a no-op closure;
+        // V2 callers inject the F1 SWITCH conditional node here via
+        // Claude-2's `prism_wire_f1_switch_ffi` C-ABI bypass. Abort
+        // cleanly on failure so the raw CUgraph isn't leaked.
+        if let Err(rc) = hook(cu_graph, &adj_node_set, adj_dev) {
+            unsafe { let _ = result::graph::destroy(cu_graph); }
+            // Stream-ordered free of pool allocations so the pool
+            // drop on `pool` in the early-return doesn't see live
+            // pointers.
+            let _ = pool.free_async(tiles_dev, md_raw);
+            let _ = pool.free_async(adj_dev, md_raw);
+            let _ = pool.free_async(burst_marker_dev, md_raw);
+            return Err(BuildError::V2HookFailed { rc });
+        }
 
         // ── 8. V1 boundary: F1 SWITCH conditional node DEFERRED to V2 ─
         //
@@ -616,9 +726,44 @@ impl CapturedAdjudicationPipeline {
         &self.ring
     }
 
-    /// Conditional handle (G19 audit input).
+    /// Conditional handle (G19 audit input). `0` in V1 (no
+    /// conditional node yet); V2 hook populates it.
     pub fn conditional_handle(&self) -> u64 {
         self.cond_handle
+    }
+
+    // ── V2 IGNITION accessors (operator-mandated) ──────────────────
+
+    /// Raw `CUgraph` handle for the captured pipeline. Exposed so
+    /// V2's `prism_wire_f1_switch_ffi` C-ABI bypass can inject a
+    /// CONDITIONAL node post-instantiation if a hook-time injection
+    /// is insufficient for some downstream pattern. Most V2 callers
+    /// should use the [`Self::build_with_v2_hook`] hook closure
+    /// instead — calling FFI on this handle AFTER instantiation
+    /// requires a re-instantiate to take effect, which the hook
+    /// avoids.
+    pub fn cu_graph_raw(&self) -> CUgraph {
+        self.cu_graph
+    }
+
+    /// Device pointer to the [`InterferometricAdjudicatorFfi`] that
+    /// the captured Adjudicator kernel writes to. V2 callers pass
+    /// this through to
+    /// `prism_get_adjudication_code_devptr(adj_dev_ptr as *const _)`
+    /// (Claude-2's existing FFI helper) to get the predicate pointer
+    /// the F1 SWITCH conditional node binds to. CSR §M alignment is
+    /// guaranteed by the F2 pool (≥ 128 B allocations are
+    /// 128-byte aligned).
+    pub fn adj_dev_ptr(&self) -> usize {
+        self.adj_dev
+    }
+
+    /// Raw `CUgraphExec` handle. Exposed for diagnostic /
+    /// `cuGraphExecGetFlags` introspection only — production paths
+    /// should call [`Self::launch`] which threads the MD stream
+    /// correctly.
+    pub fn cu_graph_exec_raw(&self) -> CUgraphExec {
+        self.cu_graph_exec
     }
 }
 
@@ -768,6 +913,10 @@ pub enum BuildError {
     CaptureNotActive,
     CaptureFrontierEmpty,
     CaptureProducedNullGraph,
+    /// V2 IGNITION hook (e.g., Claude-2's `prism_wire_f1_switch_ffi`)
+    /// returned a non-success cudaError. Build aborts and the raw
+    /// graph + all F2 allocations are cleaned up.
+    V2HookFailed { rc: i32 },
 }
 
 impl std::fmt::Display for BuildError {
@@ -789,6 +938,8 @@ impl std::fmt::Display for BuildError {
                 write!(f, "no captured nodes after trampoline launch — capture chain broken"),
             BuildError::CaptureProducedNullGraph =>
                 write!(f, "cuStreamEndCapture / cuGraphAddNode produced a null handle"),
+            BuildError::V2HookFailed { rc } =>
+                write!(f, "V2 IGNITION hook returned cudaError {}", rc),
         }
     }
 }
@@ -931,6 +1082,149 @@ mod tests {
         let pinned = is_pinned_host(pipeline.ring().base_ptr() as *const c_void)
             .expect("cuPointerGetAttribute");
         assert!(pinned, "ghost ring base pointer must be pinned");
+    }
+
+    #[test]
+    fn v2_hook_receives_nonzero_graph_and_adj_node_set_and_adj_dev_ptr() {
+        // V2 IGNITION readiness: the hook must observe a non-null
+        // raw CUgraph + a non-empty Adjudicator-node snapshot + a
+        // non-zero, 128-byte-aligned adjudicator FFI pointer.
+        // Claude-2's `prism_wire_f1_switch_ffi` will receive these
+        // exact values when the C-ABI bypass commits.
+        use std::cell::RefCell;
+        let Some((ctx, _pipeline_skip, _offsets, _spikes, _d_spikes_b, _d_offsets, stream))
+            = build_test_pipeline() else { return; };
+        // Drop the no-op pipeline so we can rebuild with the hook.
+        drop(_pipeline_skip);
+        // Re-create the same config inline (the helper doesn't expose
+        // a way to rebuild without re-allocating spike buffers).
+        let raw = stream.cu_stream() as usize;
+        unsafe {
+            let _ = crate::sh_basis::ffi::prism_sh_basis_init(raw as *mut c_void);
+        }
+        stream.synchronize().expect("sync");
+        let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
+
+        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
+            let mut s = RichSpike::zero();
+            let theta = 0.3 + (i as f32) * 0.2;
+            let phi   = 0.4 + (i as f32) * 0.3;
+            s.x = 4.0 * theta.sin() * phi.cos();
+            s.y = 4.0 * theta.sin() * phi.sin();
+            s.z = 4.0 * theta.cos();
+            s.cluster_id = 0;
+            s
+        }).collect();
+        let offsets: Vec<u32> = vec![0, spikes.len() as u32];
+        let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
+        let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc");
+        let spikes_bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
+        };
+        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
+        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
+        use cudarc::driver::DevicePtr;
+        let (sp_dev, off_dev) = {
+            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (off, _g2) = d_offsets.device_ptr(&stream);
+            (sp, off)
+        };
+        stream.synchronize().expect("post-htod sync");
+        let cfg = PipelineConfig {
+            d_spikes: sp_dev as *const RichSpike,
+            d_cluster_offsets: off_dev as *const u32,
+            n_clusters: 1,
+            d_k_lm: k_lm_dev,
+            initial_frame_id: 0,
+        };
+
+        let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
+        let hook = |raw_graph: CUgraph, adj_nodes: &[CUgraphNode], adj_dev_ptr: usize|
+            -> Result<(), i32>
+        {
+            *observed.borrow_mut() = Some((
+                raw_graph as usize,
+                adj_nodes.len(),
+                adj_dev_ptr,
+            ));
+            Ok(())
+        };
+
+        let pipeline = CapturedAdjudicationPipeline::build_with_v2_hook(&ctx, &stream, &cfg, hook)
+            .expect("V2 build succeeds with no-op hook");
+
+        let (g, n_nodes, adj_dev) = observed.borrow().expect("hook fired");
+        assert!(g != 0, "hook received null CUgraph");
+        assert!(n_nodes >= 1,
+            "hook received empty Adjudicator-node snapshot — operator §2.3 \
+             explicit-edge dependency target is missing");
+        assert!(adj_dev != 0, "hook received null adj_dev_ptr");
+        assert_eq!(adj_dev % 128, 0,
+            "adj_dev_ptr {:#x} not 128-byte aligned (CSR §M)", adj_dev);
+
+        // V2 prep accessors return the same handles.
+        assert_eq!(pipeline.cu_graph_raw() as usize, g);
+        assert_eq!(pipeline.adj_dev_ptr(), adj_dev);
+        assert!(!pipeline.cu_graph_exec_raw().is_null());
+
+        eprintln!("[v2-hook] CUgraph=0x{:x}, adj_nodes.len()={}, adj_dev_ptr=0x{:x} (128-aligned ✓)",
+                  g, n_nodes, adj_dev);
+    }
+
+    #[test]
+    fn v2_hook_failure_aborts_build_cleanly() {
+        // Verify the hook's Err return path: build aborts with
+        // V2HookFailed and the F2 pool / streams / events are
+        // released without leaking handles.
+        let Some((ctx, _, _, _, _, _, stream)) = build_test_pipeline() else { return; };
+        let raw = stream.cu_stream() as usize;
+        unsafe {
+            let _ = crate::sh_basis::ffi::prism_sh_basis_init(raw as *mut c_void);
+        }
+        stream.synchronize().expect("sync");
+        let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
+
+        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
+            let mut s = RichSpike::zero();
+            let t = 0.3 + (i as f32) * 0.2;
+            let p = 0.4 + (i as f32) * 0.3;
+            s.x = 4.0 * t.sin() * p.cos(); s.y = 4.0 * t.sin() * p.sin(); s.z = 4.0 * t.cos();
+            s.cluster_id = 0; s
+        }).collect();
+        let offsets: Vec<u32> = vec![0, spikes.len() as u32];
+        let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
+        let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc");
+        let spikes_bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
+        };
+        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
+        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
+        use cudarc::driver::DevicePtr;
+        let (sp_dev, off_dev) = {
+            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (off, _g2) = d_offsets.device_ptr(&stream);
+            (sp, off)
+        };
+        stream.synchronize().expect("sync");
+        let cfg = PipelineConfig {
+            d_spikes: sp_dev as *const RichSpike,
+            d_cluster_offsets: off_dev as *const u32,
+            n_clusters: 1, d_k_lm: k_lm_dev, initial_frame_id: 0,
+        };
+
+        // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
+        let result = CapturedAdjudicationPipeline::build_with_v2_hook(
+            &ctx, &stream, &cfg, |_, _, _| Err(700),
+        );
+        match result {
+            Err(BuildError::V2HookFailed { rc: 700 }) => {
+                eprintln!("[v2-hook-fail] graceful abort confirmed: V2HookFailed{{rc=700}}");
+            }
+            Err(other) => panic!("expected V2HookFailed{{rc=700}}, got {:?}", other),
+            Ok(_) => panic!("hook returned Err but build claimed Ok"),
+        }
     }
 
     #[test]
