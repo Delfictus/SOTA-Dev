@@ -456,6 +456,153 @@ pub struct SiteManifest {
     /// telemetry harness is not active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adjudicator_elapsed_ns: Option<u64>,
+
+    // ─── CLA-2 / Ghost Pipeline Schema (operator addendum 2026-04-29) ──
+    // Surgically additive — populated only by the Pillar 5 (Reporting)
+    // ghost-pipeline serializer on the host. Never read inside any
+    // GPU kernel. Every field `serde(skip_serializing_if = "Option::is_none")`
+    // so the I/O bloat in cold-hold phases remains under the 70%
+    // reduction target documented in the operator addendum.
+
+    /// KCC metrics aggregated for the site's driver residue (or for
+    /// the site as a whole if available). Mirrors the per-residue
+    /// fields in `<target>.kcc_visualization.json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kcc_metrics: Option<KccMetrics>,
+
+    /// Thermodynamic / phase-signaling dossier for the site. Mirrors
+    /// the per-site fields in `<target>.binding_sites.json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub therm_dossier: Option<ThermDossier>,
+}
+
+// ============================================================================
+// CLA-2 — Ghost Pipeline Schema extensions (Pillar 5 reporting only)
+//
+// These types are **strictly host-side**. They are populated by the
+// asynchronous serializer running on the ghost telemetry thread; no
+// GPU kernel ever reads them. Per the operator's addendum
+// (2026-04-29 §"Cross-Plane Separation"):
+//
+//   * Telemetry Plane (Claude-1): owns these structs end-to-end.
+//   * Control Plane  (Claude-2): forbidden from referencing them
+//     inside any `.cu` translation unit.
+// ============================================================================
+
+/// Kinematic-Causal Coupling metrics for a single site (Pillar 5
+/// reporting). Mirrors the per-residue KCC schema in
+/// `<target>.kcc_visualization.json` — every field is `Option` so
+/// "Cold Hold" frames (where no causal motion is detected) emit a
+/// near-empty object instead of a NaN-laden record. The
+/// `skip_serializing_if` attribute on every field is the I/O-bloat
+/// mitigation mandated in the operator addendum (~70% payload
+/// reduction in quiescent phases).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KccMetrics {
+    /// Number of MD steps with active UV→LIF coupling at the site's
+    /// driver residue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_causal_steps: Option<u32>,
+    /// Ratio of motion during dense causal events vs. sparse events
+    /// (> 1.0 = bursty, persistent-site signature).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burst_motion: Option<f32>,
+    /// Timestep offset that maximises the motion–causality
+    /// cross-correlation (steps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causal_lag: Option<f32>,
+    /// Ratio of net displacement to total path length
+    /// (1.0 = perfectly directed, 0.0 = random walk).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction_score: Option<f32>,
+    /// KCC composite score per the legacy ranker formula
+    /// (sqrt of weighted causality + structural signals).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kcc_score: Option<f32>,
+    /// Peak cross-correlation between causal activity and motion at
+    /// the optimal timestep lag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lag_corr_peak: Option<f32>,
+    /// Maximum local covariance of motion and causality in
+    /// timestep-windowed subregions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_cov: Option<f32>,
+    /// Saturating transform of total motion magnitude (0–1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_efficiency: Option<f32>,
+}
+
+impl KccMetrics {
+    /// Construct an all-`None` instance — the canonical "Cold Hold"
+    /// signature where every metric is below its detection floor.
+    /// `serde` will serialize this to `"kcc_metrics": {}` by default
+    /// (or, with the field-level skip-if-none, to nothing at all
+    /// when nested under [`SiteManifest::kcc_metrics`]).
+    pub const fn empty() -> Self {
+        Self {
+            active_causal_steps: None,
+            burst_motion: None,
+            causal_lag: None,
+            direction_score: None,
+            kcc_score: None,
+            lag_corr_peak: None,
+            local_cov: None,
+            motion_efficiency: None,
+        }
+    }
+}
+
+impl Default for KccMetrics {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+/// Thermodynamic + phase-signaling dossier for a site. Mirrors the
+/// canonical per-site shape produced by the `prism-therm` pipeline.
+/// All fields are required (non-optional) because the source
+/// pipeline always produces them — `therm_class` carries the
+/// "INERT" sentinel for unresolved phases, and `ccns_tau` carries a
+/// finite default. The whole `Option<ThermDossier>` wrap on
+/// [`SiteManifest::therm_dossier`] handles "no thermodynamic data
+/// yet for this frame" cleanly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThermDossier {
+    /// Characteristic time constant of the phase (CCNS τ). Cross-
+    /// references `<target>.binding_sites.json::sites[].ccns_tau`.
+    pub ccns_tau: f32,
+    /// Phase classification — typically one of
+    /// `{"DYNAMIC", "BISTABLE", "INERT", "Soc", "Responsive", ...}`.
+    /// Held as `String` (not an enum) because the upstream taxonomy
+    /// is open: new classes appear as the prism-therm taxonomy
+    /// evolves and we want the schema to absorb them without a
+    /// recompile.
+    pub therm_class: String,
+    /// Druggability score in [0, 1] from the heuristic ranker.
+    pub druggability: f32,
+    /// Hot/cold-phase asymmetry signed in [-1, 1] (positive = hot
+    /// dominant, negative = cold dominant).
+    pub relative_asymmetry: f32,
+    /// Hysteresis-loop asymmetry magnitude in [0, 1].
+    pub hysteresis_asymmetry: f32,
+}
+
+impl ThermDossier {
+    /// Sentinel "no thermodynamic data" dossier. Carries
+    /// `therm_class = "INERT"`, every numeric field at zero. Useful
+    /// as a placeholder before the prism-therm pipeline has emitted
+    /// per-frame data; downstream readers MUST distinguish this
+    /// from a real INERT classification by checking whether the
+    /// surrounding `Option` is `Some` versus `None`.
+    pub fn inert() -> Self {
+        Self {
+            ccns_tau: 0.0,
+            therm_class: String::from("INERT"),
+            druggability: 0.0,
+            relative_asymmetry: 0.0,
+            hysteresis_asymmetry: 0.0,
+        }
+    }
 }
 
 impl SiteManifest {
@@ -535,6 +682,8 @@ impl SiteManifest {
             adjudicator_divergence: None,
             adjudicator_code: None,
             adjudicator_elapsed_ns: None,
+            kcc_metrics: None,
+            therm_dossier: None,
         }
     }
 }
@@ -684,6 +833,8 @@ mod tests {
             adjudicator_divergence: None,
             adjudicator_code: None,
             adjudicator_elapsed_ns: None,
+            kcc_metrics: None,
+            therm_dossier: None,
         };
         assert_eq!(m.identity.site_id.0, 0);
         assert_eq!(m.identity.cluster_id.0, 7);
@@ -751,6 +902,162 @@ mod tests {
         assert!(m.centroids.burst_motion().is_none());
         assert!(m.centroids.validation_structural().is_none());
         assert!(m.centroids.ligand_adjacent_subcluster().is_none());
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // CLA-2 / Ghost Pipeline schema serialization tests.
+    //
+    // The operator's addendum requires `serde(skip_serializing_if =
+    // "Option::is_none")` to deliver the documented ~70% I/O reduction
+    // in cold-hold phases. These tests pin that contract.
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn kcc_metrics_empty_serializes_to_empty_object() {
+        let k = KccMetrics::empty();
+        let s = serde_json::to_string(&k).unwrap();
+        assert_eq!(s, "{}",
+            "All-None KccMetrics must serialize to {{}} (skip_serializing_if=Option::is_none); \
+             got {}", s);
+    }
+
+    #[test]
+    fn kcc_metrics_partial_only_emits_set_fields() {
+        // A site with only `burst_motion` resolved (typical M1.x state)
+        // emits exactly that one field — not eight `null`s.
+        let mut k = KccMetrics::empty();
+        k.burst_motion   = Some(1.05);
+        k.kcc_score      = Some(0.55);
+        let s = serde_json::to_string(&k).unwrap();
+        // Order is deterministic in serde-json (insertion order from
+        // the struct definition); keep the assertion shape-loose by
+        // checking presence + absence rather than exact byte order.
+        assert!(s.contains("\"burst_motion\":1.05"), "missing burst_motion: {}", s);
+        assert!(s.contains("\"kcc_score\":0.55"),    "missing kcc_score: {}",    s);
+        assert!(!s.contains("active_causal_steps"),  "active_causal_steps leaked: {}", s);
+        assert!(!s.contains("causal_lag"),           "causal_lag leaked: {}", s);
+        assert!(!s.contains("null"),                 "None field serialized as null: {}", s);
+    }
+
+    #[test]
+    fn kcc_metrics_round_trips_via_serde() {
+        let k = KccMetrics {
+            active_causal_steps: Some(8917),
+            burst_motion:        Some(1.0964780),
+            causal_lag:          Some(30.0),
+            direction_score:     Some(0.0003445477),
+            kcc_score:           Some(0.5503429),
+            lag_corr_peak:       Some(0.8100240),
+            local_cov:           Some(0.2572999),
+            motion_efficiency:   Some(0.0005009770),
+        };
+        let s  = serde_json::to_string(&k).unwrap();
+        let k2: KccMetrics = serde_json::from_str(&s).unwrap();
+        assert_eq!(k, k2);
+    }
+
+    #[test]
+    fn therm_dossier_round_trips_via_serde() {
+        let t = ThermDossier {
+            ccns_tau:             1.342099,
+            therm_class:          "DYNAMIC".into(),
+            druggability:         0.6531283,
+            relative_asymmetry:   1.296145,
+            hysteresis_asymmetry: 0.298600,
+        };
+        let s  = serde_json::to_string(&t).unwrap();
+        let t2: ThermDossier = serde_json::from_str(&s).unwrap();
+        assert_eq!(t, t2);
+        assert!(s.contains("\"therm_class\":\"DYNAMIC\""), "therm_class missing: {}", s);
+    }
+
+    #[test]
+    fn site_manifest_serde_omits_none_extension_fields_in_cold_hold() {
+        // A "Cold Hold" SiteManifest (no Adjudicator data, no KCC,
+        // no Therm) must serialize WITHOUT any of the optional
+        // extension keys — only the always-present canonical fields.
+        let m = SiteManifest::from_lbvh_cluster_aabb(
+            SiteId(0),
+            ClusterId(0),
+            &Aabb { min: [0.0; 3], max: [1.0; 3] },
+            EntangledManifoldId(0),
+            provenance(),
+            sort_key(),
+            0,
+            0,
+        );
+        let s = serde_json::to_string(&m).unwrap();
+        // None of the 6 optional extension keys may appear:
+        for forbidden in [
+            "contact_shell_geo_power_spectrum",
+            "adjudicator_divergence",
+            "adjudicator_code",
+            "adjudicator_elapsed_ns",
+            "kcc_metrics",
+            "therm_dossier",
+        ] {
+            assert!(!s.contains(forbidden),
+                "Cold-Hold SiteManifest leaked extension field {} (Operator I/O Bloat \
+                 Mitigation: 70% payload reduction violated): {}", forbidden, s);
+        }
+        // But canonical fields MUST appear.
+        assert!(s.contains("\"identity\""));
+        assert!(s.contains("\"centroids\""));
+        assert!(s.contains("\"causal_scalars\""));
+    }
+
+    #[test]
+    fn site_manifest_serde_emits_all_extension_fields_in_burst_phase() {
+        // A "Burst" SiteManifest with every extension populated
+        // serializes ALL of them (proves the skip-if-none gate
+        // doesn't hide live data).
+        let mut m = SiteManifest::from_lbvh_cluster_aabb(
+            SiteId(0),
+            ClusterId(0),
+            &Aabb { min: [0.0; 3], max: [1.0; 3] },
+            EntangledManifoldId(7),
+            provenance(),
+            sort_key(),
+            123_456,
+            7,
+        );
+        m.contact_shell_geo_power_spectrum = Some([0.4, 0.3, 0.15, 0.08, 0.04, 0.03]);
+        m.adjudicator_divergence           = Some(2.71828);
+        m.adjudicator_code                 = Some(1);   // Burst
+        m.adjudicator_elapsed_ns           = Some(7_400);
+        m.kcc_metrics = Some(KccMetrics {
+            active_causal_steps: Some(6949),
+            burst_motion:        Some(1.0496),
+            causal_lag:          Some(21.32),
+            direction_score:     Some(0.0003873),
+            kcc_score:           Some(0.5503),
+            lag_corr_peak:       Some(0.8294),
+            local_cov:           Some(0.3893),
+            motion_efficiency:   Some(0.000495),
+        });
+        m.therm_dossier = Some(ThermDossier {
+            ccns_tau:             1.342099,
+            therm_class:          "DYNAMIC".into(),
+            druggability:         0.6531283,
+            relative_asymmetry:   1.296145,
+            hysteresis_asymmetry: 0.298600,
+        });
+
+        let s = serde_json::to_string(&m).unwrap();
+        for required in [
+            "contact_shell_geo_power_spectrum",
+            "adjudicator_divergence",
+            "adjudicator_code",
+            "adjudicator_elapsed_ns",
+            "kcc_metrics",
+            "therm_dossier",
+            "burst_motion",  // nested KccMetrics field
+            "DYNAMIC",       // ThermDossier::therm_class value
+        ] {
+            assert!(s.contains(required),
+                "Burst SiteManifest missing required serialized field {}: {}",
+                required, s);
+        }
     }
 
     #[test]

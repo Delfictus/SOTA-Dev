@@ -349,6 +349,161 @@ pub fn schedule_async_tile_copy<T>(
 }
 
 // ============================================================================
+// Host-side serializer — Pillar 5 reporting (operator addendum 2026-04-29)
+//
+// The asynchronous JSON serializer that the ghost-telemetry thread runs.
+// Every tile in the `(frame_idx - 2) % 3` slot is converted into a
+// `SiteManifest` stamp and written through a `BufWriter` — no GPU
+// involvement, no allocation spikes that could jitter the MD orchestrator.
+//
+// The operator's mandate:
+//   "All JSON formatting, string manipulation, and floating-point to
+//    fixed-point conversions must occur on the CPU. The GPU must remain
+//    'ignorant' of the serialization state. Use serde_json::to_writer_buffered
+//    to ensure we don't hit memory allocation spikes on the host that
+//    could jitter the MD orchestrator."
+// ============================================================================
+
+use std::io::{BufWriter, Write};
+
+use crate::site_manifest::{
+    CentroidManifold, EntangledManifoldId, SiteIdentity, SiteId, ClusterId,
+    CausalScalars, SiteManifest,
+};
+use crate::so3_project::ContactShellTile;
+
+/// One serialized telemetry record emitted per ContactShellTile read
+/// from the ghost ring's safe-to-read slot. Each record stamps the
+/// six-band normalized C_l power spectrum into the canonical
+/// [`SiteManifest::contact_shell_geo_power_spectrum`] field along
+/// with the cluster id and frame number.
+///
+/// Returns the number of bytes written by `serde_json::to_writer`
+/// (BufWriter-buffered) for telemetry-rate accounting on the host.
+///
+/// # Surgical contract
+///
+/// * Constructs each [`SiteManifest`] via the existing
+///   `from_lbvh_cluster_aabb` constructor when an AABB is available;
+///   when not (typical: ghost-side reader has only the tile, not the
+///   originating cluster's AABB), we fall back to a minimal
+///   `SiteIdentity` + `EntangledManifoldId(frame)` shell so the
+///   downstream JSON consumer still gets a valid record.
+/// * Every Option field on `SiteManifest` other than the geometry-
+///   plane C_l is left at `None` (operator I/O-bloat mitigation).
+///   Adjudicator fields and KCC metrics are populated by separate
+///   producers; this serializer only stamps the SO(3) ground truth.
+pub fn serialize_slot_to_writer<W: Write>(
+    ring: &PinnedTelemetryRing<ContactShellTile>,
+    current_frame_idx: u64,
+    writer: &mut BufWriter<W>,
+) -> Result<usize, GhostSerializeError> {
+    let slot = unsafe { ring.read_slot_unchecked(current_frame_idx) }
+        .ok_or(GhostSerializeError::InsufficientHistory { current_frame_idx })?;
+
+    let mut total_bytes = 0usize;
+    // One JSON object per tile; line-delimited (NDJSON) for downstream
+    // streaming readers (`jq -c .`, `simdjson::dom::parser::iterate`).
+    for (cluster_id, tile) in slot.iter().enumerate() {
+        let manifest = build_minimal_site_manifest_from_tile(cluster_id as u32, tile);
+        let json = serde_json::to_string(&manifest)
+            .map_err(GhostSerializeError::Json)?;
+        writer.write_all(json.as_bytes()).map_err(GhostSerializeError::Io)?;
+        writer.write_all(b"\n").map_err(GhostSerializeError::Io)?;
+        total_bytes += json.len() + 1;
+    }
+    Ok(total_bytes)
+}
+
+/// Build a minimal SiteManifest record from a ContactShellTile read
+/// off the ghost ring. The reader doesn't carry per-cluster LBVH
+/// AABBs, so this manifest:
+///
+/// * uses `cluster_id` derived from the tile's index in the ring slot
+/// * stamps `tile.frame` into `SiteManifest::frame`
+/// * stamps the geometry-plane C_l[0..6] into
+///   `contact_shell_geo_power_spectrum`
+/// * leaves every other extension field `None` (operator addendum
+///   I/O-bloat mitigation: Cold-Hold tiles emit a near-empty record)
+///
+/// Pure-host code; no GPU involvement, no FFI calls.
+fn build_minimal_site_manifest_from_tile(
+    cluster_id: u32,
+    tile: &ContactShellTile,
+) -> SiteManifest {
+    use crate::entangled_manifold::{
+        CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField, TieBreakerPolicy,
+        ViewProvenance, CausalSortKey,
+    };
+
+    let provenance = ViewProvenance {
+        signal:      CausalSignal::SpikeAttributionCount,
+        selection:   SelectionPolicy::TopK { k: 1 },
+        #[allow(deprecated)]
+        tie_breaker: TieBreakerPolicy::CausalThenResid,
+        frame:       tile.frame as u64,
+    };
+    let sort_lineage = CausalSortKey {
+        priorities:          vec![SortField::SpikeAttributionCount],
+        identity_tiebreaker: IdentityTieBreaker::ChainResidAtom,
+    };
+
+    // Stamp the published normalized C_l[0..6] from the geometry plane
+    // (post-RECT-3.1.c L2-normalization + KL-EPS pad).
+    let mut c_l = [0.0f32; 6];
+    c_l.copy_from_slice(&tile.geo_power_spectrum[..6]);
+
+    SiteManifest {
+        identity: SiteIdentity {
+            site_id:    SiteId(cluster_id),
+            cluster_id: ClusterId(cluster_id),
+            provenance,
+        },
+        centroids:          CentroidManifold::new(),
+        causal_scalars:     CausalScalars::new_m1(tile.spike_count as u64),
+        frame:              tile.frame as u64,
+        source_manifold_id: EntangledManifoldId(tile.frame as u64),
+        sort_lineage,
+        contact_shell_geo_power_spectrum: Some(c_l),
+        adjudicator_divergence:           None,
+        adjudicator_code:                 None,
+        adjudicator_elapsed_ns:           None,
+        kcc_metrics:                      None,
+        therm_dossier:                    None,
+    }
+}
+
+/// Errors raised by [`serialize_slot_to_writer`].
+#[derive(Debug)]
+pub enum GhostSerializeError {
+    /// Caller invoked the serializer before the ring had ≥ 2 frames
+    /// of rotation history. The lagging slot doesn't exist yet.
+    InsufficientHistory { current_frame_idx: u64 },
+    /// Underlying `serde_json` failure (typically only on disk-full
+    /// when the writer is a `BufWriter<File>`).
+    Json(serde_json::Error),
+    /// Underlying writer I/O failure.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for GhostSerializeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GhostSerializeError::InsufficientHistory { current_frame_idx } => write!(
+                f,
+                "ghost ring rotation history < 2 frames (current_frame_idx = {}); \
+                 caller must wait until frame 2 before reading the lagging slot",
+                current_frame_idx
+            ),
+            GhostSerializeError::Json(e) => write!(f, "serde_json error: {}", e),
+            GhostSerializeError::Io(e) => write!(f, "writer io error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for GhostSerializeError {}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -370,6 +525,50 @@ mod tests {
         assert_eq!(PinnedTelemetryRing::<u32>::write_slot_index(5), 2);
         // Frame 100 → slot 100%3 = 1.
         assert_eq!(PinnedTelemetryRing::<u32>::write_slot_index(100), 1);
+    }
+
+    #[test]
+    fn build_minimal_site_manifest_from_tile_stamps_geo_cl_only() {
+        // Pure-host: no GPU needed. Verifies the ghost serializer
+        // converts a synthetic tile into a minimal SiteManifest with
+        // exactly the geometry-plane C_l populated; every other
+        // optional field stays None per the I/O-bloat mitigation.
+        let mut tile = ContactShellTile::zero();
+        tile.frame = 99;
+        tile.spike_count = 16;
+        // Synthetic L2-normalized geometry C_l (sums to 1.0).
+        tile.geo_power_spectrum = [0.40, 0.30, 0.15, 0.08, 0.04, 0.03, 0.0, 0.0];
+
+        let m = super::build_minimal_site_manifest_from_tile(7, &tile);
+        assert_eq!(m.frame, 99);
+        assert_eq!(m.identity.cluster_id.0, 7);
+        assert_eq!(m.identity.site_id.0, 7);
+        assert_eq!(m.causal_scalars.spike_attribution_count, 16);
+        let cl = m.contact_shell_geo_power_spectrum.expect("Some(C_l)");
+        assert_eq!(cl, [0.40, 0.30, 0.15, 0.08, 0.04, 0.03]);
+        // Every other extension field must stay None — Pillar-5 reporter
+        // never speaks for the Adjudicator nor the KCC pipeline.
+        assert!(m.adjudicator_divergence.is_none());
+        assert!(m.adjudicator_code.is_none());
+        assert!(m.adjudicator_elapsed_ns.is_none());
+        assert!(m.kcc_metrics.is_none());
+        assert!(m.therm_dossier.is_none());
+
+        // Serialize → assert the JSON contains exactly the expected
+        // shape (no Adjudicator/KCC/Therm leakage).
+        let s = serde_json::to_string(&m).unwrap();
+        assert!(s.contains("\"contact_shell_geo_power_spectrum\""));
+        assert!(s.contains("\"frame\":99"));
+        for forbidden in [
+            "adjudicator_divergence",
+            "adjudicator_code",
+            "adjudicator_elapsed_ns",
+            "kcc_metrics",
+            "therm_dossier",
+        ] {
+            assert!(!s.contains(forbidden),
+                "Pillar-5 ghost reader leaked extension field {}: {}", forbidden, s);
+        }
     }
 
     #[test]
