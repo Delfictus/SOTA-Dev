@@ -4561,6 +4561,29 @@ fn run_multi_stream_pipeline(
                         #[cfg(feature = "v2_ignition")]
                         let v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
 
+                        // ── T7 NOISE-FLOOR CALIBRATION — Path B (host-side, real production data) ──
+                        // Per operator directive 2026-04-30 ("Path B Honest-Data
+                        // Calibration"): we compute the SO(3) C_l[0..6] power
+                        // spectrum directly on the CPU each chunk from the
+                        // engine's actual GpuSpikeEvent buffer (real cold-hold
+                        // MD spike positions — not synthesized data, not the
+                        // RichSpike schema bridge that we don't have yet).
+                        // The results are aggregated across the cold-hold
+                        // window and serialized to JSON for off-line μ/σ
+                        // computation. ON only when the v2_ignition feature
+                        // is enabled (this calibration is a precursor to
+                        // graduating that feature to default-on).
+                        #[cfg(feature = "v2_ignition")]
+                        let mut t7_cl_samples: Vec<[f32; 6]> = Vec::with_capacity(512);
+                        #[cfg(feature = "v2_ignition")]
+                        let t7_k_lm_table = prism_nhs::sh_basis::k_lm_table();
+                        // Stream 0 only — multi-stream pipelines all see the
+                        // same cold-hold thermal physics; single-stream
+                        // capture is sufficient for noise-floor calibration
+                        // and avoids per-stream JSON merging.
+                        #[cfg(feature = "v2_ignition")]
+                        let t7_active = i == 0;
+
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
@@ -4600,6 +4623,109 @@ fn run_multi_stream_pipeline(
                                             .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
                                     } else {
                                         engine.run(this_chunk)?;
+                                    }
+                                }
+
+                                // ── T7 NOISE-FLOOR CAPTURE (per-chunk) ─────────
+                                // Sample the SO(3) C_l[0..6] from real cold-hold
+                                // GpuSpikeEvent positions. Fires only on
+                                // stream 0, only during cold_hold (steps_run <
+                                // kcc_cold_hold_steps), only with v2_ignition.
+                                #[cfg(feature = "v2_ignition")]
+                                if t7_active && (steps_run + this_chunk) <= kcc_cold_hold_steps {
+                                    use prism_nhs::fused_engine::GpuSpikeEvent;
+                                    use prism_nhs::sh_basis::{cpu_sh_eval_lmax5, LMAX, N_COEFFS};
+
+                                    // Read spike count back to host.
+                                    let mut count_host: [i32; 1] = [0];
+                                    if let (Some(sc_gpu), Some(buf_gpu)) =
+                                        (engine.spike_count_gpu(), engine.spike_buffer_gpu())
+                                    {
+                                      if engine.cuda_stream()
+                                        .memcpy_dtoh(sc_gpu, &mut count_host)
+                                        .is_ok()
+                                      {
+                                        let n_spikes = count_host[0].max(0) as usize;
+                                        let evt_size = std::mem::size_of::<GpuSpikeEvent>();
+                                        if n_spikes >= 4 {  // need ≥ 4 spikes for non-degenerate centroid + Y_lm
+                                            let cap = n_spikes.min(8192); // sane upper bound per-chunk
+                                            let bytes_to_read = cap.saturating_mul(evt_size);
+                                            // Read up to `bytes_to_read` bytes into a host Vec.
+                                            let read_len = bytes_to_read.min(buf_gpu.num_bytes());
+                                            let mut host_bytes: Vec<u8> = vec![0u8; read_len];
+                                            if engine.cuda_stream()
+                                                .memcpy_dtoh(buf_gpu, &mut host_bytes)
+                                                .is_ok()
+                                            {
+                                                let n_evts = host_bytes.len() / evt_size;
+                                                // Reinterpret bytes as &[GpuSpikeEvent]. SAFETY:
+                                                // GpuSpikeEvent is #[repr(C, align(32))], 96 B,
+                                                // and the device buffer was originally written
+                                                // by the engine as packed GpuSpikeEvent records.
+                                                let events: &[GpuSpikeEvent] = unsafe {
+                                                    std::slice::from_raw_parts(
+                                                        host_bytes.as_ptr() as *const GpuSpikeEvent,
+                                                        n_evts,
+                                                    )
+                                                };
+
+                                                // Centroid of the position cloud.
+                                                let (mut cx, mut cy, mut cz) = (0.0f32, 0.0, 0.0);
+                                                for e in events.iter().take(n_spikes) {
+                                                    cx += e.position[0];
+                                                    cy += e.position[1];
+                                                    cz += e.position[2];
+                                                }
+                                                let inv_n = 1.0f32 / (n_spikes.min(n_evts) as f32);
+                                                cx *= inv_n; cy *= inv_n; cz *= inv_n;
+
+                                                // Accumulate raw a_lm in fp32, then C_l + L2-normalize.
+                                                let mut alm = [0.0f32; N_COEFFS];
+                                                let mut n_used = 0usize;
+                                                for e in events.iter().take(n_spikes.min(n_evts)) {
+                                                    let dx = e.position[0] - cx;
+                                                    let dy = e.position[1] - cy;
+                                                    let dz = e.position[2] - cz;
+                                                    let r2 = dx*dx + dy*dy + dz*dz;
+                                                    if r2 < 1e-12 { continue; }
+                                                    let r = r2.sqrt();
+                                                    let theta = (dz / r).clamp(-1.0, 1.0).acos();
+                                                    let phi   = dy.atan2(dx);
+                                                    let y = cpu_sh_eval_lmax5(theta, phi, &t7_k_lm_table);
+                                                    // weight = max(intensity, 1.0) so all spikes contribute
+                                                    let w = e.intensity.max(1.0);
+                                                    for k in 0..N_COEFFS {
+                                                        alm[k] += w * y[k];
+                                                    }
+                                                    n_used += 1;
+                                                }
+                                                if n_used >= 4 {
+                                                    // C_l = Σ_m |a_lm|² for l=0..LMAX.
+                                                    let mut cl_raw = [0.0f32; 6];
+                                                    for l in 0..=LMAX {
+                                                        let base = l * (l + 1);
+                                                        let mut sum = 0.0f32;
+                                                        for m in -(l as i32)..=(l as i32) {
+                                                            let idx = (base as i32 + m) as usize;
+                                                            sum += alm[idx] * alm[idx];
+                                                        }
+                                                        cl_raw[l] = sum;
+                                                    }
+                                                    // L2-normalize (matches the GPU pipeline so μ/σ
+                                                    // are calibrated against post-norm probability-
+                                                    // distribution C_l, the form Claude-2's KL kernel
+                                                    // sees).
+                                                    let total: f32 = cl_raw.iter().sum();
+                                                    if total > 1e-9 {
+                                                        let inv_total = 1.0 / total;
+                                                        let mut cl_norm = [0.0f32; 6];
+                                                        for l in 0..=LMAX { cl_norm[l] = cl_raw[l] * inv_total; }
+                                                        t7_cl_samples.push(cl_norm);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                      }
                                     }
                                 }
 
@@ -5735,6 +5861,69 @@ fn run_multi_stream_pipeline(
                                 // CPU set_steering_focus_residue() ELIMINATED — GPU bridge only
                             }
                         }
+
+                        // ── T7 CALIBRATION: dump captured C_l samples ───────
+                        // Path B output (operator directive 2026-04-30).
+                        // Writes per-frame C_l[0..6] arrays (real cold-hold,
+                        // L2-normalized, stream 0 only) to a JSON file the
+                        // operator + Claude-2 can post-process for μ/σ.
+                        #[cfg(feature = "v2_ignition")]
+                        if t7_active && !t7_cl_samples.is_empty() {
+                            let path = std::env::var("PRISM_T7_CALIBRATION_OUTPUT")
+                                .unwrap_or_else(|_| "/tmp/t7_calibration_4lpk.json".to_string());
+                            let n = t7_cl_samples.len();
+                            // Compute μ / σ on the fly so they appear in the
+                            // JSON alongside the raw samples.
+                            let mut mu  = [0.0f64; 6];
+                            let mut var = [0.0f64; 6];
+                            for s in &t7_cl_samples { for l in 0..6 { mu[l] += s[l] as f64; } }
+                            for l in 0..6 { mu[l] /= n as f64; }
+                            for s in &t7_cl_samples {
+                                for l in 0..6 {
+                                    let d = s[l] as f64 - mu[l];
+                                    var[l] += d * d;
+                                }
+                            }
+                            let sigma: [f64; 6] = std::array::from_fn(|l|
+                                (var[l] / n as f64).sqrt()
+                            );
+                            // Hand-rolled JSON to avoid pulling serde_json
+                            // into the binary path just for this calibration
+                            // utility. Format: schema-stable for downstream
+                            // jq parsing.
+                            let mut json = String::new();
+                            json.push_str(&format!(
+                                "{{\n  \"target\": \"4lpk_clean\",\n  \"n_samples\": {},\n  \"phase\": \"cold_hold\",\n",
+                                n
+                            ));
+                            json.push_str("  \"mu\": [");
+                            for l in 0..6 {
+                                json.push_str(&format!("{}{:.10}", if l == 0 {""} else {", "}, mu[l]));
+                            }
+                            json.push_str("],\n  \"sigma\": [");
+                            for l in 0..6 {
+                                json.push_str(&format!("{}{:.10}", if l == 0 {""} else {", "}, sigma[l]));
+                            }
+                            json.push_str("],\n  \"samples\": [\n");
+                            for (k, s) in t7_cl_samples.iter().enumerate() {
+                                json.push_str("    [");
+                                for l in 0..6 {
+                                    json.push_str(&format!("{}{:.10}", if l == 0 {""} else {", "}, s[l]));
+                                }
+                                json.push_str(if k + 1 == n {"]\n"} else {"],\n"});
+                            }
+                            json.push_str("  ]\n}\n");
+                            let _ = std::fs::write(&path, json);
+                            log::info!(
+                                "    [T7-CAL stream {}] wrote {} cold-hold C_l samples → {}; \
+                                 μ=[{:.6e}, {:.6e}, {:.6e}, {:.6e}, {:.6e}, {:.6e}] \
+                                 σ=[{:.6e}, {:.6e}, {:.6e}, {:.6e}, {:.6e}, {:.6e}]",
+                                i, n, path,
+                                mu[0], mu[1], mu[2], mu[3], mu[4], mu[5],
+                                sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5],
+                            );
+                        }
+
                         // Stage 1B-2: per-stream BOCPD summary at the end of the chunk loop.
                         log::info!(
                             "    [BOCPD stream {} SUMMARY]: {} chunks observed, {} chunk-close \
