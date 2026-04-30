@@ -1,38 +1,57 @@
 // ═══════════════════════════════════════════════════════════════════════
-// PRISM-4D / RECT-3.1.b — SO(3) Projection Kernel (CUDA implementation)
+// PRISM-4D / RECT-3.1.c — SO(3) Projection Kernel (CUDA + WMMA tf32)
 // ═══════════════════════════════════════════════════════════════════════
 //
-// See `so3_project.cuh` for layout + caller contract.
+// See `so3_project.cuh` for layout + caller contract. This file
+// implements the WMMA-refactored kernel mandated by the operator
+// directive 2026-04-29 (RECT-3.1.c Tensor Core mandate).
 //
-// **Kernel summary**:
-//   - One block per cluster.
-//   - 128 threads/block (4 warps × 32 lanes).
+// **Kernel summary (per block / per cluster, single warp)**:
 //
-//   Pass 1 — Centroid + AABB:
-//     Each thread accumulates (sum_x, sum_y, sum_z, min_xyz, max_xyz)
-//     over its strided slice of the cluster. Warp-shuffle reduce
-//     followed by a final cross-warp reduce in warp 0 produces the
-//     block-wide centroid (sum / n) and AABB. Result broadcast to
-//     shared memory for Pass 2 to consume.
+//   Pass 1 — Centroid + AABB (scalar warp-shuffle).
 //
-//   Pass 2 — Y_lm projection:
-//     Each thread iterates its strided slice again, this time
-//     converting each spike's offset-from-centroid into (θ, φ) and
-//     evaluating Y_lm via the inline straight-line helper from
-//     `sh_basis.cuh`. Per-thread accumulator `local_alm[36]` collects
-//     `intensity · Y_lm`. Warp-shuffle reduce + cross-warp combine
-//     yields the per-cluster `a_lm`.
+//   Pass 2 — Per-tile projection over `TILE_ROWS = 16` spikes:
+//     2.a  Lanes 0..15 evaluate Y_lm relative to the cluster
+//          centroid; explicitly down-convert to tf32 via
+//          `__float_to_tf32`; write 4 plane-weighted rows into
+//          `s_plane_tile[plane][row][col]` (bank-padded shared mem,
+//          stride 49 floats).
+//     2.b  Lossless tag aggregation: `atomicOr` into
+//          `s_agg_spike_source / origin_phase / chem_flags`.
+//          Atomic per-plane `sum_w` accumulators.
+//     2.c  __syncwarp() — full warp barrier before WMMA load.
+//     2.d  For each (plane, col-group): load b_data fragment from the
+//          tile (two 8-row slices, k=8 each), mma_sync into a
+//          fresh fp32 c_acc, store back to a 16×17 staging buffer,
+//          then lanes 0..15 each add the corresponding column-sum
+//          into the per-plane accumulator `s_plane_acc`.
+//          Each wmma::* is bracketed by __syncwarp().
 //
-//   Tile write:
-//     Thread 0 computes `C_l = Σ_m |a_lm|²` for l=0..5 and writes the
-//     384-byte ContactShellTile.
+//   Pass 3 — Tile write (lanes cooperate to populate the 1280-byte
+//   ContactShellTile, including per-plane C_l = Σ_m |a_lm|², AABB,
+//   lossless tags, and counters).
 //
-// **WMMA forward-declaration**: the per-thread `local_alm[36]` and
-// the warp-shuffle reduction are placeholders. RECT-3.1.c rewrites
-// the inner loop to stage `intensity · Y_lm` rows into shared memory
-// and accumulate via `nvcuda::wmma::fragment<accumulator, 16, 16, 8,
-// tf32>`. The on-tile layout (alignas(128), 64-float coefficient
-// payload sized for 16×4 fragments) is unchanged.
+// **Bank-conflict-free shared memory**:
+//   - Plane tile stride = N_COEFFS_PADDED + 1 = 49 floats. 49 mod 32
+//     = 17 (coprime to 32 in the bank-stride sense), so consecutive
+//     rows do NOT collide on the 32-bank, 4-byte-wide layout.
+//   - WMMA staging buffer 16×17 (stride 17 floats) — same trick.
+//
+// **tf32 precision-aware accumulation**:
+//   - Inputs explicitly down-converted via the inline PTX
+//     `cvt.rna.tf32.f32` op (exposed by mma.h's __float_to_tf32).
+//   - Accumulator fragment is `fragment<accumulator, 16, 16, 8, float>`
+//     so the FMA chain runs in fp32 even though operands are tf32.
+//   - The per-spike multiplication (Y_lm · weight) happens in fp32
+//     and is THEN truncated to tf32 — the operator's "explicit
+//     downcast" mandate is satisfied at the shared-memory boundary.
+//
+// **Warp-synchronous discipline**:
+//   - Every wmma::load_matrix_sync, wmma::mma_sync, and
+//     wmma::store_matrix_sync is preceded and followed by an
+//     explicit `__syncwarp()`.
+//   - We do NOT rely on the implicit Volta+ warp-synchronous behaviour
+//     that the operator forbids.
 //
 // Compilation: nvcc -arch=sm_120 -O3 --use_fast_math --restrict
 //              --expt-relaxed-constexpr -std=c++17 -Xcompiler -fPIC -c
@@ -41,25 +60,40 @@
 #include "so3_project.cuh"
 
 #include <cuda_runtime.h>
+#include <mma.h>
 #include <cstdint>
 #include <cfloat>
 #include <cmath>
 
 namespace prism_nhs { namespace so3_project {
 
-// Compile-time block geometry. Anchored here so the kernel and
-// host-side launch agree.
-constexpr uint32_t BLOCK_SIZE   = 128u;
-constexpr uint32_t WARP_SIZE    = 32u;
-constexpr uint32_t WARPS_PER_BLOCK = BLOCK_SIZE / WARP_SIZE;
-
-static_assert(BLOCK_SIZE % WARP_SIZE == 0,
-    "BLOCK_SIZE must be a multiple of WARP_SIZE");
-static_assert(WARPS_PER_BLOCK <= WARP_SIZE,
-    "Cross-warp reduce requires WARPS_PER_BLOCK <= WARP_SIZE");
+namespace wmma = nvcuda::wmma;
 
 // ─────────────────────────────────────────────────────────────────────
-// Warp-level reductions (full 0xFFFFFFFF mask — all lanes participate).
+// Compile-time geometry.
+// ─────────────────────────────────────────────────────────────────────
+constexpr int BLOCK_SIZE       = 32;   // single warp per cluster
+constexpr int WARP_SIZE        = 32;
+constexpr int TILE_ROWS        = 16;   // wmma m dim (= rows reduced per call pair)
+constexpr int N_COEFFS_PADDED  = 48;   // 36 padded up to multiple of 16 for wmma n dim
+constexpr int N_COL_GROUPS     = N_COEFFS_PADDED / 16;  // 3
+// WMMA tf32 load_matrix_sync REQUIRES the leading dimension to be a
+// multiple of 4 (16-byte / 128-bit row alignment for the underlying
+// `ldmatrix.sync` PTX op). Bank padding must therefore be a multiple
+// of 4. We use 4 so the stride 52 = 48+4 is 4-aligned AND has
+// gcd(52/4, 32)=1 in the bank-stride sense (52 mod 32 = 20, and rows
+// 0..7 hit banks 0/20/8/28/16/4/24/12 — all distinct).
+constexpr int BANK_PAD         = 4;
+constexpr int TILE_STRIDE      = N_COEFFS_PADDED + BANK_PAD;  // 52, ldm-aligned
+constexpr int STAGE_STRIDE     = 16 + BANK_PAD;               // 20, ldm-aligned
+
+static_assert(N_COEFFS <= N_COEFFS_PADDED,
+    "N_COEFFS must fit inside N_COEFFS_PADDED");
+static_assert(BLOCK_SIZE == WARP_SIZE,
+    "RECT-3.1.c kernel is single-warp per block");
+
+// ─────────────────────────────────────────────────────────────────────
+// Warp-level scalar reductions (full mask).
 // ─────────────────────────────────────────────────────────────────────
 __device__ __forceinline__ float warp_reduce_sum(float v) {
     #pragma unroll
@@ -68,7 +102,6 @@ __device__ __forceinline__ float warp_reduce_sum(float v) {
     }
     return v;
 }
-
 __device__ __forceinline__ float warp_reduce_min(float v) {
     #pragma unroll
     for (int o = 16; o > 0; o >>= 1) {
@@ -76,7 +109,6 @@ __device__ __forceinline__ float warp_reduce_min(float v) {
     }
     return v;
 }
-
 __device__ __forceinline__ float warp_reduce_max(float v) {
     #pragma unroll
     for (int o = 16; o > 0; o >>= 1) {
@@ -86,7 +118,23 @@ __device__ __forceinline__ float warp_reduce_max(float v) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// SO(3) projection kernel — one cluster per block.
+// Explicit f32 → tf32 downcast (rounds-to-nearest-even on the lower
+// 13 mantissa bits via inline PTX). Mirror of mma.h's
+// __float_to_tf32 — re-declared here so the precision loss is
+// readable in this translation unit.
+// ─────────────────────────────────────────────────────────────────────
+__device__ __forceinline__ float prism_f32_to_tf32(float in) {
+    float out;
+    asm volatile(
+        "{\n  .reg .b32 t;"
+        "\n   cvt.rna.tf32.f32 t, %1;"
+        "\n   mov.b32 %0, t;\n}\n"
+        : "=f"(out) : "f"(in));
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// SO(3) projection kernel — one cluster per block, one warp per block.
 // ─────────────────────────────────────────────────────────────────────
 __global__ void prism_so3_project_manifold_kernel(
     const RichSpike*  __restrict__ d_spikes,
@@ -103,250 +151,435 @@ __global__ void prism_so3_project_manifold_kernel(
     const uint32_t end   = d_cluster_offsets[cluster_id + 1u];
     const uint32_t n     = end - start;
 
-    const uint32_t lane = threadIdx.x & (WARP_SIZE - 1u);
-    const uint32_t warp = threadIdx.x / WARP_SIZE;
+    const uint32_t lane = threadIdx.x;  // 0..31
 
-    // Shared scratch:
-    //   s_warp_partial[w][k] : per-warp partial of either centroid /
-    //                          AABB (k=0..5) or alm coefficient
-    //                          (k=0..N_COEFFS-1). Reused across
-    //                          passes; a __syncthreads() guards each
-    //                          repurposing.
-    //   s_centroid           : block-wide broadcast of (cx, cy, cz).
-    //   s_aabb               : block-wide broadcast of AABB after
-    //                          Pass 1.
-    __shared__ float s_warp_partial[WARPS_PER_BLOCK][N_COEFFS];
+    // ── Shared memory ─────────────────────────────────────────────
+    // Per-plane data tile (4 × 16 × 49 floats = 12544 B = 12.25 KB).
+    __shared__ float s_plane_tile[N_PLANES][TILE_ROWS][TILE_STRIDE];
+    // WMMA store staging buffer (16 × 17 floats = 1088 B = 1.0625 KB).
+    // Reused across (plane, col-group); explicit __syncwarp() guards
+    // the reuse.
+    __shared__ float s_wmma_stage[TILE_ROWS][STAGE_STRIDE];
+    // Per-plane a_lm accumulator across all tiles (4 × 48 floats = 768 B).
+    __shared__ float s_plane_acc[N_PLANES][N_COEFFS_PADDED];
+    // Centroid + AABB broadcast.
     __shared__ float s_centroid[3];
-    __shared__ float s_aabb[6];  // min_xyz, max_xyz
+    __shared__ float s_aabb_min[3];
+    __shared__ float s_aabb_max[3];
+    // Lossless tag aggregators.
+    __shared__ uint32_t s_agg_spike_source;
+    __shared__ uint32_t s_agg_origin_phase;
+    __shared__ uint32_t s_agg_chem_flags;
+    __shared__ float    s_sum_w[N_PLANES];
 
-    // ─── Empty-cluster fast path: zero the tile and exit ──────────────
+    // ── Init shared accumulators ──────────────────────────────────
+    // Stride loop covers all N_COEFFS_PADDED slots even though
+    // N_COEFFS_PADDED (48) > WARP_SIZE (32).
+    #pragma unroll
+    for (int p = 0; p < N_PLANES; ++p) {
+        for (int idx = lane; idx < N_COEFFS_PADDED; idx += WARP_SIZE) {
+            s_plane_acc[p][idx] = 0.0f;
+        }
+    }
+    if (lane == 0u) {
+        s_agg_spike_source = 0u;
+        s_agg_origin_phase = 0u;
+        s_agg_chem_flags   = 0u;
+        #pragma unroll
+        for (int p = 0; p < N_PLANES; ++p) s_sum_w[p] = 0.0f;
+    }
+    __syncwarp();
+
+    // ── Empty-cluster fast path ──────────────────────────────────
     if (n == 0u) {
-        if (threadIdx.x == 0) {
+        if (lane == 0u) {
             ContactShellTile& tile = d_tiles_out[cluster_id];
             tile.phase             = 0u;
             tile.stream_id         = 0u;
             tile.cluster_id        = static_cast<int32_t>(cluster_id);
             tile.frame             = frame_id;
             #pragma unroll
-            for (int k = 0; k < 64; ++k) tile.coefficients[k] = 0.0f;
+            for (int k = 0; k < 64; ++k) {
+                tile.geo_alm[k]   = 0.0f;
+                tile.caus_alm[k]  = 0.0f;
+                tile.therm_alm[k] = 0.0f;
+                tile.chem_alm[k]  = 0.0f;
+            }
+            // Epsilon-padded zeros: Adjudicator's log(C_l) must stay
+            // finite even on empty clusters. Cross-Agent FFI Mandate
+            // §Dependency 2 (KL-Divergence Absolute-Zero Fatality).
+            constexpr float KL_EPS_FP = 1e-7f;
             #pragma unroll
-            for (int k = 0; k < 8;  ++k) tile.power_spectrum[k] = 0.0f;
+            for (int k = 0; k <= static_cast<int>(LMAX); ++k) {
+                tile.geo_power_spectrum[k]   = KL_EPS_FP;
+                tile.caus_power_spectrum[k]  = KL_EPS_FP;
+                tile.therm_power_spectrum[k] = KL_EPS_FP;
+                tile.chem_power_spectrum[k]  = KL_EPS_FP;
+            }
             #pragma unroll
-            for (int k = 0; k < 4;  ++k) {
+            for (int k = static_cast<int>(LMAX) + 1; k < 8; ++k) {
+                tile.geo_power_spectrum[k]   = 0.0f;
+                tile.caus_power_spectrum[k]  = 0.0f;
+                tile.therm_power_spectrum[k] = 0.0f;
+                tile.chem_power_spectrum[k]  = 0.0f;
+            }
+            #pragma unroll
+            for (int k = 0; k < 4; ++k) {
                 tile.aabb_min[k] = 0.0f;
                 tile.aabb_max[k] = 0.0f;
             }
+            tile.agg_spike_source  = 0u;
+            tile.agg_origin_phase  = 0u;
+            tile.agg_chem_flags    = 0u;
+            tile.agg_pad           = 0u;
+            tile.sum_w_geo         = 0.0f;
+            tile.sum_w_caus        = 0.0f;
+            tile.sum_w_therm       = 0.0f;
+            tile.sum_w_chem        = 0.0f;
             tile.spike_count       = 0u;
             tile.adjudication_code = 0u;
+            tile.reserved[0]       = 0u;
+            tile.reserved[1]       = 0u;
             #pragma unroll
-            for (int k = 0; k < 6;  ++k) tile.reserved[k] = 0u;
-            #pragma unroll
-            for (int k = 0; k < 16; ++k) tile._pad[k] = 0u;
+            for (int k = 0; k < 32; ++k) tile._pad[k] = 0u;
         }
         return;
     }
 
-    // ─── Pass 1: centroid + AABB via warp-shuffle reduce ──────────────
+    // ── Pass 1 — centroid + AABB ──────────────────────────────────
     float sx = 0.0f, sy = 0.0f, sz = 0.0f;
     float mn_x = +FLT_MAX, mn_y = +FLT_MAX, mn_z = +FLT_MAX;
     float mx_x = -FLT_MAX, mx_y = -FLT_MAX, mx_z = -FLT_MAX;
-
-    for (uint32_t i = start + threadIdx.x; i < end; i += BLOCK_SIZE) {
+    for (uint32_t i = start + lane; i < end; i += WARP_SIZE) {
         const RichSpike s = d_spikes[i];
         sx += s.x; sy += s.y; sz += s.z;
         mn_x = fminf(mn_x, s.x); mn_y = fminf(mn_y, s.y); mn_z = fminf(mn_z, s.z);
         mx_x = fmaxf(mx_x, s.x); mx_y = fmaxf(mx_y, s.y); mx_z = fmaxf(mx_z, s.z);
     }
-
-    // Intra-warp reduction
     sx = warp_reduce_sum(sx);
     sy = warp_reduce_sum(sy);
     sz = warp_reduce_sum(sz);
     mn_x = warp_reduce_min(mn_x); mn_y = warp_reduce_min(mn_y); mn_z = warp_reduce_min(mn_z);
     mx_x = warp_reduce_max(mx_x); mx_y = warp_reduce_max(mx_y); mx_z = warp_reduce_max(mx_z);
-
-    // Lane 0 of each warp publishes its partial (slots 0..5 of the
-    // shared row; we reuse the same shared buffer for the alm reduce
-    // in Pass 2 after a barrier).
     if (lane == 0u) {
-        s_warp_partial[warp][0] = sx;
-        s_warp_partial[warp][1] = sy;
-        s_warp_partial[warp][2] = sz;
-        s_warp_partial[warp][3] = mn_x;
-        s_warp_partial[warp][4] = mn_y;
-        s_warp_partial[warp][5] = mn_z;
-        // mx packed into slots 6..8
-        s_warp_partial[warp][6] = mx_x;
-        s_warp_partial[warp][7] = mx_y;
-        s_warp_partial[warp][8] = mx_z;
+        const float inv_n = 1.0f / static_cast<float>(n);
+        s_centroid[0] = sx * inv_n;
+        s_centroid[1] = sy * inv_n;
+        s_centroid[2] = sz * inv_n;
+        s_aabb_min[0] = mn_x; s_aabb_min[1] = mn_y; s_aabb_min[2] = mn_z;
+        s_aabb_max[0] = mx_x; s_aabb_max[1] = mx_y; s_aabb_max[2] = mx_z;
     }
-    __syncthreads();
-
-    // Final cross-warp reduce in warp 0. WARPS_PER_BLOCK <= WARP_SIZE
-    // (asserted at compile time) so this fits within one warp.
-    if (warp == 0u) {
-        float lsx = 0.0f, lsy = 0.0f, lsz = 0.0f;
-        float lmn_x = +FLT_MAX, lmn_y = +FLT_MAX, lmn_z = +FLT_MAX;
-        float lmx_x = -FLT_MAX, lmx_y = -FLT_MAX, lmx_z = -FLT_MAX;
-        if (lane < WARPS_PER_BLOCK) {
-            lsx   = s_warp_partial[lane][0];
-            lsy   = s_warp_partial[lane][1];
-            lsz   = s_warp_partial[lane][2];
-            lmn_x = s_warp_partial[lane][3];
-            lmn_y = s_warp_partial[lane][4];
-            lmn_z = s_warp_partial[lane][5];
-            lmx_x = s_warp_partial[lane][6];
-            lmx_y = s_warp_partial[lane][7];
-            lmx_z = s_warp_partial[lane][8];
-        }
-        // 32-lane shuffle reduction; lanes >= WARPS_PER_BLOCK contribute
-        // identity (0 / +FLT_MAX / -FLT_MAX) so the sum / min / max are
-        // well-defined.
-        lsx = warp_reduce_sum(lsx);
-        lsy = warp_reduce_sum(lsy);
-        lsz = warp_reduce_sum(lsz);
-        lmn_x = warp_reduce_min(lmn_x); lmn_y = warp_reduce_min(lmn_y); lmn_z = warp_reduce_min(lmn_z);
-        lmx_x = warp_reduce_max(lmx_x); lmx_y = warp_reduce_max(lmx_y); lmx_z = warp_reduce_max(lmx_z);
-
-        if (lane == 0u) {
-            const float inv_n = 1.0f / static_cast<float>(n);
-            s_centroid[0] = lsx * inv_n;
-            s_centroid[1] = lsy * inv_n;
-            s_centroid[2] = lsz * inv_n;
-            s_aabb[0] = lmn_x; s_aabb[1] = lmn_y; s_aabb[2] = lmn_z;
-            s_aabb[3] = lmx_x; s_aabb[4] = lmx_y; s_aabb[5] = lmx_z;
-        }
-    }
-    __syncthreads();
+    __syncwarp();
 
     const float cx = s_centroid[0];
     const float cy = s_centroid[1];
     const float cz = s_centroid[2];
 
-    // ─── Pass 2: SH evaluation + accumulate ───────────────────────────
-    float local_alm[N_COEFFS];
-    #pragma unroll
-    for (int k = 0; k < N_COEFFS; ++k) local_alm[k] = 0.0f;
+    // ── WMMA fragment setup (constant across iterations) ─────────
+    // A is "ones" so that C[i][j] = sum_k 1·B[k][j] = column-sum of B.
+    // We use row-major for both A and B for natural tile-load.
+    wmma::fragment<wmma::matrix_a, 16, 16, 8, wmma::precision::tf32, wmma::row_major> a_ones;
+    wmma::fragment<wmma::matrix_b, 16, 16, 8, wmma::precision::tf32, wmma::row_major> b_data;
+    wmma::fragment<wmma::accumulator, 16, 16, 8, float>                                c_acc;
 
-    for (uint32_t i = start + threadIdx.x; i < end; i += BLOCK_SIZE) {
-        const RichSpike s = d_spikes[i];
-        const float dx = s.x - cx;
-        const float dy = s.y - cy;
-        const float dz = s.z - cz;
-        const float r2 = dx * dx + dy * dy + dz * dz;
-        // Skip spikes coincident with the centroid (θ undefined).
-        // r=0 contributes the constant Y_0^0 only and would otherwise
-        // produce NaN via acosf/atan2f's 0/0 branches under fast-math.
-        if (r2 < 1e-12f) continue;
-        const float r = sqrtf(r2);
+    // 1.0f survives the cvt.rna.tf32.f32 conversion bit-exact.
+    wmma::fill_fragment(a_ones, 1.0f);
 
-        const float theta = acosf(fmaxf(-1.0f, fminf(1.0f, dz / r)));
-        const float phi   = atan2f(dy, dx);
+    // ── Pass 2 — projection in 16-spike tiles ────────────────────
+    for (uint32_t tile_base = start; tile_base < end; tile_base += TILE_ROWS) {
+        const uint32_t tile_end   = (tile_base + TILE_ROWS < end) ? (tile_base + TILE_ROWS) : end;
+        const uint32_t n_in_tile  = tile_end - tile_base;
 
-        // Weight: prefer 24-bit intensity; fall back to 1.0 when zero
-        // so empty-intensity (test) spikes still contribute their Y_lm.
-        const uint32_t intensity_24 =
-            prism_nhs::rich_spike::prism_rich_spike_unpack_intensity(s.intensity_packed);
-        const float weight = (intensity_24 == 0u)
-            ? 1.0f
-            : static_cast<float>(intensity_24);
-
-        float Y[N_COEFFS];
-        prism_nhs::sh_basis::prism_sh_eval_lmax5(theta, phi, d_k_lm, Y);
-
-        #pragma unroll
-        for (int k = 0; k < N_COEFFS; ++k) {
-            local_alm[k] += weight * Y[k];
+        // Zero the per-plane data tile (every cell — the tile_size
+        // may be < TILE_ROWS at the last iteration, and unused rows
+        // must contribute zero to the WMMA reduction).
+        // 32 lanes split 4*16*49 = 3136 floats → 98 floats/lane.
+        constexpr int TILE_FLOATS = N_PLANES * TILE_ROWS * TILE_STRIDE;
+        for (int idx = lane; idx < TILE_FLOATS; idx += WARP_SIZE) {
+            const int p = idx / (TILE_ROWS * TILE_STRIDE);
+            const int rem = idx - p * (TILE_ROWS * TILE_STRIDE);
+            const int r = rem / TILE_STRIDE;
+            const int c = rem - r * TILE_STRIDE;
+            s_plane_tile[p][r][c] = 0.0f;
         }
-    }
+        __syncwarp();
 
-    // ─── Reduce local_alm[36] across the block ────────────────────────
-    // (1) Intra-warp reduce per coefficient. Lane 0 writes the warp
-    //     partial to the shared buffer.
-    #pragma unroll
-    for (int k = 0; k < N_COEFFS; ++k) {
-        const float v = warp_reduce_sum(local_alm[k]);
-        if (lane == 0u) {
-            s_warp_partial[warp][k] = v;
-        }
-    }
-    __syncthreads();
+        // Lanes 0..n_in_tile-1 evaluate one spike each.
+        if (lane < n_in_tile) {
+            const RichSpike s = d_spikes[tile_base + lane];
 
-    // (2) Cross-warp final reduce in warp 0. Each lane in warp 0
-    //     handles its assigned coefficient(s); since N_COEFFS == 36 and
-    //     WARP_SIZE == 32, lanes 0..31 cover indices 0..31 and lane 0
-    //     re-runs for the remaining 4 coefficients (32..35).
-    if (warp == 0u) {
-        // First sweep: coefficients 0..31 (one per lane).
-        float v0 = 0.0f;
-        if (lane < WARPS_PER_BLOCK) {
-            v0 = s_warp_partial[lane][lane];  // dummy; replaced below
-        }
-        // Per-coefficient reduction. Each lane k reads the W-element
-        // column s_warp_partial[*][k], reduces across the W warps via
-        // warp shuffle, and writes the final to s_warp_partial[0][k].
-        #pragma unroll
-        for (int k = 0; k < N_COEFFS; ++k) {
-            float v = (lane < WARPS_PER_BLOCK)
-                ? s_warp_partial[lane][k]
-                : 0.0f;
-            v = warp_reduce_sum(v);
-            if (lane == 0u) {
-                s_warp_partial[0][k] = v;  // final a_lm[k]
+            // Lossless tag aggregation (always — even for centroid-coincident
+            // spikes which contribute Y_l>0 = 0 but still carry tags).
+            atomicOr(&s_agg_spike_source, s.spike_source);
+            atomicOr(&s_agg_origin_phase, s.origin_phase);
+            atomicOr(&s_agg_chem_flags,   s.chem_flags);
+
+            const float dx = s.x - cx;
+            const float dy = s.y - cy;
+            const float dz = s.z - cz;
+            const float r2 = dx * dx + dy * dy + dz * dz;
+            if (r2 >= 1e-12f) {
+                const float r     = sqrtf(r2);
+                const float theta = acosf(fmaxf(-1.0f, fminf(1.0f, dz / r)));
+                const float phi   = atan2f(dy, dx);
+
+                float Y[N_COEFFS];
+                prism_nhs::sh_basis::prism_sh_eval_lmax5(theta, phi, d_k_lm, Y);
+
+                // Per-plane weights.
+                const float w_g = 1.0f;
+                const float w_c = fabsf(s.causal_lag);
+                const float w_t = s.water_density;
+                const float w_h = static_cast<float>(__popc(s.chem_flags));
+
+                atomicAdd(&s_sum_w[PLANE_GEO],   w_g);
+                atomicAdd(&s_sum_w[PLANE_CAUS],  w_c);
+                atomicAdd(&s_sum_w[PLANE_THERM], w_t);
+                atomicAdd(&s_sum_w[PLANE_CHEM],  w_h);
+
+                // Write tf32-down-converted, weighted Y_lm rows into
+                // each plane's tile slot at row=lane, col=k. Pad cols
+                // beyond N_COEFFS were already zero-init'd.
+                #pragma unroll
+                for (int k = 0; k < N_COEFFS; ++k) {
+                    const float y = Y[k];
+                    s_plane_tile[PLANE_GEO]  [lane][k] = prism_f32_to_tf32(y * w_g);
+                    s_plane_tile[PLANE_CAUS] [lane][k] = prism_f32_to_tf32(y * w_c);
+                    s_plane_tile[PLANE_THERM][lane][k] = prism_f32_to_tf32(y * w_t);
+                    s_plane_tile[PLANE_CHEM] [lane][k] = prism_f32_to_tf32(y * w_h);
+                }
             }
         }
-        (void)v0;  // suppress unused-warning when k loop uses its own v
-    }
-    __syncthreads();
+        __syncwarp();
 
-    // ─── Tile write (thread 0) ────────────────────────────────────────
-    if (threadIdx.x == 0u) {
-        ContactShellTile& tile = d_tiles_out[cluster_id];
-
-        tile.phase      = 0u;
-        tile.stream_id  = 0u;
-        tile.cluster_id = static_cast<int32_t>(cluster_id);
-        tile.frame      = frame_id;
-
-        // a_lm coefficients into slots 0..35; pad 36..63 with zero so
-        // RECT-3.1.c's WMMA fragment loads don't pull garbage.
+        // ── WMMA reduction: per (plane, col-group), two mma_sync
+        // calls (k=8 contracts → 2 calls cover 16 rows).
         #pragma unroll
-        for (int k = 0; k < 64; ++k) {
-            tile.coefficients[k] = (k < N_COEFFS) ? s_warp_partial[0][k] : 0.0f;
-        }
+        for (int p = 0; p < N_PLANES; ++p) {
+            #pragma unroll
+            for (int g = 0; g < N_COL_GROUPS; ++g) {
+                const int col_start = g * 16;
 
-        // Power spectrum C_l = Σ_m |a_lm|² for l=0..LMAX.
-        #pragma unroll
-        for (int l = 0; l <= static_cast<int>(LMAX); ++l) {
-            float c_l = 0.0f;
-            for (int m = -l; m <= l; ++m) {
-                const int idx = l * (l + 1) + m;
-                const float a = s_warp_partial[0][idx];
-                c_l += a * a;
+                // Fresh accumulator for this (plane, col-group).
+                wmma::fill_fragment(c_acc, 0.0f);
+
+                __syncwarp();
+
+                // First half (rows 0..7): ldm = TILE_STRIDE, B layout = row-major.
+                wmma::load_matrix_sync(
+                    b_data,
+                    &s_plane_tile[p][0][col_start],
+                    static_cast<unsigned>(TILE_STRIDE)
+                );
+                __syncwarp();
+                wmma::mma_sync(c_acc, a_ones, b_data, c_acc);
+                __syncwarp();
+
+                // Second half (rows 8..15).
+                wmma::load_matrix_sync(
+                    b_data,
+                    &s_plane_tile[p][8][col_start],
+                    static_cast<unsigned>(TILE_STRIDE)
+                );
+                __syncwarp();
+                wmma::mma_sync(c_acc, a_ones, b_data, c_acc);
+                __syncwarp();
+
+                // Store to staging buffer (row 0 contains the column-sum).
+                wmma::store_matrix_sync(
+                    &s_wmma_stage[0][0],
+                    c_acc,
+                    static_cast<unsigned>(STAGE_STRIDE),
+                    wmma::mem_row_major
+                );
+                __syncwarp();
+
+                // Lanes 0..15 each accumulate one column into the
+                // per-plane persistent accumulator. Lanes 16..31 idle.
+                if (lane < 16) {
+                    s_plane_acc[p][col_start + lane] += s_wmma_stage[0][lane];
+                }
+                __syncwarp();
             }
-            tile.power_spectrum[l] = c_l;
         }
+    }
+
+    // ── Pass 2.5 — Per-plane L2 normalization ─────────────────────
+    //
+    // Per Cross-Agent FFI Mandate §Dependency 1 (operator directive
+    // 2026-04-29 Part 2): a_lm coefficients must be L2-normalized
+    // before global write so that:
+    //   (a) downstream Q_s · a_lm scaling cannot drive tf32 to Inf
+    //       under 10^7+ spike bursts, and
+    //   (b) `C_l = Σ_m |a_lm/L2|² = original_C_l / L2²` becomes a
+    //       probability distribution, ready for the KL-divergence
+    //       Adjudicator (Σ_l C_l = 1 for non-empty planes).
+    //
+    // L2 norm is preserved under SO(3) rotation so this normalization
+    // does NOT break the G11 invariance gate.
+    //
+    // Empty-plane guard: if L2 < L2_EPS, leave a_lm at zero (skip
+    // normalization). The tile-write epsilon-pad (1e-7f) below keeps
+    // `log(C_l)` finite in Claude-2's Adjudicator either way.
+    constexpr float L2_EPS = 1e-6f;
+    __shared__ float s_l2_norm[N_PLANES];
+    if (lane < N_PLANES) {
+        const int p = lane;
+        float sum_sq = 0.0f;
         #pragma unroll
-        for (int l = static_cast<int>(LMAX) + 1; l < 8; ++l) {
-            tile.power_spectrum[l] = 0.0f;
+        for (int k = 0; k < N_COEFFS_PADDED; ++k) {
+            const float a = s_plane_acc[p][k];
+            sum_sq += a * a;
+        }
+        s_l2_norm[p] = sqrtf(sum_sq);
+    }
+    __syncwarp();
+
+    // Apply normalization. Stride loop handles all N_COEFFS_PADDED
+    // slots (32 lanes < 48 indices, so a single `lane < N` guard
+    // would silently leave slots 32..47 un-normalized — we hit this
+    // bug during RECT-3.1.c bring-up, caught by Σ C_l = 5.29 ≠ 1).
+    #pragma unroll
+    for (int p = 0; p < N_PLANES; ++p) {
+        const float l2 = s_l2_norm[p];
+        const float inv_l2 = (l2 >= L2_EPS) ? (1.0f / l2) : 0.0f;
+        for (int idx = lane; idx < N_COEFFS_PADDED; idx += WARP_SIZE) {
+            s_plane_acc[p][idx] *= inv_l2;
+        }
+    }
+    __syncwarp();
+
+    // ── Pass 3 — tile write (cooperative across lanes) ───────────
+    ContactShellTile* tile_p = &d_tiles_out[cluster_id];
+
+    // Lanes 0..15 cooperate to write per-plane a_lm[64] (28 padding
+    // slots remain zero; lanes 16..31 idle).
+    if (lane < 16) {
+        #pragma unroll
+        for (int p = 0; p < N_PLANES; ++p) {
+            // 4 column-groups × 16 lanes = 64 slots.
+            for (int g = 0; g < 4; ++g) {
+                const int idx = g * 16 + lane;
+                const float v = (idx < N_COEFFS_PADDED)
+                    ? s_plane_acc[p][idx]
+                    : 0.0f;
+                // Route to the right plane field.
+                switch (p) {
+                    case PLANE_GEO:   tile_p->geo_alm  [idx] = (idx < 64) ? v : 0.0f; break;
+                    case PLANE_CAUS:  tile_p->caus_alm [idx] = (idx < 64) ? v : 0.0f; break;
+                    case PLANE_THERM: tile_p->therm_alm[idx] = (idx < 64) ? v : 0.0f; break;
+                    case PLANE_CHEM:  tile_p->chem_alm [idx] = (idx < 64) ? v : 0.0f; break;
+                }
+            }
+        }
+    }
+
+    // Per-plane C_l = Σ_m |a_lm|² for l=0..LMAX. Only lane 0 does this
+    // (cheap: 36 sq-add ops × 4 planes = 144 fma). Epsilon-pad each
+    // value via fmaxf(c_l, KL_EPS) so the downstream Adjudicator
+    // (Claude-2) never feeds log(0) → -Inf into the F1 SWITCH selector.
+    //
+    // Cross-Agent FFI Mandate §Dependency 2 (operator directive
+    // 2026-04-29 Part 2.2): "MUST NOT allow a true zero to be written
+    // to the ContactShellTile."
+    constexpr float KL_EPS         = 1e-7f;
+    constexpr float MAX_ENERGY     = 100.0f;  // post-norm Σ C_l = 1.0 nominal; 100× headroom
+    if (lane == 0u) {
+        // Header
+        tile_p->phase      = 0u;
+        tile_p->stream_id  = 0u;
+        tile_p->cluster_id = static_cast<int32_t>(cluster_id);
+        tile_p->frame      = frame_id;
+
+        // C_l per plane (epsilon-padded).
+        float total_energy = 0.0f;
+        #pragma unroll
+        for (int p = 0; p < N_PLANES; ++p) {
+            float c_l_buf[8];
+            #pragma unroll
+            for (int l = 0; l <= static_cast<int>(LMAX); ++l) {
+                float c_l = 0.0f;
+                for (int m = -l; m <= l; ++m) {
+                    const int idx = l * (l + 1) + m;
+                    const float a = s_plane_acc[p][idx];
+                    c_l += a * a;
+                }
+                c_l_buf[l] = fmaxf(c_l, KL_EPS);
+                total_energy += c_l_buf[l];
+            }
+            #pragma unroll
+            for (int l = static_cast<int>(LMAX) + 1; l < 8; ++l) {
+                c_l_buf[l] = 0.0f;
+            }
+            switch (p) {
+                case PLANE_GEO:
+                    #pragma unroll
+                    for (int l = 0; l < 8; ++l) tile_p->geo_power_spectrum[l] = c_l_buf[l];
+                    break;
+                case PLANE_CAUS:
+                    #pragma unroll
+                    for (int l = 0; l < 8; ++l) tile_p->caus_power_spectrum[l] = c_l_buf[l];
+                    break;
+                case PLANE_THERM:
+                    #pragma unroll
+                    for (int l = 0; l < 8; ++l) tile_p->therm_power_spectrum[l] = c_l_buf[l];
+                    break;
+                case PLANE_CHEM:
+                    #pragma unroll
+                    for (int l = 0; l < 8; ++l) tile_p->chem_power_spectrum[l] = c_l_buf[l];
+                    break;
+            }
         }
 
-        // AABB (xyz + pad).
-        tile.aabb_min[0] = s_aabb[0];
-        tile.aabb_min[1] = s_aabb[1];
-        tile.aabb_min[2] = s_aabb[2];
-        tile.aabb_min[3] = 0.0f;
-        tile.aabb_max[0] = s_aabb[3];
-        tile.aabb_max[1] = s_aabb[4];
-        tile.aabb_max[2] = s_aabb[5];
-        tile.aabb_max[3] = 0.0f;
+        // PTX hard-trap on energy-budget overflow. Cross-Agent FFI
+        // Mandate §3 PTX Invariant Traps: if normalized Σ_p Σ_l C_l
+        // exceeds MAX_ENERGY (4 planes × Σ_l C_l ≤ 4 × 1 = 4 for
+        // non-empty planes; 4 × 6 × KL_EPS ≈ 2.4e-6 for empty), the
+        // L2 normalization or accumulation has broken — abort the
+        // SM rather than feed garbage to the Adjudicator.
+        if (total_energy > MAX_ENERGY) {
+            asm volatile("trap;");
+        }
 
-        tile.spike_count       = n;
-        tile.adjudication_code = 0u;  // pre_rank fills later
+        // AABB
+        tile_p->aabb_min[0] = s_aabb_min[0];
+        tile_p->aabb_min[1] = s_aabb_min[1];
+        tile_p->aabb_min[2] = s_aabb_min[2];
+        tile_p->aabb_min[3] = 0.0f;
+        tile_p->aabb_max[0] = s_aabb_max[0];
+        tile_p->aabb_max[1] = s_aabb_max[1];
+        tile_p->aabb_max[2] = s_aabb_max[2];
+        tile_p->aabb_max[3] = 0.0f;
+
+        // Lossless aggregates
+        tile_p->agg_spike_source = s_agg_spike_source;
+        tile_p->agg_origin_phase = s_agg_origin_phase;
+        tile_p->agg_chem_flags   = s_agg_chem_flags;
+        tile_p->agg_pad          = 0u;
+
+        // Per-plane sum_w
+        tile_p->sum_w_geo   = s_sum_w[PLANE_GEO];
+        tile_p->sum_w_caus  = s_sum_w[PLANE_CAUS];
+        tile_p->sum_w_therm = s_sum_w[PLANE_THERM];
+        tile_p->sum_w_chem  = s_sum_w[PLANE_CHEM];
+
+        // Counters
+        tile_p->spike_count       = n;
+        tile_p->adjudication_code = 0u;
+        tile_p->reserved[0]       = 0u;
+        tile_p->reserved[1]       = 0u;
+
+        // Padding
         #pragma unroll
-        for (int k = 0; k < 6; ++k) tile.reserved[k] = 0u;
-        #pragma unroll
-        for (int k = 0; k < 16; ++k) tile._pad[k] = 0u;
+        for (int k = 0; k < 32; ++k) tile_p->_pad[k] = 0u;
+
+        // Cross-Agent FFI Mandate §Dependency 3: __threadfence() after
+        // the final global write so the ContactShellTile is L2-coherent
+        // before the downstream Adjudicator / ASC kernel reads it.
+        // Required for in-graph WHILE-node correctness — the captured
+        // graph cannot rely on inter-kernel implicit synchronization
+        // when both producer and consumer are in the same DAG node.
+        __threadfence();
     }
 }
 
