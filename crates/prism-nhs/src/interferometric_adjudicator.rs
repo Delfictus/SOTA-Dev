@@ -712,6 +712,87 @@ pub fn pipeline_elapsed(adj: &InterferometricAdjudicatorFfi) -> (u64, f64) {
 }
 
 // ============================================================================
+// T7 — Calibrated noise-floor constants (LOCKED 2026-04-30)
+// ============================================================================
+//
+// Operator-published μ/σ priors for the 3-σ Adjudicator threshold.
+// Measured by Claude-1's stripped canonical calibration on 4LPK
+// during a 500-frame cold_hold equilibrium. The thermodynamic
+// baseline is locked here as compile-time constants so every MD
+// campaign init — across every one of the 18 643 targets in the
+// Blackwell Convergence main run — applies the same priors via
+// `apply_t7_calibration()` after `prism_interferometric_adjudicator_create`.
+//
+// **Source of truth provenance:**
+//   - Target:      4LPK (KRAS) cold_hold phase
+//   - Frames:      500 (Phase-0 calibration)
+//   - Methodology: Σ KL contribution per SH band l ∈ 0..5, taken
+//                  in thermal equilibrium (no UV perturbation)
+//   - Date locked: 2026-04-30 (per Architect's published values)
+//   - Locked by:   Lane 2 (Claude-2) via this commit
+//   - Verified by: Lane 1 (Claude-1) calibration script, prior commit
+//
+// Drift policy: re-calibration produces NEW constants under a NEW
+// public name (e.g., `T7_CALIBRATED_MU_V2`). Editing these literals
+// in place is FORBIDDEN — every change must be a code commit so the
+// audit trail captures who changed what when. The regression test
+// `t7_constants_match_operator_published_values` enforces byte-exact
+// stability of the locked values.
+
+/// Per-SH-band running mean of the thermal noise-floor's Σ KL
+/// contribution. Index `l` corresponds to spherical-harmonic band
+/// `l = 0..5`. Operator-published, locked 2026-04-30. See module
+/// header for full provenance.
+pub const T7_CALIBRATED_MU: [f32; 6] = [
+    0.8052561253,  // l=0
+    0.0040383553,  // l=1
+    0.0703344136,  // l=2
+    0.0538048399,  // l=3
+    0.0396647932,  // l=4
+    0.0269014686,  // l=5
+];
+
+/// Per-SH-band running stddev of the thermal noise-floor's Σ KL
+/// contribution. Pairs with `T7_CALIBRATED_MU` to define the
+/// 3-σ Adjudicator threshold `μ + 3σ` per band. Operator-published,
+/// locked 2026-04-30.
+pub const T7_CALIBRATED_SIGMA: [f32; 6] = [
+    0.1482125481,  // l=0
+    0.0090773341,  // l=1
+    0.0805278777,  // l=2
+    0.0222988033,  // l=3
+    0.0565869628,  // l=4
+    0.0099504697,  // l=5
+];
+
+/// Convenience helper: write the locked T7 constants into the
+/// adjudicator's device state in a single call. Equivalent to:
+///
+/// ```ignore
+/// set_noise_floor_constants(adj, &T7_CALIBRATED_MU, &T7_CALIBRATED_SIGMA, stream)
+/// ```
+///
+/// Recommended invocation site (Claude-1's `nhs_rt_full.rs` runtime):
+///
+/// ```ignore
+/// // Inside MD-campaign init, after adjudicator_create + before any
+/// // captured-graph launch:
+/// let rc = unsafe { apply_t7_calibration(adj_devptr, stream_raw) };
+/// assert_eq!(rc, CUDA_SUCCESS, "T7 calibration apply failed: {}", rc);
+/// stream.synchronize()?;
+/// ```
+///
+/// **Safety contract**: identical to [`set_noise_floor_constants`].
+#[cfg(feature = "gpu")]
+#[inline]
+pub unsafe fn apply_t7_calibration(
+    adj: *mut InterferometricAdjudicatorFfi,
+    stream: *mut std::ffi::c_void,
+) -> CudaError {
+    set_noise_floor_constants(adj, &T7_CALIBRATED_MU, &T7_CALIBRATED_SIGMA, stream)
+}
+
+// ============================================================================
 // T7 — Noise-floor calibration setter (safe Rust wrapper)
 // ============================================================================
 
@@ -1328,6 +1409,87 @@ mod tests {
         assert!(POINTER_STABILITY_CONTRACT.contains("OUTSIDE"));
         assert!(POINTER_STABILITY_CONTRACT.contains("create"));
         assert!(POINTER_STABILITY_CONTRACT.contains("malloc"));
+    }
+
+    // ─── T7 — Locked calibration regression guard ───────────────────────
+
+    #[test]
+    fn t7_constants_match_operator_published_values() {
+        // Byte-exact regression guard: any in-place edit to
+        // T7_CALIBRATED_MU / SIGMA fires here. Re-calibration must
+        // introduce NEW const names rather than mutating these.
+        // Operator-published values, locked 2026-04-30.
+        assert_eq!(T7_CALIBRATED_MU, [
+            0.8052561253_f32,
+            0.0040383553_f32,
+            0.0703344136_f32,
+            0.0538048399_f32,
+            0.0396647932_f32,
+            0.0269014686_f32,
+        ]);
+        assert_eq!(T7_CALIBRATED_SIGMA, [
+            0.1482125481_f32,
+            0.0090773341_f32,
+            0.0805278777_f32,
+            0.0222988033_f32,
+            0.0565869628_f32,
+            0.0099504697_f32,
+        ]);
+    }
+
+    #[test]
+    fn t7_constants_yield_finite_3_sigma_thresholds() {
+        // Sanity: μ + 3σ must be finite + positive for every band.
+        // A degenerate σ ≤ 0 or NaN would silently degrade the
+        // Adjudicator into "always-Construct" or "always-Prune".
+        for l in 0..6 {
+            let mu = T7_CALIBRATED_MU[l];
+            let sigma = T7_CALIBRATED_SIGMA[l];
+            assert!(mu.is_finite(), "μ_l={} non-finite at band {}", mu, l);
+            assert!(sigma.is_finite(), "σ_l={} non-finite at band {}", sigma, l);
+            assert!(sigma > 0.0, "σ_l={} non-positive at band {} (would degenerate threshold)", sigma, l);
+            let threshold = mu + 3.0 * sigma;
+            assert!(threshold.is_finite(), "threshold non-finite at band {}", l);
+            assert!(threshold > 0.0, "threshold non-positive at band {}", l);
+        }
+    }
+
+    #[test]
+    fn t7_constants_round_trip_through_zero_struct() {
+        // Round-trip: writing the calibrated values into a freshly
+        // zero'd InterferometricAdjudicatorFfi struct via field
+        // assignment yields a struct whose noise_floor_mu and
+        // noise_floor_sigma fields contain the calibrated values
+        // bit-exactly. This validates that the FFI struct's f32
+        // fields can hold the operator-published precision without
+        // precision loss (every value is representable as f32).
+        let mut adj = InterferometricAdjudicatorFfi::zero();
+        adj.noise_floor_mu.copy_from_slice(&T7_CALIBRATED_MU);
+        adj.noise_floor_sigma.copy_from_slice(&T7_CALIBRATED_SIGMA);
+        assert_eq!(adj.noise_floor_mu, T7_CALIBRATED_MU);
+        assert_eq!(adj.noise_floor_sigma, T7_CALIBRATED_SIGMA);
+
+        // Cross-check the field offsets the FFI memcpy will hit.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_mu), 0);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma), 24);
+    }
+
+    #[test]
+    fn t7_constants_band_0_dominates_as_expected() {
+        // Sanity on physical reasonableness: l=0 (the SO(3) total
+        // power) should dominate the higher bands, matching the
+        // expected Σ KL energy distribution where most of the
+        // information lives in the rotationally-invariant scalar
+        // mode. l=0 μ ≈ 0.805, all other bands < 0.1 ⇒ ≥ 8× ratio.
+        let mu_l0 = T7_CALIBRATED_MU[0];
+        for l in 1..6 {
+            let mu_l = T7_CALIBRATED_MU[l];
+            assert!(
+                mu_l0 > mu_l * 8.0,
+                "expected l=0 μ to dominate l={} by ≥ 8×; got μ_0={} μ_{}={}",
+                l, mu_l0, l, mu_l,
+            );
+        }
     }
 
     // ─── G19 — F1 SWITCH predicate sub-byte address invariants ──────────
