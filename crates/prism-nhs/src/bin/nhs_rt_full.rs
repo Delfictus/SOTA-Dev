@@ -4702,13 +4702,58 @@ fn run_multi_stream_pipeline(
                                             };
 
                                             if let Some(d_k_lm) = k_lm_dev {
+                                                // ── T6 ASC BRIDGE: allocate per-atom cluster mask ──
+                                                // All-ones = omnidirectional expansion (every atom
+                                                // participates). The kernel self-gates on
+                                                // adjudication_code == CONSTRUCT so the NVE ensemble
+                                                // is unperturbed during cold_hold / Prune phases.
+                                                let n_atoms = engine.n_atoms_loaded();
+                                                let mut d_mask: CUdeviceptr = 0;
+                                                let mask_alloc_ok = n_atoms > 0 && unsafe {
+                                                    use cudarc::driver::sys::cuMemsetD32_v2;
+                                                    matches!(
+                                                        cuMemAlloc_v2(&mut d_mask, n_atoms * std::mem::size_of::<u32>()),
+                                                        CUresult::CUDA_SUCCESS
+                                                    ) && matches!(
+                                                        cuMemsetD32_v2(d_mask, 1u32, n_atoms),
+                                                        CUresult::CUDA_SUCCESS
+                                                    )
+                                                };
+                                                let d_forces_ptr   = engine.d_forces_dev_ptr();
+                                                let d_pos_ptr      = engine.d_positions_dev_ptr();
+                                                let asc_cfg = if mask_alloc_ok
+                                                    && d_forces_ptr != 0
+                                                    && d_pos_ptr    != 0
+                                                {
+                                                    Some(prism_nhs::captured_pipeline::AscConfig {
+                                                        d_forces:           d_forces_ptr as *mut f32,
+                                                        d_atom_positions:   d_pos_ptr as *const f32,
+                                                        d_atom_in_cluster:  d_mask as *const u32,
+                                                        n_atoms:            n_atoms as i32,
+                                                        steering_gain_alpha: 0.005,
+                                                    })
+                                                } else {
+                                                    if d_mask != 0 {
+                                                        unsafe { let _ = cuMemFree_v2(d_mask); }
+                                                        d_mask = 0;
+                                                    }
+                                                    log::warn!(
+                                                        "    [V2-BUILD stream {}] ASC mask alloc failed \
+                                                         (n_atoms={}, mask_ok={}, forces={:#x}, pos={:#x}) \
+                                                         — pipeline built without Node D",
+                                                        i, n_atoms, mask_alloc_ok,
+                                                        d_forces_ptr, d_pos_ptr
+                                                    );
+                                                    None
+                                                };
+
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
                                                     n_clusters:        1,
                                                     d_k_lm,
                                                     initial_frame_id:  steps_run as u32,
-                                                    asc:               None,
+                                                    asc:               asc_cfg,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
@@ -4718,11 +4763,14 @@ fn run_multi_stream_pipeline(
                                                     Ok(pipeline) => {
                                                         log::info!(
                                                             "    [V2-BUILD stream {}] ✓ PIPELINE LIVE \
-                                                             — {} spikes, 1 cluster, frame {}",
-                                                            i, n_rs, steps_run
+                                                             — {} spikes, 1 cluster, frame {}, \
+                                                             Node-D={} (n_atoms={})",
+                                                            i, n_rs, steps_run,
+                                                            cfg.asc.is_some(), n_atoms
                                                         );
                                                         v2_spikes_raw  = d_sp;
                                                         v2_offsets_raw = d_off;
+                                                        v2_mask_raw    = d_mask;
                                                         v2_pipeline    = Some(pipeline);
                                                     }
                                                     Err(e) => {
@@ -4734,6 +4782,7 @@ fn run_multi_stream_pipeline(
                                                         unsafe {
                                                             let _ = cuMemFree_v2(d_sp);
                                                             let _ = cuMemFree_v2(d_off);
+                                                            if d_mask != 0 { let _ = cuMemFree_v2(d_mask); }
                                                         }
                                                     }
                                                 }
@@ -6141,6 +6190,11 @@ fn run_multi_stream_pipeline(
                             if v2_offsets_raw != 0 {
                                 unsafe {
                                     let _ = cudarc::driver::sys::cuMemFree_v2(v2_offsets_raw);
+                                }
+                            }
+                            if v2_mask_raw != 0 {
+                                unsafe {
+                                    let _ = cudarc::driver::sys::cuMemFree_v2(v2_mask_raw);
                                 }
                             }
                         }

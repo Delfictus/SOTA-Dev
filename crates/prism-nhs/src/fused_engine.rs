@@ -2092,6 +2092,16 @@ impl NhsAmberFusedEngine {
         self.d_forces.len()
     }
 
+    /// T6 ASC Position Bridge — raw device pointer to the `d_positions`
+    /// buffer (current atom positions read by the Velocity Verlet integrator).
+    /// Layout: `[x_0, y_0, z_0, x_1, ...]` (n_atoms × 3 contiguous f32).
+    /// Pointer-stable for the engine's lifetime — safe to capture in a graph.
+    pub fn d_positions_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_positions.device_ptr(stream);
+        ptr
+    }
+
     /// Create new fused engine from PRISM-PREP topology
     pub fn new(
         context: Arc<CudaContext>,

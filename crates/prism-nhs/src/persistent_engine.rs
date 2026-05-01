@@ -1263,6 +1263,27 @@ impl PersistentNhsEngine {
         &self.stream
     }
 
+    /// T6: raw device pointer to the `d_forces` buffer (n_atoms × 3 f32, AoS).
+    /// Returns 0 if no topology is loaded. Pointer-stable for the campaign.
+    pub fn d_forces_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_forces_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// T6: raw device pointer to the `d_positions` buffer (n_atoms × 3 f32, AoS).
+    /// Returns 0 if no topology is loaded. Pointer-stable for the campaign.
+    pub fn d_positions_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_positions_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// Number of atoms in the currently loaded topology. Returns 0 if none.
+    pub fn n_atoms_loaded(&self) -> usize {
+        self.engine.as_ref().map(|e| e.n_atoms()).unwrap_or(0)
+    }
+
     /// Get ALL GPU buffer references needed by the persistent coupling kernel.
     pub fn twin_coupling_gpu_state(&mut self) -> Option<(
         &mut CudaSlice<f32>,
