@@ -97,6 +97,27 @@ extern "C" {
 // Public surface
 // ============================================================================
 
+/// T6 ASC force-injection parameters for Node D of the captured pipeline.
+/// Pass `None` in `PipelineConfig::asc` to omit Node D (e.g. in tests).
+/// When `Some`, `prism_asc_apply_kernel` is captured after the Adjudicator
+/// node and fires at graph replay: F_total = F_newtonian + (α · Δ_AB · V_exp).
+pub struct AscConfig {
+    /// `d_forces` buffer from `NhsAmberFusedEngine` (n_atoms × 3 f32, AoS).
+    pub d_forces: *mut f32,
+    /// Current atom positions (n_atoms × 3 f32, AoS — same layout as d_forces).
+    pub d_atom_positions: *const f32,
+    /// Per-atom cluster-membership mask: 1 = inside cluster, 0 = outside.
+    pub d_atom_in_cluster: *const u32,
+    /// Total atom count.
+    pub n_atoms: i32,
+    /// Steering gain α — recommend ≤ 0.01 to keep |F_ASC| < 10% of Newtonian.
+    pub steering_gain_alpha: f32,
+}
+
+// SAFETY: raw pointers refer to CUDA device memory which lives on the GPU;
+// they are not dereferenced on the host and do not alias host-side objects.
+unsafe impl Send for AscConfig {}
+
 /// Configuration for [`CapturedAdjudicationPipeline::build`].
 ///
 /// All device pointers must live for the lifetime of the pipeline
@@ -121,6 +142,8 @@ pub struct PipelineConfig {
     /// reuse the same frame id (the captured graph stamps a constant);
     /// the host increments the frame counter externally if needed.
     pub initial_frame_id: u32,
+    /// T6 ASC force-bridge config. `None` = skip Node D (safe for tests).
+    pub asc: Option<AscConfig>,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -393,6 +416,25 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
+        // ── 5a. T7 LOCKED: burn 4LPK noise-floor priors into the
+        //       freshly-zeroed adjudicator BEFORE the capture window
+        //       opens. `apply_t7_calibration` uses cudaMemcpyAsync on
+        //       md_stream; the explicit synchronize below guarantees
+        //       both copies retire before cuStreamBeginCapture so they
+        //       are NOT recorded into the graph.
+        {
+            let rc = unsafe {
+                crate::interferometric_adjudicator::apply_t7_calibration(
+                    adj_dev as *mut InterferometricAdjudicatorFfi,
+                    md_raw as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda { stage: "apply_t7_calibration", rc });
+            }
+        }
+        md_stream.synchronize().map_err(BuildError::Driver)?;
+
         // ── 6. cuStreamBeginCapture (MODE_GLOBAL — captures cross-stream
         //      operations once a captured event bridges them).
         unsafe {
@@ -500,6 +542,30 @@ impl CapturedAdjudicationPipeline {
             }
             if n_deps > 0 {
                 adj_node_set = std::slice::from_raw_parts(deps_ptr, n_deps).to_vec();
+            }
+        }
+
+        // ── 6.c' Node D: ASC Force Injection ──────────────────────────
+        // Captured on md_stream immediately after Node C (adjudicator).
+        // At graph replay the kernel reads adj->adjudication_code from
+        // device: if Prune (0) it returns in the first warp, zero cost.
+        // If Construct (1) it injects F = α · Δ_AB · (x_i − X_c) into
+        // d_forces via atomicAdd — NVE-safe at α ≤ 0.01 (< 10% bound).
+        // Omitted when cfg.asc is None (test builds, legacy path).
+        if let Some(ref asc) = cfg.asc {
+            let rc = unsafe {
+                crate::interferometric_adjudicator::ffi::prism_asc_apply(
+                    adj_dev as *const InterferometricAdjudicatorFfi,
+                    asc.d_forces,
+                    asc.d_atom_positions,
+                    asc.d_atom_in_cluster,
+                    asc.n_atoms,
+                    asc.steering_gain_alpha,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda { stage: "Node D (ASC force inject)", rc });
             }
         }
 
@@ -687,7 +753,7 @@ impl CapturedAdjudicationPipeline {
             cond_handle,
             body_subgraph,
             n_clusters: cfg.n_clusters,
-            n_kernel_nodes_captured: 2,    // V1: SO(3), Adjudicator (trampoline + conditional are V2)
+            n_kernel_nodes_captured: 2 + if cfg.asc.is_some() { 1 } else { 0 }, // SO(3) + Adjudicator [+ ASC Node D]
             // V1: 0 explicit cuGraphAddDependencies edges (the
             // C→D edge is satisfied by capture-mode's implicit
             // sequential ordering on md_stream). V2 lands the
@@ -1047,6 +1113,7 @@ mod tests {
             n_clusters: N_CLUSTERS,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
+            asc: None,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -1164,6 +1231,7 @@ mod tests {
             n_clusters: 1,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
+            asc: None,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -1239,6 +1307,7 @@ mod tests {
             d_spikes: sp_dev as *const RichSpike,
             d_cluster_offsets: off_dev as *const u32,
             n_clusters: 1, d_k_lm: k_lm_dev, initial_frame_id: 0,
+            asc: None,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -1322,6 +1391,7 @@ mod tests {
             n_clusters: 1,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
+            asc: None,
         };
 
         // Closure that captures the conditional-node handle written

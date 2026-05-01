@@ -4558,8 +4558,20 @@ fn run_multi_stream_pipeline(
                         // a concrete `pipeline.launch()` to invoke
                         // the moment the build prerequisites are
                         // plumbed through.
+                        //
+                        // The pipeline is built lazily at the cold_hold→warm_hold
+                        // phase boundary using the accumulated spike events. The two
+                        // raw CUdeviceptr values below hold the VRAM allocations for
+                        // d_spikes and d_cluster_offsets; they must outlive the
+                        // pipeline and are freed explicitly after the chunk loop.
                         #[cfg(feature = "v2_ignition")]
-                        let v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
+                        let mut v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_spikes_raw: u64 = 0;   // CUdeviceptr — freed post-chunk-loop
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_offsets_raw: u64 = 0;  // CUdeviceptr — freed post-chunk-loop
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_mask_raw: u64 = 0;     // CUdeviceptr — per-atom ASC mask — freed post-chunk-loop
 
                         // ── T7 NOISE-FLOOR CALIBRATION — Path B (host-side, real production data) ──
                         // Per operator directive 2026-04-30 ("Path B Honest-Data
@@ -4587,6 +4599,167 @@ fn run_multi_stream_pipeline(
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
+
+                                // ── T5 PHASE-BOUNDARY BUILD ──────────────────────────────
+                                // On the first chunk that starts AFTER cold_hold: download
+                                // the accumulated spike events, convert to minimal RichSpike
+                                // records, upload to VRAM (single-cluster CSR), init the
+                                // SO(3) SH basis, and build the CapturedAdjudicationPipeline.
+                                // After this one-time handshake, the V2 launch below routes
+                                // all subsequent chunks through the GPU-only loop. Per operator
+                                // directive: only stream 0 builds the pipeline (t7_active gate).
+                                #[cfg(feature = "v2_ignition")]
+                                if t7_active && v2_pipeline.is_none()
+                                    && steps_run >= kcc_cold_hold_steps
+                                    && steps_run > 0
+                                {
+                                    use prism_nhs::rich_spike::RichSpike;
+                                    use prism_nhs::captured_pipeline::{
+                                        PipelineConfig, CapturedAdjudicationPipeline,
+                                    };
+                                    use cudarc::driver::sys::{
+                                        cuMemAlloc_v2, cuMemcpyHtoD_v2,
+                                        cuMemFree_v2, CUdeviceptr, CUresult,
+                                    };
+
+                                    log::info!(
+                                        "    [V2-BUILD stream {}] cold_hold+{} steps complete; \
+                                         downloading spikes for pipeline seed…",
+                                        i, steps_run
+                                    );
+                                    // get_accumulated_spikes returns the host-side ring already
+                                    // populated by force_spike_sync during cold_hold chunks.
+                                    let spike_events: Vec<prism_nhs::fused_engine::GpuSpikeEvent> =
+                                        engine.get_accumulated_spikes();
+                                    let n_ev = spike_events.len();
+                                    log::info!(
+                                        "    [V2-BUILD stream {}] {} spike events available",
+                                        i, n_ev
+                                    );
+
+                                    if n_ev >= 4 {
+                                        let rich: Vec<RichSpike> = spike_events.iter().map(|e| {
+                                            let mut rs = RichSpike::default();
+                                            rs.x             = e.position[0];
+                                            rs.y             = e.position[1];
+                                            rs.z             = e.position[2];
+                                            rs.t_frame       = e.timestep as u32;
+                                            rs.water_density = e.water_density;
+                                            rs.wd_change     = e.wd_change;
+                                            rs.vib_energy    = e.vibrational_energy;
+                                            // residue_id is i32 in RichSpike
+                                            rs.residue_id    = e.nearby_residues.iter()
+                                                .find(|&&r| r >= 0)
+                                                .copied()
+                                                .unwrap_or(0);
+                                            rs
+                                        }).collect();
+                                        let n_rs          = rich.len() as u32;
+                                        let offsets: Vec<u32> = vec![0u32, n_rs];
+                                        let spike_bytes   = rich.len()    * std::mem::size_of::<RichSpike>();
+                                        let offset_bytes  = offsets.len() * std::mem::size_of::<u32>();
+
+                                        let mut d_sp:  CUdeviceptr = 0;
+                                        let mut d_off: CUdeviceptr = 0;
+                                        let alloc_ok = unsafe {
+                                            matches!(
+                                                cuMemAlloc_v2(&mut d_sp,  spike_bytes),
+                                                CUresult::CUDA_SUCCESS
+                                            ) && matches!(
+                                                cuMemAlloc_v2(&mut d_off, offset_bytes),
+                                                CUresult::CUDA_SUCCESS
+                                            ) && matches!(
+                                                cuMemcpyHtoD_v2(
+                                                    d_sp,
+                                                    rich.as_ptr() as *const _,
+                                                    spike_bytes,
+                                                ),
+                                                CUresult::CUDA_SUCCESS
+                                            ) && matches!(
+                                                cuMemcpyHtoD_v2(
+                                                    d_off,
+                                                    offsets.as_ptr() as *const _,
+                                                    offset_bytes,
+                                                ),
+                                                CUresult::CUDA_SUCCESS
+                                            )
+                                        };
+
+                                        if alloc_ok {
+                                            let strm_raw = engine.cuda_stream().cu_stream()
+                                                as *mut std::ffi::c_void;
+                                            // init_device_basis is idempotent.
+                                            let k_lm_dev = match prism_nhs::sh_basis::init_device_basis(strm_raw) {
+                                                Ok(()) => prism_nhs::sh_basis::k_lm_device_ptr().ok(),
+                                                Err(rc) => {
+                                                    log::warn!(
+                                                        "    [V2-BUILD stream {}] sh_basis init rc={} — \
+                                                         pipeline build aborted",
+                                                        i, rc
+                                                    );
+                                                    None
+                                                }
+                                            };
+
+                                            if let Some(d_k_lm) = k_lm_dev {
+                                                let cfg = PipelineConfig {
+                                                    d_spikes:          d_sp as *const RichSpike,
+                                                    d_cluster_offsets: d_off as *const u32,
+                                                    n_clusters:        1,
+                                                    d_k_lm,
+                                                    initial_frame_id:  steps_run as u32,
+                                                    asc:               None,
+                                                };
+                                                match CapturedAdjudicationPipeline::build(
+                                                    engine.cuda_context(),
+                                                    engine.cuda_stream(),
+                                                    &cfg,
+                                                ) {
+                                                    Ok(pipeline) => {
+                                                        log::info!(
+                                                            "    [V2-BUILD stream {}] ✓ PIPELINE LIVE \
+                                                             — {} spikes, 1 cluster, frame {}",
+                                                            i, n_rs, steps_run
+                                                        );
+                                                        v2_spikes_raw  = d_sp;
+                                                        v2_offsets_raw = d_off;
+                                                        v2_pipeline    = Some(pipeline);
+                                                    }
+                                                    Err(e) => {
+                                                        log::warn!(
+                                                            "    [V2-BUILD stream {}] build failed: \
+                                                             {:?} — legacy path",
+                                                            i, e
+                                                        );
+                                                        unsafe {
+                                                            let _ = cuMemFree_v2(d_sp);
+                                                            let _ = cuMemFree_v2(d_off);
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                unsafe {
+                                                    let _ = cuMemFree_v2(d_sp);
+                                                    let _ = cuMemFree_v2(d_off);
+                                                }
+                                            }
+                                        } else {
+                                            if d_sp  != 0 { unsafe { let _ = cuMemFree_v2(d_sp);  } }
+                                            if d_off != 0 { unsafe { let _ = cuMemFree_v2(d_off); } }
+                                            log::warn!(
+                                                "    [V2-BUILD stream {}] VRAM alloc/copy failed — \
+                                                 legacy path",
+                                                i
+                                            );
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "    [V2-BUILD stream {}] only {} spikes after cold_hold \
+                                             — need ≥4, staying legacy",
+                                            i, n_ev
+                                        );
+                                    }
+                                }
 
                                 // ── T5 V2 IGNITION launch site ─────────
                                 // When --features=v2_ignition is set AND
@@ -5948,6 +6121,28 @@ fn run_multi_stream_pipeline(
                                 mu[0], mu[1], mu[2], mu[3], mu[4], mu[5],
                                 sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5],
                             );
+                        }
+
+                        // ── V2 raw VRAM cleanup ─────────────────────────────────────
+                        // Drop the pipeline first (it holds implicit refs to d_spikes /
+                        // d_cluster_offsets via the captured graph's SO(3) kernel args).
+                        // Then free the raw CUdeviceptrpointers that back those buffers.
+                        // Rust drops locals in reverse declaration order, so `v2_pipeline`
+                        // is already dropped before this block executes — the explicit
+                        // `drop` here is a belt-and-suspenders signal of intent.
+                        #[cfg(feature = "v2_ignition")]
+                        {
+                            drop(v2_pipeline);
+                            if v2_spikes_raw != 0 {
+                                unsafe {
+                                    let _ = cudarc::driver::sys::cuMemFree_v2(v2_spikes_raw);
+                                }
+                            }
+                            if v2_offsets_raw != 0 {
+                                unsafe {
+                                    let _ = cudarc::driver::sys::cuMemFree_v2(v2_offsets_raw);
+                                }
+                            }
                         }
 
                         // Stage 1B-2: per-stream BOCPD summary at the end of the chunk loop.

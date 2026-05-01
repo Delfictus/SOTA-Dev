@@ -217,6 +217,17 @@ pub(crate) mod ffi {
     }
 }
 
+/// Upload the K_LM normalization table to device memory. Idempotent;
+/// safe to call multiple times. Must be called before [`k_lm_device_ptr`].
+#[cfg(feature = "gpu")]
+pub fn init_device_basis(stream: *mut std::ffi::c_void) -> Result<(), i32> {
+    let rc = unsafe { ffi::prism_sh_basis_init(stream) };
+    if rc != ffi::CUDA_SUCCESS {
+        return Err(rc);
+    }
+    Ok(())
+}
+
 /// Retrieve the device-side pointer to the K_LM[36] normalization
 /// table populated by `prism_sh_basis_init`. Caller MUST have
 /// invoked `prism_sh_basis_init` once before this call. Returns
