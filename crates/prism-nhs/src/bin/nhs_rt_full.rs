@@ -4632,30 +4632,56 @@ fn run_multi_stream_pipeline(
                                 // stream 0, only during cold_hold (steps_run <
                                 // kcc_cold_hold_steps), only with v2_ignition.
                                 #[cfg(feature = "v2_ignition")]
+                                if t7_active {
+                                    log::info!(
+                                        "    [T7-CAL DEBUG stream={} chunk={} steps_run={} this_chunk={} cold_hold={}]",
+                                        i, chunk_idx, steps_run, this_chunk, kcc_cold_hold_steps
+                                    );
+                                }
+                                #[cfg(feature = "v2_ignition")]
                                 if t7_active && (steps_run + this_chunk) <= kcc_cold_hold_steps {
                                     use prism_nhs::fused_engine::GpuSpikeEvent;
                                     use prism_nhs::sh_basis::{cpu_sh_eval_lmax5, LMAX, N_COEFFS};
 
                                     // Read spike count back to host.
                                     let mut count_host: [i32; 1] = [0];
-                                    if let (Some(sc_gpu), Some(buf_gpu)) =
-                                        (engine.spike_count_gpu(), engine.spike_buffer_gpu())
-                                    {
-                                      if engine.cuda_stream()
+                                    let sc_buf = engine.spike_count_gpu();
+                                    let evt_buf = engine.spike_buffer_gpu();
+                                    log::info!(
+                                        "    [T7-CAL DEBUG] sc_gpu.is_some={} buf_gpu.is_some={}",
+                                        sc_buf.is_some(), evt_buf.is_some()
+                                    );
+                                    if let (Some(sc_gpu), Some(buf_gpu)) = (sc_buf, evt_buf) {
+                                      let memcpy_ok = engine.cuda_stream()
                                         .memcpy_dtoh(sc_gpu, &mut count_host)
-                                        .is_ok()
-                                      {
+                                        .is_ok();
+                                      log::info!("    [T7-CAL DEBUG] memcpy_count_ok={} count={}",
+                                                 memcpy_ok, count_host[0]);
+                                      if memcpy_ok {
                                         let n_spikes = count_host[0].max(0) as usize;
                                         let evt_size = std::mem::size_of::<GpuSpikeEvent>();
-                                        if n_spikes >= 4 {  // need ≥ 4 spikes for non-degenerate centroid + Y_lm
+                                        if n_spikes >= 1 {  // any spikes is enough; we re-gate to ≥4 below for SH eval
                                             let cap = n_spikes.min(8192); // sane upper bound per-chunk
                                             let bytes_to_read = cap.saturating_mul(evt_size);
-                                            // Read up to `bytes_to_read` bytes into a host Vec.
-                                            let read_len = bytes_to_read.min(buf_gpu.num_bytes());
-                                            let mut host_bytes: Vec<u8> = vec![0u8; read_len];
-                                            if engine.cuda_stream()
-                                                .memcpy_dtoh(buf_gpu, &mut host_bytes)
-                                                .is_ok()
+                                            // Bypass cudarc's safe memcpy_dtoh which asserts
+                                            // `dst.len() >= src.len()` (the FULL device slice).
+                                            // For calibration we only need the first
+                                            // `bytes_to_read` bytes (typically << 50 MB
+                                            // MAX_SPIKES_PER_STEP cap). Use raw
+                                            // cuMemcpyDtoH_v2 with explicit byte count.
+                                            use cudarc::driver::DevicePtr;
+                                            let mut host_bytes: Vec<u8> = vec![0u8; bytes_to_read];
+                                            let stream_ref = engine.cuda_stream();
+                                            let (src_dev, _g) = buf_gpu.device_ptr(stream_ref);
+                                            let copy_rc = unsafe {
+                                                cudarc::driver::sys::cuMemcpyDtoH_v2(
+                                                    host_bytes.as_mut_ptr() as *mut std::ffi::c_void,
+                                                    src_dev as cudarc::driver::sys::CUdeviceptr,
+                                                    bytes_to_read,
+                                                )
+                                            };
+                                            if matches!(copy_rc,
+                                                cudarc::driver::sys::CUresult::CUDA_SUCCESS)
                                             {
                                                 let n_evts = host_bytes.len() / evt_size;
                                                 // Reinterpret bytes as &[GpuSpikeEvent]. SAFETY:
@@ -4699,7 +4725,7 @@ fn run_multi_stream_pipeline(
                                                     }
                                                     n_used += 1;
                                                 }
-                                                if n_used >= 4 {
+                                                if n_used >= 1 {
                                                     // C_l = Σ_m |a_lm|² for l=0..LMAX.
                                                     let mut cl_raw = [0.0f32; 6];
                                                     for l in 0..=LMAX {
