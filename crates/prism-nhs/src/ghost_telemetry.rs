@@ -504,6 +504,68 @@ impl std::fmt::Display for GhostSerializeError {
 impl std::error::Error for GhostSerializeError {}
 
 // ============================================================================
+// F1 SWITCH — adjudication_code readback
+// ============================================================================
+
+/// Scan the ghost ring's safe-to-read slot for tiles where the
+/// Adjudicator has set `adjudication_code == 1` (Burst / Construct
+/// path — the F1 SWITCH fired).
+///
+/// Emits a structured `log::info!` line **with a microsecond-resolution
+/// wall-clock timestamp** the exact moment each trigger is detected on
+/// the host. Intended call site: immediately after `pipeline.launch()`
+/// returns control to the host, so the DMA from frame `current_frame_idx - 2`
+/// is guaranteed committed (the ring's 2-frame lag + the fact that
+/// `pipeline.launch()` blocks until the graph launch is enqueued on the
+/// stream, and the prior frame's DMA precedes the current launch in the
+/// stream order).
+///
+/// # Returns
+///
+/// Number of tiles in the slot whose `adjudication_code` was 1.  A
+/// non-zero return signals the operator's desired "Proof of Discovery":
+/// the GPU decided a pocket is real and fired the ASC steering path.
+///
+/// # Safety
+///
+/// Caller must have either (a) synchronized the telemetry stream, or
+/// (b) confirmed that `cuGraphLaunch` for the CURRENT frame has been
+/// enqueued — which guarantees the DMA for frame `current_frame_idx - 2`
+/// has completed (the ring protocol ensures 2-frame lag). Same contract
+/// as `PinnedTelemetryRing::read_slot_unchecked`.
+pub unsafe fn log_f1_switch_events(
+    ring: &PinnedTelemetryRing<ContactShellTile>,
+    current_frame_idx: u64,
+    stream_id: usize,
+) -> usize {
+    let slot = match ring.read_slot_unchecked(current_frame_idx) {
+        Some(s) => s,
+        None    => return 0,
+    };
+    let mut n_fired = 0usize;
+    for tile in slot {
+        if tile.adjudication_code == 1 {
+            let ts_us = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_micros())
+                .unwrap_or(0);
+            log::info!(
+                "[F1-SWITCH ts_us={} stream={} frame={} cluster={} \
+                 adj=BURST C_l0={:.6e} spikes={}]",
+                ts_us,
+                stream_id,
+                current_frame_idx.saturating_sub(2),
+                tile.cluster_id,
+                tile.geo_power_spectrum[0],
+                tile.spike_count,
+            );
+            n_fired += 1;
+        }
+    }
+    n_fired
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

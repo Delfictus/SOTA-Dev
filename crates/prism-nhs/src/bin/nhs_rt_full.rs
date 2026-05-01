@@ -4857,6 +4857,11 @@ fn run_multi_stream_pipeline(
                                     // CSR-N: non-blocking ring readback (previous frame DMA
                                     // guaranteed committed before this launch executes).
                                     // Stream-0 only; first 15 warm_hold chunks only.
+                                    // Two layers:
+                                    //   1. per-tile trace (all adj codes, existing)
+                                    //   2. log_f1_switch_events: fires only on adj==1 (BURST),
+                                    //      stamps a microsecond wall-clock timestamp so the
+                                    //      operator sees the exact ms the F1 SWITCH triggers.
                                     if i == 0 && steps_run >= kcc_cold_hold_steps
                                         && chunk_idx <= kcc_cold_hold_steps / this_chunk + 15
                                     {
@@ -4874,6 +4879,14 @@ fn run_multi_stream_pipeline(
                                                     tile.cluster_id,
                                                 );
                                             }
+                                        }
+                                        // F1-SWITCH detector: μs-precision burst log.
+                                        unsafe {
+                                            prism_nhs::ghost_telemetry::log_f1_switch_events(
+                                                pipeline.ring(),
+                                                frame_id,
+                                                i,
+                                            );
                                         }
                                     }
                                 }
