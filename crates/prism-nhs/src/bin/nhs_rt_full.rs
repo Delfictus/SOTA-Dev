@@ -4194,6 +4194,15 @@ fn run_multi_stream_pipeline(
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
     let sim_start = Instant::now();
 
+    // V2 early-exit sentinel: set to true by any stream thread that
+    // successfully builds a CapturedAdjudicationPipeline.  Checked
+    // immediately after the scope joins — if set, the entire legacy
+    // post-MD CPU pipeline (clustering / ranking / Phase 3) is bypassed
+    // and the process exits cleanly.  Arc so each stream's move-closure
+    // can hold a clone without fighting over ownership across map iterations.
+    #[cfg(feature = "v2_ignition")]
+    let v2_was_live = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)>> =
         std::thread::scope(|s| {
             let handles: Vec<_> = (0..n_streams).map(|i| {
@@ -4352,6 +4361,9 @@ fn run_multi_stream_pipeline(
                 // #1 asymmetric steering — captured per stream so the
                 // writeback block can decide which focus list to push.
                 let asymmetric_steering = args.asymmetric_steering;
+                // V2 hard-gate sentinel — cheap Arc clone per stream.
+                #[cfg(feature = "v2_ignition")]
+                let v2_was_live = std::sync::Arc::clone(&v2_was_live);
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -4772,6 +4784,10 @@ fn run_multi_stream_pipeline(
                                                         v2_offsets_raw = d_off;
                                                         v2_mask_raw    = d_mask;
                                                         v2_pipeline    = Some(pipeline);
+                                                        // Signal outer scope: V2 is live on
+                                                        // at least one stream — legacy post-MD
+                                                        // CPU path will be hard-gated off.
+                                                        v2_was_live.store(true, std::sync::atomic::Ordering::Relaxed);
                                                     }
                                                     Err(e) => {
                                                         log::warn!(
@@ -6304,6 +6320,21 @@ fn run_multi_stream_pipeline(
 
     let sim_elapsed = sim_start.elapsed();
     log::info!("  ✓ All {} streams complete in {:.1}s", n_streams, sim_elapsed.as_secs_f64());
+
+    // ── V2 HARD-GATE: legacy CPU pipeline bypass ──────────────────────────
+    // When the CapturedAdjudicationPipeline was live on ANY stream, discovery
+    // and steering happened 100% in-flight via the ASC captured graph.
+    // The Adjudicator is the ranker.  Every CPU cycle below this point
+    // (spatial hash clustering, find_neighbors_union, LIGSITE, PH, XGBoost,
+    // Phase 3 enrichment) is wasted work and is physically skipped.
+    // The process exits cleanly the exact millisecond the physics loop joins.
+    #[cfg(feature = "v2_ignition")]
+    if v2_was_live.load(std::sync::atomic::Ordering::Relaxed) {
+        log::info!("  [V2 HARD-GATE] CapturedAdjudicationPipeline was live — \
+                    bypassing legacy post-MD CPU pipeline. \
+                    Wall-clock: {:.1}s total.", sim_elapsed.as_secs_f64());
+        return Ok(());
+    }
 
     // ── Extract ASC consensus for downstream spike filtering ──
     let asc_consensus_residues: std::collections::HashSet<i32> = if let Some(ref asc) = asc_shared {
