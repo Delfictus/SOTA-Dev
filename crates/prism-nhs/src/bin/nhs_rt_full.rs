@@ -4820,32 +4820,23 @@ fn run_multi_stream_pipeline(
                                 // no host-side stamping inside this
                                 // branch — the CPU's only role is to
                                 // increment the chunk counter.
-                                #[cfg(feature = "v2_ignition")]
-                                let v2_handled = if let Some(ref pipeline) = v2_pipeline {
-                                    for _ in 0..this_chunk {
-                                        pipeline.launch().map_err(|e|
-                                            anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
-                                    }
-                                    true
-                                } else { false };
-                                #[cfg(not(feature = "v2_ignition"))]
-                                let v2_handled: bool = false;
+                                // MD physics — always runs regardless of V2 state.
+                                // V2 adjudication is an overlay, not a replacement.
+                                if let Some(ref graph) = captured_graph {
+                                    graph.run_chunk(this_chunk as u32)?;
+                                    engine.cuda_context().synchronize()
+                                        .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
+                                } else {
+                                    engine.run(this_chunk)?;
+                                }
 
-                                // Legacy path — entirely bypassed when
-                                // v2_handled. The `if !v2_handled` guard
-                                // is a no-op cost in legacy builds (the
-                                // compiler folds the constant-false).
-                                if !v2_handled {
-                                    // Use CUDA Graph replay if available, fallback to engine.run()
-                                    if let Some(ref graph) = captured_graph {
-                                        // Graph replay: Director→Physics→MultiLIF→Housekeeping in one launch
-                                        graph.run_chunk(this_chunk as u32)?;
-                                        // Sync the CUDA context to ensure graph execution completes
-                                        engine.cuda_context().synchronize()
-                                            .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
-                                    } else {
-                                        engine.run(this_chunk)?;
-                                    }
+                                // V2 IGNITION overlay — adjudication fires once per chunk
+                                // AFTER physics completes. No stream.synchronize, no println,
+                                // per operator directive. CPU role: increment chunk counter only.
+                                #[cfg(feature = "v2_ignition")]
+                                if let Some(ref pipeline) = v2_pipeline {
+                                    pipeline.launch().map_err(|e|
+                                        anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
                                 }
 
                                 // ── T7 NOISE-FLOOR CAPTURE (per-chunk) ─────────
