@@ -862,6 +862,12 @@ impl CapturedAdjudicationPipeline {
 
 impl Drop for CapturedAdjudicationPipeline {
     fn drop(&mut self) {
+        // Drain md_stream before touching any graph or device handle.
+        // The final pipeline.launch() submits async GPU work; cuGraphExecDestroy
+        // does NOT wait for it.  Without this sync, the caller's cuMemFree_v2
+        // on v2_mask_raw races with the still-running ASC kernel — UAF on device.
+        let _ = self.md_stream.synchronize();
+
         let md_raw = self.md_stream.cu_stream() as usize;
         unsafe {
             if !self.cu_graph_exec.is_null() {

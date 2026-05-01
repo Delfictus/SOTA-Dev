@@ -4787,7 +4787,7 @@ fn run_multi_stream_pipeline(
                                                         // Signal outer scope: V2 is live on
                                                         // at least one stream — legacy post-MD
                                                         // CPU path will be hard-gated off.
-                                                        v2_was_live.store(true, std::sync::atomic::Ordering::Relaxed);
+                                                        v2_was_live.store(true, std::sync::atomic::Ordering::Release);
                                                     }
                                                     Err(e) => {
                                                         log::warn!(
@@ -6342,7 +6342,7 @@ fn run_multi_stream_pipeline(
     // Phase 3 enrichment) is wasted work and is physically skipped.
     // The process exits cleanly the exact millisecond the physics loop joins.
     #[cfg(feature = "v2_ignition")]
-    if v2_was_live.load(std::sync::atomic::Ordering::Relaxed) {
+    if v2_was_live.load(std::sync::atomic::Ordering::Acquire) {
         log::info!("  [V2 HARD-GATE] CapturedAdjudicationPipeline was live — \
                     bypassing legacy post-MD CPU pipeline. \
                     Wall-clock: {:.1}s total.", sim_elapsed.as_secs_f64());
