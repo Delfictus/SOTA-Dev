@@ -4837,6 +4837,29 @@ fn run_multi_stream_pipeline(
                                 if let Some(ref pipeline) = v2_pipeline {
                                     pipeline.launch().map_err(|e|
                                         anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+
+                                    // CSR-N: non-blocking ring readback (previous frame DMA
+                                    // guaranteed committed before this launch executes).
+                                    // Stream-0 only; first 15 warm_hold chunks only.
+                                    if i == 0 && steps_run >= kcc_cold_hold_steps
+                                        && chunk_idx <= kcc_cold_hold_steps / this_chunk + 15
+                                    {
+                                        let frame_id = steps_run.saturating_sub(this_chunk) as u64;
+                                        if let Some(tiles) = unsafe {
+                                            pipeline.ring().read_slot_unchecked(frame_id)
+                                        } {
+                                            if let Some(tile) = tiles.first() {
+                                                log::info!(
+                                                    "    [CSR-N frame={} adj_code={} C_l0={:.6} spikes={} cluster={}]",
+                                                    frame_id,
+                                                    tile.adjudication_code,
+                                                    tile.geo_power_spectrum[0],
+                                                    tile.spike_count,
+                                                    tile.cluster_id,
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
 
                                 // ── T7 NOISE-FLOOR CAPTURE (per-chunk) ─────────
