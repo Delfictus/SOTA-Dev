@@ -113,7 +113,7 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             counter: 500,
             last_burst_frame: 0,
             current_gear: 1,
-            _pad: 0,
+            previous_gear: 1,
         };
         let cruise_bytes: [u8; 16] = unsafe {
             std::mem::transmute::<ChronometricStateTensor, [u8; 16]>(cruise_seed)
@@ -184,7 +184,7 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             counter: 1234,
             last_burst_frame: 0,
             current_gear: 2,
-            _pad: 0,
+            previous_gear: 1,
         };
         let cruise_bytes: [u8; 16] = unsafe {
             std::mem::transmute::<ChronometricStateTensor, [u8; 16]>(cruise_seed)

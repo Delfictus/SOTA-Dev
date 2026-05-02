@@ -675,10 +675,11 @@ impl CapturedAdjudicationPipeline {
         let cruise_state_dev = pool.alloc_async(CRUISE_STATE_BYTES, md_raw)
             .map_err(|s| BuildError::PoolAlloc { what: "cruise_state", reason: s })?;
         unsafe {
-            // Default: counter=0 (u32), last_burst_frame=0 (u32),
-            // current_gear=1 (u32), _pad=0 (u32). Encoded as little-endian
-            // bytes for cuMemcpyHtoD_v2.
-            let seed: [u32; 4] = [0u32, 0u32, 1u32, 0u32];
+            // Default: counter=0, last_burst_frame=0, current_gear=1
+            // (Gear 1 = 2.0fs safety), previous_gear=1 (matches current
+            // so the first symplectic-ratio compute yields λ = 1.0).
+            // Wave B.2 layout: [u32; 4] little-endian = 16 bytes.
+            let seed: [u32; 4] = [0u32, 0u32, 1u32, 1u32];
             let rc = cuMemcpyHtoD_v2(
                 cruise_state_dev as CUdeviceptr,
                 seed.as_ptr() as *const c_void,

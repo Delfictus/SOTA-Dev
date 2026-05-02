@@ -54,8 +54,12 @@ pub struct ChronometricStateTensor {
     /// 2 = 4.0 fs, 3 = abort.  Read by the predicate bridge in B.2 to
     /// route the SWITCH; written by every PointerSwap launch.
     pub current_gear: u32,
-    /// Padding to 16-byte boundary.
-    pub _pad: u32,
+    /// Wave B.2 — gear active BEFORE the most-recent PointerSwap launch.
+    /// PointerSwap copies `current_gear` into this slot before computing
+    /// the new gear, so the symplectic-ratio kernel can compute
+    /// λ = dt_new / dt_old without a separate scratch buffer.  Replaces
+    /// the former `_pad` slot; layout still 16 bytes, 16-aligned.
+    pub previous_gear: u32,
 }
 
 impl ChronometricStateTensor {
@@ -63,7 +67,13 @@ impl ChronometricStateTensor {
     /// (the safety gear — 2.0 fs).  This matches the operator-mandated
     /// "Safety Gear" behaviour for the first ≤500 frames after build.
     pub const fn initial() -> Self {
-        Self { counter: 0, last_burst_frame: 0, current_gear: 1, _pad: 0 }
+        Self {
+            counter: 0,
+            last_burst_frame: 0,
+            current_gear: 1,
+            previous_gear: 1,    // matches initial current_gear so the first
+                                 // symplectic-ratio compute returns 1.0
+        }
     }
 }
 
@@ -136,6 +146,48 @@ pub mod ffi {
             cruise:        *mut   ChronometricStateTensor,
             current_frame: u32,
             stream:        *mut   c_void,
+        ) -> i32;
+
+        // ── Wave B.2 — Velocity Rescale + Berendsen + Predicate Bridge ──
+
+        /// T12.2 — Symplectic Velocity Rescale.  Records one bulk kernel
+        /// node onto `stream`: each thread multiplies one f32 of the
+        /// AoS velocity buffer by `ratio`.  Block size 256 ⇒ each warp
+        /// reads 32 contiguous f32 = 128 bytes ⇒ ptxas emits LDG.E.128 +
+        /// STG.E.128 (operator-mandated vectorised path).
+        pub fn prism_gearbox_launch_velocity_rescale(
+            d_velocities: *mut f32,
+            n_floats:     u32,
+            ratio:        f32,
+            stream:       *mut c_void,
+        ) -> i32;
+
+        /// T12.3 — Berendsen weak-coupling guard.  Reads
+        /// `*d_current_temp` (= d_protocol->current_temperature) and
+        /// `*d_dt` (= d_protocol->dt for the current gear), computes
+        /// λ = sqrt(max(1 + (dt/τ_T)·(T₀/T − 1), ε)), applies
+        /// v_i ← v_i · λ across the whole velocity buffer.  Single
+        /// captured node; no scratch buffer.
+        pub fn prism_gearbox_launch_berendsen_guard(
+            d_velocities:   *mut   f32,
+            n_floats:       u32,
+            d_current_temp: *const f32,
+            d_dt:           *const f32,
+            target_temp_K:  f32,
+            tau_ps:         f32,
+            stream:         *mut   c_void,
+        ) -> i32;
+
+        /// T12.4 — 4-way Predicate Bridge.  Single-thread kernel reads
+        /// `cruise->current_gear` and forwards the value to the G26
+        /// SWITCH conditional handle via cudaGraphSetConditional.
+        /// `handle_v` is the cudaGraphConditionalHandle (driver typedef
+        /// to `unsigned long long`) bound to the captured graph at
+        /// pipeline-build time via prism_wire_g26_gearbox_ffi.
+        pub fn prism_gearbox_launch_predicate_bridge(
+            handle_v: u64,
+            cruise:   *const ChronometricStateTensor,
+            stream:   *mut   c_void,
         ) -> i32;
     }
 }

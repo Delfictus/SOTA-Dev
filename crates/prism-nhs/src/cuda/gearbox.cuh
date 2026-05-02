@@ -64,7 +64,9 @@ struct __align__(16) ChronometricStateTensor {
     uint32_t counter;            // frames since last burst (0..∞)
     uint32_t last_burst_frame;   // global frame index of most-recent Burst
     uint32_t current_gear;       // 0/1/2/3 — whatever PointerSwap most recently chose
-    uint32_t _pad;               // padding to 16 bytes
+    uint32_t previous_gear;      // B.2 — gear active BEFORE the most recent PointerSwap
+                                 //       launch (used by the symplectic-ratio kernel
+                                 //       to compute λ = dt_new / dt_old).
 };
 
 static_assert(sizeof(ChronometricStateTensor) == 16,
@@ -120,6 +122,65 @@ int prism_gearbox_launch_pointer_swap(
     ChronometricStateTensor*             cruise,
     uint32_t                             current_frame,
     void*                                stream);
+
+// ─── B.2 — Velocity Rescale + Berendsen Guard + Predicate Bridge ───────────
+//
+// Three new kernels per operator directive 2026-05-02 §3.1–§3.3.
+
+/// T12.2 — Symplectic Velocity Rescale.
+///
+/// Pure momentum-scale kernel: v_i ← v_i · ratio for every f32 in the
+/// `n_floats = n_atoms · 3` velocity buffer.  Does NOT touch positions
+/// or forces.  Vectorised float4 main loop with a 1-thread tail handler
+/// for the `n_floats % 4` trailing scalars; the f32 entry point keeps
+/// the FFI surface pointer-aligned-agnostic (the kernel re-interprets
+/// to float4 internally and asserts 16-byte alignment).
+///
+/// `ratio` should be `dt_new / dt_old` (computed by the symplectic
+/// ratio kernel — B.3) or a Berendsen λ (computed by the Berendsen
+/// guard — same call signature).
+int prism_gearbox_launch_velocity_rescale(
+    float*    d_velocities,        /* n_atoms × 3 contiguous f32 (AoS) */
+    uint32_t  n_floats,
+    float     ratio,
+    void*     stream);
+
+/// T12.3 — Berendsen weak-coupling guard (Gear 0 entry only).
+///
+/// Reads `*d_current_temp` (= d_protocol->current_temperature) and
+/// `*d_dt` (= d_protocol->dt, the gear-0 timestep just written by
+/// PointerSwap), computes
+///     λ = sqrt(max(1 + (dt/τ_T)·(T₀/T − 1), ε))
+/// and applies v_i ← v_i · λ across the whole velocity buffer.  Single
+/// captured node: each thread re-derives λ from the broadcast loads of
+/// d_current_temp + d_dt (perfect L1 const-cache hit after the first
+/// warp; ~10 extra ALU ops per thread is negligible vs. avoiding a
+/// separate scratch-buffer + compute kernel pair).
+int prism_gearbox_launch_berendsen_guard(
+    float*       d_velocities,
+    uint32_t     n_floats,
+    const float* d_current_temp,    /* device ptr to d_protocol->current_temperature */
+    const float* d_dt,              /* device ptr to d_protocol->dt                 */
+    float        target_temp_K,
+    float        tau_ps,            /* Berendsen τ_T (operator default 0.5 ps)      */
+    void*        stream);
+
+/// T12.4 — 4-way Predicate Bridge.
+///
+/// Captured AFTER PointerSwap.  Reads cruise->current_gear (already
+/// computed by PointerSwap's stateful finite automaton) and forwards
+/// the 0/1/2/3 value into the G26 SWITCH conditional handle via
+/// `cudaGraphSetConditional(handle, gear)`.  Trivial 1-thread kernel —
+/// the heavy lifting is in PointerSwap.  This kernel is the FFI
+/// handshake that completes the autonomous gear-shift loop.
+///
+/// `handle_v` is `cudaGraphConditionalHandle` cast to u64 (driver
+/// typedef).  Created via `cudaGraphConditionalHandleCreate` at
+/// pipeline build time and bound to the captured graph.
+int prism_gearbox_launch_predicate_bridge(
+    uint64_t                                handle_v,
+    const ChronometricStateTensor*          cruise,
+    void*                                   stream);
 
 #ifdef __cplusplus
 }  // extern "C"

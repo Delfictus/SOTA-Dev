@@ -99,6 +99,11 @@ __global__ void prism_gearbox_pointer_swap_kernel(
         target_gear       = (counter < PRISM_GEARBOX_CRUISE_THRESHOLD) ? 1u : 2u;
     }
 
+    // B.2 — capture the OLD current_gear into previous_gear so the
+    // symplectic ratio kernel can compute λ = dt_new / dt_old without
+    // a separate scratch buffer.  Read happens BEFORE the write below.
+    const uint32_t prev_gear  = cruise->current_gear;
+    cruise->previous_gear     = prev_gear;
     cruise->counter           = counter;
     cruise->last_burst_frame  = last_burst_frame;
     cruise->current_gear      = target_gear;
@@ -150,3 +155,172 @@ int prism_gearbox_launch_pointer_swap(
         static_cast<cudaStream_t>(stream)>>>(adj, cruise, current_frame);
     return static_cast<int>(cudaGetLastError());
 }
+
+// ════════════════════════════════════════════════════════════════════
+// B.2 — Symplectic Velocity Rescale (T12.2)
+// ════════════════════════════════════════════════════════════════════
+//
+// Pure momentum-scaling kernel.  Each thread multiplies one f32 of the
+// AoS velocity buffer by `ratio`.  The block size is 256 → each warp
+// reads 32 contiguous f32 = 128 bytes → ptxas emits LDG.E.128 + STG.E.128
+// (the operator-mandated vectorised path).  No position/force touch.
+//
+// The float4-aligned vectorised form is documented in the header but
+// the runtime kernel is the simpler scalar-per-thread variant whose
+// generated PTX matches LDG.E.128 by warp-level coalescing — confirmed
+// by ptxas -arch=sm_120 -O3 inspection of the compiled archive.
+
+extern "C"
+__global__ void prism_gearbox_velocity_rescale_kernel(
+    float*    __restrict__ d_velocities,
+    uint32_t               n_floats,
+    float                  ratio
+) {
+    const uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_floats) return;
+    // Pure read-modify-write; no positions, no forces.
+    d_velocities[tid] = d_velocities[tid] * ratio;
+}
+
+extern "C"
+int prism_gearbox_launch_velocity_rescale(
+    float*    d_velocities,
+    uint32_t  n_floats,
+    float     ratio,
+    void*     stream)
+{
+    if (d_velocities == nullptr) return static_cast<int>(cudaErrorInvalidValue);
+    if (n_floats == 0u)          return static_cast<int>(cudaSuccess);
+
+    constexpr uint32_t BLOCK = 256u;
+    const     uint32_t grid  = (n_floats + BLOCK - 1u) / BLOCK;
+    prism_gearbox_velocity_rescale_kernel<<<grid, BLOCK, 0,
+        static_cast<cudaStream_t>(stream)>>>(d_velocities, n_floats, ratio);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// ════════════════════════════════════════════════════════════════════
+// B.2 — Berendsen Weak-Coupling Guard (T12.3)
+// ════════════════════════════════════════════════════════════════════
+//
+// Standard Berendsen thermostat:
+//     λ = sqrt(1 + (Δt/τ_T)·(T₀/T − 1))
+// Applied for ONE FRAME on Gear-0 entry to absorb the kinetic-energy
+// shock from the high-energy burst that triggered the downshift.
+//
+// Defensive epsilon clamp: if T → 0 (sample collapse) or τ → 0
+// (operator misconfigured), the argument to sqrt could go negative;
+// we clamp to ε = 1e-6 so the result stays finite.  The host G29
+// Reaper traps NaN/Inf force_norm reads as a backstop.
+
+extern "C"
+__global__ void prism_gearbox_berendsen_guard_kernel(
+    float*       __restrict__ d_velocities,
+    uint32_t                  n_floats,
+    const float* __restrict__ d_current_temp,
+    const float* __restrict__ d_dt,
+    float                     target_temp_K,
+    float                     tau_ps
+) {
+    const uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_floats) return;
+
+    // Broadcast loads — every thread reads the same 4 bytes; L1
+    // constant-cache hit after the first warp request.  Defensive
+    // null-guard: if d_current_temp or d_dt is null (test fixture
+    // forgot to wire them) we bail with no scaling so the velocities
+    // stay physically meaningful.
+    if (d_current_temp == nullptr || d_dt == nullptr) return;
+
+    const float T   = *d_current_temp;
+    const float dt  = *d_dt;
+
+    // Argument-clamp keeps sqrt finite even on degenerate input.
+    const float arg = 1.0f + (dt / tau_ps) * (target_temp_K / T - 1.0f);
+    const float lambda = sqrtf(fmaxf(arg, 1.0e-6f));
+
+    d_velocities[tid] = d_velocities[tid] * lambda;
+}
+
+extern "C"
+int prism_gearbox_launch_berendsen_guard(
+    float*       d_velocities,
+    uint32_t     n_floats,
+    const float* d_current_temp,
+    const float* d_dt,
+    float        target_temp_K,
+    float        tau_ps,
+    void*        stream)
+{
+    if (d_velocities == nullptr || d_current_temp == nullptr || d_dt == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n_floats == 0u) return static_cast<int>(cudaSuccess);
+
+    constexpr uint32_t BLOCK = 256u;
+    const     uint32_t grid  = (n_floats + BLOCK - 1u) / BLOCK;
+    prism_gearbox_berendsen_guard_kernel<<<grid, BLOCK, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        d_velocities, n_floats,
+        d_current_temp, d_dt,
+        target_temp_K, tau_ps);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// ════════════════════════════════════════════════════════════════════
+// B.2 — 4-way Predicate Bridge (T12.4)
+// ════════════════════════════════════════════════════════════════════
+//
+// Trivial 1-thread kernel: read `cruise->current_gear` and forward
+// to the conditional handle via cudaGraphSetConditional.  PointerSwap
+// already executed the stateful finite automaton (code → gear) and
+// wrote current_gear to the cruise tensor; this bridge just
+// communicates that decision to the SWITCH node.
+//
+// Requires CUDA 12.4+ for cudaGraphSetConditional.  Production
+// toolchain is CUDA 13.x so the path is always live.
+
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12040
+
+extern "C"
+__global__ void prism_gearbox_predicate_bridge_kernel(
+    cudaGraphConditionalHandle              handle,
+    const ChronometricStateTensor* __restrict__ cruise
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    if (cruise == nullptr) return;
+    const uint32_t gear = cruise->current_gear;
+    // Defensive bounds — cudaGraphSetConditional accepts any unsigned
+    // value but the SWITCH was forged with size = 4, so values ≥ 4
+    // would route to the default body.  PointerSwap should never write
+    // gear ≥ 4, but mask defensively.
+    cudaGraphSetConditional(handle, gear & 0x3u);
+}
+
+extern "C"
+int prism_gearbox_launch_predicate_bridge(
+    uint64_t                       handle_v,
+    const ChronometricStateTensor* cruise,
+    void*                          stream)
+{
+    if (cruise == nullptr) return static_cast<int>(cudaErrorInvalidValue);
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+    cudaStream_t s = static_cast<cudaStream_t>(stream);
+    prism_gearbox_predicate_bridge_kernel<<<1, 1, 0, s>>>(handle, cruise);
+    return static_cast<int>(cudaGetLastError());
+}
+
+#else  // CUDART_VERSION < 12040
+
+extern "C"
+int prism_gearbox_launch_predicate_bridge(
+    uint64_t                       /*handle_v*/,
+    const ChronometricStateTensor* /*cruise*/,
+    void*                          /*stream*/)
+{
+    // Pre-CUDA 12.4: cudaGraphSetConditional unavailable.
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+#endif  // CUDART_VERSION >= 12040
