@@ -4578,9 +4578,16 @@ fn run_multi_stream_pipeline(
                         // pipeline and are freed explicitly after the chunk loop.
                         // G23: 5-slot ZSTR ring — declared BEFORE v2_pipeline so Rust
                         // drops it AFTER the pipeline (pipeline holds raw pointers into
-                        // the ring's pinned allocation).
+                        // the ring's pinned allocation).  Arc so the consumer thread and
+                        // the launch_with_zstr_slot call both borrow the same allocation.
                         #[cfg(feature = "v2_ignition")]
-                        let mut v2_zstr_ring: Option<prism_nhs::zstr::ZstrRing> = None;
+                        let mut v2_zstr_ring: Option<std::sync::Arc<prism_nhs::zstr::ZstrRing>> = None;
+                        // G24 consumer — stop signal + join handle for O_DIRECT Reaper thread.
+                        #[cfg(feature = "v2_ignition")]
+                        let v2_zstr_stop: std::sync::Arc<std::sync::atomic::AtomicBool> =
+                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_zstr_consumer: Option<std::thread::JoinHandle<prism_nhs::zstr::ZstrStats>> = None;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
                         #[cfg(feature = "v2_ignition")]
@@ -4887,7 +4894,20 @@ fn run_multi_stream_pipeline(
                                                         // Store ring: must outlive pipeline
                                                         // (pipeline holds raw ptrs into ring).
                                                         if let Ok(ring) = zstr_ring_new {
-                                                            v2_zstr_ring = Some(ring);
+                                                            let ring_arc = std::sync::Arc::new(ring);
+                                                            // G24 Reaper: spawn O_DIRECT consumer thread.
+                                                            let zstr_out = std::path::PathBuf::from(
+                                                                format!("/tmp/prism_zstr_{}_{}.bin",
+                                                                        std::process::id(), i)
+                                                            );
+                                                            let stop_clone = v2_zstr_stop.clone();
+                                                            let ring_clone = ring_arc.clone();
+                                                            v2_zstr_consumer = Some(
+                                                                prism_nhs::zstr::spawn_zstr_consumer(
+                                                                    ring_clone, zstr_out, stop_clone,
+                                                                )
+                                                            );
+                                                            v2_zstr_ring = Some(ring_arc);
                                                         }
                                                         v2_pipeline    = Some(pipeline);
                                                         // Signal outer scope: V2 is live on
@@ -4975,8 +4995,16 @@ fn run_multi_stream_pipeline(
                                 // per operator directive. CPU role: increment chunk counter only.
                                 #[cfg(feature = "v2_ignition")]
                                 if let Some(ref pipeline) = v2_pipeline {
-                                    pipeline.launch().map_err(|e|
-                                        anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                    // G24 slot-roller: patch ZSTR node params per launch,
+                                    // then fire the captured graph. Falls back to plain
+                                    // pipeline.launch() when ZSTR ring is not live.
+                                    if let Some(ref ring) = v2_zstr_ring {
+                                        pipeline.launch_with_zstr_slot(chunk_idx as u64, ring)
+                                            .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                    } else {
+                                        pipeline.launch()
+                                            .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                    }
 
                                     // CSR-N: non-blocking ring readback (previous frame DMA
                                     // guaranteed committed before this launch executes).
@@ -6348,6 +6376,21 @@ fn run_multi_stream_pipeline(
                         // `drop` here is a belt-and-suspenders signal of intent.
                         #[cfg(feature = "v2_ignition")]
                         {
+                            // G24 Reaper: signal stop and join before dropping pipeline/ring.
+                            v2_zstr_stop.store(true, std::sync::atomic::Ordering::Release);
+                            if let Some(handle) = v2_zstr_consumer.take() {
+                                match handle.join() {
+                                    Ok(stats) => log::info!(
+                                        "[ZSTR G24 stream {}] Reaper joined: \
+                                         frames_written={} dropped={} bytes={}",
+                                        i, stats.frames_written,
+                                        stats.frames_dropped, stats.bytes_written
+                                    ),
+                                    Err(_) => log::warn!(
+                                        "[ZSTR G24 stream {}] Reaper thread panicked", i
+                                    ),
+                                }
+                            }
                             drop(v2_pipeline);
                             if v2_spikes_raw != 0 {
                                 unsafe {

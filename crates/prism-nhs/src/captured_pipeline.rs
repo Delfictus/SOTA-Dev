@@ -230,6 +230,16 @@ pub struct CapturedAdjudicationPipeline {
     cond_handle: u64,         // CUgraphConditionalHandle
     body_subgraph: CUgraph,
 
+    // G24 ZSTR slot-roller — node handles from the captured graph and the
+    // fixed kernel params read back via cuGraphKernelNodeGetParams.
+    // All null/zero when PipelineConfig::zstr was None at build time.
+    zstr_pos_stage_node: CUgraphNode,
+    zstr_fence_node:     CUgraphNode,
+    zstr_pos_stage_func: CUfunction,  // stable across all launches
+    zstr_fence_func:     CUfunction,
+    zstr_src_vram:       u64,  // d_positions CUdeviceptr — fixed for run lifetime
+    zstr_n_atoms:        u32,
+
     // Audit metadata (Claude-3 G18/G19/G20 attestation).
     n_clusters: u32,
     n_kernel_nodes_captured: u32,
@@ -668,7 +678,20 @@ impl CapturedAdjudicationPipeline {
         // visible to the host ZSTR consumer before it reads them.
         // Phase 3: dst_pinned/slot_fence baked at capture time (slot 0).
         // Phase 4: cuGraphKernelNodeSetParams updates slot per launch.
+        // G23/G24: ZSTR pos_stage + fence_signal on telemetry_stream.
+        // After each launcher we snapshot the telemetry_stream's dependency
+        // frontier — under MODE_GLOBAL the frontier is exactly the node just
+        // recorded — to obtain the graph node handles needed by G24's
+        // cuGraphExecKernelNodeSetParams slot-roller.
+        let mut zstr_pos_stage_node: CUgraphNode = ptr::null_mut();
+        let mut zstr_fence_node:     CUgraphNode = ptr::null_mut();
+        let mut zstr_src_vram:       u64         = 0;
+        let mut zstr_n_atoms:        u32         = 0;
+
         if let Some(ref zstr) = cfg.zstr {
+            zstr_src_vram = zstr.d_positions as u64;
+            zstr_n_atoms  = zstr.n_atoms;
+
             let rc = unsafe {
                 zstr_launch_pos_stage(
                     zstr.dst_pinned as *mut c_void,
@@ -683,6 +706,22 @@ impl CapturedAdjudicationPipeline {
                     rc,
                 });
             }
+            // Snapshot pos_stage node: frontier on telemetry_stream is now
+            // [pos_stage_node] immediately after the <<<>>> launch.
+            unsafe {
+                let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+                let mut id: cuuint64_t = 0;
+                let mut g: CUgraph = ptr::null_mut();
+                let mut dp: *const CUgraphNode = ptr::null();
+                let mut nd: usize = 0;
+                let rc = cuStreamGetCaptureInfo_v2(
+                    telemetry_stream, &mut s, &mut id, &mut g, &mut dp, &mut nd,
+                );
+                if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
+                    zstr_pos_stage_node = *dp;
+                }
+            }
+
             let rc = unsafe {
                 zstr_launch_fence_signal(
                     zstr.slot_fence as *mut c_void,
@@ -695,10 +734,26 @@ impl CapturedAdjudicationPipeline {
                     rc,
                 });
             }
+            // Snapshot fence node.
+            unsafe {
+                let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+                let mut id: cuuint64_t = 0;
+                let mut g: CUgraph = ptr::null_mut();
+                let mut dp: *const CUgraphNode = ptr::null();
+                let mut nd: usize = 0;
+                let rc = cuStreamGetCaptureInfo_v2(
+                    telemetry_stream, &mut s, &mut id, &mut g, &mut dp, &mut nd,
+                );
+                if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
+                    zstr_fence_node = *dp;
+                }
+            }
+
             log::debug!(
-                "[G23] ZSTR nodes captured: pos_stage(n_atoms={}, dst={:p}) \
-                 fence({:p}) on telemetry_stream",
-                zstr.n_atoms, zstr.dst_pinned, zstr.slot_fence,
+                "[G23] ZSTR nodes captured: pos_stage={:p} fence={:p} \
+                 n_atoms={} src_vram={:#x}",
+                zstr_pos_stage_node, zstr_fence_node,
+                zstr.n_atoms, zstr.d_positions as u64,
             );
         }
 
@@ -836,6 +891,41 @@ impl CapturedAdjudicationPipeline {
             }
         };
 
+        // ── 9.5 G24 slot-roller: read ZSTR CUfunction handles ──────────
+        // `cuGraphKernelNodeGetParams` reads from the GRAPH (not exec),
+        // so it must be called AFTER end_capture and BEFORE or AFTER
+        // instantiate (graph topology is frozen after end_capture).
+        // We call it here (post-instantiate) to avoid extra ordering
+        // constraints.  On failure (ZSTR disabled or node null) the
+        // func fields stay null — `launch_with_zstr_slot` no-ops.
+        let zstr_pos_stage_func: CUfunction = if !zstr_pos_stage_node.is_null() {
+            let mut p: CUDA_KERNEL_NODE_PARAMS = unsafe { std::mem::zeroed() };
+            let rc = unsafe { cuGraphKernelNodeGetParams_v2(zstr_pos_stage_node, &mut p) };
+            if matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::debug!("[G24] zstr_pos_stage func={:p}", p.func);
+                p.func
+            } else {
+                log::warn!("[G24] cuGraphKernelNodeGetParams(pos_stage) rc={:?}", rc);
+                ptr::null_mut()
+            }
+        } else {
+            ptr::null_mut()
+        };
+
+        let zstr_fence_func: CUfunction = if !zstr_fence_node.is_null() {
+            let mut p: CUDA_KERNEL_NODE_PARAMS = unsafe { std::mem::zeroed() };
+            let rc = unsafe { cuGraphKernelNodeGetParams_v2(zstr_fence_node, &mut p) };
+            if matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::debug!("[G24] zstr_fence func={:p}", p.func);
+                p.func
+            } else {
+                log::warn!("[G24] cuGraphKernelNodeGetParams(fence) rc={:?}", rc);
+                ptr::null_mut()
+            }
+        } else {
+            ptr::null_mut()
+        };
+
         Ok(Self {
             pool,
             md_stream: md_stream.clone(),
@@ -850,6 +940,12 @@ impl CapturedAdjudicationPipeline {
             cu_graph_exec,
             cond_handle,
             body_subgraph,
+            zstr_pos_stage_node,
+            zstr_fence_node,
+            zstr_pos_stage_func,
+            zstr_fence_func,
+            zstr_src_vram,
+            zstr_n_atoms,
             n_clusters: cfg.n_clusters,
             // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + fence]
             n_kernel_nodes_captured: 2
@@ -869,6 +965,110 @@ impl CapturedAdjudicationPipeline {
     /// the host-visible burst_marker / ring slot.
     pub fn launch(&self) -> Result<(), DriverError> {
         unsafe { result::graph::launch(self.cu_graph_exec, self.md_stream.cu_stream()) }
+    }
+
+    /// G24 ZSTR Slot-Roller: patch the ZSTR kernel node params for ring slot
+    /// `frame_idx % N_SLOTS` via `cuGraphExecKernelNodeSetParams`, then launch.
+    ///
+    /// Per-slot pointers patched:
+    /// - `zstr_pos_stage` node: `dst_pinned` → `ring.positions_host_ptr(slot)`
+    /// - `zstr_fence`     node: `slot_fence` → `ring.fence_cu_ptr(slot)`
+    ///
+    /// Zero heap allocation. The `CUfunction` handles and grid/block dims
+    /// were captured at build time; only the pointer arguments change per slot.
+    ///
+    /// Falls back to `self.launch()` transparently when ZSTR nodes are null
+    /// (ZSTR was disabled at build time — test / legacy path).
+    pub fn launch_with_zstr_slot(
+        &self,
+        frame_idx: u64,
+        ring: &crate::zstr::ZstrRing,
+    ) -> Result<(), DriverError> {
+        if !self.zstr_pos_stage_node.is_null()
+            && !self.zstr_pos_stage_func.is_null()
+            && !self.zstr_fence_node.is_null()
+            && !self.zstr_fence_func.is_null()
+        {
+            let slot = (frame_idx as usize) % crate::zstr::ZstrRing::N_SLOTS;
+
+            // ── Patch pos_stage node ─────────────────────────────────────
+            // zstr_pos_stage_f4_kernel(float4* dst_pinned,
+            //                          const float4* src_vram,
+            //                          uint32_t n_floats)
+            // Grid dims identical to capture time (same n_atoms, same formula).
+            let n_floats: u32 = self.zstr_n_atoms * 3;
+            let n_f4: u32     = (n_floats + 3) >> 2;
+            let block: u32    = 256;
+            let grid: u32     = (n_f4 + block - 1) / block;
+
+            // kernelParams[i] is a void* that POINTS TO the argument value.
+            let mut arg0_dst: u64 = ring.positions_host_ptr(slot) as u64;
+            let mut arg1_src: u64 = self.zstr_src_vram;
+            let mut arg2_nfl: u32 = n_floats;
+            let mut pos_kp: [*mut c_void; 3] = [
+                &mut arg0_dst as *mut u64 as *mut c_void,
+                &mut arg1_src as *mut u64 as *mut c_void,
+                &mut arg2_nfl as *mut u32 as *mut c_void,
+            ];
+            // CUDA_KERNEL_NODE_PARAMS is CUDA_KERNEL_NODE_PARAMS_v2_st for
+            // cuda-12050; it has kern + ctx fields that must be null for
+            // the standard kernelParams path (unused by our launchers).
+            let pos_node_params = CUDA_KERNEL_NODE_PARAMS {
+                func:          self.zstr_pos_stage_func,
+                gridDimX:  grid,  gridDimY: 1, gridDimZ: 1,
+                blockDimX: block, blockDimY: 1, blockDimZ: 1,
+                sharedMemBytes: 0,
+                kernelParams: pos_kp.as_mut_ptr(),
+                extra: ptr::null_mut(),
+                kern: ptr::null_mut(),
+                ctx:  ptr::null_mut(),
+            };
+            let rc = unsafe {
+                cuGraphExecKernelNodeSetParams_v2(
+                    self.cu_graph_exec,
+                    self.zstr_pos_stage_node,
+                    &pos_node_params as *const _,
+                )
+            };
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::warn!("[G24] cuGraphExecKernelNodeSetParams_v2(pos_stage) slot={} rc={:?}",
+                           slot, rc);
+                return Err(DriverError(rc));
+            }
+
+            // ── Patch fence node ─────────────────────────────────────────
+            // zstr_signal_completion_kernel(uint32_t* slot_fence)
+            let mut arg0_fence: u64 = ring.fence_cu_ptr(slot);
+            let mut fence_kp: [*mut c_void; 1] = [
+                &mut arg0_fence as *mut u64 as *mut c_void,
+            ];
+            let fence_node_params = CUDA_KERNEL_NODE_PARAMS {
+                func:          self.zstr_fence_func,
+                gridDimX:  1, gridDimY: 1, gridDimZ: 1,
+                blockDimX: 1, blockDimY: 1, blockDimZ: 1,
+                sharedMemBytes: 0,
+                kernelParams: fence_kp.as_mut_ptr(),
+                extra: ptr::null_mut(),
+                kern: ptr::null_mut(),
+                ctx:  ptr::null_mut(),
+            };
+            let rc = unsafe {
+                cuGraphExecKernelNodeSetParams_v2(
+                    self.cu_graph_exec,
+                    self.zstr_fence_node,
+                    &fence_node_params as *const _,
+                )
+            };
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::warn!("[G24] cuGraphExecKernelNodeSetParams(fence) slot={} rc={:?}",
+                           slot, rc);
+                return Err(DriverError(rc));
+            }
+
+            log::trace!("[G24] slot={} dst={:#x} fence={:#x}", slot, arg0_dst, arg0_fence);
+        }
+
+        self.launch()
     }
 
     /// Read the burst-marker u32 back to the host (synchronous; for

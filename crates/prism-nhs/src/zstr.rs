@@ -290,7 +290,7 @@ pub fn spawn_zstr_consumer(
             loop {
                 if stop.load(Ordering::Relaxed) { break; }
 
-                let slot = (frame_idx % 3) as usize;
+                let slot = (frame_idx as usize) % ZstrRing::N_SLOTS;
                 let hdr  = unsafe { &*ring.header_ptr(slot) };
 
                 // Non-blocking spin on completion_fence.
