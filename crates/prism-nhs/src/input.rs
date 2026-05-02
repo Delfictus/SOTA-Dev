@@ -203,6 +203,28 @@ pub struct PrismPrepTopology {
     /// List of residue metadata (mapping indices to PDB IDs)
     #[serde(default)]
     pub residues: Vec<ResidueMetadata>,
+    /// G28 SISR dimer-dyad metadata (Amendment 3.4 substrate-aware path).
+    /// Present iff the substrate is a homodimer with a known C2 axis;
+    /// when set, the V2 pipeline auto-enables the SISR symmetry-consensus
+    /// kernel using the supplied axis + center + tolerance.  Optional —
+    /// monomer topologies omit this block entirely.
+    #[serde(default)]
+    pub dimer_dyad: Option<DimerDyad>,
+}
+
+/// G28 SISR dyad parameters embedded in topology JSON.
+/// `axis` is the rotation axis (unit vector); `center` is the rotation
+/// center (Å); `epsilon` is the partner-search tolerance (Å, typically 1.5).
+/// The C2 reflection sends `c → 2·center + R(axis,π)·(c − center)`. For the
+/// canonical Z-axis dyad at the origin this simplifies to (x,y,z) → (-x,-y,z).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimerDyad {
+    /// Rotation axis (unit 3-vector).
+    pub axis: [f32; 3],
+    /// Rotation center in Å.
+    pub center: [f32; 3],
+    /// Partner-search tolerance in Å.
+    pub epsilon: f32,
 }
 
 impl PrismPrepTopology {

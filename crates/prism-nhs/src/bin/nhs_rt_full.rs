@@ -3801,6 +3801,11 @@ fn run_multi_stream_pipeline(
     let mut topology = PrismPrepTopology::load(topology_path)
         .with_context(|| format!("Failed to load: {}", topology_path.display()))?;
 
+    // Snapshot the optional G28 dimer_dyad metadata so the per-stream
+    // closures (which only borrow `topology` immutably) can read it
+    // without contending on the FnMut borrow.
+    let topo_dyad: Option<prism_nhs::input::DimerDyad> = topology.dimer_dyad.clone();
+
     let structure_name = topology_path.file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "structure".to_string());
@@ -4211,6 +4216,10 @@ fn run_multi_stream_pipeline(
                 let stream_i = streams[i].clone();
                 let stream_rb = streams[i].clone(); // second handle for ring buffer ops
                 let topo_ref = &topology;
+                // Per-stream clone of optional dimer_dyad — read-only, but
+                // cloned out of the FnMut closure capture so the V2 setup can
+                // call `.as_ref()` safely each chunk.
+                let topo_dyad = topo_dyad.clone();
                 let config_ref = &config;
                 // Per-stream clone of the Arc<RescueTargets>. Captured by
                 // the thread worker; cheap (Arc clone is a refcount bump).
@@ -4876,12 +4885,41 @@ fn run_multi_stream_pipeline(
                                                     }
                                                 };
 
-                                                // G28 SISR: None by default — enabling on a
-                                                // monomer prunes every cluster (no symmetric
-                                                // partner exists ⇒ ALL bits set in mask). For
-                                                // dimer targets like 7C8R the operator opts in
-                                                // via --sisr-enable / topology metadata in a
-                                                // follow-up wiring pass.
+                                                // G28 SISR (Amendment 3.4 substrate-aware): derive
+                                                // the C2-rotation matrix R + translation t from the
+                                                // topology's dimer_dyad metadata, when present. For
+                                                // C2 rotation about unit axis n by π:
+                                                //   R[i][j] = 2 n[i] n[j] - δ_ij
+                                                //   t = c - R c  (offset-rotation about center)
+                                                // Monomer topologies omit the dimer_dyad block ⇒
+                                                // sisr stays None and the symmetry gate is bypassed.
+                                                let sisr_cfg = topo_dyad.as_ref().map(|d| {
+                                                    let nx = d.axis[0]; let ny = d.axis[1]; let nz = d.axis[2];
+                                                    let len = (nx*nx + ny*ny + nz*nz).sqrt().max(1e-6);
+                                                    let n = [nx/len, ny/len, nz/len];
+                                                    let mut r = [0.0f32; 9];
+                                                    for ii in 0..3 {
+                                                        for jj in 0..3 {
+                                                            r[ii*3 + jj] = 2.0 * n[ii] * n[jj]
+                                                                - if ii == jj { 1.0 } else { 0.0 };
+                                                        }
+                                                    }
+                                                    let c = d.center;
+                                                    let rcx = r[0]*c[0] + r[1]*c[1] + r[2]*c[2];
+                                                    let rcy = r[3]*c[0] + r[4]*c[1] + r[5]*c[2];
+                                                    let rcz = r[6]*c[0] + r[7]*c[1] + r[8]*c[2];
+                                                    log::info!(
+                                                        "    [G28 SISR stream {}] dimer_dyad active: \
+                                                         axis=[{:.3},{:.3},{:.3}] center=[{:.3},{:.3},{:.3}] \
+                                                         ε={:.2}Å",
+                                                        i, n[0], n[1], n[2], c[0], c[1], c[2], d.epsilon
+                                                    );
+                                                    prism_nhs::captured_pipeline::SisrConfig {
+                                                        dyad_R_row_major: r,
+                                                        dyad_t: [c[0] - rcx, c[1] - rcy, c[2] - rcz],
+                                                        epsilon_sym_angstrom: d.epsilon,
+                                                    }
+                                                });
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -4890,7 +4928,7 @@ fn run_multi_stream_pipeline(
                                                     initial_frame_id:  steps_run as u32,
                                                     asc:               asc_cfg,
                                                     zstr:              zstr_cfg,
-                                                    sisr:              None,
+                                                    sisr:              sisr_cfg,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
