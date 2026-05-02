@@ -289,7 +289,12 @@ pub struct CapturedAdjudicationPipeline {
     telemetry_to_md_event: CUevent,
 
     // F2-pool allocations — pre-capture, virtual-pointer-stable.
-    tiles_dev: usize,         // *mut ContactShellTile
+    tiles_dev: usize,         // *mut ContactShellTile (current/perturbed)
+    /// Path Z.2 dual-manifold baseline buffer. Holds previous frame's SO(3)
+    /// projection. Adjudicator's relaxed_manifold_ptr targets this; an
+    /// in-graph cuMemcpyDtoDAsync node refreshes it from `tiles_dev` after
+    /// each Adjudicator+ASC retirement.
+    tiles_baseline_dev: usize, // *mut ContactShellTile (relaxed/lagged)
     adj_dev: usize,           // *mut InterferometricAdjudicatorFfi
     burst_marker_dev: usize,  // *mut u32 (4 B)
     /// G28 SISR per-cluster prune-bit u64. Zero when SISR disabled.
@@ -503,6 +508,25 @@ impl CapturedAdjudicationPipeline {
             pool.alloc_async(4, md_raw)
                 .map_err(|s| BuildError::PoolAlloc { what: "sisr_count", reason: s })?
         } else { 0 };
+        // Path Z.2 — Dual-Manifold Temporal Buffer (Amendment 3.4.5):
+        // SECOND ContactShellTile array, same bytes as `tiles_dev`. Holds the
+        // PREVIOUS frame's SO(3) projection — serves as the "relaxed" baseline
+        // the Adjudicator reads vs the current frame's "perturbed" output.
+        // After Adjudicator + ASC retire on each launch, an in-graph
+        // cuMemcpyDtoDAsync node copies tiles_dev → tiles_baseline_dev so the
+        // next frame's relaxed-vs-perturbed comparison has a real temporal
+        // delta. Zero-CPU: the memcpy node lives inside the captured graph.
+        let tiles_baseline_dev = pool.alloc_async(tiles_bytes, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "tiles_baseline", reason: s })?;
+        // Zero-init the baseline so the FIRST adjudication has well-defined
+        // relaxed = 0, perturbed = SO(3)(frame 0). First-frame Δ_AB will be
+        // large; subsequent frames compute true temporal differential.
+        unsafe {
+            let rc = cuMemsetD8_v2(tiles_baseline_dev as CUdeviceptr, 0, tiles_bytes as usize);
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda { stage: "memset tiles_baseline", rc: rc as i32 });
+            }
+        }
         md_stream.synchronize().map_err(BuildError::Driver)?;
 
         // CSR §M alignment guard (Anti-Greenfield Audit Gate G19):
@@ -552,25 +576,30 @@ impl CapturedAdjudicationPipeline {
         debug_assert!(manifest.tile_alignment_ok(),
             "F2 pool returned non-128-aligned tiles_dev_ptr");
 
-        // Pre-populate adj->relaxed_manifold_ptr and ->perturbed (offsets 56,
-        // 64) to point at the same tile so the first launch has well-
-        // defined inputs. The Adjudicator owner overwrites them on each
-        // frame's update.
+        // Path Z.2 — Dual-Manifold pointer wiring (Amendment 3.4.5):
+        //   adj->relaxed_manifold_ptr   → tiles_baseline_dev  (frame N-1)
+        //   adj->perturbed_manifold_ptr → tiles_dev           (frame N)
+        // SO(3) writes new state into tiles_dev each frame; Adjudicator
+        // computes Δ_AB(baseline, current); after Adjudicator retires, an
+        // in-graph DtoDAsync memcpy node copies tiles_dev → tiles_baseline_dev
+        // making the current frame's output the next frame's baseline.
         unsafe {
-            let relaxed_ptr_field = (adj_dev + 56) as CUdeviceptr;
+            let relaxed_ptr_field   = (adj_dev + 56) as CUdeviceptr;
             let perturbed_ptr_field = (adj_dev + 64) as CUdeviceptr;
-            let tile_ptr_value: u64 = manifest.tiles_dev_ptr as u64;
+            let baseline_value: u64 = tiles_baseline_dev as u64;
+            let current_value:  u64 = manifest.tiles_dev_ptr as u64;
             let rc1 = cuMemcpyHtoD_v2(
                 relaxed_ptr_field,
-                &tile_ptr_value as *const _ as *const c_void,
+                &baseline_value as *const _ as *const c_void,
                 8,
             );
             let rc2 = cuMemcpyHtoD_v2(
                 perturbed_ptr_field,
-                &tile_ptr_value as *const _ as *const c_void,
+                &current_value as *const _ as *const c_void,
                 8,
             );
-            for (rc, stage) in [(rc1, "seed relaxed_ptr"), (rc2, "seed perturbed_ptr")] {
+            for (rc, stage) in [(rc1, "seed relaxed_ptr=baseline"),
+                                (rc2, "seed perturbed_ptr=current")] {
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
                     return Err(BuildError::Cuda { stage, rc: rc as i32 });
                 }
@@ -659,6 +688,7 @@ impl CapturedAdjudicationPipeline {
             );
             if let Err(e) = rc {
                 let _ = pool.free_async(tiles_dev, md_raw);
+                let _ = pool.free_async(tiles_baseline_dev, md_raw);
                 let _ = pool.free_async(adj_dev, md_raw);
                 let _ = pool.free_async(burst_marker_dev, md_raw);
                 if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
@@ -813,6 +843,28 @@ impl CapturedAdjudicationPipeline {
             };
             if rc != 0 {
                 return Err(BuildError::Cuda { stage: "Node D (ASC force inject)", rc });
+            }
+        }
+
+        // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll (in-graph memcpy) ──
+        // After Adjudicator (Node C) + ASC (Node D) retire, copy the freshly-
+        // produced "perturbed" tiles into the "relaxed" baseline buffer so the
+        // NEXT frame's adjudication has a real temporal delta. The cuMemcpyDtoD
+        // is captured under MODE_GLOBAL on md_stream — entirely device-side,
+        // no host involvement per launch. This is the "Adjudicator owner"
+        // mechanism the original code TODO promised but never implemented.
+        unsafe {
+            let rc = cuMemcpyDtoDAsync_v2(
+                tiles_baseline_dev as CUdeviceptr,
+                manifest.tiles_dev_ptr as CUdeviceptr,
+                tiles_bytes as usize,
+                md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path Z.2 manifold-roll DtoD memcpy",
+                    rc: rc as i32,
+                });
             }
         }
 
@@ -1123,6 +1175,7 @@ impl CapturedAdjudicationPipeline {
             md_to_telemetry_event,
             telemetry_to_md_event,
             tiles_dev,
+            tiles_baseline_dev,
             adj_dev,
             burst_marker_dev,
             sisr_mask_dev,
@@ -1311,6 +1364,7 @@ impl Drop for CapturedAdjudicationPipeline {
         }
         // Stream-ordered free of pool allocations.
         let _ = self.pool.free_async(self.tiles_dev, md_raw);
+        let _ = self.pool.free_async(self.tiles_baseline_dev, md_raw);
         let _ = self.pool.free_async(self.adj_dev, md_raw);
         let _ = self.pool.free_async(self.burst_marker_dev, md_raw);
         if self.sisr_mask_dev != 0 {
