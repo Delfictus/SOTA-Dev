@@ -271,6 +271,13 @@ pub struct PipelineConfig {
     /// the u64 prune-mask buffer into the F2 pool.  The Adjudicator FFI's
     /// `force_prune_mask` is wired to that buffer pre-capture.
     pub sisr: Option<SisrConfig>,
+    /// Substrate-aware noise-floor override (Amendment 3.4.6).  When set,
+    /// applied AFTER `apply_t7_calibration` overwrites the 4LPK-derived
+    /// μ/σ constants with substrate-specific values.  Pair = (μ, σ),
+    /// applied uniformly across all 6 SH bands.  Adjudicator threshold
+    /// becomes μ + 3σ.  Operator-recommended for 7C8R: (0.01, 0.005)
+    /// → threshold 0.025 (vs 4LPK threshold 1.249).
+    pub noise_floor_override: Option<(f32, f32)>,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -676,6 +683,33 @@ impl CapturedAdjudicationPipeline {
             if rc != 0 {
                 return Err(BuildError::Cuda { stage: "apply_t7_calibration", rc });
             }
+        }
+        // Amendment 3.4.6 — Substrate-Aware Noise-Floor Override.
+        // After the locked 4LPK T7 priors are burned in, conditionally
+        // overwrite with operator-supplied (μ, σ) pair (uniform across
+        // all 6 SH bands).  Skipping this leaves the 4LPK threshold
+        // (μ+3σ ≈ 1.249) which is calibrated to KRAS, not 7C8R.
+        if let Some((mu, sigma)) = cfg.noise_floor_override {
+            let mu_arr    = [mu; 6];
+            let sigma_arr = [sigma; 6];
+            let rc = unsafe {
+                crate::interferometric_adjudicator::set_noise_floor_constants(
+                    adj_dev as *mut InterferometricAdjudicatorFfi,
+                    &mu_arr,
+                    &sigma_arr,
+                    md_raw as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "noise_floor_override",
+                    rc,
+                });
+            }
+            log::info!(
+                "[T7-OVERRIDE] noise_floor_mu={} noise_floor_sigma={} → threshold={}",
+                mu, sigma, mu + 3.0 * sigma
+            );
         }
         md_stream.synchronize().map_err(BuildError::Driver)?;
 
@@ -1605,6 +1639,7 @@ mod tests {
             asc:  None,
             zstr: None,
             sisr: None,
+            noise_floor_override: None,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -1725,6 +1760,7 @@ mod tests {
             asc:  None,
             zstr: None,
             sisr: None,
+            noise_floor_override: None,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -1803,6 +1839,7 @@ mod tests {
             asc:  None,
             zstr: None,
             sisr: None,
+            noise_floor_override: None,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -1889,6 +1926,7 @@ mod tests {
             asc:  None,
             zstr: None,
             sisr: None,
+            noise_floor_override: None,
         };
 
         // Closure that captures the conditional-node handle written

@@ -253,6 +253,20 @@ struct Args {
     #[arg(long, default_value = "false")]
     m1_monolithic_discovery: bool,
 
+    /// Amendment 3.4.6 — Substrate-aware noise-floor μ override applied AFTER
+    /// the locked 4LPK T7 priors are burned in.  Single value, broadcast
+    /// across all 6 SH bands.  Adjudicator threshold becomes μ + 3σ.
+    /// Operator-recommended for 7C8R: 0.01 (paired with --noise-floor-sigma 0.005,
+    /// threshold 0.025 — vs the 4LPK threshold 1.249 calibrated to KRAS).
+    /// Both flags must be set together; otherwise no override is applied.
+    #[arg(long)]
+    noise_floor_mu: Option<f32>,
+
+    /// Amendment 3.4.6 — Substrate-aware noise-floor σ override paired with
+    /// --noise-floor-mu.  Required when --noise-floor-mu is set.
+    #[arg(long)]
+    noise_floor_sigma: Option<f32>,
+
     /// Enable true parallel replica execution via AmberSimdBatch
     /// All replicas run simultaneously on GPU (vs sequential when disabled)
     #[arg(long, default_value = "false")]
@@ -4945,6 +4959,11 @@ fn run_multi_stream_pipeline(
                                                         epsilon_sym_angstrom: d.epsilon,
                                                     }
                                                 });
+                                                // Amendment 3.4.6: pair both flags or skip.
+                                                let nf_override = match (args.noise_floor_mu, args.noise_floor_sigma) {
+                                                    (Some(m), Some(s)) => Some((m, s)),
+                                                    _ => None,
+                                                };
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -4954,6 +4973,7 @@ fn run_multi_stream_pipeline(
                                                     asc:               asc_cfg,
                                                     zstr:              zstr_cfg,
                                                     sisr:              sisr_cfg,
+                                                    noise_floor_override: nf_override,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
