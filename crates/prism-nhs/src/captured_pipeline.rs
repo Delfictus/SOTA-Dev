@@ -106,7 +106,7 @@ extern "C" {
 
     fn prism_sisr_launch(
         tiles:                *const c_void,  // *const ContactShellTile
-        n_clusters:           u32,             // ≤ 64
+        n_clusters_dev:       *const c_void,  // *const u32 (RECT-3.4.1 device veto)
         out_force_prune_mask: *mut c_void,    // *mut u64 (8 B device buffer)
         epsilon_sym_angstrom: f32,
         stream:               *mut c_void,
@@ -297,6 +297,11 @@ pub struct CapturedAdjudicationPipeline {
     /// step kernel reads the bits the SISR kernel wrote earlier in the same
     /// captured graph epoch.  Freed on Drop.
     sisr_mask_dev: usize,     // *mut u64 (8 B), or 0 when SISR disabled
+    /// RECT-3.4.1 device-resident cluster count. Read by the SISR kernel
+    /// to decide whether to early-exit (n_clusters < 2 ⇒ skip prune logic).
+    /// Initialised to `cfg.n_clusters` pre-capture; future per-frame updates
+    /// land here when the SpikeToCluster4D transform writes dynamic counts.
+    sisr_count_dev: usize,    // *mut u32 (4 B), or 0 when SISR disabled
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -491,6 +496,13 @@ impl CapturedAdjudicationPipeline {
             pool.alloc_async(8, md_raw)
                 .map_err(|s| BuildError::PoolAlloc { what: "sisr_mask", reason: s })?
         } else { 0 };
+        // RECT-3.4.1 device-resident cluster count buffer (u32). Initialised
+        // to cfg.n_clusters via cuMemcpyHtoD below; the SISR kernel reads
+        // this value at execution time to decide early-exit (< 2 ⇒ skip).
+        let sisr_count_dev: usize = if cfg.sisr.is_some() {
+            pool.alloc_async(4, md_raw)
+                .map_err(|s| BuildError::PoolAlloc { what: "sisr_count", reason: s })?
+        } else { 0 };
         md_stream.synchronize().map_err(BuildError::Driver)?;
 
         // CSR §M alignment guard (Anti-Greenfield Audit Gate G19):
@@ -566,11 +578,9 @@ impl CapturedAdjudicationPipeline {
         }
 
         // ── 5.SISR-pre G28: dyad-axis init + Adjudicator force_prune_mask
-        //       pointer wire-in.  Done OUTSIDE the capture window:
-        //       cudaMemcpyToSymbolAsync writes __constant__ memory once at
-        //       build (subsequent launches reuse the same R/t), and the
-        //       adj->force_prune_mask field is patched via cuMemcpyHtoD
-        //       at offset 104 (matches the static_assert in adjudicator.cuh).
+        //       pointer wire-in + RECT-3.4.1 device-resident cluster count.
+        //       Done OUTSIDE the capture window so subsequent captures
+        //       observe a stable adj_dev struct + initialised count buffer.
         if let Some(ref sisr) = cfg.sisr {
             // Init dyad transform in __constant__ memory.
             let rc = unsafe {
@@ -596,6 +606,24 @@ impl CapturedAdjudicationPipeline {
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
                     return Err(BuildError::Cuda {
                         stage: "wire adj->force_prune_mask",
+                        rc: rc as i32,
+                    });
+                }
+            }
+            // RECT-3.4.1: initialise device-resident cluster count = cfg.n_clusters.
+            // The SISR kernel reads this at execution time and early-exits when < 2.
+            // Future: SpikeToCluster4D writes the dynamic count here per-frame.
+            unsafe {
+                let count_addr = sisr_count_dev as CUdeviceptr;
+                let count_value: u32 = cfg.n_clusters;
+                let rc = cuMemcpyHtoD_v2(
+                    count_addr,
+                    &count_value as *const _ as *const c_void,
+                    4,
+                );
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "init sisr_count_dev",
                         rc: rc as i32,
                     });
                 }
@@ -634,6 +662,7 @@ impl CapturedAdjudicationPipeline {
                 let _ = pool.free_async(adj_dev, md_raw);
                 let _ = pool.free_async(burst_marker_dev, md_raw);
                 if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
+                if sisr_count_dev != 0 { let _ = pool.free_async(sisr_count_dev, md_raw); }
                 return Err(BuildError::Driver(e));
             }
         }
@@ -694,33 +723,26 @@ impl CapturedAdjudicationPipeline {
         // *adj->force_prune_mask (offset 104 → sisr_mask_dev) and forces
         // PRISM_ADJ_PRUNE on any non-zero bit.
         //
-        // RECT-3.4.1 SISR Adaptive Gate: skip the kernel when n_clusters < 2.
-        // Single-cluster mode has no symmetric partner candidate so SISR
-        // would set force_prune_mask bit 0 every frame and collapse the F1
-        // SWITCH predicate to PRUNE.  Operator-mandated unblock (M1.2.16).
-        // The mask buffer remains zero-initialised → Adjudicator never
-        // overrides Δ_AB-based decision → "Burst" path becomes reachable.
-        // Once cluster bifurcation matures (n_clusters ≥ 2), SISR fires
-        // automatically and provides the bilateral-truth gate.
+        // RECT-3.4.1 (Amendment 3.4.4) — Device-resident SISR Veto.
+        // The kernel is ALWAYS captured into the graph; topology stays
+        // immutable.  Inside the kernel, thread 0 zeros the mask, then
+        // every thread reads *sisr_count_dev: if < 2, __threadfence_block()
+        // and early-exit with mask zero.  Adjudicator reads zero mask,
+        // does not override Δ_AB.  When clustering matures and the host
+        // updates *sisr_count_dev to ≥ 2, the same captured kernel
+        // automatically begins enforcing the bilateral-truth gate.
         if let Some(ref sisr) = cfg.sisr {
-            if cfg.n_clusters >= 2 {
-                let rc = unsafe {
-                    prism_sisr_launch(
-                        manifest.tiles_dev_ptr as *const c_void,
-                        cfg.n_clusters,
-                        sisr_mask_dev as *mut c_void,
-                        sisr.epsilon_sym_angstrom,
-                        md_stream.cu_stream() as *mut c_void,
-                    )
-                };
-                if rc != 0 {
-                    return Err(BuildError::Cuda { stage: "G28 SISR launch", rc });
-                }
-            } else {
-                log::info!(
-                    "[G28 SISR] adaptive gate: n_clusters={} < 2 — kernel skipped, \
-                     mask stays zero, F1 SWITCH branches on Δ_AB only", cfg.n_clusters
-                );
+            let rc = unsafe {
+                prism_sisr_launch(
+                    manifest.tiles_dev_ptr as *const c_void,
+                    sisr_count_dev as *const c_void,
+                    sisr_mask_dev as *mut c_void,
+                    sisr.epsilon_sym_angstrom,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda { stage: "G28 SISR launch", rc });
             }
         }
 
@@ -1104,6 +1126,7 @@ impl CapturedAdjudicationPipeline {
             adj_dev,
             burst_marker_dev,
             sisr_mask_dev,
+            sisr_count_dev,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -1292,6 +1315,9 @@ impl Drop for CapturedAdjudicationPipeline {
         let _ = self.pool.free_async(self.burst_marker_dev, md_raw);
         if self.sisr_mask_dev != 0 {
             let _ = self.pool.free_async(self.sisr_mask_dev, md_raw);
+        }
+        if self.sisr_count_dev != 0 {
+            let _ = self.pool.free_async(self.sisr_count_dev, md_raw);
         }
         // VramPool's Drop releases the pool itself.
     }

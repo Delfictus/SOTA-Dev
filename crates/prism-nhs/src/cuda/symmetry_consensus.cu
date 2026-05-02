@@ -67,7 +67,7 @@ __global__ void prism_sisr_init_dyad_kernel(
 extern "C"
 __global__ void prism_sisr_kernel(
     const ContactShellTile* __restrict__ tiles,
-    uint32_t                              n_clusters,
+    const uint32_t* __restrict__         n_clusters_dev,        // RECT-3.4.1
     unsigned long long* __restrict__      out_force_prune_mask,  // u64
     float                                 epsilon_sym_squared
 ) {
@@ -78,6 +78,19 @@ __global__ void prism_sisr_kernel(
         *out_force_prune_mask = 0ull;
     }
     __syncthreads();
+
+    // RECT-3.4.1 — Device-resident n_clusters veto (Amendment 3.4.4):
+    // single-cluster operation has no symmetric partner, so SISR's brute-force
+    // search would set bit 0 every frame and collapse the F1 SWITCH to PRUNE.
+    // Reading n_clusters from a pinned device buffer keeps the captured graph
+    // topology immutable while still gating the prune-mask write.  The mask
+    // stays zero (Phase 1) → Adjudicator does not override → Δ_AB-based
+    // decision propagates → "Burst" path becomes reachable.
+    const uint32_t n_clusters = *n_clusters_dev;
+    if (n_clusters < 2u) {
+        __threadfence_block();
+        return;
+    }
 
     // Phase 2: clusters beyond n_clusters bail.
     if (i >= n_clusters || i >= SISR_MAX_CLUSTERS) return;
@@ -140,25 +153,24 @@ int prism_sisr_init_dyad(const float* R_row_major,
 
 extern "C"
 int prism_sisr_launch(const void* tiles,
-                       uint32_t    n_clusters,
+                       const void* n_clusters_dev,
                        void*       out_force_prune_mask,
                        float       epsilon_sym_angstrom,
                        void*       stream)
 {
-    if (tiles == nullptr || out_force_prune_mask == nullptr) {
+    if (tiles == nullptr || out_force_prune_mask == nullptr
+        || n_clusters_dev == nullptr) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
-    if (n_clusters > SISR_MAX_CLUSTERS) {
-        // u64 bit width caps us at 64 clusters; reject overflow rather
-        // than silently truncate (would mask high-cluster prune bits).
-        return static_cast<int>(cudaErrorInvalidValue);
-    }
+    // RECT-3.4.1: kernel reads n_clusters from device pointer at execution.
+    // No host-side cluster-count check — the captured graph node fires every
+    // launch; the kernel's own early-exit handles n_clusters < 2.
     // Single block, blockDim = SISR_MAX_CLUSTERS so the __syncthreads
     // barrier between mask-zero and bit-OR is well-defined.
     prism_sisr_kernel<<<1, SISR_MAX_CLUSTERS, 0,
         static_cast<cudaStream_t>(stream)>>>(
         static_cast<const ContactShellTile*>(tiles),
-        n_clusters,
+        static_cast<const uint32_t*>(n_clusters_dev),
         static_cast<unsigned long long*>(out_force_prune_mask),
         epsilon_sym_angstrom * epsilon_sym_angstrom
     );

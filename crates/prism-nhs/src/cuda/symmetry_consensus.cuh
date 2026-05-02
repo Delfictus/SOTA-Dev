@@ -50,12 +50,14 @@ int prism_sisr_init_dyad(const float* R_row_major,
                           void* stream);
 
 /// Launch the SISR kernel: each thread handles one cluster centroid.
+/// `n_clusters_dev` is a pinned/device u32 buffer holding the live cluster
+/// count (RECT-3.4.1 device-resident veto: kernel early-exits when *n < 2).
 /// `out_force_prune_mask` is a single device-side u64 buffer (8 B); the
 /// kernel zeros it then ORs in bits for clusters with no Chain-B partner.
 /// `epsilon_sym_angstrom` is the partner-search tolerance (typical: 1.5 Å).
-int prism_sisr_launch(const void* tiles,            // *const ContactShellTile
-                      uint32_t    n_clusters,        // ≤ SISR_MAX_CLUSTERS
-                      void*       out_force_prune_mask,  // *mut u64
+int prism_sisr_launch(const void* tiles,                  // *const ContactShellTile
+                      const void* n_clusters_dev,          // *const u32
+                      void*       out_force_prune_mask,    // *mut u64
                       float       epsilon_sym_angstrom,
                       void*       stream);
 
