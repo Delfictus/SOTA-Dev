@@ -125,6 +125,7 @@ mod gpu_tests {
             end_temp: 300.0,
             ramp_steps: 0,
             hold_steps: 100,
+            cold_hold_steps: 0,
             current_step: 0,
         });
 

@@ -89,6 +89,7 @@ mod gpu_tests {
             end_temp: 300.0,
             ramp_steps: 50,
             hold_steps: 50,
+            cold_hold_steps: 0,
             current_step: 0,
         });
 
@@ -274,6 +275,7 @@ mod gpu_tests {
             end_temp: 300.0,
             ramp_steps: 0,
             hold_steps: 10,
+            cold_hold_steps: 0,
             current_step: 0,
         });
 

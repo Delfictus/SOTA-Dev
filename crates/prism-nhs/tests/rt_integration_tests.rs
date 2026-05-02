@@ -115,6 +115,8 @@ fn create_realistic_protein() -> PrismPrepTopology {
         exclusions: Vec::new(),
         h_clusters: Vec::new(),
         water_oxygens: Vec::new(),
+        residues: Vec::new(),
+        dimer_dyad: None,
     }
 }
 

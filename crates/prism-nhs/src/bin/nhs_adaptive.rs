@@ -337,6 +337,7 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             end_temp: args.temperature,
             ramp_steps: warm_steps.max(1000), // Warm up over remaining steps
             hold_steps: args.cryo_hold,        // Hold frozen first
+            cold_hold_steps: 0,
             current_step: 0,
         }
     } else {
@@ -346,6 +347,7 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             end_temp: args.temperature,
             ramp_steps: 0,
             hold_steps: protocol.total_steps(),
+            cold_hold_steps: 0,
             current_step: 0,
         }
     };

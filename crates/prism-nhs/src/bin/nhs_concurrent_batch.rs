@@ -58,7 +58,19 @@ struct Args {
     multi_stream: bool,
 }
 
+#[allow(unreachable_code, dead_code, unused_variables, unused_mut, unused_imports, unused_assignments)]
 fn main() -> Result<()> {
+    // Wave B.1 surgical-cleanup gate (operator 2026-05-02): this bin's
+    // AmberMegaFusedHmc::new_with_stream call site has drifted from the
+    // current production API.  Production runs go through
+    // scripts/prism-validate-and-run.sh; this legacy bin is rejected at
+    // launch so a stale invocation cannot corrupt a campaign.
+    eprintln!(
+        "nhs_concurrent_batch: legacy bin out of date with current \
+         AmberMegaFusedHmc API.  Use scripts/prism-validate-and-run.sh."
+    );
+    std::process::exit(2);
+
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("info")
     ).init();
@@ -140,11 +152,13 @@ fn run_multi_stream_batch(args: Args) -> Result<()> {
         for (i, (topo, stream)) in topology_chunk.iter().zip(streams.iter()).enumerate() {
             println!("    [{}] {} atoms on stream {}", i + 1, topo.n_atoms, i);
 
-            let mut engine = AmberMegaFusedHmc::new_with_stream(
-                Arc::clone(&context),
-                Arc::clone(stream),
-                topo.n_atoms
-            )?;
+            // Legacy stub — bin is gated off at startup (see main()).
+            // The call site referenced AmberMegaFusedHmc::new_with_stream,
+            // which has been removed from the current API surface.
+            let mut engine: AmberMegaFusedHmc = unreachable!(
+                "nhs_concurrent_batch: legacy bin (AmberMegaFusedHmc::new_with_stream removed). \
+                 Use scripts/prism-validate-and-run.sh."
+            );
 
             // Convert and upload topology
             let bonds: Vec<(usize, usize, f32, f32)> = topo.bonds.iter()

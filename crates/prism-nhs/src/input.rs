@@ -752,6 +752,7 @@ mod tests {
             h_clusters: Vec::new(),
             water_oxygens: Vec::new(),
             residues: Vec::new(),
+            dimer_dyad: None,
         }
     }
 

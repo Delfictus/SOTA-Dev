@@ -72,6 +72,7 @@ fn run_gpu_test() -> Result<()> {
         end_temp: 300.0,
         ramp_steps: 0,
         hold_steps: 100000,
+        cold_hold_steps: 0,
         current_step: 0,
     };
     let _ = engine.set_temperature_protocol(temp_protocol);
@@ -122,6 +123,7 @@ fn run_gpu_test() -> Result<()> {
         end_temp: 300.0,
         ramp_steps: 0,
         hold_steps: 100000,
+        cold_hold_steps: 0,
         current_step: 0,
     });
 

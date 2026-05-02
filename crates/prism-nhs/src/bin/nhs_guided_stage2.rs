@@ -241,6 +241,7 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
         end_temp: args.temperature,
         ramp_steps: 0,
         hold_steps: args.steps + args.equilibration,
+        cold_hold_steps: 0,
         current_step: 0,
     };
     engine.set_temperature_protocol(temp_protocol)?;

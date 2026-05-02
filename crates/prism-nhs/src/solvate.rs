@@ -478,6 +478,7 @@ mod tests {
             h_clusters: Vec::new(),
             water_oxygens: Vec::new(),
             residues: Vec::new(),
+            dimer_dyad: None,
         };
 
         // Simple 2-atom protein (10 Å apart)
@@ -525,6 +526,7 @@ mod tests {
             h_clusters: Vec::new(),
             water_oxygens: Vec::new(),
             residues: Vec::new(),
+            dimer_dyad: None,
         };
 
         // Single atom at origin
@@ -569,6 +571,7 @@ mod tests {
             h_clusters: Vec::new(),
             water_oxygens: Vec::new(),
             residues: Vec::new(),
+            dimer_dyad: None,
         };
 
         let coords = vec![0.0, 0.0, 0.0];
