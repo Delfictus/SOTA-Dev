@@ -235,6 +235,14 @@ struct Args {
     #[arg(long, default_value = "false")]
     fast_25k: bool,
 
+    /// Amendment 3.4.2 — V2 Ignition Trigger Compression. When set, the V2
+    /// monolithic-fusion pipeline build fires at this step count instead of
+    /// waiting for the full cold_hold phase. Used for short stress-test
+    /// dry-runs (e.g., 2000 steps with --cold-hold-override 500). Production
+    /// runs leave this unset; V2 builds at the natural cold→warm boundary.
+    #[arg(long)]
+    cold_hold_override: Option<i32>,
+
     /// Enable true parallel replica execution via AmberSimdBatch
     /// All replicas run simultaneously on GPU (vs sequential when disabled)
     #[arg(long, default_value = "false")]
@@ -4360,6 +4368,13 @@ fn run_multi_stream_pipeline(
                 let nma_frac = args.nma_scan_fraction;
                 let cold_hold_steps = prot.cold_hold_steps;
                 let kcc_cold_hold_steps = prot.cold_hold_steps;
+                // Amendment 3.4.2 — V2 ignition trigger compression. When the
+                // operator passes --cold-hold-override N, the V2 pipeline build
+                // fires at step N instead of waiting for kcc_cold_hold_steps.
+                // Used for short dry-runs that need to exercise the monolithic
+                // fusion path. None ⇒ natural cold→warm trigger preserved.
+                let v2_trigger_step: i32 = args.cold_hold_override
+                    .unwrap_or(kcc_cold_hold_steps);
                 let kcc_ramp_steps = prot.ramp_steps;
                 let kcc_warm_hold_steps = prot.warm_hold_steps;
                 let bocpd_enabled = args.bocpd_chunking;
@@ -4701,7 +4716,7 @@ fn run_multi_stream_pipeline(
                                 // directive: only stream 0 builds the pipeline (t7_active gate).
                                 #[cfg(feature = "v2_ignition")]
                                 if t7_active && v2_pipeline.is_none()
-                                    && steps_run >= kcc_cold_hold_steps
+                                    && steps_run >= v2_trigger_step
                                     && steps_run > 0
                                 {
                                     use prism_nhs::rich_spike::RichSpike;
