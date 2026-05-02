@@ -161,8 +161,12 @@ pub struct InterferometricAdjudicatorFfi {
     /// **The Adjudicator is a Total Function**: any 32-bit input
     /// pattern produces exactly one of these three values. The
     /// inline PTX guards in the kernel ensure no NaN escapes.
-    /// Decode via `AdjudicationCode::from_raw(self.adjudication_code)`.
-    pub adjudication_code: u32,
+    /// Decode via `AdjudicationCode::from_raw(self.global_adjudication_summary)`.
+    /// Amendment 3.9 ABI rename: the SIMT step kernel now produces a
+    /// per-cluster vector of codes (`per_cluster_codes` below) and reduces
+    /// them via `__reduce_or_sync` into THIS scalar summary.  Same byte
+    /// offset (52), same F1 SWITCH semantics, vectorised semantics underneath.
+    pub global_adjudication_summary: u32,
 
     /// F2-pool-allocated pointer to the relaxed-state manifold (P).
     /// Lifetime: the `ContactShellTile` referenced here must outlive
@@ -201,12 +205,20 @@ pub struct InterferometricAdjudicatorFfi {
     /// on a non-zero result, **independent of** Δ_AB magnitude.
     /// Null disables the symmetry gate (legacy / non-dimer targets).
     pub force_prune_mask: *mut u64,
+    /// Amendment 3.9 — Per-cluster adjudication codes (vector output).
+    /// Pointer to an F2-pooled `[u32; N_MAX_CLUSTERS]` buffer.  Each thread
+    /// `cid` in the SIMT step kernel writes its local 3-σ-thresholded code
+    /// into `per_cluster_codes[cid]`.  The orchestrator reads this vector
+    /// to know which specific clusters went Burst (1), Prune (0), or
+    /// Violation (2) — useful for Med-Chem Pillar-5 site triage.
+    /// 8-byte aligned at offset 112 (immediately after `force_prune_mask`).
+    pub per_cluster_codes: *mut u32,
     /// Forward-compatible reserved tail. Layout (with C-ABI alignment):
-    /// `legacy_centroid_fallback` ends at offset 100; the `*mut u64` pointer
-    /// requires 8-byte alignment, so the compiler inserts 4 B of padding,
-    /// placing `force_prune_mask` at offset 104..112. Reserved tail occupies
-    /// offset 112..128 (16 B = 4 × u32). Total: 88 + 12 + 4(pad) + 8 + 16 = 128 B.
-    pub _reserved: [u32; 4],
+    /// `legacy_centroid_fallback` ends at offset 100; pointers require
+    /// 8-byte alignment, so the compiler inserts 4 B padding before
+    /// `force_prune_mask` at offset 104; `per_cluster_codes` follows at 112.
+    /// Reserved tail occupies offset 120..128 (8 B = 2 × u32).
+    pub _reserved: [u32; 2],
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -224,14 +236,15 @@ impl InterferometricAdjudicatorFfi {
             noise_floor_mu: [0.0; 6],
             noise_floor_sigma: [0.0; 6],
             current_divergence: 0.0,
-            adjudication_code: 0,
+            global_adjudication_summary: 0,
             relaxed_manifold_ptr: std::ptr::null(),
             perturbed_manifold_ptr: std::ptr::null(),
             start_clock: 0,
             stop_clock: 0,
             legacy_centroid_fallback: [0.0; 3],
             force_prune_mask: std::ptr::null_mut(),
-            _reserved: [0; 4],
+            per_cluster_codes: std::ptr::null_mut(),
+            _reserved: [0; 2],
         }
     }
 
@@ -907,7 +920,7 @@ pub unsafe fn adjudication_code_devptr(
     // Use addr_of! to compute the field address without dereferencing
     // (place expression). The cast back via byte_offset is equivalent
     // and confirms the offset matches the CSR-C invariant.
-    std::ptr::addr_of!((*adj).adjudication_code)
+    std::ptr::addr_of!((*adj).global_adjudication_summary)
 }
 
 // ============================================================================
@@ -1009,13 +1022,15 @@ mod tests {
         assert_eq!(z.noise_floor_mu, [0.0; 6]);
         assert_eq!(z.noise_floor_sigma, [0.0; 6]);
         assert_eq!(z.current_divergence, 0.0);
-        assert_eq!(z.adjudication_code, 0);
+        assert_eq!(z.global_adjudication_summary, 0);
         assert!(z.relaxed_manifold_ptr.is_null());
         assert!(z.perturbed_manifold_ptr.is_null());
         assert_eq!(z.start_clock, 0);
         assert_eq!(z.stop_clock, 0);
         assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
-        assert_eq!(z._reserved, [0; 7]);
+        assert!(z.force_prune_mask.is_null());
+        assert!(z.per_cluster_codes.is_null());
+        assert_eq!(z._reserved, [0; 2]);
     }
 
     #[test]
@@ -1034,14 +1049,14 @@ mod tests {
         // writes one of {0, 1, 2} into adjudication_code; host
         // decodes via from_raw.
         let mut adj = InterferometricAdjudicatorFfi::zero();
-        adj.adjudication_code = 1;
+        adj.global_adjudication_summary = 1;
         assert_eq!(
-            AdjudicationCode::from_raw(adj.adjudication_code),
+            AdjudicationCode::from_raw(adj.global_adjudication_summary),
             Some(AdjudicationCode::Construct),
         );
-        adj.adjudication_code = 2;
+        adj.global_adjudication_summary = 2;
         assert_eq!(
-            AdjudicationCode::from_raw(adj.adjudication_code),
+            AdjudicationCode::from_raw(adj.global_adjudication_summary),
             Some(AdjudicationCode::Violation),
         );
     }
@@ -1510,9 +1525,10 @@ mod tests {
         // offset is the FFI contract; drift here would mean the
         // hardware scheduler reads the wrong word.
         assert_eq!(
-            offset_of!(InterferometricAdjudicatorFfi, adjudication_code),
+            offset_of!(InterferometricAdjudicatorFfi, global_adjudication_summary),
             ADJUDICATION_CODE_OFFSET,
-            "G19 invariant: adjudication_code MUST remain at byte offset 52"
+            "G19 invariant: global_adjudication_summary MUST remain at byte offset 52 \
+             (Amendment 3.9 ABI rename preserved byte location)"
         );
         assert_eq!(ADJUDICATION_CODE_OFFSET, 52);
     }
@@ -1553,7 +1569,7 @@ mod tests {
             ADJUDICATION_CODE_OFFSET,
         );
         // The devptr lets the caller actually read the value.
-        adj.adjudication_code = 1; // Construct
+        adj.global_adjudication_summary = 1; // Construct
         let read_back = unsafe {
             *adjudication_code_devptr(&adj as *const _)
         };

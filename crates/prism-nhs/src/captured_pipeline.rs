@@ -314,6 +314,12 @@ pub struct CapturedAdjudicationPipeline {
     /// Initialised to `cfg.n_clusters` pre-capture; future per-frame updates
     /// land here when the SpikeToCluster4D transform writes dynamic counts.
     sisr_count_dev: usize,    // *mut u32 (4 B), or 0 when SISR disabled
+    /// Amendment 3.9 SIMT vector output: per-cluster adjudication codes.
+    /// F2-pooled `[u32; 64]` buffer (256 B). Each thread `cid` of the SIMT
+    /// step kernel writes its local 3-σ-thresholded code; orchestrator can
+    /// read this back to know which specific clusters went Burst/Prune.
+    /// Wired into `adj->per_cluster_codes` (offset 112) pre-capture.
+    adj_per_cluster_codes_dev: usize,  // *mut u32 (256 B = 64 × u32)
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -515,6 +521,22 @@ impl CapturedAdjudicationPipeline {
             pool.alloc_async(4, md_raw)
                 .map_err(|s| BuildError::PoolAlloc { what: "sisr_count", reason: s })?
         } else { 0 };
+        // Amendment 3.9 — SIMT per-cluster adjudication codes buffer.
+        // 64 × u32 = 256 B; the SIMT step kernel writes one code per cluster.
+        let adj_per_cluster_codes_dev = pool.alloc_async(256, md_raw)
+            .map_err(|s| BuildError::PoolAlloc {
+                what: "adj_per_cluster_codes",
+                reason: s
+            })?;
+        unsafe {
+            let rc = cuMemsetD8_v2(adj_per_cluster_codes_dev as CUdeviceptr, 0, 256);
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "memset adj_per_cluster_codes",
+                    rc: rc as i32,
+                });
+            }
+        }
         // Path Z.2 — Dual-Manifold Temporal Buffer (Amendment 3.4.5):
         // SECOND ContactShellTile array, same bytes as `tiles_dev`. Holds the
         // PREVIOUS frame's SO(3) projection — serves as the "relaxed" baseline
@@ -582,6 +604,24 @@ impl CapturedAdjudicationPipeline {
         };
         debug_assert!(manifest.tile_alignment_ok(),
             "F2 pool returned non-128-aligned tiles_dev_ptr");
+
+        // Amendment 3.9 — wire adj->per_cluster_codes (offset 112) to point at
+        // the F2-pooled buffer the SIMT step kernel writes per-cluster codes to.
+        unsafe {
+            let codes_field_addr = (adj_dev + 112) as CUdeviceptr;
+            let codes_ptr_value: u64 = adj_per_cluster_codes_dev as u64;
+            let rc = cuMemcpyHtoD_v2(
+                codes_field_addr,
+                &codes_ptr_value as *const _ as *const c_void,
+                8,
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "wire adj->per_cluster_codes",
+                    rc: rc as i32,
+                });
+            }
+        }
 
         // Path Z.2 — Dual-Manifold pointer wiring (Amendment 3.4.5):
         //   adj->relaxed_manifold_ptr   → tiles_baseline_dev  (frame N-1)
@@ -727,6 +767,7 @@ impl CapturedAdjudicationPipeline {
                 let _ = pool.free_async(burst_marker_dev, md_raw);
                 if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
                 if sisr_count_dev != 0 { let _ = pool.free_async(sisr_count_dev, md_raw); }
+                let _ = pool.free_async(adj_per_cluster_codes_dev, md_raw);
                 return Err(BuildError::Driver(e));
             }
         }
@@ -1214,6 +1255,7 @@ impl CapturedAdjudicationPipeline {
             burst_marker_dev,
             sisr_mask_dev,
             sisr_count_dev,
+            adj_per_cluster_codes_dev,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -1404,6 +1446,7 @@ impl Drop for CapturedAdjudicationPipeline {
         if self.sisr_mask_dev != 0 {
             let _ = self.pool.free_async(self.sisr_mask_dev, md_raw);
         }
+        let _ = self.pool.free_async(self.adj_per_cluster_codes_dev, md_raw);
         if self.sisr_count_dev != 0 {
             let _ = self.pool.free_async(self.sisr_count_dev, md_raw);
         }

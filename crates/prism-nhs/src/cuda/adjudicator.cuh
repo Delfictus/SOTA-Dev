@@ -89,7 +89,13 @@ struct __align__(128) InterferometricAdjudicatorFfi {
 
     // Adjudicator outputs (offset 48..56, 8 B).
     float    current_divergence;    // offset  48
-    uint32_t adjudication_code;     // offset  52  — F1 SWITCH selector
+    // Amendment 3.9 ABI rename: scalar adjudication_code → vector summary.
+    // The SIMT step kernel computes per-cluster KL divergence and writes
+    // each thread's local adj_code into per_cluster_codes[threadIdx.x];
+    // a __reduce_or_sync warp aggregation produces the global summary
+    // bit (== max(per_cluster_codes), since codes are {0,1,2}).  F1
+    // SWITCH continues to read offset 52 — same byte, new semantics.
+    uint32_t global_adjudication_summary;  // offset  52  — F1 SWITCH selector
 
     // Manifold pointers (offset 56..72, 16 B).
     const ContactShellTile* relaxed_manifold_ptr;    // offset 56
@@ -111,8 +117,15 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // Null disables the gate (non-dimer / legacy targets).
     uint64_t* force_prune_mask;     // offset 104
 
-    // Forward-compatible reserved tail (offset 112..128, 16 B).
-    uint32_t _reserved[4];          // offset 112
+    // Amendment 3.9 SIMT vector output: per-cluster adjudication codes.
+    // Pointer to an F2-pooled array of N_MAX_CLUSTERS u32 values.  Each
+    // thread cid in the SIMT step kernel writes its local code into
+    // per_cluster_codes[cid].  The orchestrator can read this back to
+    // see which specific clusters went Burst vs Pruned vs Violation.
+    uint32_t* per_cluster_codes;    // offset 112
+
+    // Forward-compatible reserved tail (offset 120..128, 8 B).
+    uint32_t _reserved[2];          // offset 120
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");
@@ -122,6 +135,13 @@ static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
 // 4-byte padding after `legacy_centroid_fallback` aligns the pointer to 8 B).
 static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
               "force_prune_mask offset drift: must be 104 (8-byte aligned).");
+// Amendment 3.9 vector output: F1 SWITCH preserves byte 52, per-cluster
+// vector pointer lands at byte 112 (8-byte aligned, immediately after the
+// force_prune_mask pointer).
+static_assert(offsetof(InterferometricAdjudicatorFfi, global_adjudication_summary) == 52,
+              "global_adjudication_summary offset drift: F1 SWITCH selector must stay at 52.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, per_cluster_codes) == 112,
+              "per_cluster_codes offset drift: must be 112 (8-byte aligned).");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)
