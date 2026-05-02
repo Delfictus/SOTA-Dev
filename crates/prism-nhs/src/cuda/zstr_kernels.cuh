@@ -25,24 +25,27 @@ namespace prism_nhs { namespace zstr {
 /// Sets slot_fence to 1 after __threadfence_system() ensures all
 /// preceding DMA writes (positions, forces) are visible to the host.
 ///
-/// @param slot_fence   Pointer into the ZstrFrameHeader::completion_fence
-///                     field for the current ring slot (pinned host mem).
+/// Path Z device-slot variant: kernel reads __constant__ d_zstr_active_slot
+/// at execution time to compute the slot-specific fence address inside the
+/// pinned ring.  base_fence points at slot-0's completion_fence.
 extern "C"
-__global__ void zstr_signal_completion_kernel(uint32_t* __restrict__ slot_fence);
+__global__ void zstr_signal_completion_kernel(
+    uint8_t* __restrict__ base_fence,
+    uint32_t              inter_slot_stride
+);
 
-/// Vectorized async position stage: copies the VRAM d_positions buffer
-/// (n_atoms * 3 * f32) into the pre-designated pinned slot.
-/// Uses float4 loads/stores (128-bit) for maximum PCIe throughput.
-/// One thread per float4 quad (covers 4 consecutive f32 values).
-///
-/// @param dst_pinned   Pinned-host destination (positions payload of slot).
-/// @param src_vram     VRAM source (d_positions, row-major n_atoms × 3 f32).
-/// @param n_floats     n_atoms * 3.
+/// Path Z device-slot variant: kernel reads __constant__ d_zstr_active_slot
+/// at execution time to compute the slot-specific positions destination
+/// inside the pinned ring.  base_pinned points at slot-0's header start;
+/// pos_offset_in_slot adds the header-size offset to land on the positions
+/// payload.
 extern "C"
 __global__ void zstr_pos_stage_f4_kernel(
-    float4* __restrict__       dst_pinned,
-    const float4* __restrict__ src_vram,
-    uint32_t                   n_floats
+    uint8_t* __restrict__       base_pinned,
+    uint32_t                    inter_slot_stride,
+    uint32_t                    pos_offset_in_slot,
+    const float4* __restrict__  src_vram,
+    uint32_t                    n_floats
 );
 
 }} // namespace prism_nhs::zstr
@@ -59,13 +62,28 @@ __global__ void zstr_pos_stage_f4_kernel(
 extern "C" {
 #endif
 
-/// Launch zstr_pos_stage_f4_kernel on `stream` targeting `dst_pinned`.
-/// grid = ceil(n_atoms*3 / 4) / 256 blocks, blockDim = 256.
-int zstr_launch_pos_stage(void* dst_pinned, const void* src_vram,
-                           uint32_t n_atoms, void* stream);
+/// Path Z launcher: device-slot pos_stage (kernel reads d_zstr_active_slot).
+/// `base_pinned` is the slot-0 header start; `inter_slot_stride` is the
+/// inter-slot byte distance (== ring frame_size); `pos_offset_in_slot` is
+/// the byte offset from slot base to positions payload (== sizeof header).
+/// Host MUST call prism_zstr_set_active_slot BEFORE the launch / replay.
+int zstr_launch_pos_stage(void*       base_pinned,
+                           uint32_t    inter_slot_stride,
+                           uint32_t    pos_offset_in_slot,
+                           const void* src_vram,
+                           uint32_t    n_atoms,
+                           void*       stream);
 
-/// Launch zstr_signal_completion_kernel on `stream` (1×1 thread).
-int zstr_launch_fence_signal(void* slot_fence, void* stream);
+/// Path Z launcher: device-slot fence signal.  base_fence points at slot-0
+/// completion_fence; kernel rolls slot via d_zstr_active_slot.
+int zstr_launch_fence_signal(void*    base_fence,
+                              uint32_t inter_slot_stride,
+                              void*    stream);
+
+/// Path Z host helper: stream-ordered cudaMemcpyToSymbolAsync update of
+/// d_zstr_active_slot. Caller invokes BEFORE each cuGraphLaunch on the
+/// same stream so the captured kernels observe the new slot value.
+int prism_zstr_set_active_slot(uint32_t slot, void* stream);
 
 #ifdef __cplusplus
 }

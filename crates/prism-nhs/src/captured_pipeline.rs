@@ -75,15 +75,18 @@ use crate::vram_pool::VramPool;
 // Linked from libzstr_kernels.a (build.rs compile_to_static_archive).
 extern "C" {
     fn zstr_launch_pos_stage(
-        dst_pinned: *mut c_void,
-        src_vram:   *const c_void,
-        n_atoms:    u32,
-        stream:     *mut c_void,
+        base_pinned:        *mut c_void,
+        inter_slot_stride:  u32,
+        pos_offset_in_slot: u32,
+        src_vram:           *const c_void,
+        n_atoms:            u32,
+        stream:             *mut c_void,
     ) -> i32;
 
     fn zstr_launch_fence_signal(
-        slot_fence: *mut c_void,
-        stream:     *mut c_void,
+        base_fence:        *mut c_void,
+        inter_slot_stride: u32,
+        stream:            *mut c_void,
     ) -> i32;
 }
 
@@ -180,12 +183,17 @@ pub struct ZstrCaptureParams {
     pub d_positions: *const f32,
     /// Number of atoms.  Determines grid size for pos_stage kernel.
     pub n_atoms: u32,
-    /// Pinned host destination: `ZstrRing::positions_host_ptr(slot)`.
-    /// Baked into the kernel node params at capture time (Phase 3: slot 0).
-    pub dst_pinned: *mut f32,
-    /// Pinned fence address: `ZstrRing::fence_cu_ptr(slot)` dereferenced.
-    /// Written to 1 by `zstr_signal_completion_kernel` after pos_stage.
-    pub slot_fence: *mut u32,
+    /// Path Z device-slot: pinned slot-0 base (header start of slot 0).
+    /// Kernels compute slot offsets at execution time using
+    /// `__constant__ d_zstr_active_slot` (updated host-side per launch via
+    /// `prism_zstr_set_active_slot`).  Same fused exec rolls all 5 slots.
+    pub pinned_base: *mut u8,
+    /// Inter-slot stride in bytes (== `ZstrRing::frame_size`, 4096-aligned).
+    pub inter_slot_stride: u32,
+    /// Byte offset from slot base to positions payload (== sizeof header).
+    pub pos_offset_in_slot: u32,
+    /// Byte offset from slot base to `completion_fence` field (16 in header).
+    pub fence_offset_in_slot: u32,
 }
 
 // SAFETY: pointers are into pinned CUDA host memory + device memory;
@@ -830,7 +838,9 @@ impl CapturedAdjudicationPipeline {
 
             let rc = unsafe {
                 zstr_launch_pos_stage(
-                    zstr.dst_pinned as *mut c_void,
+                    zstr.pinned_base as *mut c_void,
+                    zstr.inter_slot_stride,
+                    zstr.pos_offset_in_slot,
                     zstr.d_positions as *const c_void,
                     zstr.n_atoms,
                     telemetry_stream as *mut c_void,
@@ -858,9 +868,14 @@ impl CapturedAdjudicationPipeline {
                 }
             }
 
+            // Fence base = slot-0 base + fence_offset_in_slot.
+            let fence_base_ptr = unsafe {
+                zstr.pinned_base.add(zstr.fence_offset_in_slot as usize)
+            };
             let rc = unsafe {
                 zstr_launch_fence_signal(
-                    zstr.slot_fence as *mut c_void,
+                    fence_base_ptr as *mut c_void,
+                    zstr.inter_slot_stride,
                     telemetry_stream as *mut c_void,
                 )
             };
@@ -1106,107 +1121,27 @@ impl CapturedAdjudicationPipeline {
         unsafe { result::graph::launch(self.cu_graph_exec, self.md_stream.cu_stream()) }
     }
 
-    /// G24 ZSTR Slot-Roller: patch the ZSTR kernel node params for ring slot
-    /// `frame_idx % N_SLOTS` via `cuGraphExecKernelNodeSetParams`, then launch.
+    /// LEGACY API SHIM (Path Z device-slot supersedes per-launch patching).
     ///
-    /// Per-slot pointers patched:
-    /// - `zstr_pos_stage` node: `dst_pinned` → `ring.positions_host_ptr(slot)`
-    /// - `zstr_fence`     node: `slot_fence` → `ring.fence_cu_ptr(slot)`
+    /// In the original G24 design (commit 37669ea9) this method patched the
+    /// ZSTR kernel-node params per launch via `cuGraphExecKernelNodeSetParams_v2`.
+    /// Path Z (Amendment 3.4) replaced that with a `__constant__ uint32_t
+    /// d_zstr_active_slot` updated host-side via
+    /// `prism_nhs::zstr::ffi::prism_zstr_set_active_slot(slot, stream)`,
+    /// because `cudaGraphAddChildGraphNode` copies the child template — the
+    /// original node handles are non-addressable on the fused exec.
     ///
-    /// Zero heap allocation. The `CUfunction` handles and grid/block dims
-    /// were captured at build time; only the pointer arguments change per slot.
-    ///
-    /// Falls back to `self.launch()` transparently when ZSTR nodes are null
-    /// (ZSTR was disabled at build time — test / legacy path).
+    /// This shim now delegates to `launch()`. Callers should call
+    /// `prism_zstr_set_active_slot(frame_idx % N_SLOTS, stream)` BEFORE the
+    /// launch on the same stream — kernels read the new slot at execution.
     pub fn launch_with_zstr_slot(
         &self,
-        frame_idx: u64,
-        ring: &crate::zstr::ZstrRing,
+        _frame_idx: u64,
+        _ring: &crate::zstr::ZstrRing,
     ) -> Result<(), DriverError> {
-        if !self.zstr_pos_stage_node.is_null()
-            && !self.zstr_pos_stage_func.is_null()
-            && !self.zstr_fence_node.is_null()
-            && !self.zstr_fence_func.is_null()
-        {
-            let slot = (frame_idx as usize) % crate::zstr::ZstrRing::N_SLOTS;
-
-            // ── Patch pos_stage node ─────────────────────────────────────
-            // zstr_pos_stage_f4_kernel(float4* dst_pinned,
-            //                          const float4* src_vram,
-            //                          uint32_t n_floats)
-            // Grid dims identical to capture time (same n_atoms, same formula).
-            let n_floats: u32 = self.zstr_n_atoms * 3;
-            let n_f4: u32     = (n_floats + 3) >> 2;
-            let block: u32    = 256;
-            let grid: u32     = (n_f4 + block - 1) / block;
-
-            // kernelParams[i] is a void* that POINTS TO the argument value.
-            let mut arg0_dst: u64 = ring.positions_host_ptr(slot) as u64;
-            let mut arg1_src: u64 = self.zstr_src_vram;
-            let mut arg2_nfl: u32 = n_floats;
-            let mut pos_kp: [*mut c_void; 3] = [
-                &mut arg0_dst as *mut u64 as *mut c_void,
-                &mut arg1_src as *mut u64 as *mut c_void,
-                &mut arg2_nfl as *mut u32 as *mut c_void,
-            ];
-            // CUDA_KERNEL_NODE_PARAMS is CUDA_KERNEL_NODE_PARAMS_v2_st for
-            // cuda-12050; it has kern + ctx fields that must be null for
-            // the standard kernelParams path (unused by our launchers).
-            let pos_node_params = CUDA_KERNEL_NODE_PARAMS {
-                func:          self.zstr_pos_stage_func,
-                gridDimX:  grid,  gridDimY: 1, gridDimZ: 1,
-                blockDimX: block, blockDimY: 1, blockDimZ: 1,
-                sharedMemBytes: 0,
-                kernelParams: pos_kp.as_mut_ptr(),
-                extra: ptr::null_mut(),
-                kern: ptr::null_mut(),
-                ctx:  ptr::null_mut(),
-            };
-            let rc = unsafe {
-                cuGraphExecKernelNodeSetParams_v2(
-                    self.cu_graph_exec,
-                    self.zstr_pos_stage_node,
-                    &pos_node_params as *const _,
-                )
-            };
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                log::warn!("[G24] cuGraphExecKernelNodeSetParams_v2(pos_stage) slot={} rc={:?}",
-                           slot, rc);
-                return Err(DriverError(rc));
-            }
-
-            // ── Patch fence node ─────────────────────────────────────────
-            // zstr_signal_completion_kernel(uint32_t* slot_fence)
-            let mut arg0_fence: u64 = ring.fence_cu_ptr(slot);
-            let mut fence_kp: [*mut c_void; 1] = [
-                &mut arg0_fence as *mut u64 as *mut c_void,
-            ];
-            let fence_node_params = CUDA_KERNEL_NODE_PARAMS {
-                func:          self.zstr_fence_func,
-                gridDimX:  1, gridDimY: 1, gridDimZ: 1,
-                blockDimX: 1, blockDimY: 1, blockDimZ: 1,
-                sharedMemBytes: 0,
-                kernelParams: fence_kp.as_mut_ptr(),
-                extra: ptr::null_mut(),
-                kern: ptr::null_mut(),
-                ctx:  ptr::null_mut(),
-            };
-            let rc = unsafe {
-                cuGraphExecKernelNodeSetParams_v2(
-                    self.cu_graph_exec,
-                    self.zstr_fence_node,
-                    &fence_node_params as *const _,
-                )
-            };
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                log::warn!("[G24] cuGraphExecKernelNodeSetParams(fence) slot={} rc={:?}",
-                           slot, rc);
-                return Err(DriverError(rc));
-            }
-
-            log::trace!("[G24] slot={} dst={:#x} fence={:#x}", slot, arg0_dst, arg0_fence);
-        }
-
+        // Path Z: slot rolling via __constant__ memory + host-side
+        // prism_zstr_set_active_slot. This shim no longer patches node
+        // params; caller must update the active slot before launch.
         self.launch()
     }
 

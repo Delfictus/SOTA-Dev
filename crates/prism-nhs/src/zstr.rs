@@ -394,24 +394,33 @@ pub fn spawn_zstr_consumer(
 // `zstr_launch_fence_signal` — launches zstr_signal_completion_kernel (1×1
 //   thread; __threadfence_system() + atomicExch(fence, 1)).
 
-pub(crate) mod ffi {
+pub mod ffi {
     use std::ffi::c_void;
 
     extern "C" {
-        /// C-ABI launcher: zstr_pos_stage_f4_kernel<<<ceil(n_atoms*3/4)/256, 256>>>.
-        /// Returns cudaError_t cast to i32; 0 == success.
+        /// Path Z device-slot launcher: kernel reads `d_zstr_active_slot` at
+        /// execution time. `base_pinned` is slot-0 header start;
+        /// `inter_slot_stride` is bytes between slot bases (== frame_size);
+        /// `pos_offset_in_slot` is the header-size offset to positions payload.
         pub fn zstr_launch_pos_stage(
-            dst_pinned: *mut c_void,
-            src_vram:   *const c_void,
-            n_atoms:    u32,
-            stream:     *mut c_void,
+            base_pinned:        *mut c_void,
+            inter_slot_stride:  u32,
+            pos_offset_in_slot: u32,
+            src_vram:           *const c_void,
+            n_atoms:            u32,
+            stream:             *mut c_void,
         ) -> i32;
 
-        /// C-ABI launcher: zstr_signal_completion_kernel<<<1, 1>>>.
-        /// Returns cudaError_t cast to i32; 0 == success.
+        /// Path Z device-slot launcher: fence signal. `base_fence` is slot-0
+        /// completion_fence; kernel rolls slot via `d_zstr_active_slot`.
         pub fn zstr_launch_fence_signal(
-            slot_fence: *mut c_void,
-            stream:     *mut c_void,
+            base_fence:        *mut c_void,
+            inter_slot_stride: u32,
+            stream:            *mut c_void,
         ) -> i32;
+
+        /// Path Z host helper: stream-ordered update of d_zstr_active_slot.
+        /// Caller invokes BEFORE each cuGraphLaunch on the same stream.
+        pub fn prism_zstr_set_active_slot(slot: u32, stream: *mut c_void) -> i32;
     }
 }

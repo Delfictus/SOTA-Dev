@@ -4838,19 +4838,24 @@ fn run_multi_stream_pipeline(
                                                 );
                                                 let zstr_cfg = match &zstr_ring_new {
                                                     Ok(ring) if ring.alignment_ok => {
-                                                        let slot = 0usize; // Phase 3: slot 0
-                                                        let dst = ring.positions_host_ptr(slot) as *mut f32;
-                                                        let fence_cu = ring.fence_cu_ptr(slot);
-                                                        // fence_cu is a CUdeviceptr into pinned host
-                                                        // memory — dereference to *mut u32 is safe
-                                                        // because cuMemAllocHost guarantees the ptr is
-                                                        // host-accessible.
-                                                        let fence_ptr = fence_cu as *mut u32;
+                                                        // Path Z: pass slot-0 base + inter-slot stride.
+                                                        // The kernels compute slot offsets at execution
+                                                        // time via __constant__ d_zstr_active_slot,
+                                                        // updated host-side per launch via
+                                                        // prism_zstr_set_active_slot.
+                                                        // header_size = sizeof(ZstrFrameHeader) = 4096
+                                                        // fence_offset = offset of completion_fence in
+                                                        //                header = 16 (frame_idx 8 + dt 4
+                                                        //                + adj_code 4)
+                                                        const ZSTR_HEADER_SIZE: u32 = 4096;
+                                                        const ZSTR_FENCE_OFFSET: u32 = 16;
                                                         Some(prism_nhs::captured_pipeline::ZstrCaptureParams {
                                                             d_positions: d_pos_ptr as *const f32,
                                                             n_atoms:     n_atoms as u32,
-                                                            dst_pinned:  dst,
-                                                            slot_fence:  fence_ptr,
+                                                            pinned_base: ring.pinned_ptr,
+                                                            inter_slot_stride: ring.frame_size as u32,
+                                                            pos_offset_in_slot: ZSTR_HEADER_SIZE,
+                                                            fence_offset_in_slot: ZSTR_FENCE_OFFSET,
                                                         })
                                                     }
                                                     Ok(ring) => {
@@ -5057,7 +5062,22 @@ fn run_multi_stream_pipeline(
                                     #[cfg(feature = "v2_ignition")]
                                     if let Some(ref mono) = v2_monolithic {
                                         let s = engine.cuda_stream();
-                                        for _ in 0..this_chunk {
+                                        let s_raw = s.cu_stream() as *mut std::ffi::c_void;
+                                        // Path Z: per-launch slot rolling via constant memory.
+                                        // Update d_zstr_active_slot on the same stream BEFORE
+                                        // each cuGraphLaunch — kernels read the new slot at
+                                        // execution time.  No-op when ZSTR is disabled (the
+                                        // monolithic graph simply doesn't include ZSTR nodes,
+                                        // and the symbol write is a stream no-op of 4 bytes).
+                                        for step_in_chunk in 0..this_chunk {
+                                            let frame_idx = (steps_run + step_in_chunk) as u64;
+                                            let slot = (frame_idx
+                                                % prism_nhs::zstr::ZstrRing::N_SLOTS as u64) as u32;
+                                            let _rc = unsafe {
+                                                prism_nhs::zstr::ffi::prism_zstr_set_active_slot(
+                                                    slot, s_raw,
+                                                )
+                                            };
                                             mono.launch_on_stream(s.cu_stream())
                                                 .map_err(|e| anyhow::anyhow!(
                                                     "Monolithic launch: {:?}", e))?;
