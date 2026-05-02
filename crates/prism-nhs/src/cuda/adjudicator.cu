@@ -400,6 +400,10 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     // d_dt: null until host wires &d_protocol->dt pre-capture via
     // cuMemcpyHtoD into offset 120.
     adj->d_dt = nullptr;
+    // M1.2.18-P3 — Total External Work (Hamiltonian audit).
+    // Zeroed each chunk by the captured pipeline; UV/clamp atomicAdds
+    // accumulate into this scalar over the chunk window.
+    adj->d_external_work = 0.0;
 }
 
 /// Noise-floor update kernel — Welford-style running mean+stddev over
@@ -460,7 +464,13 @@ __global__ void prism_asc_apply_kernel(
     const float*    __restrict__ d_atom_positions,
     const uint32_t* __restrict__ d_atom_in_cluster,
     int32_t         n_atoms,
-    float           steering_gain_alpha
+    float           steering_gain_alpha,
+    // M1.2.18-P3.2 — per-atom PE accumulator.  When non-null, the
+    // ASC kernel folds V_ASC = -½·α·Δ_AB·‖x_i − X_c‖²·mask into
+    // pe_components[i] so the SFA's drift fuse sees the steering
+    // potential as part of V_t (operator §3.2: "the SFA fuse should
+    // not fire on Intentional Perturbation").
+    double*         __restrict__ pe_components
 ) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_atoms) return;
@@ -493,6 +503,23 @@ __global__ void prism_asc_apply_kernel(
     atomicAdd(&d_forces[i * 3 + 0], scale * dx);
     atomicAdd(&d_forces[i * 3 + 1], scale * dy);
     atomicAdd(&d_forces[i * 3 + 2], scale * dz);
+
+    // ── M1.2.18-P3.2 — ASC steering potential accumulation ──
+    //
+    //   F_ASC = α · Δ_AB · (x_i − X_c) · mask          (anti-restraint)
+    //   V_ASC = −½ · α · Δ_AB · ‖x_i − X_c‖² · mask    (∫ −F·dr)
+    //
+    // The minus sign is intentional: ASC PUSHES atoms outward (positive
+    // F along the radial direction), so its potential is INVERTED
+    // ("anti-restraint", confining well becomes a hill).  Folding V_ASC
+    // into pe_components means V_t already reflects the steering work;
+    // the SFA drift fuse can't false-positive on Construct frames just
+    // because we're injecting steering force.
+    if (pe_components != nullptr) {
+        const float r2 = dx * dx + dy * dy + dz * dz;
+        const double v_asc = -0.5 * (double)scale * (double)r2;
+        atomicAdd(pe_components + i, v_asc);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -628,7 +655,11 @@ int prism_asc_apply(
     const uint32_t* d_atom_in_cluster,
     int32_t n_atoms,
     float steering_gain_alpha,
-    void* stream_v
+    void* stream_v,
+    // M1.2.18-P3.2 — per-atom PE accumulator (nullable).  When non-
+    // null, the ASC kernel folds V_ASC into pe_components[i] so the
+    // SFA's drift fuse sees the steering potential as part of V_t.
+    double* pe_components
 ) {
     if (n_atoms <= 0) return static_cast<int>(cudaSuccess);
     cudaStream_t s = static_cast<cudaStream_t>(stream_v);
@@ -636,7 +667,7 @@ int prism_asc_apply(
     const int grid = (n_atoms + BLOCK - 1) / BLOCK;
     prism_asc_apply_kernel<<<grid, BLOCK, 0, s>>>(
         adj, d_forces, d_atom_positions, d_atom_in_cluster,
-        n_atoms, steering_gain_alpha);
+        n_atoms, steering_gain_alpha, pe_components);
     return static_cast<int>(cudaGetLastError());
 }
 

@@ -129,14 +129,22 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     //   buffer.  SFA reads it for the 1% drift Hamiltonian Stability Fuse.
     // d_dt: *mut f32 → integrator's d_protocol->dt at offset 120.
     //   The G26 SWITCH body sub-graphs write here via apply_fixed_dt_kernel.
-    // d_velocities REMOVED in M1.2.17: kept only on PipelineConfig
-    //   (the populator FFI threads it directly into the SWITCH body
-    //   rescale kernels — no struct round-trip needed).
     double    d_potential_energy;   // offset 112  (f64 VALUE)
     float*    d_dt;                 // offset 120
+    // ── M1.2.18-P3 — Total External Work (Hamiltonian audit) ──
+    // f64 VALUE at offset 128.  atomicAdd-f64 destination for non-
+    // conservative energy injections (UV velocity kicks; force/velocity
+    // clamps).  ASC steering work is folded into d_potential_energy
+    // directly per operator §3.2 (no separate accounting needed).
+    // SFA drift formula (§3.4):
+    //   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
+    double    d_external_work;      // offset 128  (f64 VALUE)
 };
-static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
-              "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");
+// M1.2.18-P3 layout pivot: 136 bytes used (d_external_work spills into
+// the second L1 sector at offset 128); aligned to 128 ⇒ physical size
+// 256 bytes.
+static_assert(sizeof(InterferometricAdjudicatorFfi) == 256,
+              "InterferometricAdjudicatorFfi MUST be 256 bytes (M1.2.18 expansion).");
 static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128-byte aligned.");
 // G28 SISR + B.3.2 + M1.2.17 offset locks — operator memory map LOCKED:
@@ -152,6 +160,8 @@ static_assert(offsetof(InterferometricAdjudicatorFfi, d_potential_energy) == 112
               "d_potential_energy offset drift: must be 112 (M1.2.17 Hamiltonian).");
 static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 120,
               "d_dt offset drift: must be 120 (M1.2.17 layout pivot).");
+static_assert(offsetof(InterferometricAdjudicatorFfi, d_external_work) == 128,
+              "d_external_work offset drift: must be 128 (M1.2.18-P3).");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)
@@ -267,7 +277,12 @@ int prism_asc_apply(
     const uint32_t* d_atom_in_cluster,  /* [n_atoms]    */
     int32_t         n_atoms,
     float           steering_gain_alpha,
-    void*           stream);
+    void*           stream,
+    /* M1.2.18-P3.2 — per-atom PE accumulator (nullable).  When non-
+     * null, V_ASC = -½·α·Δ·‖x_i − X_c‖²·mask is atomic-added to
+     * pe_components[i] so the SFA stability fuse sees the steering
+     * potential as part of V_t. */
+    double*         pe_components);
 
 // ════════════════════════════════════════════════════════════════════
 // T4 — clock64 pipeline timing bookends

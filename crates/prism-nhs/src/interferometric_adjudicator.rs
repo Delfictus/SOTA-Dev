@@ -286,6 +286,27 @@ pub struct InterferometricAdjudicatorFfi {
     /// Was at offset 112 in B.3.2; M1.2.17 moved it to 120 to make
     /// room for `d_potential_energy` at the L1-aligned 112 slot.
     pub d_dt: *mut f32,
+
+    /// **M1.2.18-P3 — Total External Work (Hamiltonian audit).**
+    /// Offset 128..136, 8 B (f64 VALUE).  Per-step accumulator for
+    /// non-conservative energy injections that the SFA stability fuse
+    /// must subtract from ΔV before computing drift:
+    ///
+    ///   * UV velocity kicks (apply_vibrational_transfer):
+    ///     ΔK = ½·m·(v_new² − v_old²) atomicAdd_f64'd here.
+    ///   * Force/velocity clamps (M1.2.18 follow-up): clamp losses.
+    ///
+    /// ASC steering work is folded into `d_potential_energy` directly
+    /// (operator §3.2 — accumulate V_ASC into pe_components so V_t
+    /// already reflects the steering potential).
+    ///
+    /// Zero-Trust drift formula (M1.2.18 §3.4):
+    ///   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
+    /// > 0.01 ⇒ Gear 3 abort trap.
+    ///
+    /// Zeroed every chunk by the captured pipeline; 0.0 default
+    /// preserves the M1.2.17 stability-fuse semantics on first frame.
+    pub d_external_work: f64,
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -313,6 +334,7 @@ impl InterferometricAdjudicatorFfi {
             force_prune_mask: std::ptr::null_mut(),
             d_potential_energy: 0.0,
             d_dt: std::ptr::null_mut(),
+            d_external_work: 0.0,
         }
     }
 
@@ -356,10 +378,17 @@ unsafe impl Sync for InterferometricAdjudicatorFfi {}
 const _: () = {
     use std::mem::{align_of, size_of};
 
-    // sizeof == 128 — operator CSR-C strict invariant.
-    assert!(size_of::<InterferometricAdjudicatorFfi>() == 128);
+    // M1.2.18-P3 — operator-authorised 136-byte expansion for
+    // d_external_work at offset 128.  With #[repr(C, align(128))],
+    // the struct's physical size rounds up to the next 128-byte
+    // multiple ⇒ 256 bytes total (136 used, 120 trailing pad).  The
+    // first 128 bytes still hit one Blackwell L1 sector for the hot
+    // fields; SFA reads of d_external_work spill into the second
+    // sector — acceptable per directive §3 ("the 1% fuse only traps
+    // on Numerical Instability, not Intentional Perturbation").
+    assert!(size_of::<InterferometricAdjudicatorFfi>() == 256);
 
-    // alignof == 128 — Blackwell L1 sector boundary.
+    // alignof == 128 — Blackwell L1 sector boundary preserved.
     assert!(align_of::<InterferometricAdjudicatorFfi>() == 128);
 
     // The pointer width must be 8 — the byte-offset table assumes
@@ -462,6 +491,10 @@ pub(crate) mod ffi {
         /// the existing `fused_engine.rs::d_forces` buffer
         /// (Anti-Greenfield § 2.1). Pointer-stability invariant on
         /// every device pointer.
+        // M1.2.18-P3.2 — pe_components: per-atom PE accumulator (nullable).
+        // When non-null, V_ASC = -½·α·Δ·‖x_i − X_c‖²·mask folded into
+        // pe_components[i] so the SFA stability fuse sees the steering
+        // potential as part of V_t.
         pub fn prism_asc_apply(
             adj: *const InterferometricAdjudicatorFfi,
             d_forces: *mut f32,
@@ -470,6 +503,7 @@ pub(crate) mod ffi {
             n_atoms: i32,
             steering_gain_alpha: f32,
             stream: *mut c_void,
+            pe_components: *mut f64,
         ) -> CudaError;
 
         // ─── T4 — clock64 pipeline timing bookends ──────────────────
@@ -1098,10 +1132,11 @@ mod tests {
         // implicit compiler padding).  force_prune_mask at 104 (G28 SISR).
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gear_override),       100);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask),    104);
-        // M1.2.17 — d_potential_energy (f64 VALUE) at 112; d_dt at 120;
-        // d_velocities removed from struct (lives on PipelineConfig only).
+        // M1.2.17 — d_potential_energy (f64 VALUE) at 112; d_dt at 120.
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_potential_energy), 112);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),                120);
+        // M1.2.18-P3 — d_external_work (f64 VALUE) at 128.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_external_work),    128);
     }
 
     #[test]

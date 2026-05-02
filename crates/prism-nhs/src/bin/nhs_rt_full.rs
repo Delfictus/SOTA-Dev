@@ -4997,19 +4997,15 @@ fn run_multi_stream_pipeline(
                                                 // apply_fixed_dt kernels write to this address via
                                                 // `*(adj->d_dt)` to commit the active gear's timestep
                                                 // before the next integrator launch reads it.
-                                                let d_velocities_ptr = engine.d_velocities_dev_ptr(
-                                                    engine.cuda_stream(),
-                                                );
-                                                let d_protocol_dt_ptr = engine.d_protocol_dt_dev_ptr(
-                                                    engine.cuda_stream(),
-                                                );
+                                                // M1.2.18-P1: PersistentNhsEngine forwarders use the
+                                                // wrapper's internal stream (no stream arg).
+                                                let d_velocities_ptr = engine.d_velocities_dev_ptr();
+                                                let d_protocol_dt_ptr = engine.d_protocol_dt_dev_ptr();
                                                 // M1.2.17 — Hamiltonian Auditor wire-up: thread the
                                                 // engine's per-atom PE components buffer + n_atoms
                                                 // through to the captured pipeline so the energy-
                                                 // monitor reduce node can capture downstream of ASC.
-                                                let d_pe_components_ptr = engine.d_potential_energy_components_dev_ptr(
-                                                    engine.cuda_stream(),
-                                                );
+                                                let d_pe_components_ptr = engine.d_potential_energy_components_dev_ptr();
                                                 let n_atoms_for_pe = engine.d_potential_energy_n_atoms() as u32;
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,

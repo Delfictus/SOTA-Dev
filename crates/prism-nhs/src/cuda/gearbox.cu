@@ -218,22 +218,38 @@ __global__ void prism_gearbox_sfa_kernel(
         target_gear = (counter < PRISM_GEARBOX_CRUISE_THRESHOLD) ? 1u : 2u;
     }
 
-    // ── M1.2.17 — Hamiltonian Stability Fuse ──────────────────────
-    // Read V_t from adj.d_potential_energy (offset 112, written by the
-    // upstream CUB-reduce energy monitor) and V_{t-1} from cruise.v_prev.
-    // If drift |V_t − V_{t-1}| / |V_{t-1}| > 0.01 OR isnan(V_t), force
-    // target_gear = 3 (Abort) → SWITCH body 3 fires the trap kernel.
+    // ── M1.2.18-P3.4 — Hamiltonian Stability Fuse (corrected) ─────
+    // Read V_t from adj.d_potential_energy (offset 112) and V_{t-1}
+    // from cruise.v_prev.  Read W_ext from adj.d_external_work
+    // (offset 128, M1.2.18-P3) — the integrated non-conservative
+    // energy injected by UV kicks, force/velocity clamps, etc., over
+    // the chunk window.
     //
-    // First-frame guard: when v_prev == 0.0 (sentinel), skip the drift
-    // check so the engine doesn't trap on the very first launch.
+    // Operator §3.4 — Corrected Hamiltonian Audit:
+    //   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
+    //
+    // Subtracting W_ext means the fuse fires only on numerical
+    // instability, not on intentional perturbation.  The 1% threshold
+    // catches drift that's NOT explained by tracked external work.
+    //
+    // First-frame guard: when v_prev == 0.0 (sentinel), skip the
+    // drift check.  The captured pipeline zeros W_ext each chunk so
+    // the SFA always sees a fresh window.
     const double v_curr = prism_gearbox_load_adj_v_curr(adj);
     const double v_prev = cruise->v_prev;
+    // adj.d_external_work is at offset 128 (f64 VALUE).
+    const uint8_t* adj_base = reinterpret_cast<const uint8_t*>(adj);
+    const double w_ext = *reinterpret_cast<const double*>(adj_base + 128);
     const bool   first_frame = (v_prev == 0.0);
     if (!first_frame) {
-        const double abs_prev = (v_prev < 0.0) ? -v_prev : v_prev;
-        const double diff     = (v_curr - v_prev);
+        const double expected = v_prev + w_ext;
+        const double abs_exp  = (expected < 0.0) ? -expected : expected;
+        const double diff     = v_curr - expected;
         const double abs_diff = (diff < 0.0) ? -diff : diff;
-        const double drift    = abs_diff / abs_prev;
+        // Avoid division by zero when |V_{t-1} + W_ext| ≈ 0 (rare).
+        const double drift    = (abs_exp > 1.0e-12)
+                                ? (abs_diff / abs_exp)
+                                : 0.0;
         // isnan check: NaN != NaN.  Reject Inf as well.
         const bool   nan_v    = !(v_curr == v_curr) || (v_curr > 1.0e300) || (v_curr < -1.0e300);
         if (drift > 0.01 || nan_v) {

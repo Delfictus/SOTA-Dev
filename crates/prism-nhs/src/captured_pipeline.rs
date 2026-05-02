@@ -1237,6 +1237,10 @@ impl CapturedAdjudicationPipeline {
         // d_forces via atomicAdd — NVE-safe at α ≤ 0.01 (< 10% bound).
         // Omitted when cfg.asc is None (test builds, legacy path).
         if let Some(ref asc) = cfg.asc {
+            // M1.2.18-P3.2 — pass d_pe_components so the ASC kernel
+            // can fold V_ASC into V_t.  Cast f64 const → f64 mut for
+            // the atomicAdd target.  Null-passthrough preserves legacy
+            // test fixtures that don't wire PE.
             let rc = unsafe {
                 crate::interferometric_adjudicator::ffi::prism_asc_apply(
                     adj_dev as *const InterferometricAdjudicatorFfi,
@@ -1246,6 +1250,7 @@ impl CapturedAdjudicationPipeline {
                     asc.n_atoms,
                     asc.steering_gain_alpha,
                     md_stream.cu_stream() as *mut c_void,
+                    cfg.d_pe_components as *mut f64,
                 )
             };
             if rc != 0 {

@@ -1284,6 +1284,56 @@ impl PersistentNhsEngine {
         self.engine.as_ref().map(|e| e.n_atoms()).unwrap_or(0)
     }
 
+    // ── M1.2.18-P1 — Forwarders for the V2 captured-pipeline build ──
+    //
+    // The five methods below are simple `engine.as_ref()/as_mut()` forwarders
+    // that bridge the production `nhs_rt_full --features=v2_ignition` build
+    // (which uses `PersistentNhsEngine`) to the inner `NhsAmberFusedEngine`
+    // accessors added in the B.3 / M1.2.17 waves.  Without these, the
+    // captured-pipeline wire-up at nhs_rt_full.rs:5010+ fails to link.
+
+    /// **B.3** raw device pointer to the `d_velocities` buffer.
+    /// Forwards to inner `NhsAmberFusedEngine::d_velocities_dev_ptr`.
+    pub fn d_velocities_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_velocities_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// **B.3** raw device pointer to `d_protocol->dt` (offset 84 within
+    /// the GPU-resident ProtocolState).  Forwarder.
+    pub fn d_protocol_dt_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_protocol_dt_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// **M1.2.17** raw device pointer to the per-atom potential-energy
+    /// components buffer (n_atoms × f64).  CUB DeviceReduce::Sum reads
+    /// from this address.  Forwarder.
+    pub fn d_potential_energy_components_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_potential_energy_components_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// **M1.2.17** atom count for the per-atom PE buffer (= length of
+    /// d_potential_energy_components / sizeof(f64)).  Forwarder.
+    pub fn d_potential_energy_n_atoms(&self) -> usize {
+        self.engine.as_ref()
+            .map(|e| e.d_potential_energy_n_atoms())
+            .unwrap_or(0)
+    }
+
+    /// **B.3.1** Gearbox > Adaptive-DT hierarchy gate.  When the V2
+    /// captured pipeline is live the legacy `--adaptive-dt` host write
+    /// path is bypassed.  Forwarder.
+    pub fn set_gearbox_active(&mut self, active: bool) {
+        if let Some(ref mut e) = self.engine {
+            e.set_gearbox_active(active);
+        }
+    }
+
     /// Get ALL GPU buffer references needed by the persistent coupling kernel.
     pub fn twin_coupling_gpu_state(&mut self) -> Option<(
         &mut CudaSlice<f32>,

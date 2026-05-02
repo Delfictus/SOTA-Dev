@@ -446,7 +446,11 @@ __device__ __forceinline__ void compute_nonbonded_force(
     // M1.2.17 — per-atom PE accumulator + 2 atom indices.  pe_components
     // = nullptr disables PE accumulation (legacy callers).
     double* pe_components,
-    int nbi, int nbj
+    int nbi, int nbj,
+    // M1.2.18-P2.3 — 1-4 FUDGE bit.  When true, the AMBER ff14SB
+    // scaling factors (FUDGE_LJ=0.5, FUDGE_QQ=0.8333) are applied to
+    // BOTH the force AND the per-atom PE so F = −∇V parity holds.
+    bool is_14
 ) {
     float3 rij = make_float3(pj.x - pi.x, pj.y - pi.y, pj.z - pi.z);
     float r_sq = rij.x*rij.x + rij.y*rij.y + rij.z*rij.z;
@@ -472,13 +476,18 @@ __device__ __forceinline__ void compute_nonbonded_force(
     // Coulomb force
     float elec_force = COULOMB_CONSTANT * qi * qj * inv_r2 * inv_r;
 
-    float total_force = lj_force + elec_force;
+    // M1.2.18-P2.3 — 1-4 FUDGE applied to BOTH force and PE.
+    // Branchless select.
+    const float scale_lj = is_14 ? FUDGE_LJ : 1.0f;
+    const float scale_qq = is_14 ? FUDGE_QQ : 1.0f;
+    float total_force = scale_lj * lj_force + scale_qq * elec_force;
 
     float3 f = make_float3(total_force * rij.x, total_force * rij.y, total_force * rij.z);
     fi.x -= f.x; fi.y -= f.y; fi.z -= f.z;
     fj.x += f.x; fj.y += f.y; fj.z += f.z;
 
-    // M1.2.17 — accumulate V_pair = V_LJ + V_elec split half-half.
+    // M1.2.17 — accumulate V_pair = V_LJ + V_elec (with 1-4 FUDGE
+    // applied per M1.2.18-P2.3) split half-half across atoms i, j.
     //   V_LJ   = 4·ε·(σ_r¹² − σ_r⁶)         (Lorentz-Berthelot ε,σ form)
     //   V_elec = COULOMB_CONSTANT·q_i·q_j / r
     if (pe_components != nullptr) {
@@ -486,7 +495,9 @@ __device__ __forceinline__ void compute_nonbonded_force(
                                 * ((double)sigma_r12 - (double)sigma_r6);
         const double v_elec = (double)COULOMB_CONSTANT * (double)qi * (double)qj
                                 * (double)inv_r;
-        const double v_pair_half = (v_lj + v_elec) * 0.5;
+        const double v_pair = (double)scale_lj * v_lj
+                            + (double)scale_qq * v_elec;
+        const double v_pair_half = v_pair * 0.5;
         atomicAdd(pe_components + nbi, v_pair_half);
         atomicAdd(pe_components + nbj, v_pair_half);
     }
@@ -1148,6 +1159,19 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 float other_charge = __ldg(&charges[j]);
                 LJParam other_lj = lj_params[j];
 
+                // M1.2.18-P2.3 — 1-4 pair lookup for ff14SB FUDGE
+                // scaling.  Walks the per-atom 1-4 list (avg ~4 entries
+                // per atom; effective lookup is single warp pass through
+                // the same L1-cached buffer the O(N²) path uses).
+                bool is_14 = false;
+                {
+                    const int s14 = pairs14_offsets[tid];
+                    const int e14 = pairs14_offsets[tid + 1];
+                    for (int p = s14; p < e14; p++) {
+                        if (pairs14_list[p] == j) { is_14 = true; break; }
+                    }
+                }
+
                 float3 fi = make_float3(0, 0, 0);
                 float3 fj = make_float3(0, 0, 0);
 
@@ -1157,7 +1181,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                     my_lj.sigma, my_lj.epsilon,
                     other_lj.sigma, other_lj.epsilon,
                     fi, fj, cutoff_sq,
-                    pe_components, tid, j
+                    pe_components, tid, j,
+                    is_14
                 );
 
                 my_force.x += fi.x;
@@ -1170,83 +1195,31 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 atomicAdd(&forces[j].z, fj.z);
             }
         } else {
-            // ================================================================
-            // O(N²) FALLBACK: All-pairs with early cutoff rejection
-            // ================================================================
-            // Used for small systems (<500 atoms) where neighbor list overhead isn't worth it
-            const int TILE_SIZE = 32;
-            for (int tile_start = tid + 1; tile_start < n_atoms; tile_start += TILE_SIZE) {
-                int tile_end = min(tile_start + TILE_SIZE, n_atoms);
-
-                for (int j = tile_start; j < tile_end; j++) {
-                    float3 other_pos = positions[j];
-
-                    // CRITICAL: Early distance check BEFORE exclusion list lookup
-                    float dx = my_pos.x - other_pos.x;
-                    float dy = my_pos.y - other_pos.y;
-                    float dz = my_pos.z - other_pos.z;
-                    float r2 = dx * dx + dy * dy + dz * dz;
-
-                    // Skip if outside cutoff - this eliminates most pairs
-                    if (r2 >= cutoff_sq || r2 < 0.01f) continue;
-
-                    // Only check exclusion list for nearby pairs
-                    bool excluded = false;
-                    int start = exclusion_offsets[tid];
-                    int end = exclusion_offsets[tid + 1];
-                    for (int e = start; e < end; e++) {
-                        if (exclusion_list[e] == j) {
-                            excluded = true;
-                            break;
-                        }
-                    }
-
-                    if (!excluded) {
-                        // Check 1-4 pair list (short scan, avg ~4 entries)
-                        bool is_14 = false;
-                        int s14 = pairs14_offsets[tid];
-                        int e14 = pairs14_offsets[tid + 1];
-                        for (int p = s14; p < e14; p++) {
-                            if (pairs14_list[p] == j) { is_14 = true; break; }
-                        }
-
-                        float3 rij = make_float3(
-                            other_pos.x - my_pos.x,
-                            other_pos.y - my_pos.y,
-                            other_pos.z - my_pos.z
-                        );
-                        float inv_r = rsqrtf(r2);
-                        float inv_r2 = inv_r * inv_r;
-
-                        // LJ force (Lorentz-Berthelot combining)
-                        float sigma = 0.5f * (my_lj.sigma + lj_params[j].sigma);
-                        float epsilon = sqrtf(my_lj.epsilon * lj_params[j].epsilon);
-                        float sigma_r = sigma * inv_r;
-                        float sr2 = sigma_r * sigma_r;
-                        float sr6 = sr2 * sr2 * sr2;
-                        float sr12 = sr6 * sr6;
-                        float lj_f = 24.0f * epsilon * inv_r2 * (2.0f * sr12 - sr6);
-
-                        // Coulomb force
-                        float elec_f = COULOMB_CONSTANT * my_charge * charges[j] * inv_r2 * inv_r;
-
-                        // Apply 1-4 AMBER scaling (branchless select)
-                        float scale_lj = is_14 ? FUDGE_LJ : 1.0f;
-                        float scale_qq = is_14 ? FUDGE_QQ : 1.0f;
-                        float total = scale_lj * lj_f + scale_qq * elec_f;
-
-                        float3 f = make_float3(total * rij.x, total * rij.y, total * rij.z);
-                        my_force.x -= f.x;
-                        my_force.y -= f.y;
-                        my_force.z -= f.z;
-
-                        // Newton's 3rd law
-                        atomicAdd(&forces[j].x, f.x);
-                        atomicAdd(&forces[j].y, f.y);
-                        atomicAdd(&forces[j].z, f.z);
-                    }
-                }
-            }
+            // ════════════════════════════════════════════════════════
+            // RECT-3.6 / Amendment 3.5.2 — ALL-PAIRS PURGE
+            // ════════════════════════════════════════════════════════
+            //
+            // The O(N²) all-pairs fallback is excised per operator
+            // directive 2026-05-02.  Rationale (from the directive):
+            //
+            //   * Architectural Naivety — relic of legacy CPU MD
+            //     packages.  No physical/computational justification
+            //     on Blackwell sm_120.
+            //   * Register Tax — even if the branch is never taken,
+            //     the inner-loop locals were allocated by the
+            //     hardware scheduler for every thread, costing
+            //     ~4-6 registers/thread in the production O(N) path.
+            //     Critical for the G16 64-register sweet-spot.
+            //   * Neighbor-List Invariant — Mpro/MYC-MAX targets are
+            //     thousands of atoms; only the cell-list path hits
+            //     ≥92% SM saturation.  If a system is small enough
+            //     to "need" all-pairs, it belongs in a unit test, not
+            //     on an RTX 5080.
+            //
+            // Hardware Safety Valve: any attempt to launch this
+            // kernel with use_neighbor_list == 0 is a protocol
+            // violation.  PTX `trap` halts the SM immediately.
+            asm volatile("trap;");
         }
 
         // Write accumulated local force once
@@ -1276,6 +1249,31 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         scaled_force.x *= per_atom_lam;
         scaled_force.y *= per_atom_lam;
         scaled_force.z *= per_atom_lam;
+
+        // M1.2.18-P2.2 — REST2 PE parity.  pe_components[tid] is the
+        // SUM of per-atom V contributions (V_b/2 from bonds + V_a/3 from
+        // angles + V_d/4 from dihedrals + V_pair/2 from non-bonded pairs)
+        // accumulated by the compute_*_force helpers BEFORE this λ scale
+        // was applied to the forces.  Without this multiply the SFA
+        // stability fuse would see V_t at λ = 1.0 while F is at λ_i ⇒
+        // every tempered replica trips Gear 3 spuriously.
+        //
+        // F = −∇V parity: scaling F by λ_i means the work done is
+        // λ_i · V_unscaled, so the per-atom V should also be λ_i ·
+        // V_unscaled.  Note: a pair interaction (i,j) had V_pair/2
+        // accumulated to BOTH atoms; under REST2 the effective pair
+        // V becomes (λ_i + λ_j)/2 · V_pair/2 + (λ_i + λ_j)/2 · V_pair/2
+        // = (λ_i + λ_j)/2 · V_pair.  Standard REST2 uses √(λ_i·λ_j);
+        // the arithmetic-mean approximation here is acceptable for the
+        // SFA fuse (drift detection, not equilibrium thermo) but should
+        // be revisited if AMBER-REST2 exact semantics are required.
+        if (pe_components != nullptr) {
+            const double lam = (double)per_atom_lam;
+            // Atomic not needed — only this thread writes pe_components[tid]
+            // at THIS point (force accumulation phase ended at
+            // __syncthreads() above).
+            pe_components[tid] = pe_components[tid] * lam;
+        }
 
         // FORCE CLAMPING: Prevent runaway from unminimized structures
         // Max force ~1000 kcal/mol/Å prevents numerical blowup
@@ -1908,7 +1906,18 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 neighbors.n_neighbors,
                 timestep * n_aromatics + arom_idx,  // seed for RNG
                 d_aromatic_type[arom_idx],          // ChromophoreType for debug
-                uv_wavelength_nm                    // Wavelength for debug
+                uv_wavelength_nm,                   // Wavelength for debug
+                // M1.2.18-P3.3 — d_external_work accumulator.  NOT YET
+                // wired through the kernel arg list (would require a
+                // 70-th param + 3 launch-site updates).  The
+                // accumulator logic in apply_vibrational_transfer is
+                // staged for M1.2.19 — the engine will thread
+                // &adj.d_external_work (offset 128) here once a
+                // pre-launch hook copies that address into engine
+                // state.  Passing nullptr is the SAFE default: UV
+                // kicks happen but their ΔK is not added to W_ext
+                // until the integrator gains the pointer.
+                nullptr
             );
         }
     }
