@@ -1,0 +1,26 @@
+{
+  "merged_pdb": "7c8r_dimer.pdb",
+  "created": "2026-05-02T00:42:30.901588+00:00",
+  "chains": [
+    {
+      "source_file": "7c8r_chainA_clean.pdb",
+      "original_chain": "A",
+      "original_resnum_start": 1,
+      "original_resnum_end": 306,
+      "merged_resnum_start": 1,
+      "merged_resnum_end": 301,
+      "n_residues": 301
+    },
+    {
+      "source_file": "7c8r_chainB_clean.pdb",
+      "original_chain": "B",
+      "original_resnum_start": 1,
+      "original_resnum_end": 306,
+      "merged_resnum_start": 302,
+      "merged_resnum_end": 602,
+      "n_residues": 301
+    }
+  ],
+  "total_residues": 602,
+  "offset_formula": "Use merged_resnum_start/end to translate. merged_resnum = original_resnum - original_start + merged_start"
+}
