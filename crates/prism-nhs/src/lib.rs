@@ -265,6 +265,19 @@ pub mod captured_pipeline;
 /// gating in-flight physics or the F1 SWITCH adjudication.
 #[cfg(feature = "gpu")]
 pub mod ghost_telemetry;
+/// ZSTR — Zero-Stall Telemetry Ring.
+/// Phase 1 (G21): `ZstrRing` pinned triple-buffer + alignment gate.
+/// Phase 2 (G22): `spawn_zstr_consumer` O_DIRECT NVMe writer thread.
+/// CUDA kernels: `zstr_signal_completion_kernel` (fence) +
+/// `asc_inject_repulsion_v4_kernel` (vectorized ASC force injection).
+#[cfg(feature = "gpu")]
+pub mod zstr;
+/// G26 Chronometric Gearbox — Wave B.1 foundation: __constant__
+/// d_gearbox_table[16] + ChronometricStateTensor + PointerSwap kernel.
+/// B.2 lands the predicate bridge + VelocityRescale + Berendsen guard;
+/// B.3 lands the PTX-trap kernel + 1k-step transition test.
+#[cfg(feature = "gpu")]
+pub mod gearbox;
 /// Diagnostic / informational modules — opt-in via the `diagnostic`
 /// Cargo feature. Per the Blackwell Convergence mandate the M1.2.5b
 /// typed-producer differential is no longer a closure gate; it

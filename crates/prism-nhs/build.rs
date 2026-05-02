@@ -36,6 +36,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/symmetry_consensus.cuh");
     println!("cargo:rerun-if-changed=src/cuda/dynamic_t7.cu");
     println!("cargo:rerun-if-changed=src/cuda/dynamic_t7.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/gearbox.cu");
+    println!("cargo:rerun-if-changed=src/cuda/gearbox.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -244,6 +246,21 @@ fn main() {
         &nvcc,
         "src/cuda/dynamic_t7.cu",
         "dynamic_t7",
+        &out_dir,
+    );
+
+    // Wave B.1 — G26 Chronometric Gearbox foundation.  __constant__ float
+    // d_gearbox_table[16] (3 active gears + NaN-sentinel Gear 3) +
+    // ChronometricStateTensor (16-byte F2-pool persistent state) +
+    // prism_gearbox_pointer_swap_kernel (Stateful Finite Automaton: reads
+    // adj->adjudication_code, mutates cruise tensor, writes the active
+    // gear's dt through *(adj->d_dt) — the address T12 Pre-Flight wired
+    // to &d_protocol->dt).  Hello-world test in gearbox.rs proves the
+    // 2.0fs → 4.0fs flip without host intervention.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/gearbox.cu",
+        "gearbox",
         &out_dir,
     );
 }

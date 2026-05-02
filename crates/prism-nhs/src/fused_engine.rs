@@ -1904,6 +1904,14 @@ pub struct NhsAmberFusedEngine {
     adaptive_dt_enabled: bool,
     base_dt: f32,  // stores the base dt for adaptive scaling
 
+    // Wave B.1 — G26 chronometric gearbox is the sole master of the
+    // chronometric plane when active.  When `gearbox_active == true`
+    // the adaptive_dt_enabled path is bypassed in `step_with_clusters`
+    // so the CPU and GPU don't fight for control of d_protocol->dt.
+    // Set via `set_gearbox_active(true)` once the V2 captured pipeline
+    // is built; never written from anywhere else.
+    gearbox_active: bool,
+
     // PRISM-TWIN v3.0: GPU-resident protocol state (148 bytes in VRAM)
     // The Director kernel updates this each step BEFORE physics kernels read from it.
     // All three physics kernels (fused_step, voxel_step, multi_lif) read from this pointer.
@@ -3111,6 +3119,9 @@ impl NhsAmberFusedEngine {
             // Adaptive dt (disabled by default)
             adaptive_dt_enabled: false,
             base_dt: 0.002,
+            // Wave B.1 — gearbox inactive until the V2 captured pipeline
+            // build calls `set_gearbox_active(true)`.
+            gearbox_active: false,
 
             // PRISM-TWIN v3.0: GPU-resident protocol state
             d_protocol_state,
@@ -3435,6 +3446,25 @@ impl NhsAmberFusedEngine {
     }
 
     // Enable adaptive dt: 1.5x during hold phases, base_dt during ramps.
+    /// Wave B.1 — flips the gearbox-takes-priority gate.  When `true`,
+    /// the host-side `adaptive_dt_enabled` write path in `step_with_clusters`
+    /// is bypassed; the G26 gearbox PointerSwap kernel becomes the sole
+    /// writer of `d_protocol->dt`.  Set this once the V2 captured pipeline
+    /// is built and never toggle it during a campaign.
+    pub fn set_gearbox_active(&mut self, active: bool) {
+        if self.gearbox_active != active {
+            log::info!(
+                "[GEARBOX HIERARCHY] gearbox_active: {} → {} (legacy --adaptive-dt {} from now on)",
+                self.gearbox_active, active,
+                if active { "BYPASSED" } else { "active" }
+            );
+        }
+        self.gearbox_active = active;
+    }
+
+    /// Read accessor — true while the V2 captured pipeline owns dt.
+    pub fn is_gearbox_active(&self) -> bool { self.gearbox_active }
+
     pub fn set_adaptive_dt(&mut self, enabled: bool) {
         self.adaptive_dt_enabled = enabled;
         self.base_dt = self.dt;
@@ -5334,8 +5364,11 @@ impl NhsAmberFusedEngine {
         // Get current temperature from protocol (simulated annealing ramp)
         current_temp = self.temp_protocol.current_temperature();
 
-        // Adaptive dt: use 1.5x during hold phases (constant T, forces change slowly)
-        if self.adaptive_dt_enabled {
+        // Adaptive dt: use 1.5x during hold phases (constant T, forces change slowly).
+        // Wave B.1 hierarchy: when the G26 gearbox is active the PointerSwap
+        // kernel is the sole writer of d_protocol->dt; the legacy host-side
+        // adaptive heuristic must NOT race with it.
+        if self.adaptive_dt_enabled && !self.gearbox_active {
             if self.temp_protocol.is_hold_phase() {
                 self.dt = self.base_dt * 1.5;
             } else {

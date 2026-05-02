@@ -4998,6 +4998,13 @@ fn run_multi_stream_pipeline(
                                                     &cfg,
                                                 ) {
                                                     Ok(pipeline) => {
+                                                        // Wave B.1 — V2 pipeline live ⇒ G26 gearbox is
+                                                        // the sole master of d_protocol->dt.  Bypass
+                                                        // the legacy --adaptive-dt host-side write
+                                                        // path so the CPU and GPU don't race over
+                                                        // the same f32 in VRAM (operator ruling
+                                                        // 2026-05-02 RULING-1: Gearbox > Adaptive-DT).
+                                                        engine.set_gearbox_active(true);
                                                         let zstr_live = cfg.zstr.is_some();
                                                         log::info!(
                                                             "    [V2-BUILD stream {}] ✓ PIPELINE LIVE \

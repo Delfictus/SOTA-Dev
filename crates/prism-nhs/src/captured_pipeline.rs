@@ -416,6 +416,15 @@ pub struct CapturedAdjudicationPipeline {
     dynt7_idx_dev:   usize,
     dynt7_stats_dev: usize,
 
+    /// Wave B.1 — G26 ChronometricStateTensor (16 bytes, 16-aligned).
+    /// Persistent state for the gearbox PointerSwap kernel.  Initialised
+    /// to {counter=0, last_burst_frame=0, current_gear=1, _pad=0} —
+    /// Gear 1 (2.0 fs) is the safe pre-Burst default.  Pointer-stable
+    /// for the campaign; the predicate bridge in B.2 will pass this
+    /// address to the PointerSwap kernel through the SWITCH body
+    /// sub-graphs.  Freed on Drop.
+    cruise_state_dev: usize,
+
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
 
@@ -655,6 +664,53 @@ impl CapturedAdjudicationPipeline {
             let _ = cuMemsetD8_v2(dynt7_idx_dev   as CUdeviceptr, 0, DYNT7_IDX_BYTES   as usize);
             let _ = cuMemsetD8_v2(dynt7_stats_dev as CUdeviceptr, 0, DYNT7_STATS_BYTES as usize);
         }
+
+        // ── Wave B.1 — G26 ChronometricStateTensor (16 bytes) ─────────
+        // Pre-allocated in F2 pool; persistent across captured-graph
+        // launches. Seeded with the default state {counter=0, no burst,
+        // current_gear=1 (2.0 fs safety)} so the first PointerSwap
+        // launch sees a clean baseline.  Predicate bridge in B.2 will
+        // wire this address into the SWITCH body sub-graphs.
+        const CRUISE_STATE_BYTES: u64 = 16;
+        let cruise_state_dev = pool.alloc_async(CRUISE_STATE_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "cruise_state", reason: s })?;
+        unsafe {
+            // Default: counter=0 (u32), last_burst_frame=0 (u32),
+            // current_gear=1 (u32), _pad=0 (u32). Encoded as little-endian
+            // bytes for cuMemcpyHtoD_v2.
+            let seed: [u32; 4] = [0u32, 0u32, 1u32, 0u32];
+            let rc = cuMemcpyHtoD_v2(
+                cruise_state_dev as CUdeviceptr,
+                seed.as_ptr() as *const c_void,
+                CRUISE_STATE_BYTES as usize,
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "seed cruise_state_dev",
+                    rc: rc as i32,
+                });
+            }
+        }
+
+        // ── Wave B.1 — Initialise __constant__ d_gearbox_table ────────
+        // Stream-ordered cudaMemcpyToSymbolAsync of 16 floats (64 bytes,
+        // one Blackwell L1 const-cache line) into the gearbox.cu's
+        // __constant__ memory. Done OUTSIDE the capture window — the
+        // captured graph cannot host-write a __constant__ symbol.
+        let gearbox_table = crate::gearbox::default_gearbox_table();
+        let rc = unsafe {
+            crate::gearbox::ffi::prism_gearbox_init_table_async(
+                gearbox_table.as_ptr(),
+                md_raw as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "prism_gearbox_init_table_async",
+                rc,
+            });
+        }
+
         md_stream.synchronize().map_err(BuildError::Driver)?;
 
         // CSR §M alignment guard (Anti-Greenfield Audit Gate G19):
@@ -900,6 +956,7 @@ impl CapturedAdjudicationPipeline {
                 let _ = pool.free_async(dynt7_acc_dev, md_raw);
                 let _ = pool.free_async(dynt7_idx_dev, md_raw);
                 let _ = pool.free_async(dynt7_stats_dev, md_raw);
+                let _ = pool.free_async(cruise_state_dev, md_raw);
                 return Err(BuildError::Driver(e));
             }
         }
@@ -1364,6 +1421,7 @@ impl CapturedAdjudicationPipeline {
             let _ = pool.free_async(adj_dev, md_raw);
             let _ = pool.free_async(burst_marker_dev, md_raw);
             if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
+            let _ = pool.free_async(cruise_state_dev, md_raw);
             return Err(BuildError::V2HookFailed { rc });
         }
 
@@ -1459,6 +1517,7 @@ impl CapturedAdjudicationPipeline {
             dynt7_acc_dev,
             dynt7_idx_dev,
             dynt7_stats_dev,
+            cruise_state_dev,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -1613,6 +1672,16 @@ impl CapturedAdjudicationPipeline {
     pub fn cu_graph_exec_raw(&self) -> CUgraphExec {
         self.cu_graph_exec
     }
+
+    /// Wave B.1 — device pointer to the G26 ChronometricStateTensor
+    /// (16 B). Pointer-stable for the campaign. The B.2 predicate
+    /// bridge will pass this to the gearbox PointerSwap kernel through
+    /// the SWITCH body sub-graphs; outside the captured graph, callers
+    /// can invoke `prism_gearbox_launch_pointer_swap` directly with
+    /// this address for diagnostic / one-shot tests.
+    pub fn cruise_state_dev_ptr(&self) -> u64 {
+        self.cruise_state_dev as u64
+    }
 }
 
 impl Drop for CapturedAdjudicationPipeline {
@@ -1656,6 +1725,8 @@ impl Drop for CapturedAdjudicationPipeline {
         let _ = self.pool.free_async(self.dynt7_acc_dev,   md_raw);
         let _ = self.pool.free_async(self.dynt7_idx_dev,   md_raw);
         let _ = self.pool.free_async(self.dynt7_stats_dev, md_raw);
+        // Wave B.1 — G26 ChronometricStateTensor (always allocated).
+        let _ = self.pool.free_async(self.cruise_state_dev, md_raw);
         // VramPool's Drop releases the pool itself.
     }
 }
