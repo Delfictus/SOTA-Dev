@@ -1334,6 +1334,90 @@ impl PersistentNhsEngine {
     /// Capture the autonomous physics step as a CUDA Graph for replay.
     /// Pre-synchronizes the stream to flush all prior work (module loads, memcpy)
     /// before entering capture mode — this prevents CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED.
+    /// Amendment 3.4 monolithic-fusion variant. Captures the autonomous
+    /// kernel sequence into a raw `CUgraph` template (NOT instantiated)
+    /// with named node handles for "director", "fused_step", "multi_lif"
+    /// recorded by a `StreamCaptureTagger`. The caller can splice in child
+    /// graphs via `CapturedTemplate::add_child_graph_node` before
+    /// instantiating with `template.instantiate()`.
+    ///
+    /// Bypasses `cudarc::driver::safe::CudaGraph` entirely; uses raw
+    /// `cuStreamBeginCapture_v2` / `cuStreamEndCapture` from
+    /// `cudarc::driver::sys` so the template handle stays alive
+    /// post-capture.
+    pub fn capture_autonomous_template(&mut self)
+        -> anyhow::Result<crate::graph_capture::CapturedTemplate>
+    {
+        use cudarc::driver::sys;
+        use crate::graph_capture::{StreamCaptureTagger, CapturedTemplate};
+        let stream = self.stream.clone();
+
+        // Same pre-capture posture as the legacy path: bind context, sync.
+        stream.context().bind_to_thread()
+            .map_err(|e| anyhow::anyhow!("Pre-capture context bind: {:?}", e))?;
+        stream.synchronize()
+            .map_err(|e| anyhow::anyhow!("Pre-capture sync: {:?}", e))?;
+
+        let engine = self.engine.as_mut()
+            .ok_or_else(|| anyhow::anyhow!("No engine loaded"))?;
+
+        // Capture-mode flag for cudarc's bind_to_thread no-op shim.
+        cudarc::driver::set_capture_mode_active(true);
+        struct CaptureGuard;
+        impl Drop for CaptureGuard {
+            fn drop(&mut self) {
+                cudarc::driver::set_capture_mode_active(false);
+            }
+        }
+        let _guard = CaptureGuard;
+
+        // ── Begin capture (raw sys, RELAXED mode matches legacy path) ──
+        let raw_stream = stream.cu_stream();
+        let rc = unsafe {
+            sys::cuStreamBeginCapture_v2(
+                raw_stream,
+                sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED,
+            )
+        };
+        if !matches!(rc, sys::CUresult::CUDA_SUCCESS) {
+            anyhow::bail!("cuStreamBeginCapture_v2 failed: {:?}", rc);
+        }
+
+        // Tagger snapshots the CUgraphNode handle after each kernel.
+        let mut tagger = StreamCaptureTagger::new(raw_stream);
+
+        // Launch the captured kernel sequence. On error, abort capture
+        // cleanly and propagate.
+        let kernel_result = engine.step_autonomous_kernels_tagged(
+            &stream,
+            Some(&mut tagger),
+        );
+        if let Err(e) = kernel_result {
+            // Abort capture: end and discard the template.
+            let mut discard: sys::CUgraph = std::ptr::null_mut();
+            unsafe { let _ = sys::cuStreamEndCapture(raw_stream, &mut discard); }
+            if !discard.is_null() {
+                unsafe { let _ = sys::cuGraphDestroy(discard); }
+            }
+            return Err(anyhow::anyhow!("step_autonomous_kernels_tagged: {}", e));
+        }
+
+        // ── End capture → raw CUgraph template ─────────────────────────
+        let mut cu_graph: sys::CUgraph = std::ptr::null_mut();
+        let rc = unsafe { sys::cuStreamEndCapture(raw_stream, &mut cu_graph) };
+        if !matches!(rc, sys::CUresult::CUDA_SUCCESS) {
+            anyhow::bail!("cuStreamEndCapture failed: {:?}", rc);
+        }
+        if cu_graph.is_null() {
+            anyhow::bail!("cuStreamEndCapture produced null template");
+        }
+        Ok(CapturedTemplate::from_capture(
+            cu_graph,
+            tagger.into_registry(),
+            stream,
+        ))
+    }
+
     pub fn capture_autonomous_graph(&mut self) -> anyhow::Result<crate::graph_capture::AutonomousGraph> {
         use cudarc::driver::sys;
         let stream = self.stream.clone();

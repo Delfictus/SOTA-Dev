@@ -6764,7 +6764,26 @@ impl NhsAmberFusedEngine {
     /// Launch one step's GPU kernels WITHOUT any CPU-side memcpy operations.
     /// This is the graph-capturable step: Director → Physics → multi_lif → housekeeping.
     /// The CPU does not touch positions, velocities, or spike data.
+    ///
+    /// Convenience wrapper that passes `None` for the tagger. Callers that
+    /// need to record CUgraphNode handles during stream capture should call
+    /// [`Self::step_autonomous_kernels_tagged`] directly.
     pub fn step_autonomous_kernels(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
+        self.step_autonomous_kernels_tagged(stream, None)
+    }
+
+    /// Same as [`Self::step_autonomous_kernels`] but accepts an optional
+    /// `CaptureTagger` (Amendment 3.4 monolithic-fusion path). When `Some`,
+    /// `record_node` is called immediately after each kernel launch to
+    /// snapshot the captured `CUgraphNode` handle on `stream` under the
+    /// labels `"director"`, `"fused_step"`, and `"multi_lif"`. The
+    /// orchestrator uses these handles for `cudaGraphAddChildGraphNode`
+    /// splice-point selection.
+    pub fn step_autonomous_kernels_tagged(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        mut tagger: Option<&mut dyn crate::graph_capture::CaptureTagger>,
+    ) -> Result<()> {
         let n_atoms_i32 = self.n_atoms as i32;
 
         // Director kernel — use the standard (non-graph) variant.
@@ -6781,6 +6800,9 @@ impl NhsAmberFusedEngine {
             if let Err(e) = res {
                 return Err(anyhow::anyhow!("step_autonomous: Director launch failed: {:?}", e));
             }
+        }
+        if let Some(t) = tagger.as_deref_mut() {
+            let _ = t.record_node("director")?;
         }
 
         // Physics kernel (reads from ProtocolState)
@@ -6864,6 +6886,9 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_residue_step_causal)
                 .launch(physics_cfg)
         }.context("step_autonomous: Physics kernel failed")?;
+        if let Some(t) = tagger.as_deref_mut() {
+            let _ = t.record_node("fused_step")?;
+        }
 
         // CA restraints SKIPPED in autonomous path — from housekeeping module (cross-module capture issue).
         // CA restraint force is small (<0.1 kcal/mol) at 300K and doesn't affect pocket detection.
@@ -6951,6 +6976,9 @@ impl NhsAmberFusedEngine {
                 .arg(&self.ladd_cold_hold_steps)
                 .launch(voxel_cfg)
         }.context("step_autonomous: multi_lif failed")?;
+        if let Some(t) = tagger.as_deref_mut() {
+            let _ = t.record_node("multi_lif")?;
+        }
 
         // Heartbeat + coupling clear SKIPPED in autonomous path.
         // These are from the housekeeping module (separate PTX) and cause
