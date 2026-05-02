@@ -4576,6 +4576,11 @@ fn run_multi_stream_pipeline(
                         // raw CUdeviceptr values below hold the VRAM allocations for
                         // d_spikes and d_cluster_offsets; they must outlive the
                         // pipeline and are freed explicitly after the chunk loop.
+                        // G23: 5-slot ZSTR ring — declared BEFORE v2_pipeline so Rust
+                        // drops it AFTER the pipeline (pipeline holds raw pointers into
+                        // the ring's pinned allocation).
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_zstr_ring: Option<prism_nhs::zstr::ZstrRing> = None;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
                         #[cfg(feature = "v2_ignition")]
@@ -4584,6 +4589,58 @@ fn run_multi_stream_pipeline(
                         let mut v2_offsets_raw: u64 = 0;  // CUdeviceptr — freed post-chunk-loop
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_mask_raw: u64 = 0;     // CUdeviceptr — per-atom ASC mask — freed post-chunk-loop
+
+                        // ── V2 TRAJECTORY STREAMING ───────────────────────────────────
+                        // Bounded MPSC channel: sender stays in the chunk loop,
+                        // receiver is consumed by a background writer thread that
+                        // flushes frames to disk as they arrive.  Host RAM usage is
+                        // O(channel_depth × n_atoms × 4) = bounded at ~244 KB for
+                        // 4LPK with depth=4.  The writer owns the file handle; the
+                        // chunk loop only try_send()s — it NEVER blocks on I/O.
+                        //
+                        // Frame wire format (all LE):
+                        //   [0..8]  placeholder for n_frames (u64) — seeked back at close
+                        //   per frame: [step: u64][n_floats: u32][positions: n_floats × f32]
+                        #[cfg(feature = "v2_ignition")]
+                        let v2_snap_pid = std::process::id();
+                        #[cfg(feature = "v2_ignition")]
+                        let v2_frames_tmp = std::path::PathBuf::from(
+                            format!("/tmp/prism_v2_{}_{}.bin", v2_snap_pid, i)
+                        );
+                        #[cfg(feature = "v2_ignition")]
+                        let (v2_snap_tx, v2_snap_rx) =
+                            std::sync::mpsc::sync_channel::<(u64, Vec<f32>)>(4);
+                        #[cfg(feature = "v2_ignition")]
+                        let writer_tmp_path = v2_frames_tmp.clone();
+                        #[cfg(feature = "v2_ignition")]
+                        let v2_writer_handle = std::thread::spawn(move || -> u64 {
+                            use std::io::{Seek, SeekFrom, Write};
+                            let Ok(f) = std::fs::File::create(&writer_tmp_path) else {
+                                log::warn!("[V2-traj writer {}] cannot create {:?}",
+                                           i, writer_tmp_path);
+                                return 0;
+                            };
+                            let mut bw = std::io::BufWriter::with_capacity(1 << 20, f);
+                            // Reserve 8 bytes for the n_frames header (written at close).
+                            let _ = bw.write_all(&0u64.to_le_bytes());
+                            let mut n_frames = 0u64;
+                            while let Ok((step, positions)) = v2_snap_rx.recv() {
+                                let n_floats = positions.len() as u32;
+                                let _ = bw.write_all(&step.to_le_bytes());
+                                let _ = bw.write_all(&n_floats.to_le_bytes());
+                                for x in &positions {
+                                    let _ = bw.write_all(&x.to_le_bytes());
+                                }
+                                n_frames += 1;
+                            }
+                            // Seekback: patch the n_frames header.
+                            if let Ok(mut inner) = bw.into_inner() {
+                                let _ = inner.seek(SeekFrom::Start(0));
+                                let _ = inner.write_all(&n_frames.to_le_bytes());
+                                let _ = inner.flush();
+                            }
+                            n_frames
+                        });
 
                         // ── T7 NOISE-FLOOR CALIBRATION — Path B (host-side, real production data) ──
                         // Per operator directive 2026-04-30 ("Path B Honest-Data
@@ -4759,6 +4816,48 @@ fn run_multi_stream_pipeline(
                                                     None
                                                 };
 
+                                                // ── G23 ZSTR ring allocation ──────────────────────
+                                                // 5-slot resilience ring (Amendment 2.2).
+                                                // Phase 3: position staging baked to slot 0.
+                                                // Phase 4: cuGraphKernelNodeSetParams rolls slot.
+                                                let zstr_ring_new = prism_nhs::zstr::ZstrRing::allocate(
+                                                    n_atoms as usize
+                                                );
+                                                let zstr_cfg = match &zstr_ring_new {
+                                                    Ok(ring) if ring.alignment_ok => {
+                                                        let slot = 0usize; // Phase 3: slot 0
+                                                        let dst = ring.positions_host_ptr(slot) as *mut f32;
+                                                        let fence_cu = ring.fence_cu_ptr(slot);
+                                                        // fence_cu is a CUdeviceptr into pinned host
+                                                        // memory — dereference to *mut u32 is safe
+                                                        // because cuMemAllocHost guarantees the ptr is
+                                                        // host-accessible.
+                                                        let fence_ptr = fence_cu as *mut u32;
+                                                        Some(prism_nhs::captured_pipeline::ZstrCaptureParams {
+                                                            d_positions: d_pos_ptr as *const f32,
+                                                            n_atoms:     n_atoms as u32,
+                                                            dst_pinned:  dst,
+                                                            slot_fence:  fence_ptr,
+                                                        })
+                                                    }
+                                                    Ok(ring) => {
+                                                        log::warn!(
+                                                            "    [G23 stream {}] ZSTR ring not aligned \
+                                                             ({:p}) — ZSTR nodes skipped",
+                                                            i, ring.positions_host_ptr(0)
+                                                        );
+                                                        None
+                                                    }
+                                                    Err(e) => {
+                                                        log::warn!(
+                                                            "    [G23 stream {}] ZstrRing alloc failed: \
+                                                             {} — ZSTR nodes skipped",
+                                                            i, e
+                                                        );
+                                                        None
+                                                    }
+                                                };
+
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -4766,6 +4865,7 @@ fn run_multi_stream_pipeline(
                                                     d_k_lm,
                                                     initial_frame_id:  steps_run as u32,
                                                     asc:               asc_cfg,
+                                                    zstr:              zstr_cfg,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
@@ -4773,16 +4873,22 @@ fn run_multi_stream_pipeline(
                                                     &cfg,
                                                 ) {
                                                     Ok(pipeline) => {
+                                                        let zstr_live = cfg.zstr.is_some();
                                                         log::info!(
                                                             "    [V2-BUILD stream {}] ✓ PIPELINE LIVE \
                                                              — {} spikes, 1 cluster, frame {}, \
-                                                             Node-D={} (n_atoms={})",
+                                                             Node-D={} Node-ZSTR={} (n_atoms={})",
                                                             i, n_rs, steps_run,
-                                                            cfg.asc.is_some(), n_atoms
+                                                            cfg.asc.is_some(), zstr_live, n_atoms
                                                         );
                                                         v2_spikes_raw  = d_sp;
                                                         v2_offsets_raw = d_off;
                                                         v2_mask_raw    = d_mask;
+                                                        // Store ring: must outlive pipeline
+                                                        // (pipeline holds raw ptrs into ring).
+                                                        if let Ok(ring) = zstr_ring_new {
+                                                            v2_zstr_ring = Some(ring);
+                                                        }
                                                         v2_pipeline    = Some(pipeline);
                                                         // Signal outer scope: V2 is live on
                                                         // at least one stream — legacy post-MD
@@ -4844,6 +4950,24 @@ fn run_multi_stream_pipeline(
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
                                 } else {
                                     engine.run(this_chunk)?;
+                                }
+
+                                // V2 trajectory snapshot — DtoH pull every N steps.
+                                // GPU is guaranteed idle (synchronize() just returned).
+                                // try_send: if the writer is backlogged, drop this frame
+                                // rather than stalling the chunk loop.
+                                // Fires only once v2_pipeline is live (warm_hold phase).
+                                #[cfg(feature = "v2_ignition")]
+                                if v2_pipeline.is_some() {
+                                    const V2_SNAP_EVERY: i32 = 5000; // steps between frames
+                                    let prev = steps_run;
+                                    let next = steps_run + this_chunk;
+                                    if next / V2_SNAP_EVERY > prev / V2_SNAP_EVERY {
+                                        if let Ok(positions) = engine.get_positions() {
+                                            let _ = v2_snap_tx
+                                                .try_send((steps_run as u64, positions));
+                                        }
+                                    }
                                 }
 
                                 // V2 IGNITION overlay — adjudication fires once per chunk
@@ -6282,6 +6406,20 @@ fn run_multi_stream_pipeline(
                             );
                         }
 
+                        // V2 trajectory: drop the sender so the writer thread sees
+                        // channel-EOF, drains any queued frames, patches the n_frames
+                        // header, and exits.  Join here so the file is fully flushed
+                        // before teardown moves it into the output directory.
+                        #[cfg(feature = "v2_ignition")]
+                        {
+                            drop(v2_snap_tx);
+                            let v2_n_frames = v2_writer_handle.join().unwrap_or(0);
+                            log::info!(
+                                "    [V2-traj stream {}] writer joined: {} frames → {:?}",
+                                i, v2_n_frames, v2_frames_tmp
+                            );
+                        }
+
                         last_summary.unwrap_or_else(|| engine.run(0).unwrap())
                     } else if adaptive_protocol || rest2_lambda < 1.0 {
                         // Split run: cold_hold first, then apply focused REST2, then remaining steps.
@@ -6313,6 +6451,10 @@ fn run_multi_stream_pipeline(
                     let spikes = engine.get_accumulated_spikes();
                     log::info!("    [stream {}] Accumulated spikes: {} (steps_run={})",
                         i, spikes.len(), if is_multi_diff { steps } else { steps_per_stream });
+
+                    // In the V2 path, engine.get_snapshots() is empty because physics
+                    // ran via graph.run_chunk(), not engine.run().  The real trajectory
+                    // is on disk; return an empty vec so teardown uses the disk file.
                     let snapshots = engine.get_snapshots();
 
                     // Download signal preservation grids from this stream's GPU buffers
@@ -6340,12 +6482,586 @@ fn run_multi_stream_pipeline(
     // The Adjudicator is the ranker.  Every CPU cycle below this point
     // (spatial hash clustering, find_neighbors_union, LIGSITE, PH, XGBoost,
     // Phase 3 enrichment) is wasted work and is physically skipped.
-    // The process exits cleanly the exact millisecond the physics loop joins.
+    // The teardown block below flushes ALL host-accessible metadata to disk
+    // before returning, per the comprehensive audit (2026-05-01).
     #[cfg(feature = "v2_ignition")]
     if v2_was_live.load(std::sync::atomic::Ordering::Acquire) {
         log::info!("  [V2 HARD-GATE] CapturedAdjudicationPipeline was live — \
                     bypassing legacy post-MD CPU pipeline. \
                     Wall-clock: {:.1}s total.", sim_elapsed.as_secs_f64());
+
+        // ── Phase 0: Output directory + path roots ────────────────────────
+        std::fs::create_dir_all(&args.output)
+            .with_context(|| format!("V2 teardown: create output dir {}",
+                                     args.output.display()))?;
+        let output_base = args.output.join(&structure_name);
+        let stem = structure_name.strip_suffix(".topology")
+                                 .unwrap_or(&structure_name);
+
+        // ── Phase 1: stream_results sweep ────────────────────────────────
+        // Collect spikes, snapshots, KCC, SignalPreservation across all streams.
+        // KCC merge: best-per-residue by active_causal count (same policy as
+        // legacy aggregation at L6416). Signal grid: element-wise sum.
+        let mut total_spikes  = 0usize;
+        let mut stream_summaries: Vec<serde_json::Value> = Vec::new();
+        let mut final_snapshot: Option<prism_nhs::fused_engine::EnsembleSnapshot> = None;
+        let mut merged_kcc: Option<prism_nhs::fused_engine::KccData> = None;
+        let mut merged_sig: Option<prism_nhs::fused_engine::SignalPreservationData> = None;
+
+        for (i, result) in stream_results.into_iter().enumerate() {
+            match result {
+                Ok((spikes, snapshots, sig_data, kcc_data)) => {
+                    let n_spikes = spikes.len();
+                    let mut n_frames = snapshots.len();
+                    total_spikes += n_spikes;
+
+                    // Capture last frame from the first non-empty stream for final PDB
+                    if final_snapshot.is_none() {
+                        if let Some(last) = snapshots.last().cloned() {
+                            final_snapshot = Some(last);
+                        }
+                    }
+
+                    // Per-stream ensemble trajectory PDB (legacy in-memory path)
+                    if !snapshots.is_empty() {
+                        let stream_base = args.output
+                            .join(format!("{}_stream{:02}", stem, i));
+                        match write_ensemble_trajectory(&snapshots, &topology,
+                                                        &stream_base) {
+                            Ok(()) => log::info!(
+                                "  [V2 teardown] ✓ stream {} trajectory: {} frames",
+                                i, n_frames),
+                            Err(e) => log::warn!(
+                                "  [V2 teardown] stream {} trajectory failed: {}",
+                                i, e),
+                        }
+
+                        // frames.bin binary sidecar (Gate G2)
+                        if args.save_trajectory_interval > 0 {
+                            let frames_path = stream_base.with_extension("frames.bin");
+                            let dt_ps: f32 = if args.hmr { 0.004 } else { 0.002 };
+                            match prism_nhs::gpu::TrajectoryWriter::create(
+                                &frames_path,
+                                topology.n_atoms as u32,
+                                args.save_trajectory_interval,
+                                dt_ps,
+                            ) {
+                                Ok(mut tw) => {
+                                    let mut had_err = false;
+                                    for snap in snapshots.iter() {
+                                        if let Err(e) = tw.write_frame(&snap.positions) {
+                                            log::warn!(
+                                                "  [V2 teardown] frames.bin stream {} \
+                                                 write_frame error: {}", i, e);
+                                            had_err = true;
+                                            break;
+                                        }
+                                    }
+                                    if !had_err {
+                                        match tw.finish() {
+                                            Ok(n) => log::info!(
+                                                "  [V2 teardown] ✓ frames.bin stream {}: \
+                                                 {} frames -> {}",
+                                                i, n, frames_path.display()),
+                                            Err(e) => log::warn!(
+                                                "  [V2 teardown] frames.bin finish \
+                                                 stream {}: {}", i, e),
+                                        }
+                                    }
+                                }
+                                Err(e) => log::warn!(
+                                    "  [V2 teardown] TrajectoryWriter stream {}: {}", i, e),
+                            }
+                        }
+                    }
+
+                    // V2 streaming trajectory path: snapshots Vec is empty because
+                    // the chunk loop used graph.run_chunk() and streamed frames
+                    // directly to /tmp/prism_v2_{pid}_{stream}.bin.
+                    // Move the file into the output directory and read the
+                    // n_frames header so the stream summary is accurate.
+                    if snapshots.is_empty() {
+                        let tmp_src = std::path::PathBuf::from(
+                            format!("/tmp/prism_v2_{}_{}.bin",
+                                    std::process::id(), i)
+                        );
+                        if tmp_src.exists() {
+                            let dst = args.output.join(
+                                format!("{}_stream{:02}_v2_frames.bin", stem, i)
+                            );
+                            // Read n_frames header (first 8 bytes u64 LE).
+                            let disk_frames = std::fs::read(&tmp_src)
+                                .ok()
+                                .and_then(|b| b.get(..8)
+                                    .map(|hdr| u64::from_le_bytes(
+                                        hdr.try_into().unwrap_or([0u8; 8])
+                                    )))
+                                .unwrap_or(0);
+                            match std::fs::rename(&tmp_src, &dst) {
+                                Ok(()) => {
+                                    n_frames = disk_frames as usize;
+                                    log::info!(
+                                        "  [V2 teardown] ✓ stream {} streamed \
+                                         trajectory: {} frames → {}",
+                                        i, disk_frames, dst.display());
+                                }
+                                Err(e) => log::warn!(
+                                    "  [V2 teardown] stream {} move tmp→output \
+                                     failed: {}", i, e),
+                            }
+                        }
+                    }
+
+                    // Merge KCC: best per residue by active_causal
+                    if let Some(kd) = kcc_data {
+                        match merged_kcc.as_mut() {
+                            None => { merged_kcc = Some(kd); }
+                            Some(ref mut m) => {
+                                for j in 0..kd.n_residues.min(m.n_residues) {
+                                    if kd.active_causal[j] > m.active_causal[j] {
+                                        m.temporal_corr[j]    = kd.temporal_corr[j];
+                                        m.direction_score[j]  = kd.direction_score[j];
+                                        m.motion_efficiency[j]= kd.motion_efficiency[j];
+                                        m.burst_motion[j]     = kd.burst_motion[j];
+                                        m.phase_shift[j]      = kd.phase_shift[j];
+                                        m.causal_lag[j]       = kd.causal_lag[j];
+                                        m.lag_corr_peak[j]    = kd.lag_corr_peak[j];
+                                        m.local_cov[j]        = kd.local_cov[j];
+                                        m.net_dx[j]           = kd.net_dx[j];
+                                        m.net_dy[j]           = kd.net_dy[j];
+                                        m.net_dz[j]           = kd.net_dz[j];
+                                        m.sum_m[j]            = kd.sum_m[j];
+                                        m.residue_count[j]    = kd.residue_count[j];
+                                        m.active_causal[j]    = kd.active_causal[j];
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Merge SignalPreservationData: element-wise sum for grids,
+                    // max-wins for per-voxel dominant residue
+                    if let Some(sd) = sig_data {
+                        match merged_sig.as_mut() {
+                            None => { merged_sig = Some(sd); }
+                            Some(ref mut m) => {
+                                for (j, v) in sd.voxel_hit_grid.iter().enumerate() {
+                                    m.voxel_hit_grid[j] += v;
+                                }
+                                for (j, v) in sd.coupled_spike_grid.iter().enumerate() {
+                                    m.coupled_spike_grid[j] += v;
+                                }
+                                for j in 0..sd.primary_residue_count.len()
+                                            .min(m.primary_residue_count.len()) {
+                                    if sd.primary_residue_count[j] > m.primary_residue_count[j] {
+                                        m.primary_residue_id[j]    = sd.primary_residue_id[j];
+                                        m.primary_residue_count[j] = sd.primary_residue_count[j];
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    stream_summaries.push(serde_json::json!({
+                        "stream_id": i,
+                        "n_spikes":  n_spikes,
+                        "n_frames":  n_frames,
+                    }));
+                }
+                Err(e) => {
+                    log::warn!("  [V2 teardown] stream {} result error: {}", i, e);
+                    stream_summaries.push(serde_json::json!({
+                        "stream_id": i,
+                        "error": e.to_string(),
+                    }));
+                }
+            }
+        }
+
+        // ── Phase 2: phasor_kcc_state.json ───────────────────────────────
+        // Fuses: per-group phasor accumulators (S_pc coherence, mean phase θ)
+        // from AscSharedState + merged KCC per-residue temporal/spatial fields.
+        // This is the primary x,y,z,t reconstruction substrate.
+        {
+            let mut residue_entries: Vec<serde_json::Value> = Vec::new();
+            let n_res_kcc = merged_kcc.as_ref().map(|k| k.n_residues).unwrap_or(0);
+            let n_res_phasor = asc_shared.as_ref()
+                .and_then(|a| a.group_residue_phasors.lock().ok()
+                    .map(|p| p.first().map(|g| g.len()).unwrap_or(0)))
+                .unwrap_or(0);
+            let n_res = n_res_kcc.max(n_res_phasor);
+
+            for rid in 0..n_res {
+                let mut entry = serde_json::json!({ "residue_idx": rid });
+
+                // Phasor fields from AscSharedState
+                if let Some(ref asc) = asc_shared {
+                    if let Ok(phasors) = asc.group_residue_phasors.lock() {
+                        for (g, group) in phasors.iter().enumerate() {
+                            if let Some(&(cs, ss, cnt)) = group.get(rid) {
+                                let spc = if cnt > 0 {
+                                    (cs * cs + ss * ss).sqrt() / cnt as f64
+                                } else { 0.0 };
+                                let theta = ss.atan2(cs);
+                                entry[format!("g{}_spc",   g)] = serde_json::json!(spc);
+                                entry[format!("g{}_theta_rad", g)] = serde_json::json!(theta);
+                                entry[format!("g{}_count", g)] = serde_json::json!(cnt);
+                            }
+                        }
+                    }
+                }
+
+                // KCC fields — causal motion descriptors
+                if let Some(ref kcc) = merged_kcc {
+                    if rid < kcc.n_residues {
+                        entry["temporal_corr"]    = serde_json::json!(kcc.temporal_corr[rid]);
+                        entry["direction_score"]  = serde_json::json!(kcc.direction_score[rid]);
+                        entry["motion_efficiency"]= serde_json::json!(kcc.motion_efficiency[rid]);
+                        entry["burst_motion"]     = serde_json::json!(kcc.burst_motion[rid]);
+                        entry["phase_shift"]      = serde_json::json!(kcc.phase_shift[rid]);
+                        entry["causal_lag"]       = serde_json::json!(kcc.causal_lag[rid]);
+                        entry["lag_corr_peak"]    = serde_json::json!(kcc.lag_corr_peak[rid]);
+                        entry["local_cov"]        = serde_json::json!(kcc.local_cov[rid]);
+                        entry["net_dx"]           = serde_json::json!(kcc.net_dx[rid]);
+                        entry["net_dy"]           = serde_json::json!(kcc.net_dy[rid]);
+                        entry["net_dz"]           = serde_json::json!(kcc.net_dz[rid]);
+                        entry["sum_m"]            = serde_json::json!(kcc.sum_m[rid]);
+                        entry["active_causal"]    = serde_json::json!(kcc.active_causal[rid]);
+                        entry["residue_count"]    = serde_json::json!(kcc.residue_count[rid]);
+                    }
+                }
+
+                residue_entries.push(entry);
+            }
+
+            let phasor_json = serde_json::json!({
+                "v2_ignition": true,
+                "n_residues": residue_entries.len(),
+                "residues": residue_entries,
+            });
+            let path = output_base.with_extension("phasor_kcc_state.json");
+            match std::fs::write(&path,
+                                 serde_json::to_string_pretty(&phasor_json)
+                                     .unwrap_or_default()) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
+                Err(e) => log::warn!("  [V2 teardown] phasor_kcc_state.json: {}", e),
+            }
+        }
+
+        // ── Phase 3: prism_therm_telemetry.json ──────────────────────────
+        // Flushes: PCMI/SURP event log, KL divergence contrast samples,
+        // ASC consensus residues (S_pc + n_groups), Bayesian prior density.
+        // prior_residue_density is the closest structure to per-residue
+        // thermodynamic weights (Wi) that actually exists in this engine.
+        {
+            let mut consensus_out: Vec<serde_json::Value> = Vec::new();
+            let mut event_out:     Vec<serde_json::Value> = Vec::new();
+            let mut acl_out:       Vec<serde_json::Value> = Vec::new();
+            let mut prior_density: Vec<f64>               = Vec::new();
+            let mut baseline_ready = false;
+
+            if let Some(ref asc) = asc_shared {
+                baseline_ready = asc.baseline_ready
+                    .load(std::sync::atomic::Ordering::Acquire);
+
+                if let Ok(cr) = asc.consensus_residues.lock() {
+                    for &(rid, n_groups, spc) in cr.iter() {
+                        consensus_out.push(serde_json::json!({
+                            "residue_id": rid, "n_groups": n_groups, "spc": spc,
+                        }));
+                    }
+                }
+                if let Ok(el) = asc.event_log.lock() {
+                    for (step, event) in el.iter() {
+                        event_out.push(serde_json::json!({
+                            "step": step, "event": event,
+                        }));
+                    }
+                }
+                if let Ok(acl) = asc.acl_contrast_log.lock() {
+                    for &(step, ratio) in acl.iter() {
+                        acl_out.push(serde_json::json!({
+                            "step": step, "s_over_o_ratio": ratio,
+                        }));
+                    }
+                }
+                if let Ok(prior) = asc.prior_residue_density.lock() {
+                    prior_density = prior.clone();
+                }
+            }
+
+            let therm_json = serde_json::json!({
+                "v2_ignition": true,
+                "baseline_ready": baseline_ready,
+                "consensus_residues": consensus_out,
+                "pcmi_surp_event_log": event_out,
+                "kl_divergence_contrast_log": acl_out,
+                "prior_residue_density": prior_density,
+                "audit_note": {
+                    "Wi_penalty_weights": "Do not exist — thermodynamic scoring is \
+                                           site-level (ThermClass), not per-residue.",
+                    "hysteresis_counters": "No runtime open/close counters. Hysteresis \
+                                           detected post-hoc from asymmetry_score.",
+                },
+            });
+            let path = output_base.with_extension("prism_therm_telemetry.json");
+            match std::fs::write(&path,
+                                 serde_json::to_string_pretty(&therm_json)
+                                     .unwrap_or_default()) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
+                Err(e) => log::warn!("  [V2 teardown] prism_therm_telemetry.json: {}", e),
+            }
+        }
+
+        // ── Phase 4: spatial_grid_state.json ─────────────────────────────
+        // Merged SignalPreservationData: per-voxel spike recurrence + UV→LIF
+        // coupling counts. Non-zero voxels only for compact output.
+        if let Some(ref sig) = merged_sig {
+            let dim = sig.grid_dim;
+            let nonzero: Vec<serde_json::Value> = sig.voxel_hit_grid.iter()
+                .enumerate()
+                .filter(|(_, &v)| v > 0)
+                .map(|(idx, &hits)| {
+                    let iz = idx / (dim * dim);
+                    let iy = (idx / dim) % dim;
+                    let ix = idx % dim;
+                    serde_json::json!({
+                        "voxel_idx": idx,
+                        "ix": ix, "iy": iy, "iz": iz,
+                        "hit_count": hits,
+                        "coupled_spike_count":
+                            sig.coupled_spike_grid.get(idx).copied().unwrap_or(0),
+                        "primary_residue_id":
+                            sig.primary_residue_id.get(idx).copied().unwrap_or(-1),
+                        "primary_residue_count":
+                            sig.primary_residue_count.get(idx).copied().unwrap_or(0),
+                    })
+                })
+                .collect();
+            let grid_json = serde_json::json!({
+                "v2_ignition": true,
+                "grid_dim": dim,
+                "total_voxels": sig.voxel_hit_grid.len(),
+                "nonzero_voxels": nonzero.len(),
+                "voxels": nonzero,
+                "audit_note": "d_warp_matrix and full GPU voxel grids are VRAM-only; \
+                               not downloaded. This file contains the host-mirrored \
+                               SignalPreservationData only.",
+            });
+            let path = output_base.with_extension("spatial_grid_state.json");
+            match std::fs::write(&path,
+                                 serde_json::to_string_pretty(&grid_json)
+                                     .unwrap_or_default()) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
+                Err(e) => log::warn!("  [V2 teardown] spatial_grid_state.json: {}", e),
+            }
+        }
+
+        // ── Phase 5: t7_calibration.json ─────────────────────────────────
+        // Copy from PRISM_T7_CALIBRATION_OUTPUT (written by stream 0 during
+        // cold-hold). If not found, fall back to hardcoded T7-LOCKED priors
+        // (commit abfdb633).
+        {
+            let tmp_path = std::env::var("PRISM_T7_CALIBRATION_OUTPUT")
+                .unwrap_or_else(|_| "/tmp/t7_calibration_4lpk.json".to_string());
+            let dest = output_base.with_extension("t7_calibration.json");
+            let content = std::fs::read_to_string(&tmp_path).unwrap_or_else(|_| {
+                let mu    = prism_nhs::interferometric_adjudicator::T7_CALIBRATED_MU;
+                let sigma = prism_nhs::interferometric_adjudicator::T7_CALIBRATED_SIGMA;
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "source":       "hardcoded_t7_locked_priors",
+                    "target":       stem,
+                    "locked_commit":"abfdb633",
+                    "phase":        "cold_hold",
+                    "mu":           mu,
+                    "sigma":        sigma,
+                    "note":         "Raw C_l samples not found — constants are the \
+                                     T7-LOCKED 4LPK priors applied at pipeline build.",
+                })).unwrap_or_default()
+            });
+            match std::fs::write(&dest, content) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", dest.display()),
+                Err(e) => log::warn!("  [V2 teardown] t7_calibration.json: {}", e),
+            }
+        }
+
+        // ── Phase 6: aromatic_centroids_map.json ─────────────────────────
+        // Initial topology centroids (averaged ring-atom positions from
+        // PrismPrepTopology). Final per-step VRAM centroids (d_aromatic_centroids)
+        // are unavailable — engine destroyed at thread join.
+        {
+            let arom_residue_ids = topology.aromatic_residues();
+            let entries: Vec<serde_json::Value> = arom_residue_ids.iter()
+                .enumerate()
+                .map(|(idx, &res_id)| {
+                    let ring_atom_indices: Vec<usize> = topology.residue_ids.iter()
+                        .enumerate()
+                        .filter(|(_, &r)| r == res_id)
+                        .map(|(a, _)| a)
+                        .collect();
+                    let (cx, cy, cz) = if !ring_atom_indices.is_empty() {
+                        let n = ring_atom_indices.len() as f32;
+                        let cx = ring_atom_indices.iter()
+                            .map(|&a| topology.positions.get(a * 3    ).copied().unwrap_or(0.0))
+                            .sum::<f32>() / n;
+                        let cy = ring_atom_indices.iter()
+                            .map(|&a| topology.positions.get(a * 3 + 1).copied().unwrap_or(0.0))
+                            .sum::<f32>() / n;
+                        let cz = ring_atom_indices.iter()
+                            .map(|&a| topology.positions.get(a * 3 + 2).copied().unwrap_or(0.0))
+                            .sum::<f32>() / n;
+                        (cx, cy, cz)
+                    } else { (0.0f32, 0.0f32, 0.0f32) };
+                    let res_name = topology.residue_ids.iter().enumerate()
+                        .find(|(_, &r)| r == res_id)
+                        .and_then(|(i, _)| topology.residue_names.get(i))
+                        .map(|s| s.as_str()).unwrap_or("UNK");
+                    serde_json::json!({
+                        "aromatic_idx":    idx,
+                        "residue_id":      res_id,
+                        "residue_name":    res_name,
+                        "n_ring_atoms":    ring_atom_indices.len(),
+                        "first_atom_idx":  ring_atom_indices.first().copied().unwrap_or(0),
+                        "initial_cx_ang":  cx,
+                        "initial_cy_ang":  cy,
+                        "initial_cz_ang":  cz,
+                    })
+                })
+                .collect();
+            let arom_json = serde_json::json!({
+                "v2_ignition": true,
+                "n_aromatics": entries.len(),
+                "aromatics": entries,
+                "audit_note": "Initial topology centroids only. Final VRAM centroids \
+                               (d_aromatic_centroids, updated per-step) unavailable — \
+                               engine destroyed at thread join.",
+            });
+            let path = output_base.with_extension("aromatic_centroids_map.json");
+            match std::fs::write(&path,
+                                 serde_json::to_string_pretty(&arom_json)
+                                     .unwrap_or_default()) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
+                Err(e) => log::warn!("  [V2 teardown] aromatic_centroids_map.json: {}", e),
+            }
+        }
+
+        // ── Phase 7: [stem]_v2_final.pdb ─────────────────────────────────
+        // Single-frame PDB of the last EnsembleSnapshot from stream 0.
+        // Provides a static 3D reference for downstream docking/visualization.
+        if let Some(ref snap) = final_snapshot {
+            let pdb_path = output_base.with_extension("v2_final.pdb");
+            match std::fs::File::create(&pdb_path) {
+                Ok(mut f) => {
+                    use std::io::Write as _;
+                    let _ = writeln!(f, "MODEL        1");
+                    let _ = writeln!(f, "REMARK   V2_IGNITION FINAL FRAME");
+                    let _ = writeln!(f, "REMARK   TIMESTEP {}", snap.timestep);
+                    let _ = writeln!(f, "REMARK   TEMPERATURE {:.1} K",
+                                     snap.temperature);
+                    let _ = writeln!(f, "REMARK   TIME {:.3} ps", snap.time_ps);
+                    let n_atoms = topology.n_atoms;
+                    if snap.positions.len() == n_atoms * 3 {
+                        for atom_idx in 0..n_atoms {
+                            let x = snap.positions[atom_idx * 3];
+                            let y = snap.positions[atom_idx * 3 + 1];
+                            let z = snap.positions[atom_idx * 3 + 2];
+                            let aname = topology.atom_names.get(atom_idx)
+                                .map(|s| s.as_str()).unwrap_or("UNK");
+                            let rname = topology.residue_names.get(atom_idx)
+                                .map(|s| s.as_str()).unwrap_or("UNK");
+                            let chain = topology.chain_ids.get(atom_idx)
+                                .and_then(|s| s.chars().next()).unwrap_or('A');
+                            let resid = topology.residue_ids.get(atom_idx)
+                                .copied().unwrap_or(1);
+                            let elem  = topology.elements.get(atom_idx)
+                                .map(|s| s.as_str()).unwrap_or("X");
+                            let aname_pad = if aname.len() < 4 {
+                                format!(" {:<3}", aname)
+                            } else {
+                                format!("{:<4}", aname)
+                            };
+                            let _ = write!(f,
+                                "ATOM  {:>5} {:4}{}{:>3} {}{:>4}    \
+                                 {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}          {:>2}\n",
+                                (atom_idx + 1) % 100000,
+                                aname_pad, ' ', rname,
+                                chain, resid % 10000,
+                                x, y, z,
+                                1.00f32, 0.00f32, elem);
+                        }
+                    }
+                    let _ = writeln!(f, "ENDMDL");
+                    let _ = writeln!(f, "END");
+                    log::info!("  [V2 teardown] ✓ {}", pdb_path.display());
+                }
+                Err(e) => log::warn!("  [V2 teardown] v2_final.pdb: {}", e),
+            }
+        }
+
+        // ── Phase 8: v2_ignition_summary.json ────────────────────────────
+        let summary = serde_json::json!({
+            "v2_ignition":  true,
+            "wall_clock_s": sim_elapsed.as_secs_f64(),
+            "n_streams":    n_streams,
+            "total_spikes": total_spikes,
+            "streams":      stream_summaries,
+            "artifacts": [
+                "phasor_kcc_state.json",
+                "prism_therm_telemetry.json",
+                "spatial_grid_state.json",
+                "t7_calibration.json",
+                "aromatic_centroids_map.json",
+                "v2_final.pdb",
+                "binding_sites.json",
+            ],
+            "metadata_gaps": {
+                "d_forces_vram": "ASC force vectors VRAM-only — no cuMemcpyDtoH \
+                                  before thread exit. Requires return-tuple extension.",
+                "adaptive_dt_history": "No chronological dt log structure exists. \
+                                        Only scalar current dt tracked per thread.",
+                "per_residue_Wi_weights": "Do not exist. Boltzmann scoring is \
+                                           site-level (ThermClass), not residue-level.",
+                "bocpd_per_stream": "Thread-local, not in return tuple.",
+                "protocol_state": "Thread-local, not in return tuple.",
+            },
+        });
+        let summary_path = output_base.with_extension("v2_ignition_summary.json");
+        match std::fs::write(&summary_path,
+                             serde_json::to_string_pretty(&summary)
+                                 .unwrap_or_default()) {
+            Ok(()) => log::info!("  [V2 teardown] ✓ {}", summary_path.display()),
+            Err(e) => log::warn!("  [V2 teardown] v2_ignition_summary.json: {}", e),
+        }
+
+        // ── Phase 9: binding_sites.json stub ─────────────────────────────
+        // Prevents prism_canonical.py from hard-failing on a missing file.
+        let bs_stub = serde_json::json!({
+            "v2_ignition":  true,
+            "binding_sites": [],
+            "run_id":       phase3_run_id,
+            "note": "Sites adjudicated in-flight. See v2_ignition_summary.json.",
+        });
+        let bs_path = output_base.with_extension("binding_sites.json");
+        match std::fs::write(&bs_path,
+                             serde_json::to_string_pretty(&bs_stub)
+                                 .unwrap_or_default()) {
+            Ok(()) => log::info!("  [V2 teardown] ✓ {}", bs_path.display()),
+            Err(e) => log::warn!("  [V2 teardown] binding_sites.json stub: {}", e),
+        }
+
+        // ── Audit log: un-capturable metadata ────────────────────────────
+        log::warn!("  [V2 teardown] METADATA GAPS (arch changes required to capture):");
+        log::warn!("    d_forces: VRAM-only; no host download before thread exit");
+        log::warn!("    adaptive_dt history: structure does not exist; scalar only");
+        log::warn!("    per-residue Wi: do not exist; scoring is site-level");
+        log::warn!("    BOCPD summaries: thread-local, not in return tuple");
+        log::warn!("    ProtocolState (focus_match_count): thread-local");
+
+        log::info!(
+            "  [V2 HARD-GATE] Graceful teardown complete — \
+             {} total spikes, {} streams, {:.1}s wall-clock. \
+             9 artifact phases executed.",
+            total_spikes, n_streams, sim_elapsed.as_secs_f64());
         return Ok(());
     }
 

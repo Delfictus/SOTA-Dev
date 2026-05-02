@@ -67,6 +67,27 @@ use crate::so3_project::{ContactShellTile, SiteManifestFfi};
 use crate::vram_pool::VramPool;
 
 // ============================================================================
+// ZSTR FFI — G23 capture-window launchers (Amendment 2.2)
+// ============================================================================
+//
+// Called inside the cuStreamBeginCapture window on telemetry_stream.
+// Each call records a kernel node into the in-progress CUgraph.
+// Linked from libzstr_kernels.a (build.rs compile_to_static_archive).
+extern "C" {
+    fn zstr_launch_pos_stage(
+        dst_pinned: *mut c_void,
+        src_vram:   *const c_void,
+        n_atoms:    u32,
+        stream:     *mut c_void,
+    ) -> i32;
+
+    fn zstr_launch_fence_signal(
+        slot_fence: *mut c_void,
+        stream:     *mut c_void,
+    ) -> i32;
+}
+
+// ============================================================================
 // V2 IGNITION FFI — Claude-2's Native C-ABI Bypass (Lane 2 commit 9a90a9c6)
 // ============================================================================
 //
@@ -118,6 +139,36 @@ pub struct AscConfig {
 // they are not dereferenced on the host and do not alias host-side objects.
 unsafe impl Send for AscConfig {}
 
+/// G23 ZSTR position-staging + fence-signal capture parameters.
+///
+/// Passed to `PipelineConfig::zstr`.  When `Some`, two kernel nodes are
+/// recorded into the captured graph on `telemetry_stream`, downstream of
+/// the tile-DMA node and upstream of the JOIN event:
+///
+/// ```text
+/// [tile DMA] → [zstr_pos_stage_f4] → [zstr_signal_completion] → [JOIN]
+/// ```
+///
+/// Both nodes run on `telemetry_stream` (non-blocking) — zero MD stall.
+pub struct ZstrCaptureParams {
+    /// Device pointer to atom positions (n_atoms × 3 × f32, AoS).
+    /// Same pointer as `AscConfig::d_atom_positions`; must be stable
+    /// for the lifetime of the pipeline (operator §3.2).
+    pub d_positions: *const f32,
+    /// Number of atoms.  Determines grid size for pos_stage kernel.
+    pub n_atoms: u32,
+    /// Pinned host destination: `ZstrRing::positions_host_ptr(slot)`.
+    /// Baked into the kernel node params at capture time (Phase 3: slot 0).
+    pub dst_pinned: *mut f32,
+    /// Pinned fence address: `ZstrRing::fence_cu_ptr(slot)` dereferenced.
+    /// Written to 1 by `zstr_signal_completion_kernel` after pos_stage.
+    pub slot_fence: *mut u32,
+}
+
+// SAFETY: pointers are into pinned CUDA host memory + device memory;
+// not dereferenced on the host outside the CUDA capture sequence.
+unsafe impl Send for ZstrCaptureParams {}
+
 /// Configuration for [`CapturedAdjudicationPipeline::build`].
 ///
 /// All device pointers must live for the lifetime of the pipeline
@@ -144,6 +195,10 @@ pub struct PipelineConfig {
     pub initial_frame_id: u32,
     /// T6 ASC force-bridge config. `None` = skip Node D (safe for tests).
     pub asc: Option<AscConfig>,
+    /// G23 ZSTR position-staging + fence-signal. `None` = no ZSTR nodes
+    /// captured (legacy / test builds). `Some` records two kernel nodes on
+    /// `telemetry_stream` downstream of the tile DMA (Amendment 2.2).
+    pub zstr: Option<ZstrCaptureParams>,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -604,6 +659,49 @@ impl CapturedAdjudicationPipeline {
             rc,
         })?;
 
+        // ── 6.c-mid G23 ZSTR: position staging + fence signal ────────
+        // Node sequence on telemetry_stream (captured under MODE_GLOBAL):
+        //   [tile DMA] → [zstr_pos_stage_f4] → [zstr_signal_completion]
+        // Both launches record kernel nodes into the in-progress CUgraph.
+        // The fence-signal node fires __threadfence_system() before writing
+        // completion_fence=1, guaranteeing all position bytes are globally
+        // visible to the host ZSTR consumer before it reads them.
+        // Phase 3: dst_pinned/slot_fence baked at capture time (slot 0).
+        // Phase 4: cuGraphKernelNodeSetParams updates slot per launch.
+        if let Some(ref zstr) = cfg.zstr {
+            let rc = unsafe {
+                zstr_launch_pos_stage(
+                    zstr.dst_pinned as *mut c_void,
+                    zstr.d_positions as *const c_void,
+                    zstr.n_atoms,
+                    telemetry_stream as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "zstr_pos_stage capture (G23)",
+                    rc,
+                });
+            }
+            let rc = unsafe {
+                zstr_launch_fence_signal(
+                    zstr.slot_fence as *mut c_void,
+                    telemetry_stream as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "zstr_fence_signal capture (G23)",
+                    rc,
+                });
+            }
+            log::debug!(
+                "[G23] ZSTR nodes captured: pos_stage(n_atoms={}, dst={:p}) \
+                 fence({:p}) on telemetry_stream",
+                zstr.n_atoms, zstr.dst_pinned, zstr.slot_fence,
+            );
+        }
+
         // ── 6.c-end Cross-stream JOIN: telemetry → MD ─────────────────
         // After the DMA retires on the telemetry stream, fire the join
         // event. md_stream waits on it BEFORE launching the trampoline,
@@ -753,7 +851,10 @@ impl CapturedAdjudicationPipeline {
             cond_handle,
             body_subgraph,
             n_clusters: cfg.n_clusters,
-            n_kernel_nodes_captured: 2 + if cfg.asc.is_some() { 1 } else { 0 }, // SO(3) + Adjudicator [+ ASC Node D]
+            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + fence]
+            n_kernel_nodes_captured: 2
+                + if cfg.asc.is_some()  { 1 } else { 0 }
+                + if cfg.zstr.is_some() { 2 } else { 0 },
             // V1: 0 explicit cuGraphAddDependencies edges (the
             // C→D edge is satisfied by capture-mode's implicit
             // sequential ordering on md_stream). V2 lands the
@@ -1119,7 +1220,8 @@ mod tests {
             n_clusters: N_CLUSTERS,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
-            asc: None,
+            asc:  None,
+            zstr: None,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -1237,7 +1339,8 @@ mod tests {
             n_clusters: 1,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
-            asc: None,
+            asc:  None,
+            zstr: None,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -1313,7 +1416,8 @@ mod tests {
             d_spikes: sp_dev as *const RichSpike,
             d_cluster_offsets: off_dev as *const u32,
             n_clusters: 1, d_k_lm: k_lm_dev, initial_frame_id: 0,
-            asc: None,
+            asc:  None,
+            zstr: None,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -1397,7 +1501,8 @@ mod tests {
             n_clusters: 1,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
-            asc: None,
+            asc:  None,
+            zstr: None,
         };
 
         // Closure that captures the conditional-node handle written
