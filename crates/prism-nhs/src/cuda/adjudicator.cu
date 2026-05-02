@@ -206,6 +206,19 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
         code = (total_kl_div > threshold) ? PRISM_ADJ_CONSTRUCT
                                           : PRISM_ADJ_PRUNE;
     }
+
+    // ─── G28 SISR symmetry gate (Amendment 3.4) ──────────────────────
+    // If the bilateral-symmetry kernel set the prune mask for this
+    // cluster, override the Δ_AB-based decision to PRUNE.  Single-
+    // cluster current architecture: any non-zero bit means the active
+    // cluster failed the C2-reflected AABB partner search, so the
+    // discovery is a stochastic fluke regardless of magnitude.
+    if (adjudicator->force_prune_mask != nullptr) {
+        const uint64_t mask = *adjudicator->force_prune_mask;
+        if (mask != 0ull) {
+            code = PRISM_ADJ_PRUNE;
+        }
+    }
     adjudicator->adjudication_code = code;
 
     // ─── Anti-Greenfield § 6.2 — legacy_centroid_fallback (Path A) ──

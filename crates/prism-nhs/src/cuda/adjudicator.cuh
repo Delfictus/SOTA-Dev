@@ -102,8 +102,17 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // Anti-Greenfield § 6.2 backward-compatibility shim (offset 88..100, 12 B).
     float    legacy_centroid_fallback[3];  // offset 88
 
-    // Forward-compatible reserved tail (offset 100..128, 28 B).
-    uint32_t _reserved[7];          // offset 100
+    // G28 SISR symmetry prune mask. The compiler inserts 4 B of padding
+    // after `legacy_centroid_fallback` (offset 100..104) to satisfy 8-byte
+    // pointer alignment, placing this field at offset 104..112.
+    // Pointer to a single u64 holding bit-flags per cluster. The G28
+    // kernel sets `bit[i]` when cluster `i` fails the C2-reflected AABB
+    // partner search; the step kernel forces adjudication_code=0 on hit.
+    // Null disables the gate (non-dimer / legacy targets).
+    uint64_t* force_prune_mask;     // offset 104
+
+    // Forward-compatible reserved tail (offset 112..128, 16 B).
+    uint32_t _reserved[4];          // offset 112
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");

@@ -192,12 +192,21 @@ pub struct InterferometricAdjudicatorFfi {
     /// the full SO(3) manifold.
     pub legacy_centroid_fallback: [f32; 3],
 
-    /// Forward-compatible reserved tail. Sized to make
-    /// `sizeof::<InterferometricAdjudicatorFfi>() == 128` after
-    /// the legacy_centroid_fallback addition: 88 B live + 12 B
-    /// fallback + 28 B reserved = 128 B. Future fields may consume
-    /// this slot without changing layout.
-    pub _reserved: [u32; 7],
+    /// G28 SISR per-cluster prune-bit mask buffer (offset 100..108, 8 B).
+    /// Pointer to a single `u64` in F2-pool device memory. Bit `i` is set
+    /// by the SISR kernel when site `i` fails the bilateral symmetry check
+    /// (no Chain-B partner manifold within ε_sym of the C2-reflected
+    /// AABB centroid). The Adjudicator step kernel ANDs this mask with
+    /// `(1u64 << cluster_id)` and forces `adjudication_code = 0` (Prune)
+    /// on a non-zero result, **independent of** Δ_AB magnitude.
+    /// Null disables the symmetry gate (legacy / non-dimer targets).
+    pub force_prune_mask: *mut u64,
+    /// Forward-compatible reserved tail. Layout (with C-ABI alignment):
+    /// `legacy_centroid_fallback` ends at offset 100; the `*mut u64` pointer
+    /// requires 8-byte alignment, so the compiler inserts 4 B of padding,
+    /// placing `force_prune_mask` at offset 104..112. Reserved tail occupies
+    /// offset 112..128 (16 B = 4 × u32). Total: 88 + 12 + 4(pad) + 8 + 16 = 128 B.
+    pub _reserved: [u32; 4],
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -221,7 +230,8 @@ impl InterferometricAdjudicatorFfi {
             start_clock: 0,
             stop_clock: 0,
             legacy_centroid_fallback: [0.0; 3],
-            _reserved: [0; 7],
+            force_prune_mask: std::ptr::null_mut(),
+            _reserved: [0; 4],
         }
     }
 
