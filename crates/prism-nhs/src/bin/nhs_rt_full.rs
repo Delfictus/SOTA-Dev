@@ -4267,6 +4267,13 @@ fn run_multi_stream_pipeline(
                 // stem of this path locates the sibling `*_nma_modes.json`
                 // written by prism-prep.
                 let topology_path_capture = topology_path.clone();
+                // M1.2.19.A — T7 Substrate Lock: capture engine output dir
+                // so the T7 calibration writer can target the run-specific
+                // /mnt/storage/.../{stem}_noise_floor.json instead of the
+                // hardcoded /tmp path.  Eliminates the "4lpk_clean" target
+                // mislabel by deriving the substrate name from the topology
+                // file at runtime.
+                let output_path_capture = args.output.clone();
                 // Multi-temperature ladder: spread end_temp across streams
                 // Stream 0 gets the base temperature; higher streams get progressively
                 // hotter to crack high-barrier pockets. The ramp_down phase then cools
@@ -4645,6 +4652,12 @@ fn run_multi_stream_pipeline(
                         let mut v2_zstr_consumer: Option<std::thread::JoinHandle<prism_nhs::zstr::ZstrStats>> = None;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
+                        // M1.2.19.B — Channel-B GhostTileRing must outlive the
+                        // pipeline so its pinned buffer stays valid during
+                        // captured-graph replay; serialized to disk during
+                        // teardown after the engine joins.
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_ghost_ring: Option<prism_nhs::ghost_tile::GhostTileRing> = None;
                         // Amendment 3.4 monolithic-fusion exec — single AutonomousGraph
                         // that fuses MD physics + adjudication via cudaGraphAddChildGraphNode.
                         // When Some, the chunk loop launches this instead of the dual
@@ -4669,12 +4682,21 @@ fn run_multi_stream_pipeline(
                         // Frame wire format (all LE):
                         //   [0..8]  placeholder for n_frames (u64) — seeked back at close
                         //   per frame: [step: u64][n_floats: u32][positions: n_floats × f32]
+                        // M1.2.19.D — write V2 trajectory binary directly into the
+                        // run output dir (no /tmp staging + cross-device rename).
+                        // Eliminates the "Invalid cross-device link (os error 18)"
+                        // teardown warnings that fired when /tmp lived on
+                        // /dev/nvme0n1p2 and the output dir on /dev/nvme1n1p1.
+                        // Per operator Amendment 3.13 §2: "NO RENAME, NO COPY."
                         #[cfg(feature = "v2_ignition")]
                         let v2_snap_pid = std::process::id();
                         #[cfg(feature = "v2_ignition")]
-                        let v2_frames_tmp = std::path::PathBuf::from(
-                            format!("/tmp/prism_v2_{}_{}.bin", v2_snap_pid, i)
-                        );
+                        let v2_frames_tmp = {
+                            let _ = std::fs::create_dir_all(&args.output);
+                            args.output.join(
+                                format!("prism_v2_{}_{}.bin", v2_snap_pid, i)
+                            )
+                        };
                         #[cfg(feature = "v2_ignition")]
                         let (v2_snap_tx, v2_snap_rx) =
                             std::sync::mpsc::sync_channel::<(u64, Vec<f32>)>(4);
@@ -4905,8 +4927,14 @@ fn run_multi_stream_pipeline(
                                                         const ZSTR_HEADER_SIZE: u32 = 4096;
                                                         const ZSTR_FENCE_OFFSET: u32 = 16;
                                                         const ZSTR_FORCE_NORM_OFFSET: u32 = 28;
+                                                        // Operator Amendment 3.11 — pad pos payload up to
+                                                        // 16-byte boundary so force_offset is 16-aligned
+                                                        // (zstr_force_stage_f4_kernel emits STG.E.128).
+                                                        // Mirrors ZstrRing::forces_offset_in_slot().
+                                                        let pos_bytes_raw     = (n_atoms as u32) * 3 * 4;
+                                                        let pos_bytes_aligned = (pos_bytes_raw + 15) & !15;
                                                         let force_offset =
-                                                            ZSTR_HEADER_SIZE + (n_atoms as u32) * 3 * 4;
+                                                            ZSTR_HEADER_SIZE + pos_bytes_aligned;
                                                         Some(prism_nhs::captured_pipeline::ZstrCaptureParams {
                                                             d_positions: d_pos_ptr as *const f32,
                                                             d_forces:    d_forces_ptr as *const f32,
@@ -5007,6 +5035,54 @@ fn run_multi_stream_pipeline(
                                                 // monitor reduce node can capture downstream of ASC.
                                                 let d_pe_components_ptr = engine.d_potential_energy_components_dev_ptr();
                                                 let n_atoms_for_pe = engine.d_potential_energy_n_atoms() as u32;
+                                                // M1.2.18.5 — VRAM-native W_ext buffer (1 × f64).
+                                                // The captured pipeline writes this address into
+                                                // adj.d_external_work (FFI offset 128) pre-capture
+                                                // and emits a cuMemsetD8Async at the head of every
+                                                // replay so each chunk starts with *W_ext == 0.0.
+                                                // The same address is bound as the 70th parameter
+                                                // of nhs_amber_fused_step (engine-side wiring is
+                                                // already done at the launch sites in fused_engine.rs).
+                                                let d_external_work_ptr = engine.allocate_external_work_buffer();
+                                                // ── M1.2.19.B / Amendment 3.13 — Channel B ring ──
+                                                // Pinned-host, device-mapped GhostTileRing for the
+                                                // per-frame [GhostTileFrame + ContactShellTile] stream.
+                                                // Sized for ~32k records (≈45 MB) — generous for any
+                                                // V2 chunk count up to the 18,643-target campaign.
+                                                // Stream 0 owns the ring (one per process, not per
+                                                // stream — t7_active gate already restricts pipeline
+                                                // build to stream 0).
+                                                let ghost_max_records: u32 = 32768;
+                                                if i == 0 && v2_ghost_ring.is_none() {
+                                                    match prism_nhs::ghost_tile::GhostTileRing::allocate(
+                                                        ghost_max_records,
+                                                    ) {
+                                                        Ok(r) => {
+                                                            log::info!(
+                                                                "[Channel-B stream {}] GhostTileRing \
+                                                                 host=0x{:x} dev=0x{:x} bytes={} \
+                                                                 max_records={}",
+                                                                i,
+                                                                r.host_base as usize,
+                                                                r.device_base,
+                                                                r.total_bytes,
+                                                                r.max_records,
+                                                            );
+                                                            v2_ghost_ring = Some(r);
+                                                        }
+                                                        Err(e) => {
+                                                            log::warn!(
+                                                                "[Channel-B stream {}] ring alloc \
+                                                                 failed: {} — Channel B disabled",
+                                                                i, e
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                let (ghost_dev, ghost_caps) = match &v2_ghost_ring {
+                                                    Some(r) => (r.device_base, r.max_records),
+                                                    None    => (0u64, 0u32),
+                                                };
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -5021,6 +5097,9 @@ fn run_multi_stream_pipeline(
                                                     d_velocities:      d_velocities_ptr as *mut f32,
                                                     d_pe_components:   d_pe_components_ptr as *const f64,
                                                     n_atoms_for_pe,
+                                                    d_external_work:   d_external_work_ptr as *mut f64,
+                                                    ghost_tile_ring_dev:    ghost_dev,
+                                                    ghost_tile_max_records: ghost_caps,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
@@ -5050,9 +5129,12 @@ fn run_multi_stream_pipeline(
                                                         // (pipeline holds raw ptrs into ring).
                                                         if let Ok(ring) = zstr_ring_new {
                                                             let ring_arc = std::sync::Arc::new(ring);
-                                                            // G24 Reaper: spawn O_DIRECT consumer thread.
-                                                            let zstr_out = std::path::PathBuf::from(
-                                                                format!("/tmp/prism_zstr_{}_{}.bin",
+                                                            // G24 Reaper: spawn io_uring + O_DIRECT consumer thread.
+                                                            // Wave 0 / #69: path /tmp → args.output, so the ZSTR
+                                                            // ring lands on the campaign output volume (typically
+                                                            // /mnt/storage) and survives across reboot/cleanup.
+                                                            let zstr_out = output_path_capture.join(
+                                                                format!("prism_zstr_{}_{}.bin",
                                                                         std::process::id(), i)
                                                             );
                                                             let stop_clone = v2_zstr_stop.clone();
@@ -5293,6 +5375,61 @@ fn run_multi_stream_pipeline(
                                                 )
                                             };
                                         }
+                                        // ── Force-Gear Orchestration Supervisor Shim ──
+                                        //
+                                        // Operator Zero-Trust §4: at step 800 force Gear 0
+                                        // (0.5 fs); at step 1000 reset to Auto (gearbox SFA
+                                        // decides).  Implements the Manual Override Invariant
+                                        // (Hardware Interlock) — proves the gear_override at
+                                        // FFI offset 100 (B.3.2 home; Emergency Rectification
+                                        // 2026-05-02 reverted from M1.2.18.5 attempt to
+                                        // relocate to 136) is host-writable mid-campaign and
+                                        // the predicate-bridge kernel honours it on the next
+                                        // replay.
+                                        //
+                                        // Fired at the chunk boundary that crosses each threshold:
+                                        //   crosses_800  = steps_run < 800  AND steps_run+chunk >= 800
+                                        //   crosses_1000 = steps_run < 1000 AND steps_run+chunk >= 1000
+                                        //
+                                        // cuMemcpyHtoDAsync writes 4 bytes to (adj_dev + 100).
+                                        let next_step = steps_run + this_chunk;
+                                        let crosses_800  = steps_run < 800  && next_step >= 800;
+                                        let crosses_1000 = steps_run < 1000 && next_step >= 1000;
+                                        if crosses_800 || crosses_1000 {
+                                            use cudarc::driver::sys::{
+                                                cuMemcpyHtoD_v2, CUdeviceptr, CUresult,
+                                            };
+                                            let adj_dev = pipeline.adj_dev_ptr();
+                                            const GEAR_OVERRIDE_OFFSET: usize = 100;
+                                            let target_addr = (adj_dev + GEAR_OVERRIDE_OFFSET)
+                                                as CUdeviceptr;
+                                            let value: u32 = if crosses_800 { 0x00 } else { 0xFF };
+                                            let rc = unsafe {
+                                                cuMemcpyHtoD_v2(
+                                                    target_addr,
+                                                    &value as *const u32 as *const std::ffi::c_void,
+                                                    4,
+                                                )
+                                            };
+                                            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                                                log::warn!(
+                                                    "[SUPERVISOR-SHIM] cuMemcpyHtoD \
+                                                     gear_override@100 failed (rc={}); \
+                                                     step={}, value=0x{:02X}",
+                                                    rc as i32, next_step, value
+                                                );
+                                            } else {
+                                                log::info!(
+                                                    "[SUPERVISOR-SHIM] gear_override @ {} \
+                                                     ← 0x{:02X} ({})  [crossed step={}]",
+                                                    GEAR_OVERRIDE_OFFSET,
+                                                    value,
+                                                    if value == 0xFF { "AUTO" } else { "Gear 0 (0.5 fs)" },
+                                                    if crosses_800 { 800 } else { 1000 }
+                                                );
+                                            }
+                                        }
+
                                         // G24 slot-roller (Path Z): legacy API now no-ops
                                         // beyond delegating to launch(); slot rolling lives
                                         // in the constant-memory update above.
@@ -6609,10 +6746,27 @@ fn run_multi_stream_pipeline(
                         // Writes per-frame C_l[0..6] arrays (real cold-hold,
                         // L2-normalized, stream 0 only) to a JSON file the
                         // operator + Claude-2 can post-process for μ/σ.
+                        //
+                        // M1.2.19.A — Substrate Lock: derive both the output
+                        // path and the in-JSON `target` field from the actual
+                        // topology stem (e.g., "7c8r_dimer_hmr") instead of
+                        // the legacy hardcoded "4lpk_clean" / "/tmp/...".
+                        // The 12σ noise-floor threshold is substrate-specific;
+                        // labeling a 7C8R run as "4lpk_clean" was an active
+                        // poison source for downstream Φ_sym calibration.
                         #[cfg(feature = "v2_ignition")]
                         if t7_active && !t7_cl_samples.is_empty() {
+                            let topo_stem = topology_path_capture
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .map(|s| s.trim_end_matches(".topology").to_string())
+                                .unwrap_or_else(|| "unknown_target".to_string());
+                            let default_path = output_path_capture
+                                .join(format!("{}_noise_floor.json", topo_stem))
+                                .to_string_lossy()
+                                .into_owned();
                             let path = std::env::var("PRISM_T7_CALIBRATION_OUTPUT")
-                                .unwrap_or_else(|_| "/tmp/t7_calibration_4lpk.json".to_string());
+                                .unwrap_or(default_path);
                             let n = t7_cl_samples.len();
                             // Compute μ / σ on the fly so they appear in the
                             // JSON alongside the raw samples.
@@ -6635,7 +6789,8 @@ fn run_multi_stream_pipeline(
                             // jq parsing.
                             let mut json = String::new();
                             json.push_str(&format!(
-                                "{{\n  \"target\": \"4lpk_clean\",\n  \"n_samples\": {},\n  \"phase\": \"cold_hold\",\n",
+                                "{{\n  \"target\": \"{}\",\n  \"n_samples\": {},\n  \"phase\": \"cold_hold\",\n",
+                                topo_stem,
                                 n
                             ));
                             json.push_str("  \"mu\": [");
@@ -6664,6 +6819,127 @@ fn run_multi_stream_pipeline(
                                 mu[0], mu[1], mu[2], mu[3], mu[4], mu[5],
                                 sigma[0], sigma[1], sigma[2], sigma[3], sigma[4], sigma[5],
                             );
+                        }
+
+                        // ── M1.2.19.C — ASC FORCE-VECTOR DtoH (Channel C, Stream 0 only) ──
+                        // Operator Amendment 3.13 §2: exfiltrate the post-ASC d_forces
+                        // buffer to disk so the offline Causal-Lead-Velocity (v_c) and
+                        // Desolvation-Tax (Γ_w) computations can read where steering
+                        // physically acted.  Without this DtoH, the force vectors die
+                        // in VRAM at thread join (per metadata_gaps.d_forces_vram).
+                        //
+                        // Final node of the Teardown DAG: cuMemcpyDtoHAsync → explicit
+                        // cudaStreamSynchronize (operator's "guaranteed retired before
+                        // Rust thread joins" requirement).
+                        //
+                        // Output: {output_dir}/{stem}_asc_vectors.bin — exactly
+                        // n_atoms × 3 × sizeof(f32) = n_atoms × 12 bytes.  For 7C8R
+                        // dimer (n_atoms=9226) that's 110,712 bytes (operator's
+                        // Section AMS Channel C exact-byte gate).
+                        //
+                        // Stream 0 only — all 8 streams share the same atom count
+                        // and 8× redundant DtoH would waste PCIe bandwidth.
+                        #[cfg(feature = "v2_ignition")]
+                        if i == 0 {
+                            use cudarc::driver::sys::{
+                                cuMemcpyDtoHAsync_v2, CUdeviceptr, CUresult,
+                            };
+                            let n_atoms_loaded = engine.n_atoms_loaded();
+                            let d_forces_ptr = engine.d_forces_dev_ptr();
+                            if n_atoms_loaded > 0 && d_forces_ptr != 0 {
+                                let n_floats = n_atoms_loaded * 3;
+                                let nbytes = n_floats * std::mem::size_of::<f32>();
+                                let mut host_forces: Vec<f32> = vec![0.0f32; n_floats];
+                                let stream_raw = engine.cuda_stream().cu_stream()
+                                    as *mut std::ffi::c_void;
+                                let rc = unsafe {
+                                    cuMemcpyDtoHAsync_v2(
+                                        host_forces.as_mut_ptr() as *mut std::ffi::c_void,
+                                        d_forces_ptr as CUdeviceptr,
+                                        nbytes,
+                                        stream_raw as cudarc::driver::sys::CUstream,
+                                    )
+                                };
+                                let mut sync_ok = false;
+                                if matches!(rc, CUresult::CUDA_SUCCESS) {
+                                    if engine.cuda_stream().synchronize().is_ok() {
+                                        sync_ok = true;
+                                    }
+                                }
+                                let topo_stem = topology_path_capture
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .map(|s| s.trim_end_matches(".topology").to_string())
+                                    .unwrap_or_else(|| "unknown_target".to_string());
+                                let dest = output_path_capture
+                                    .join(format!("{}_asc_vectors.bin", topo_stem));
+                                let bytes_view = unsafe {
+                                    std::slice::from_raw_parts(
+                                        host_forces.as_ptr() as *const u8,
+                                        nbytes,
+                                    )
+                                };
+                                let write_ok = std::fs::write(&dest, bytes_view).is_ok();
+                                if sync_ok && write_ok {
+                                    log::info!(
+                                        "[Channel-C stream {}] ASC force vectors → {} \
+                                         ({} bytes = n_atoms({}) × 3 × f32)",
+                                        i, dest.display(), nbytes, n_atoms_loaded,
+                                    );
+                                } else {
+                                    log::warn!(
+                                        "[Channel-C stream {}] DtoH/sync/write failed \
+                                         (rc={} sync={} write={}); dest={}",
+                                        i, rc as i32, sync_ok, write_ok,
+                                        dest.display(),
+                                    );
+                                }
+                            } else {
+                                log::warn!(
+                                    "[Channel-C stream {}] skipped: n_atoms={} d_forces=0x{:x}",
+                                    i, n_atoms_loaded, d_forces_ptr,
+                                );
+                            }
+                        }
+
+                        // ── M1.2.19.B — Channel B GhostTileFrame stream serialization ─
+                        // Stream-0-only.  Read GPU-written counter, slice the live
+                        // record payload, and dump it as a single contiguous binary
+                        // file: `{output_dir}/{stem}_ghost_tiles.bin`.  Each record
+                        // is 1408 bytes (128 B header + 1280 B ContactShellTile).
+                        // The number of records on disk = `n_frames_written` clamped
+                        // to `max_records`.
+                        //
+                        // The pinned-host ring is mapped, so no DtoH is needed —
+                        // the GPU writes through the device-mapped alias and the
+                        // host reads directly.  The cuda_stream().synchronize()
+                        // above (Channel C) already retired any in-flight Channel-B
+                        // writes; the pinned host pages are coherent at this point.
+                        #[cfg(feature = "v2_ignition")]
+                        if i == 0 {
+                            if let Some(ref ring) = v2_ghost_ring {
+                                let n_records = ring.n_frames_written().min(ring.max_records);
+                                let payload   = ring.payload_bytes();
+                                let topo_stem = topology_path_capture
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .map(|s| s.trim_end_matches(".topology").to_string())
+                                    .unwrap_or_else(|| "unknown_target".to_string());
+                                let dest = output_path_capture
+                                    .join(format!("{}_ghost_tiles.bin", topo_stem));
+                                match std::fs::write(&dest, payload) {
+                                    Ok(()) => log::info!(
+                                        "[Channel-B stream {}] GhostTileFrame stream → {} \
+                                         (n_records={} max={} bytes={})",
+                                        i, dest.display(),
+                                        n_records, ring.max_records, payload.len(),
+                                    ),
+                                    Err(e) => log::warn!(
+                                        "[Channel-B stream {}] write {} failed: {}",
+                                        i, dest.display(), e,
+                                    ),
+                                }
+                            }
                         }
 
                         // ── V2 raw VRAM cleanup ─────────────────────────────────────
@@ -7205,11 +7481,17 @@ fn run_multi_stream_pipeline(
 
         // ── Phase 5: t7_calibration.json ─────────────────────────────────
         // Copy from PRISM_T7_CALIBRATION_OUTPUT (written by stream 0 during
-        // cold-hold). If not found, fall back to hardcoded T7-LOCKED priors
-        // (commit abfdb633).
+        // cold-hold).  M1.2.19.A — substrate-locked default path:
+        // `{output_dir}/{stem}_noise_floor.json` instead of the legacy
+        // `/tmp/t7_calibration_4lpk.json`.  If not found, fall back to
+        // hardcoded T7-LOCKED priors (commit abfdb633).
         {
+            let substrate_default = output_base
+                .parent()
+                .map(|p| p.join(format!("{}_noise_floor.json", stem)))
+                .unwrap_or_else(|| std::path::PathBuf::from(format!("{}_noise_floor.json", stem)));
             let tmp_path = std::env::var("PRISM_T7_CALIBRATION_OUTPUT")
-                .unwrap_or_else(|_| "/tmp/t7_calibration_4lpk.json".to_string());
+                .unwrap_or_else(|_| substrate_default.to_string_lossy().into_owned());
             let dest = output_base.with_extension("t7_calibration.json");
             let content = std::fs::read_to_string(&tmp_path).unwrap_or_else(|_| {
                 let mu    = prism_nhs::interferometric_adjudicator::T7_CALIBRATED_MU;

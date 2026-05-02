@@ -4004,6 +4004,8 @@ dependencies = [
  "env_logger 0.10.2",
  "glob",
  "half",
+ "io-uring",
+ "libc",
  "log",
  "ndarray 0.16.1",
  "optix-sys",

@@ -1748,6 +1748,17 @@ pub struct NhsAmberFusedEngine {
     /// monitor node downstream of fused_step_kernel.
     d_potential_energy_components: CudaSlice<f64>,
 
+    /// **M1.2.18.5 — VRAM-native total external work scalar (1 × f64).**
+    /// F2-pool stable address; the 70th parameter of nhs_amber_fused_step
+    /// binds the device pointer of this buffer so apply_vibrational_transfer
+    /// can `atomicAdd_f64(d_external_work, delta_k)` in-place.  The
+    /// captured pipeline emits cuMemsetD8Async at the head of every
+    /// replay window, so each chunk starts with W_ext == 0.0.  The SFA
+    /// stability fuse dereferences `*adj.d_external_work` (pointer at
+    /// adj offset 128) and uses the value in the First-Law drift formula
+    /// |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|.
+    d_external_work_buffer: CudaSlice<f64>,
+
     // AMBER parameter buffers (as raw bytes for GPU compatibility)
     d_bonds: CudaSlice<u8>,
     d_angles: CudaSlice<u8>,
@@ -2155,6 +2166,21 @@ impl NhsAmberFusedEngine {
         self.d_potential_energy_components.len()
     }
 
+    /// **M1.2.18.5 — VRAM-native external-work buffer device pointer.**
+    /// Returns the device address of the 1 × f64 W_ext accumulator.  The
+    /// captured pipeline writes this address into the FFI struct's
+    /// `d_external_work` field at offset 128 pre-capture and emits a
+    /// cuMemsetD8Async at the head of every replay window so each chunk
+    /// starts with `*d_external_work == 0.0`.  AMBER fused step's 70th
+    /// parameter binds this same address; apply_vibrational_transfer
+    /// atomicAdd-f64s ΔK = ½·m·(v_new² − v_old²) per UV velocity kick.
+    /// Pointer-stable for the engine's lifetime.
+    pub fn allocate_external_work_buffer(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_external_work_buffer.device_ptr(stream);
+        ptr
+    }
+
     /// B.3 — raw device pointer to `d_protocol_state[84..88]` — the
     /// `dt` field within `ProtocolState` (per
     /// `crates/prism-gpu/src/kernels/protocol_state.cuh:45`).  All three
@@ -2459,6 +2485,13 @@ impl NhsAmberFusedEngine {
         // Zeroed at the start of every integration step; populated by
         // the AMBER force kernels via atomicAdd_f64 of split V terms.
         let d_potential_energy_components: CudaSlice<f64> = stream.alloc_zeros(n_atoms)?;
+        // M1.2.18.5 — VRAM-native total-external-work buffer (1 × f64).
+        // Sized exactly 1 element (8 B); the captured graph emits a
+        // cuMemsetD8Async at the head of every replay window so each
+        // chunk starts with W_ext == 0.0.  AMBER fused step's 70th
+        // parameter binds this address; apply_vibrational_transfer
+        // atomicAdd-f64s ΔK = ½·m·(v_new² − v_old²) per UV kick.
+        let d_external_work_buffer: CudaSlice<f64> = stream.alloc_zeros(1)?;
         // Reference positions for CA position restraints (prevents unfolding in vacuum)
         let mut d_reference_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         stream.memcpy_htod(&topology.positions, &mut d_reference_positions)?;
@@ -3059,6 +3092,7 @@ impl NhsAmberFusedEngine {
             d_atom_types,
             d_residue_ids,
             d_potential_energy_components,
+            d_external_work_buffer,
 
             d_bonds,
             d_angles,
@@ -5633,6 +5667,9 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_residue_step_causal)
                 // M1.2.17 — per-atom potential-energy components (f64).
                 .arg(&mut self.d_potential_energy_components)
+                // M1.2.18.5 — VRAM-native total-external-work scalar (f64, 1 element).
+                // apply_vibrational_transfer atomicAdd-f64s ΔK here per UV kick.
+                .arg(&mut self.d_external_work_buffer)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -6552,6 +6589,8 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_residue_step_causal)
                     // M1.2.17 — per-atom potential-energy components.
                     .arg(&mut self.d_potential_energy_components)
+                    // M1.2.18.5 — VRAM-native total-external-work scalar.
+                    .arg(&mut self.d_external_work_buffer)
                     .launch(cfg)
             }
             .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -7009,6 +7048,8 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_residue_step_causal)
                 // M1.2.17 — per-atom potential-energy components.
                 .arg(&mut self.d_potential_energy_components)
+                // M1.2.18.5 — VRAM-native total-external-work scalar.
+                .arg(&mut self.d_external_work_buffer)
                 .launch(physics_cfg)
         }.context("step_autonomous: Physics kernel failed")?;
         if let Some(t) = tagger.as_deref_mut() {

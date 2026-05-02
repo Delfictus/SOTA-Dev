@@ -1001,7 +1001,17 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // captured CUB DeviceReduce::Sum node downstream consumes it and
     // writes the system-wide V into adj.d_potential_energy at offset
     // 112.  Pass nullptr to disable PE accumulation.
-    double* pe_components
+    double* pe_components,
+
+    // M1.2.18.5 — Total External Work POINTER (Hamiltonian audit).
+    // Single f64 scalar in F2-pool VRAM.  apply_vibrational_transfer
+    // (UV velocity-kick path) atomicAdd-f64s ΔK = ½·m·(v_new² − v_old²)
+    // here; the captured pipeline emits a cuMemsetD8Async at the head
+    // of every replay window so each chunk starts with *d_external_work
+    // == 0.0.  The SFA stability fuse dereferences *adj.d_external_work
+    // (pointer at FFI offset 128) for the First-Law drift formula.
+    // Pass nullptr to disable W_ext accumulation (legacy / non-V2).
+    double* d_external_work
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1277,16 +1287,50 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
 
         // FORCE CLAMPING: Prevent runaway from unminimized structures
         // Max force ~1000 kcal/mol/Å prevents numerical blowup
+        //
+        // M1.2.18.5.B — Force-Clamp Work Recovery (operator §1.2):
+        //   W_f_clamp ≈ (F_old − F_new) · v · dt
+        // The integrator wanted to inject this much work into the system
+        // but the MAX_FORCE gate suppressed it.  We exfiltrate it as
+        // negative external work so the SFA First-Law audit can subtract
+        // it from ΔV and avoid false-positive Gear-3 traps on legitimate
+        // hardware-safety clamp events.
         const float MAX_FORCE = 1000.0f;
         float3 clamped_force = scaled_force;
         float force_mag = sqrtf(clamped_force.x * clamped_force.x +
                                 clamped_force.y * clamped_force.y +
                                 clamped_force.z * clamped_force.z);
         if (force_mag > MAX_FORCE) {
-            float scale = MAX_FORCE / force_mag;
-            clamped_force.x *= scale;
-            clamped_force.y *= scale;
-            clamped_force.z *= scale;
+            const float scale = MAX_FORCE / force_mag;
+            const float3 f_new = make_float3(
+                clamped_force.x * scale,
+                clamped_force.y * scale,
+                clamped_force.z * scale
+            );
+            // Read v_old NON-atomically: at this point velocities[tid]
+            // holds the post-Phase-2-half-kick v which is the right
+            // velocity for the displacement Δx ≈ v·dt this step.  Only
+            // this thread writes velocities[tid] later in this block.
+            const float3 v_pre = velocities[tid];
+            // f64 first-order work approximation: W = (F_old − F_new)·v·dt.
+            const double dt_d = (double)dt;
+            const double dfx  = (double)(clamped_force.x - f_new.x);
+            const double dfy  = (double)(clamped_force.y - f_new.y);
+            const double dfz  = (double)(clamped_force.z - f_new.z);
+            const double work_loss_kcal_mol_amu_a2_ps2 =
+                  dfx * (double)v_pre.x
+                + dfy * (double)v_pre.y
+                + dfz * (double)v_pre.z;
+            // Convert amu·Å²/ps² → kcal/mol via /418.4 (same factor as
+            // the UV-kick path in nhs_excited_state.cuh).  Suppressed
+            // work is energy NOT injected, so atomicAdd a NEGATIVE
+            // value into the W_ext accumulator.
+            if (d_external_work != nullptr) {
+                const double work_loss_kcal_mol =
+                    (work_loss_kcal_mol_amu_a2_ps2 * dt_d) / 418.4;
+                atomicAdd(d_external_work, -work_loss_kcal_mol);
+            }
+            clamped_force = f_new;
         }
 
         // NOTE: CA position restraints applied in Rust (CPU-side) after each step
@@ -1304,18 +1348,52 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         // At 300K: thermal velocity ~0.5 Å/ps → clamp at 10 Å/ps (20σ)
         // At 50K:  thermal velocity ~0.2 Å/ps → clamp at 4 Å/ps (20σ)
         // The old fixed 100 Å/ps clamp was useless at cryogenic temperatures
+        //
+        // M1.2.18.5.B — Velocity-Clamp Kinetic Loss (operator §1.1):
+        //   ΔK_v_clamp = ½·m·(v_new² − v_old²)
+        // computed in bit-accurate f64.  Always negative when the clamp
+        // fires (scale < 1).  Sent as negative external work so the
+        // First-Law drift audit subtracts it from ΔV.
         {
             const float KB_KCAL = 0.001987204f;
             float thermal_vel = sqrtf(KB_KCAL * target_temp / fmaxf(masses[tid], 1.0f));
             float max_vel = fmaxf(thermal_vel * 20.0f, 2.0f);  // 20σ cutoff, min 2 Å/ps
-            float vel_mag = sqrtf(velocities[tid].x * velocities[tid].x +
-                                  velocities[tid].y * velocities[tid].y +
-                                  velocities[tid].z * velocities[tid].z);
+            const float3 v_old = make_float3(
+                velocities[tid].x,
+                velocities[tid].y,
+                velocities[tid].z
+            );
+            float vel_mag = sqrtf(v_old.x * v_old.x
+                                + v_old.y * v_old.y
+                                + v_old.z * v_old.z);
             if (vel_mag > max_vel) {
-                float scale = max_vel / vel_mag;
-                velocities[tid].x *= scale;
-                velocities[tid].y *= scale;
-                velocities[tid].z *= scale;
+                const float scale = max_vel / vel_mag;
+                const float3 v_new = make_float3(
+                    v_old.x * scale,
+                    v_old.y * scale,
+                    v_old.z * scale
+                );
+                if (d_external_work != nullptr) {
+                    const double m_d = (double)masses[tid];
+                    const double vnx = (double)v_new.x;
+                    const double vny = (double)v_new.y;
+                    const double vnz = (double)v_new.z;
+                    const double vox = (double)v_old.x;
+                    const double voy = (double)v_old.y;
+                    const double voz = (double)v_old.z;
+                    const double delta_k_amu_a2_ps2 = 0.5 * m_d * (
+                        vnx * vnx + vny * vny + vnz * vnz
+                      - vox * vox - voy * voy - voz * voz
+                    );
+                    // Convert amu·Å²/ps² → kcal/mol via /418.4.  Always
+                    // negative (scale < 1 ⇒ v_new² < v_old²); represents
+                    // kinetic energy removed by the clamp safety valve.
+                    const double delta_k_kcal_mol = delta_k_amu_a2_ps2 / 418.4;
+                    atomicAdd(d_external_work, delta_k_kcal_mol);
+                }
+                velocities[tid].x = v_new.x;
+                velocities[tid].y = v_new.y;
+                velocities[tid].z = v_new.z;
             }
         }
 
@@ -1907,17 +1985,15 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 timestep * n_aromatics + arom_idx,  // seed for RNG
                 d_aromatic_type[arom_idx],          // ChromophoreType for debug
                 uv_wavelength_nm,                   // Wavelength for debug
-                // M1.2.18-P3.3 — d_external_work accumulator.  NOT YET
-                // wired through the kernel arg list (would require a
-                // 70-th param + 3 launch-site updates).  The
-                // accumulator logic in apply_vibrational_transfer is
-                // staged for M1.2.19 — the engine will thread
-                // &adj.d_external_work (offset 128) here once a
-                // pre-launch hook copies that address into engine
-                // state.  Passing nullptr is the SAFE default: UV
-                // kicks happen but their ΔK is not added to W_ext
-                // until the integrator gains the pointer.
-                nullptr
+                // M1.2.18.5 — d_external_work accumulator.  Wired
+                // through as the 70th kernel parameter; the captured
+                // pipeline pre-capture sets adj.d_external_work
+                // (offset 128) = this same address, then emits a
+                // cuMemsetD8Async at the head of every replay so each
+                // chunk starts with *d_external_work == 0.0.
+                // apply_vibrational_transfer atomicAdd-f64s
+                // ΔK = ½·m·(v_new² − v_old²) per kicked neighbor.
+                d_external_work
             );
         }
     }

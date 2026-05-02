@@ -63,6 +63,7 @@
 #include <mma.h>
 #include <cstdint>
 #include <cfloat>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 #include <cmath>
 
 namespace prism_nhs { namespace so3_project {

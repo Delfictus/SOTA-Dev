@@ -22,10 +22,17 @@
 //! ∈ {0, 1, 2}. Inline PTX guards (see [`Self::APPLY_GUARD_DOC`])
 //! prevent any `NaN` from leaving the kernel.
 //!
-//! ## Memory layout — 128-byte invariant
+//! ## Memory layout — 256-byte zero-trust lock (Emergency Rectification 2026-05-02)
 //!
 //! Per CSR-section C of the mandate, `sizeof::<InterferometricAdjudicatorFfi>()`
-//! must equal **128 bytes exactly** (one Blackwell L1 sector).
+//! is **256 bytes exactly** (two Blackwell L1 sectors).  The operator's
+//! Emergency Kill / Zero-Trust Alignment directive reverts `gear_override`
+//! to its B.3.2 home at offset 100 and renames two fields for ABI clarity
+//! (`force_prune_mask` → `force_prune_mask_ptr`; `d_potential_energy` →
+//! `potential_energy`).  `d_external_work` retains its M1.2.18.5 pointer-
+//! fusion semantics (`*mut f64` at offset 128) so multi-kernel asynchronous
+//! atomicAdd-f64 contributions (UV kicks, ASC, force/velocity clamps) land
+//! in a single F2-pool address — no read-modify-write hazard.
 //!
 //! ```text
 //! noise_floor_mu          [f32; 6]  offset   0..24    24 B
@@ -37,12 +44,14 @@
 //! start_clock             u64       offset  72..80     8 B
 //! stop_clock              u64       offset  80..88     8 B
 //! legacy_centroid_fallback [f32;3]  offset  88..100   12 B  (Anti-Greenfield § 6.2)
-//! gear_override           u32       offset 100..104    4 B  (B.3.2 — Hardware Interlock)
-//! force_prune_mask        *mut u64  offset 104..112    8 B  (G28 SISR)
-//! d_potential_energy      f64       offset 112..120    8 B  (M1.2.17 — Hamiltonian scalar VALUE)
+//! gear_override           u32       offset 100..104    4 B  (B.3.2 Hardware Interlock — RESTORED)
+//! force_prune_mask_ptr    *mut u64  offset 104..112    8 B  (G28 SISR)
+//! potential_energy        f64       offset 112..120    8 B  (M1.2.17 — Hamiltonian scalar VALUE)
 //! d_dt                    *mut f32  offset 120..128    8 B  (Gearbox dt target)
+//! d_external_work         *mut f64  offset 128..136    8 B  (W_ext POINTER, F2-pool)
+//! _trailing_pad           ...      offset 136..256  120 B  (implicit via #[repr(C, align(128))])
 //! ─────────────────────────────────────────────────────────
-//! TOTAL                                                128 B
+//! TOTAL                                                256 B
 //! ```
 //!
 //! ## M1.2.17 — Layout pivot (operator unified directive 2026-05-02)
@@ -61,21 +70,23 @@
 //! `d_dt` moves to offset 120; T12 Pre-Flight pre-capture
 //! `cuMemcpyHtoD` wire-up updated.
 //!
-//! ## B.3.2 — `gear_override` Hardware Interlock (operator 2026-05-02)
+//! ## `gear_override` Hardware Interlock (operator Zero-Trust 2026-05-02)
 //!
-//! `gear_override` is the **Manual Override Invariant** — a single
-//! byte at offset 100 that the human operator (or an external safety
-//! script) writes to force a gear shift independent of the KL-driven
-//! adjudication state machine.  Sentinel `0xFF` = Auto (gearbox is
-//! free to choose); values 0..3 = manual force to that gear.  The
-//! predicate-bridge kernel reads this field on every captured-graph
-//! launch and short-circuits the SFA's calculated gear when override
-//! is set.
+//! `gear_override` is the **Manual Override Invariant** — a u32 at
+//! offset **100** that the host (operator or safety script) writes via
+//! `cuMemcpyHtoDAsync` to force a gear shift independent of the
+//! KL-driven adjudication state machine.  Sentinel `0xFF` = Auto
+//! (gearbox is free to choose); values 0..3 = manual force to that
+//! gear.  The predicate-bridge kernel reads this field on every
+//! captured-graph launch and short-circuits the SFA's calculated gear
+//! when override is set.
 //!
-//! Slot was previously implicit compiler padding (8-byte alignment
-//! for `force_prune_mask`); B.3.2 makes the layout explicit with
-//! `gear_override: u8 + _gear_pad: [u8; 3]`.  No size change; no
-//! offset drift on the existing pointer fields.
+//! Slot history: B.3.2 placed `gear_override` at offset 100 (claiming
+//! the implicit padding for `force_prune_mask_ptr`'s 8-byte alignment).
+//! M1.2.18.5 attempted to move it to offset 136 to free that slot for
+//! `_pad_100`; the Emergency Rectification reverted it to offset 100
+//! per the operator's Forced-Gear Supervisor Shim spec which writes to
+//! `(adj_dev + 100)` directly.
 //!
 //! ## T12 Pre-Flight — connective tissue (Wave A)
 //!
@@ -232,37 +243,33 @@ pub struct InterferometricAdjudicatorFfi {
     pub legacy_centroid_fallback: [f32; 3],
 
     /// **B.3.2 — Manual Gear Override (Hardware Interlock).**
-    /// **Offset 100** (operator spec said offset 104; that slot is
-    /// pinned by the G28 SISR `force_prune_mask` contract — see the
-    /// `static_assert(offsetof(force_prune_mask) == 104)` on the
-    /// C side.  The next available 4-byte aligned slot is the
-    /// formerly-implicit padding at 100.  Operator's intent — a
-    /// host-writable u32 the predicate bridge consults — is preserved
-    /// at this offset.)
-    ///
-    /// Sentinel `0xFF` (i.e., 0x000000FF) = Auto (gearbox's KL-driven
-    /// SFA decides); values `0..3` = manual force to that gear
-    /// (0 = 0.5fs / 1 = 2.0fs / 2 = 4.0fs / 3 = abort).  Read on every
-    /// captured-graph launch by the predicate-bridge kernel:
+    /// **Offset 100** (Emergency Rectification 2026-05-02 — restored from
+    /// the M1.2.18.5 attempt to relocate to 136).  u32 the host writes
+    /// via `cuMemcpyHtoDAsync` to force a gear shift, bypassing the
+    /// KL-driven SFA.  Sentinel `0xFF` (i.e., 0x000000FF) = Auto;
+    /// values 0..3 = manual force (0 = 0.5fs / 1 = 2.0fs / 2 = 4.0fs /
+    /// 3 = abort).  Read on every captured-graph launch by the
+    /// predicate-bridge kernel:
     ///
     /// ```text
     ///     final_gear = (override == 0xFF) ? calculated : (override & 0x03)
     /// ```
-    ///
-    /// This is the "Blackwell Overlord" safety surface: an external
-    /// process can `cuMemcpyHtoD` a 4-byte value to this address and
-    /// the next integration step will downshift in nanoseconds.
     pub gear_override: u32,
 
-    /// G28 SISR per-cluster prune-bit mask buffer (offset 104..112, 8 B).
-    /// Pointer to a single `u64` in F2-pool device memory. Bit `i` is set
-    /// by the SISR kernel when site `i` fails the bilateral symmetry check
-    /// (no Chain-B partner manifold within ε_sym of the C2-reflected
-    /// AABB centroid). The Adjudicator step kernel ANDs this mask with
+    /// **G28 SISR per-cluster prune-bit mask buffer pointer.**
+    /// Offset 104..112, 8 B (`*mut u64`).  Pointer to a single `u64`
+    /// in F2-pool device memory.  Bit `i` is set by the SISR kernel
+    /// when site `i` fails the bilateral symmetry check (no Chain-B
+    /// partner manifold within ε_sym of the C2-reflected AABB centroid).
+    /// The Adjudicator step kernel ANDs this mask with
     /// `(1u64 << cluster_id)` and forces `adjudication_code = 0` (Prune)
     /// on a non-zero result, **independent of** Δ_AB magnitude.
     /// Null disables the symmetry gate (legacy / non-dimer targets).
-    pub force_prune_mask: *mut u64,
+    ///
+    /// Renamed from `force_prune_mask` to `force_prune_mask_ptr` per
+    /// the operator's Zero-Trust §1.1 — the `_ptr` suffix makes the
+    /// pointer-vs-value distinction explicit at the FFI boundary.
+    pub force_prune_mask_ptr: *mut u64,
 
     /// **M1.2.17 — Hamiltonian scalar (potential energy VALUE).**
     /// Offset 112..120, 8 B.  System-wide total potential energy in
@@ -271,10 +278,16 @@ pub struct InterferometricAdjudicatorFfi {
     /// buffer.  This is a VALUE (not a pointer) — host code reads it
     /// directly from the F2-pool-resident FFI struct.
     ///
-    /// Stability fuse: the SFA kernel reads `d_potential_energy` and
-    /// compares against `cruise.v_prev`; if `|V_t − V_{t-1}| / |V_{t-1}|
-    /// > 0.01` or `isnan(V_t)`, target_gear = 3 (abort/trap).
-    pub d_potential_energy: f64,
+    /// Stability fuse: the SFA kernel reads `potential_energy` and
+    /// compares against `cruise.v_prev`; if `|V_t − (V_{t-1} + W_ext)|
+    /// / |V_{t-1} + W_ext| > 0.01` or `isnan(V_t)`, target_gear = 3
+    /// (abort/trap).  See `gearbox.cu::prism_gearbox_sfa_kernel`.
+    ///
+    /// Renamed from `d_potential_energy` to `potential_energy` per the
+    /// operator's Zero-Trust §1.1 — the `d_` prefix is reserved for
+    /// pointer fields (`d_dt`, `d_external_work`); a VALUE field has
+    /// no prefix.
+    pub potential_energy: f64,
 
     /// **G26 chronometric gearbox dt pointer.**  Offset 120..128, 8 B.
     /// Device-resident `*mut f32` carrying the active integrator
@@ -287,26 +300,36 @@ pub struct InterferometricAdjudicatorFfi {
     /// room for `d_potential_energy` at the L1-aligned 112 slot.
     pub d_dt: *mut f32,
 
-    /// **M1.2.18-P3 — Total External Work (Hamiltonian audit).**
-    /// Offset 128..136, 8 B (f64 VALUE).  Per-step accumulator for
+    /// **M1.2.18.5 — Total External Work POINTER (Hamiltonian audit).**
+    /// Offset 128..136, 8 B (`*mut f64`).  VRAM-native accumulator for
     /// non-conservative energy injections that the SFA stability fuse
     /// must subtract from ΔV before computing drift:
     ///
     ///   * UV velocity kicks (apply_vibrational_transfer):
-    ///     ΔK = ½·m·(v_new² − v_old²) atomicAdd_f64'd here.
+    ///     ΔK = ½·m·(v_new² − v_old²) f64-precision, atomicAdd_f64.
     ///   * Force/velocity clamps (M1.2.18 follow-up): clamp losses.
     ///
     /// ASC steering work is folded into `d_potential_energy` directly
     /// (operator §3.2 — accumulate V_ASC into pe_components so V_t
     /// already reflects the steering potential).
     ///
-    /// Zero-Trust drift formula (M1.2.18 §3.4):
-    ///   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
-    /// > 0.01 ⇒ Gear 3 abort trap.
+    /// Pointer-fusion rationale (M1.2.18.5):
+    ///   * F2-pool `*mut f64` allocated once, address-stable for the
+    ///     entire MD campaign.  The captured graph emits a
+    ///     `cuMemsetD8Async` head-of-loop node that zeros `*d_external_work`
+    ///     each replay so the SFA reads a fresh chunk-window value.
+    ///   * `nhs_amber_fused_step`'s 70th parameter binds the same address.
+    ///     `apply_vibrational_transfer` (was `nullptr` pre-M1.2.18.5)
+    ///     now writes via `atomicAdd(d_external_work, delta_k)` —
+    ///     sm_120 native f64 atomic.
     ///
-    /// Zeroed every chunk by the captured pipeline; 0.0 default
-    /// preserves the M1.2.17 stability-fuse semantics on first frame.
-    pub d_external_work: f64,
+    /// First-Law drift formula (M1.2.18.5 §2):
+    ///   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
+    ///   > 0.01 ⇒ Gear 3 abort trap.
+    ///
+    /// `null` is the default (e.g., test fixtures) — captured pipeline
+    /// gates the W_ext read on a non-null pointer.
+    pub d_external_work: *mut f64,
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -331,10 +354,10 @@ impl InterferometricAdjudicatorFfi {
             stop_clock: 0,
             legacy_centroid_fallback: [0.0; 3],
             gear_override: Self::GEAR_OVERRIDE_AUTO,
-            force_prune_mask: std::ptr::null_mut(),
-            d_potential_energy: 0.0,
+            force_prune_mask_ptr: std::ptr::null_mut(),
+            potential_energy: 0.0,
             d_dt: std::ptr::null_mut(),
-            d_external_work: 0.0,
+            d_external_work: std::ptr::null_mut(),
         }
     }
 
@@ -376,16 +399,15 @@ unsafe impl Sync for InterferometricAdjudicatorFfi {}
 // ============================================================================
 
 const _: () = {
-    use std::mem::{align_of, size_of};
+    use std::mem::{align_of, offset_of, size_of};
 
-    // M1.2.18-P3 — operator-authorised 136-byte expansion for
-    // d_external_work at offset 128.  With #[repr(C, align(128))],
-    // the struct's physical size rounds up to the next 128-byte
-    // multiple ⇒ 256 bytes total (136 used, 120 trailing pad).  The
-    // first 128 bytes still hit one Blackwell L1 sector for the hot
-    // fields; SFA reads of d_external_work spill into the second
-    // sector — acceptable per directive §3 ("the 1% fuse only traps
-    // on Numerical Instability, not Intentional Perturbation").
+    // Emergency Rectification 2026-05-02 — Zero-Trust 256-byte lock.
+    // gear_override @ 100 (B.3.2 home), force_prune_mask_ptr @ 104,
+    // potential_energy @ 112, d_dt @ 120, d_external_work @ 128.
+    // Trailing 120 B implicit pad (#[repr(C, align(128))] rounds up
+    // 136 used → 256 physical).  Byte-offset asserts below pin every
+    // FFI-visible field; drift here breaks the C++ static_asserts in
+    // adjudicator.cuh and the byte-offset reads in gearbox.cu.
     assert!(size_of::<InterferometricAdjudicatorFfi>() == 256);
 
     // alignof == 128 — Blackwell L1 sector boundary preserved.
@@ -395,6 +417,15 @@ const _: () = {
     // a 64-bit target.  Any target where size_of::<*const T>() != 8
     // would need a layout audit before this struct can be used.
     assert!(size_of::<*const ContactShellTile>() == 8);
+
+    // Operator §1.1 — mandatory const-context offset asserts (Zero-Trust).
+    // Fail compilation immediately on FFI drift.  The C++ side has the
+    // mirror static_assert in adjudicator.cuh.
+    assert!(offset_of!(InterferometricAdjudicatorFfi, gear_override) == 100);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask_ptr) == 104);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, potential_energy) == 112);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, d_dt) == 120);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, d_external_work) == 128);
 };
 
 // ============================================================================
@@ -932,6 +963,93 @@ pub unsafe fn apply_t7_calibration(
 }
 
 // ============================================================================
+// Wave 0 / Task #68 — KL-DIVERGENCE NOISE-FLOOR BOOTSTRAP
+// ============================================================================
+//
+// The Adjudicator step kernel's threshold formula is
+//   threshold = adj->noise_floor_mu[0] + 3.0f * adj->noise_floor_sigma[0]
+// and the test it gates is `fabsf(total_kl) > threshold` (Wave 0 fix
+// 2026-05-02, prior code compared signed `total_kl` against the same
+// threshold and silently dropped half the divergence half-plane).
+//
+// `total_kl` is the 4-plane WEIGHTED KL DIVERGENCE
+// `Σ_planes ω_p · Σ_l p_l · log2(p_l/q_l)`.  It is dimensionless and
+// — under cold-hold (relaxed≈perturbed manifolds) — should sit at
+// magnitudes ≪ 1.  Warm-phase divergence events run several orders
+// of magnitude larger (the legacy CPU PCMI/SURP loop sees Σ KL
+// bursts in the 10² range on 7C8R).
+//
+// `T7_CALIBRATED_MU` / `T7_CALIBRATED_SIGMA` (above) are the
+// **C_l power-spectrum** statistics from cold-hold sampling.  Plugging
+// those into `adj->noise_floor_mu[0..6]` (μ[0]≈0.805) gave a threshold
+// of ~1.249 — comparing apples to oranges.  The 15k 7C8R campaign
+// (2026-05-02) exposed this: 35k steps, 0 GhostTileFrame records.
+//
+// The KL bootstrap below seeds `adj->noise_floor_mu[0]` and
+// `adj->noise_floor_sigma[0]` with KL-magnitude priors small enough
+// that the very first warm-phase divergence event lifts above the
+// threshold, while Dynamic T7 (`dynamic_t7.cu`) takes over at
+// `PRISM_DYNT7_N_MIN = 100` samples and replaces the bootstrap with
+// the substrate's measured cold-hold KL μ/σ via stream-ordered
+// `atomicMin`/`atomicMax`-free in-place writes.
+//
+// Why these specific numbers
+//   μ_kl_boot      = 0.0    (cold-hold KL is centred near zero in
+//                            both directions — the relaxed and
+//                            perturbed manifolds are statistically
+//                            identical in equilibrium).
+//   σ_kl_boot      = 1.0e-3 (2-σ KL noise envelope from the 4LPK
+//                            cold-hold profile, conservatively
+//                            doubled to avoid first-frame
+//                            false-Construct on numerical jitter
+//                            before Dynamic T7 has 100 samples).
+//   threshold_boot = μ + 3σ = 3.0e-3
+//
+// Bands [1..5] are written but unused by the kernel (it only reads
+// index 0).  We seed them with the same values for symmetry; future
+// per-band threshold support can repopulate without ABI churn.
+//
+// Lock policy: same as `T7_CALIBRATED_*` — re-calibration produces
+// new constants under a new public name; in-place mutation
+// FORBIDDEN.
+
+/// **Wave 0 / Task #68** — KL-units μ bootstrap for `noise_floor_mu`.
+///
+/// Per-band (only index 0 is read by the step kernel).  All bands
+/// share the same value here; per-band differentiation is a future
+/// enhancement once Dynamic T7 captures per-band KL samples.
+pub const T7_KL_BOOTSTRAP_MU: [f32; 6] = [
+    0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32,
+];
+
+/// **Wave 0 / Task #68** — KL-units σ bootstrap for `noise_floor_sigma`.
+///
+/// 1.0e-3 → bootstrap threshold of 3.0e-3.  Dynamic T7 overwrites
+/// index 0 with the measured substrate value once it has ≥100
+/// `current_divergence` samples; bands [1..5] retain this value.
+pub const T7_KL_BOOTSTRAP_SIGMA: [f32; 6] = [
+    1.0e-3_f32, 1.0e-3_f32, 1.0e-3_f32, 1.0e-3_f32, 1.0e-3_f32, 1.0e-3_f32,
+];
+
+/// **Wave 0 / Task #68** — apply the KL-units bootstrap into the
+/// adjudicator's device state.  This REPLACES `apply_t7_calibration`
+/// for the captured-pipeline init path: the C_l-magnitude priors
+/// (`T7_CALIBRATED_MU/SIGMA`) yielded a threshold of ~1.249 — the
+/// wrong order of magnitude vs. the divergence the kernel is
+/// actually computing.  See module-level comment above for the
+/// numerics rationale.
+///
+/// **Safety contract**: identical to [`set_noise_floor_constants`].
+#[cfg(feature = "gpu")]
+#[inline]
+pub unsafe fn apply_t7_kl_calibration(
+    adj: *mut InterferometricAdjudicatorFfi,
+    stream: *mut std::ffi::c_void,
+) -> CudaError {
+    set_noise_floor_constants(adj, &T7_KL_BOOTSTRAP_MU, &T7_KL_BOOTSTRAP_SIGMA, stream)
+}
+
+// ============================================================================
 // T7 — Noise-floor calibration setter (safe Rust wrapper)
 // ============================================================================
 
@@ -1092,13 +1210,20 @@ mod tests {
     }
 
     #[test]
-    fn ffi_struct_size_is_128_bytes() {
+    fn ffi_struct_size_is_256_bytes() {
+        // M1.2.18.5 — explicit 256-byte lock (two Blackwell L1 sectors).
+        // The first sector (0..128) holds the SO(3) outputs +
+        // legacy_centroid_fallback + force_prune_mask + d_potential_energy +
+        // d_dt.  The second (128..256) holds d_external_work pointer +
+        // gear_override + tail padding.  Drift here ⇒ breaks both Rust-side
+        // offset_of asserts and C++-side static_assert(sizeof == 256).
         assert_eq!(
             size_of::<InterferometricAdjudicatorFfi>(),
-            128,
-            "InterferometricAdjudicatorFfi MUST be 128 bytes (one Blackwell L1 sector); \
-             CSR-C invariant. If this fails, the Adjudicator's LDG.E.128 alignment \
-             is broken and the F1 SWITCH read will fault."
+            256,
+            "InterferometricAdjudicatorFfi MUST be 256 bytes (M1.2.18.5 \
+             two-sector lock). Drift means one of: missing field, missing \
+             padding, or compiler-inserted alignment changed.  Cross-check \
+             the C-side static_assert in adjudicator.cuh."
         );
     }
 
@@ -1118,6 +1243,8 @@ mod tests {
         // Explicit byte-offsets per CSR-section C requirement.
         // Layout drift here = silent ABI break against the C-side
         // mirror in adjudicator.cuh (its static_asserts pin the same
+        // M1.2.18.5 layout: gear_override @ 136, d_external_work
+        // (pointer) @ 128, total size 256.
         // values).
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_mu), 0);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma), 24);
@@ -1128,15 +1255,14 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, start_clock), 72);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, stop_clock), 80);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback), 88);
-        // B.3.2 — gear_override (u32) at 100 (claims the former
-        // implicit compiler padding).  force_prune_mask at 104 (G28 SISR).
+        // Emergency Rectification — gear_override @ 100 (B.3.2 home).
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gear_override),       100);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask),    104);
-        // M1.2.17 — d_potential_energy (f64 VALUE) at 112; d_dt at 120.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_potential_energy), 112);
+        // Renamed: force_prune_mask → force_prune_mask_ptr (G28 SISR).
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask_ptr), 104);
+        // Renamed: d_potential_energy → potential_energy (f64 VALUE).
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, potential_energy),    112);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),                120);
-        // M1.2.18-P3 — d_external_work (f64 VALUE) at 128.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_external_work),    128);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_external_work),     128);
     }
 
     #[test]
@@ -1152,10 +1278,14 @@ mod tests {
         assert_eq!(z.stop_clock, 0);
         assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
         assert_eq!(z.gear_override, InterferometricAdjudicatorFfi::GEAR_OVERRIDE_AUTO);
-        assert!(z.force_prune_mask.is_null());
-        // M1.2.17 — d_potential_energy is an f64 value (not a ptr); zero by default.
-        assert_eq!(z.d_potential_energy, 0.0_f64);
+        assert!(z.force_prune_mask_ptr.is_null());
+        // potential_energy is an f64 value (not a ptr); zero by default.
+        assert_eq!(z.potential_energy, 0.0_f64);
         assert!(z.d_dt.is_null());
+        // d_external_work is a *mut f64 pointer; null by default.
+        // Captured pipeline build wires it pre-capture and zero-host
+        // guard rejects null at capture time (Operator §3 Zero-Host Guard).
+        assert!(z.d_external_work.is_null());
     }
 
     #[test]

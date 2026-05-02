@@ -207,9 +207,10 @@ int prism_gearbox_launch_berendsen_guard(
 /// typedef).  Created via `cudaGraphConditionalHandleCreate` at
 /// pipeline build time and bound to the captured graph.
 ///
-/// B.3.2 — additionally consults `adj->gear_override` (u32 at offset
-/// 100).  When the operator writes 0..3 to that VRAM word, the bridge
-/// short-circuits the SFA's calculated gear with the override.
+/// B.3.2 — additionally consults `adj->gear_override` (u32 at offset 100;
+/// Emergency Rectification 2026-05-02 reverted from the M1.2.18.5 attempt
+/// to relocate to 136).  When the host writes 0..3 via cuMemcpyHtoDAsync,
+/// the bridge short-circuits the SFA's calculated gear with the override.
 /// Sentinel 0xFF = Auto.  Pass null `adj` for tests that don't have
 /// an InterferometricAdjudicatorFfi fixture (override is simply not
 /// consulted).

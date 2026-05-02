@@ -90,14 +90,30 @@ pub struct ZstrFrameHeader {
     /// force buffer at this slot. NaN ⇒ G29 trap (steering produced
     /// non-physical forces; campaign aborts on detection).
     pub force_norm: f32,                 // 28..32
+    /// **M1.2.18.5 — Total External Work (kcal/mol)** integrated over
+    /// this chunk window.  Snapshotted from `*adj.d_external_work`
+    /// (FFI offset 128 → F2-pool W_ext buffer) at frame retirement.
+    /// `nan` is reserved (write zero when the W_ext pointer is null
+    /// pre-M1.2.18.5 wire-up).  Off-line replay subtracts this from
+    /// `potential_energy` deltas to derive the conservative-only
+    /// component of ΔV (First Law audit).
+    pub external_work: f64,              // 32..40
+    /// **M1.2.18.5 — System Potential Energy V_t (kcal/mol)** as written
+    /// by the captured Hamiltonian-Auditor reduce node into
+    /// `adj.d_potential_energy` (FFI offset 112).  Snapshotted at frame
+    /// retirement so off-line replay can rebuild the V trace without
+    /// re-reducing per-atom components.  Zero pre-Hamiltonian wire-up.
+    pub potential_energy: f64,           // 40..48
     /// Pads the header to a full 4096-byte sector. align(4096) on the
     /// struct already enforces tail padding, but making it explicit
     /// here pins the slot layout so the offline replay format does not
     /// silently drift if the struct is later extended.
-    pub _padding: [u32; 1016],           // 32..4096
+    /// M1.2.18.5: 1016 → 1012 (lost 16 B = 4 × u32 to external_work +
+    /// potential_energy f64 fields above).
+    pub _padding: [u32; 1012],           // 48..4096
 }
 
-// ZstrFrameHeader meaningful payload: 32 bytes.
+// ZstrFrameHeader meaningful payload (post-M1.2.18.5): 48 bytes.
 // size_of::<ZstrFrameHeader>() == 4096 (explicit + align(4096)).
 // Slot layout post-T11:
 //   [header: 4096 B] [positions: n_atoms*3*4 B] [forces: n_atoms*3*4 B] [pad→4096]
@@ -140,21 +156,47 @@ impl ZstrRing {
         // ZstrFrameHeader is align(4096) → size_of = 4096 (padded by Rust).
         // Meaningful header data occupies only the first 32 bytes.
         let header_bytes = std::mem::size_of::<ZstrFrameHeader>(); // == 4096
-        let pos_bytes    = n_atoms * 3 * 4;                         // n_atoms × xyz × f32
-        let force_bytes  = n_atoms * 3 * 4;                         // T11: forces appended
-        let raw_frame    = header_bytes + pos_bytes + force_bytes;
+        // Operator Amendment 3.11 — ZSTR Payload Alignment Rectification.
+        //
+        // `zstr_force_stage_f4_kernel` issues `STG.E.128` (float4 store) at
+        // base `slot_base + force_offset_in_slot`.  Blackwell sm_120
+        // requires the destination address to be 16-byte aligned or the
+        // hardware traps with MISALIGNED_ADDRESS (kernel-printf triage
+        // 2026-05-02 isolated the trap to this kernel).
+        //
+        // For any `n_atoms` where `n_atoms mod 4 != 0`, the raw pos
+        // payload size `n_atoms * 12` is not a multiple of 16, leaving
+        // `force_offset = 4096 + 12·n_atoms` at an 8-aligned (not 16-
+        // aligned) offset within the slot.  Padding the pos payload up
+        // to the next 16-byte boundary fixes the offset for the force
+        // payload — the slot is still 4096-pad'd at the end so the
+        // O_DIRECT total size is preserved.
+        let pos_bytes_raw     = n_atoms * 3 * 4; // n_atoms × xyz × f32
+        let pos_bytes_aligned = (pos_bytes_raw + 15) & !15;
+        let force_bytes       = n_atoms * 3 * 4; // T11: forces appended
+        let raw_frame    = header_bytes + pos_bytes_aligned + force_bytes;
         // Round up to next 4096-byte multiple for O_DIRECT sector alignment.
         let frame_size   = (raw_frame + 4095) & !4095;
         let total_bytes  = frame_size * Self::N_SLOTS;
 
+        // M1.2.19.D — Mapped-memory standard (operator Amendment 3.13 §1.2).
+        // Use cuMemHostAlloc with PORTABLE + DEVICEMAP so the page-locked
+        // host buffer carries an explicit device-side virtual-address alias
+        // (vs. the implicit-mapped behavior of cuMemAllocHost_v2).  On
+        // Blackwell sm_120 + PCIe Gen5 the driver collapses them to the
+        // same VA window, but the explicit flag makes the contract part
+        // of the source — required for multi-node B200 portability where
+        // the implicit behavior is not guaranteed.
         let mut ptr: *mut c_void = std::ptr::null_mut();
+        let flags = cudarc::driver::sys::CU_MEMHOSTALLOC_PORTABLE
+                  | cudarc::driver::sys::CU_MEMHOSTALLOC_DEVICEMAP;
         let rc = unsafe {
-            cudarc::driver::sys::cuMemAllocHost_v2(&mut ptr, total_bytes)
+            cudarc::driver::sys::cuMemHostAlloc(&mut ptr, total_bytes, flags)
         };
 
         if !matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS) {
             return Err(format!(
-                "cuMemAllocHost_v2 failed: {:?} \
+                "cuMemHostAlloc(PORTABLE|DEVICEMAP) failed: {:?} \
                  (requested {} bytes for {} atoms × 3 slots)",
                 rc, total_bytes, n_atoms
             ));
@@ -211,10 +253,19 @@ impl ZstrRing {
     }
 
     /// Byte offset from a slot's base to the forces payload.
-    /// Equals `sizeof(header) + n_atoms*3*4` — positions sit immediately
-    /// after the header, forces immediately after positions.
+    /// Header (4096) + positions payload aligned up to 16-byte boundary.
+    ///
+    /// Operator Amendment 3.11 — pos payload `n_atoms*12` is rounded up
+    /// to the next 16-byte boundary so this offset (and therefore the
+    /// `slot_base + force_offset` address consumed by
+    /// `zstr_force_stage_f4_kernel`) is 16-aligned for `STG.E.128`.
+    /// Without padding, any `n_atoms mod 4 != 0` produced an 8-aligned
+    /// offset → MISALIGNED_ADDRESS hardware trap on the first launch.
     pub fn forces_offset_in_slot(&self) -> usize {
-        std::mem::size_of::<ZstrFrameHeader>() + self.n_atoms * 3 * 4
+        let header_bytes      = std::mem::size_of::<ZstrFrameHeader>();
+        let pos_bytes_raw     = self.n_atoms * 3 * 4;
+        let pos_bytes_aligned = (pos_bytes_raw + 15) & !15;
+        header_bytes + pos_bytes_aligned
     }
 
     /// Raw byte pointer to the forces payload inside slot `slot` (T11).
@@ -266,15 +317,40 @@ const fn offset_of_completion_fence() -> usize { 16 }
 /// + n_atoms(4) + gear_id(4) = 28.
 const fn offset_of_force_norm() -> usize { 28 }
 
+/// **M1.2.18.5** Byte offset of `external_work` within the raw header bytes.
+/// `force_norm` ends at 32; `external_work` (f64) lives at 32..40.
+pub const fn offset_of_external_work() -> usize { 32 }
+
+/// **M1.2.18.5** Byte offset of `potential_energy` within the raw header bytes.
+/// `external_work` ends at 40; `potential_energy` (f64) lives at 40..48.
+pub const fn offset_of_potential_energy() -> usize { 40 }
+
 // Compile-time pin: the header layout MUST match the offsets the C-side
 // kernels and the offline replay parser depend on.  Drift here ⇒ silently
 // corrupt force_norm / gear_id reads in the consumer thread.
 const _: () = {
     use std::mem::size_of;
     assert!(size_of::<ZstrFrameHeader>() == 4096);
-    // We can't take addr_of on uninitialised memory in const, but we can
-    // assert the field pack: 8+4+4+4+4+4+4 = 32 used bytes + 4064 padding.
-    assert!(size_of::<u64>() + 6 * size_of::<u32>() + 1016 * size_of::<u32>() == 4096);
+    // M1.2.18.5 — header packed payload is 48 bytes:
+    //   frame_idx       u64       8 B
+    //   dt              f32       4 B
+    //   adjudication    u32       4 B
+    //   completion      u32       4 B
+    //   n_atoms         u32       4 B
+    //   gear_id         u32       4 B
+    //   force_norm      f32       4 B
+    //   external_work   f64       8 B
+    //   potential_energy f64      8 B
+    //   _padding       [u32;1012] 4048 B
+    //   ─────────────────────────────────
+    //   TOTAL                     4096 B
+    assert!(
+        size_of::<u64>()      // frame_idx
+        + 6 * size_of::<u32>()    // dt + adj + fence + n_atoms + gear_id + force_norm
+        + 2 * size_of::<f64>()    // M1.2.18.5: external_work + potential_energy
+        + 1012 * size_of::<u32>() // tail padding
+        == 4096
+    );
 };
 
 // ─── ZSTR Consumer Thread ────────────────────────────────────────────────────
@@ -287,23 +363,38 @@ pub struct ZstrStats {
     pub bytes_written:  u64,
 }
 
-/// Spawn the O_DIRECT ZSTR consumer thread.
+/// Spawn the io_uring + O_DIRECT ZSTR consumer thread.
+///
+/// **Wave 0 / #69 — Beast-Mode I/O.** Replaces the pwrite(2) path with
+/// pure io_uring SQE submission.  No VFS read/write copy, no page
+/// cache (O_DIRECT bypasses it; io_uring bypasses the buffered-IO
+/// stack entirely).  Each ready ring slot is slammed straight into
+/// the NVMe submission queue as an `IORING_OP_WRITE` SQE pointing at
+/// the pinned-host slot bytes; the kernel's blk-mq layer hands them
+/// to the device without an intermediate copy.
 ///
 /// The thread:
-/// 1. Opens `output_path` with `O_DIRECT | O_CREAT | O_WRONLY`.
-/// 2. For each frame epoch:
-///    a. Computes `slot = frame_idx % 3`.
-///    b. Spin-polls `ZstrFrameHeader::completion_fence` until `== 1`
-///       (GPU has fenced all writes for this slot) or `stop` is set.
-///    c. Writes `frame_size` bytes via `pwrite` (sector-aligned offset).
-///    d. Resets `completion_fence` to 0 (returns slot to GPU).
-///    e. Advances `frame_idx`.
-/// 3. Flushes and closes the file when `stop` fires.
+/// 1. Opens `output_path` with `O_DIRECT | O_CREAT | O_WRONLY`
+///    (path: under `args.output` in the campaign output dir; the
+///    legacy `/tmp` path was eliminated in this commit).
+/// 2. Initialises a 16-entry `IoUring` (5 inflight + headroom).
+/// 3. For each frame epoch:
+///    a. Computes `slot = frame_idx % N_SLOTS`.
+///    b. Spin-polls `ZstrFrameHeader::completion_fence == 1` (GPU
+///       has fenced all writes for this slot) or `stop` is set.
+///    c. Reads + traps non-finite `force_norm` (G29).
+///    d. Pushes one `IORING_OP_WRITE` SQE: fd + sector-aligned
+///       offset + slot pointer + frame_size, `submit_and_wait(1)`,
+///       reaps the CQE, checks `cqe.result() >= 0`.
+///    e. Resets `force_norm` and `completion_fence` to 0 (returns
+///       the slot to the GPU's writable pool).
+///    f. Advances `frame_idx`.
+/// 4. Flushes (fdatasync) and closes the file when `stop` fires.
 ///
 /// Returns a `JoinHandle<ZstrStats>`.
 ///
 /// # Safety
-/// `ring_ptr` must remain valid for the lifetime of the returned thread.
+/// `ring` must remain valid for the lifetime of the returned thread.
 /// The caller is responsible for joining before dropping the ring.
 pub fn spawn_zstr_consumer(
     ring: Arc<ZstrRing>,
@@ -314,6 +405,7 @@ pub fn spawn_zstr_consumer(
         .name(format!("zstr-consumer"))
         .spawn(move || {
             use std::os::unix::fs::OpenOptionsExt;
+            use io_uring::{IoUring, opcode, types};
 
             // G21 gate enforcement — consumer must not proceed if alignment failed.
             if !ring.alignment_ok {
@@ -342,6 +434,30 @@ pub fn spawn_zstr_consumer(
 
             use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
+
+            // Wave 0 / #69 — io_uring instance.  16 entries: 5 ring slots
+            // can be inflight at most, the rest is queue headroom for
+            // bursts.  Build with default flags (no SQPOLL — we keep the
+            // submit/wait synchronous-per-frame contract so slot recycle
+            // ordering is preserved; switching to SQPOLL is a follow-up
+            // once we pipeline >1 SQE per frame).
+            let mut uring: IoUring = match IoUring::new(16) {
+                Ok(u) => u,
+                Err(e) => {
+                    log::error!(
+                        "[ZSTR consumer] io_uring init failed: {} \
+                         — falling back to no-op (frames will all drop). \
+                         Check kernel build for CONFIG_IO_URING=y.",
+                        e
+                    );
+                    return ZstrStats { frames_written: 0, frames_dropped: 0, bytes_written: 0 };
+                }
+            };
+            log::info!(
+                "[ZSTR consumer] io_uring initialised: 16 SQEs, O_DIRECT \
+                 fd={} → {:?}",
+                fd, output_path
+            );
 
             let frame_size   = ring.frame_size;
             let mut frame_idx: u64 = 0;
@@ -383,20 +499,59 @@ pub fn spawn_zstr_consumer(
                     continue;
                 }
 
-                // Slot is READY.  O_DIRECT pwrite at sector-aligned offset.
+                // Slot is READY.  io_uring zero-copy submit:
+                //   pinned slot ptr → IORING_OP_WRITE SQE → NVMe queue.
                 let slot_ptr = unsafe {
                     ring.pinned_ptr.add(slot * frame_size)
                 } as *const u8;
-                let buf = unsafe { std::slice::from_raw_parts(slot_ptr, frame_size) };
-                let offset = (frames_written * frame_size as u64) as i64;
+                let offset_i64 = (frames_written * frame_size as u64) as i64;
 
-                let written = unsafe {
-                    libc::pwrite(
-                        fd,
-                        buf.as_ptr() as *const libc::c_void,
-                        frame_size,
-                        offset,
+                let write_e = opcode::Write::new(
+                        types::Fd(fd),
+                        slot_ptr,
+                        frame_size as u32,
                     )
+                    .offset(offset_i64)
+                    .build()
+                    .user_data(frame_idx);
+
+                let push_rc = unsafe { uring.submission().push(&write_e) };
+                if push_rc.is_err() {
+                    // Submission queue full — drop frame, keep going.
+                    log::warn!(
+                        "[ZSTR consumer] io_uring SQ full at frame={}; \
+                         dropping",
+                        frame_idx
+                    );
+                    frames_dropped += 1;
+                    frame_idx += 1;
+                    continue;
+                }
+                let submit_rc = uring.submit_and_wait(1);
+                let written: isize = match submit_rc {
+                    Err(e) => {
+                        log::warn!(
+                            "[ZSTR consumer] io_uring submit_and_wait \
+                             frame={} failed: {}",
+                            frame_idx, e
+                        );
+                        -1
+                    }
+                    Ok(_) => {
+                        // Reap the single completion we waited on.
+                        match uring.completion().next() {
+                            Some(cqe) => cqe.result() as isize,
+                            None => {
+                                log::warn!(
+                                    "[ZSTR consumer] submit_and_wait \
+                                     returned but no CQE present at \
+                                     frame={}",
+                                    frame_idx
+                                );
+                                -1
+                            }
+                        }
+                    }
                 };
 
                 // ── G29 — Action-Recovery Zero-Trust trap.  Read the
@@ -421,10 +576,11 @@ pub fn spawn_zstr_consumer(
                 }
 
                 if written < 0 {
+                    // io_uring CQE.result() returns -errno on failure.
                     log::warn!(
-                        "[ZSTR consumer] pwrite frame {} failed: errno={}",
-                        frame_idx,
-                        std::io::Error::last_os_error()
+                        "[ZSTR consumer] io_uring write frame={} failed: \
+                         cqe.result={} (negative ⇒ -errno)",
+                        frame_idx, written
                     );
                     frames_dropped += 1;
                 } else if !g29_finite {

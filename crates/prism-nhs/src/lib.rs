@@ -510,3 +510,8 @@ mod tests {
     }
 }
 pub mod simd_batch_integration;
+
+// M1.2.19.B / Amendment 3.13 — Asynchronous Manifold Sequencer Channel-B.
+// Pinned-host, device-mapped GhostTileFrame ring + capture-kernel FFI.
+#[cfg(feature = "gpu")]
+pub mod ghost_tile;

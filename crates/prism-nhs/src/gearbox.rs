@@ -187,9 +187,11 @@ pub mod ffi {
         /// `cruise->current_gear` and forwards the value to the G26
         /// SWITCH conditional handle via cudaGraphSetConditional.
         ///
-        /// B.3.2 — also consults `adj->gear_override` (u32 at offset
-        /// 100).  When non-0xFF, the override short-circuits the SFA's
-        /// calculated gear.  Pass null `adj` to skip override consult.
+        /// B.3.2 — also consults `adj->gear_override` (u32 at offset 100;
+        /// Emergency Rectification 2026-05-02 reverted from M1.2.18.5
+        /// attempt to relocate to 136).  When non-0xFF, the override
+        /// short-circuits the SFA's calculated gear.  Pass null `adj`
+        /// to skip override consult.
         pub fn prism_gearbox_launch_predicate_bridge(
             handle_v: u64,
             adj:      *const InterferometricAdjudicatorFfi,

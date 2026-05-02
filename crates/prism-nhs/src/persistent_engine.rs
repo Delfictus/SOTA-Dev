@@ -1325,6 +1325,18 @@ impl PersistentNhsEngine {
             .unwrap_or(0)
     }
 
+    /// **M1.2.18.5** raw device pointer to the 1 × f64 W_ext accumulator.
+    /// The captured pipeline writes this address into the FFI struct's
+    /// `d_external_work` field at offset 128 pre-capture and emits a
+    /// cuMemsetD8Async at the head of every replay window so each chunk
+    /// starts with `*d_external_work == 0.0`.  Forwarder to inner
+    /// `NhsAmberFusedEngine::allocate_external_work_buffer`.
+    pub fn allocate_external_work_buffer(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.allocate_external_work_buffer(&self.stream))
+            .unwrap_or(0)
+    }
+
     /// **B.3.1** Gearbox > Adaptive-DT hierarchy gate.  When the V2
     /// captured pipeline is live the legacy `--adaptive-dt` host write
     /// path is bypassed.  Forwarder.

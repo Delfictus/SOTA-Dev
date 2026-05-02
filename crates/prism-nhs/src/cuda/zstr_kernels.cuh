@@ -140,6 +140,19 @@ int zstr_launch_force_norm_sqrt(void*    base_pinned,
                                  uint32_t force_norm_offset_in_slot,
                                  void*    stream);
 
+/// **M1.2.18.5** — Records the single-thread audit-field stage kernel
+/// that snapshots the Hamiltonian audit fields into the active ZSTR slot:
+///   slot[external_work_offset_in_slot]   ← *adj.d_external_work (offset 32, 8 B)
+///   slot[potential_energy_offset_in_slot] ← adj.d_potential_energy (offset 40, 8 B)
+/// Captured downstream of the SFA (so V_t and W_ext are settled).  `adj`
+/// may be null in legacy / test fixtures — kernel writes 0.0 to both.
+int zstr_launch_stage_audit(void*       base_pinned,
+                             uint32_t    inter_slot_stride,
+                             uint32_t    external_work_offset_in_slot,
+                             uint32_t    potential_energy_offset_in_slot,
+                             const void* adj,
+                             void*       stream);
+
 #ifdef __cplusplus
 }
 #endif

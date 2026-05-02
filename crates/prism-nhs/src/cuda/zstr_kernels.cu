@@ -15,6 +15,7 @@
 #include "zstr_kernels.cuh"
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 #include <math_constants.h>
 
 namespace prism_nhs { namespace zstr {
@@ -148,6 +149,53 @@ __global__ void zstr_force_norm_sqrt_kernel(
     *fn_ptr = sqrtf(sumsq);
 }
 
+// ─── M1.2.18.5 — Single-thread audit-field stage kernel ─────────────────────
+//
+// Reads V_t (f64) from `adj.potential_energy` at FFI offset 112 and W_ext
+// (f64) by dereferencing the *mut f64 pointer at FFI offset 128.  Writes
+// the two f64s into the active ZSTR slot at the operator-specified offsets:
+//
+//     slot[external_work_offset_in_slot]   ← W_ext     (offset 32, 8 B)
+//     slot[potential_energy_offset_in_slot] ← V_t      (offset 40, 8 B)
+//
+// Captured downstream of the SFA so V_t and W_ext are settled before
+// the read.  Pinned-host writes land as system-scope PCIe stores on
+// sm_120, visible to the Reaper as soon as completion_fence flips.
+//
+// `adj` may be null in legacy / test fixtures — kernel writes 0.0 to
+// both fields in that case.
+extern "C"
+__global__ void zstr_stage_audit_kernel(
+    uint8_t* __restrict__   base_pinned,
+    uint32_t                inter_slot_stride,
+    uint32_t                external_work_offset_in_slot,
+    uint32_t                potential_energy_offset_in_slot,
+    const uint8_t* __restrict__ adj
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+
+    const uint32_t slot = d_zstr_active_slot;
+    uint8_t* slot_base  = base_pinned + slot * inter_slot_stride;
+
+    double v_t   = 0.0;
+    double w_ext = 0.0;
+    if (adj != nullptr) {
+        // FFI offset 112: potential_energy (f64 VALUE).
+        v_t = *reinterpret_cast<const double*>(adj + 112);
+        // FFI offset 128: d_external_work (*mut f64 POINTER).
+        const double* w_ptr =
+            *reinterpret_cast<const double* const*>(adj + 128);
+        if (w_ptr != nullptr) {
+            w_ext = *w_ptr;
+        }
+    }
+
+    *reinterpret_cast<double*>(slot_base + external_work_offset_in_slot)
+        = w_ext;
+    *reinterpret_cast<double*>(slot_base + potential_energy_offset_in_slot)
+        = v_t;
+}
+
 }} // namespace prism_nhs::zstr
 
 // ─── C-ABI capture-window launchers ─────────────────────────────────────────
@@ -244,6 +292,25 @@ int zstr_launch_force_norm_sqrt(void*    base_pinned,
         static_cast<uint8_t*>(base_pinned),
         inter_slot_stride,
         force_norm_offset_in_slot
+    );
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C"
+int zstr_launch_stage_audit(void*       base_pinned,
+                             uint32_t    inter_slot_stride,
+                             uint32_t    external_work_offset_in_slot,
+                             uint32_t    potential_energy_offset_in_slot,
+                             const void* adj,
+                             void*       stream)
+{
+    prism_nhs::zstr::zstr_stage_audit_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        static_cast<uint8_t*>(base_pinned),
+        inter_slot_stride,
+        external_work_offset_in_slot,
+        potential_energy_offset_in_slot,
+        static_cast<const uint8_t*>(adj)
     );
     return static_cast<int>(cudaGetLastError());
 }

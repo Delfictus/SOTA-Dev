@@ -5,6 +5,7 @@
 #include "energy_monitor.cuh"
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 
 // CUB device-wide reduction.  CUDA 13.x ships CUB under
 // /usr/local/cuda/include/cccl/cub; build.rs adds that include path.
@@ -17,7 +18,7 @@
 //   window->prev = window->cur
 //   window->cur  = *d_pe_scalar
 // ALSO writes the same scalar into *d_adj_pe_target — the
-// `adj.d_potential_energy` field (offset 112) so the SFA reads the
+// `adj.potential_energy` field (offset 112) so the SFA reads the
 // latest V_t directly from the FFI struct without an extra memcpy.
 
 extern "C"
@@ -91,7 +92,7 @@ int prism_energy_monitor_launch_reduce(
         s);
     if (err != cudaSuccess) return static_cast<int>(err);
 
-    // Window roll + adj.d_potential_energy write in a single 1-thread kernel.
+    // Window roll + adj.potential_energy write in a single 1-thread kernel.
     prism_energy_monitor_window_update_kernel<<<1, 1, 0, s>>>(
         d_energy_window, d_pe_scalar, d_adj_pe_target);
     return static_cast<int>(cudaGetLastError());

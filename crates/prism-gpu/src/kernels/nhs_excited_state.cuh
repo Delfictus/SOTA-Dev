@@ -475,13 +475,17 @@ __device__ __forceinline__ void apply_vibrational_transfer(
     unsigned int seed,           // For random direction component
     int aromatic_type,           // ChromophoreType enum (0=TRP, 1=TYR, 2=PHE, 3=SS)
     float uv_wavelength_nm,      // Current UV wavelength for debug output
-    // M1.2.18-P3.3 — Total External Work accumulator (Hamiltonian audit).
-    // Single f64 scalar at adj.d_external_work (offset 128 in
-    // InterferometricAdjudicatorFfi).  Each UV velocity kick contributes
-    // ΔK = ½·m·(v_new² − v_old²) atomicAdd_f64'd here.  The SFA stability
-    // fuse subtracts W_ext from ΔV before computing drift so UV gasps
-    // don't false-trigger Gear 3.  Pass nullptr to skip accumulation
-    // (e.g., legacy / non-V2 builds).
+    // M1.2.18.5 — Total External Work POINTER (Hamiltonian audit).
+    // VRAM-native f64 scalar at *adj.d_external_work (FFI offset 128 holds
+    // the *mut f64 pointer; the captured pipeline writes the F2-pool buffer
+    // address there pre-capture, then emits a cuMemsetD8Async at the head
+    // of every replay so each chunk starts with *d_external_work == 0.0).
+    // Each UV velocity kick contributes
+    //   ΔK = ½·m·(v_new² − v_old²)
+    // computed in bit-accurate f64 from the float3 components, atomicAdd_f64'd
+    // here.  The SFA stability fuse subtracts W_ext from ΔV before computing
+    // drift so UV gasps don't false-trigger Gear 3.  Pass nullptr to skip
+    // accumulation (legacy / non-V2 builds).
     double* d_external_work
 ) {
     if (energy_to_transfer < 0.001f || n_neighbors == 0) return;
@@ -525,40 +529,52 @@ __device__ __forceinline__ void apply_vibrational_transfer(
             kick_dir = make_float3(rx/len, ry/len, rz/len);
         }
 
-        // Apply velocity kick (use atomicAdd for thread safety).
+        // M1.2.18.5 — Exact ΔK accumulation (operator UV KINETIC PERFECTION).
         //
-        // M1.2.18-P3.3 — capture ΔK_UV = ½·m·(v_new² − v_old²) before
-        // we apply the kick, so the SFA stability fuse can subtract
-        // this external work from the next ΔV measurement.
+        // Read v_old as a float3, compose v_new = v_old + kick·vel_mag in
+        // float, then accumulate
+        //   ΔK = 0.5 · m · (v_new·v_new − v_old·v_old)
+        // in bit-accurate f64 BEFORE applying the velocity update.
+        // v_old is read non-atomically (acceptable: the captured fused
+        // step's UV path is the only writer to this neighbor in-frame —
+        // SISR/G28 ensure no cross-frame race, and the SFA is a coarse
+        // First-Law drift detector, not a bit-exact integrator).
         //
-        // The atomicAdds below give v_new = v_old + kick_dir·vel_mag.
-        // For a unit-norm kick_dir:
-        //   ‖v_new‖² − ‖v_old‖² = 2·vel_mag·(v_old·kick_dir) + vel_mag²
-        // With v_old read non-atomically (acceptable race — the SFA
-        // is a coarse drift detector, not a bit-exact integrator):
-        const float v_old_x = velocities[neighbor].x;
-        const float v_old_y = velocities[neighbor].y;
-        const float v_old_z = velocities[neighbor].z;
+        // Conversion: AMBER velocities are in Å/ps and masses in amu, so
+        // ½·m·v² is in amu·Å²/ps² ⇒ ÷418.4 gives kcal/mol.
+        const float3 v_old = make_float3(
+            velocities[neighbor].x,
+            velocities[neighbor].y,
+            velocities[neighbor].z
+        );
+        const float3 v_new = make_float3(
+            v_old.x + kick_dir.x * vel_magnitude,
+            v_old.y + kick_dir.y * vel_magnitude,
+            v_old.z + kick_dir.z * vel_magnitude
+        );
 
+        if (d_external_work != nullptr) {
+            const double m_d = (double)mass;
+            const double vnx = (double)v_new.x;
+            const double vny = (double)v_new.y;
+            const double vnz = (double)v_new.z;
+            const double vox = (double)v_old.x;
+            const double voy = (double)v_old.y;
+            const double voz = (double)v_old.z;
+            const double delta_k_amu_a2_ps2 = 0.5 * m_d * (
+                vnx * vnx + vny * vny + vnz * vnz
+              - vox * vox - voy * voy - voz * voz
+            );
+            const double delta_k_kcal_mol = delta_k_amu_a2_ps2 / 418.4;
+            // sm_120 native f64 atomic.
+            atomicAdd(d_external_work, delta_k_kcal_mol);
+        }
+
+        // Apply velocity kick (use atomicAdd for thread safety against
+        // concurrent NMA / other UV writers across the warp).
         atomicAdd(&velocities[neighbor].x, kick_dir.x * vel_magnitude);
         atomicAdd(&velocities[neighbor].y, kick_dir.y * vel_magnitude);
         atomicAdd(&velocities[neighbor].z, kick_dir.z * vel_magnitude);
-
-        if (d_external_work != nullptr) {
-            // ΔK = ½·m·(‖v_new‖² − ‖v_old‖²)
-            //    = ½·m·(2·vel_mag·(v·kd) + vel_mag²)
-            //    = m·vel_mag·(v_old · kick_dir) + ½·m·vel_mag²
-            // Conversion factor: AMBER stores velocities in Å/ps, masses
-            // in amu, so KE in amu·Å²/ps² needs ÷418.4 for kcal/mol.
-            const float v_dot_kd = v_old_x * kick_dir.x
-                                 + v_old_y * kick_dir.y
-                                 + v_old_z * kick_dir.z;
-            const double delta_k_amu_a2_ps2 =
-                (double)mass * (double)vel_magnitude * (double)v_dot_kd
-                + 0.5 * (double)mass * (double)vel_magnitude * (double)vel_magnitude;
-            const double delta_k_kcal_mol = delta_k_amu_a2_ps2 / 418.4;
-            atomicAdd(d_external_work, delta_k_kcal_mol);
-        }
 
 #ifdef DEBUG_UV_PHYSICS
         // Verify energy conservation: KE = 0.5 * m * v² / 418.4 kcal/mol

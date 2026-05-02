@@ -103,65 +103,76 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     float    legacy_centroid_fallback[3];  // offset 88
 
     // ── B.3.2 — Manual Gear Override (Hardware Interlock) ──
-    // u32 at offset 100 the operator (or safety script) writes to
-    // force a gear shift, bypassing the KL-driven SFA.  Sentinel
-    // 0x000000FF = Auto; values 0..3 = manual force.  Read by the
-    // predicate-bridge kernel on every captured-graph launch.
-    //
-    // Operator spec called for offset 104; that slot is pinned by
-    // force_prune_mask's G28 SISR contract.  Offset 100 is the closest
-    // available 4-byte aligned slot (formerly implicit compiler
-    // padding for force_prune_mask 8-byte alignment).  No size or
-    // downstream offset change.
+    // u32 at offset 100 the host writes via cuMemcpyHtoDAsync to force
+    // a gear shift, bypassing the KL-driven SFA.  Sentinel 0x000000FF
+    // = Auto; values 0..3 = manual force.  Read by the predicate-bridge
+    // kernel on every captured-graph launch.  Restored to its B.3.2
+    // home (Emergency Rectification 2026-05-02 — reverted from the
+    // M1.2.18.5 attempt to relocate to 136).
     uint32_t gear_override;         // offset 100..104  (Hardware Interlock)
 
-    // G28 SISR symmetry prune mask, offset 104..112.
-    // Pointer to a single u64 holding bit-flags per cluster. The G28
+    // ── G28 SISR symmetry prune mask pointer (offset 104..112, 8 B) ──
+    // Pointer to a single u64 holding bit-flags per cluster.  The G28
     // kernel sets `bit[i]` when cluster `i` fails the C2-reflected AABB
     // partner search; the step kernel forces adjudication_code=0 on hit.
     // Null disables the gate (non-dimer / legacy targets).
-    uint64_t* force_prune_mask;     // offset 104
+    //
+    // Renamed from `force_prune_mask` to `force_prune_mask_ptr` per
+    // the operator's Zero-Trust §1.1 — the `_ptr` suffix makes the
+    // pointer-vs-value distinction explicit at the FFI boundary.
+    uint64_t* force_prune_mask_ptr; // offset 104
 
-    // ── M1.2.17 — Hamiltonian + Gearbox dt ──
-    // d_potential_energy: system-wide total potential energy (f64 VALUE,
+    // ── M1.2.17 — Hamiltonian VALUE + Gearbox dt POINTER ──
+    // potential_energy: system-wide total potential energy (f64 VALUE,
     //   not pointer) at offset 112.  CUB DeviceReduce::Sum captured node
     //   writes it every step from the per-atom AMBER PE components
     //   buffer.  SFA reads it for the 1% drift Hamiltonian Stability Fuse.
+    //   Renamed from `d_potential_energy` per Zero-Trust §1.1 — `d_`
+    //   prefix is reserved for pointer fields.
     // d_dt: *mut f32 → integrator's d_protocol->dt at offset 120.
     //   The G26 SWITCH body sub-graphs write here via apply_fixed_dt_kernel.
-    double    d_potential_energy;   // offset 112  (f64 VALUE)
+    double    potential_energy;     // offset 112  (f64 VALUE)
     float*    d_dt;                 // offset 120
-    // ── M1.2.18-P3 — Total External Work (Hamiltonian audit) ──
-    // f64 VALUE at offset 128.  atomicAdd-f64 destination for non-
-    // conservative energy injections (UV velocity kicks; force/velocity
-    // clamps).  ASC steering work is folded into d_potential_energy
-    // directly per operator §3.2 (no separate accounting needed).
-    // SFA drift formula (§3.4):
+
+    // ── Total External Work POINTER (Hamiltonian audit) ──
+    // double* at offset 128.  VRAM-native F2-pool accumulator.
+    // atomicAdd-f64 destination for non-conservative energy injections
+    // (UV velocity kicks; ASC; force/velocity clamps).  Multiple
+    // kernels contribute asynchronously across the 2+2+2+2 graph —
+    // pointer fusion eliminates the read-modify-write hazard that an
+    // inline f64 would impose.
+    //
+    // SFA drift formula (Zero-Trust §3.2):
     //   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
-    double    d_external_work;      // offset 128  (f64 VALUE)
+    //
+    // Captured-graph emits cuMemsetD8Async at the head of every replay
+    // window so *d_external_work is fresh at chunk start.  The pre-
+    // capture wire-in MUST receive a non-null pointer (Zero-Host Guard
+    // §3) — null at capture time is a LANE-BLOCKED escalation.
+    double*   d_external_work;      // offset 128  (POINTER)
+
+    // 136..256 implicit trailing pad (#[repr(C, align(128))] on the
+    // Rust mirror rounds the 136-byte footprint up to 256 — 2 ×
+    // Blackwell L1 sector).  C++ alignof(...) == 128 mirrors this.
 };
-// M1.2.18-P3 layout pivot: 136 bytes used (d_external_work spills into
-// the second L1 sector at offset 128); aligned to 128 ⇒ physical size
-// 256 bytes.
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 256,
-              "InterferometricAdjudicatorFfi MUST be 256 bytes (M1.2.18 expansion).");
+              "FFI Size Mismatch — must be 256 bytes (Zero-Trust §1.1).");
 static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
-              "InterferometricAdjudicatorFfi MUST be 128-byte aligned.");
-// G28 SISR + B.3.2 + M1.2.17 offset locks — operator memory map LOCKED:
-//   gear_override         u32  @ 100  (B.3.2 Manual Overlord)
-//   force_prune_mask      ptr  @ 104  (G28 SISR)
-//   d_potential_energy    f64  @ 112  (M1.2.17 Hamiltonian VALUE)
-//   d_dt                  ptr  @ 120  (Gearbox dt target)
+              "FFI Alignment Mismatch — must be 128-byte aligned (Blackwell L1 sector).");
+// Operator Zero-Trust §1.1 — mandatory offset asserts.  These mirror
+// the Rust-side const-context asserts in interferometric_adjudicator.rs.
+// Drift here breaks every kernel that reads via byte-offset arithmetic
+// (gearbox SFA, predicate bridge, energy monitor, supervisor shim).
 static_assert(offsetof(InterferometricAdjudicatorFfi, gear_override) == 100,
               "gear_override offset drift: must be 100.");
-static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
-              "force_prune_mask offset drift: must be 104 (8-byte aligned).");
-static_assert(offsetof(InterferometricAdjudicatorFfi, d_potential_energy) == 112,
-              "d_potential_energy offset drift: must be 112 (M1.2.17 Hamiltonian).");
+static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask_ptr) == 104,
+              "force_prune_mask_ptr offset drift: must be 104 (8-byte aligned).");
+static_assert(offsetof(InterferometricAdjudicatorFfi, potential_energy) == 112,
+              "potential_energy offset drift: must be 112 (M1.2.17 Hamiltonian).");
 static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 120,
-              "d_dt offset drift: must be 120 (M1.2.17 layout pivot).");
+              "d_dt offset drift: must be 120.");
 static_assert(offsetof(InterferometricAdjudicatorFfi, d_external_work) == 128,
-              "d_external_work offset drift: must be 128 (M1.2.18-P3).");
+              "External Work Offset Drift — must be 128.");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)

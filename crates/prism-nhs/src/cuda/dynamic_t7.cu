@@ -7,6 +7,7 @@
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <cstdint>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 
 // ─── Capture: read adj->current_divergence, accumulate into acc[idx] ──────
 //

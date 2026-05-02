@@ -40,6 +40,9 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/gearbox.cuh");
     println!("cargo:rerun-if-changed=src/cuda/energy_monitor.cu");
     println!("cargo:rerun-if-changed=src/cuda/energy_monitor.cuh");
+    // M1.2.19.B — Asynchronous Manifold Sequencer Channel-B (ghost tiles).
+    println!("cargo:rerun-if-changed=src/cuda/ghost_tile_kernel.cu");
+    println!("cargo:rerun-if-changed=src/cuda/ghost_tile_kernel.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -278,6 +281,17 @@ fn main() {
         &nvcc,
         "src/cuda/energy_monitor.cu",
         "energy_monitor",
+        &out_dir,
+    );
+
+    // M1.2.19.B — Channel-B GhostTileFrame capture kernel.  Single-block
+    // n_clusters-thread kernel records per-frame [header (128 B) + tile
+    // (1280 B)] = 1408 B records into a pinned-host, device-mapped ring.
+    // Captured into the V2 graph downstream of the Adjudicator.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/ghost_tile_kernel.cu",
+        "ghost_tile_kernel",
         &out_dir,
     );
 }

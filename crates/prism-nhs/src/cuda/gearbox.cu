@@ -5,6 +5,7 @@
 #include "gearbox.cuh"
 #include <cuda_runtime.h>
 #include <math_constants.h>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 
 // ─── __constant__ gear table — 64 bytes, one Blackwell L1 const-cache line ──
 //
@@ -69,11 +70,11 @@ __device__ __forceinline__ float* prism_gearbox_load_adj_d_dt(
 ) {
     const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
     // d_dt is a *mut f32; we load the 8-byte pointer value.
-    // M1.2.17: moved from offset 112 → 120 (d_potential_energy now at 112).
+    // M1.2.17: moved from offset 112 → 120 (potential_energy now at 112).
     return *reinterpret_cast<float* const*>(base + 120);
 }
 
-/// M1.2.17 — load adj->d_potential_energy (f64 VALUE at offset 112).
+/// M1.2.17 — load adj->potential_energy (f64 VALUE at offset 112).
 /// Read by the SFA stability-fuse logic to compute the rolling-window
 /// drift |V_t − V_{t-1}| / |V_{t-1}|.
 __device__ __forceinline__ double prism_gearbox_load_adj_v_curr(
@@ -218,14 +219,16 @@ __global__ void prism_gearbox_sfa_kernel(
         target_gear = (counter < PRISM_GEARBOX_CRUISE_THRESHOLD) ? 1u : 2u;
     }
 
-    // ── M1.2.18-P3.4 — Hamiltonian Stability Fuse (corrected) ─────
-    // Read V_t from adj.d_potential_energy (offset 112) and V_{t-1}
-    // from cruise.v_prev.  Read W_ext from adj.d_external_work
-    // (offset 128, M1.2.18-P3) — the integrated non-conservative
-    // energy injected by UV kicks, force/velocity clamps, etc., over
-    // the chunk window.
+    // ── First-Law Hamiltonian Stability Fuse (Zero-Trust §3.2) ──
+    // Read V_t from adj.potential_energy (offset 112) and V_{t-1}
+    // from cruise.v_prev.  Read W_ext from *adj.d_external_work
+    // (offset 128, POINTER) — the integrated non-conservative energy
+    // injected by UV kicks, ASC, force/velocity clamps, etc., over the
+    // chunk window.  The pointer holds an F2-pool address; the
+    // captured graph emits cuMemsetD8Async at the head of every replay
+    // so the deref'd value is fresh per chunk.
     //
-    // Operator §3.4 — Corrected Hamiltonian Audit:
+    // Operator M1.2.18.5 §2 — Corrected Hamiltonian Audit:
     //   Drift = |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|
     //
     // Subtracting W_ext means the fuse fires only on numerical
@@ -233,13 +236,17 @@ __global__ void prism_gearbox_sfa_kernel(
     // catches drift that's NOT explained by tracked external work.
     //
     // First-frame guard: when v_prev == 0.0 (sentinel), skip the
-    // drift check.  The captured pipeline zeros W_ext each chunk so
-    // the SFA always sees a fresh window.
+    // drift check.  Null d_external_work pointer treated as W_ext = 0.
     const double v_curr = prism_gearbox_load_adj_v_curr(adj);
     const double v_prev = cruise->v_prev;
-    // adj.d_external_work is at offset 128 (f64 VALUE).
+    // M1.2.18.5 — Production W_ext pointer-deref restored after diag2
+    // confirmed the deref is NOT the source of the V2-launch
+    // MISALIGNED_ADDRESS fault.  Sanitizer interrogation (Option B) will
+    // pinpoint the actual faulting kernel.
     const uint8_t* adj_base = reinterpret_cast<const uint8_t*>(adj);
-    const double w_ext = *reinterpret_cast<const double*>(adj_base + 128);
+    const double* d_w_ext_ptr =
+        *reinterpret_cast<const double* const*>(adj_base + 128);
+    const double w_ext = (d_w_ext_ptr != nullptr) ? *d_w_ext_ptr : 0.0;
     const bool   first_frame = (v_prev == 0.0);
     if (!first_frame) {
         const double expected = v_prev + w_ext;
@@ -266,7 +273,7 @@ __global__ void prism_gearbox_sfa_kernel(
     cruise->current_gear      = target_gear;
     // M1.2.17 — store V_t into v_prev so the next launch's SFA reads
     // the correct V_{t-1}.  (Captured-graph dependency edge: SFA runs
-    // AFTER the energy monitor's window-update, so adj.d_potential_energy
+    // AFTER the energy monitor's window-update, so adj.potential_energy
     // already holds V_t.)
     cruise->v_prev            = v_curr;
     // No dt write — that's the SWITCH body's job.
@@ -413,17 +420,19 @@ int prism_gearbox_launch_berendsen_guard(
 
 #if defined(CUDART_VERSION) && CUDART_VERSION >= 12040
 
-// B.3.2 — predicate-bridge with gear_override consult.
+// Predicate-bridge with gear_override consult.
 //
 //   final_gear = (adj->gear_override != 0xFF)
 //                ? adj->gear_override
 //                : cruise->current_gear
 //
-// `adj->gear_override` is at offset 100 — read via byte-offset
-// arithmetic to keep this TU independent of the full FFI struct
-// definition.  When the operator (or a safety script) writes 0..3 to
-// that VRAM byte, the next captured-graph launch's SWITCH routes to
-// the corresponding body — the Blackwell Hardware Interlock.
+// `adj->gear_override` is at offset 100 (B.3.2 home; Emergency
+// Rectification 2026-05-02 reverted from the M1.2.18.5 attempt to
+// relocate to 136).  Read via byte-offset arithmetic to keep this TU
+// independent of the full FFI struct definition.  When the host
+// writes 0..3 via cuMemcpyHtoDAsync to (adj + 100), the next captured-
+// graph launch's SWITCH routes to the corresponding body — the
+// Blackwell Hardware Interlock.
 extern "C"
 __global__ void prism_gearbox_predicate_bridge_kernel(
     cudaGraphConditionalHandle                          handle,
@@ -434,7 +443,7 @@ __global__ void prism_gearbox_predicate_bridge_kernel(
     if (cruise == nullptr) return;
 
     // Default to cruise.current_gear if adj is null (test fixtures);
-    // otherwise consult the u32 gear_override at offset 100.
+    // otherwise consult the u32 gear_override at offset 100 (B.3.2).
     //
     //   final_gear = (override == 0xFF) ? calculated : (override & 0x03)
     //

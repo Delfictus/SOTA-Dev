@@ -27,6 +27,7 @@
 #include "so3_project.cuh"  // ContactShellTile
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 
 using prism_nhs::so3_project::ContactShellTile;
 using prism_nhs::symmetry_consensus::SISR_MAX_CLUSTERS;

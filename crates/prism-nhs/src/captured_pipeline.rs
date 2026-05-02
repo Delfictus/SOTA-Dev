@@ -106,6 +106,16 @@ extern "C" {
         force_norm_offset_in_slot:  u32,
         stream:                     *mut c_void,
     ) -> i32;
+
+    // ── M1.2.18.5 — Hamiltonian audit field stage ──
+    fn zstr_launch_stage_audit(
+        base_pinned:                          *mut c_void,
+        inter_slot_stride:                    u32,
+        external_work_offset_in_slot:         u32,
+        potential_energy_offset_in_slot:      u32,
+        adj:                                  *const c_void,
+        stream:                               *mut c_void,
+    ) -> i32;
 }
 
 // ============================================================================
@@ -125,6 +135,21 @@ extern "C" {
         idx_dev:   *mut c_void,
         stats_dev: *mut c_void,
         stream:    *mut c_void,
+    ) -> i32;
+}
+
+// ============================================================================
+// M1.2.19.B / Amendment 3.13 — Channel B GhostTileFrame capture FFI
+// ============================================================================
+extern "C" {
+    fn prism_ghost_pipe_stage_launch(
+        ring_base_dev: u64,
+        tiles:         *const c_void,
+        adj:           *const c_void,
+        frame_idx:     u64,
+        n_clusters:    u32,
+        max_records:   u32,
+        stream:        *mut c_void,
     ) -> i32;
 }
 
@@ -430,6 +455,38 @@ pub struct PipelineConfig {
 
     /// **M1.2.17** — Number of atoms (= length of d_pe_components).
     pub n_atoms_for_pe: u32,
+
+    /// **M1.2.18.5 — VRAM-native total-external-work buffer pointer.**
+    /// Device-resident `*mut f64` (1 element, 8 B) aliased to
+    /// `NhsAmberFusedEngine::d_external_work_buffer`.  The captured
+    /// pipeline:
+    ///   1. Pre-capture: `cuMemcpyHtoD` writes this address into the
+    ///      InterferometricAdjudicatorFfi struct's `d_external_work`
+    ///      field at offset 128 (M1.2.18.5 pointer fusion).
+    ///   2. Inside the capture window: emits a `cuMemsetD8Async` node
+    ///      at the head of the replay so each chunk starts with
+    ///      `*d_external_work == 0.0`.
+    /// `apply_vibrational_transfer` (called from inside
+    /// nhs_amber_fused_step's UV path) atomicAdd-f64s
+    /// ΔK = ½·m·(v_new² − v_old²) per kicked neighbor.  The SFA's
+    /// First-Law drift fuse dereferences this pointer via the FFI.
+    /// `null` = no W_ext instrumentation (legacy/test).
+    pub d_external_work: *mut f64,
+
+    /// **M1.2.19.B / Amendment 3.13 — Channel B GhostTileFrame ring (device-mapped).**
+    /// Device-side alias of a `GhostTileRing`'s pinned-host buffer.
+    /// When non-zero, the build flow records a `prism_ghost_pipe_stage`
+    /// kernel into the captured graph downstream of the Adjudicator
+    /// step.  The kernel checks `adj.adjudication_code >= 1` and pushes
+    /// `[GhostTileFrame (128 B) + ContactShellTile (1280 B)]` records
+    /// to the buffer, atomically incrementing the leading u32 counter.
+    /// Zero disables Channel B (legacy / no Φ_sym extraction wanted).
+    pub ghost_tile_ring_dev: u64,
+
+    /// **M1.2.19.B** — `max_records` capacity of the ghost ring; kernel
+    /// bounds-checks against this before atomic-add'ing a new record.
+    /// Sized at engine init based on expected V2 chunk count.
+    pub ghost_tile_max_records: u32,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -1010,21 +1067,82 @@ impl CapturedAdjudicationPipeline {
             );
         }
 
-        // ── 5a. T7 LOCKED: burn 4LPK noise-floor priors into the
-        //       freshly-zeroed adjudicator BEFORE the capture window
-        //       opens. `apply_t7_calibration` uses cudaMemcpyAsync on
-        //       md_stream; the explicit synchronize below guarantees
-        //       both copies retire before cuStreamBeginCapture so they
-        //       are NOT recorded into the graph.
+        // ── 5c. Wire adj->d_external_work at offset 128 (Zero-Host Guard) ──
+        // The W_ext F2-pool buffer pointer is written into adj_dev at
+        // offset 128 (pointer fusion).  apply_vibrational_transfer +
+        // velocity/force-clamp paths atomicAdd-f64 ΔK into *d_external_work;
+        // the SFA stability fuse dereferences the pointer for the First-Law
+        // drift formula |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|.
+        //
+        // Captured-graph emits a cuMemsetD8Async head-of-loop node
+        // (block 6.0 below) so each chunk replay starts with
+        // *d_external_work == 0.0 — required by Zero-Trust §3.2 to
+        // isolate per-chunk W_ext for the drift derivative.
+        //
+        // **Operator Zero-Trust §3 Zero-Host Guard:** null at capture
+        // time is a LANE-BLOCKED escalation.  The integrator's 70th
+        // parameter has nowhere to atomic-add to without this buffer;
+        // a null pointer here would let UV/clamp instrumentation
+        // silently drop ΔK contributions, breaking the audit.
+        if cfg.d_external_work.is_null() {
+            return Err(BuildError::Cuda {
+                stage: "Zero-Host Guard: cfg.d_external_work is null at capture \
+                        time (LANE BLOCKED — F2-pool buffer must be allocated \
+                        via NhsAmberFusedEngine::allocate_external_work_buffer \
+                        before captured pipeline build)",
+                rc: -1,
+            });
+        }
+        unsafe {
+            let field_addr = (adj_dev + 128) as CUdeviceptr;
+            let value: u64 = cfg.d_external_work as u64;
+            let rc = cuMemcpyHtoD_v2(
+                field_addr,
+                &value as *const _ as *const c_void,
+                8,
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "wire adj->d_external_work (offset 128)",
+                    rc: rc as i32,
+                });
+            }
+        }
+        md_stream.synchronize().map_err(BuildError::Driver)?;
+        log::info!(
+            "[ZeroTrust] wired adj->d_external_work={:p} at offset 128 (POINTER); \
+             captured-graph head-of-loop will cuMemsetD8Async-zero per chunk",
+            cfg.d_external_work as *const f64
+        );
+
+        // ── 5a. Wave 0 / Task #68 — KL-UNITS BOOTSTRAP.
+        //       Burn KL-magnitude noise-floor priors (μ=0, σ=1e-3 →
+        //       threshold=3e-3) into the freshly-zeroed adjudicator
+        //       BEFORE the capture window opens.  Pre-Wave-0 this
+        //       path called `apply_t7_calibration` which wrote the
+        //       4LPK C_l power-spectrum statistics (μ[0]≈0.805) into
+        //       a slot the step kernel uses as a KL-divergence
+        //       threshold — units mismatch, threshold ~1.249 in C_l
+        //       space vs. cold-hold KL ≪ 1.  The 15k 7C8R run on
+        //       2026-05-02 produced 35k steps × 0 GhostTileFrame
+        //       records as a result.  `apply_t7_kl_calibration` lays
+        //       down a small KL-magnitude prior; Dynamic T7 (the
+        //       captured graph node downstream of the Adjudicator
+        //       step) replaces μ[0]/σ[0] with the substrate's
+        //       measured cold-hold KL once it has ≥100 samples.
+        //       cudaMemcpyAsync runs on md_stream; the explicit
+        //       synchronize below guarantees both copies retire
+        //       before cuStreamBeginCapture so they are NOT recorded
+        //       into the graph.
         {
             let rc = unsafe {
-                crate::interferometric_adjudicator::apply_t7_calibration(
+                crate::interferometric_adjudicator::apply_t7_kl_calibration(
                     adj_dev as *mut InterferometricAdjudicatorFfi,
                     md_raw as *mut c_void,
                 )
             };
             if rc != 0 {
-                return Err(BuildError::Cuda { stage: "apply_t7_calibration", rc });
+                return Err(BuildError::Cuda { stage: "apply_t7_kl_calibration", rc });
             }
         }
         // Amendment 3.4.6 — Substrate-Aware Noise-Floor Override.
@@ -1111,6 +1229,37 @@ impl CapturedAdjudicationPipeline {
         // as CUDA_ERROR_INVALID_VALUE).
         let cond_handle: CUgraphConditionalHandle = 0;
 
+        // ── 6.0 M1.2.18.5 — head-of-loop W_ext zero (MANDATORY) ──────
+        // Operator M1.2.18.5.B §3.2 (FFI Invariant Check):
+        //   "The d_external_work scalar MUST be zeroed asynchronously
+        //   via cudaMemsetAsync at the head of every captured WHILE
+        //   loop launch.  Any accumulation across frames will poison
+        //   the drift derivative and trigger a false-positive Gear-3
+        //   trap."
+        //
+        // First captured op on md_stream is the cuMemsetD8Async node;
+        // every replay starts the chunk window with `*d_external_work
+        // == 0.0`.  The MISALIGNED_ADDRESS observed on the first cert-v8
+        // attempt was the stale `nhs_amber_fused.ptx` PTX cache (only
+        // 68 params; source has 69) — fixed by force-rebuild.  Skipped
+        // only when `cfg.d_external_work` is null (legacy/test fixtures).
+        if !cfg.d_external_work.is_null() {
+            unsafe {
+                let rc = cuMemsetD8Async(
+                    cfg.d_external_work as CUdeviceptr,
+                    0,
+                    8,
+                    md_stream.cu_stream(),
+                );
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "M1.2.18.5 head-of-loop cuMemsetD8Async (W_ext)",
+                        rc: rc as i32,
+                    });
+                }
+            }
+        }
+
         // ── 6.a Node B: SO(3) projection ──────────────────────────────
         let rc = unsafe {
             crate::so3_project::ffi::prism_so3_project_run(
@@ -1192,6 +1341,42 @@ impl CapturedAdjudicationPipeline {
         };
         if rc != 0 {
             return Err(BuildError::Cuda { stage: "Wave 3 dynamic T7", rc });
+        }
+
+        // ── 6.b-AMS Channel-B: GhostTileFrame ring push (M1.2.19.B) ─────
+        // Operator Amendment 3.13 §2.1: every replay where
+        // `adj.adjudication_code >= 1` pushes a self-describing
+        // [GhostTileFrame (128 B) + ContactShellTile (1280 B)] = 1408 B
+        // record to the pinned-host, device-mapped ring.  Captured AFTER
+        // the Adjudicator step (so the SWITCH code is final + the per-
+        // frame Δ_AB / power_spectrum reads are stable) and BEFORE ASC
+        // (so the captured frame reflects the unsteered manifold —
+        // legitimate "raw" interferometer input for offline Φ_sym /
+        // Lag-Persistence integration).
+        //
+        // `frame_idx` is the immutable capture-time `initial_frame_id`;
+        // host code re-records the graph if frame ordering needs to
+        // change (consistent with ZSTR's pos-stage frame-id contract).
+        // The on-disk record's frame_idx is therefore monotonic across
+        // chunk replays via the GPU-side u32 counter offset 0.
+        if cfg.ghost_tile_ring_dev != 0 && cfg.ghost_tile_max_records > 0 {
+            let rc = unsafe {
+                prism_ghost_pipe_stage_launch(
+                    cfg.ghost_tile_ring_dev,
+                    manifest.tiles_dev_ptr as *const c_void,
+                    adj_dev as *const c_void,
+                    cfg.initial_frame_id as u64,
+                    cfg.n_clusters,
+                    cfg.ghost_tile_max_records,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "M1.2.19.B prism_ghost_pipe_stage_launch",
+                    rc,
+                });
+            }
         }
 
         // ── 6.b' V2 IGNITION prep: snapshot the Adjudicator's captured
@@ -1562,6 +1747,32 @@ impl CapturedAdjudicationPipeline {
                 });
             }
 
+            // ── M1.2.18.5 — Hamiltonian audit-field stage (MANDATORY) ──
+            // Snapshots V_t (adj.d_potential_energy @ 112) + W_ext
+            // (*adj.d_external_work, where the pointer is at 128) into
+            // the active ZSTR slot at offsets 32 + 40 so the off-line
+            // replay can compute the First-Law drift trace per frame.
+            // Captured AFTER force_norm_sqrt so the slot already has all
+            // conservative observables.
+            const ZSTR_EXTERNAL_WORK_OFFSET:    u32 = 32;
+            const ZSTR_POTENTIAL_ENERGY_OFFSET: u32 = 40;
+            let rc = unsafe {
+                zstr_launch_stage_audit(
+                    zstr.pinned_base as *mut c_void,
+                    zstr.inter_slot_stride,
+                    ZSTR_EXTERNAL_WORK_OFFSET,
+                    ZSTR_POTENTIAL_ENERGY_OFFSET,
+                    adj_dev as *const c_void,
+                    telemetry_stream as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "zstr_stage_audit capture (M1.2.18.5)",
+                    rc,
+                });
+            }
+
             // Fence base = slot-0 base + fence_offset_in_slot.
             let fence_base_ptr = unsafe {
                 zstr.pinned_base.add(zstr.fence_offset_in_slot as usize)
@@ -1906,10 +2117,72 @@ impl CapturedAdjudicationPipeline {
         })
     }
 
+    /// **Operator Amendment 3.9 §2.2 — G19.5 Zero-Trust Pointer Alignment Audit.**
+    ///
+    /// Runs immediately before `cuGraphLaunch`.  Panics on any pointer
+    /// that fails the 16-byte alignment requirement for Blackwell sm_120
+    /// vector ops (`LDG.E.128`, `STG.E.128`, `RED.E.ADD.V4`).  Pointers
+    /// from the F2 pool are 256-byte aligned by construction (the
+    /// `vram_pool::alloc_async` assertion catches any allocator
+    /// regression at mint time); this guard catches anything that
+    /// landed via a different code path (e.g., cudarc `alloc_zeros`,
+    /// pinned-host `cuMemAllocHost_v2`, or the engine's primary
+    /// integrator buffers wired through `PipelineConfig`).
+    ///
+    /// Side effect: panics with a HALT message naming the offending
+    /// pointer + its hex address + actual alignment.  `panic!` here is
+    /// preferred over `Result<>` because a misaligned pointer at this
+    /// site is a structural correctness violation — the GPU will trap
+    /// in nanoseconds anyway, and the panic stack trace gives the host-
+    /// side diagnostic the hardware MISALIGNED_ADDRESS does not.
+    fn audit_v2_graph_pointers(&self) {
+        let tiles_dev_ptr = self.tiles_dev as u64;
+        let tiles_baseline_ptr = self.tiles_baseline_dev as u64;
+        let adj_dev_ptr = self.adj_dev as u64;
+        let burst_marker_ptr = self.burst_marker_dev as u64;
+        let cruise_state_ptr = self.cruise_state_dev as u64;
+        let energy_pe_scalar_ptr = self.energy_pe_scalar_dev as u64;
+        let energy_window_ptr = self.energy_window_dev as u64;
+
+        // 16-byte alignment is the Blackwell vector-load minimum;
+        // F2-pool allocations exceed this at 256-byte alignment by
+        // construction (cudaMallocFromPoolAsync contract).
+        let pointers: [(&str, u64); 7] = [
+            ("tiles_dev",         tiles_dev_ptr),
+            ("tiles_baseline",    tiles_baseline_ptr),
+            ("adj_dev",           adj_dev_ptr),
+            ("burst_marker",      burst_marker_ptr),
+            ("cruise_state",      cruise_state_ptr),
+            ("energy_pe_scalar",  energy_pe_scalar_ptr),
+            ("energy_window",     energy_window_ptr),
+        ];
+
+        for (name, ptr) in pointers {
+            // Skip null pointers (legitimate when the corresponding
+            // captured-graph branch is gated off — e.g., energy
+            // monitor when n_atoms_for_pe == 0).
+            if ptr == 0 { continue; }
+            assert!(
+                ptr % 16 == 0,
+                "FATAL ARCHITECTURAL VIOLATION (G19.5 PAG): {} pointer \
+                 (0x{:x}) is not 16-byte aligned (mod 16 = {}). \
+                 Blackwell sm_120 vector loads will trap. HALT.",
+                name, ptr, ptr % 16
+            );
+        }
+    }
+
     /// Launch the captured graph once. Stream-ordered against the
     /// caller-provided MD stream — caller synchronizes when they need
     /// the host-visible burst_marker / ring slot.
+    ///
+    /// Operator Amendment 3.9 §2.2 — runs the G19.5 PAG audit before
+    /// every launch.  The audit is cheap (7 modulo-16 checks); the
+    /// CUDA Graph launch path doesn't tolerate misaligned pointers,
+    /// so catching them in safe Rust here gives a stack trace the
+    /// hardware MISALIGNED_ADDRESS does not.
     pub fn launch(&self) -> Result<(), DriverError> {
+        self.audit_v2_graph_pointers();
         unsafe { result::graph::launch(self.cu_graph_exec, self.md_stream.cu_stream()) }
     }
 
@@ -2336,6 +2609,9 @@ mod tests {
             d_velocities: ptr::null_mut(),
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
+            d_external_work: ptr::null_mut(),
+            ghost_tile_ring_dev: 0,
+            ghost_tile_max_records: 0,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -2356,9 +2632,20 @@ mod tests {
         let Some((_ctx, pipeline, ..)) = build_test_pipeline() else { return; };
 
         assert_eq!(pipeline.n_clusters, 1);
-        assert_eq!(pipeline.n_kernel_nodes(), 2,
-            "V1 expected 2 captured kernel nodes (SO(3), Adjudicator); \
-             V2 follow-up adds Trampoline + body MEMSET = 4 total");
+        // Post-M1.2.18.5 baseline kernel nodes (V1 fixture, d_external_work=null,
+        // d_pe_components=null, asc/zstr/sisr=None, dynt7+gearbox always captured):
+        //   1. SO(3)            (Node B)
+        //   2. Adjudicator step (Node C)
+        //   3. Wave-3 dynamic T7 (always-on accumulator)
+        //   4. Gearbox SFA      (always-on cruise tensor update)
+        // SWITCH bodies + ASC + energy monitor + ZSTR + W_ext memset are
+        // all gated off by the test fixture.  Lower-bound assert tolerates
+        // additional always-on nodes added in the future.
+        assert!(
+            pipeline.n_kernel_nodes() >= 2,
+            "captured graph must record at least SO(3) + Adjudicator (got {})",
+            pipeline.n_kernel_nodes(),
+        );
         // V1 ships with implicit dep edges only (capture-mode sequential
         // ordering on md_stream gives the C → C' chain). V2 adds the
         // explicit `cuGraphAddNode(CONDITIONAL, deps=[trampoline])`
@@ -2461,6 +2748,9 @@ mod tests {
             d_velocities: ptr::null_mut(),
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
+            d_external_work: ptr::null_mut(),
+            ghost_tile_ring_dev: 0,
+            ghost_tile_max_records: 0,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -2544,6 +2834,9 @@ mod tests {
             d_velocities: ptr::null_mut(),
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
+            d_external_work: ptr::null_mut(),
+            ghost_tile_ring_dev: 0,
+            ghost_tile_max_records: 0,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -2635,6 +2928,9 @@ mod tests {
             d_velocities: ptr::null_mut(),
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
+            d_external_work: ptr::null_mut(),
+            ghost_tile_ring_dev: 0,
+            ghost_tile_max_records: 0,
         };
 
         // Closure that captures the conditional-node handle written

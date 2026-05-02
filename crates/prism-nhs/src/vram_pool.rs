@@ -264,7 +264,26 @@ impl VramPool {
                 size
             ));
         }
-        Ok(out as usize)
+        // Operator Amendment 3.9 §4 — F2 Pool 256-byte alignment guard.
+        //
+        // cudaMallocFromPoolAsync (the C++-side backing allocator) is
+        // documented to return at least 256-byte aligned addresses.
+        // Blackwell sm_120 LDG.E.128 / RED.E.ADD.V4 vector ops trap on
+        // any sub-16-byte misalignment; cache-sector-aligned (256 B)
+        // exceeds that floor.  This assertion catches any future
+        // allocator regression (e.g., a sub-allocator that subdivides
+        // a parent block on non-256-byte boundaries) at the point of
+        // mint, before the pointer enters the captured graph and the
+        // hardware traps deep inside a kernel launch.
+        let ptr = out as usize;
+        assert!(
+            ptr % 256 == 0,
+            "F2 POOL ALIGNMENT VIOLATION: alloc_async({} bytes) returned \
+             0x{:x} which is not 256-byte aligned (mod 256 = {}). \
+             Blackwell sm_120 vector loads will trap. HALT.",
+            size, ptr, ptr % 256
+        );
+        Ok(ptr)
     }
 
     /// Free a pointer back to this pool on `stream`. Stream-ordered.

@@ -56,6 +56,7 @@
 #include "adjudicator.cuh"  // transitively #includes so3_project.cuh (header fusion)
 #include <cuda_runtime.h>
 #include <math_constants.h>
+#include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 
 // ════════════════════════════════════════════════════════════════════
 // __constant__ memory LUT — populated by init_constants() at startup.
@@ -186,8 +187,8 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
     // Pre-fetch the G28 prune mask once per thread (broadcast load).
     // mask == 0 when SISR is disabled (single-cluster / non-dimer);
     // mask bit i set ⇒ cluster i fails bilateral symmetry.
-    const uint64_t prune_mask = (adjudicator->force_prune_mask != nullptr)
-                                ? *(adjudicator->force_prune_mask)
+    const uint64_t prune_mask = (adjudicator->force_prune_mask_ptr != nullptr)
+                                ? *(adjudicator->force_prune_mask_ptr)
                                 : 0ull;
     const bool i_vetoed = ((prune_mask >> i) & 1ull) != 0ull;
 
@@ -336,7 +337,17 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
             //   3. Causal/Thermo trigger:  max_caus_therm > threshold/2
             //      (intent-bearing planes get a 2× sensitivity boost —
             //      the operator-mandated "Whisper" detector).
-            const bool weighted_trigger = (total_kl                > threshold);
+            // Wave 0 / Task #68 — sign-invariant trigger.  `total_kl` is
+            // a 4-plane weighted sum of `Σ p_l · log2(p_l/q_l)`; the
+            // log_ratio is signed, so total_kl can land negative when
+            // perturbed > relaxed on dominant bands.  Pre-Wave-0 the
+            // threshold check was `total_kl > threshold` which silently
+            // discarded the entire negative half-plane of real
+            // divergence events.  Take fabsf so any spectral departure
+            // — in either direction — counts.  `max_plane_kl_unweighted`
+            // and `max_caus_therm_kl` already use fabsf at accumulation
+            // (lines 264-272), so no change there.
+            const bool weighted_trigger = (fabsf(total_kl)         > threshold);
             const bool any_plane_spike  = (max_plane_kl_unweighted > threshold);
             const bool whisper_trigger  = (max_caus_therm_kl       > threshold * 0.5f);
             code = (weighted_trigger || any_plane_spike || whisper_trigger)
@@ -389,21 +400,24 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     adj->legacy_centroid_fallback[0] = 0.0f;
     adj->legacy_centroid_fallback[1] = 0.0f;
     adj->legacy_centroid_fallback[2] = 0.0f;
-    // B.3.2 — gear_override = 0xFF (Auto sentinel) so the gearbox SFA
-    // decides.  Operator writes a 0..3 here to force a manual gear shift.
-    adj->gear_override     = 0xFFu;
-    adj->force_prune_mask  = nullptr;
-    // M1.2.17 — d_potential_energy is an f64 value (not a pointer);
-    // 0.0 means "PE not yet computed" — the SFA stability fuse skips
-    // the drift check on the first frame to avoid a bogus trap.
-    adj->d_potential_energy = 0.0;
+    // gear_override = 0xFF (Auto sentinel) so the gearbox SFA decides.
+    // Offset 100 (B.3.2 home, restored Emergency Rectification 2026-05-02).
+    // Host writes 0..3 via cuMemcpyHtoDAsync to (adj_dev + 100) to force.
+    adj->gear_override = 0xFFu;
+    adj->force_prune_mask_ptr = nullptr;
+    // potential_energy is an f64 value (not a pointer); 0.0 means
+    // "PE not yet computed" — the SFA stability fuse skips the drift
+    // check on the first frame to avoid a bogus trap.
+    adj->potential_energy = 0.0;
     // d_dt: null until host wires &d_protocol->dt pre-capture via
     // cuMemcpyHtoD into offset 120.
     adj->d_dt = nullptr;
-    // M1.2.18-P3 — Total External Work (Hamiltonian audit).
-    // Zeroed each chunk by the captured pipeline; UV/clamp atomicAdds
-    // accumulate into this scalar over the chunk window.
-    adj->d_external_work = 0.0;
+    // d_external_work is a *mut f64 POINTER.  The host wires the
+    // F2-pool buffer address into offset 128 pre-capture via cuMemcpyHtoD;
+    // Zero-Host Guard §3 rejects null at capture time.  The captured
+    // graph emits cuMemsetD8Async at the head of every replay so
+    // *d_external_work is fresh at chunk start.
+    adj->d_external_work = nullptr;
 }
 
 /// Noise-floor update kernel — Welford-style running mean+stddev over
