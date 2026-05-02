@@ -4648,6 +4648,12 @@ fn run_multi_stream_pipeline(
                         let mut v2_spikes_raw: u64 = 0;   // CUdeviceptr — freed post-chunk-loop
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_offsets_raw: u64 = 0;  // CUdeviceptr — freed post-chunk-loop
+                        // Wave 1 — capacity of v2_spikes_raw in bytes, needed for the
+                        // per-chunk refresh path to clamp accumulated spikes against
+                        // the originally-allocated buffer (pointer must stay stable for
+                        // the captured graph).
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_spikes_capacity_bytes: usize = 0;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_mask_raw: u64 = 0;     // CUdeviceptr — per-atom ASC mask — freed post-chunk-loop
 
@@ -4992,6 +4998,7 @@ fn run_multi_stream_pipeline(
                                                         v2_spikes_raw  = d_sp;
                                                         v2_offsets_raw = d_off;
                                                         v2_mask_raw    = d_mask;
+                                                        v2_spikes_capacity_bytes = spike_bytes;
                                                         // Store ring: must outlive pipeline
                                                         // (pipeline holds raw ptrs into ring).
                                                         if let Ok(ring) = zstr_ring_new {
@@ -5218,6 +5225,64 @@ fn run_multi_stream_pipeline(
                                 #[cfg(feature = "v2_ignition")]
                                 if let Some(ref pipeline) = v2_pipeline {
                                     if v2_monolithic.is_none() {
+                                        // ── Wave 1: Per-chunk Live-Buffer Linkage ────────
+                                        // Refresh V2 pipeline's d_spikes/d_cluster_offsets
+                                        // with the engine's CURRENT accumulated spike events
+                                        // (most recent N up to the buffer capacity allocated
+                                        // at V2 build time). The captured graph's pointer
+                                        // stability is preserved (we write into the SAME
+                                        // VRAM addresses, not new allocations).
+                                        // Without this, the V2 pipeline processes a static
+                                        // snapshot taken at V2-BUILD; SO(3) outputs are
+                                        // identical every frame → Δ_AB = 0 → adj_code=0
+                                        // permanently. With this, fresh spikes feed each
+                                        // launch; ContactShellTile.geo_power_spectrum varies
+                                        // frame-to-frame; F1 SWITCH branches on real Δ_AB.
+                                        if v2_spikes_raw != 0 && v2_offsets_raw != 0
+                                            && v2_spikes_capacity_bytes > 0
+                                        {
+                                            use prism_nhs::rich_spike::RichSpike as _RichSpike;
+                                            let max_spikes = v2_spikes_capacity_bytes
+                                                / std::mem::size_of::<_RichSpike>();
+                                            let spike_events = engine.get_accumulated_spikes();
+                                            let n_avail = spike_events.len();
+                                            if n_avail > 0 {
+                                                // Take most-recent N up to capacity (sliding window).
+                                                let start = n_avail.saturating_sub(max_spikes);
+                                                let recent = &spike_events[start..];
+                                                let rich: Vec<_RichSpike> = recent.iter().map(|e| {
+                                                    let mut rs = _RichSpike::default();
+                                                    rs.x             = e.position[0];
+                                                    rs.y             = e.position[1];
+                                                    rs.z             = e.position[2];
+                                                    rs.t_frame       = e.timestep as u32;
+                                                    rs.water_density = e.water_density;
+                                                    rs.wd_change     = e.wd_change;
+                                                    rs.vib_energy    = e.vibrational_energy;
+                                                    rs.residue_id    = e.nearby_residues.iter()
+                                                        .find(|&&r| r >= 0)
+                                                        .copied()
+                                                        .unwrap_or(0);
+                                                    rs
+                                                }).collect();
+                                                let n_rs = rich.len() as u32;
+                                                let bytes = rich.len()
+                                                    * std::mem::size_of::<_RichSpike>();
+                                                let offsets: [u32; 2] = [0u32, n_rs];
+                                                unsafe {
+                                                    let _ = cudarc::driver::sys::cuMemcpyHtoD_v2(
+                                                        v2_spikes_raw,
+                                                        rich.as_ptr() as *const _,
+                                                        bytes,
+                                                    );
+                                                    let _ = cudarc::driver::sys::cuMemcpyHtoD_v2(
+                                                        v2_offsets_raw,
+                                                        offsets.as_ptr() as *const _,
+                                                        std::mem::size_of_val(&offsets),
+                                                    );
+                                                }
+                                            }
+                                        }
                                         // RECT-3.5.1 — Path Z device-slot ZSTR.  Update
                                         // __constant__ d_zstr_active_slot via stream-ordered
                                         // cudaMemcpyToSymbolAsync BEFORE the captured-graph
