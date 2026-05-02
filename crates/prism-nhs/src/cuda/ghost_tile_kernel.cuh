@@ -33,13 +33,17 @@ struct __align__(128) GhostTileFrame {
     uint32_t site_id;               // offset 8
     uint8_t  chain_id;              // offset 12
     uint8_t  adjudication_code;     // offset 13
-    uint8_t  _pad[2];               // offset 14
+    uint16_t telemetry_flags;       // offset 14   (Wave 1 — was uint8_t _pad[2])
     float    kl_divergence;         // offset 16
     float    power_spectrum[6];     // offset 20
     float    thermo_flux[2];        // offset 44
     uint32_t causal_lead_residue;   // offset 52
     uint32_t _reserved[18];         // offset 56..128
 };
+
+// Wave 1 / P4 — telemetry_flags bit definitions (mirrors
+// GHOST_TELEMETRY_CLASS_TAINTED in Rust ghost_tile.rs).
+constexpr uint16_t GHOST_TELEMETRY_CLASS_TAINTED = 0x0001u;
 
 static_assert(sizeof(GhostTileFrame)  == 128,
               "GhostTileFrame size drift — must be 128 bytes (operator §2.1).");
@@ -67,14 +71,29 @@ extern "C" {
 /// captured-graph window.  Insert downstream of the Adjudicator step
 /// (so adj.adjudication_code is final) and downstream of the SO(3)
 /// projection (so the baseline tiles hold the latest power spectra).
+///
+/// Wave 1 / Q2: `d_kcc_lead` is an F2-pool `uint32_t[n_clusters]` buffer
+/// holding the per-cluster causal-lead residue id (host populates it
+/// between chunks via argmax|d_kcc_temporal_corr|).  Pass `nullptr` to
+/// have the kernel emit `0xFFFFFFFFu` sentinels in causal_lead_residue
+/// — typical bootstrap state during the first chunk.
 int prism_ghost_pipe_stage_launch(
     uint64_t       ring_base_dev,    /* GhostTileRing::device_base */
     const void*    tiles,            /* baseline manifold (n_clusters × ContactShellTile) */
     const void*    adj,              /* InterferometricAdjudicatorFfi */
+    const void*    d_kcc_lead,       /* Wave 1 / Q2 — F2-pool [n_clusters] u32, nullable */
     uint64_t       frame_idx,        /* monotonic frame counter */
     uint32_t       n_clusters,
     uint32_t       max_records,
     void*          stream);
+
+/// Wave 1 / Q1 — host-side populator for the __constant__ cluster→repr
+/// residue table.  Call once per campaign after Pillar 1 clustering
+/// converges; stream-ordered cudaMemcpyToSymbolAsync.
+int prism_ghost_set_cluster_repr_residue(
+    const uint32_t* repr_residues_host,   /* [n] host array */
+    uint32_t        n,                    /* 1..=64 */
+    void*           stream);
 
 #ifdef __cplusplus
 }

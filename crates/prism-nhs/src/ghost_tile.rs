@@ -96,8 +96,17 @@ pub struct GhostTileFrame {
     /// (legitimate burst) from Violation (numerical trap).
     pub adjudication_code: u8,
 
-    /// Padding to make the next f32 field land 4-aligned at offset 16.
-    pub _pad: [u8; 2],
+    /// **Wave 1 / Q1+P4** — bitfield of per-record telemetry flags.
+    /// Bit 0 (`CLASS_TAINTED` = 0x0001): set when the kernel substituted
+    ///   a NaN/Inf value in `thermo_flux[0..2]` with 0.0 (the upstream
+    ///   manifold has not yet populated the water-density derivative or
+    ///   vibrational-energy slot).
+    /// Bits 1..15 reserved for future quality flags (chain-resolution
+    ///   confidence, KCC-stale, gear-id snapshot, etc.).
+    /// Replaces the alignment-only `_pad: [u8; 2]` placeholder; offset
+    /// and size unchanged so the on-disk layout is bit-for-bit
+    /// equivalent for records produced before the flag was wired.
+    pub telemetry_flags: u16,
 
     /// Σ_planes Δ_AB — total weighted KL divergence across all 4 planes
     /// at this frame.  Mirrors `adj.current_divergence` at the moment
@@ -130,6 +139,16 @@ pub struct GhostTileFrame {
     pub _reserved: [u32; 18],
 }
 
+/// **Wave 1 / P4** — telemetry_flags bit definitions.
+///
+/// Bit 0 — `CLASS_TAINTED`: set when the Ghost stage kernel had to
+/// substitute a NaN/Inf in `thermo_flux[0]` (water-density derivative)
+/// or `thermo_flux[1]` (vibrational energy) with 0.0.  Indicates the
+/// upstream manifold has not yet populated those slots; downstream
+/// consumers (offline Φ_sym/η integrators) MUST exclude tainted records
+/// from the η = ΔV_wd / ΔV_vib ratio computation.
+pub const GHOST_TELEMETRY_CLASS_TAINTED: u16 = 0x0001;
+
 impl GhostTileFrame {
     /// All-zero seed.  Matches the cuMemHostAlloc-zero'd buffer state;
     /// kernels overwrite these fields atomically per-record.
@@ -139,7 +158,7 @@ impl GhostTileFrame {
             site_id: 0,
             chain_id: 0,
             adjudication_code: 0,
-            _pad: [0u8; 2],
+            telemetry_flags: 0,
             kl_divergence: 0.0,
             power_spectrum: [0.0; 6],
             thermo_flux: [0.0; 2],
@@ -161,7 +180,7 @@ const _: () = {
     assert!(offset_of!(GhostTileFrame, site_id) == 8);
     assert!(offset_of!(GhostTileFrame, chain_id) == 12);
     assert!(offset_of!(GhostTileFrame, adjudication_code) == 13);
-    assert!(offset_of!(GhostTileFrame, _pad) == 14);
+    assert!(offset_of!(GhostTileFrame, telemetry_flags) == 14);
     assert!(offset_of!(GhostTileFrame, kl_divergence) == 16);
     assert!(offset_of!(GhostTileFrame, power_spectrum) == 20);
     assert!(offset_of!(GhostTileFrame, thermo_flux) == 44);
@@ -313,9 +332,18 @@ extern "C" {
         ring_base_dev: u64,
         tiles: *const std::ffi::c_void,
         adj: *const std::ffi::c_void,
+        d_kcc_lead: *const std::ffi::c_void,   // Wave 1 / Q2 — nullable
         frame_idx: u64,
         n_clusters: u32,
         max_records: u32,
         stream: *mut std::ffi::c_void,
+    ) -> i32;
+
+    /// Wave 1 / Q1 — populator for the __constant__ d_cluster_to_repr_residue[64]
+    /// table.  Stream-ordered cudaMemcpyToSymbolAsync.  `n` clamped to 64.
+    pub fn prism_ghost_set_cluster_repr_residue(
+        repr_residues_host: *const u32,
+        n:                  u32,
+        stream:             *mut std::ffi::c_void,
     ) -> i32;
 }

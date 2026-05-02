@@ -5100,6 +5100,11 @@ fn run_multi_stream_pipeline(
                                                     d_external_work:   d_external_work_ptr as *mut f64,
                                                     ghost_tile_ring_dev:    ghost_dev,
                                                     ghost_tile_max_records: ghost_caps,
+                                                    // Wave 1 / Q2 — F2-pool d_kcc_lead[n_clusters]
+                                                    // not yet plumbed through the engine; kernel
+                                                    // emits 0xFFFFFFFFu sentinels until host argmax
+                                                    // populator lands in the chunk loop below.
+                                                    d_kcc_lead: 0u64,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),

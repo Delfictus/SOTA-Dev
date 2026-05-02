@@ -313,11 +313,19 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
             code = PRISM_ADJ_VIOLATION;
         } else {
             // Threshold uses noise_floor_mu[0] / sigma[0] as the
-            // band-0 proxy; substrate-aware T7 (Wave 3) writes
-            // dynamic μ / σ here every frame (≥100 samples).
+            // band-0 proxy; substrate-aware T7 writes dynamic μ / σ
+            // here every frame after PRISM_DYNT7_N_MIN samples.
+            //
+            // Wave 1 / Q3 — operator-mandated 12σ "Discovery Gear"
+            // (Augmentation option B, 2026-05-02).  Pre-Wave-1 was
+            // 3σ; the 7C8R Mpro dimer's thermal baseline is volatile
+            // enough that 3σ floods the AMS pipeline with false
+            // positives.  12σ isolates only the most significant
+            // "Cryptic Gasps".  Operates on KL units (Wave 0 fix —
+            // current_divergence is the 4-plane weighted KL Σ).
             const float threshold =
                 adjudicator->noise_floor_mu[0]
-                + 3.0f * adjudicator->noise_floor_sigma[0];
+                + 12.0f * adjudicator->noise_floor_sigma[0];
 
             // ── B.3.2 Total Information Yield (TIY) — operator
             //    addendum 2026-05-02:

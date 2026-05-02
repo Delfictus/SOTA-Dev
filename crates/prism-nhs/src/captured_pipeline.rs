@@ -146,10 +146,20 @@ extern "C" {
         ring_base_dev: u64,
         tiles:         *const c_void,
         adj:           *const c_void,
+        d_kcc_lead:    *const c_void,   // Wave 1 / Q2 — F2-pool [n_clusters] u32, nullable
         frame_idx:     u64,
         n_clusters:    u32,
         max_records:   u32,
         stream:        *mut c_void,
+    ) -> i32;
+
+    /// Wave 1 / Q1 — populate __constant__ d_cluster_to_repr_residue[64].
+    /// Called once per campaign init from the Rust orchestrator after
+    /// Pillar 1 clustering identifies the per-cluster centroid residue.
+    fn prism_ghost_set_cluster_repr_residue(
+        repr_residues_host: *const u32,
+        n:                  u32,
+        stream:             *mut c_void,
     ) -> i32;
 }
 
@@ -487,6 +497,17 @@ pub struct PipelineConfig {
     /// bounds-checks against this before atomic-add'ing a new record.
     /// Sized at engine init based on expected V2 chunk count.
     pub ghost_tile_max_records: u32,
+
+    /// **Wave 1 / Q2 — Causal-lead residue F2-pool buffer.**
+    /// Device pointer (`u64` raw) to a `[u32; n_clusters]` buffer
+    /// holding the per-cluster KCC argmax residue id.  The Ghost
+    /// stage kernel reads this when populating `causal_lead_residue`
+    /// (offset 52 in GhostTileFrame).  Zero disables (kernel emits
+    /// 0xFFFFFFFFu sentinels — typical bootstrap during the first
+    /// chunk before host argmax has run).  The host orchestrator in
+    /// `nhs_rt_full.rs` populates this between chunks via
+    /// `argmax|d_kcc_temporal_corr|` per cluster.
+    pub d_kcc_lead: u64,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -1360,11 +1381,22 @@ impl CapturedAdjudicationPipeline {
         // The on-disk record's frame_idx is therefore monotonic across
         // chunk replays via the GPU-side u32 counter offset 0.
         if cfg.ghost_tile_ring_dev != 0 && cfg.ghost_tile_max_records > 0 {
+            // Wave 1 / Q2 — `d_kcc_lead` is the F2-pool [n_clusters] u32
+            // buffer holding the per-cluster causal-lead residue id.
+            // When `cfg.d_kcc_lead == 0` the kernel emits 0xFFFFFFFFu
+            // sentinels until the host populator fires (typical
+            // bootstrap during the very first chunk).
+            let kcc_lead_ptr = if cfg.d_kcc_lead != 0 {
+                cfg.d_kcc_lead as *const c_void
+            } else {
+                std::ptr::null()
+            };
             let rc = unsafe {
                 prism_ghost_pipe_stage_launch(
                     cfg.ghost_tile_ring_dev,
                     manifest.tiles_dev_ptr as *const c_void,
                     adj_dev as *const c_void,
+                    kcc_lead_ptr,
                     cfg.initial_frame_id as u64,
                     cfg.n_clusters,
                     cfg.ghost_tile_max_records,
@@ -2612,6 +2644,7 @@ mod tests {
             d_external_work: ptr::null_mut(),
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
+            d_kcc_lead: 0,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -2750,6 +2783,7 @@ mod tests {
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
             ghost_tile_ring_dev: 0,
+            d_kcc_lead: 0,
             ghost_tile_max_records: 0,
         };
 
@@ -2835,6 +2869,7 @@ mod tests {
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
+            d_kcc_lead: 0,
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
         };
@@ -2928,6 +2963,7 @@ mod tests {
             d_velocities: ptr::null_mut(),
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
+            d_kcc_lead: 0,
             d_external_work: ptr::null_mut(),
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
