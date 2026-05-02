@@ -91,6 +91,26 @@ extern "C" {
 }
 
 // ============================================================================
+// Dynamic T7 FFI — substrate-aware noise-floor calibration (Wave 3 / Path B)
+// ============================================================================
+//
+// Three captured kernels (capture → reduce → apply) accumulate the
+// Adjudicator's current_divergence per launch, compute substrate-derived
+// μ + σ across PRISM_DYNT7_N_SAMPLES (=500), and write back to the FFI struct's
+// noise_floor_mu[0] / noise_floor_sigma[0].  Replaces the locked 4LPK priors
+// once n ≥ PRISM_DYNT7_N_MIN (=100) samples have accumulated.  All GPU-native;
+// no host bridges per launch.
+extern "C" {
+    fn prism_dynamic_t7_launch(
+        adj:       *const c_void,
+        acc_dev:   *mut c_void,
+        idx_dev:   *mut c_void,
+        stats_dev: *mut c_void,
+        stream:    *mut c_void,
+    ) -> i32;
+}
+
+// ============================================================================
 // G28 SISR FFI — Spatially-Indexed Symmetric Reflection (Amendment 3.4)
 // ============================================================================
 //
@@ -314,6 +334,14 @@ pub struct CapturedAdjudicationPipeline {
     /// Initialised to `cfg.n_clusters` pre-capture; future per-frame updates
     /// land here when the SpikeToCluster4D transform writes dynamic counts.
     sisr_count_dev: usize,    // *mut u32 (4 B), or 0 when SISR disabled
+    /// Wave 3 / Path B Dynamic T7 calibration buffers (always allocated).
+    /// `dynt7_acc_dev`:   F2-pool f32[500]  — Δ_AB samples (saturating)
+    /// `dynt7_idx_dev`:   F2-pool u32      — atomic write counter
+    /// `dynt7_stats_dev`: F2-pool f32[2]   — [mean, stddev] outputs
+    /// All freed on Drop.
+    dynt7_acc_dev:   usize,
+    dynt7_idx_dev:   usize,
+    dynt7_stats_dev: usize,
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -534,6 +562,26 @@ impl CapturedAdjudicationPipeline {
                 return Err(BuildError::Cuda { stage: "memset tiles_baseline", rc: rc as i32 });
             }
         }
+
+        // ── Wave 3 / Path B — Dynamic T7 calibration buffers ────────────
+        // acc:   500 × f32 = 2000 B  (cold-equilibrium Δ_AB samples)
+        // idx:    1 × u32 = 4 B      (atomic write counter, saturating)
+        // stats:  2 × f32 = 8 B      ([mean, stddev])
+        // All zero-initialised so the FIRST capture starts from a clean slate.
+        const DYNT7_ACC_BYTES:   u64 = 500 * 4;
+        const DYNT7_IDX_BYTES:   u64 = 4;
+        const DYNT7_STATS_BYTES: u64 = 2 * 4;
+        let dynt7_acc_dev = pool.alloc_async(DYNT7_ACC_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "dynt7_acc", reason: s })?;
+        let dynt7_idx_dev = pool.alloc_async(DYNT7_IDX_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "dynt7_idx", reason: s })?;
+        let dynt7_stats_dev = pool.alloc_async(DYNT7_STATS_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "dynt7_stats", reason: s })?;
+        unsafe {
+            let _ = cuMemsetD8_v2(dynt7_acc_dev   as CUdeviceptr, 0, DYNT7_ACC_BYTES   as usize);
+            let _ = cuMemsetD8_v2(dynt7_idx_dev   as CUdeviceptr, 0, DYNT7_IDX_BYTES   as usize);
+            let _ = cuMemsetD8_v2(dynt7_stats_dev as CUdeviceptr, 0, DYNT7_STATS_BYTES as usize);
+        }
         md_stream.synchronize().map_err(BuildError::Driver)?;
 
         // CSR §M alignment guard (Anti-Greenfield Audit Gate G19):
@@ -727,6 +775,9 @@ impl CapturedAdjudicationPipeline {
                 let _ = pool.free_async(burst_marker_dev, md_raw);
                 if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
                 if sisr_count_dev != 0 { let _ = pool.free_async(sisr_count_dev, md_raw); }
+                let _ = pool.free_async(dynt7_acc_dev, md_raw);
+                let _ = pool.free_async(dynt7_idx_dev, md_raw);
+                let _ = pool.free_async(dynt7_stats_dev, md_raw);
                 return Err(BuildError::Driver(e));
             }
         }
@@ -819,6 +870,28 @@ impl CapturedAdjudicationPipeline {
         };
         if rc != 0 {
             return Err(BuildError::Cuda { stage: "Node C (Adjudicator)", rc });
+        }
+
+        // ── 6.b-T7 Wave 3 / Path B: dynamic noise-floor calibration ────
+        // Three captured kernels (capture → reduce → apply) run AFTER the
+        // Adjudicator step on md_stream.  The Adjudicator's __threadfence()
+        // before its global_adjudication_summary write + the captured-graph
+        // dependency edge guarantee current_divergence is L2-visible here.
+        // After PRISM_DYNT7_N_MIN samples (=100), the apply kernel writes
+        // substrate-derived μ + σ into adj->noise_floor_mu[0] and σ[0],
+        // adapting the threshold for subsequent launches.  Pure GPU-native;
+        // no host involvement per chunk.
+        let rc = unsafe {
+            prism_dynamic_t7_launch(
+                adj_dev as *const c_void,
+                dynt7_acc_dev as *mut c_void,
+                dynt7_idx_dev as *mut c_void,
+                dynt7_stats_dev as *mut c_void,
+                md_stream.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(BuildError::Cuda { stage: "Wave 3 dynamic T7", rc });
         }
 
         // ── 6.b' V2 IGNITION prep: snapshot the Adjudicator's captured
@@ -1214,6 +1287,9 @@ impl CapturedAdjudicationPipeline {
             burst_marker_dev,
             sisr_mask_dev,
             sisr_count_dev,
+            dynt7_acc_dev,
+            dynt7_idx_dev,
+            dynt7_stats_dev,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -1407,6 +1483,10 @@ impl Drop for CapturedAdjudicationPipeline {
         if self.sisr_count_dev != 0 {
             let _ = self.pool.free_async(self.sisr_count_dev, md_raw);
         }
+        // Wave 3 / Path B Dynamic T7 buffers (always allocated).
+        let _ = self.pool.free_async(self.dynt7_acc_dev,   md_raw);
+        let _ = self.pool.free_async(self.dynt7_idx_dev,   md_raw);
+        let _ = self.pool.free_async(self.dynt7_stats_dev, md_raw);
         // VramPool's Drop releases the pool itself.
     }
 }

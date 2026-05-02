@@ -34,6 +34,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/asc_steering.cuh");
     println!("cargo:rerun-if-changed=src/cuda/symmetry_consensus.cu");
     println!("cargo:rerun-if-changed=src/cuda/symmetry_consensus.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/dynamic_t7.cu");
+    println!("cargo:rerun-if-changed=src/cuda/dynamic_t7.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -229,6 +231,19 @@ fn main() {
         &nvcc,
         "src/cuda/symmetry_consensus.cu",
         "symmetry_consensus",
+        &out_dir,
+    );
+
+    // Wave 3 / Path B — Dynamic T7 substrate-aware noise-floor calibration.
+    // Three captured kernels (capture / reduce / apply) run inside the V2
+    // pipeline graph downstream of the Adjudicator step.  All GPU-native;
+    // no host bridges per launch.  Replaces the locked 4LPK priors with
+    // values derived from the running substrate's thermal-equilibrium Δ_AB
+    // distribution after PRISM_DYNT7_N_MIN samples accumulate.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/dynamic_t7.cu",
+        "dynamic_t7",
         &out_dir,
     );
 }
