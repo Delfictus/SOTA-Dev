@@ -88,6 +88,24 @@ extern "C" {
         inter_slot_stride: u32,
         stream:            *mut c_void,
     ) -> i32;
+
+    // ── T11 — Action-Recovery force exfiltration ──
+    fn zstr_launch_force_stage(
+        base_pinned:                *mut c_void,
+        inter_slot_stride:          u32,
+        force_offset_in_slot:       u32,
+        force_norm_offset_in_slot:  u32,
+        src_d_forces:               *const c_void,
+        n_atoms:                    u32,
+        stream:                     *mut c_void,
+    ) -> i32;
+
+    fn zstr_launch_force_norm_sqrt(
+        base_pinned:                *mut c_void,
+        inter_slot_stride:          u32,
+        force_norm_offset_in_slot:  u32,
+        stream:                     *mut c_void,
+    ) -> i32;
 }
 
 // ============================================================================
@@ -187,20 +205,29 @@ unsafe impl Send for AscConfig {}
 
 /// G23 ZSTR position-staging + fence-signal capture parameters.
 ///
-/// Passed to `PipelineConfig::zstr`.  When `Some`, two kernel nodes are
+/// Passed to `PipelineConfig::zstr`.  When `Some`, four kernel nodes are
 /// recorded into the captured graph on `telemetry_stream`, downstream of
 /// the tile-DMA node and upstream of the JOIN event:
 ///
 /// ```text
-/// [tile DMA] → [zstr_pos_stage_f4] → [zstr_signal_completion] → [JOIN]
+/// [tile DMA] → [zstr_pos_stage_f4]
+///   → [zstr_force_stage_f4]                  (T11 — Action-Recovery)
+///   → [zstr_force_norm_sqrt]                 (T11 — sqrt post-pass)
+///   → [zstr_signal_completion] → [JOIN]
 /// ```
 ///
-/// Both nodes run on `telemetry_stream` (non-blocking) — zero MD stall.
+/// All four nodes run on `telemetry_stream` (non-blocking) — zero MD stall.
 pub struct ZstrCaptureParams {
     /// Device pointer to atom positions (n_atoms × 3 × f32, AoS).
     /// Same pointer as `AscConfig::d_atom_positions`; must be stable
     /// for the lifetime of the pipeline (operator §3.2).
     pub d_positions: *const f32,
+    /// Device pointer to integrator forces (n_atoms × 3 × f32, AoS) —
+    /// the SAME `d_forces` pointer the ASC kernel atomic-adds steering
+    /// contributions into.  Captured AFTER the ASC node so the recorded
+    /// frame reflects the post-steering total potential (T11 invariant).
+    /// Same lifetime contract as `d_positions`.
+    pub d_forces: *const f32,
     /// Number of atoms.  Determines grid size for pos_stage kernel.
     pub n_atoms: u32,
     /// Path Z device-slot: pinned slot-0 base (header start of slot 0).
@@ -212,6 +239,13 @@ pub struct ZstrCaptureParams {
     pub inter_slot_stride: u32,
     /// Byte offset from slot base to positions payload (== sizeof header).
     pub pos_offset_in_slot: u32,
+    /// T11 — Byte offset from slot base to forces payload
+    /// (== `pos_offset_in_slot + n_atoms*3*4`).
+    pub force_offset_in_slot: u32,
+    /// T11 — Byte offset from slot base to `force_norm` field
+    /// (28 in header). Stable across slots; provided in the params so
+    /// the launcher does not duplicate the layout constant.
+    pub force_norm_offset_in_slot: u32,
     /// Byte offset from slot base to `completion_fence` field (16 in header).
     pub fence_offset_in_slot: u32,
 }
@@ -1065,6 +1099,49 @@ impl CapturedAdjudicationPipeline {
                 }
             }
 
+            // ── T11 — force-stage (DMA + warp-shuffle Σ‖F‖² atomic-add) ──
+            // Captured on telemetry_stream after pos_stage. Reads d_forces
+            // AFTER the ASC kernel has retired (md_to_telemetry_event +
+            // tile DMA dependency chain establishes the cross-stream
+            // happens-before edge). Each warp lane-0 atomicAdds its
+            // Σ Fᵢ² into the active slot's force_norm field (offset 28).
+            let rc = unsafe {
+                zstr_launch_force_stage(
+                    zstr.pinned_base as *mut c_void,
+                    zstr.inter_slot_stride,
+                    zstr.force_offset_in_slot,
+                    zstr.force_norm_offset_in_slot,
+                    zstr.d_forces as *const c_void,
+                    zstr.n_atoms,
+                    telemetry_stream as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "zstr_force_stage capture (T11)",
+                    rc,
+                });
+            }
+
+            // ── T11 — force_norm sqrt post-pass (single-thread) ──
+            // In-place sqrtf converts the running Σ‖F‖² into ‖F‖₂
+            // before the consumer reads. NaN propagates verbatim;
+            // the host G29 Reaper traps non-finite reads.
+            let rc = unsafe {
+                zstr_launch_force_norm_sqrt(
+                    zstr.pinned_base as *mut c_void,
+                    zstr.inter_slot_stride,
+                    zstr.force_norm_offset_in_slot,
+                    telemetry_stream as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "zstr_force_norm_sqrt capture (T11)",
+                    rc,
+                });
+            }
+
             // Fence base = slot-0 base + fence_offset_in_slot.
             let fence_base_ptr = unsafe {
                 zstr.pinned_base.add(zstr.fence_offset_in_slot as usize)
@@ -1302,10 +1379,10 @@ impl CapturedAdjudicationPipeline {
             zstr_src_vram,
             zstr_n_atoms,
             n_clusters: cfg.n_clusters,
-            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + fence] [+ SISR]
+            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + force_stage + force_norm_sqrt + fence] [+ SISR]
             n_kernel_nodes_captured: 2
                 + if cfg.asc.is_some()  { 1 } else { 0 }
-                + if cfg.zstr.is_some() { 2 } else { 0 }
+                + if cfg.zstr.is_some() { 4 } else { 0 }
                 + if cfg.sisr.is_some() { 1 } else { 0 },
             // V1: 0 explicit cuGraphAddDependencies edges (the
             // C→D edge is satisfied by capture-mode's implicit

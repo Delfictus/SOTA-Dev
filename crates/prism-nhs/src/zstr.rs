@@ -49,8 +49,17 @@ use std::thread::JoinHandle;
 
 /// Header for one ZSTR ring slot (pinned, 4096-byte aligned).
 ///
+/// T11 (Action-Recovery): the slot now carries forces in addition to
+/// positions; the header gains `n_atoms`, `gear_id`, and `force_norm`
+/// so the offline replay can reconstruct (a) the system size, (b) the
+/// G26 chronometric gear active during the frame (set by Wave B; default 0
+/// in Wave A), and (c) the L2 norm of the integrator's total force after
+/// ASC steering — a single scalar witness that the steering is bounded
+/// and finite.
+///
 /// Immediately followed in the same allocation by:
 ///   [positions: n_atoms * 3 * f32]
+///   [forces:    n_atoms * 3 * f32]
 ///   [padding to next 4096-byte boundary]
 ///
 /// The full slot size is computed and padded to 4096 bytes so that
@@ -58,24 +67,40 @@ use std::thread::JoinHandle;
 #[repr(C, align(4096))]
 pub struct ZstrFrameHeader {
     /// Monotonically increasing epoch counter (0-based).
-    pub frame_idx: u64,
+    pub frame_idx: u64,                  // 0..8
     /// Integration timestep in picoseconds at the time of capture.
-    pub dt: f32,
+    pub dt: f32,                         // 8..12
     /// adjudication_code written by the InterferometricAdjudicator
-    /// (0 = NOISE, 1 = BURST/F1, 2 = ONSET, 3 = WAIT_SENTINEL).
-    pub adjudication_code: u32,
+    /// (0 = Prune, 1 = Construct, 2 = Violation).
+    pub adjudication_code: u32,          // 12..16
     /// 0 = Dirty/Writing (GPU owns).  1 = Ready (host may flush).
     /// Written by `zstr_signal_completion_kernel` after __threadfence_system().
-    pub completion_fence: u32,
-    /// Reserved — keeps total header size at 32 bytes.
-    pub _padding: [u32; 3],
+    pub completion_fence: u32,           // 16..20
+    /// Atom count for this slot (replay payload size = n_atoms * 3 * 4
+    /// bytes for positions and again for forces). Stamped at capture
+    /// time so the consumer doesn't need a side-channel size.
+    pub n_atoms: u32,                    // 20..24
+    /// G26 chronometric gear in effect when this frame retired.
+    /// 0 = 0.5 fs (high-res), 1 = 2.0 fs (default), 2 = 4.0 fs (HMR sprint),
+    /// 3 = abort-trap. Wave A leaves this at 0 (gear logic is Wave B);
+    /// the field is reserved here so no header layout change is needed
+    /// when the SWITCH lands.
+    pub gear_id: u32,                    // 24..28
+    /// L2 norm ‖F‖₂ = sqrt(Σ_i Σ_d F_id²) of the post-ASC integrator
+    /// force buffer at this slot. NaN ⇒ G29 trap (steering produced
+    /// non-physical forces; campaign aborts on detection).
+    pub force_norm: f32,                 // 28..32
+    /// Pads the header to a full 4096-byte sector. align(4096) on the
+    /// struct already enforces tail padding, but making it explicit
+    /// here pins the slot layout so the offline replay format does not
+    /// silently drift if the struct is later extended.
+    pub _padding: [u32; 1016],           // 32..4096
 }
 
 // ZstrFrameHeader meaningful payload: 32 bytes.
-// size_of::<ZstrFrameHeader>() == 4096 (padded by align(4096)).
-// The positions payload begins at the 4096-byte-aligned slot base,
-// after the header struct, for a slot layout of:
-//   [header: 4096 B] [positions: n_atoms*3*4 B] [pad→next 4096 multiple]
+// size_of::<ZstrFrameHeader>() == 4096 (explicit + align(4096)).
+// Slot layout post-T11:
+//   [header: 4096 B] [positions: n_atoms*3*4 B] [forces: n_atoms*3*4 B] [pad→4096]
 
 // ─── ZstrRing ────────────────────────────────────────────────────────────────
 
@@ -106,16 +131,18 @@ impl ZstrRing {
 
     /// Allocate the triple-buffer in pinned host memory.
     ///
-    /// Frame layout per slot:
+    /// Frame layout per slot (T11 — forces co-resident with positions):
     /// ```
-    /// [ZstrFrameHeader: 32 B] [positions: n_atoms*3*4 B] [pad→4096]
+    /// [ZstrFrameHeader: 4096 B] [positions: n_atoms*3*4 B]
+    ///   [forces: n_atoms*3*4 B] [pad→next 4096 multiple]
     /// ```
     pub fn allocate(n_atoms: usize) -> Result<Self, String> {
         // ZstrFrameHeader is align(4096) → size_of = 4096 (padded by Rust).
         // Meaningful header data occupies only the first 32 bytes.
         let header_bytes = std::mem::size_of::<ZstrFrameHeader>(); // == 4096
         let pos_bytes    = n_atoms * 3 * 4;                         // n_atoms × xyz × f32
-        let raw_frame    = header_bytes + pos_bytes;
+        let force_bytes  = n_atoms * 3 * 4;                         // T11: forces appended
+        let raw_frame    = header_bytes + pos_bytes + force_bytes;
         // Round up to next 4096-byte multiple for O_DIRECT sector alignment.
         let frame_size   = (raw_frame + 4095) & !4095;
         let total_bytes  = frame_size * Self::N_SLOTS;
@@ -183,6 +210,30 @@ impl ZstrRing {
         self.positions_host_ptr(slot) as u64
     }
 
+    /// Byte offset from a slot's base to the forces payload.
+    /// Equals `sizeof(header) + n_atoms*3*4` — positions sit immediately
+    /// after the header, forces immediately after positions.
+    pub fn forces_offset_in_slot(&self) -> usize {
+        std::mem::size_of::<ZstrFrameHeader>() + self.n_atoms * 3 * 4
+    }
+
+    /// Raw byte pointer to the forces payload inside slot `slot` (T11).
+    /// This is what `zstr_force_stage_f4_kernel` writes into.
+    pub fn forces_host_ptr(&self, slot: usize) -> *mut u8 {
+        debug_assert!(slot < Self::N_SLOTS);
+        unsafe { self.pinned_ptr.add(slot * self.frame_size + self.forces_offset_in_slot()) }
+    }
+
+    /// Device-side CUdeviceptr for the forces payload of slot `slot` (T11).
+    pub fn forces_cu_ptr(&self, slot: usize) -> u64 {
+        self.forces_host_ptr(slot) as u64
+    }
+
+    /// Byte offset of `force_norm` within `ZstrFrameHeader`. Stable: 28.
+    pub const fn force_norm_offset_in_slot() -> usize {
+        offset_of_force_norm()
+    }
+
     /// Device-side CUdeviceptr for the `completion_fence` field of slot `slot`.
     /// Pass to `zstr_signal_completion_kernel` as its argument.
     pub fn fence_cu_ptr(&self, slot: usize) -> u64 {
@@ -209,6 +260,22 @@ impl Drop for ZstrRing {
 /// Byte offset of `completion_fence` within the raw header bytes.
 /// frame_idx(8) + dt(4) + adjudication_code(4) = 16.
 const fn offset_of_completion_fence() -> usize { 16 }
+
+/// Byte offset of `force_norm` within the raw header bytes.
+/// frame_idx(8) + dt(4) + adjudication_code(4) + completion_fence(4)
+/// + n_atoms(4) + gear_id(4) = 28.
+const fn offset_of_force_norm() -> usize { 28 }
+
+// Compile-time pin: the header layout MUST match the offsets the C-side
+// kernels and the offline replay parser depend on.  Drift here ⇒ silently
+// corrupt force_norm / gear_id reads in the consumer thread.
+const _: () = {
+    use std::mem::size_of;
+    assert!(size_of::<ZstrFrameHeader>() == 4096);
+    // We can't take addr_of on uninitialised memory in const, but we can
+    // assert the field pack: 8+4+4+4+4+4+4 = 32 used bytes + 4064 padding.
+    assert!(size_of::<u64>() + 6 * size_of::<u32>() + 1016 * size_of::<u32>() == 4096);
+};
 
 // ─── ZSTR Consumer Thread ────────────────────────────────────────────────────
 
@@ -332,6 +399,27 @@ pub fn spawn_zstr_consumer(
                     )
                 };
 
+                // ── G29 — Action-Recovery Zero-Trust trap.  Read the
+                //    sqrt'd L2 norm written by zstr_force_norm_sqrt_kernel.
+                //    Non-finite ⇒ ASC produced a non-physical force; we log
+                //    loudly and drop the frame (the campaign should be
+                //    aborted by the orchestrator on first detection — the
+                //    Reaper does not have authority to kill the engine).
+                let force_norm_val = unsafe {
+                    std::ptr::read_volatile(
+                        std::ptr::addr_of!((*ring.header_ptr(slot)).force_norm)
+                    )
+                };
+                let g29_finite = force_norm_val.is_finite();
+                if !g29_finite {
+                    log::error!(
+                        "[ZSTR G29 TRAP] frame={} slot={} force_norm={:?} non-finite — \
+                         Action-Recovery Invariant violated; ASC steered into NaN/Inf. \
+                         Frame dropped. Operator must abort campaign.",
+                        frame_idx, slot, force_norm_val
+                    );
+                }
+
                 if written < 0 {
                     log::warn!(
                         "[ZSTR consumer] pwrite frame {} failed: errno={}",
@@ -339,28 +427,41 @@ pub fn spawn_zstr_consumer(
                         std::io::Error::last_os_error()
                     );
                     frames_dropped += 1;
+                } else if !g29_finite {
+                    // Slot bytes ARE on disk (we wrote first), but the run
+                    // is poisoned. Count it as a drop so the stats line
+                    // reflects the broken slot count rather than a clean
+                    // success.
+                    frames_dropped += 1;
                 } else {
                     frames_written += 1;
                     bytes_written  += written as u64;
 
                     if frame_idx % 1000 == 0 {
                         log::info!(
-                            "[ZSTR] frame={} adj_code={} fence_was_ready  \
+                            "[ZSTR] frame={} adj_code={} ‖F‖₂={:.6e} fence_was_ready  \
                              written={} MB",
                             frame_idx,
                             hdr.adjudication_code,
+                            force_norm_val,
                             bytes_written >> 20,
                         );
                     }
                 }
 
-                // Reset fence: return slot to GPU.
-                // Use addr_of_mut! to avoid going through a shared reference
-                // (&T → *mut T is UB per Rust's aliasing rules).
+                // Reset fence + force_norm + completion_fence, returning the
+                // slot to the GPU's writable pool.  Zeroing force_norm is
+                // mandatory: the next force_stage kernel atomic-adds Σ‖F‖²
+                // INTO this same field expecting it to start at 0.
                 unsafe {
-                    let fence_ptr = std::ptr::addr_of_mut!(
-                        (*ring.header_ptr(slot)).completion_fence
-                    );
+                    let hdr_mut = ring.header_ptr(slot);
+                    let fence_ptr      = std::ptr::addr_of_mut!((*hdr_mut).completion_fence);
+                    let force_norm_ptr = std::ptr::addr_of_mut!((*hdr_mut).force_norm);
+                    std::ptr::write_volatile(force_norm_ptr, 0.0f32);
+                    // Force fence write to land AFTER the force_norm reset
+                    // so a racing GPU launch on this slot never observes
+                    // fence=0 with a stale non-zero force_norm.
+                    std::sync::atomic::fence(std::sync::atomic::Ordering::Release);
                     std::ptr::write_volatile(fence_ptr, 0u32);
                 }
 
@@ -422,5 +523,49 @@ pub mod ffi {
         /// Path Z host helper: stream-ordered update of d_zstr_active_slot.
         /// Caller invokes BEFORE each cuGraphLaunch on the same stream.
         pub fn prism_zstr_set_active_slot(slot: u32, stream: *mut c_void) -> i32;
+
+        /// T11 — Action-Recovery force exfiltration (DMA + Σ‖F‖² atomic-add).
+        ///
+        /// Records ONE kernel node onto `stream`:
+        /// `zstr_force_stage_f4_kernel` — float4 LDG.E.128 from `d_forces` →
+        /// STG.E.128 to the pinned slot's force payload, plus per-warp
+        /// `__shfl_down_sync` butterfly reduce of Σ Fᵢ² with the warp leader
+        /// `atomicAdd`-ing directly into the active slot's `force_norm`
+        /// field (offset 28). The field holds the running sum-of-squares
+        /// at this point; `zstr_launch_force_norm_sqrt` finalises it.
+        ///
+        /// `base_pinned`              : slot-0 header start.
+        /// `inter_slot_stride`        : `ZstrRing::frame_size`.
+        /// `force_offset_in_slot`     : forces payload offset
+        ///                              (== `ZstrRing::forces_offset_in_slot()`).
+        /// `force_norm_offset_in_slot`: 28 (offset_of_force_norm).
+        /// `src_d_forces`             : `d_forces` device pointer
+        ///                              (NhsAmberFusedEngine).
+        /// `n_atoms`                  : atom count.
+        ///
+        /// Caller contract: the pinned `force_norm` field MUST be 0.0f
+        /// before this kernel atomic-adds. The Reaper resets it alongside
+        /// `completion_fence` once it has read the slot; the initial state
+        /// is zero from `ZstrRing::allocate`.
+        pub fn zstr_launch_force_stage(
+            base_pinned:                *mut c_void,
+            inter_slot_stride:          u32,
+            force_offset_in_slot:       u32,
+            force_norm_offset_in_slot:  u32,
+            src_d_forces:               *const c_void,
+            n_atoms:                    u32,
+            stream:                     *mut c_void,
+        ) -> i32;
+
+        /// T11 — Single-thread post-pass: in-place sqrtf of the active
+        /// slot's `force_norm`, converting the accumulated Σ‖F‖² to
+        /// ‖F‖₂ before the consumer reads it.  NaN propagates verbatim
+        /// (host-side G29 Reaper traps non-finite values).
+        pub fn zstr_launch_force_norm_sqrt(
+            base_pinned:                *mut c_void,
+            inter_slot_stride:          u32,
+            force_norm_offset_in_slot:  u32,
+            stream:                     *mut c_void,
+        ) -> i32;
     }
 }

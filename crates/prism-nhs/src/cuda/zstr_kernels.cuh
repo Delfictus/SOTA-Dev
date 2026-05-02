@@ -48,6 +48,39 @@ __global__ void zstr_pos_stage_f4_kernel(
     uint32_t                    n_floats
 );
 
+/// T11 — Action-Recovery force-stage kernel.
+///
+/// Vectorized float4 LDG.E.128 → STG.E.128 DMA from `d_forces` into the
+/// active slot's pinned forces payload, with per-warp `__shfl_down_sync`
+/// butterfly reduction of Σ Fᵢ² and warp-leader `atomicAdd` directly into
+/// the slot's pinned `force_norm` field (offset 28). The field holds the
+/// running sum-of-squares after this kernel; the sqrt post-pass converts
+/// it to the L2 norm in-place.
+///
+/// Caller invariant: `force_norm` MUST be 0.0f before launch. The host
+/// ZSTR Reaper resets it alongside `completion_fence` once it has read
+/// and validated the slot.
+extern "C"
+__global__ void zstr_force_stage_f4_kernel(
+    uint8_t* __restrict__       base_pinned,
+    uint32_t                    inter_slot_stride,
+    uint32_t                    force_offset_in_slot,
+    uint32_t                    force_norm_offset_in_slot,
+    const float4* __restrict__  src_forces,
+    uint32_t                    n_floats
+);
+
+/// T11 — Single-thread <<<1,1>>> post-pass.  Reads the active slot's
+/// `force_norm` (= Σ Fᵢ² as written by force_stage), writes `sqrtf`
+/// back in place, converting the field to the L2 norm ‖F‖₂.  NaN
+/// propagates verbatim — the host G29 Reaper traps non-finite values.
+extern "C"
+__global__ void zstr_force_norm_sqrt_kernel(
+    uint8_t* __restrict__       base_pinned,
+    uint32_t                    inter_slot_stride,
+    uint32_t                    force_norm_offset_in_slot
+);
+
 }} // namespace prism_nhs::zstr
 
 // ─── C-ABI capture-window launchers ─────────────────────────────────────────
@@ -84,6 +117,28 @@ int zstr_launch_fence_signal(void*    base_fence,
 /// d_zstr_active_slot. Caller invokes BEFORE each cuGraphLaunch on the
 /// same stream so the captured kernels observe the new slot value.
 int prism_zstr_set_active_slot(uint32_t slot, void* stream);
+
+/// T11 — Records the force-stage kernel onto `stream` inside the
+/// active capture window.  DMA copy + warp-shuffle reduce + atomic-add
+/// into pinned `force_norm`.  Caller pairs this with
+/// `zstr_launch_force_norm_sqrt` on the same stream for the in-place
+/// sqrt post-pass.  Insert AFTER ASC atomic-add and BEFORE
+/// `zstr_launch_fence_signal`.
+int zstr_launch_force_stage(void*       base_pinned,
+                             uint32_t    inter_slot_stride,
+                             uint32_t    force_offset_in_slot,
+                             uint32_t    force_norm_offset_in_slot,
+                             const void* src_d_forces,
+                             uint32_t    n_atoms,
+                             void*       stream);
+
+/// T11 — Records the single-thread sqrt post-pass that finalises
+/// `force_norm` to the L2 norm.  Insert immediately after
+/// `zstr_launch_force_stage` and before `zstr_launch_fence_signal`.
+int zstr_launch_force_norm_sqrt(void*    base_pinned,
+                                 uint32_t inter_slot_stride,
+                                 uint32_t force_norm_offset_in_slot,
+                                 void*    stream);
 
 #ifdef __cplusplus
 }

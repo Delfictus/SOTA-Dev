@@ -15,6 +15,7 @@
 #include "zstr_kernels.cuh"
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <math_constants.h>
 
 namespace prism_nhs { namespace zstr {
 
@@ -69,6 +70,82 @@ __global__ void zstr_pos_stage_f4_kernel(
     // DMA engine sees the data immediately.
     float4 quad = __ldg(&src_vram[tid]);
     dst[tid] = quad;
+}
+
+// ─── T11 — Force-stage: vectorized DMA + warp-shuffle Σ‖F‖² atomic-add ─────
+
+extern "C"
+__global__ void zstr_force_stage_f4_kernel(
+    uint8_t* __restrict__       base_pinned,
+    uint32_t                    inter_slot_stride,
+    uint32_t                    force_offset_in_slot,
+    uint32_t                    force_norm_offset_in_slot,
+    const float4* __restrict__  src_forces,
+    uint32_t                    n_floats
+) {
+    const uint32_t tid  = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t lane = threadIdx.x & 31u;
+    const uint32_t n_f4 = (n_floats + 3u) >> 2u;
+
+    const uint32_t slot = d_zstr_active_slot;
+    uint8_t*  slot_base = base_pinned + slot * inter_slot_stride;
+    float4*   dst       = reinterpret_cast<float4*>(slot_base + force_offset_in_slot);
+    float*    fn_ptr    = reinterpret_cast<float*>(slot_base + force_norm_offset_in_slot);
+
+    // Per-thread DMA + sum-of-squares.  The tail bounds-check ensures
+    // the last quad's components beyond n_floats do NOT contribute; we
+    // still STG the quad verbatim (the trailing slots in the pinned
+    // forces region are unused) — keeping the store fully vectorised.
+    float local_sumsq = 0.0f;
+    if (tid < n_f4) {
+        const float4 q = __ldg(&src_forces[tid]);
+        dst[tid] = q;
+
+        const uint32_t base_idx = tid * 4u;
+        if (base_idx + 0u < n_floats) local_sumsq += q.x * q.x;
+        if (base_idx + 1u < n_floats) local_sumsq += q.y * q.y;
+        if (base_idx + 2u < n_floats) local_sumsq += q.z * q.z;
+        if (base_idx + 3u < n_floats) local_sumsq += q.w * q.w;
+    }
+
+    // Warp-level butterfly reduction (32-lane).  __shfl_down_sync is the
+    // sm_120 SOTA primitive — single-instruction inter-lane communication
+    // with no shared-memory traffic.  After the loop, lane 0 holds Σ over
+    // its warp's 32 threads.
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        local_sumsq += __shfl_down_sync(0xffffffffu, local_sumsq, offset);
+    }
+
+    // Each warp's lane-0 atomicAdds its partial sum directly into the
+    // pinned host slot's force_norm field — no intermediate scratch.
+    // Pinned-host atomicAdd lands as a system-scope PCIe atomic on
+    // sm_120; the host Reaper reads the post-sqrt finalised value.
+    if (lane == 0u) {
+        atomicAdd(fn_ptr, local_sumsq);
+    }
+}
+
+// ─── T11 — Single-thread post-pass: in-place sqrtf of force_norm ──────────
+
+extern "C"
+__global__ void zstr_force_norm_sqrt_kernel(
+    uint8_t* __restrict__       base_pinned,
+    uint32_t                    inter_slot_stride,
+    uint32_t                    force_norm_offset_in_slot
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+
+    const uint32_t slot = d_zstr_active_slot;
+    float* fn_ptr = reinterpret_cast<float*>(
+        base_pinned + slot * inter_slot_stride + force_norm_offset_in_slot
+    );
+
+    // sqrtf propagates NaN verbatim; negative values (impossible on a
+    // sum-of-squares but defensive for clamp drift) produce NaN under
+    // IEEE-754 — the host G29 Reaper traps non-finite reads.
+    const float sumsq = *fn_ptr;
+    *fn_ptr = sqrtf(sumsq);
 }
 
 }} // namespace prism_nhs::zstr
@@ -126,4 +203,47 @@ int prism_zstr_set_active_slot(uint32_t slot, void* stream)
         static_cast<cudaStream_t>(stream)
     );
     return static_cast<int>(rc);
+}
+
+// ─── T11 — Force-stage launchers ────────────────────────────────────────────
+
+extern "C"
+int zstr_launch_force_stage(void*       base_pinned,
+                             uint32_t    inter_slot_stride,
+                             uint32_t    force_offset_in_slot,
+                             uint32_t    force_norm_offset_in_slot,
+                             const void* src_d_forces,
+                             uint32_t    n_atoms,
+                             void*       stream)
+{
+    const uint32_t n_floats = n_atoms * 3u;
+    const uint32_t n_f4     = (n_floats + 3u) >> 2u;
+    const uint32_t block    = 256u;
+    const uint32_t grid     = (n_f4 + block - 1u) / block;
+
+    prism_nhs::zstr::zstr_force_stage_f4_kernel<<<grid, block, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        static_cast<uint8_t*>(base_pinned),
+        inter_slot_stride,
+        force_offset_in_slot,
+        force_norm_offset_in_slot,
+        static_cast<const float4*>(src_d_forces),
+        n_floats
+    );
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C"
+int zstr_launch_force_norm_sqrt(void*    base_pinned,
+                                 uint32_t inter_slot_stride,
+                                 uint32_t force_norm_offset_in_slot,
+                                 void*    stream)
+{
+    prism_nhs::zstr::zstr_force_norm_sqrt_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        static_cast<uint8_t*>(base_pinned),
+        inter_slot_stride,
+        force_norm_offset_in_slot
+    );
+    return static_cast<int>(cudaGetLastError());
 }

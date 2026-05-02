@@ -4891,18 +4891,24 @@ fn run_multi_stream_pipeline(
                                                         // time via __constant__ d_zstr_active_slot,
                                                         // updated host-side per launch via
                                                         // prism_zstr_set_active_slot.
-                                                        // header_size = sizeof(ZstrFrameHeader) = 4096
-                                                        // fence_offset = offset of completion_fence in
-                                                        //                header = 16 (frame_idx 8 + dt 4
-                                                        //                + adj_code 4)
+                                                        //
+                                                        // T11 — Action-Recovery: forces sit immediately
+                                                        // after positions inside each slot; force_norm
+                                                        // is at offset 28 within the header.
                                                         const ZSTR_HEADER_SIZE: u32 = 4096;
                                                         const ZSTR_FENCE_OFFSET: u32 = 16;
+                                                        const ZSTR_FORCE_NORM_OFFSET: u32 = 28;
+                                                        let force_offset =
+                                                            ZSTR_HEADER_SIZE + (n_atoms as u32) * 3 * 4;
                                                         Some(prism_nhs::captured_pipeline::ZstrCaptureParams {
                                                             d_positions: d_pos_ptr as *const f32,
+                                                            d_forces:    d_forces_ptr as *const f32,
                                                             n_atoms:     n_atoms as u32,
                                                             pinned_base: ring.pinned_ptr,
                                                             inter_slot_stride: ring.frame_size as u32,
                                                             pos_offset_in_slot: ZSTR_HEADER_SIZE,
+                                                            force_offset_in_slot: force_offset,
+                                                            force_norm_offset_in_slot: ZSTR_FORCE_NORM_OFFSET,
                                                             fence_offset_in_slot: ZSTR_FENCE_OFFSET,
                                                         })
                                                     }
