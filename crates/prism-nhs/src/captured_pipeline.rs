@@ -198,6 +198,35 @@ extern "C" {
         out_conditional_node: *mut CUgraphNode,
         out_body_subgraphs:   *mut CUgraph,  // [4]
     ) -> i32;
+
+    // B.3.2-FULL — capture-time handle creation.
+    fn prism_gearbox_create_handle_ffi(
+        graph:         CUgraph,
+        default_value: u32,
+        out_handle:    *mut u64,
+    ) -> i32;
+
+    // B.3.2-FULL — post-capture SWITCH wire with pre-existing handle.
+    fn prism_gearbox_wire_with_handle_ffi(
+        graph:                CUgraph,
+        predicate_node:       CUgraphNode,
+        handle_v:             u64,
+        out_conditional_node: *mut CUgraphNode,
+        out_body_subgraphs:   *mut CUgraph,  // [4]
+    ) -> i32;
+
+    // B.3.2-FULL — populate the 4 phGraph_out body sub-graphs.
+    fn prism_gearbox_populate_switch_bodies_ffi(
+        body_subgraphs: *mut CUgraph,                   // [4]
+        adj:            *const InterferometricAdjudicatorFfi,
+        d_velocities:   *mut f32,
+        n_floats:       u32,
+        cruise:         *const c_void,                  // ChronometricStateTensor
+        d_current_temp: *const f32,
+        d_dt:           *const f32,
+        target_temp_K:  f32,
+        tau_ps:         f32,
+    ) -> i32;
 }
 
 // ============================================================================
@@ -424,6 +453,20 @@ pub struct CapturedAdjudicationPipeline {
     /// address to the PointerSwap kernel through the SWITCH body
     /// sub-graphs.  Freed on Drop.
     cruise_state_dev: usize,
+
+    /// B.3.2-FULL — G26 conditional handle (u64-cast
+    /// cudaGraphConditionalHandle).  Created during capture via
+    /// `prism_gearbox_create_handle_ffi` so the bridge kernel can
+    /// reference it as a kernel-node arg; the SWITCH node added
+    /// post-capture references the same handle.  Lifetime managed by
+    /// the captured graph itself — no explicit destroy.
+    g26_cond_handle: u64,
+    /// B.3.2-FULL — G26 SWITCH conditional node added post-capture
+    /// downstream of the bridge kernel.  Body sub-graphs (rescale +
+    /// apply_dt + Berendsen for body 0; trap for body 3) populated
+    /// via `prism_gearbox_populate_switch_bodies_ffi`.  Null if the
+    /// gearbox wiring is bypassed (n_atoms == 0 / test fixture).
+    g26_cond_node: CUgraphNode,
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -1137,6 +1180,120 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
+        // ── 6.c'' B.3.2-FULL — G26 Chronometric Gearbox ────────────────────
+        //
+        // Capture-time:
+        //   1. cuStreamGetCaptureInfo to fetch the in-progress graph handle.
+        //   2. prism_gearbox_create_handle_ffi creates a conditional handle
+        //      bound to the in-progress graph; bridge kernel will reference
+        //      it as a kernel-node arg.
+        //   3. Launch SFA kernel — reads adj->adjudication_code, mutates
+        //      cruise.{counter, current_gear, previous_gear, last_burst_frame}.
+        //      Decoupled from dt-write (the SWITCH body's apply_fixed_dt
+        //      kernel owns that side-effect).
+        //   4. Launch predicate-bridge kernel — reads adj->gear_override
+        //      (offset 100, B.3.2) and cruise->current_gear, calls
+        //      cudaGraphSetConditional(handle, final_gear).
+        //   5. Snapshot the bridge node handle for the post-capture
+        //      SWITCH wiring.
+        //
+        // Post-capture (after end_capture):
+        //   6. prism_gearbox_wire_with_handle_ffi — adds the SWITCH
+        //      conditional node downstream of bridge_node, using the
+        //      handle from step 2.
+        //   7. prism_gearbox_populate_switch_bodies_ffi — populates the
+        //      4 phGraph_out body sub-graphs:
+        //        Body 0 (Burst, 0.5fs):  rescale → Berendsen → apply_dt(0)
+        //        Body 1 (Cruise, 2.0fs): rescale → apply_dt(1)
+        //        Body 2 (Sprint, 4.0fs): rescale → apply_dt(2)
+        //        Body 3 (Abort):         trap (asm volatile("trap;"))
+
+        // Step 1 + 2: pull in-progress graph + create G26 handle.
+        let mut g26_in_progress_graph: CUgraph = ptr::null_mut();
+        unsafe {
+            let mut s   = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+            let mut id: cuuint64_t = 0;
+            let mut dp: *const CUgraphNode = ptr::null();
+            let mut nd: usize = 0;
+            let rc = cuStreamGetCaptureInfo_v2(
+                md_stream.cu_stream(),
+                &mut s as *mut _,
+                &mut id as *mut _,
+                &mut g26_in_progress_graph as *mut _,
+                &mut dp as *mut _,
+                &mut nd as *mut _,
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "B.3.2 cuStreamGetCaptureInfo (pre-gearbox)",
+                    rc: rc as i32,
+                });
+            }
+        }
+        let mut g26_cond_handle: u64 = 0;
+        let rc = unsafe {
+            prism_gearbox_create_handle_ffi(
+                g26_in_progress_graph,
+                /*default_value=*/ 1u32,    // safe default = Gear 1 (2.0fs)
+                &mut g26_cond_handle as *mut u64,
+            )
+        };
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "B.3.2 prism_gearbox_create_handle_ffi",
+                rc,
+            });
+        }
+
+        // Step 3: SFA kernel.
+        let rc = unsafe {
+            crate::gearbox::ffi::prism_gearbox_launch_sfa(
+                adj_dev as *const InterferometricAdjudicatorFfi,
+                cruise_state_dev as *mut crate::gearbox::ChronometricStateTensor,
+                cfg.initial_frame_id,
+                md_stream.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "B.3.2 SFA kernel",
+                rc,
+            });
+        }
+
+        // Step 4: predicate bridge kernel — sets conditional for SWITCH.
+        let rc = unsafe {
+            crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge(
+                g26_cond_handle,
+                adj_dev as *const InterferometricAdjudicatorFfi,
+                cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
+                md_stream.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "B.3.2 predicate bridge kernel",
+                rc,
+            });
+        }
+
+        // Step 5: snapshot bridge node handle (frontier == [bridge]).
+        let mut g26_bridge_node: CUgraphNode = ptr::null_mut();
+        unsafe {
+            let mut s   = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+            let mut id: cuuint64_t = 0;
+            let mut g: CUgraph = ptr::null_mut();
+            let mut dp: *const CUgraphNode = ptr::null();
+            let mut nd: usize = 0;
+            let rc = cuStreamGetCaptureInfo_v2(
+                md_stream.cu_stream(),
+                &mut s, &mut id, &mut g, &mut dp, &mut nd,
+            );
+            if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
+                g26_bridge_node = *dp;
+            }
+        }
+
         // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll (in-graph memcpy) ──
         // After Adjudicator (Node C) + ASC (Node D) retire, copy the freshly-
         // produced "perturbed" tiles into the "relaxed" baseline buffer so the
@@ -1407,6 +1564,83 @@ impl CapturedAdjudicationPipeline {
             }
         };
 
+        // ── 7.4 B.3.2-FULL — G26 SWITCH wire + body population ────────
+        // Post-capture: add the 4-way SWITCH conditional node downstream
+        // of the bridge kernel and populate the four body sub-graphs.
+        // Driver Probe (B.3-narrow commit d8dcaa10) confirmed CUDA 13.x
+        // populates phGraph_out for SWITCH-type — no kernel-conditional
+        // fallback needed.
+        let mut g26_cond_node: CUgraphNode = ptr::null_mut();
+        let mut g26_body_subgraphs: [CUgraph; 4] = [ptr::null_mut(); 4];
+        if !g26_bridge_node.is_null() {
+            let rc = unsafe {
+                prism_gearbox_wire_with_handle_ffi(
+                    cu_graph,
+                    g26_bridge_node,
+                    g26_cond_handle,
+                    &mut g26_cond_node as *mut _,
+                    g26_body_subgraphs.as_mut_ptr(),
+                )
+            };
+            if rc != 0 {
+                unsafe { let _ = result::graph::destroy(cu_graph); }
+                return Err(BuildError::Cuda {
+                    stage: "B.3.2 prism_gearbox_wire_with_handle_ffi",
+                    rc,
+                });
+            }
+            // Driver-Probe assertion at runtime: all four bodies must
+            // be non-null per the B.3-narrow result.  Defensive guard
+            // here re-validates per-build (driver behaviour could
+            // regress on toolkit upgrades).
+            for i in 0..4 {
+                if g26_body_subgraphs[i].is_null() {
+                    unsafe { let _ = result::graph::destroy(cu_graph); }
+                    return Err(BuildError::Cuda {
+                        stage: "B.3.2 SWITCH body_subgraphs null (driver regression)",
+                        rc: -1,
+                    });
+                }
+            }
+            // Populate the bodies.  d_velocities comes from PipelineConfig
+            // (T12 Pre-Flight wired it through to the FFI struct's offset
+            // 120; we read the same address for the gearbox's per-body
+            // rescale kernel).  n_atoms is taken from AscConfig (the only
+            // place in PipelineConfig that carries it).  When asc is None
+            // OR cfg.d_velocities is null, skip body population — the
+            // SWITCH still fires but the bodies are no-ops.
+            if let Some(ref asc) = cfg.asc {
+                if !cfg.d_velocities.is_null() {
+                    let n_floats = (asc.n_atoms as u32).saturating_mul(3u32);
+                    let rc = unsafe {
+                        prism_gearbox_populate_switch_bodies_ffi(
+                            g26_body_subgraphs.as_mut_ptr(),
+                            adj_dev as *const InterferometricAdjudicatorFfi,
+                            cfg.d_velocities,
+                            n_floats,
+                            cruise_state_dev as *const c_void,
+                            ptr::null(),  // d_current_temp — Berendsen disabled in B.3.2 (PE wiring deferred)
+                            ptr::null(),  // d_dt
+                            300.0_f32,    // target_temp_K placeholder
+                            0.5_f32,      // tau_ps placeholder
+                        )
+                    };
+                    if rc != 0 {
+                        unsafe { let _ = result::graph::destroy(cu_graph); }
+                        return Err(BuildError::Cuda {
+                            stage: "B.3.2 prism_gearbox_populate_switch_bodies_ffi",
+                            rc,
+                        });
+                    }
+                    log::info!(
+                        "[B.3.2] G26 SWITCH wired: cond_node={:p} bodies populated \
+                         (rescale + apply_dt for 0/1/2; trap for 3); n_floats={}",
+                        g26_cond_node, n_floats
+                    );
+                }
+            }
+        }
+
         // ── 7.5 V2 IGNITION HOOK ────────────────────────────────────
         // Invoke the caller-provided hook between end_capture and
         // cuGraphInstantiate. The V1 wrapper passes a no-op closure;
@@ -1519,6 +1753,8 @@ impl CapturedAdjudicationPipeline {
             dynt7_idx_dev,
             dynt7_stats_dev,
             cruise_state_dev,
+            g26_cond_handle,
+            g26_cond_node,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -1531,11 +1767,19 @@ impl CapturedAdjudicationPipeline {
             zstr_src_vram,
             zstr_n_atoms,
             n_clusters: cfg.n_clusters,
-            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + force_stage + force_norm_sqrt + fence] [+ SISR]
+            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage +
+            // force_stage + force_norm_sqrt + fence] [+ SISR] +
+            // [B.3.2] gearbox SFA + bridge + 4 SWITCH bodies
+            // (rescale + apply_dt × 3 + trap = 7 inner nodes when
+            // populated).
             n_kernel_nodes_captured: 2
                 + if cfg.asc.is_some()  { 1 } else { 0 }
                 + if cfg.zstr.is_some() { 4 } else { 0 }
-                + if cfg.sisr.is_some() { 1 } else { 0 },
+                + if cfg.sisr.is_some() { 1 } else { 0 }
+                + 2  // B.3.2: SFA + predicate-bridge captured kernels
+                + if cfg.asc.is_some() && !cfg.d_velocities.is_null() {
+                    7  // B.3.2: bodies populated (rescale × 3, apply_dt × 3, trap × 1)
+                  } else { 0 },
             // V1: 0 explicit cuGraphAddDependencies edges (the
             // C→D edge is satisfied by capture-mode's implicit
             // sequential ordering on md_stream). V2 lands the

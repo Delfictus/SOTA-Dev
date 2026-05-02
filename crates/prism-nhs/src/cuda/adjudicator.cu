@@ -191,8 +191,17 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
                                 : 0ull;
     const bool i_vetoed = ((prune_mask >> i) & 1ull) != 0ull;
 
-    float    my_kl        = 0.0f;
-    uint32_t my_violation = 0u;
+    float    my_kl              = 0.0f;
+    uint32_t my_violation       = 0u;
+    // B.3.2 TIY (Total Information Yield) — operator addendum 2026-05-02:
+    // track the max UNWEIGHTED per-plane KL across all 4 planes so a
+    // strong Causal or Thermodynamic spike triggers Construct (Gear 0)
+    // even when Geometry is quiet.  The "Whisper detector" — we don't
+    // wait for the coordinates to scream before shifting gears.
+    float    my_max_plane_kl    = 0.0f;
+    // Per-plane max over (Causality, Thermodynamics) — the
+    // intent-bearing planes the operator wants us to prioritise.
+    float    my_max_caus_therm  = 0.0f;
 
     if (i < n_clusters && i < SIMT_WIDTH && !i_vetoed) {
         const ContactShellTile* relaxed   = &relaxed_arr[i];
@@ -246,28 +255,53 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
                 plane_kl += p * log_ratio;
             }
             my_kl += WEIGHTS[plane] * plane_kl;
+
+            // B.3.2 TIY — track the unweighted per-plane max for the
+            // Whisper detector below.  fabsf because plane_kl can go
+            // slightly negative on near-equal distributions (the
+            // log_ratio guard does NOT enforce non-negativity).
+            const float abs_plane_kl = fabsf(plane_kl);
+            my_max_plane_kl = fmaxf(my_max_plane_kl, abs_plane_kl);
+            // Causality (plane==1) + Thermodynamics (plane==2): the
+            // intent-bearing channels.  Their independent threshold
+            // is half the global one (operator: "Whisper of a Causal
+            // Lead, not the Scream of a Spatial Collision").
+            if (plane == 1 || plane == 2) {
+                my_max_caus_therm = fmaxf(my_max_caus_therm, abs_plane_kl);
+            }
         }
     }
 
-    // ─── Block reduction (sum + OR) ─────────────────────────────────
+    // ─── Block reduction (sum + OR + max-per-plane) ────────────────
+    // B.3.2 TIY — also reduce the max unweighted per-plane KL and the
+    // max Causal/Thermo per-plane KL across all clusters so the
+    // Whisper detector fires on ANY cluster's intent-bearing spike.
     __shared__ float    s_kl[64];
     __shared__ uint32_t s_violation[64];
-    s_kl[i]        = my_kl;
-    s_violation[i] = my_violation;
+    __shared__ float    s_max_plane[64];
+    __shared__ float    s_max_caus_therm[64];
+    s_kl[i]              = my_kl;
+    s_violation[i]       = my_violation;
+    s_max_plane[i]       = my_max_plane_kl;
+    s_max_caus_therm[i]  = my_max_caus_therm;
     __syncthreads();
 
     #pragma unroll
     for (uint32_t s = 32u; s > 0u; s >>= 1) {
         if (i < s) {
-            s_kl[i]        += s_kl[i + s];
-            s_violation[i] |= s_violation[i + s];
+            s_kl[i]              += s_kl[i + s];
+            s_violation[i]       |= s_violation[i + s];
+            s_max_plane[i]        = fmaxf(s_max_plane[i],       s_max_plane[i + s]);
+            s_max_caus_therm[i]   = fmaxf(s_max_caus_therm[i],  s_max_caus_therm[i + s]);
         }
         __syncthreads();
     }
 
     if (i == 0u) {
-        const float    total_kl       = s_kl[0];
-        const uint32_t any_violation  = s_violation[0];
+        const float    total_kl              = s_kl[0];
+        const uint32_t any_violation         = s_violation[0];
+        const float    max_plane_kl_unweighted = s_max_plane[0];
+        const float    max_caus_therm_kl       = s_max_caus_therm[0];
 
         // Race-free write order: divergence first, fence, then SWITCH code.
         adjudicator->current_divergence = total_kl;
@@ -283,8 +317,31 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
             const float threshold =
                 adjudicator->noise_floor_mu[0]
                 + 3.0f * adjudicator->noise_floor_sigma[0];
-            code = (total_kl > threshold) ? PRISM_ADJ_CONSTRUCT
-                                          : PRISM_ADJ_PRUNE;
+
+            // ── B.3.2 Total Information Yield (TIY) — operator
+            //    addendum 2026-05-02:
+            //
+            //   "A high-intensity signal in the Causal Plane (Plane 2)
+            //    or Thermodynamic Plane (Plane 3) must be able to
+            //    trigger Gear 0 (0.5 fs) independently of the
+            //    Geometry plane.  The Brain must trigger on the
+            //    'Whisper' of a Causal Lead, not the 'Scream' of a
+            //    Spatial Collision."
+            //
+            // Three independent triggers (any → Construct):
+            //   1. Weighted-sum trigger:   total_kl > threshold
+            //      (geometry-dominant signal — "Scream" detector).
+            //   2. Any-plane trigger:      max_plane_kl > threshold
+            //      (any single plane spiking — covers Chemistry, etc.).
+            //   3. Causal/Thermo trigger:  max_caus_therm > threshold/2
+            //      (intent-bearing planes get a 2× sensitivity boost —
+            //      the operator-mandated "Whisper" detector).
+            const bool weighted_trigger = (total_kl                > threshold);
+            const bool any_plane_spike  = (max_plane_kl_unweighted > threshold);
+            const bool whisper_trigger  = (max_caus_therm_kl       > threshold * 0.5f);
+            code = (weighted_trigger || any_plane_spike || whisper_trigger)
+                       ? PRISM_ADJ_CONSTRUCT
+                       : PRISM_ADJ_PRUNE;
         }
 
         // G28 SISR campaign-level prune (any vetoed cluster ⇒ frame
@@ -332,6 +389,9 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     adj->legacy_centroid_fallback[0] = 0.0f;
     adj->legacy_centroid_fallback[1] = 0.0f;
     adj->legacy_centroid_fallback[2] = 0.0f;
+    // B.3.2 — gear_override = 0xFF (Auto sentinel) so the gearbox SFA
+    // decides.  Operator writes a 0..3 here to force a manual gear shift.
+    adj->gear_override    = 0xFFu;
     adj->force_prune_mask = nullptr;
     // T12 Pre-Flight: null until host wires d_dt / d_velocities pointers
     // pre-capture via cuMemcpyHtoD into offsets 112 / 120.
@@ -910,6 +970,116 @@ extern "C" int prism_wire_g26_gearbox_ffi(
     const uint32_t*  /*predicate_dev_ptr*/,
     cudaGraphNode_t* /*out_conditional_node*/,
     cudaGraph_t*     /*out_body_subgraphs*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+#endif  // CUDART_VERSION >= 12060
+
+// ════════════════════════════════════════════════════════════════════
+// B.3.2-FULL — Conditional handle creation + SWITCH wire with
+// pre-existing handle (for the captured-graph integration path).
+// ════════════════════════════════════════════════════════════════════
+//
+// During captured-graph build:
+//   1. Caller is mid-capture; calls cuStreamGetCaptureInfo to get the
+//      in-progress graph handle.
+//   2. Calls prism_gearbox_create_handle_ffi(in_progress_graph, &handle).
+//   3. Launches the predicate-bridge kernel WITH `handle` as its arg —
+//      the kernel-node captured into the graph will use this exact
+//      handle value at every launch's cudaGraphSetConditional call.
+//   4. Continues capture; calls cuStreamEndCapture.
+//   5. Post-capture: prism_gearbox_wire_with_handle_ffi(graph, bridge_node,
+//      handle, &cond_node, body_subgraphs) — adds the SWITCH conditional
+//      referencing the same handle downstream of bridge_node.
+//   6. prism_gearbox_populate_switch_bodies_ffi populates the bodies.
+//
+// This is the operator-mandated B.3.2-FULL path: handle is created
+// during capture so the bridge kernel and SWITCH share it; the SWITCH
+// is added post-capture (since cuGraphConditionalNode cannot be
+// directly captured as a kernel node).
+
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12060
+
+extern "C" int prism_gearbox_create_handle_ffi(
+    cudaGraph_t   graph,
+    uint32_t      default_value,
+    uint64_t*     out_handle
+) {
+    if (graph == nullptr || out_handle == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaGraphConditionalHandle handle = 0;
+    cudaError_t err = cudaGraphConditionalHandleCreate(
+        &handle, graph,
+        /*defaultLaunchValue=*/ default_value,
+        /*flags=*/              cudaGraphCondAssignDefault);
+    if (err != cudaSuccess) return static_cast<int>(err);
+    *out_handle = static_cast<uint64_t>(handle);
+    return static_cast<int>(cudaSuccess);
+}
+
+extern "C" int prism_gearbox_wire_with_handle_ffi(
+    cudaGraph_t      graph,
+    cudaGraphNode_t  predicate_node,
+    uint64_t         handle_v,
+    cudaGraphNode_t* out_conditional_node,
+    cudaGraph_t*     out_body_subgraphs    /* [4] */
+) {
+    if (graph == nullptr ||
+        out_conditional_node == nullptr ||
+        out_body_subgraphs == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+
+    for (int i = 0; i < 4; ++i) out_body_subgraphs[i] = nullptr;
+
+    cudaGraphNodeParams nodeParams{};
+    nodeParams.type                 = cudaGraphNodeTypeConditional;
+    nodeParams.conditional.handle   = handle;
+    nodeParams.conditional.type     = cudaGraphCondTypeSwitch;
+    nodeParams.conditional.size     = 4u;
+    nodeParams.conditional.ctx      = nullptr;
+
+    // Downstream of predicate_node so the SWITCH only fires after the
+    // bridge kernel has called cudaGraphSetConditional.
+    cudaError_t err = cudaGraphAddNode(
+        out_conditional_node, graph,
+        /*pDependencies=*/   &predicate_node,
+        /*dependencyData=*/  nullptr,
+        /*numDependencies=*/ 1u,
+        &nodeParams);
+    if (err != cudaSuccess) return static_cast<int>(err);
+
+    // Driver-probe-confirmed: phGraph_out is populated for SWITCH-type
+    // on CUDA 13.x.  Copy handles for the caller.
+    for (int i = 0; i < 4; ++i) {
+        out_body_subgraphs[i] = nodeParams.conditional.phGraph_out
+                                ? nodeParams.conditional.phGraph_out[i]
+                                : nullptr;
+    }
+    // Defensive — if any handle is null the populator will fail with
+    // its own InvalidValue (the operator-mandated Smoking-Gun signal).
+
+    return static_cast<int>(cudaSuccess);
+}
+
+#else
+
+extern "C" int prism_gearbox_create_handle_ffi(
+    cudaGraph_t /*graph*/, uint32_t /*dv*/, uint64_t* /*out*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C" int prism_gearbox_wire_with_handle_ffi(
+    cudaGraph_t /*graph*/,
+    cudaGraphNode_t /*predicate_node*/,
+    uint64_t /*handle_v*/,
+    cudaGraphNode_t* /*out_conditional_node*/,
+    cudaGraph_t* /*out_body_subgraphs*/
 ) {
     return static_cast<int>(cudaErrorNotSupported);
 }

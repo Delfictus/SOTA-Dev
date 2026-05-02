@@ -37,13 +37,30 @@
 //! start_clock             u64       offset  72..80     8 B
 //! stop_clock              u64       offset  80..88     8 B
 //! legacy_centroid_fallback [f32;3]  offset  88..100   12 B  (Anti-Greenfield § 6.2)
-//! [4 B compiler padding for 8-byte pointer alignment]
+//! gear_override           u8        offset 100..101    1 B  (B.3.2 — Hardware Interlock)
+//! _gear_pad               [u8; 3]   offset 101..104    3 B  (claims compiler padding)
 //! force_prune_mask        *mut u64  offset 104..112    8 B  (G28 SISR)
 //! d_dt                    *mut f32  offset 112..120    8 B  (T12 Pre-Flight)
 //! d_velocities            *mut f32  offset 120..128    8 B  (T12 Pre-Flight)
 //! ─────────────────────────────────────────────────────────
 //! TOTAL                                                128 B
 //! ```
+//!
+//! ## B.3.2 — `gear_override` Hardware Interlock (operator 2026-05-02)
+//!
+//! `gear_override` is the **Manual Override Invariant** — a single
+//! byte at offset 100 that the human operator (or an external safety
+//! script) writes to force a gear shift independent of the KL-driven
+//! adjudication state machine.  Sentinel `0xFF` = Auto (gearbox is
+//! free to choose); values 0..3 = manual force to that gear.  The
+//! predicate-bridge kernel reads this field on every captured-graph
+//! launch and short-circuits the SFA's calculated gear when override
+//! is set.
+//!
+//! Slot was previously implicit compiler padding (8-byte alignment
+//! for `force_prune_mask`); B.3.2 makes the layout explicit with
+//! `gear_override: u8 + _gear_pad: [u8; 3]`.  No size change; no
+//! offset drift on the existing pointer fields.
 //!
 //! ## T12 Pre-Flight — connective tissue (Wave A)
 //!
@@ -199,7 +216,30 @@ pub struct InterferometricAdjudicatorFfi {
     /// the full SO(3) manifold.
     pub legacy_centroid_fallback: [f32; 3],
 
-    /// G28 SISR per-cluster prune-bit mask buffer (offset 100..108, 8 B).
+    /// **B.3.2 — Manual Gear Override (Hardware Interlock).**
+    /// **Offset 100** (operator spec said offset 104; that slot is
+    /// pinned by the G28 SISR `force_prune_mask` contract — see the
+    /// `static_assert(offsetof(force_prune_mask) == 104)` on the
+    /// C side.  The next available 4-byte aligned slot is the
+    /// formerly-implicit padding at 100.  Operator's intent — a
+    /// host-writable u32 the predicate bridge consults — is preserved
+    /// at this offset.)
+    ///
+    /// Sentinel `0xFF` (i.e., 0x000000FF) = Auto (gearbox's KL-driven
+    /// SFA decides); values `0..3` = manual force to that gear
+    /// (0 = 0.5fs / 1 = 2.0fs / 2 = 4.0fs / 3 = abort).  Read on every
+    /// captured-graph launch by the predicate-bridge kernel:
+    ///
+    /// ```text
+    ///     final_gear = (override == 0xFF) ? calculated : (override & 0x03)
+    /// ```
+    ///
+    /// This is the "Blackwell Overlord" safety surface: an external
+    /// process can `cuMemcpyHtoD` a 4-byte value to this address and
+    /// the next integration step will downshift in nanoseconds.
+    pub gear_override: u32,
+
+    /// G28 SISR per-cluster prune-bit mask buffer (offset 104..112, 8 B).
     /// Pointer to a single `u64` in F2-pool device memory. Bit `i` is set
     /// by the SISR kernel when site `i` fails the bilateral symmetry check
     /// (no Chain-B partner manifold within ε_sym of the C2-reflected
@@ -255,11 +295,19 @@ impl InterferometricAdjudicatorFfi {
             start_clock: 0,
             stop_clock: 0,
             legacy_centroid_fallback: [0.0; 3],
+            gear_override: Self::GEAR_OVERRIDE_AUTO,
             force_prune_mask: std::ptr::null_mut(),
             d_dt: std::ptr::null_mut(),
             d_velocities: std::ptr::null_mut(),
         }
     }
+
+    /// B.3.2 — sentinel value for `gear_override` meaning "Auto"
+    /// (the gearbox's KL-driven SFA decides the gear).  Stored as
+    /// u32 = 0x000000FF — the predicate bridge compares the full
+    /// word against this constant.  Anything other than the sentinel
+    /// is a manual force; only the low 2 bits are honoured (& 0x03).
+    pub const GEAR_OVERRIDE_AUTO: u32 = 0xFFu32;
 
     /// Documented PTX guard sequence used by the Adjudicator kernel
     /// before every `flog2.approx`. Reproduced here as a string
@@ -1032,7 +1080,12 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, start_clock), 72);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, stop_clock), 80);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback), 88);
-        // 4 B compiler padding at 100..104 for 8-byte pointer alignment.
+        // B.3.2 — gear_override (u32) at 100 (claims the former
+        // implicit compiler padding).  Operator spec said offset 104;
+        // that slot is pinned by force_prune_mask's G28 SISR contract.
+        // 100 is the closest available 4-byte aligned slot.
+        // force_prune_mask remains at offset 104 — no drift.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gear_override),  100);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask), 104);
         // T12 Pre-Flight: replace _reserved [u32; 4] with two pointers.
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),         112);
@@ -1051,6 +1104,7 @@ mod tests {
         assert_eq!(z.start_clock, 0);
         assert_eq!(z.stop_clock, 0);
         assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
+        assert_eq!(z.gear_override, InterferometricAdjudicatorFfi::GEAR_OVERRIDE_AUTO);
         assert!(z.force_prune_mask.is_null());
         assert!(z.d_dt.is_null());
         assert!(z.d_velocities.is_null());

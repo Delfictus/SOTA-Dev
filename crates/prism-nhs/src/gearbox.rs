@@ -181,13 +181,29 @@ pub mod ffi {
         /// T12.4 — 4-way Predicate Bridge.  Single-thread kernel reads
         /// `cruise->current_gear` and forwards the value to the G26
         /// SWITCH conditional handle via cudaGraphSetConditional.
-        /// `handle_v` is the cudaGraphConditionalHandle (driver typedef
-        /// to `unsigned long long`) bound to the captured graph at
-        /// pipeline-build time via prism_wire_g26_gearbox_ffi.
+        ///
+        /// B.3.2 — also consults `adj->gear_override` (u32 at offset
+        /// 100).  When non-0xFF, the override short-circuits the SFA's
+        /// calculated gear.  Pass null `adj` to skip override consult.
         pub fn prism_gearbox_launch_predicate_bridge(
             handle_v: u64,
+            adj:      *const InterferometricAdjudicatorFfi,
             cruise:   *const ChronometricStateTensor,
             stream:   *mut   c_void,
+        ) -> i32;
+
+        /// B.3.2 — SFA-only kernel (Logic/Action Bifurcation).
+        /// Runs the same KL-driven state machine as
+        /// prism_gearbox_pointer_swap_kernel but does NOT write
+        /// *(adj->d_dt) — the dt-write side-effect is owned by the
+        /// SWITCH body's apply-fixed-dt kernel.  Decoupling lets the
+        /// Blackwell scheduler hide the SFA's logic-only cycles
+        /// behind the integrator's global-memory writes.
+        pub fn prism_gearbox_launch_sfa(
+            adj:           *const InterferometricAdjudicatorFfi,
+            cruise:        *mut   ChronometricStateTensor,
+            current_frame: u32,
+            stream:        *mut   c_void,
         ) -> i32;
 
         // ── B.3-narrow — SWITCH body kernels + populator ──

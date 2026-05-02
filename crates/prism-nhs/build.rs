@@ -38,6 +38,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/dynamic_t7.cuh");
     println!("cargo:rerun-if-changed=src/cuda/gearbox.cu");
     println!("cargo:rerun-if-changed=src/cuda/gearbox.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/energy_monitor.cu");
+    println!("cargo:rerun-if-changed=src/cuda/energy_monitor.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -261,6 +263,21 @@ fn main() {
         &nvcc,
         "src/cuda/gearbox.cu",
         "gearbox",
+        &out_dir,
+    );
+
+    // Wave B.3.2 — Hamiltonian Auditor (CUB-based potential-energy reduce).
+    // Captured node at the end of the FusedStep sequence reduces the
+    // per-atom potential-energy components buffer into a single f32 via
+    // cub::DeviceReduce::Sum, then promotes to f64 and rolls the energy
+    // window (E_n / E_{n-1}) for the SFA stability fuse.  AMBER kernel-
+    // side per-atom PE accumulation is a separate Wave (M1.2.17 —
+    // "Hamiltonian Recovery"); B.3.2 lands the FFI surface + captured-
+    // graph node so M1.2.17 just wires the source buffer.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/energy_monitor.cu",
+        "energy_monitor",
         &out_dir,
     );
 }

@@ -123,6 +123,24 @@ int prism_gearbox_launch_pointer_swap(
     uint32_t                             current_frame,
     void*                                stream);
 
+/// B.3.2 — SFA-only kernel (Logic/Action Bifurcation).
+///
+/// Decoupled from the dt-write path: this kernel runs the Stateful
+/// Finite Automaton that maps `adj->adjudication_code` → `target_gear`
+/// and updates the cruise tensor (counter, current_gear, previous_gear,
+/// last_burst_frame).  Does NOT write `*(adj->d_dt)` — that
+/// side-effect is owned by the SWITCH body's apply-fixed-dt kernel
+/// after the SWITCH has routed the bodies.
+///
+/// Wired into the captured pipeline AFTER the Adjudicator step and
+/// BEFORE the predicate-bridge kernel.  The cruise.current_gear it
+/// writes is the predicate-bridge's input.
+int prism_gearbox_launch_sfa(
+    const InterferometricAdjudicatorFfi* adj,
+    ChronometricStateTensor*             cruise,
+    uint32_t                             current_frame,
+    void*                                stream);
+
 // ─── B.2 — Velocity Rescale + Berendsen Guard + Predicate Bridge ───────────
 //
 // Three new kernels per operator directive 2026-05-02 §3.1–§3.3.
@@ -177,8 +195,16 @@ int prism_gearbox_launch_berendsen_guard(
 /// `handle_v` is `cudaGraphConditionalHandle` cast to u64 (driver
 /// typedef).  Created via `cudaGraphConditionalHandleCreate` at
 /// pipeline build time and bound to the captured graph.
+///
+/// B.3.2 — additionally consults `adj->gear_override` (u32 at offset
+/// 100).  When the operator writes 0..3 to that VRAM word, the bridge
+/// short-circuits the SFA's calculated gear with the override.
+/// Sentinel 0xFF = Auto.  Pass null `adj` for tests that don't have
+/// an InterferometricAdjudicatorFfi fixture (override is simply not
+/// consulted).
 int prism_gearbox_launch_predicate_bridge(
     uint64_t                                handle_v,
+    const InterferometricAdjudicatorFfi*    adj,
     const ChronometricStateTensor*          cruise,
     void*                                   stream);
 

@@ -102,9 +102,20 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // Anti-Greenfield § 6.2 backward-compatibility shim (offset 88..100, 12 B).
     float    legacy_centroid_fallback[3];  // offset 88
 
-    // G28 SISR symmetry prune mask. The compiler inserts 4 B of padding
-    // after `legacy_centroid_fallback` (offset 100..104) to satisfy 8-byte
-    // pointer alignment, placing this field at offset 104..112.
+    // ── B.3.2 — Manual Gear Override (Hardware Interlock) ──
+    // u32 at offset 100 the operator (or safety script) writes to
+    // force a gear shift, bypassing the KL-driven SFA.  Sentinel
+    // 0x000000FF = Auto; values 0..3 = manual force.  Read by the
+    // predicate-bridge kernel on every captured-graph launch.
+    //
+    // Operator spec called for offset 104; that slot is pinned by
+    // force_prune_mask's G28 SISR contract.  Offset 100 is the closest
+    // available 4-byte aligned slot (formerly implicit compiler
+    // padding for force_prune_mask 8-byte alignment).  No size or
+    // downstream offset change.
+    uint32_t gear_override;         // offset 100..104  (Hardware Interlock)
+
+    // G28 SISR symmetry prune mask, offset 104..112.
     // Pointer to a single u64 holding bit-flags per cluster. The G28
     // kernel sets `bit[i]` when cluster `i` fails the C2-reflected AABB
     // partner search; the step kernel forces adjudication_code=0 on hit.
@@ -127,10 +138,15 @@ static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");
 static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128-byte aligned.");
-// G28 SISR offset lock — Rust mirror MUST hit the same byte (compiler-inserted
-// 4-byte padding after `legacy_centroid_fallback` aligns the pointer to 8 B).
+// G28 SISR offset lock — Rust mirror MUST hit the same byte.  After
+// B.3.2 the 4-byte pad between legacy_centroid_fallback and
+// force_prune_mask is `gear_override (1 B) + _gear_pad (3 B)`; no
+// drift on force_prune_mask itself.
 static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
               "force_prune_mask offset drift: must be 104 (8-byte aligned).");
+// B.3.2 — Manual Gear Override offset lock.
+static_assert(offsetof(InterferometricAdjudicatorFfi, gear_override) == 100,
+              "gear_override offset drift: must be 100.");
 // T12 Pre-Flight offset locks.
 static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 112,
               "d_dt offset drift: must be 112.");
@@ -371,6 +387,29 @@ int prism_wire_g26_gearbox_ffi(
     cudaGraph_t      graph,
     cudaGraphNode_t  predicate_node,
     const uint32_t*  predicate_dev_ptr,
+    cudaGraphNode_t* out_conditional_node,
+    cudaGraph_t*     out_body_subgraphs    /* [4] */);
+
+// ─── B.3.2-FULL — capture-time handle creation + post-capture wire ─────────
+
+/// Wrapper around `cudaGraphConditionalHandleCreate`.  Created
+/// DURING capture (via cuStreamGetCaptureInfo to fetch the in-progress
+/// graph handle) so the bridge kernel can capture the handle as a
+/// kernel-node arg.  Pair with `prism_gearbox_wire_with_handle_ffi`
+/// post-capture to add the SWITCH node referencing the same handle.
+int prism_gearbox_create_handle_ffi(
+    cudaGraph_t graph,
+    uint32_t    default_value,
+    uint64_t*   out_handle);
+
+/// Post-capture: add a SWITCH (size=4) conditional node downstream of
+/// `predicate_node` referencing an EXISTING `handle_v` (created via
+/// `prism_gearbox_create_handle_ffi` during capture).  Returns the
+/// four phGraph_out body sub-graphs ready for population.
+int prism_gearbox_wire_with_handle_ffi(
+    cudaGraph_t      graph,
+    cudaGraphNode_t  predicate_node,
+    uint64_t         handle_v,
     cudaGraphNode_t* out_conditional_node,
     cudaGraph_t*     out_body_subgraphs    /* [4] */);
 

@@ -174,6 +174,64 @@ int prism_gearbox_launch_pointer_swap(
     return static_cast<int>(cudaGetLastError());
 }
 
+// ─── B.3.2 — SFA-only kernel (Logic/Action Bifurcation) ────────────────────
+//
+// Runs the same stateful finite automaton as prism_gearbox_pointer_swap_kernel
+// but does NOT write *(adj->d_dt).  The dt-write side-effect is owned by the
+// SWITCH body's apply-fixed-dt kernel.  This decoupling lets the Blackwell
+// scheduler hide the SFA's logic-only cycles behind the integrator's global-
+// memory writes — the operator-mandated path to >95% SM utilization.
+
+extern "C"
+__global__ void prism_gearbox_sfa_kernel(
+    const InterferometricAdjudicatorFfi* __restrict__ adj,
+    ChronometricStateTensor*             __restrict__ cruise,
+    uint32_t                                          current_frame
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+
+    const uint32_t code = prism_gearbox_load_adj_code(adj);
+
+    uint32_t counter           = cruise->counter;
+    uint32_t last_burst_frame  = cruise->last_burst_frame;
+    uint32_t target_gear;
+
+    if (code == 2u) {
+        target_gear = 3u;
+    } else if (code == 1u) {
+        target_gear       = 0u;
+        counter           = 0u;
+        last_burst_frame  = current_frame;
+    } else {
+        counter     = (counter < 0xffffffffu) ? counter + 1u : counter;
+        target_gear = (counter < PRISM_GEARBOX_CRUISE_THRESHOLD) ? 1u : 2u;
+    }
+
+    // Capture OLD current_gear into previous_gear so the body's
+    // rescale kernel can read it for the symplectic ratio compute.
+    const uint32_t prev_gear  = cruise->current_gear;
+    cruise->previous_gear     = prev_gear;
+    cruise->counter           = counter;
+    cruise->last_burst_frame  = last_burst_frame;
+    cruise->current_gear      = target_gear;
+    // No dt write — that's the SWITCH body's job.
+}
+
+extern "C"
+int prism_gearbox_launch_sfa(
+    const InterferometricAdjudicatorFfi* adj,
+    ChronometricStateTensor*             cruise,
+    uint32_t                             current_frame,
+    void*                                stream)
+{
+    if (adj == nullptr || cruise == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    prism_gearbox_sfa_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(adj, cruise, current_frame);
+    return static_cast<int>(cudaGetLastError());
+}
+
 // ════════════════════════════════════════════════════════════════════
 // B.2 — Symplectic Velocity Rescale (T12.2)
 // ════════════════════════════════════════════════════════════════════
@@ -300,32 +358,57 @@ int prism_gearbox_launch_berendsen_guard(
 
 #if defined(CUDART_VERSION) && CUDART_VERSION >= 12040
 
+// B.3.2 — predicate-bridge with gear_override consult.
+//
+//   final_gear = (adj->gear_override != 0xFF)
+//                ? adj->gear_override
+//                : cruise->current_gear
+//
+// `adj->gear_override` is at offset 100 — read via byte-offset
+// arithmetic to keep this TU independent of the full FFI struct
+// definition.  When the operator (or a safety script) writes 0..3 to
+// that VRAM byte, the next captured-graph launch's SWITCH routes to
+// the corresponding body — the Blackwell Hardware Interlock.
 extern "C"
 __global__ void prism_gearbox_predicate_bridge_kernel(
-    cudaGraphConditionalHandle              handle,
-    const ChronometricStateTensor* __restrict__ cruise
+    cudaGraphConditionalHandle                          handle,
+    const InterferometricAdjudicatorFfi* __restrict__   adj,
+    const ChronometricStateTensor*       __restrict__   cruise
 ) {
     if (threadIdx.x != 0 || blockIdx.x != 0) return;
     if (cruise == nullptr) return;
-    const uint32_t gear = cruise->current_gear;
-    // Defensive bounds — cudaGraphSetConditional accepts any unsigned
-    // value but the SWITCH was forged with size = 4, so values ≥ 4
-    // would route to the default body.  PointerSwap should never write
-    // gear ≥ 4, but mask defensively.
-    cudaGraphSetConditional(handle, gear & 0x3u);
+
+    // Default to cruise.current_gear if adj is null (test fixtures);
+    // otherwise consult the u32 gear_override at offset 100.
+    //
+    //   final_gear = (override == 0xFF) ? calculated : (override & 0x03)
+    //
+    // Branchless selection per operator §2 — predicate evaluates as a
+    // single comparison + select; no warp divergence (single thread).
+    uint32_t final_gear = cruise->current_gear;
+    if (adj != nullptr) {
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
+        const uint32_t override_val = *reinterpret_cast<const uint32_t*>(base + 100);
+        if (override_val != 0xFFu) {
+            final_gear = override_val & 0x03u;
+        }
+    }
+    // SWITCH was forged with size=4; defensive 2-bit mask.
+    cudaGraphSetConditional(handle, final_gear & 0x3u);
 }
 
 extern "C"
 int prism_gearbox_launch_predicate_bridge(
-    uint64_t                       handle_v,
-    const ChronometricStateTensor* cruise,
-    void*                          stream)
+    uint64_t                                handle_v,
+    const InterferometricAdjudicatorFfi*    adj,
+    const ChronometricStateTensor*          cruise,
+    void*                                   stream)
 {
     if (cruise == nullptr) return static_cast<int>(cudaErrorInvalidValue);
     cudaGraphConditionalHandle handle =
         static_cast<cudaGraphConditionalHandle>(handle_v);
     cudaStream_t s = static_cast<cudaStream_t>(stream);
-    prism_gearbox_predicate_bridge_kernel<<<1, 1, 0, s>>>(handle, cruise);
+    prism_gearbox_predicate_bridge_kernel<<<1, 1, 0, s>>>(handle, adj, cruise);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -333,11 +416,11 @@ int prism_gearbox_launch_predicate_bridge(
 
 extern "C"
 int prism_gearbox_launch_predicate_bridge(
-    uint64_t                       /*handle_v*/,
-    const ChronometricStateTensor* /*cruise*/,
-    void*                          /*stream*/)
+    uint64_t                                /*handle_v*/,
+    const InterferometricAdjudicatorFfi*    /*adj*/,
+    const ChronometricStateTensor*          /*cruise*/,
+    void*                                   /*stream*/)
 {
-    // Pre-CUDA 12.4: cudaGraphSetConditional unavailable.
     return static_cast<int>(cudaErrorNotSupported);
 }
 

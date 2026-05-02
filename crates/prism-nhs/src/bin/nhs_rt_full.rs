@@ -4966,8 +4966,22 @@ fn run_multi_stream_pipeline(
                                                     }
                                                 });
                                                 // Amendment 3.4.6: pair both flags or skip.
+                                                // B.3.2 — 7C8R Mpro dimer threshold lock-in
+                                                // (operator 2026-05-02 §3): when the topology
+                                                // carries a dimer_dyad block (homodimer target),
+                                                // default to (μ=0.005, σ=0.001) ⇒ trigger
+                                                // T = μ + 3σ = 0.008.  Operator-supplied flags
+                                                // still take precedence (explicit override).
                                                 let nf_override = match (args.noise_floor_mu, args.noise_floor_sigma) {
                                                     (Some(m), Some(s)) => Some((m, s)),
+                                                    _ if topo_dyad.is_some() => {
+                                                        log::info!(
+                                                            "[B.3.2 LOCK] dimer topology detected — \
+                                                             defaulting noise_floor to (μ=0.005, σ=0.001) \
+                                                             ⇒ threshold T = μ + 3σ = 0.008  (Mpro dimer lock-in)"
+                                                        );
+                                                        Some((0.005f32, 0.001f32))
+                                                    }
                                                     _ => None,
                                                 };
                                                 // B.3 — wire d_dt to the integrator's
