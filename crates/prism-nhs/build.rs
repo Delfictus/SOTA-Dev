@@ -28,6 +28,12 @@ fn main() {
     println!("cargo:rerun-if-changed=src/cuda/so3_project.cuh");
     println!("cargo:rerun-if-changed=src/cuda/adjudicator.cu");
     println!("cargo:rerun-if-changed=src/cuda/adjudicator.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/zstr_kernels.cu");
+    println!("cargo:rerun-if-changed=src/cuda/zstr_kernels.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/asc_steering.cu");
+    println!("cargo:rerun-if-changed=src/cuda/asc_steering.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/symmetry_consensus.cu");
+    println!("cargo:rerun-if-changed=src/cuda/symmetry_consensus.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -187,6 +193,42 @@ fn main() {
         &nvcc,
         "src/cuda/adjudicator.cu",
         "adjudicator",
+        &out_dir,
+    );
+
+    // ZSTR Phase 1: Zero-Stall Telemetry Ring kernels.
+    // zstr_signal_completion_kernel: __threadfence_system() + pinned fence
+    // write at end of captured graph epoch.
+    // zstr_pos_stage_f4_kernel: vectorized LDG.E.128 → STG.E.128 position
+    // staging into pinned triple-buffer slot.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/zstr_kernels.cu",
+        "zstr_kernels",
+        &out_dir,
+    );
+
+    // ZSTR Phase 2: Vectorized ASC repulsion force injection.
+    // asc_inject_repulsion_v4_kernel: float4 loads + atom.global.add.v4.f32
+    // for concurrent 4-wide force accumulation into d_forces.
+    // Gate G22_ATOMIC_v4_VERIFIED: ptxas audit required post-compile.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/asc_steering.cu",
+        "asc_steering",
+        &out_dir,
+    );
+
+    // G28 SISR (Spatially-Indexed Symmetric Reflection) — bilateral-truth
+    // symmetry consensus gate for homodimer targets.  Operates on
+    // ContactShellTile array between SO(3) projection and Adjudicator
+    // step inside the captured graph window.  Brute-force pairwise
+    // centroid-distance check (n_clusters ≤ 64); writes a u64 prune
+    // mask consumed by the Adjudicator step kernel.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/symmetry_consensus.cu",
+        "symmetry_consensus",
         &out_dir,
     );
 }

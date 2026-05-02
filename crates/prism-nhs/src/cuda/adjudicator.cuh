@@ -118,6 +118,10 @@ static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");
 static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128-byte aligned.");
+// G28 SISR offset lock — Rust mirror MUST hit the same byte (compiler-inserted
+// 4-byte padding after `legacy_centroid_fallback` aligns the pointer to 8 B).
+static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
+              "force_prune_mask offset drift: must be 104 (8-byte aligned).");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)

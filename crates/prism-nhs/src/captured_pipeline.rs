@@ -88,6 +88,29 @@ extern "C" {
 }
 
 // ============================================================================
+// G28 SISR FFI — Spatially-Indexed Symmetric Reflection (Amendment 3.4)
+// ============================================================================
+//
+// Captured between Node B (SO(3) project) and Node C (Adjudicator step) on
+// md_stream; bilateral-symmetry gate for homodimer targets.  Writes a u64
+// prune mask the Adjudicator reads via `force_prune_mask` in its FFI struct.
+extern "C" {
+    fn prism_sisr_init_dyad(
+        R_row_major: *const f32,  // 9 floats, row-major
+        t:           *const f32,  // 3 floats
+        stream:      *mut c_void,
+    ) -> i32;
+
+    fn prism_sisr_launch(
+        tiles:                *const c_void,  // *const ContactShellTile
+        n_clusters:           u32,             // ≤ 64
+        out_force_prune_mask: *mut c_void,    // *mut u64 (8 B device buffer)
+        epsilon_sym_angstrom: f32,
+        stream:               *mut c_void,
+    ) -> i32;
+}
+
+// ============================================================================
 // V2 IGNITION FFI — Claude-2's Native C-ABI Bypass (Lane 2 commit 9a90a9c6)
 // ============================================================================
 //
@@ -169,6 +192,41 @@ pub struct ZstrCaptureParams {
 // not dereferenced on the host outside the CUDA capture sequence.
 unsafe impl Send for ZstrCaptureParams {}
 
+/// G28 SISR symmetry consensus configuration.  When `Some`, the pipeline
+/// records a SISR kernel node into the captured graph between Node B
+/// (SO(3)) and Node C (Adjudicator).  The kernel writes a u64 prune mask
+/// to a pipeline-allocated F2-pool buffer; the Adjudicator's
+/// `force_prune_mask` field is initialised to point at the same buffer
+/// pre-capture, so each frame's bit-flags propagate to the gate without
+/// a host round-trip.
+pub struct SisrConfig {
+    /// Dyad-axis 3×3 rotation matrix (row-major, 9 floats).
+    /// For C2 symmetry along Z (operator default): R = diag(-1,-1,1).
+    /// For BIOMT-driven dimers: extracted from the assembly file.
+    pub dyad_R_row_major: [f32; 9],
+    /// Dyad-axis translation (3 floats).
+    pub dyad_t: [f32; 3],
+    /// Partner-search tolerance in Å.  Operator-recommended: 1.5.
+    /// Squared internally to skip sqrtf in the inner loop.
+    pub epsilon_sym_angstrom: f32,
+}
+
+impl Default for SisrConfig {
+    /// 7C8R-default: C2 symmetry about Z-axis after centre-on-origin.
+    /// (x,y,z) → (-x,-y,z).  ε_sym = 1.5 Å (Amendment 3.4).
+    fn default() -> Self {
+        Self {
+            dyad_R_row_major: [
+                -1.0, 0.0, 0.0,
+                 0.0,-1.0, 0.0,
+                 0.0, 0.0, 1.0,
+            ],
+            dyad_t: [0.0, 0.0, 0.0],
+            epsilon_sym_angstrom: 1.5,
+        }
+    }
+}
+
 /// Configuration for [`CapturedAdjudicationPipeline::build`].
 ///
 /// All device pointers must live for the lifetime of the pipeline
@@ -199,6 +257,12 @@ pub struct PipelineConfig {
     /// captured (legacy / test builds). `Some` records two kernel nodes on
     /// `telemetry_stream` downstream of the tile DMA (Amendment 2.2).
     pub zstr: Option<ZstrCaptureParams>,
+    /// G28 SISR symmetry consensus (Amendment 3.4). `None` = no SISR node
+    /// captured (non-dimer / legacy / test).  `Some` records the SISR kernel
+    /// node on `md_stream` between SO(3) and Adjudicator, and pre-allocates
+    /// the u64 prune-mask buffer into the F2 pool.  The Adjudicator FFI's
+    /// `force_prune_mask` is wired to that buffer pre-capture.
+    pub sisr: Option<SisrConfig>,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -220,6 +284,11 @@ pub struct CapturedAdjudicationPipeline {
     tiles_dev: usize,         // *mut ContactShellTile
     adj_dev: usize,           // *mut InterferometricAdjudicatorFfi
     burst_marker_dev: usize,  // *mut u32 (4 B)
+    /// G28 SISR per-cluster prune-bit u64. Zero when SISR disabled.
+    /// Aliased into `adj->force_prune_mask` pre-capture so the Adjudicator
+    /// step kernel reads the bits the SISR kernel wrote earlier in the same
+    /// captured graph epoch.  Freed on Drop.
+    sisr_mask_dev: usize,     // *mut u64 (8 B), or 0 when SISR disabled
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -407,6 +476,13 @@ impl CapturedAdjudicationPipeline {
         ).map_err(|s| BuildError::PoolAlloc { what: "adjudicator", reason: s })?;
         let burst_marker_dev = pool.alloc_async(4, md_raw)
             .map_err(|s| BuildError::PoolAlloc { what: "burst_marker", reason: s })?;
+        // G28 SISR prune-mask buffer (u64) — only when SISR is enabled.
+        // Pointer-stable for the pipeline lifetime; zeroed by SISR kernel
+        // at the start of each captured-graph launch.
+        let sisr_mask_dev: usize = if cfg.sisr.is_some() {
+            pool.alloc_async(8, md_raw)
+                .map_err(|s| BuildError::PoolAlloc { what: "sisr_mask", reason: s })?
+        } else { 0 };
         md_stream.synchronize().map_err(BuildError::Driver)?;
 
         // CSR §M alignment guard (Anti-Greenfield Audit Gate G19):
@@ -481,6 +557,44 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
+        // ── 5.SISR-pre G28: dyad-axis init + Adjudicator force_prune_mask
+        //       pointer wire-in.  Done OUTSIDE the capture window:
+        //       cudaMemcpyToSymbolAsync writes __constant__ memory once at
+        //       build (subsequent launches reuse the same R/t), and the
+        //       adj->force_prune_mask field is patched via cuMemcpyHtoD
+        //       at offset 104 (matches the static_assert in adjudicator.cuh).
+        if let Some(ref sisr) = cfg.sisr {
+            // Init dyad transform in __constant__ memory.
+            let rc = unsafe {
+                prism_sisr_init_dyad(
+                    sisr.dyad_R_row_major.as_ptr(),
+                    sisr.dyad_t.as_ptr(),
+                    md_raw as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda { stage: "prism_sisr_init_dyad", rc });
+            }
+            // Wire adj->force_prune_mask = sisr_mask_dev. Offset 104 per
+            // the C-side static_assert.
+            unsafe {
+                let mask_field_addr = (adj_dev + 104) as CUdeviceptr;
+                let mask_ptr_value: u64 = sisr_mask_dev as u64;
+                let rc = cuMemcpyHtoD_v2(
+                    mask_field_addr,
+                    &mask_ptr_value as *const _ as *const c_void,
+                    8,
+                );
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "wire adj->force_prune_mask",
+                        rc: rc as i32,
+                    });
+                }
+            }
+            md_stream.synchronize().map_err(BuildError::Driver)?;
+        }
+
         // ── 5a. T7 LOCKED: burn 4LPK noise-floor priors into the
         //       freshly-zeroed adjudicator BEFORE the capture window
         //       opens. `apply_t7_calibration` uses cudaMemcpyAsync on
@@ -511,6 +625,7 @@ impl CapturedAdjudicationPipeline {
                 let _ = pool.free_async(tiles_dev, md_raw);
                 let _ = pool.free_async(adj_dev, md_raw);
                 let _ = pool.free_async(burst_marker_dev, md_raw);
+                if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
                 return Err(BuildError::Driver(e));
             }
         }
@@ -562,6 +677,27 @@ impl CapturedAdjudicationPipeline {
         };
         if rc != crate::so3_project::ffi::CUDA_SUCCESS {
             return Err(BuildError::Cuda { stage: "Node B (SO(3))", rc });
+        }
+
+        // ── 6.b-G28 SISR symmetry consensus (Amendment 3.4) ─────────────
+        // Captured between SO(3) and Adjudicator on md_stream. The kernel
+        // zeros sisr_mask_dev then atomicOr's bits for clusters lacking a
+        // C2-reflected partner within ε_sym. Adjudicator step kernel reads
+        // *adj->force_prune_mask (offset 104 → sisr_mask_dev) and forces
+        // PRISM_ADJ_PRUNE on any non-zero bit.
+        if let Some(ref sisr) = cfg.sisr {
+            let rc = unsafe {
+                prism_sisr_launch(
+                    manifest.tiles_dev_ptr as *const c_void,
+                    cfg.n_clusters,
+                    sisr_mask_dev as *mut c_void,
+                    sisr.epsilon_sym_angstrom,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda { stage: "G28 SISR launch", rc });
+            }
         }
 
         // ── 6.b Node C: Adjudicator step ──────────────────────────────
@@ -846,6 +982,7 @@ impl CapturedAdjudicationPipeline {
             let _ = pool.free_async(tiles_dev, md_raw);
             let _ = pool.free_async(adj_dev, md_raw);
             let _ = pool.free_async(burst_marker_dev, md_raw);
+            if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
             return Err(BuildError::V2HookFailed { rc });
         }
 
@@ -935,6 +1072,7 @@ impl CapturedAdjudicationPipeline {
             tiles_dev,
             adj_dev,
             burst_marker_dev,
+            sisr_mask_dev,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -947,10 +1085,11 @@ impl CapturedAdjudicationPipeline {
             zstr_src_vram,
             zstr_n_atoms,
             n_clusters: cfg.n_clusters,
-            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + fence]
+            // SO(3) + Adjudicator [+ ASC Node D] [+ ZSTR pos_stage + fence] [+ SISR]
             n_kernel_nodes_captured: 2
                 + if cfg.asc.is_some()  { 1 } else { 0 }
-                + if cfg.zstr.is_some() { 2 } else { 0 },
+                + if cfg.zstr.is_some() { 2 } else { 0 }
+                + if cfg.sisr.is_some() { 1 } else { 0 },
             // V1: 0 explicit cuGraphAddDependencies edges (the
             // C→D edge is satisfied by capture-mode's implicit
             // sequential ordering on md_stream). V2 lands the
@@ -1191,6 +1330,9 @@ impl Drop for CapturedAdjudicationPipeline {
         let _ = self.pool.free_async(self.tiles_dev, md_raw);
         let _ = self.pool.free_async(self.adj_dev, md_raw);
         let _ = self.pool.free_async(self.burst_marker_dev, md_raw);
+        if self.sisr_mask_dev != 0 {
+            let _ = self.pool.free_async(self.sisr_mask_dev, md_raw);
+        }
         // VramPool's Drop releases the pool itself.
     }
 }
@@ -1422,6 +1564,7 @@ mod tests {
             initial_frame_id: 0,
             asc:  None,
             zstr: None,
+            sisr: None,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -1541,6 +1684,7 @@ mod tests {
             initial_frame_id: 0,
             asc:  None,
             zstr: None,
+            sisr: None,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -1618,6 +1762,7 @@ mod tests {
             n_clusters: 1, d_k_lm: k_lm_dev, initial_frame_id: 0,
             asc:  None,
             zstr: None,
+            sisr: None,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -1703,6 +1848,7 @@ mod tests {
             initial_frame_id: 0,
             asc:  None,
             zstr: None,
+            sisr: None,
         };
 
         // Closure that captures the conditional-node handle written
