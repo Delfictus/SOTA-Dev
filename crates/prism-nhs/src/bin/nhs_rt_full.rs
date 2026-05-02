@@ -4774,7 +4774,7 @@ fn run_multi_stream_pipeline(
                                     );
 
                                     if n_ev >= 4 {
-                                        let rich_unsorted: Vec<RichSpike> = spike_events.iter().map(|e| {
+                                        let rich: Vec<RichSpike> = spike_events.iter().map(|e| {
                                             let mut rs = RichSpike::default();
                                             rs.x             = e.position[0];
                                             rs.y             = e.position[1];
@@ -4790,98 +4790,8 @@ fn run_multi_stream_pipeline(
                                                 .unwrap_or(0);
                                             rs
                                         }).collect();
-
-                                        // ── Manifold-aware spatial-hash clustering (M1.2.18-Phase1) ──
-                                        // Replaces the legacy single-cluster shortcut that aggregated
-                                        // every spike into ContactShellTile[0]. Each spike's (x,y,z)
-                                        // is binned via floor((p - bbox_min)/cell) into a grid bin;
-                                        // bins with ≥ MIN_SPIKES are promoted to compact cluster IDs.
-                                        // V2 captured graph is built with N_MAX_CLUSTERS=64; empty
-                                        // clusters get zero-length CSR slots (offsets[i] == offsets[i+1]).
-                                        const N_MAX_CLUSTERS: u32 = 64;
-                                        const CELL_SIZE_A: f32 = 4.0;       // Å — operator's spike_radius default
-                                        const MIN_SPIKES_PER_CLUSTER: u32 = 4;
-                                        let mut bmin = [f32::INFINITY; 3];
-                                        let mut bmax = [f32::NEG_INFINITY; 3];
-                                        for r in &rich_unsorted {
-                                            for (d, p) in [r.x, r.y, r.z].iter().enumerate() {
-                                                if *p < bmin[d] { bmin[d] = *p; }
-                                                if *p > bmax[d] { bmax[d] = *p; }
-                                            }
-                                        }
-                                        let gd = [
-                                            (((bmax[0]-bmin[0])/CELL_SIZE_A).ceil().max(1.0) as u32),
-                                            (((bmax[1]-bmin[1])/CELL_SIZE_A).ceil().max(1.0) as u32),
-                                            (((bmax[2]-bmin[2])/CELL_SIZE_A).ceil().max(1.0) as u32),
-                                        ];
-                                        let n_bins = (gd[0] * gd[1] * gd[2]) as usize;
-                                        let mut bin_per_spike = Vec::with_capacity(rich_unsorted.len());
-                                        for r in &rich_unsorted {
-                                            let bx = (((r.x - bmin[0])/CELL_SIZE_A) as i32)
-                                                .clamp(0, gd[0] as i32 - 1) as u32;
-                                            let by = (((r.y - bmin[1])/CELL_SIZE_A) as i32)
-                                                .clamp(0, gd[1] as i32 - 1) as u32;
-                                            let bz = (((r.z - bmin[2])/CELL_SIZE_A) as i32)
-                                                .clamp(0, gd[2] as i32 - 1) as u32;
-                                            bin_per_spike.push(bx + by*gd[0] + bz*gd[0]*gd[1]);
-                                        }
-                                        let mut bin_count = vec![0u32; n_bins];
-                                        for &b in &bin_per_spike {
-                                            if (b as usize) < n_bins { bin_count[b as usize] += 1; }
-                                        }
-                                        let mut bin_to_cluster = vec![u32::MAX; n_bins];
-                                        let mut n_actual = 0u32;
-                                        for (bidx, &cnt) in bin_count.iter().enumerate() {
-                                            if cnt >= MIN_SPIKES_PER_CLUSTER && n_actual < N_MAX_CLUSTERS {
-                                                bin_to_cluster[bidx] = n_actual;
-                                                n_actual += 1;
-                                            }
-                                        }
-                                        let n_actual = n_actual.max(1); // always ≥1 cluster (fallback)
-                                        // Sort spikes by cluster_id (CSR-contiguous). Spikes in
-                                        // unpromoted bins go to cluster 0 (catch-all).
-                                        let mut indexed: Vec<(u32, usize)> = bin_per_spike.iter()
-                                            .enumerate()
-                                            .map(|(i, &b)| {
-                                                let c = if (b as usize) < n_bins
-                                                    && bin_to_cluster[b as usize] != u32::MAX
-                                                {
-                                                    bin_to_cluster[b as usize]
-                                                } else { 0u32 };
-                                                (c, i)
-                                            })
-                                            .collect();
-                                        indexed.sort_by_key(|&(c, _)| c);
-                                        let rich: Vec<RichSpike> = indexed.iter().map(|&(c, idx)| {
-                                            let mut r = rich_unsorted[idx].clone();
-                                            r.cluster_id = c as i32;
-                                            r
-                                        }).collect();
-                                        // Build CSR offsets: length = N_MAX_CLUSTERS + 1.
-                                        // Empty trailing slots all point at total = rich.len().
-                                        let n_rs = rich.len() as u32;
-                                        let mut offsets: Vec<u32> = vec![0u32; (N_MAX_CLUSTERS + 1) as usize];
-                                        let mut cur_cluster = 0u32;
-                                        for (idx, &(c, _)) in indexed.iter().enumerate() {
-                                            while cur_cluster < c {
-                                                cur_cluster += 1;
-                                                offsets[cur_cluster as usize] = idx as u32;
-                                            }
-                                        }
-                                        // Pad the rest of the offsets array up to total.
-                                        while (cur_cluster as u32) < N_MAX_CLUSTERS {
-                                            cur_cluster += 1;
-                                            offsets[cur_cluster as usize] = n_rs;
-                                        }
-                                        log::info!(
-                                            "    [V2-BUILD stream {}] manifold clustering: {} non-empty / {} max bins, \
-                                             cell_size={}Å, spikes_per_cluster=[{}..{}]",
-                                            i, n_actual, N_MAX_CLUSTERS, CELL_SIZE_A,
-                                            bin_count.iter().filter(|&&c| c >= MIN_SPIKES_PER_CLUSTER)
-                                                .min().copied().unwrap_or(0),
-                                            bin_count.iter().max().copied().unwrap_or(0)
-                                        );
-
+                                        let n_rs          = rich.len() as u32;
+                                        let offsets: Vec<u32> = vec![0u32, n_rs];
                                         let spike_bytes   = rich.len()    * std::mem::size_of::<RichSpike>();
                                         let offset_bytes  = offsets.len() * std::mem::size_of::<u32>();
 
@@ -5063,10 +4973,7 @@ fn run_multi_stream_pipeline(
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
-                                                    n_clusters:        64, // M1.2.18-Phase1: N_MAX_CLUSTERS
-                                                                              //   (was hardcoded 1 — single-cluster
-                                                                              //    aggregation; now sized to operator's
-                                                                              //    bound; CSR offsets pad empty slots)
+                                                    n_clusters:        1,
                                                     d_k_lm,
                                                     initial_frame_id:  steps_run as u32,
                                                     asc:               asc_cfg,
@@ -5343,7 +5250,7 @@ fn run_multi_stream_pipeline(
                                                 // Take most-recent N up to capacity (sliding window).
                                                 let start = n_avail.saturating_sub(max_spikes);
                                                 let recent = &spike_events[start..];
-                                                let rich_unsorted: Vec<_RichSpike> = recent.iter().map(|e| {
+                                                let rich: Vec<_RichSpike> = recent.iter().map(|e| {
                                                     let mut rs = _RichSpike::default();
                                                     rs.x             = e.position[0];
                                                     rs.y             = e.position[1];
@@ -5358,74 +5265,10 @@ fn run_multi_stream_pipeline(
                                                         .unwrap_or(0);
                                                     rs
                                                 }).collect();
-                                                // M1.2.18-Phase1: per-chunk manifold-aware clustering.
-                                                // Mirror of the V2-build clustering above.  N_MAX_CLUSTERS
-                                                // is locked at 64 (matches the captured graph's baked
-                                                // n_clusters); empty bins get zero-length CSR slots.
-                                                const N_MAX: u32 = 64;
-                                                const CELL: f32 = 4.0;
-                                                const MIN_PER: u32 = 4;
-                                                let mut bmin = [f32::INFINITY; 3];
-                                                let mut bmax = [f32::NEG_INFINITY; 3];
-                                                for r in &rich_unsorted {
-                                                    for (d, p) in [r.x, r.y, r.z].iter().enumerate() {
-                                                        if *p < bmin[d] { bmin[d] = *p; }
-                                                        if *p > bmax[d] { bmax[d] = *p; }
-                                                    }
-                                                }
-                                                let gd = [
-                                                    (((bmax[0]-bmin[0])/CELL).ceil().max(1.0) as u32),
-                                                    (((bmax[1]-bmin[1])/CELL).ceil().max(1.0) as u32),
-                                                    (((bmax[2]-bmin[2])/CELL).ceil().max(1.0) as u32),
-                                                ];
-                                                let n_bins = (gd[0]*gd[1]*gd[2]) as usize;
-                                                let mut bps = Vec::with_capacity(rich_unsorted.len());
-                                                for r in &rich_unsorted {
-                                                    let bx = (((r.x-bmin[0])/CELL) as i32).clamp(0, gd[0] as i32 -1) as u32;
-                                                    let by = (((r.y-bmin[1])/CELL) as i32).clamp(0, gd[1] as i32 -1) as u32;
-                                                    let bz = (((r.z-bmin[2])/CELL) as i32).clamp(0, gd[2] as i32 -1) as u32;
-                                                    bps.push(bx + by*gd[0] + bz*gd[0]*gd[1]);
-                                                }
-                                                let mut bcnt = vec![0u32; n_bins];
-                                                for &b in &bps {
-                                                    if (b as usize) < n_bins { bcnt[b as usize] += 1; }
-                                                }
-                                                let mut b2c = vec![u32::MAX; n_bins];
-                                                let mut na = 0u32;
-                                                for (bi, &c) in bcnt.iter().enumerate() {
-                                                    if c >= MIN_PER && na < N_MAX {
-                                                        b2c[bi] = na;
-                                                        na += 1;
-                                                    }
-                                                }
-                                                let mut idx2: Vec<(u32,usize)> = bps.iter().enumerate()
-                                                    .map(|(i,&b)| {
-                                                        let c = if (b as usize) < n_bins
-                                                            && b2c[b as usize] != u32::MAX
-                                                        { b2c[b as usize] } else { 0u32 };
-                                                        (c, i)
-                                                    }).collect();
-                                                idx2.sort_by_key(|&(c,_)| c);
-                                                let rich: Vec<_RichSpike> = idx2.iter().map(|&(c,i)| {
-                                                    let mut r = rich_unsorted[i].clone();
-                                                    r.cluster_id = c as i32;
-                                                    r
-                                                }).collect();
                                                 let n_rs = rich.len() as u32;
-                                                let mut offsets: Vec<u32> = vec![0u32; (N_MAX+1) as usize];
-                                                let mut cur = 0u32;
-                                                for (idx_, &(c,_)) in idx2.iter().enumerate() {
-                                                    while cur < c {
-                                                        cur += 1;
-                                                        offsets[cur as usize] = idx_ as u32;
-                                                    }
-                                                }
-                                                while cur < N_MAX {
-                                                    cur += 1;
-                                                    offsets[cur as usize] = n_rs;
-                                                }
                                                 let bytes = rich.len()
                                                     * std::mem::size_of::<_RichSpike>();
+                                                let offsets: [u32; 2] = [0u32, n_rs];
                                                 unsafe {
                                                     let _ = cudarc::driver::sys::cuMemcpyHtoD_v2(
                                                         v2_spikes_raw,
@@ -5435,7 +5278,7 @@ fn run_multi_stream_pipeline(
                                                     let _ = cudarc::driver::sys::cuMemcpyHtoD_v2(
                                                         v2_offsets_raw,
                                                         offsets.as_ptr() as *const _,
-                                                        offsets.len() * std::mem::size_of::<u32>(),
+                                                        std::mem::size_of_val(&offsets),
                                                     );
                                                 }
                                             }
