@@ -4970,6 +4970,15 @@ fn run_multi_stream_pipeline(
                                                     (Some(m), Some(s)) => Some((m, s)),
                                                     _ => None,
                                                 };
+                                                // T12 Pre-Flight wire-up: d_velocities lives in the
+                                                // fused engine; d_dt has no device pointer yet (Wave B
+                                                // integrator surgery). Pass null for d_dt so the FFI
+                                                // struct's offset 112 stays unwired; offset 120
+                                                // receives the engine's d_velocities address. Wave A
+                                                // does NOT consume either pointer.
+                                                let d_velocities_ptr = engine.d_velocities_dev_ptr(
+                                                    engine.cuda_stream(),
+                                                );
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -4980,6 +4989,8 @@ fn run_multi_stream_pipeline(
                                                     zstr:              zstr_cfg,
                                                     sisr:              sisr_cfg,
                                                     noise_floor_override: nf_override,
+                                                    d_dt:              std::ptr::null_mut(),
+                                                    d_velocities:      d_velocities_ptr as *mut f32,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),

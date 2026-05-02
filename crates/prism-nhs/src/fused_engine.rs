@@ -2102,6 +2102,19 @@ impl NhsAmberFusedEngine {
         ptr
     }
 
+    /// T12 Pre-Flight — raw device pointer to the `d_velocities` buffer
+    /// (Velocity Verlet half-step state). Layout: `[vx_0, vy_0, vz_0, ...]`
+    /// (n_atoms × 3 contiguous f32). Pointer-stable for the engine's
+    /// lifetime; the captured pipeline writes this address into
+    /// `InterferometricAdjudicatorFfi::d_velocities` at offset 120 so
+    /// Wave B's G26 VelocityRescale kernel can read it from the SWITCH
+    /// body sub-graphs without a separate FFI argument plumbing.
+    pub fn d_velocities_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_velocities.device_ptr(stream);
+        ptr
+    }
+
     /// Create new fused engine from PRISM-PREP topology
     pub fn new(
         context: Arc<CudaContext>,

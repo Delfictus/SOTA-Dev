@@ -111,8 +111,17 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // Null disables the gate (non-dimer / legacy targets).
     uint64_t* force_prune_mask;     // offset 104
 
-    // Forward-compatible reserved tail (offset 112..128, 16 B).
-    uint32_t _reserved[4];          // offset 112
+    // ── T12 Pre-Flight — G26 chronometric gearbox connective tissue ──
+    // d_dt: device-resident *mut f32 carrying the active integrator
+    //       timestep (in ps). Wave A leaves null; Wave B's PointerSwap
+    //       kernel updates it inside the SWITCH body sub-graphs.
+    // d_velocities: *mut f32 aliased to integrator's d_velocities slice
+    //       (n_atoms × 3 f32, AoS). Wave B's VelocityRescale kernel reads
+    //       both this and d_dt to enforce kinetic-energy continuity on
+    //       gear-transition frames.
+    // Both unconsumed in Wave A — surface preparation only.
+    float*    d_dt;                 // offset 112
+    float*    d_velocities;         // offset 120
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");
@@ -122,6 +131,11 @@ static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
 // 4-byte padding after `legacy_centroid_fallback` aligns the pointer to 8 B).
 static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
               "force_prune_mask offset drift: must be 104 (8-byte aligned).");
+// T12 Pre-Flight offset locks.
+static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 112,
+              "d_dt offset drift: must be 112.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, d_velocities) == 120,
+              "d_velocities offset drift: must be 120.");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)
@@ -331,6 +345,34 @@ int prism_wire_f1_switch_ffi(
     cudaGraphNode_t  adjudicator_node,
     const uint32_t*  predicate_dev_ptr,
     cudaGraphNode_t* out_conditional_node);
+
+// ════════════════════════════════════════════════════════════════════
+// T12 Pre-Flight — G26 Chronometric Gearbox 4-way SWITCH forge
+// ════════════════════════════════════════════════════════════════════
+//
+// Sibling of `prism_wire_f1_switch_ffi`: creates a 4-way SWITCH
+// conditional node and returns BOTH the conditional-node handle and
+// all four body sub-graph handles via `out_body_subgraphs[4]`.  The
+// caller (Rust orchestrator, Wave B) populates each sub-graph with:
+//   Case 0 → Gear 0 PointerSwap  (0.5 fs)
+//   Case 1 → Gear 1 PointerSwap  (2.0 fs)
+//   Case 2 → Gear 2 PointerSwap  (4.0 fs)
+//   Case 3 → Gear 3 PTX trap     (abort)
+//
+// Wave A leaves the body sub-graphs unpopulated; the SWITCH fires the
+// default value (0) for every frame, which is a no-op until Wave B's
+// PointerSwap kernels land.
+//
+// `predicate_dev_ptr` is wiring metadata; a separate bridge kernel
+// (Wave B) will forward the gear_id source value into the conditional
+// handle via `cudaGraphSetConditional`. The Pre-Flight forge does NOT
+// capture that bridge — it only stamps the SWITCH skeleton.
+int prism_wire_g26_gearbox_ffi(
+    cudaGraph_t      graph,
+    cudaGraphNode_t  predicate_node,
+    const uint32_t*  predicate_dev_ptr,
+    cudaGraphNode_t* out_conditional_node,
+    cudaGraph_t*     out_body_subgraphs    /* [4] */);
 
 // ════════════════════════════════════════════════════════════════════
 // T7 — Noise-floor calibration writeback

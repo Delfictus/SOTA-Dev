@@ -332,10 +332,11 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     adj->legacy_centroid_fallback[0] = 0.0f;
     adj->legacy_centroid_fallback[1] = 0.0f;
     adj->legacy_centroid_fallback[2] = 0.0f;
-    #pragma unroll
-    for (int i = 0; i < 7; ++i) {
-        adj->_reserved[i] = 0u;
-    }
+    adj->force_prune_mask = nullptr;
+    // T12 Pre-Flight: null until host wires d_dt / d_velocities pointers
+    // pre-capture via cuMemcpyHtoD into offsets 112 / 120.
+    adj->d_dt         = nullptr;
+    adj->d_velocities = nullptr;
 }
 
 /// Noise-floor update kernel — Welford-style running mean+stddev over
@@ -797,6 +798,119 @@ extern "C" int prism_wire_f1_switch_ffi(
     // Pre-CUDA-12.6: cudaGraphCondTypeSwitch (3-way SWITCH) is not
     // available. Caller should fall back to a chain of If-conditional
     // nodes if 2-way branching is acceptable, or upgrade the toolkit.
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+#endif  // CUDART_VERSION >= 12060
+
+// ════════════════════════════════════════════════════════════════════
+// T12 Pre-Flight — G26 Chronometric Gearbox 4-way SWITCH forge
+// ════════════════════════════════════════════════════════════════════
+//
+// Sibling of `prism_wire_f1_switch_ffi` above, but with `size = 4`
+// and returns ALL FOUR body-subgraph handles via `out_body_subgraphs`
+// so the caller can populate them with PointerSwap + VelocityRescale
+// kernels (Wave B). Wave A only INSTANTIATES the SWITCH skeleton —
+// the body sub-graphs are returned to Rust unpopulated and the SWITCH
+// fires Gear 0 (default) for every frame.
+//
+// Predicate forwarding: caller wires a separate bridge kernel that
+// reads the gear_id source (TBD in Wave B — likely `adj->gear_id`
+// once the integrator refactor lands) and calls
+// `cudaGraphSetConditional(handle, gear_id)` to route to the matching
+// sub-graph.  This Pre-Flight helper does NOT capture the bridge —
+// it only creates the conditional node and exposes the sub-graphs.
+
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12060
+
+extern "C" int prism_wire_g26_gearbox_ffi(
+    cudaGraph_t      graph,
+    cudaGraphNode_t  predicate_node,
+    const uint32_t*  predicate_dev_ptr,
+    cudaGraphNode_t* out_conditional_node,
+    cudaGraph_t*     out_body_subgraphs    /* [4] */
+) {
+    if (graph == nullptr ||
+        out_conditional_node == nullptr ||
+        out_body_subgraphs == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+
+    // Initialise body-subgraph slots to null so a partial failure
+    // never leaves stale handles behind for the caller to misuse.
+    for (int i = 0; i < 4; ++i) out_body_subgraphs[i] = nullptr;
+
+    // Step 1 — bind a fresh conditional handle to this graph. Default
+    // launch value 0 ⇒ Gear 0 (high-resolution 0.5 fs) is the safe
+    // fallback if the predicate forwarder hasn't fired yet.
+    cudaGraphConditionalHandle handle = 0;
+    cudaError_t err = cudaGraphConditionalHandleCreate(
+        &handle, graph,
+        /*defaultLaunchValue=*/ 0u,
+        /*flags=*/              cudaGraphCondAssignDefault);
+    if (err != cudaSuccess) {
+        return static_cast<int>(err);
+    }
+
+    // The predicate device pointer is wiring metadata for the future
+    // bridge kernel; the runtime API itself is handle-based, not
+    // pointer-based, so we do not consume it here. Suppress unused-
+    // parameter warning while keeping the signature symmetric with
+    // `prism_wire_f1_switch_ffi`.
+    (void)predicate_dev_ptr;
+
+    // Step 2 — populate cudaGraphNodeParams for the 4-way SWITCH.
+    //   Case 0 → Gear 0 (0.5 fs, high-resolution capture)
+    //   Case 1 → Gear 1 (2.0 fs, default monitoring)
+    //   Case 2 → Gear 2 (4.0 fs, HMR-stabilised sprint)
+    //   Case 3 → Gear 3 (abort sub-graph; PTX trap kernel target)
+    cudaGraphNodeParams nodeParams{};
+    nodeParams.type                 = cudaGraphNodeTypeConditional;
+    nodeParams.conditional.handle   = handle;
+    nodeParams.conditional.type     = cudaGraphCondTypeSwitch;
+    nodeParams.conditional.size     = 4u;
+    nodeParams.conditional.ctx      = nullptr;
+
+    // Step 3 — add the conditional node, depending on the predicate
+    // node so the SWITCH only fires after the upstream gear_id write
+    // is L2-visible.
+    err = cudaGraphAddNode(
+        out_conditional_node, graph,
+        /*pDependencies=*/   &predicate_node,
+        /*dependencyData=*/  nullptr,
+        /*numDependencies=*/ 1u,
+        &nodeParams);
+    if (err != cudaSuccess) {
+        return static_cast<int>(err);
+    }
+
+    // Step 4 — Runtime API SWITCH/IF nodes write the body-subgraph
+    // handles into `nodeParams.conditional.phGraph_out` on creation.
+    // The struct field is set by `cudaGraphAddNode` itself; we copy
+    // the handles to the caller's output array.  Note: on CUDA 13.x
+    // the runtime fills phGraph_out for IF-type nodes via cudarc's
+    // driver bridge; for SWITCH-type, the same call is the documented
+    // path (CUDA Programming Guide § 3.2.8.7.4). If the toolkit ever
+    // diverges we fall back to a follow-up cudaGraphConditionalHandleCreate
+    // path — out-of-scope for Wave A.
+    for (int i = 0; i < 4; ++i) {
+        out_body_subgraphs[i] = nodeParams.conditional.phGraph_out
+                                ? nodeParams.conditional.phGraph_out[i]
+                                : nullptr;
+    }
+
+    return static_cast<int>(cudaSuccess);
+}
+
+#else  // CUDART_VERSION < 12060
+
+extern "C" int prism_wire_g26_gearbox_ffi(
+    cudaGraph_t      /*graph*/,
+    cudaGraphNode_t  /*predicate_node*/,
+    const uint32_t*  /*predicate_dev_ptr*/,
+    cudaGraphNode_t* /*out_conditional_node*/,
+    cudaGraph_t*     /*out_body_subgraphs*/
+) {
     return static_cast<int>(cudaErrorNotSupported);
 }
 

@@ -179,6 +179,28 @@ extern "C" {
 }
 
 // ============================================================================
+// T12 Pre-Flight FFI — G26 chronometric gearbox 4-way SWITCH forge
+// ============================================================================
+//
+// Wave A scaffolding only. Creates a 4-way SWITCH conditional node and
+// returns the four body sub-graph handles to Rust unpopulated. Wave B
+// will:
+//   - Write a predicate-bridge kernel that forwards `gear_id` into the
+//     conditional handle via `cudaGraphSetConditional`.
+//   - Populate the body sub-graphs with PointerSwap (cases 0/1/2) +
+//     PTX trap (case 3) + VelocityRescale (cases 0 & 2 — gear-transition
+//     kinetic-energy continuity).
+extern "C" {
+    fn prism_wire_g26_gearbox_ffi(
+        graph:                CUgraph,
+        predicate_node:       CUgraphNode,
+        predicate_dev_ptr:    *const u32,
+        out_conditional_node: *mut CUgraphNode,
+        out_body_subgraphs:   *mut CUgraph,  // [4]
+    ) -> i32;
+}
+
+// ============================================================================
 // Public surface
 // ============================================================================
 
@@ -332,6 +354,23 @@ pub struct PipelineConfig {
     /// becomes μ + 3σ.  Operator-recommended for 7C8R: (0.01, 0.005)
     /// → threshold 0.025 (vs 4LPK threshold 1.249).
     pub noise_floor_override: Option<(f32, f32)>,
+
+    /// **T12 Pre-Flight — G26 gearbox dt pointer (Wave A connective tissue).**
+    /// Device-resident `*mut f32` carrying the active integrator timestep.
+    /// `null` = unwired (default). When non-null, the build flow writes
+    /// the address into `adj->d_dt` at offset 112 pre-capture so Wave B's
+    /// PointerSwap kernel can update the value through the SWITCH body
+    /// sub-graphs. Wave A leaves the field UNCONSUMED — no kernel reads
+    /// it, no integrator depends on it. Pure surface preparation.
+    pub d_dt: *mut f32,
+
+    /// **T12 Pre-Flight — Velocity rescale buffer pointer.**
+    /// Device-resident `*mut f32` aliased to the integrator's
+    /// `d_velocities` slice (n_atoms × 3 f32, AoS). When non-null, written
+    /// into `adj->d_velocities` at offset 120 pre-capture. Wave A leaves
+    /// the field UNCONSUMED; Wave B's VelocityRescale kernel inside the
+    /// G26 SWITCH body sub-graphs will read it on gear transitions.
+    pub d_velocities: *mut f32,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -747,6 +786,55 @@ impl CapturedAdjudicationPipeline {
                 }
             }
             md_stream.synchronize().map_err(BuildError::Driver)?;
+        }
+
+        // ── 5b. T12 Pre-Flight — wire d_dt / d_velocities pointers ──
+        // Connective tissue for Wave B's G26 chronometric gearbox.
+        // The pointers are written into adj_dev at the offsets pinned
+        // by the C-side static_asserts (112 / 120) so Wave B kernels
+        // can read them via the FFI struct without a separate plumbing.
+        // Wave A leaves these UNCONSUMED — no kernel depends on them.
+        if !cfg.d_dt.is_null() {
+            unsafe {
+                let field_addr = (adj_dev + 112) as CUdeviceptr;
+                let value: u64 = cfg.d_dt as u64;
+                let rc = cuMemcpyHtoD_v2(
+                    field_addr,
+                    &value as *const _ as *const c_void,
+                    8,
+                );
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "wire adj->d_dt (T12 Pre-Flight)",
+                        rc: rc as i32,
+                    });
+                }
+            }
+        }
+        if !cfg.d_velocities.is_null() {
+            unsafe {
+                let field_addr = (adj_dev + 120) as CUdeviceptr;
+                let value: u64 = cfg.d_velocities as u64;
+                let rc = cuMemcpyHtoD_v2(
+                    field_addr,
+                    &value as *const _ as *const c_void,
+                    8,
+                );
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "wire adj->d_velocities (T12 Pre-Flight)",
+                        rc: rc as i32,
+                    });
+                }
+            }
+        }
+        if !cfg.d_dt.is_null() || !cfg.d_velocities.is_null() {
+            md_stream.synchronize().map_err(BuildError::Driver)?;
+            log::info!(
+                "[T12 PRE-FLIGHT] wired adj->d_dt={:p} adj->d_velocities={:p} \
+                 (Wave A — unconsumed; Wave B PointerSwap will read these)",
+                cfg.d_dt as *const f32, cfg.d_velocities as *const f32
+            );
         }
 
         // ── 5a. T7 LOCKED: burn 4LPK noise-floor priors into the
@@ -1801,6 +1889,8 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            d_dt: ptr::null_mut(),
+            d_velocities: ptr::null_mut(),
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -1922,6 +2012,8 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            d_dt: ptr::null_mut(),
+            d_velocities: ptr::null_mut(),
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -2001,6 +2093,8 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            d_dt: ptr::null_mut(),
+            d_velocities: ptr::null_mut(),
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -2088,6 +2182,8 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            d_dt: ptr::null_mut(),
+            d_velocities: ptr::null_mut(),
         };
 
         // Closure that captures the conditional-node handle written

@@ -25,11 +25,7 @@
 //! ## Memory layout — 128-byte invariant
 //!
 //! Per CSR-section C of the mandate, `sizeof::<InterferometricAdjudicatorFfi>()`
-//! must equal **128 bytes exactly** (one Blackwell L1 sector). The
-//! Anti-Greenfield Doctrine § 6.2 mandates a `legacy_centroid_fallback`
-//! field for backward-compatible nhs_rt_full.rs logging. Honouring both
-//! constraints simultaneously: 88 B of "live" fields + 12 B fallback
-//! + 28 B reserved tail = 128 B exactly:
+//! must equal **128 bytes exactly** (one Blackwell L1 sector).
 //!
 //! ```text
 //! noise_floor_mu          [f32; 6]  offset   0..24    24 B
@@ -41,10 +37,21 @@
 //! start_clock             u64       offset  72..80     8 B
 //! stop_clock              u64       offset  80..88     8 B
 //! legacy_centroid_fallback [f32;3]  offset  88..100   12 B  (Anti-Greenfield § 6.2)
-//! _reserved               [u32; 7]  offset 100..128   28 B
+//! [4 B compiler padding for 8-byte pointer alignment]
+//! force_prune_mask        *mut u64  offset 104..112    8 B  (G28 SISR)
+//! d_dt                    *mut f32  offset 112..120    8 B  (T12 Pre-Flight)
+//! d_velocities            *mut f32  offset 120..128    8 B  (T12 Pre-Flight)
 //! ─────────────────────────────────────────────────────────
 //! TOTAL                                                128 B
 //! ```
+//!
+//! ## T12 Pre-Flight — connective tissue (Wave A)
+//!
+//! `d_dt` and `d_velocities` are wired in for Wave B's G26 chronometric
+//! gearbox: the SWITCH body sub-graphs will swap the integrator's dt
+//! coefficient and rescale velocities on gear-transition frames.
+//! Wave A leaves these pointers wired but UNCONSUMED — no kernel
+//! reads them, no integrator depends on them. Pure surface prep.
 //!
 //! ## Anti-Greenfield § 6.2 — `legacy_centroid_fallback`
 //!
@@ -201,12 +208,30 @@ pub struct InterferometricAdjudicatorFfi {
     /// on a non-zero result, **independent of** Δ_AB magnitude.
     /// Null disables the symmetry gate (legacy / non-dimer targets).
     pub force_prune_mask: *mut u64,
-    /// Forward-compatible reserved tail. Layout (with C-ABI alignment):
-    /// `legacy_centroid_fallback` ends at offset 100; the `*mut u64` pointer
-    /// requires 8-byte alignment, so the compiler inserts 4 B of padding,
-    /// placing `force_prune_mask` at offset 104..112. Reserved tail occupies
-    /// offset 112..128 (16 B = 4 × u32). Total: 88 + 12 + 4(pad) + 8 + 16 = 128 B.
-    pub _reserved: [u32; 4],
+
+    /// **T12 Pre-Flight — G26 chronometric gearbox dt pointer.**
+    /// Device-resident `*mut f32` carrying the active integrator
+    /// timestep (in ps). Offset 112..120, 8 B.
+    ///
+    /// Wave A leaves this null and unconsumed. Wave B's G26 SWITCH
+    /// body sub-graphs will atomically swap the value through a
+    /// PointerSwap kernel as part of gear transitions
+    /// (Gear 0: 0.5 fs / Gear 1: 2.0 fs / Gear 2: 4.0 fs / Gear 3: abort).
+    /// The integrator kernels must be refactored to LOAD their dt from
+    /// this pointer instead of taking it as a kernel argument — that
+    /// surgery is explicitly out-of-scope for Wave A.
+    pub d_dt: *mut f32,
+
+    /// **T12 Pre-Flight — Velocity rescaling buffer pointer.**
+    /// Device-resident `*mut f32` aliased to the integrator's
+    /// `d_velocities` slice (n_atoms × 3 f32, AoS). Offset 120..128, 8 B.
+    ///
+    /// Wave A wires this pointer in but no kernel reads it. Wave B's
+    /// VelocityRescale kernel inside the G26 SWITCH body sub-graphs
+    /// will multiply each component by `(dt_new / dt_old)` on gear
+    /// transitions to preserve kinetic energy continuity (the
+    /// "numerical shock" guard).
+    pub d_velocities: *mut f32,
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -231,7 +256,8 @@ impl InterferometricAdjudicatorFfi {
             stop_clock: 0,
             legacy_centroid_fallback: [0.0; 3],
             force_prune_mask: std::ptr::null_mut(),
-            _reserved: [0; 4],
+            d_dt: std::ptr::null_mut(),
+            d_velocities: std::ptr::null_mut(),
         }
     }
 
@@ -994,10 +1020,9 @@ mod tests {
     #[test]
     fn ffi_field_offsets_match_csr_c_table() {
         // Explicit byte-offsets per CSR-section C requirement.
-        // Operator-mandated: list noise_floor and adjudication_code.
-        // Updated post-Anti-Greenfield retrofit to include
-        // legacy_centroid_fallback at 88 and _reserved (now [u32; 7])
-        // at 100.
+        // Layout drift here = silent ABI break against the C-side
+        // mirror in adjudicator.cuh (its static_asserts pin the same
+        // values).
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_mu), 0);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma), 24);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, current_divergence), 48);
@@ -1007,7 +1032,11 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, start_clock), 72);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, stop_clock), 80);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback), 88);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved), 100);
+        // 4 B compiler padding at 100..104 for 8-byte pointer alignment.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask), 104);
+        // T12 Pre-Flight: replace _reserved [u32; 4] with two pointers.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),         112);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_velocities), 120);
     }
 
     #[test]
@@ -1022,7 +1051,9 @@ mod tests {
         assert_eq!(z.start_clock, 0);
         assert_eq!(z.stop_clock, 0);
         assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
-        assert_eq!(z._reserved, [0; 7]);
+        assert!(z.force_prune_mask.is_null());
+        assert!(z.d_dt.is_null());
+        assert!(z.d_velocities.is_null());
     }
 
     #[test]
