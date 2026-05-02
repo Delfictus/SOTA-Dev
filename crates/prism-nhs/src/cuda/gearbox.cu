@@ -29,6 +29,24 @@ __constant__ float d_gearbox_table[PRISM_GEARBOX_TABLE_LEN] = {
     0.0000f, 0.0f, 0.0f, 0.0f,    // Gear 3 — overwritten by host init with NaN
 };
 
+// ─── B.3 — 3×3 Constant Ratio Matrix ────────────────────────────────────────
+//
+// Gear-to-gear dt-ratio lookup table.  Indexed as [prev*3 + target].
+// Pre-baked from the canonical gearbox dt values (0.5/2.0/4.0 fs).  Gear 3
+// (abort) is OOB — the body 3 sub-graph fires the trap kernel without
+// consulting this matrix.  Operator constraint: zero divisions in the
+// rescale kernel — single LDC + MUL per thread.
+//
+// Static init values are correct for the canonical gearbox table; the
+// host-side init helper exists for ABI symmetry with future runtime
+// re-tuning (e.g., a different 3-gear ratio set on a non-HMR substrate).
+
+__constant__ float d_rescale_ratios[9] = {
+    1.0f,   4.0f,   8.0f,    // prev = 0 (0.5 fs) → target 0/1/2
+    0.25f,  1.0f,   2.0f,    // prev = 1 (2.0 fs) → target 0/1/2
+    0.125f, 0.5f,   1.0f,    // prev = 2 (4.0 fs) → target 0/1/2
+};
+
 // ─── adj→adjudication_code / d_dt offsets ───────────────────────────────────
 //
 // Pinned by the C-side static_assert in adjudicator.cuh:
@@ -324,3 +342,291 @@ int prism_gearbox_launch_predicate_bridge(
 }
 
 #endif  // CUDART_VERSION >= 12040
+
+// ════════════════════════════════════════════════════════════════════
+// B.3-narrow — SWITCH body kernels
+// ════════════════════════════════════════════════════════════════════
+
+// ─── Rescale kernel (ratio matrix lookup, single multiply) ─────────────────
+
+extern "C"
+__global__ void prism_gearbox_rescale_kernel(
+    float*                                      __restrict__ d_velocities,
+    uint32_t                                                  n_floats,
+    const ChronometricStateTensor*              __restrict__ cruise,
+    uint32_t                                                  target_gear
+) {
+    const uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_floats) return;
+    if (cruise == nullptr) return;
+
+    // Single LDC for ratio (broadcast across the warp).
+    const uint32_t prev_gear = cruise->previous_gear & 0x3u;
+    const uint32_t tgt       = target_gear           & 0x3u;
+    // Bounds: matrix only covers active gears 0..2.  Gear 3 (abort)
+    // bodies do NOT call this kernel; the trap kernel fires directly.
+    if (prev_gear >= 3u || tgt >= 3u) return;
+    const float ratio = d_rescale_ratios[prev_gear * 3u + tgt];
+
+    // Single LDG + MUL + STG per thread.  Block 256 ⇒ warp-coalesced
+    // 128-byte memory transactions (LDG.E.128 / STG.E.128).
+    d_velocities[tid] = d_velocities[tid] * ratio;
+}
+
+extern "C"
+int prism_gearbox_launch_rescale(
+    float*                              d_velocities,
+    uint32_t                            n_floats,
+    const ChronometricStateTensor*      cruise,
+    uint32_t                            target_gear,
+    void*                               stream)
+{
+    if (d_velocities == nullptr || cruise == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n_floats == 0u) return static_cast<int>(cudaSuccess);
+    constexpr uint32_t BLOCK = 256u;
+    const     uint32_t grid  = (n_floats + BLOCK - 1u) / BLOCK;
+    prism_gearbox_rescale_kernel<<<grid, BLOCK, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        d_velocities, n_floats, cruise, target_gear);
+    return static_cast<int>(cudaGetLastError());
+}
+
+extern "C"
+int prism_gearbox_init_rescale_ratios_async(void* stream)
+{
+    // Static initialiser at the top of this TU is canonical; this
+    // function exists for ABI symmetry with future runtime re-tuning.
+    // No-op on the canonical 0.5/2.0/4.0fs gearbox.
+    (void)stream;
+    return static_cast<int>(cudaSuccess);
+}
+
+// ─── Apply-fixed-dt kernel (per-body dt write) ─────────────────────────────
+
+extern "C"
+__global__ void prism_gearbox_apply_fixed_dt_kernel(
+    const InterferometricAdjudicatorFfi*  __restrict__ adj,
+    uint32_t                                            target_gear
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    if (adj == nullptr) return;
+    // Read d_dt pointer via offset arithmetic — keeps this TU
+    // independent of the full FFI struct definition (operator §M2).
+    const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
+    float* dt_target = *reinterpret_cast<float* const*>(base + 112);
+    if (dt_target == nullptr) return;
+    if (target_gear >= 4u) return;
+    *dt_target = d_gearbox_table[target_gear * PRISM_GEARBOX_FLOATS_PER_GEAR];
+}
+
+extern "C"
+int prism_gearbox_launch_apply_fixed_dt(
+    const InterferometricAdjudicatorFfi* adj,
+    uint32_t                             target_gear,
+    void*                                stream)
+{
+    if (adj == nullptr) return static_cast<int>(cudaErrorInvalidValue);
+    prism_gearbox_apply_fixed_dt_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(adj, target_gear);
+    return static_cast<int>(cudaGetLastError());
+}
+
+// ─── Trap kernel (PTX hardware-trap for Gear 3 abort) ──────────────────────
+
+extern "C"
+__global__ void prism_gearbox_trap_kernel() {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    // PTX `trap` instruction.  Halts the GPU stream and surfaces
+    // CUDA_ERROR_LAUNCH_FAILED to the host on the next sync.
+    asm volatile("trap;");
+}
+
+extern "C"
+int prism_gearbox_launch_trap(void* stream) {
+    prism_gearbox_trap_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>();
+    return static_cast<int>(cudaGetLastError());
+}
+
+// ════════════════════════════════════════════════════════════════════
+// B.3-narrow — SWITCH body populator (Blackwell Driver Probe target)
+// ════════════════════════════════════════════════════════════════════
+//
+// Takes the four phGraph_out CUgraph handles returned by
+// `prism_wire_g26_gearbox_ffi` and adds the body kernels as graph
+// nodes.  If ANY of the four handles is null, returns
+// cudaErrorInvalidValue early — the operator-mandated "Smoking Gun"
+// signal that CUDA 13.x's runtime API does not populate phGraph_out
+// for SWITCH-type conditional nodes (the same bug noted for IF-type
+// at captured_pipeline.rs:1212-1216).  In that case the caller pivots
+// to the `cudaGraphSetConditional` kernel-conditional pattern.
+//
+// Body topologies (per operator 2026-05-02 §1.1):
+//   Body 0 (Gear 0 — Burst — 0.5 fs):
+//     rescale(0) → [Berendsen guard if d_current_temp+d_dt non-null]
+//                → apply_fixed_dt(0)
+//   Body 1 (Gear 1 — Cruise — 2.0 fs):  rescale(1) → apply_fixed_dt(1)
+//   Body 2 (Gear 2 — Sprint — 4.0 fs):  rescale(2) → apply_fixed_dt(2)
+//   Body 3 (Gear 3 — Abort):            trap
+
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12060
+
+namespace {
+
+// Canonical kernel-node addition wrapper.  CUDA 13.x signature uses
+// cudaGraphAddNode with a cudaGraphNodeParams struct (the runtime
+// equivalent of cuGraphAddNode_v2).  We use the simpler
+// cudaGraphAddKernelNode path which is stable across 12.4+/13.x.
+__host__ cudaError_t add_kernel_node(
+    cudaGraphNode_t*       out_node,
+    cudaGraph_t            graph,
+    const cudaGraphNode_t* deps,
+    size_t                 num_deps,
+    void*                  func,
+    dim3                   grid,
+    dim3                   block,
+    void**                 args,
+    size_t                 shared_bytes
+) {
+    cudaKernelNodeParams params{};
+    params.func           = func;
+    params.gridDim        = grid;
+    params.blockDim       = block;
+    params.sharedMemBytes = static_cast<unsigned int>(shared_bytes);
+    params.kernelParams   = args;
+    params.extra          = nullptr;
+    return cudaGraphAddKernelNode(out_node, graph, deps, num_deps, &params);
+}
+
+}  // anonymous namespace
+
+extern "C"
+int prism_gearbox_populate_switch_bodies_ffi(
+    cudaGraph_t*                          body_subgraphs,
+    const InterferometricAdjudicatorFfi*  adj,
+    float*                                d_velocities,
+    uint32_t                              n_floats,
+    const ChronometricStateTensor*        cruise,
+    const float*                          d_current_temp,
+    const float*                          d_dt,
+    float                                 target_temp_K,
+    float                                 tau_ps)
+{
+    if (body_subgraphs == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+
+    // ── Driver Probe: assert all four sub-graph handles are valid. ──
+    // Operator-mandated "Smoking Gun" check (2026-05-02 §1.3): a null
+    // handle here means CUDA 13.x's cudaGraphAddNode(CONDITIONAL)
+    // does NOT populate phGraph_out for SWITCH-type, and we must
+    // pivot to the kernel-conditional fallback path.
+    for (int i = 0; i < 4; ++i) {
+        if (body_subgraphs[i] == nullptr) {
+            return static_cast<int>(cudaErrorInvalidValue);
+        }
+    }
+
+    constexpr uint32_t BLOCK = 256u;
+    const     uint32_t rescale_grid =
+        (n_floats == 0u) ? 1u : (n_floats + BLOCK - 1u) / BLOCK;
+
+    cudaError_t rc = cudaSuccess;
+
+    // ── Bodies 0, 1, 2: rescale → [Berendsen for 0] → apply_fixed_dt ──
+    for (uint32_t gear = 0u; gear <= 2u; ++gear) {
+        cudaGraph_t body = body_subgraphs[gear];
+
+        cudaGraphNode_t rescale_node = nullptr;
+        {
+            void* args[] = {
+                &d_velocities,
+                const_cast<uint32_t*>(&n_floats),
+                const_cast<ChronometricStateTensor**>(&cruise),
+                &gear,
+            };
+            rc = add_kernel_node(
+                &rescale_node, body,
+                /*deps=*/   nullptr, /*num_deps=*/ 0,
+                reinterpret_cast<void*>(prism_gearbox_rescale_kernel),
+                dim3(rescale_grid, 1, 1), dim3(BLOCK, 1, 1),
+                args, /*shared=*/ 0);
+            if (rc != cudaSuccess) return static_cast<int>(rc);
+        }
+
+        cudaGraphNode_t last_node = rescale_node;
+
+        // ── Berendsen guard (Gear 0 only — burst-shock dampener) ──
+        if (gear == 0u && d_current_temp != nullptr && d_dt != nullptr) {
+            cudaGraphNode_t berendsen_node = nullptr;
+            void* args[] = {
+                &d_velocities,
+                const_cast<uint32_t*>(&n_floats),
+                const_cast<float**>(&d_current_temp),
+                const_cast<float**>(&d_dt),
+                &target_temp_K,
+                &tau_ps,
+            };
+            rc = add_kernel_node(
+                &berendsen_node, body,
+                &last_node, /*num_deps=*/ 1,
+                reinterpret_cast<void*>(prism_gearbox_berendsen_guard_kernel),
+                dim3(rescale_grid, 1, 1), dim3(BLOCK, 1, 1),
+                args, /*shared=*/ 0);
+            if (rc != cudaSuccess) return static_cast<int>(rc);
+            last_node = berendsen_node;
+        }
+
+        // ── apply_fixed_dt — single-thread dt write ──
+        cudaGraphNode_t apply_node = nullptr;
+        {
+            void* args[] = {
+                const_cast<InterferometricAdjudicatorFfi**>(&adj),
+                &gear,
+            };
+            rc = add_kernel_node(
+                &apply_node, body,
+                &last_node, /*num_deps=*/ 1,
+                reinterpret_cast<void*>(prism_gearbox_apply_fixed_dt_kernel),
+                dim3(1, 1, 1), dim3(1, 1, 1),
+                args, /*shared=*/ 0);
+            if (rc != cudaSuccess) return static_cast<int>(rc);
+        }
+    }
+
+    // ── Body 3: trap kernel ───────────────────────────────────────
+    {
+        cudaGraph_t body = body_subgraphs[3];
+        cudaGraphNode_t trap_node = nullptr;
+        rc = add_kernel_node(
+            &trap_node, body,
+            /*deps=*/ nullptr, /*num_deps=*/ 0,
+            reinterpret_cast<void*>(prism_gearbox_trap_kernel),
+            dim3(1, 1, 1), dim3(1, 1, 1),
+            /*args=*/ nullptr, /*shared=*/ 0);
+        if (rc != cudaSuccess) return static_cast<int>(rc);
+    }
+
+    return static_cast<int>(cudaSuccess);
+}
+
+#else  // CUDART_VERSION < 12060
+
+extern "C"
+int prism_gearbox_populate_switch_bodies_ffi(
+    cudaGraph_t*                          /*body_subgraphs*/,
+    const InterferometricAdjudicatorFfi*  /*adj*/,
+    float*                                /*d_velocities*/,
+    uint32_t                              /*n_floats*/,
+    const ChronometricStateTensor*        /*cruise*/,
+    const float*                          /*d_current_temp*/,
+    const float*                          /*d_dt*/,
+    float                                 /*target_temp_K*/,
+    float                                 /*tau_ps*/)
+{
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+#endif  // CUDART_VERSION >= 12060

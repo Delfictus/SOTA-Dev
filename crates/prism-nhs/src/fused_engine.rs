@@ -2123,6 +2123,31 @@ impl NhsAmberFusedEngine {
         ptr
     }
 
+    /// B.3 — raw device pointer to `d_protocol_state[84..88]` — the
+    /// `dt` field within `ProtocolState` (per
+    /// `crates/prism-gpu/src/kernels/protocol_state.cuh:45`).  All three
+    /// integrator kernels (nhs_amber_fused_step, nhs_voxel_step,
+    /// nhs_voxel_step_multi_lif) read `d_protocol->dt` on every step
+    /// from this exact address; the gearbox PointerSwap and
+    /// apply_fixed_dt kernels write to it through `*(adj->d_dt)` once
+    /// the captured pipeline wires this address into the FFI struct's
+    /// offset 112.
+    ///
+    /// Offset 84 is pinned by the C-side `ProtocolState` struct layout
+    /// (4 + 4 + 4 + 4 + 4 + 4×4(phase boundaries) + 4 + 4 + 4 + 4×4 +
+    /// 4×scan_wavelengths + 4 + 4 = 84).  Drift in the C-side struct
+    /// would silently corrupt this address; the layout is currently
+    /// stable per the protocol_state.cuh static_assert chain.
+    pub fn d_protocol_dt_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (base, _guard) = self.d_protocol_state.device_ptr(stream);
+        // Offset of `dt` field within ProtocolState struct (mirrors
+        // protocol_state.cuh layout: header + temp + phase boundaries
+        // + UV burst + scan wavelengths == 84 bytes before `dt`).
+        const PROTOCOL_DT_OFFSET: u64 = 84;
+        base + PROTOCOL_DT_OFFSET
+    }
+
     /// Create new fused engine from PRISM-PREP topology
     pub fn new(
         context: Arc<CudaContext>,

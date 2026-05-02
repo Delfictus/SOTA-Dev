@@ -189,6 +189,64 @@ pub mod ffi {
             cruise:   *const ChronometricStateTensor,
             stream:   *mut   c_void,
         ) -> i32;
+
+        // ── B.3-narrow — SWITCH body kernels + populator ──
+
+        /// B.3 — No-op on the canonical 0.5/2.0/4.0 fs gearbox; the
+        /// 3×3 ratio matrix is statically initialised in __constant__
+        /// memory.  Exists for ABI symmetry with future runtime
+        /// re-tuning.  Returns cudaSuccess.
+        pub fn prism_gearbox_init_rescale_ratios_async(
+            stream: *mut c_void,
+        ) -> i32;
+
+        /// B.3 — Symplectic velocity rescale (ratio-matrix variant).
+        /// Reads cruise->previous_gear, indexes the constant ratio
+        /// matrix at [prev*3 + target_gear], multiplies every f32 in
+        /// d_velocities by that ratio.  Single LDC + LDG + MUL + STG
+        /// per thread; block 256 ⇒ LDG.E.128 / STG.E.128 warp-coalesced.
+        pub fn prism_gearbox_launch_rescale(
+            d_velocities: *mut f32,
+            n_floats:     u32,
+            cruise:       *const ChronometricStateTensor,
+            target_gear:  u32,
+            stream:       *mut c_void,
+        ) -> i32;
+
+        /// B.3 — Apply-fixed-dt kernel.  Single-thread <<<1,1>>> writes
+        /// d_gearbox_table[target_gear*4] into *(adj->d_dt).  Used
+        /// inside SWITCH body sub-graphs (Gears 0/1/2).
+        pub fn prism_gearbox_launch_apply_fixed_dt(
+            adj:         *const InterferometricAdjudicatorFfi,
+            target_gear: u32,
+            stream:      *mut c_void,
+        ) -> i32;
+
+        /// B.3 — Hardware trap kernel.  Single-thread asm("trap;").
+        /// Used inside SWITCH body 3 (Gear 3 / Abort).
+        pub fn prism_gearbox_launch_trap(stream: *mut c_void) -> i32;
+
+        /// B.3 — Populate the four phGraph_out body sub-graphs returned
+        /// by prism_wire_g26_gearbox_ffi with the gear-specific kernel
+        /// node sequences.  Returns cudaErrorInvalidValue if any
+        /// body_subgraphs[i] is null — the operator-mandated "Smoking
+        /// Gun" signal that the caller must pivot to the kernel-
+        /// conditional fallback pattern.
+        ///
+        /// `d_current_temp` and `d_dt` are nullable — pass null to skip
+        /// the Berendsen guard in body 0 (e.g., for tests without a
+        /// ProtocolState fixture).
+        pub fn prism_gearbox_populate_switch_bodies_ffi(
+            body_subgraphs: *mut *mut std::ffi::c_void,    // [4]
+            adj:            *const InterferometricAdjudicatorFfi,
+            d_velocities:   *mut f32,
+            n_floats:       u32,
+            cruise:         *const ChronometricStateTensor,
+            d_current_temp: *const f32,
+            d_dt:           *const f32,
+            target_temp_K:  f32,
+            tau_ps:         f32,
+        ) -> i32;
     }
 }
 

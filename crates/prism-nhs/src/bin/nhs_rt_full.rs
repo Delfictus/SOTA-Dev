@@ -4970,13 +4970,16 @@ fn run_multi_stream_pipeline(
                                                     (Some(m), Some(s)) => Some((m, s)),
                                                     _ => None,
                                                 };
-                                                // T12 Pre-Flight wire-up: d_velocities lives in the
-                                                // fused engine; d_dt has no device pointer yet (Wave B
-                                                // integrator surgery). Pass null for d_dt so the FFI
-                                                // struct's offset 112 stays unwired; offset 120
-                                                // receives the engine's d_velocities address. Wave A
-                                                // does NOT consume either pointer.
+                                                // B.3 — wire d_dt to the integrator's
+                                                // `d_protocol->dt` field (offset 84 within
+                                                // ProtocolState). The G26 gearbox PointerSwap +
+                                                // apply_fixed_dt kernels write to this address via
+                                                // `*(adj->d_dt)` to commit the active gear's timestep
+                                                // before the next integrator launch reads it.
                                                 let d_velocities_ptr = engine.d_velocities_dev_ptr(
+                                                    engine.cuda_stream(),
+                                                );
+                                                let d_protocol_dt_ptr = engine.d_protocol_dt_dev_ptr(
                                                     engine.cuda_stream(),
                                                 );
                                                 let cfg = PipelineConfig {
@@ -4989,7 +4992,7 @@ fn run_multi_stream_pipeline(
                                                     zstr:              zstr_cfg,
                                                     sisr:              sisr_cfg,
                                                     noise_floor_override: nf_override,
-                                                    d_dt:              std::ptr::null_mut(),
+                                                    d_dt:              d_protocol_dt_ptr as *mut f32,
                                                     d_velocities:      d_velocities_ptr as *mut f32,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(

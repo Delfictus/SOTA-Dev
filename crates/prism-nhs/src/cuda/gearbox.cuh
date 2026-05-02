@@ -182,6 +182,81 @@ int prism_gearbox_launch_predicate_bridge(
     const ChronometricStateTensor*          cruise,
     void*                                   stream);
 
+// ─── B.3-narrow — SWITCH body kernels + ratio matrix ───────────────────────
+
+/// B.3 — Constant-memory transition-ratio matrix init.
+///
+/// 3×3 matrix of dt-ratio factors `[prev_gear * 3 + target_gear]` for
+/// the three active gears (0=0.5fs / 1=2.0fs / 2=4.0fs).  Gear 3 (abort)
+/// is OUT-OF-BAND — the body 3 sub-graph fires the trap kernel directly
+/// without consulting this matrix.  Pre-baked at host build time:
+///
+///     d_rescale_ratios[0..3]  = { 1.0,    4.0,   8.0  }    // prev=0 → 0/1/2
+///     d_rescale_ratios[3..6]  = { 0.25,   1.0,   2.0  }    // prev=1
+///     d_rescale_ratios[6..9]  = { 0.125,  0.5,   1.0  }    // prev=2
+///
+/// Operator constraint (2026-05-02 §2): zero divisions in the body
+/// kernels; the rescale kernel performs a single LDC + multiply.
+int prism_gearbox_init_rescale_ratios_async(void* stream);
+
+/// B.3 — Symplectic velocity rescale, ratio-matrix variant.
+///
+/// Reads `cruise->previous_gear` at runtime, indexes the constant
+/// ratio matrix, multiplies every f32 in `d_velocities` by that ratio.
+/// Single LDC for the ratio (broadcast across the warp); single LDG +
+/// MUL + STG per thread.  Block size 256 ⇒ LDG.E.128 / STG.E.128 at
+/// the warp level (sm_120 ptxas behaviour).
+///
+/// `target_gear` is the body's hardcoded 0/1/2.  Body 3 (abort) does
+/// NOT call this kernel — the trap kernel runs instead.
+int prism_gearbox_launch_rescale(
+    float*                              d_velocities,
+    uint32_t                            n_floats,
+    const ChronometricStateTensor*      cruise,
+    uint32_t                            target_gear,
+    void*                               stream);
+
+/// B.3 — Apply-fixed-dt kernel.  Single-thread <<<1,1>>> writes
+/// `d_gearbox_table[target_gear * 4]` into `*(adj->d_dt)`.  Used inside
+/// each body sub-graph (Gears 0/1/2) to commit the gear's timestep
+/// after the velocity rescale has completed.  Idempotent: if the
+/// upstream PointerSwap already wrote the same value, the second write
+/// is a no-op observable.
+int prism_gearbox_launch_apply_fixed_dt(
+    const InterferometricAdjudicatorFfi* adj,
+    uint32_t                             target_gear,
+    void*                                stream);
+
+/// B.3 — Hardware trap kernel.  Single-thread <<<1,1>>> issues
+/// `asm volatile("trap;");`.  Used inside body 3 (Gear 3 / Abort).
+/// Halts the GPU stream and surfaces a CUDA error to the host.
+int prism_gearbox_launch_trap(void* stream);
+
+/// B.3 — Populate the four phGraph_out body sub-graphs returned by
+/// `prism_wire_g26_gearbox_ffi`.  For each active gear N ∈ {0, 1, 2},
+/// adds rescale → [Berendsen if N==0] → apply_fixed_dt as kernel
+/// nodes with intra-body dependency edges.  For Gear 3, adds the trap
+/// kernel as a single node.
+///
+/// Returns cudaSuccess on full population.  If any phGraph_out[i] is
+/// null (CUDA driver bug — the Wave A B.1 risk register flag),
+/// returns `cudaErrorInvalidValue` early as the operator-mandated
+/// "Smoking Gun" signal for the kernel-conditional fallback path.
+///
+/// Berendsen knobs (target_temp_K, tau_ps) are passed through to the
+/// Gear 0 body kernel.  Pass null d_current_temp / d_dt to skip the
+/// Berendsen guard (for tests that don't have a ProtocolState).
+int prism_gearbox_populate_switch_bodies_ffi(
+    cudaGraph_t*                          body_subgraphs,        /* [4] */
+    const InterferometricAdjudicatorFfi*  adj,
+    float*                                d_velocities,
+    uint32_t                              n_floats,
+    const ChronometricStateTensor*        cruise,
+    const float*                          d_current_temp,        /* nullable */
+    const float*                          d_dt,                  /* nullable */
+    float                                 target_temp_K,
+    float                                 tau_ps);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
