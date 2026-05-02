@@ -243,6 +243,16 @@ struct Args {
     #[arg(long)]
     cold_hold_override: Option<i32>,
 
+    /// Amendment 3.4.3 — Opt-in monolithic-fusion (Path Z). When set, the V2
+    /// build attempts the cudaGraphAddChildGraphNode splice
+    /// (FusedStep → AdjudicationChild → MultiLIF) producing a single fused
+    /// CUgraphExec.  Default OFF: V2 runs in overlay mode (separate
+    /// CapturedAdjudicationPipeline launch alongside legacy autonomous
+    /// MD graph) — restored as the safe path while the monolithic
+    /// deadlock signature reported in 3.4.3 is investigated.
+    #[arg(long, default_value = "false")]
+    m1_monolithic_discovery: bool,
+
     /// Enable true parallel replica execution via AmberSimdBatch
     /// All replicas run simultaneously on GPU (vs sequential when disabled)
     #[arg(long, default_value = "false")]
@@ -4987,15 +4997,24 @@ fn run_multi_stream_pipeline(
                                                         v2_was_live.store(true, std::sync::atomic::Ordering::Release);
 
                                                         // ── Amendment 3.4 MONOLITHIC FUSION ────────────
-                                                        // Capture the autonomous template (Director →
-                                                        // FusedStep → MultiLIF) with node tagging, then
-                                                        // splice the adjudication template (from the
-                                                        // already-built v2_pipeline.cu_graph_raw()) as a
-                                                        // child graph node downstream of FusedStep,
-                                                        // upstream of MultiLIF. Instantiate the fused
-                                                        // template into a single CUgraphExec.
-                                                        // Failure here is non-fatal: we fall back to the
-                                                        // overlay path with explicit log.
+                                                        // OPT-IN per Amendment 3.4.3: the splice
+                                                        // surfaced a deadlock signature in production
+                                                        // (12.7 GB VRAM resident, GPU 0%, log frozen at
+                                                        // chunk 0 well before the V2 trigger fired).
+                                                        // Default-OFF restores the working V2 overlay
+                                                        // path until Path Z.1 (flattened capture) is
+                                                        // landed and verified.
+                                                        if !args.m1_monolithic_discovery {
+                                                            log::info!(
+                                                                "    [MONO-FUSE stream {}] SKIPPED — \
+                                                                 --m1-monolithic-discovery not set; \
+                                                                 V2 runs in overlay mode", i
+                                                            );
+                                                        } else {
+                                                        log::info!(
+                                                            "    [V2-INSTANTIATE-START stream {}] \
+                                                             beginning monolithic splice", i
+                                                        );
                                                         match engine.capture_autonomous_template() {
                                                             Ok(mut auto_tmpl) => {
                                                                 let pipe_ref = v2_pipeline.as_ref().unwrap();
@@ -5051,6 +5070,11 @@ fn run_multi_stream_pipeline(
                                                                  failed: {} — overlay path", i, e
                                                             ),
                                                         }
+                                                        log::info!(
+                                                            "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                             monolithic splice attempt finished", i
+                                                        );
+                                                        } // end if !args.m1_monolithic_discovery else
                                                     }
                                                     Err(e) => {
                                                         log::warn!(
