@@ -5198,9 +5198,30 @@ fn run_multi_stream_pipeline(
                                 #[cfg(feature = "v2_ignition")]
                                 if let Some(ref pipeline) = v2_pipeline {
                                     if v2_monolithic.is_none() {
-                                        // G24 slot-roller: patch ZSTR node params per launch,
-                                        // then fire the captured graph. Falls back to plain
-                                        // pipeline.launch() when ZSTR ring is not live.
+                                        // RECT-3.5.1 — Path Z device-slot ZSTR.  Update
+                                        // __constant__ d_zstr_active_slot via stream-ordered
+                                        // cudaMemcpyToSymbolAsync BEFORE the captured-graph
+                                        // launch on the V2 pipeline's md_stream.  The
+                                        // captured ZSTR pos_stage + fence_signal kernels
+                                        // read the new slot at execution time, so the same
+                                        // fused exec rolls through all 5 ring slots without
+                                        // graph mutation.  Without this, slot 0 is
+                                        // overwritten every launch → frame aliasing risk.
+                                        if v2_zstr_ring.is_some() {
+                                            let v2_md_stream = pipeline.md_stream_raw()
+                                                as *mut std::ffi::c_void;
+                                            let slot = (chunk_idx as u64
+                                                % prism_nhs::zstr::ZstrRing::N_SLOTS as u64)
+                                                as u32;
+                                            let _rc = unsafe {
+                                                prism_nhs::zstr::ffi::prism_zstr_set_active_slot(
+                                                    slot, v2_md_stream,
+                                                )
+                                            };
+                                        }
+                                        // G24 slot-roller (Path Z): legacy API now no-ops
+                                        // beyond delegating to launch(); slot rolling lives
+                                        // in the constant-memory update above.
                                         if let Some(ref ring) = v2_zstr_ring {
                                             pipeline.launch_with_zstr_slot(chunk_idx as u64, ring)
                                                 .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;

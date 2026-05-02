@@ -687,24 +687,40 @@ impl CapturedAdjudicationPipeline {
             return Err(BuildError::Cuda { stage: "Node B (SO(3))", rc });
         }
 
-        // ── 6.b-G28 SISR symmetry consensus (Amendment 3.4) ─────────────
+        // ── 6.b-G28 SISR symmetry consensus (Amendment 3.4 + RECT-3.4.1) ──
         // Captured between SO(3) and Adjudicator on md_stream. The kernel
         // zeros sisr_mask_dev then atomicOr's bits for clusters lacking a
         // C2-reflected partner within ε_sym. Adjudicator step kernel reads
         // *adj->force_prune_mask (offset 104 → sisr_mask_dev) and forces
         // PRISM_ADJ_PRUNE on any non-zero bit.
+        //
+        // RECT-3.4.1 SISR Adaptive Gate: skip the kernel when n_clusters < 2.
+        // Single-cluster mode has no symmetric partner candidate so SISR
+        // would set force_prune_mask bit 0 every frame and collapse the F1
+        // SWITCH predicate to PRUNE.  Operator-mandated unblock (M1.2.16).
+        // The mask buffer remains zero-initialised → Adjudicator never
+        // overrides Δ_AB-based decision → "Burst" path becomes reachable.
+        // Once cluster bifurcation matures (n_clusters ≥ 2), SISR fires
+        // automatically and provides the bilateral-truth gate.
         if let Some(ref sisr) = cfg.sisr {
-            let rc = unsafe {
-                prism_sisr_launch(
-                    manifest.tiles_dev_ptr as *const c_void,
-                    cfg.n_clusters,
-                    sisr_mask_dev as *mut c_void,
-                    sisr.epsilon_sym_angstrom,
-                    md_stream.cu_stream() as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda { stage: "G28 SISR launch", rc });
+            if cfg.n_clusters >= 2 {
+                let rc = unsafe {
+                    prism_sisr_launch(
+                        manifest.tiles_dev_ptr as *const c_void,
+                        cfg.n_clusters,
+                        sisr_mask_dev as *mut c_void,
+                        sisr.epsilon_sym_angstrom,
+                        md_stream.cu_stream() as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda { stage: "G28 SISR launch", rc });
+                }
+            } else {
+                log::info!(
+                    "[G28 SISR] adaptive gate: n_clusters={} < 2 — kernel skipped, \
+                     mask stays zero, F1 SWITCH branches on Δ_AB only", cfg.n_clusters
+                );
             }
         }
 
@@ -1186,6 +1202,15 @@ impl CapturedAdjudicationPipeline {
     /// (`stream_flags(...) & CU_STREAM_NON_BLOCKING == 1`).
     pub fn telemetry_stream(&self) -> CUstream {
         self.telemetry_stream
+    }
+
+    /// Raw `CUstream` for the pipeline's MD-side stream.  Exposed so the
+    /// orchestrator can enqueue stream-ordered host operations (e.g.,
+    /// `prism_zstr_set_active_slot` constant-memory updates per launch)
+    /// on the same stream that runs the captured graph — preserves the
+    /// FIFO ordering between symbol update and `cuGraphLaunch`.
+    pub fn md_stream_raw(&self) -> CUstream {
+        self.md_stream.cu_stream()
     }
 
     /// Read access to the pinned ring (Pillar-5 reporter consumes
