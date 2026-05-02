@@ -93,11 +93,13 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
     let mut d_adj: cudarc::driver::CudaSlice<u8> =
         stream.alloc_zeros::<u8>(128).expect("alloc adj");
     let mut host_adj = [0u8; 128];
-    host_adj[112..120].copy_from_slice(&d_dt_addr_u64.to_le_bytes());
+    // M1.2.17 layout pivot: d_dt moved from offset 112 → 120 (offset
+    // 112 is now the f64 d_potential_energy VALUE).
+    host_adj[120..128].copy_from_slice(&d_dt_addr_u64.to_le_bytes());
 
     // ── ChronometricStateTensor (16 B) ──
     let mut d_cruise: cudarc::driver::CudaSlice<u8> =
-        stream.alloc_zeros::<u8>(16).expect("alloc cruise");
+        stream.alloc_zeros::<u8>(32).expect("alloc cruise");
 
     // ════════════════════════════════════════════════════════════════
     // SCENARIO A — Equilibrium upshift to Gear 2.
@@ -114,9 +116,11 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             last_burst_frame: 0,
             current_gear: 1,
             previous_gear: 1,
+            v_prev: 0.0,
+            _pad_v_prev: 0,
         };
-        let cruise_bytes: [u8; 16] = unsafe {
-            std::mem::transmute::<ChronometricStateTensor, [u8; 16]>(cruise_seed)
+        let cruise_bytes: [u8; 32] = unsafe {
+            std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed)
         };
         stream.memcpy_htod(&cruise_bytes, &mut d_cruise).expect("htod cruise A");
 
@@ -149,10 +153,10 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
         assert_ne!(pre_bits, post_bits, "[A] pre and post bit patterns identical");
 
         // Cruise state-machine audit.
-        let mut cruise_back = [0u8; 16];
+        let mut cruise_back = [0u8; 32];
         stream.memcpy_dtoh(&d_cruise, &mut cruise_back).expect("[A] dtoh cruise");
         let cruise_after: ChronometricStateTensor = unsafe {
-            std::mem::transmute::<[u8; 16], ChronometricStateTensor>(cruise_back)
+            std::mem::transmute::<[u8; 32], ChronometricStateTensor>(cruise_back)
         };
         assert_eq!(cruise_after.counter,      501);
         assert_eq!(cruise_after.current_gear, 2);
@@ -185,9 +189,11 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             last_burst_frame: 0,
             current_gear: 2,
             previous_gear: 1,
+            v_prev: 0.0,
+            _pad_v_prev: 0,
         };
-        let cruise_bytes: [u8; 16] = unsafe {
-            std::mem::transmute::<ChronometricStateTensor, [u8; 16]>(cruise_seed)
+        let cruise_bytes: [u8; 32] = unsafe {
+            std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed)
         };
         stream.memcpy_htod(&cruise_bytes, &mut d_cruise).expect("htod cruise B");
 
@@ -219,10 +225,10 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             post_bits);
 
         // Cruise state-machine audit (Zero-Trust last_burst_frame stamp).
-        let mut cruise_back = [0u8; 16];
+        let mut cruise_back = [0u8; 32];
         stream.memcpy_dtoh(&d_cruise, &mut cruise_back).expect("[B] dtoh cruise");
         let cruise_after: ChronometricStateTensor = unsafe {
-            std::mem::transmute::<[u8; 16], ChronometricStateTensor>(cruise_back)
+            std::mem::transmute::<[u8; 32], ChronometricStateTensor>(cruise_back)
         };
         assert_eq!(cruise_after.counter,          0,    "burst MUST reset counter");
         assert_eq!(cruise_after.current_gear,     0,    "burst MUST select Gear 0");

@@ -69,7 +69,18 @@ __device__ __forceinline__ float* prism_gearbox_load_adj_d_dt(
 ) {
     const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
     // d_dt is a *mut f32; we load the 8-byte pointer value.
-    return *reinterpret_cast<float* const*>(base + 112);
+    // M1.2.17: moved from offset 112 → 120 (d_potential_energy now at 112).
+    return *reinterpret_cast<float* const*>(base + 120);
+}
+
+/// M1.2.17 — load adj->d_potential_energy (f64 VALUE at offset 112).
+/// Read by the SFA stability-fuse logic to compute the rolling-window
+/// drift |V_t − V_{t-1}| / |V_{t-1}|.
+__device__ __forceinline__ double prism_gearbox_load_adj_v_curr(
+    const InterferometricAdjudicatorFfi* adj
+) {
+    const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
+    return *reinterpret_cast<const double*>(base + 112);
 }
 
 // ─── PointerSwap kernel — Stateful Finite Automaton ────────────────────────
@@ -207,6 +218,29 @@ __global__ void prism_gearbox_sfa_kernel(
         target_gear = (counter < PRISM_GEARBOX_CRUISE_THRESHOLD) ? 1u : 2u;
     }
 
+    // ── M1.2.17 — Hamiltonian Stability Fuse ──────────────────────
+    // Read V_t from adj.d_potential_energy (offset 112, written by the
+    // upstream CUB-reduce energy monitor) and V_{t-1} from cruise.v_prev.
+    // If drift |V_t − V_{t-1}| / |V_{t-1}| > 0.01 OR isnan(V_t), force
+    // target_gear = 3 (Abort) → SWITCH body 3 fires the trap kernel.
+    //
+    // First-frame guard: when v_prev == 0.0 (sentinel), skip the drift
+    // check so the engine doesn't trap on the very first launch.
+    const double v_curr = prism_gearbox_load_adj_v_curr(adj);
+    const double v_prev = cruise->v_prev;
+    const bool   first_frame = (v_prev == 0.0);
+    if (!first_frame) {
+        const double abs_prev = (v_prev < 0.0) ? -v_prev : v_prev;
+        const double diff     = (v_curr - v_prev);
+        const double abs_diff = (diff < 0.0) ? -diff : diff;
+        const double drift    = abs_diff / abs_prev;
+        // isnan check: NaN != NaN.  Reject Inf as well.
+        const bool   nan_v    = !(v_curr == v_curr) || (v_curr > 1.0e300) || (v_curr < -1.0e300);
+        if (drift > 0.01 || nan_v) {
+            target_gear = 3u;    // override → SWITCH body 3 (trap)
+        }
+    }
+
     // Capture OLD current_gear into previous_gear so the body's
     // rescale kernel can read it for the symplectic ratio compute.
     const uint32_t prev_gear  = cruise->current_gear;
@@ -214,6 +248,11 @@ __global__ void prism_gearbox_sfa_kernel(
     cruise->counter           = counter;
     cruise->last_burst_frame  = last_burst_frame;
     cruise->current_gear      = target_gear;
+    // M1.2.17 — store V_t into v_prev so the next launch's SFA reads
+    // the correct V_{t-1}.  (Captured-graph dependency edge: SFA runs
+    // AFTER the energy monitor's window-update, so adj.d_potential_energy
+    // already holds V_t.)
+    cruise->v_prev            = v_curr;
     // No dt write — that's the SWITCH body's job.
 }
 
@@ -497,8 +536,9 @@ __global__ void prism_gearbox_apply_fixed_dt_kernel(
     if (adj == nullptr) return;
     // Read d_dt pointer via offset arithmetic — keeps this TU
     // independent of the full FFI struct definition (operator §M2).
+    // M1.2.17 layout pivot: d_dt now at offset 120 (was 112).
     const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
-    float* dt_target = *reinterpret_cast<float* const*>(base + 112);
+    float* dt_target = *reinterpret_cast<float* const*>(base + 120);
     if (dt_target == nullptr) return;
     if (target_gear >= 4u) return;
     *dt_target = d_gearbox_table[target_gear * PRISM_GEARBOX_FLOATS_PER_GEAR];

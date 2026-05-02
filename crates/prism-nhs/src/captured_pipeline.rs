@@ -227,6 +227,23 @@ extern "C" {
         target_temp_K:  f32,
         tau_ps:         f32,
     ) -> i32;
+
+    // M1.2.17 — Hamiltonian Auditor.
+    fn prism_energy_monitor_temp_storage_bytes(
+        n:              u32,
+        out_temp_bytes: *mut usize,
+    ) -> i32;
+
+    fn prism_energy_monitor_launch_reduce(
+        d_pe_components:    *const f64,
+        n:                  u32,
+        d_temp_storage:     *mut c_void,
+        temp_storage_bytes: usize,
+        d_pe_scalar:        *mut f64,
+        d_energy_window:    *mut c_void,    // EnergyWindow
+        d_adj_pe_target:    *mut f64,
+        stream:             *mut c_void,
+    ) -> i32;
 }
 
 // ============================================================================
@@ -400,6 +417,19 @@ pub struct PipelineConfig {
     /// the field UNCONSUMED; Wave B's VelocityRescale kernel inside the
     /// G26 SWITCH body sub-graphs will read it on gear transitions.
     pub d_velocities: *mut f32,
+
+    /// **M1.2.17 — Per-atom potential-energy components buffer pointer.**
+    /// Device-resident `*const f64` aliased to
+    /// `NhsAmberFusedEngine::d_potential_energy_components` (n_atoms × f64,
+    /// zeroed each integration step, populated by the AMBER force kernels
+    /// via atomicAdd_f64).  The captured pipeline's energy-monitor node
+    /// reduces this buffer via `cub::DeviceReduce::Sum` and writes the
+    /// scalar V_t into `adj.d_potential_energy` at offset 112.  null =
+    /// no energy monitoring (SFA stability fuse stays in first-frame mode).
+    pub d_pe_components: *const f64,
+
+    /// **M1.2.17** — Number of atoms (= length of d_pe_components).
+    pub n_atoms_for_pe: u32,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -467,6 +497,16 @@ pub struct CapturedAdjudicationPipeline {
     /// via `prism_gearbox_populate_switch_bodies_ffi`.  Null if the
     /// gearbox wiring is bypassed (n_atoms == 0 / test fixture).
     g26_cond_node: CUgraphNode,
+
+    /// **M1.2.17 — Hamiltonian Auditor buffers (F2-pool, freed on Drop).**
+    /// `energy_temp_storage_dev`: CUB temp storage (variable size).
+    /// `energy_pe_scalar_dev`:    f64 reduce result (8 B).
+    /// `energy_window_dev`:       EnergyWindow scratch (16 B).
+    /// All zero when n_atoms_for_pe == 0 (energy monitor disabled).
+    energy_temp_storage_dev:   usize,
+    energy_temp_storage_bytes: u64,
+    energy_pe_scalar_dev:      usize,
+    energy_window_dev:         usize,
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -714,18 +754,20 @@ impl CapturedAdjudicationPipeline {
         // current_gear=1 (2.0 fs safety)} so the first PointerSwap
         // launch sees a clean baseline.  Predicate bridge in B.2 will
         // wire this address into the SWITCH body sub-graphs.
-        const CRUISE_STATE_BYTES: u64 = 16;
+        // M1.2.17: cruise grew 16 → 32 bytes for v_prev (f64) + pad.
+        const CRUISE_STATE_BYTES: u64 = 32;
         let cruise_state_dev = pool.alloc_async(CRUISE_STATE_BYTES, md_raw)
             .map_err(|s| BuildError::PoolAlloc { what: "cruise_state", reason: s })?;
         unsafe {
-            // Default: counter=0, last_burst_frame=0, current_gear=1
-            // (Gear 1 = 2.0fs safety), previous_gear=1 (matches current
-            // so the first symplectic-ratio compute yields λ = 1.0).
-            // Wave B.2 layout: [u32; 4] little-endian = 16 bytes.
-            let seed: [u32; 4] = [0u32, 0u32, 1u32, 1u32];
+            // Default: counter=0, last_burst_frame=0, current_gear=1,
+            // previous_gear=1, v_prev=0.0 (sentinel for "first frame;
+            // skip drift check"), _pad_v_prev=0.  Encoded as raw bytes
+            // matching the C-side layout (u32 × 4 + f64 + u64 = 32 B).
+            let seed = crate::gearbox::ChronometricStateTensor::initial();
+            let seed_bytes: [u8; 32] = std::mem::transmute(seed);
             let rc = cuMemcpyHtoD_v2(
                 cruise_state_dev as CUdeviceptr,
-                seed.as_ptr() as *const c_void,
+                seed_bytes.as_ptr() as *const c_void,
                 CRUISE_STATE_BYTES as usize,
             );
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
@@ -734,6 +776,55 @@ impl CapturedAdjudicationPipeline {
                     rc: rc as i32,
                 });
             }
+        }
+
+        // ── M1.2.17 — Hamiltonian Auditor buffers ──────────────────
+        // Three F2-pool allocations for the captured energy-monitor
+        // node:
+        //   energy_temp_storage_dev: CUB temp storage (sized via
+        //     prism_energy_monitor_temp_storage_bytes).
+        //   energy_pe_scalar_dev:    f64 reduce target (8 B).
+        //   energy_window_dev:       EnergyWindow (16 B: prev/cur f64).
+        //
+        // All zero-initialised so the first launch sees a clean baseline.
+        // Sized to PipelineConfig::n_atoms_for_pe; if 0 the node skips.
+        let mut energy_temp_storage_dev: usize = 0;
+        let mut energy_pe_scalar_dev:    usize = 0;
+        let mut energy_window_dev:       usize = 0;
+        let mut energy_temp_storage_bytes: u64 = 0;
+        if cfg.n_atoms_for_pe > 0 {
+            // Query CUB temp-storage size for an n-element f64 reduce.
+            let mut temp_bytes: usize = 0;
+            let rc = unsafe {
+                prism_energy_monitor_temp_storage_bytes(
+                    cfg.n_atoms_for_pe,
+                    &mut temp_bytes as *mut usize,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "M1.2.17 prism_energy_monitor_temp_storage_bytes",
+                    rc,
+                });
+            }
+            energy_temp_storage_bytes = temp_bytes as u64;
+            energy_temp_storage_dev = pool.alloc_async(temp_bytes as u64, md_raw)
+                .map_err(|s| BuildError::PoolAlloc { what: "energy_temp_storage", reason: s })?;
+            energy_pe_scalar_dev = pool.alloc_async(8, md_raw)
+                .map_err(|s| BuildError::PoolAlloc { what: "energy_pe_scalar", reason: s })?;
+            energy_window_dev = pool.alloc_async(16, md_raw)
+                .map_err(|s| BuildError::PoolAlloc { what: "energy_window", reason: s })?;
+            unsafe {
+                let _ = cuMemsetD8_v2(energy_temp_storage_dev as CUdeviceptr, 0, temp_bytes);
+                let _ = cuMemsetD8_v2(energy_pe_scalar_dev    as CUdeviceptr, 0, 8);
+                let _ = cuMemsetD8_v2(energy_window_dev       as CUdeviceptr, 0, 16);
+            }
+            md_stream.synchronize().map_err(BuildError::Driver)?;
+            log::info!(
+                "[M1.2.17] energy monitor allocated: temp_storage={} B \
+                 pe_scalar=8 B window=16 B; n_atoms={}",
+                temp_bytes, cfg.n_atoms_for_pe
+            );
         }
 
         // ── Wave B.1 — Initialise __constant__ d_gearbox_table ────────
@@ -888,15 +979,16 @@ impl CapturedAdjudicationPipeline {
             md_stream.synchronize().map_err(BuildError::Driver)?;
         }
 
-        // ── 5b. T12 Pre-Flight — wire d_dt / d_velocities pointers ──
-        // Connective tissue for Wave B's G26 chronometric gearbox.
-        // The pointers are written into adj_dev at the offsets pinned
-        // by the C-side static_asserts (112 / 120) so Wave B kernels
-        // can read them via the FFI struct without a separate plumbing.
-        // Wave A leaves these UNCONSUMED — no kernel depends on them.
+        // ── 5b. M1.2.17 — wire adj->d_dt at offset 120 ──────────────
+        // The d_dt pointer is written into adj_dev at offset 120 (the
+        // M1.2.17 layout pivot moved it from 112 to 120 to make room
+        // for the f64 d_potential_energy VALUE at the L1-aligned 112
+        // slot).  d_velocities is no longer in the struct — it lives
+        // on PipelineConfig only and the populator FFI threads it
+        // directly into the SWITCH body rescale kernels.
         if !cfg.d_dt.is_null() {
             unsafe {
-                let field_addr = (adj_dev + 112) as CUdeviceptr;
+                let field_addr = (adj_dev + 120) as CUdeviceptr;
                 let value: u64 = cfg.d_dt as u64;
                 let rc = cuMemcpyHtoD_v2(
                     field_addr,
@@ -905,34 +997,15 @@ impl CapturedAdjudicationPipeline {
                 );
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
                     return Err(BuildError::Cuda {
-                        stage: "wire adj->d_dt (T12 Pre-Flight)",
+                        stage: "wire adj->d_dt (M1.2.17 offset 120)",
                         rc: rc as i32,
                     });
                 }
             }
-        }
-        if !cfg.d_velocities.is_null() {
-            unsafe {
-                let field_addr = (adj_dev + 120) as CUdeviceptr;
-                let value: u64 = cfg.d_velocities as u64;
-                let rc = cuMemcpyHtoD_v2(
-                    field_addr,
-                    &value as *const _ as *const c_void,
-                    8,
-                );
-                if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                    return Err(BuildError::Cuda {
-                        stage: "wire adj->d_velocities (T12 Pre-Flight)",
-                        rc: rc as i32,
-                    });
-                }
-            }
-        }
-        if !cfg.d_dt.is_null() || !cfg.d_velocities.is_null() {
             md_stream.synchronize().map_err(BuildError::Driver)?;
             log::info!(
-                "[T12 PRE-FLIGHT] wired adj->d_dt={:p} adj->d_velocities={:p} \
-                 (Wave A — unconsumed; Wave B PointerSwap will read these)",
+                "[M1.2.17] wired adj->d_dt={:p} at offset 120; \
+                 cfg.d_velocities={:p} (struct slot removed; populator threads it)",
                 cfg.d_dt as *const f32, cfg.d_velocities as *const f32
             );
         }
@@ -1243,6 +1316,41 @@ impl CapturedAdjudicationPipeline {
                 stage: "B.3.2 prism_gearbox_create_handle_ffi",
                 rc,
             });
+        }
+
+        // ── M1.2.17 — Hamiltonian Auditor (energy monitor reduce) ──
+        // Captured BEFORE the SFA kernel so adj.d_potential_energy
+        // (offset 112) holds V_t when the SFA reads it for the
+        // stability-fuse drift check.  Skipped when the host hasn't
+        // wired d_pe_components / n_atoms_for_pe — the SFA stays in
+        // first-frame mode (no drift trip).  Captured-graph dependency:
+        //   ASC → energy_monitor_reduce → energy_window_update → SFA → ...
+        //
+        // The reduce + window-update pair adds 2 captured nodes.
+        if !cfg.d_pe_components.is_null() && cfg.n_atoms_for_pe > 0 {
+            // The CUB DeviceReduce::Sum is captured as a series of
+            // internal nodes; we don't snapshot individual handles.
+            // The window-update kernel writes adj.d_potential_energy
+            // (offset 112) directly.
+            let adj_pe_target = (adj_dev + 112) as *mut f64;
+            let rc = unsafe {
+                prism_energy_monitor_launch_reduce(
+                    cfg.d_pe_components,
+                    cfg.n_atoms_for_pe,
+                    energy_temp_storage_dev as *mut c_void,
+                    energy_temp_storage_bytes as usize,
+                    energy_pe_scalar_dev as *mut f64,
+                    energy_window_dev as *mut c_void,
+                    adj_pe_target,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "M1.2.17 prism_energy_monitor_launch_reduce",
+                    rc,
+                });
+            }
         }
 
         // Step 3: SFA kernel.
@@ -1755,6 +1863,10 @@ impl CapturedAdjudicationPipeline {
             cruise_state_dev,
             g26_cond_handle,
             g26_cond_node,
+            energy_temp_storage_dev,
+            energy_temp_storage_bytes,
+            energy_pe_scalar_dev,
+            energy_window_dev,
             ring,
             cu_graph,
             cu_graph_exec,
@@ -1972,6 +2084,16 @@ impl Drop for CapturedAdjudicationPipeline {
         let _ = self.pool.free_async(self.dynt7_stats_dev, md_raw);
         // Wave B.1 — G26 ChronometricStateTensor (always allocated).
         let _ = self.pool.free_async(self.cruise_state_dev, md_raw);
+        // M1.2.17 — energy monitor buffers (allocated only when n_atoms_for_pe > 0).
+        if self.energy_temp_storage_dev != 0 {
+            let _ = self.pool.free_async(self.energy_temp_storage_dev, md_raw);
+        }
+        if self.energy_pe_scalar_dev != 0 {
+            let _ = self.pool.free_async(self.energy_pe_scalar_dev, md_raw);
+        }
+        if self.energy_window_dev != 0 {
+            let _ = self.pool.free_async(self.energy_window_dev, md_raw);
+        }
         // VramPool's Drop releases the pool itself.
     }
 }
@@ -2207,6 +2329,8 @@ mod tests {
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
+            d_pe_components: ptr::null(),
+            n_atoms_for_pe: 0,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -2330,6 +2454,8 @@ mod tests {
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
+            d_pe_components: ptr::null(),
+            n_atoms_for_pe: 0,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -2411,6 +2537,8 @@ mod tests {
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
+            d_pe_components: ptr::null(),
+            n_atoms_for_pe: 0,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -2500,6 +2628,8 @@ mod tests {
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
+            d_pe_components: ptr::null(),
+            n_atoms_for_pe: 0,
         };
 
         // Closure that captures the conditional-node handle written

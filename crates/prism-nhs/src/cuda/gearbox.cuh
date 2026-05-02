@@ -61,18 +61,29 @@
 // pinned by the Rust-side `#[repr(C, align(16))]` mirror in gearbox.rs.
 
 struct __align__(16) ChronometricStateTensor {
-    uint32_t counter;            // frames since last burst (0..∞)
-    uint32_t last_burst_frame;   // global frame index of most-recent Burst
-    uint32_t current_gear;       // 0/1/2/3 — whatever PointerSwap most recently chose
-    uint32_t previous_gear;      // B.2 — gear active BEFORE the most recent PointerSwap
-                                 //       launch (used by the symplectic-ratio kernel
-                                 //       to compute λ = dt_new / dt_old).
+    uint32_t counter;            // frames since last burst (0..∞)        @ 0
+    uint32_t last_burst_frame;   // global frame index of most-recent Burst @ 4
+    uint32_t current_gear;       // 0/1/2/3 — current PointerSwap choice  @ 8
+    uint32_t previous_gear;      // B.2 — gear active BEFORE the latest    @ 12
+                                 //       PointerSwap launch (symplectic
+                                 //       ratio kernel reads it for
+                                 //       λ = dt_new / dt_old).
+    // M1.2.17 — Hamiltonian Stability Fuse state.  V_{t-1} for the
+    // rolling-window drift check.  Initialised to 0.0 (sentinel for
+    // "first frame; skip drift check"); SFA writes V_t here at the
+    // end of each launch.
+    double   v_prev;             // V at frame t-1 (kcal/mol, f64)        @ 16
+    // Pad to 32 bytes for L2-cache-line-aligned access (24 → 32 via
+    // align(16)).  Operator-locked layout with explicit padding.
+    uint64_t _pad_v_prev;        //                                       @ 24
 };
 
-static_assert(sizeof(ChronometricStateTensor) == 16,
-              "ChronometricStateTensor MUST be 16 bytes (operator-mandated layout).");
+static_assert(sizeof(ChronometricStateTensor) == 32,
+              "ChronometricStateTensor MUST be 32 bytes (M1.2.17 v_prev extension).");
 static_assert(alignof(ChronometricStateTensor) == 16,
               "ChronometricStateTensor MUST be 16-byte aligned.");
+static_assert(offsetof(ChronometricStateTensor, v_prev) == 16,
+              "v_prev offset drift: must be 16.");
 
 // ─── Gear-table cardinality ─────────────────────────────────────────────────
 //

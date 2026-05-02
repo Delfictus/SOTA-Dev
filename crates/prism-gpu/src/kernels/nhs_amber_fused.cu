@@ -268,7 +268,11 @@ struct SharedMemory {
 __device__ void compute_bond_force(
     const float3& pi, const float3& pj,
     float r0, float k,
-    float3& fi, float3& fj
+    float3& fi, float3& fj,
+    // M1.2.17 — per-atom PE accumulator + atom indices.  Pass nullptr
+    // for pe_components to disable PE accumulation (legacy callers).
+    double* pe_components,
+    int bi, int bj
 ) {
     float3 rij = make_float3(pj.x - pi.x, pj.y - pi.y, pj.z - pi.z);
     float r = sqrtf(rij.x*rij.x + rij.y*rij.y + rij.z*rij.z);
@@ -281,13 +285,25 @@ __device__ void compute_bond_force(
     float3 f = make_float3(force_mag * rij.x, force_mag * rij.y, force_mag * rij.z);
     fi.x -= f.x; fi.y -= f.y; fi.z -= f.z;
     fj.x += f.x; fj.y += f.y; fj.z += f.z;
+
+    // M1.2.17 — accumulate V_b = k·(r − r_eq)² split half-half across
+    // the two bonded atoms (so Σ pe_components = Σ_bonds V_b).
+    // AMBER ff14SB convention: K_r already pre-folds the 1/2 into k.
+    if (pe_components != nullptr) {
+        const double v_bond_half = (double)k * (double)dr * (double)dr * 0.5;
+        atomicAdd(pe_components + bi, v_bond_half);
+        atomicAdd(pe_components + bj, v_bond_half);
+    }
 }
 
-// Angle force: E = k(theta - theta0)^2
+// Angle force: V = k(theta - theta0)^2
 __device__ void compute_angle_force(
     const float3& pi, const float3& pj, const float3& pk,
     float theta0, float k,
-    float3& fi, float3& fj, float3& fk
+    float3& fi, float3& fj, float3& fk,
+    // M1.2.17 — per-atom PE accumulator + 3 atom indices.
+    double* pe_components,
+    int ai, int aj, int ak
 ) {
     float3 rij = make_float3(pi.x - pj.x, pi.y - pj.y, pi.z - pj.z);
     float3 rkj = make_float3(pk.x - pj.x, pk.y - pj.y, pk.z - pj.z);
@@ -330,13 +346,27 @@ __device__ void compute_angle_force(
     fj.x += force_mag * (di.x + dk.x);
     fj.y += force_mag * (di.y + dk.y);
     fj.z += force_mag * (di.z + dk.z);
+
+    // M1.2.17 — accumulate V_a = k·(θ − θ_eq)² split into thirds
+    // across the three angle atoms (so Σ pe_components = Σ_angles V_a).
+    if (pe_components != nullptr) {
+        const double v_angle_third =
+            (double)k * (double)dtheta * (double)dtheta * (1.0 / 3.0);
+        atomicAdd(pe_components + ai, v_angle_third);
+        atomicAdd(pe_components + aj, v_angle_third);
+        atomicAdd(pe_components + ak, v_angle_third);
+    }
 }
 
-// Dihedral force: E = k[1 + cos(n*phi - gamma)]
+// Dihedral force: V = (V_n/2)·[1 + cos(n*phi - gamma)]
+// (AMBER convention: k stored = V_n/2 ⇒ V = k·(1 + cos(n·phi − gamma))).
 __device__ void compute_dihedral_force(
     const float3& pi, const float3& pj, const float3& pk, const float3& pl,
     int periodicity, float phase, float k,
-    float3& fi, float3& fj, float3& fk, float3& fl
+    float3& fi, float3& fj, float3& fk, float3& fl,
+    // M1.2.17 — per-atom PE accumulator + 4 atom indices.
+    double* pe_components,
+    int di, int dj, int dk, int dl
 ) {
     float3 b1 = make_float3(pj.x - pi.x, pj.y - pi.y, pj.z - pi.z);
     float3 b2 = make_float3(pk.x - pj.x, pk.y - pj.y, pk.z - pj.z);
@@ -390,6 +420,19 @@ __device__ void compute_dihedral_force(
     fl.x -= f4.x; fl.y -= f4.y; fl.z -= f4.z;
     fj.x += f1.x * 0.5f; fj.y += f1.y * 0.5f; fj.z += f1.z * 0.5f;
     fk.x += f4.x * 0.5f; fk.y += f4.y * 0.5f; fk.z += f4.z * 0.5f;
+
+    // M1.2.17 — accumulate V_d = k·(1 + cos(n·phi − gamma)) split into
+    // quarters across the four dihedral atoms.  Note: V_n/2 is pre-folded
+    // into k in the AMBER topology, so V_d = k·(1 + cos(n·phi − gamma)).
+    // Σ pe_components = Σ_dihedrals V_d.
+    if (pe_components != nullptr) {
+        const double v_dih = (double)k * (1.0 + cos((double)n * (double)phi - (double)phase));
+        const double v_dih_quarter = v_dih * 0.25;
+        atomicAdd(pe_components + di, v_dih_quarter);
+        atomicAdd(pe_components + dj, v_dih_quarter);
+        atomicAdd(pe_components + dk, v_dih_quarter);
+        atomicAdd(pe_components + dl, v_dih_quarter);
+    }
 }
 
 // LJ + Electrostatic nonbonded force (OPTIMIZED with fast math)
@@ -399,7 +442,11 @@ __device__ __forceinline__ void compute_nonbonded_force(
     float sigma_i, float epsilon_i,
     float sigma_j, float epsilon_j,
     float3& fi, float3& fj,
-    float cutoff_sq
+    float cutoff_sq,
+    // M1.2.17 — per-atom PE accumulator + 2 atom indices.  pe_components
+    // = nullptr disables PE accumulation (legacy callers).
+    double* pe_components,
+    int nbi, int nbj
 ) {
     float3 rij = make_float3(pj.x - pi.x, pj.y - pi.y, pj.z - pi.z);
     float r_sq = rij.x*rij.x + rij.y*rij.y + rij.z*rij.z;
@@ -430,6 +477,19 @@ __device__ __forceinline__ void compute_nonbonded_force(
     float3 f = make_float3(total_force * rij.x, total_force * rij.y, total_force * rij.z);
     fi.x -= f.x; fi.y -= f.y; fi.z -= f.z;
     fj.x += f.x; fj.y += f.y; fj.z += f.z;
+
+    // M1.2.17 — accumulate V_pair = V_LJ + V_elec split half-half.
+    //   V_LJ   = 4·ε·(σ_r¹² − σ_r⁶)         (Lorentz-Berthelot ε,σ form)
+    //   V_elec = COULOMB_CONSTANT·q_i·q_j / r
+    if (pe_components != nullptr) {
+        const double v_lj   = 4.0 * (double)epsilon
+                                * ((double)sigma_r12 - (double)sigma_r6);
+        const double v_elec = (double)COULOMB_CONSTANT * (double)qi * (double)qj
+                                * (double)inv_r;
+        const double v_pair_half = (v_lj + v_elec) * 0.5;
+        atomicAdd(pe_components + nbi, v_pair_half);
+        atomicAdd(pe_components + nbj, v_pair_half);
+    }
 }
 
 // ============================================================================
@@ -920,7 +980,17 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     int* primary_residue_id,               // [grid_dim³] dominant driver residue ID (-1 = none)
     unsigned int* primary_residue_count,   // [grid_dim³] count for dominant driver
     // === KCC: per-residue per-step causal counter ===
-    int* residue_step_causal               // [n_residues] zeroed each step by kcc_residue_update
+    int* residue_step_causal,              // [n_residues] zeroed each step by kcc_residue_update
+
+    // M1.2.17 — Per-atom potential-energy components buffer.
+    // [n_atoms] f64.  Zeroed each step by the host before launch;
+    // the AMBER force kernels atomicAdd_f64 their per-atom V splits
+    // (V_b/2 per bonded atom; V_a/3 per angle atom; V_d/4 per dihedral
+    // atom; V_pair/2 per non-bonded pair atom) into this buffer.  The
+    // captured CUB DeviceReduce::Sum node downstream consumes it and
+    // writes the system-wide V into adj.d_potential_energy at offset
+    // 112.  Pass nullptr to disable PE accumulation.
+    double* pe_components
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -964,7 +1034,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         float3 pi = positions[bi];
         float3 pj = positions[bj];
 
-        compute_bond_force(pi, pj, bond.r0, bond.k, fi, fj);
+        compute_bond_force(pi, pj, bond.r0, bond.k, fi, fj,
+                           pe_components, bi, bj);
 
         atomicAdd(&forces[bi].x, fi.x);
         atomicAdd(&forces[bi].y, fi.y);
@@ -986,7 +1057,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         compute_angle_force(
             positions[ai], positions[aj], positions[ak],
             angle.theta0, angle.force_k,
-            fi, fj, fk
+            fi, fj, fk,
+            pe_components, ai, aj, ak
         );
 
         atomicAdd(&forces[ai].x, fi.x);
@@ -1013,7 +1085,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
         compute_dihedral_force(
             positions[di], positions[dj], positions[dk], positions[dl],
             dih.periodicity, dih.phase, dih.force_k,
-            fi, fj, fk, fl
+            fi, fj, fk, fl,
+            pe_components, di, dj, dk, dl
         );
 
         atomicAdd(&forces[di].x, fi.x);
@@ -1083,7 +1156,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                     my_charge, other_charge,
                     my_lj.sigma, my_lj.epsilon,
                     other_lj.sigma, other_lj.epsilon,
-                    fi, fj, cutoff_sq
+                    fi, fj, cutoff_sq,
+                    pe_components, tid, j
                 );
 
                 my_force.x += fi.x;

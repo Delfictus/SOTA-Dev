@@ -38,48 +38,53 @@ use std::ffi::c_void;
 /// Persistent gearbox state — lives in the F2 pool, mutated only by the
 /// PointerSwap kernel (Zero-CPU mandate).  Allocated once per pipeline,
 /// pointer-stable for the campaign.
+///
+/// **M1.2.17**: extended to 32 bytes to hold `v_prev: f64` for the
+/// Hamiltonian Stability Fuse.  Layout pinned by const_assert and
+/// the C-side static_assert in `gearbox.cuh`.
 #[repr(C, align(16))]
 #[derive(Debug, Clone, Copy)]
 pub struct ChronometricStateTensor {
-    /// Frames since the most recent Burst (`adjudication_code == 1`).
+    /// Frames since the most recent Burst (`adjudication_code == 1`).  @ 0
     /// Drives the cruise hysteresis: counter < 500 → Gear 1 (2.0 fs
-    /// safety); counter ≥ 500 → Gear 2 (4.0 fs campaign).  Saturating
-    /// increment in the kernel so a long quiet run cannot wrap u32.
+    /// safety); counter ≥ 500 → Gear 2 (4.0 fs campaign).
     pub counter: u32,
-    /// Global frame index of the most-recent Burst.  Stamped by the
-    /// kernel on the code=1 transition; passed in by the caller as
-    /// `current_frame`.  Useful for offline replay / forensic timeline.
+    /// Global frame index of the most-recent Burst.                    @ 4
     pub last_burst_frame: u32,
-    /// Most-recent gear chosen by the kernel.  0 = 0.5 fs, 1 = 2.0 fs,
-    /// 2 = 4.0 fs, 3 = abort.  Read by the predicate bridge in B.2 to
-    /// route the SWITCH; written by every PointerSwap launch.
+    /// Most-recent gear chosen by the kernel.                           @ 8
     pub current_gear: u32,
-    /// Wave B.2 — gear active BEFORE the most-recent PointerSwap launch.
-    /// PointerSwap copies `current_gear` into this slot before computing
-    /// the new gear, so the symplectic-ratio kernel can compute
-    /// λ = dt_new / dt_old without a separate scratch buffer.  Replaces
-    /// the former `_pad` slot; layout still 16 bytes, 16-aligned.
+    /// Gear active BEFORE the most-recent PointerSwap launch.           @ 12
+    /// Used by the symplectic-ratio kernel for λ = dt_new / dt_old.
     pub previous_gear: u32,
+    /// **M1.2.17 — V_{t-1}** for the rolling-window stability fuse.    @ 16
+    /// Initialised to 0.0 (first-frame sentinel; the SFA skips the
+    /// drift check when v_prev == 0).  SFA writes `adj.d_potential_energy`
+    /// here at the end of each launch so the next launch sees the
+    /// correct V_{t-1}.
+    pub v_prev: f64,
+    /// Padding to 32-byte boundary for L2 cache-line alignment.        @ 24
+    pub _pad_v_prev: u64,
 }
 
 impl ChronometricStateTensor {
     /// Default cruise state: counter = 0, no burst yet, current_gear = 1
-    /// (the safety gear — 2.0 fs).  This matches the operator-mandated
-    /// "Safety Gear" behaviour for the first ≤500 frames after build.
+    /// (the safety gear — 2.0 fs).  v_prev = 0.0 sentinel triggers
+    /// first-frame-skip in the SFA stability fuse.
     pub const fn initial() -> Self {
         Self {
             counter: 0,
             last_burst_frame: 0,
             current_gear: 1,
-            previous_gear: 1,    // matches initial current_gear so the first
-                                 // symplectic-ratio compute returns 1.0
+            previous_gear: 1,
+            v_prev: 0.0,
+            _pad_v_prev: 0,
         }
     }
 }
 
 const _: () = {
     use std::mem::{align_of, size_of};
-    assert!(size_of::<ChronometricStateTensor>()  == 16);
+    assert!(size_of::<ChronometricStateTensor>()  == 32);
     assert!(align_of::<ChronometricStateTensor>() == 16);
 };
 

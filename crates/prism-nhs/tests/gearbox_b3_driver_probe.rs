@@ -185,7 +185,7 @@ fn b3_blackwell_driver_probe_phgraph_out_validity() {
     let mut d_v: cudarc::driver::CudaSlice<f32> =
         stream.alloc_zeros::<f32>(n_floats as usize).expect("alloc v");
     let mut d_cruise: cudarc::driver::CudaSlice<u8> =
-        stream.alloc_zeros::<u8>(16).expect("alloc cruise");
+        stream.alloc_zeros::<u8>(32).expect("alloc cruise");
     let mut d_adj: cudarc::driver::CudaSlice<u8> =
         stream.alloc_zeros::<u8>(128).expect("alloc adj");
 
@@ -265,12 +265,14 @@ fn b3_rescale_kernel_latency_10k_atoms() {
         last_burst_frame: 0,
         current_gear: 0,
         previous_gear: 2,
+        v_prev: 0.0,
+        _pad_v_prev: 0,
     };
-    let cruise_bytes: [u8; 16] = unsafe {
-        std::mem::transmute::<ChronometricStateTensor, [u8; 16]>(cruise_seed)
+    let cruise_bytes: [u8; 32] = unsafe {
+        std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed)
     };
     let mut d_cruise: cudarc::driver::CudaSlice<u8> =
-        stream.alloc_zeros::<u8>(16).expect("alloc cruise");
+        stream.alloc_zeros::<u8>(32).expect("alloc cruise");
     stream.memcpy_htod(&cruise_bytes, &mut d_cruise).expect("htod cruise");
 
     // Pre-populate the gearbox table (the rescale kernel reads

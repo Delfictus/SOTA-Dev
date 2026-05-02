@@ -1737,6 +1737,17 @@ pub struct NhsAmberFusedEngine {
     d_atom_types: CudaSlice<i32>,
     d_residue_ids: CudaSlice<i32>,
 
+    /// **M1.2.17 — Per-atom potential energy components (f64).**
+    /// Sized n_atoms × 1.  Zeroed at the start of every integration
+    /// step; populated by the AMBER force kernels via atomicAdd_f64
+    /// of per-bond/angle/dihedral/pair V split (V_b/2 to each bonded
+    /// atom; V_a/3 to each angle atom; V_d/4 to each dihedral atom;
+    /// V_pair/2 to each non-bonded atom).  Reduced via
+    /// cub::DeviceReduce::Sum into the InterferometricAdjudicatorFfi's
+    /// d_potential_energy field (offset 112) by the captured energy-
+    /// monitor node downstream of fused_step_kernel.
+    d_potential_energy_components: CudaSlice<f64>,
+
     // AMBER parameter buffers (as raw bytes for GPU compatibility)
     d_bonds: CudaSlice<u8>,
     d_angles: CudaSlice<u8>,
@@ -2123,6 +2134,27 @@ impl NhsAmberFusedEngine {
         ptr
     }
 
+    /// **M1.2.17 — Per-atom potential-energy components device pointer.**
+    /// Returns the device address of `d_potential_energy_components`
+    /// (n_atoms × f64).  The captured CUB DeviceReduce::Sum node reads
+    /// from this buffer; AMBER force kernels write to it via
+    /// atomicAdd_f64 of per-bond/angle/dihedral/pair V splits.
+    /// Pointer-stable for the engine's lifetime.
+    ///
+    /// **n_floats convention**: this buffer is f64 (8 bytes × n_atoms).
+    /// Callers passing it to a CUB Sum reduce should declare the input
+    /// type as `double` and the count as `n_atoms` (NOT n_atoms × 3).
+    pub fn d_potential_energy_components_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_potential_energy_components.device_ptr(stream);
+        ptr
+    }
+
+    /// **M1.2.17** — atom count (rows in d_potential_energy_components).
+    pub fn d_potential_energy_n_atoms(&self) -> usize {
+        self.d_potential_energy_components.len()
+    }
+
     /// B.3 — raw device pointer to `d_protocol_state[84..88]` — the
     /// `dt` field within `ProtocolState` (per
     /// `crates/prism-gpu/src/kernels/protocol_state.cuh:45`).  All three
@@ -2423,6 +2455,10 @@ impl NhsAmberFusedEngine {
         let d_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         let d_velocities: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         let d_forces: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
+        // M1.2.17 — per-atom potential-energy components buffer (f64).
+        // Zeroed at the start of every integration step; populated by
+        // the AMBER force kernels via atomicAdd_f64 of split V terms.
+        let d_potential_energy_components: CudaSlice<f64> = stream.alloc_zeros(n_atoms)?;
         // Reference positions for CA position restraints (prevents unfolding in vacuum)
         let mut d_reference_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         stream.memcpy_htod(&topology.positions, &mut d_reference_positions)?;
@@ -3022,6 +3058,7 @@ impl NhsAmberFusedEngine {
             d_charges,
             d_atom_types,
             d_residue_ids,
+            d_potential_energy_components,
 
             d_bonds,
             d_angles,
@@ -5504,6 +5541,11 @@ impl NhsAmberFusedEngine {
             self.stream.memcpy_dtod(&self.d_positions, &mut self.d_positions_prev_ladd)?;
         }
 
+        // M1.2.17 — zero per-atom PE components before this step's
+        // force kernels accumulate into them.  Stream-ordered so the
+        // memset retires before the kernel launch reads.
+        self.stream.memset_zeros(&mut self.d_potential_energy_components)?;
+
         unsafe {
             self.stream
                 .launch_builder(&self.fused_step_kernel)
@@ -5589,6 +5631,8 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_primary_residue_id)
                 .arg(&mut self.d_primary_residue_count)
                 .arg(&mut self.d_residue_step_causal)
+                // M1.2.17 — per-atom potential-energy components (f64).
+                .arg(&mut self.d_potential_energy_components)
                 .launch(cfg)
         }
         .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -6433,6 +6477,9 @@ impl NhsAmberFusedEngine {
                 shared_mem_bytes: 0,
             };
 
+            // M1.2.17 — zero per-atom PE components before each step.
+            self.stream.memset_zeros(&mut self.d_potential_energy_components)?;
+
             unsafe {
                 self.stream
                     .launch_builder(&self.fused_step_kernel)
@@ -6503,6 +6550,8 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_primary_residue_id)
                     .arg(&mut self.d_primary_residue_count)
                     .arg(&mut self.d_residue_step_causal)
+                    // M1.2.17 — per-atom potential-energy components.
+                    .arg(&mut self.d_potential_energy_components)
                     .launch(cfg)
             }
             .context("Failed to launch nhs_amber_fused_step kernel")?;
@@ -6891,6 +6940,9 @@ impl NhsAmberFusedEngine {
         let n_uv_targets_i32 = self.n_uv_targets as i32;
         let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
 
+        // M1.2.17 — zero per-atom PE components before this step's kernels.
+        stream.memset_zeros(&mut self.d_potential_energy_components)?;
+
         unsafe {
             stream.launch_builder(&self.fused_step_kernel)
                 .arg(&mut self.d_positions)
@@ -6955,6 +7007,8 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_primary_residue_id)
                 .arg(&mut self.d_primary_residue_count)
                 .arg(&mut self.d_residue_step_causal)
+                // M1.2.17 — per-atom potential-energy components.
+                .arg(&mut self.d_potential_energy_components)
                 .launch(physics_cfg)
         }.context("step_autonomous: Physics kernel failed")?;
         if let Some(t) = tagger.as_deref_mut() {

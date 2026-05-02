@@ -391,12 +391,15 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     adj->legacy_centroid_fallback[2] = 0.0f;
     // B.3.2 — gear_override = 0xFF (Auto sentinel) so the gearbox SFA
     // decides.  Operator writes a 0..3 here to force a manual gear shift.
-    adj->gear_override    = 0xFFu;
-    adj->force_prune_mask = nullptr;
-    // T12 Pre-Flight: null until host wires d_dt / d_velocities pointers
-    // pre-capture via cuMemcpyHtoD into offsets 112 / 120.
-    adj->d_dt         = nullptr;
-    adj->d_velocities = nullptr;
+    adj->gear_override     = 0xFFu;
+    adj->force_prune_mask  = nullptr;
+    // M1.2.17 — d_potential_energy is an f64 value (not a pointer);
+    // 0.0 means "PE not yet computed" — the SFA stability fuse skips
+    // the drift check on the first frame to avoid a bogus trap.
+    adj->d_potential_energy = 0.0;
+    // d_dt: null until host wires &d_protocol->dt pre-capture via
+    // cuMemcpyHtoD into offset 120.
+    adj->d_dt = nullptr;
 }
 
 /// Noise-floor update kernel — Welford-style running mean+stddev over

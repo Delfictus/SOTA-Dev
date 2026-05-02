@@ -59,10 +59,10 @@ struct EnergyWindow {
 static_assert(sizeof(EnergyWindow) == 16,
               "EnergyWindow MUST be 16 bytes.");
 
-/// B.3.2 — Returns the temp-storage size required by the CUB
-/// DeviceReduce::Sum operation on `n` f32 inputs.  Caller allocates a
-/// device buffer of this size and passes it to
-/// `prism_energy_monitor_launch_reduce`.
+/// M1.2.17 — Returns the temp-storage size required by the CUB
+/// DeviceReduce::Sum operation on `n` f64 inputs (the per-atom PE
+/// components buffer).  Caller allocates a device buffer of this size
+/// and passes it to `prism_energy_monitor_launch_reduce`.
 ///
 /// Returns cudaError_t cast to int; on success writes the size into
 /// *out_temp_bytes.  Required-temp-storage is (currently) ~ a few KB
@@ -71,29 +71,28 @@ int prism_energy_monitor_temp_storage_bytes(
     uint32_t n,
     size_t*  out_temp_bytes);
 
-/// B.3.2 — Records two captured graph kernel nodes onto `stream`:
+/// M1.2.17 — Records two captured graph kernel nodes onto `stream`:
 ///
-///   1. CUB DeviceReduce::Sum reducing `d_pe_components` (n f32)
-///      into `d_pe_scalar_f32` (single f32 — CUB native output).
+///   1. CUB DeviceReduce::Sum reducing `d_pe_components` (n f64)
+///      into `*d_pe_scalar` (single f64) — Hamiltonian Auditor.
 ///   2. Single-thread `prism_energy_monitor_window_update_kernel` —
-///      promotes the f32 to f64, copies window->cur into window->prev,
-///      then writes window->cur := static_cast<double>(*d_pe_scalar_f32).
+///      copies window->cur into window->prev, then writes
+///      window->cur := *d_pe_scalar.  ALSO writes the same scalar
+///      into `*d_adj_pe_target` (= &adj.d_potential_energy at
+///      offset 112) so the SFA stability-fuse logic reads the
+///      latest V_t directly from the FFI struct.
 ///
 /// `d_temp_storage` is the device buffer sized via
 /// `prism_energy_monitor_temp_storage_bytes`.
-///
-/// `d_pe_scalar_f32` is a single 4-byte buffer (the CUB output).
-/// EnergyWindow stores f64 for numerical stability over the 18-hour
-/// campaign — long-run accumulation of f32 drift would catastrophically
-/// lose precision past ~10⁸ steps.
 int prism_energy_monitor_launch_reduce(
-    const float*    d_pe_components,
-    uint32_t        n,
-    void*           d_temp_storage,
-    size_t          temp_storage_bytes,
-    float*          d_pe_scalar_f32,
-    EnergyWindow*   d_energy_window,
-    void*           stream);
+    const double*  d_pe_components,
+    uint32_t       n,
+    void*          d_temp_storage,
+    size_t         temp_storage_bytes,
+    double*        d_pe_scalar,
+    EnergyWindow*  d_energy_window,
+    double*        d_adj_pe_target,
+    void*          stream);
 
 #ifdef __cplusplus
 }

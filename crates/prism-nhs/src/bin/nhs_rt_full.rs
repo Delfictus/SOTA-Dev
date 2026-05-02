@@ -489,9 +489,16 @@ struct Args {
 
     /// Fused multi-step: run N AMBER integration steps per 1 multi-LIF
     /// observation step. Since multi-LIF is 99% of GPU time, this gives
-    /// ~Nx wall-clock speedup. Use 4 for ~4x, 8 for ~8x.
-    /// Default 6 (validated safe for Nyquist sampling of the RAF oscillator).
-    #[arg(long, default_value = "6")]
+    /// ~Nx wall-clock speedup.
+    ///
+    /// **M1.2.17 Goldilocks Downshift (2026-05-02)**: default is now 12.
+    /// At HMR dt=4fs, 12 fused steps ⇒ 48 fs gearbox response time
+    /// (4× tighter than the prior 48-step / 192fs default).  Operator
+    /// rationale: catch ultra-fast hydrogen-bond reorganisations in
+    /// the Mpro catalytic dyad without sacrificing SM utilisation
+    /// (the captured graph's zero-sync architecture absorbs the 4×
+    /// chunk-frequency increase).
+    #[arg(long, default_value = "12")]
     fused_steps: u32,
 
     /// Adaptive timestep: use 1.5x dt during hold phases (constant T) where
@@ -4996,6 +5003,14 @@ fn run_multi_stream_pipeline(
                                                 let d_protocol_dt_ptr = engine.d_protocol_dt_dev_ptr(
                                                     engine.cuda_stream(),
                                                 );
+                                                // M1.2.17 — Hamiltonian Auditor wire-up: thread the
+                                                // engine's per-atom PE components buffer + n_atoms
+                                                // through to the captured pipeline so the energy-
+                                                // monitor reduce node can capture downstream of ASC.
+                                                let d_pe_components_ptr = engine.d_potential_energy_components_dev_ptr(
+                                                    engine.cuda_stream(),
+                                                );
+                                                let n_atoms_for_pe = engine.d_potential_energy_n_atoms() as u32;
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -5008,6 +5023,8 @@ fn run_multi_stream_pipeline(
                                                     noise_floor_override: nf_override,
                                                     d_dt:              d_protocol_dt_ptr as *mut f32,
                                                     d_velocities:      d_velocities_ptr as *mut f32,
+                                                    d_pe_components:   d_pe_components_ptr as *const f64,
+                                                    n_atoms_for_pe,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),

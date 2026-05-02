@@ -37,14 +37,29 @@
 //! start_clock             u64       offset  72..80     8 B
 //! stop_clock              u64       offset  80..88     8 B
 //! legacy_centroid_fallback [f32;3]  offset  88..100   12 B  (Anti-Greenfield § 6.2)
-//! gear_override           u8        offset 100..101    1 B  (B.3.2 — Hardware Interlock)
-//! _gear_pad               [u8; 3]   offset 101..104    3 B  (claims compiler padding)
+//! gear_override           u32       offset 100..104    4 B  (B.3.2 — Hardware Interlock)
 //! force_prune_mask        *mut u64  offset 104..112    8 B  (G28 SISR)
-//! d_dt                    *mut f32  offset 112..120    8 B  (T12 Pre-Flight)
-//! d_velocities            *mut f32  offset 120..128    8 B  (T12 Pre-Flight)
+//! d_potential_energy      f64       offset 112..120    8 B  (M1.2.17 — Hamiltonian scalar VALUE)
+//! d_dt                    *mut f32  offset 120..128    8 B  (Gearbox dt target)
 //! ─────────────────────────────────────────────────────────
 //! TOTAL                                                128 B
 //! ```
+//!
+//! ## M1.2.17 — Layout pivot (operator unified directive 2026-05-02)
+//!
+//! `d_velocities` removed from the struct (was at offset 120 in B.3.2).
+//! It remains a `PipelineConfig` field — the gearbox SWITCH bodies'
+//! velocity-rescale kernel reads it through populator FFI plumbing,
+//! not through the FFI struct.
+//!
+//! `d_potential_energy` is the system-wide potential energy SCALAR
+//! VALUE (not a pointer) at offset 112.  The CUB DeviceReduce::Sum
+//! captured node writes it every step from the per-atom AMBER PE
+//! components buffer.  The SFA kernel reads it for the 1% drift
+//! Hamiltonian Stability Fuse → Gear 3 trap on instability.
+//!
+//! `d_dt` moves to offset 120; T12 Pre-Flight pre-capture
+//! `cuMemcpyHtoD` wire-up updated.
 //!
 //! ## B.3.2 — `gear_override` Hardware Interlock (operator 2026-05-02)
 //!
@@ -249,29 +264,28 @@ pub struct InterferometricAdjudicatorFfi {
     /// Null disables the symmetry gate (legacy / non-dimer targets).
     pub force_prune_mask: *mut u64,
 
-    /// **T12 Pre-Flight — G26 chronometric gearbox dt pointer.**
-    /// Device-resident `*mut f32` carrying the active integrator
-    /// timestep (in ps). Offset 112..120, 8 B.
+    /// **M1.2.17 — Hamiltonian scalar (potential energy VALUE).**
+    /// Offset 112..120, 8 B.  System-wide total potential energy in
+    /// kcal/mol, written every step by the captured CUB
+    /// DeviceReduce::Sum node from the per-atom AMBER PE components
+    /// buffer.  This is a VALUE (not a pointer) — host code reads it
+    /// directly from the F2-pool-resident FFI struct.
     ///
-    /// Wave A leaves this null and unconsumed. Wave B's G26 SWITCH
-    /// body sub-graphs will atomically swap the value through a
-    /// PointerSwap kernel as part of gear transitions
-    /// (Gear 0: 0.5 fs / Gear 1: 2.0 fs / Gear 2: 4.0 fs / Gear 3: abort).
-    /// The integrator kernels must be refactored to LOAD their dt from
-    /// this pointer instead of taking it as a kernel argument — that
-    /// surgery is explicitly out-of-scope for Wave A.
-    pub d_dt: *mut f32,
+    /// Stability fuse: the SFA kernel reads `d_potential_energy` and
+    /// compares against `cruise.v_prev`; if `|V_t − V_{t-1}| / |V_{t-1}|
+    /// > 0.01` or `isnan(V_t)`, target_gear = 3 (abort/trap).
+    pub d_potential_energy: f64,
 
-    /// **T12 Pre-Flight — Velocity rescaling buffer pointer.**
-    /// Device-resident `*mut f32` aliased to the integrator's
-    /// `d_velocities` slice (n_atoms × 3 f32, AoS). Offset 120..128, 8 B.
+    /// **G26 chronometric gearbox dt pointer.**  Offset 120..128, 8 B.
+    /// Device-resident `*mut f32` carrying the active integrator
+    /// timestep (in ps).  The G26 SWITCH body sub-graphs (Gears 0/1/2)
+    /// write to `*d_dt` via `apply_fixed_dt_kernel` — the integrator
+    /// reads its dt from this address every step (`d_protocol->dt`
+    /// wired by `NhsAmberFusedEngine::d_protocol_dt_dev_ptr()`).
     ///
-    /// Wave A wires this pointer in but no kernel reads it. Wave B's
-    /// VelocityRescale kernel inside the G26 SWITCH body sub-graphs
-    /// will multiply each component by `(dt_new / dt_old)` on gear
-    /// transitions to preserve kinetic energy continuity (the
-    /// "numerical shock" guard).
-    pub d_velocities: *mut f32,
+    /// Was at offset 112 in B.3.2; M1.2.17 moved it to 120 to make
+    /// room for `d_potential_energy` at the L1-aligned 112 slot.
+    pub d_dt: *mut f32,
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -297,8 +311,8 @@ impl InterferometricAdjudicatorFfi {
             legacy_centroid_fallback: [0.0; 3],
             gear_override: Self::GEAR_OVERRIDE_AUTO,
             force_prune_mask: std::ptr::null_mut(),
+            d_potential_energy: 0.0,
             d_dt: std::ptr::null_mut(),
-            d_velocities: std::ptr::null_mut(),
         }
     }
 
@@ -1081,15 +1095,13 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, stop_clock), 80);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback), 88);
         // B.3.2 — gear_override (u32) at 100 (claims the former
-        // implicit compiler padding).  Operator spec said offset 104;
-        // that slot is pinned by force_prune_mask's G28 SISR contract.
-        // 100 is the closest available 4-byte aligned slot.
-        // force_prune_mask remains at offset 104 — no drift.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gear_override),  100);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask), 104);
-        // T12 Pre-Flight: replace _reserved [u32; 4] with two pointers.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),         112);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_velocities), 120);
+        // implicit compiler padding).  force_prune_mask at 104 (G28 SISR).
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gear_override),       100);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask),    104);
+        // M1.2.17 — d_potential_energy (f64 VALUE) at 112; d_dt at 120;
+        // d_velocities removed from struct (lives on PipelineConfig only).
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_potential_energy), 112);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),                120);
     }
 
     #[test]
@@ -1106,8 +1118,9 @@ mod tests {
         assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
         assert_eq!(z.gear_override, InterferometricAdjudicatorFfi::GEAR_OVERRIDE_AUTO);
         assert!(z.force_prune_mask.is_null());
+        // M1.2.17 — d_potential_energy is an f64 value (not a ptr); zero by default.
+        assert_eq!(z.d_potential_energy, 0.0_f64);
         assert!(z.d_dt.is_null());
-        assert!(z.d_velocities.is_null());
     }
 
     #[test]

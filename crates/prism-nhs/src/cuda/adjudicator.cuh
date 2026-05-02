@@ -122,36 +122,36 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // Null disables the gate (non-dimer / legacy targets).
     uint64_t* force_prune_mask;     // offset 104
 
-    // ── T12 Pre-Flight — G26 chronometric gearbox connective tissue ──
-    // d_dt: device-resident *mut f32 carrying the active integrator
-    //       timestep (in ps). Wave A leaves null; Wave B's PointerSwap
-    //       kernel updates it inside the SWITCH body sub-graphs.
-    // d_velocities: *mut f32 aliased to integrator's d_velocities slice
-    //       (n_atoms × 3 f32, AoS). Wave B's VelocityRescale kernel reads
-    //       both this and d_dt to enforce kinetic-energy continuity on
-    //       gear-transition frames.
-    // Both unconsumed in Wave A — surface preparation only.
-    float*    d_dt;                 // offset 112
-    float*    d_velocities;         // offset 120
+    // ── M1.2.17 — Hamiltonian + Gearbox dt ──
+    // d_potential_energy: system-wide total potential energy (f64 VALUE,
+    //   not pointer) at offset 112.  CUB DeviceReduce::Sum captured node
+    //   writes it every step from the per-atom AMBER PE components
+    //   buffer.  SFA reads it for the 1% drift Hamiltonian Stability Fuse.
+    // d_dt: *mut f32 → integrator's d_protocol->dt at offset 120.
+    //   The G26 SWITCH body sub-graphs write here via apply_fixed_dt_kernel.
+    // d_velocities REMOVED in M1.2.17: kept only on PipelineConfig
+    //   (the populator FFI threads it directly into the SWITCH body
+    //   rescale kernels — no struct round-trip needed).
+    double    d_potential_energy;   // offset 112  (f64 VALUE)
+    float*    d_dt;                 // offset 120
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128 bytes (Blackwell L1 sector).");
 static_assert(alignof(InterferometricAdjudicatorFfi) == 128,
               "InterferometricAdjudicatorFfi MUST be 128-byte aligned.");
-// G28 SISR offset lock — Rust mirror MUST hit the same byte.  After
-// B.3.2 the 4-byte pad between legacy_centroid_fallback and
-// force_prune_mask is `gear_override (1 B) + _gear_pad (3 B)`; no
-// drift on force_prune_mask itself.
-static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
-              "force_prune_mask offset drift: must be 104 (8-byte aligned).");
-// B.3.2 — Manual Gear Override offset lock.
+// G28 SISR + B.3.2 + M1.2.17 offset locks — operator memory map LOCKED:
+//   gear_override         u32  @ 100  (B.3.2 Manual Overlord)
+//   force_prune_mask      ptr  @ 104  (G28 SISR)
+//   d_potential_energy    f64  @ 112  (M1.2.17 Hamiltonian VALUE)
+//   d_dt                  ptr  @ 120  (Gearbox dt target)
 static_assert(offsetof(InterferometricAdjudicatorFfi, gear_override) == 100,
               "gear_override offset drift: must be 100.");
-// T12 Pre-Flight offset locks.
-static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 112,
-              "d_dt offset drift: must be 112.");
-static_assert(offsetof(InterferometricAdjudicatorFfi, d_velocities) == 120,
-              "d_velocities offset drift: must be 120.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, force_prune_mask) == 104,
+              "force_prune_mask offset drift: must be 104 (8-byte aligned).");
+static_assert(offsetof(InterferometricAdjudicatorFfi, d_potential_energy) == 112,
+              "d_potential_energy offset drift: must be 112 (M1.2.17 Hamiltonian).");
+static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 120,
+              "d_dt offset drift: must be 120 (M1.2.17 layout pivot).");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)
