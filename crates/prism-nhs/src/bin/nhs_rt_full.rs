@@ -4590,6 +4590,12 @@ fn run_multi_stream_pipeline(
                         let mut v2_zstr_consumer: Option<std::thread::JoinHandle<prism_nhs::zstr::ZstrStats>> = None;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
+                        // Amendment 3.4 monolithic-fusion exec — single AutonomousGraph
+                        // that fuses MD physics + adjudication via cudaGraphAddChildGraphNode.
+                        // When Some, the chunk loop launches this instead of the dual
+                        // (captured_graph + v2_pipeline) overlay launches.
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_monolithic: Option<prism_nhs::graph_capture::AutonomousGraph> = None;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_spikes_raw: u64 = 0;   // CUdeviceptr — freed post-chunk-loop
                         #[cfg(feature = "v2_ignition")]
@@ -4865,6 +4871,12 @@ fn run_multi_stream_pipeline(
                                                     }
                                                 };
 
+                                                // G28 SISR: None by default — enabling on a
+                                                // monomer prunes every cluster (no symmetric
+                                                // partner exists ⇒ ALL bits set in mask). For
+                                                // dimer targets like 7C8R the operator opts in
+                                                // via --sisr-enable / topology metadata in a
+                                                // follow-up wiring pass.
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -4873,6 +4885,7 @@ fn run_multi_stream_pipeline(
                                                     initial_frame_id:  steps_run as u32,
                                                     asc:               asc_cfg,
                                                     zstr:              zstr_cfg,
+                                                    sisr:              None,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
@@ -4914,6 +4927,72 @@ fn run_multi_stream_pipeline(
                                                         // at least one stream — legacy post-MD
                                                         // CPU path will be hard-gated off.
                                                         v2_was_live.store(true, std::sync::atomic::Ordering::Release);
+
+                                                        // ── Amendment 3.4 MONOLITHIC FUSION ────────────
+                                                        // Capture the autonomous template (Director →
+                                                        // FusedStep → MultiLIF) with node tagging, then
+                                                        // splice the adjudication template (from the
+                                                        // already-built v2_pipeline.cu_graph_raw()) as a
+                                                        // child graph node downstream of FusedStep,
+                                                        // upstream of MultiLIF. Instantiate the fused
+                                                        // template into a single CUgraphExec.
+                                                        // Failure here is non-fatal: we fall back to the
+                                                        // overlay path with explicit log.
+                                                        match engine.capture_autonomous_template() {
+                                                            Ok(mut auto_tmpl) => {
+                                                                let pipe_ref = v2_pipeline.as_ref().unwrap();
+                                                                let adj_tmpl = pipe_ref.cu_graph_raw();
+                                                                match (auto_tmpl.node("fused_step"),
+                                                                       auto_tmpl.node("multi_lif")) {
+                                                                    (Some(fused_node), Some(multi_lif_node)) => {
+                                                                        match auto_tmpl.add_child_graph_node(
+                                                                            &[fused_node],
+                                                                            adj_tmpl,
+                                                                        ) {
+                                                                            Ok(child_node) => {
+                                                                                if let Err(e) = auto_tmpl.add_dependency(
+                                                                                    child_node, multi_lif_node,
+                                                                                ) {
+                                                                                    log::warn!(
+                                                                                        "    [MONO-FUSE stream {}] add_dependency \
+                                                                                         child→multi_lif failed: {} — overlay path",
+                                                                                        i, e
+                                                                                    );
+                                                                                } else {
+                                                                                    match auto_tmpl.instantiate() {
+                                                                                        Ok(exec) => {
+                                                                                            log::info!(
+                                                                                                "    [MONO-FUSE stream {}] ✓ \
+                                                                                                 monolithic exec instantiated \
+                                                                                                 (FusedStep → ChildAdj → MultiLIF)",
+                                                                                                i
+                                                                                            );
+                                                                                            v2_monolithic = Some(exec);
+                                                                                        }
+                                                                                        Err(e) => log::warn!(
+                                                                                            "    [MONO-FUSE stream {}] instantiate \
+                                                                                             failed: {} — overlay path", i, e
+                                                                                        ),
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                            Err(e) => log::warn!(
+                                                                                "    [MONO-FUSE stream {}] add_child_graph_node \
+                                                                                 failed: {} — overlay path", i, e
+                                                                            ),
+                                                                        }
+                                                                    }
+                                                                    _ => log::warn!(
+                                                                        "    [MONO-FUSE stream {}] tagger missing \
+                                                                         fused_step/multi_lif handles — overlay path", i
+                                                                    ),
+                                                                }
+                                                            }
+                                                            Err(e) => log::warn!(
+                                                                "    [MONO-FUSE stream {}] capture_autonomous_template \
+                                                                 failed: {} — overlay path", i, e
+                                                            ),
+                                                        }
                                                     }
                                                     Err(e) => {
                                                         log::warn!(
@@ -4962,9 +5041,33 @@ fn run_multi_stream_pipeline(
                                 // no host-side stamping inside this
                                 // branch — the CPU's only role is to
                                 // increment the chunk counter.
-                                // MD physics — always runs regardless of V2 state.
-                                // V2 adjudication is an overlay, not a replacement.
-                                if let Some(ref graph) = captured_graph {
+                                // ── Amendment 3.4 MONOLITHIC LAUNCH ───────────
+                                // When v2_monolithic is live, a single fused
+                                // graph executes Director → FusedStep → ChildAdj
+                                // → MultiLIF for each step.  Replaces BOTH the
+                                // legacy captured_graph MD launch and the
+                                // pipeline.launch_with_zstr_slot adjudication
+                                // overlay — single host kick per step.
+                                #[cfg(feature = "v2_ignition")]
+                                let monolithic_active = v2_monolithic.is_some();
+                                #[cfg(not(feature = "v2_ignition"))]
+                                let monolithic_active = false;
+
+                                if monolithic_active {
+                                    #[cfg(feature = "v2_ignition")]
+                                    if let Some(ref mono) = v2_monolithic {
+                                        let s = engine.cuda_stream();
+                                        for _ in 0..this_chunk {
+                                            mono.launch_on_stream(s.cu_stream())
+                                                .map_err(|e| anyhow::anyhow!(
+                                                    "Monolithic launch: {:?}", e))?;
+                                        }
+                                        engine.cuda_context().synchronize()
+                                            .map_err(|e| anyhow::anyhow!(
+                                                "Mono sync: {:?}", e))?;
+                                    }
+                                } else if let Some(ref graph) = captured_graph {
+                                    // Legacy path: MD physics overlay.
                                     graph.run_chunk(this_chunk as u32)?;
                                     engine.cuda_context().synchronize()
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
@@ -4993,17 +5096,21 @@ fn run_multi_stream_pipeline(
                                 // V2 IGNITION overlay — adjudication fires once per chunk
                                 // AFTER physics completes. No stream.synchronize, no println,
                                 // per operator directive. CPU role: increment chunk counter only.
+                                // SKIPPED when v2_monolithic is active — adjudication already
+                                // ran as a child graph inside the fused exec.
                                 #[cfg(feature = "v2_ignition")]
                                 if let Some(ref pipeline) = v2_pipeline {
-                                    // G24 slot-roller: patch ZSTR node params per launch,
-                                    // then fire the captured graph. Falls back to plain
-                                    // pipeline.launch() when ZSTR ring is not live.
-                                    if let Some(ref ring) = v2_zstr_ring {
-                                        pipeline.launch_with_zstr_slot(chunk_idx as u64, ring)
-                                            .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
-                                    } else {
-                                        pipeline.launch()
-                                            .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                    if v2_monolithic.is_none() {
+                                        // G24 slot-roller: patch ZSTR node params per launch,
+                                        // then fire the captured graph. Falls back to plain
+                                        // pipeline.launch() when ZSTR ring is not live.
+                                        if let Some(ref ring) = v2_zstr_ring {
+                                            pipeline.launch_with_zstr_slot(chunk_idx as u64, ring)
+                                                .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                        } else {
+                                            pipeline.launch()
+                                                .map_err(|e| anyhow::anyhow!("V2 IGNITION launch: {:?}", e))?;
+                                        }
                                     }
 
                                     // CSR-N: non-blocking ring readback (previous frame DMA
@@ -6391,6 +6498,10 @@ fn run_multi_stream_pipeline(
                                     ),
                                 }
                             }
+                            // Drop the monolithic exec FIRST (it embeds a copy of
+                            // the adjudication template; the original template is
+                            // still owned by v2_pipeline and freed on the next drop).
+                            drop(v2_monolithic);
                             drop(v2_pipeline);
                             if v2_spikes_raw != 0 {
                                 unsafe {
