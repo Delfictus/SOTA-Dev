@@ -330,25 +330,32 @@ pub(crate) mod ffi {
             stream: *mut c_void,
         ) -> CudaError;
 
-        /// Run the KL-divergence Adjudicator kernel against the
-        /// (relaxed, perturbed) `ContactShellTile` pair currently
-        /// pointed-to by `adj`. Updates `current_divergence`,
-        /// `adjudication_code`, `start_clock`, `stop_clock` in place.
+        /// Run the T13 SIMT 4-plane weighted KL Adjudicator kernel
+        /// against the (relaxed[], perturbed[]) `ContactShellTile` arrays
+        /// currently pointed-to by `adj`. Updates `current_divergence`,
+        /// `adjudication_code`, `legacy_centroid_fallback` in place.
         ///
-        /// **Determinism:** the kernel launches as `<<<1, 1, 0,
-        /// stream>>>`; integer outputs (`adjudication_code`) are
-        /// BitExact across replays of the same input.
+        /// **Launch geometry**: `<<<1, 64, 0, stream>>>`. Each thread
+        /// processes one cluster (capped at 64). Threads with
+        /// `id >= n_clusters` early-skip and contribute 0 to the
+        /// block-level sum reduction.
         ///
-        /// **Race-freedom:** internal `__threadfence()` orders the
-        /// `current_divergence` write before the `adjudication_code`
-        /// write. The captured-graph topology orders this kernel
-        /// before the F1 SWITCH node's read.
+        /// **Determinism**: integer outputs (`adjudication_code`) are
+        /// BitExact across replays of the same input. KL accumulation
+        /// uses IEEE-754 single-precision adds; ordering is fixed by
+        /// the per-thread loop + tree-reduce.
+        ///
+        /// **Race-freedom**: thread 0's internal `__threadfence()`
+        /// orders the `current_divergence` write before the
+        /// `adjudication_code` write. The captured-graph topology
+        /// orders this kernel before the F1 SWITCH node's read.
         ///
         /// Captured into the F1 conditional graph node's predicate
         /// evaluator — must NOT be invoked outside a captured graph
         /// in production paths.
         pub fn prism_interferometric_adjudicator_step(
             adj: *mut InterferometricAdjudicatorFfi,
+            n_clusters: u32,
             stream: *mut c_void,
         ) -> CudaError;
 

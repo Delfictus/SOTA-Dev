@@ -119,119 +119,194 @@ __device__ __forceinline__ float prism_log2_with_guard(float ratio) {
 
 }  // anonymous namespace
 
-/// Single-thread Adjudicator kernel.
-/// Launches as <<<1, 1, 0, stream>>>. Captured into the F1
-/// cudaGraphConditionalNode predicate evaluator. Race-free: the
-/// __threadfence() between the divergence write and the
-/// adjudication_code write enforces L2 visibility before the SWITCH
-/// node read; the captured-graph topology orders this kernel before
-/// the SWITCH read.
+/// T13 — 4-plane weighted KL fusion Adjudicator (SIMT).
+///
+/// Launches as <<<1, 64, 0, stream>>>.  Each thread `i` < n_clusters
+/// processes cluster `i`'s (relaxed, perturbed) ContactShellTile pair
+/// and computes the weighted KL divergence across all 4 planes:
+///
+///   Δ_i = ω_G·KL_geo + ω_C·KL_caus + ω_T·KL_therm + ω_H·KL_chem
+///
+/// with operator-mandated weights (7C8R dimer calibration):
+///   ω_G = 0.4  (Geometry — pocket presence)
+///   ω_C = 0.3  (Causality — trigger lag)
+///   ω_T = 0.2  (Thermodynamics — water flux)
+///   ω_H = 0.1  (Chemistry — aromatic shifts)
+///
+/// G28 mask veto (Amendment 3.4): if `(force_prune_mask >> i) & 1`,
+/// thread i forces its cluster contribution to 0 BEFORE the KL sum —
+/// a vetoed cluster cannot contribute to the campaign-level decision.
+///
+/// Zero-Trust hard-trap (T13 §4.1): non-finite values on the Causality
+/// or Thermodynamics planes raise the cluster's violation flag; the
+/// block-reduced OR routes the F1 SWITCH to PRISM_ADJ_VIOLATION,
+/// triggering the abort sub-graph. NaN on geometry / chemistry is
+/// substituted with epsilon (less aggressive — those planes can carry
+/// numerical drift without indicating non-physical force).
+///
+/// Reduction: 64-element shared-memory butterfly (sum for KL,
+/// bitwise-OR for violation), thread 0 writes the scalar outputs.
 __global__ void prism_interferometric_adjudicator_step_kernel(
-    InterferometricAdjudicatorFfi* __restrict__ adjudicator
+    InterferometricAdjudicatorFfi* __restrict__ adjudicator,
+    uint32_t                                    n_clusters
 ) {
-    // Strict single-thread guard. Block / thread > 0 falls out
-    // immediately, avoiding any concurrent write to adjudicator state.
-    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    const uint32_t i = threadIdx.x;
 
     // Note (T4): start_clock / stop_clock are owned by the pipeline
     // bookend kernels (`prism_pipeline_clock_start_kernel` /
     // `_stop_kernel`). T2 deliberately does NOT touch them so the
-    // SO(3)→T2→ASC pipeline-wide timing is not clobbered. T2's
-    // own internal latency is sub-µs and not separately tracked.
+    // SO(3)→T2→ASC pipeline-wide timing is not clobbered.
 
-    const ContactShellTile* relaxed   = adjudicator->relaxed_manifold_ptr;
-    const ContactShellTile* perturbed = adjudicator->perturbed_manifold_ptr;
+    const ContactShellTile* relaxed_arr   = adjudicator->relaxed_manifold_ptr;
+    const ContactShellTile* perturbed_arr = adjudicator->perturbed_manifold_ptr;
 
-    // Defensive null-pointer guard. If either pointer is null (e.g. the
-    // first frame before manifolds are populated), route directly to
-    // Violation without dereferencing.
-    if (relaxed == nullptr || perturbed == nullptr) {
-        adjudicator->current_divergence = 0.0f;
-        __threadfence();
-        adjudicator->adjudication_code = PRISM_ADJ_VIOLATION;
+    // Defensive whole-block null-pointer guard. All threads converge on
+    // the same answer, no warp divergence; thread 0 writes the violation
+    // and we exit cleanly. First-frame seed before manifolds populated.
+    if (relaxed_arr == nullptr || perturbed_arr == nullptr) {
+        if (i == 0u) {
+            adjudicator->current_divergence = 0.0f;
+            __threadfence();
+            adjudicator->adjudication_code = PRISM_ADJ_VIOLATION;
+        }
         return;
     }
 
-    // ─── KL-divergence over the geometry plane SH bands l=0..5 ──────
-    // Geometry is the canonical SO(3) rotationally-invariant signal
-    // (RECT-3.1.b). The other 3 planes (causality, thermodynamics,
-    // chemistry) carry orthogonal weighted projections; multi-plane
-    // KL aggregation is a future enhancement.
-    float    total_kl_div    = 0.0f;
-    uint32_t violation_count = 0u;
-    constexpr float epsilon  = 1.0e-7f;
+    // Cap at SIMT block width (64). Excess clusters beyond 64 are NOT
+    // adjudicated this frame — the captured-graph topology fixes the
+    // launch geometry, so multi-block adjudication is deferred to a
+    // separate refactor (operator-flagged scope cap).
+    constexpr uint32_t SIMT_WIDTH = 64u;
+    constexpr float    EPSILON    = 1.0e-7f;
+
+    // 4-plane weights — pinned per the T13 specification. Mutating
+    // these requires re-validation against the 4LPK / 7C8R cal runs.
+    constexpr float WEIGHTS[4] = { 0.4f, 0.3f, 0.2f, 0.1f };
+
+    // Pre-fetch the G28 prune mask once per thread (broadcast load).
+    // mask == 0 when SISR is disabled (single-cluster / non-dimer);
+    // mask bit i set ⇒ cluster i fails bilateral symmetry.
+    const uint64_t prune_mask = (adjudicator->force_prune_mask != nullptr)
+                                ? *(adjudicator->force_prune_mask)
+                                : 0ull;
+    const bool i_vetoed = ((prune_mask >> i) & 1ull) != 0ull;
+
+    float    my_kl        = 0.0f;
+    uint32_t my_violation = 0u;
+
+    if (i < n_clusters && i < SIMT_WIDTH && !i_vetoed) {
+        const ContactShellTile* relaxed   = &relaxed_arr[i];
+        const ContactShellTile* perturbed = &perturbed_arr[i];
+
+        // Per-plane spectrum pointers — same offset layout in both tiles.
+        // Indexed by PLANE_GEO=0 / _CAUS=1 / _THERM=2 / _CHEM=3 from
+        // so3_project.cuh.
+        const float* p_planes[4] = {
+            relaxed->geo_power_spectrum,
+            relaxed->caus_power_spectrum,
+            relaxed->therm_power_spectrum,
+            relaxed->chem_power_spectrum,
+        };
+        const float* q_planes[4] = {
+            perturbed->geo_power_spectrum,
+            perturbed->caus_power_spectrum,
+            perturbed->therm_power_spectrum,
+            perturbed->chem_power_spectrum,
+        };
+
+        #pragma unroll
+        for (int plane = 0; plane < 4; ++plane) {
+            float plane_kl = 0.0f;
+            #pragma unroll
+            for (int l = 0; l < 6; ++l) {
+                float p_raw = p_planes[plane][l];
+                float q_raw = q_planes[plane][l];
+
+                const bool p_bad = !isfinite(p_raw);
+                const bool q_bad = !isfinite(q_raw);
+
+                // T13 §4.1 hard-trap: NaN/Inf on Causality or
+                // Thermodynamics planes is non-physical (those planes
+                // carry intent-bearing signal); raise violation.
+                if ((p_bad || q_bad) && (plane == 1 || plane == 2)) {
+                    my_violation = 1u;
+                }
+
+                // Substitute clean placeholders so the running sum stays
+                // finite even when Geometry / Chemistry carry NaN drift.
+                if (p_bad) p_raw = EPSILON;
+                if (q_bad) q_raw = EPSILON;
+
+                const float p     = fmaxf(p_raw, EPSILON);
+                const float q     = fmaxf(q_raw, EPSILON);
+                const float ratio = p / q;
+                // PTX-guarded log2 (defense-in-depth).
+                const float log_ratio = prism_log2_with_guard(ratio);
+
+                plane_kl += p * log_ratio;
+            }
+            my_kl += WEIGHTS[plane] * plane_kl;
+        }
+    }
+
+    // ─── Block reduction (sum + OR) ─────────────────────────────────
+    __shared__ float    s_kl[64];
+    __shared__ uint32_t s_violation[64];
+    s_kl[i]        = my_kl;
+    s_violation[i] = my_violation;
+    __syncthreads();
 
     #pragma unroll
-    for (int l = 0; l < 6; ++l) {
-        float p_raw = relaxed->geo_power_spectrum[l];
-        float q_raw = perturbed->geo_power_spectrum[l];
+    for (uint32_t s = 32u; s > 0u; s >>= 1) {
+        if (i < s) {
+            s_kl[i]        += s_kl[i + s];
+            s_violation[i] |= s_violation[i + s];
+        }
+        __syncthreads();
+    }
 
-        // Dirty-input detection BEFORE any clamping. isfinite() returns
-        // false for NaN, +Inf, -Inf; true for all finite values
-        // (including ±0 and subnormals).
-        if (!isfinite(p_raw) || !isfinite(q_raw)) {
-            violation_count++;
-            // Substitute clean placeholders so the running sum stays
-            // finite. The violation flag will elevate the SWITCH to 2.
-            if (!isfinite(p_raw)) p_raw = epsilon;
-            if (!isfinite(q_raw)) q_raw = epsilon;
+    if (i == 0u) {
+        const float    total_kl       = s_kl[0];
+        const uint32_t any_violation  = s_violation[0];
+
+        // Race-free write order: divergence first, fence, then SWITCH code.
+        adjudicator->current_divergence = total_kl;
+        __threadfence();
+
+        uint32_t code;
+        if (any_violation != 0u) {
+            code = PRISM_ADJ_VIOLATION;
+        } else {
+            // Threshold uses noise_floor_mu[0] / sigma[0] as the
+            // band-0 proxy; substrate-aware T7 (Wave 3) writes
+            // dynamic μ / σ here every frame (≥100 samples).
+            const float threshold =
+                adjudicator->noise_floor_mu[0]
+                + 3.0f * adjudicator->noise_floor_sigma[0];
+            code = (total_kl > threshold) ? PRISM_ADJ_CONSTRUCT
+                                          : PRISM_ADJ_PRUNE;
         }
 
-        // Defensive epsilon padding — clamps 0 / -finite to epsilon.
-        const float p = fmaxf(p_raw, epsilon);
-        const float q = fmaxf(q_raw, epsilon);
-        const float ratio = p / q;
-
-        // PTX-guarded log2 (defense-in-depth; should not fire after
-        // the clamps above on clean input).
-        const float log_ratio = prism_log2_with_guard(ratio);
-
-        total_kl_div += p * log_ratio;
-    }
-
-    // Race-free write order: divergence first, fence, then SWITCH code.
-    adjudicator->current_divergence = total_kl_div;
-    __threadfence();
-
-    uint32_t code;
-    if (violation_count > 0u) {
-        code = PRISM_ADJ_VIOLATION;
-    } else {
-        // 3-σ adjudication threshold. Aggregating across 6 SH bands by
-        // taking the band-0 noise floor as the cumulative-band proxy;
-        // future enhancement: per-band threshold with worst-band escalation.
-        const float threshold =
-            adjudicator->noise_floor_mu[0]
-            + 3.0f * adjudicator->noise_floor_sigma[0];
-        code = (total_kl_div > threshold) ? PRISM_ADJ_CONSTRUCT
-                                          : PRISM_ADJ_PRUNE;
-    }
-
-    // ─── G28 SISR symmetry gate (Amendment 3.4) ──────────────────────
-    // If the bilateral-symmetry kernel set the prune mask for this
-    // cluster, override the Δ_AB-based decision to PRUNE.  Single-
-    // cluster current architecture: any non-zero bit means the active
-    // cluster failed the C2-reflected AABB partner search, so the
-    // discovery is a stochastic fluke regardless of magnitude.
-    if (adjudicator->force_prune_mask != nullptr) {
-        const uint64_t mask = *adjudicator->force_prune_mask;
-        if (mask != 0ull) {
+        // G28 SISR campaign-level prune (any vetoed cluster ⇒ frame
+        // is suspect; preserve existing semantics from pre-SIMT).
+        if (prune_mask != 0ull) {
             code = PRISM_ADJ_PRUNE;
         }
-    }
-    adjudicator->adjudication_code = code;
+        adjudicator->adjudication_code = code;
 
-    // ─── Anti-Greenfield § 6.2 — legacy_centroid_fallback (Path A) ──
-    // AABB midpoint of the relaxed manifold. Not the literal
-    // "intensity-weighted geometric mean" (would require per-spike
-    // positions that ContactShellTile doesn't retain post-SO(3)
-    // projection); operator-approved approximation per Path A.
-    adjudicator->legacy_centroid_fallback[0] =
-        0.5f * (relaxed->aabb_min[0] + relaxed->aabb_max[0]);
-    adjudicator->legacy_centroid_fallback[1] =
-        0.5f * (relaxed->aabb_min[1] + relaxed->aabb_max[1]);
-    adjudicator->legacy_centroid_fallback[2] =
-        0.5f * (relaxed->aabb_min[2] + relaxed->aabb_max[2]);
+        // ─── Anti-Greenfield § 6.2 — legacy_centroid_fallback ──
+        // AABB midpoint of cluster 0's relaxed manifold. The legacy
+        // single-tile observer cannot represent multi-cluster centroids;
+        // cluster 0 is a stable representative for nhs_rt_full's
+        // 3-float ABI.
+        const ContactShellTile* relaxed_0 = &relaxed_arr[0];
+        adjudicator->legacy_centroid_fallback[0] =
+            0.5f * (relaxed_0->aabb_min[0] + relaxed_0->aabb_max[0]);
+        adjudicator->legacy_centroid_fallback[1] =
+            0.5f * (relaxed_0->aabb_min[1] + relaxed_0->aabb_max[1]);
+        adjudicator->legacy_centroid_fallback[2] =
+            0.5f * (relaxed_0->aabb_min[2] + relaxed_0->aabb_max[2]);
+    }
 }
 
 /// Zero-fill kernel — initialises a freshly F2-pool-allocated
@@ -455,10 +530,15 @@ int prism_interferometric_adjudicator_destroy(
 }
 
 int prism_interferometric_adjudicator_step(
-    InterferometricAdjudicatorFfi* adj, void* stream_v
+    InterferometricAdjudicatorFfi* adj,
+    uint32_t                       n_clusters,
+    void*                          stream_v
 ) {
+    // T13 — SIMT 4-plane KL fusion. Single block of 64 threads; each
+    // thread processes one cluster (capped at 64 clusters per launch;
+    // multi-block adjudication deferred to a separate refactor).
     cudaStream_t s = static_cast<cudaStream_t>(stream_v);
-    prism_interferometric_adjudicator_step_kernel<<<1, 1, 0, s>>>(adj);
+    prism_interferometric_adjudicator_step_kernel<<<1, 64, 0, s>>>(adj, n_clusters);
     return static_cast<int>(cudaGetLastError());
 }
 

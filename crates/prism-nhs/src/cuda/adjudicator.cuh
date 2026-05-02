@@ -188,12 +188,19 @@ int prism_interferometric_adjudicator_create(
 int prism_interferometric_adjudicator_destroy(
     InterferometricAdjudicatorFfi* adj, void* stream);
 
-/// Run the T2 KL-divergence Adjudicator kernel against the
-/// (relaxed, perturbed) manifold pair currently pointed-to by `adj`.
-/// Updates current_divergence, adjudication_code, start/stop_clock,
-/// legacy_centroid_fallback in place. <<<1, 1, 0, stream>>> launch.
+/// Run the T13 SIMT 4-plane weighted KL Adjudicator kernel against
+/// the (relaxed[], perturbed[]) ContactShellTile arrays currently
+/// pointed-to by `adj`. Updates current_divergence, adjudication_code,
+/// legacy_centroid_fallback in place. <<<1, 64, 0, stream>>> launch
+/// — each thread processes one cluster, capped at 64.
+///
+/// `n_clusters` is the number of valid tiles in the (relaxed,
+/// perturbed) arrays. Threads with id >= n_clusters skip the KL math
+/// and contribute 0 to the reduction. Capture-time constant.
 int prism_interferometric_adjudicator_step(
-    InterferometricAdjudicatorFfi* adj, void* stream);
+    InterferometricAdjudicatorFfi* adj,
+    uint32_t                       n_clusters,
+    void*                          stream);
 
 /// Update running noise-floor estimates from the latest "Cool" frame.
 /// <<<1, 1, 0, stream>>> launch — single-thread, no atomic contention.

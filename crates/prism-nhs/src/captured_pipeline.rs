@@ -895,10 +895,14 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
-        // ── 6.b Node C: Adjudicator step ──────────────────────────────
+        // ── 6.b Node C: Adjudicator step (T13 SIMT 4-plane KL) ─────────
+        // <<<1, 64>>>: each thread processes one cluster.  cfg.n_clusters
+        // is the capture-time constant fed in; threads with id >=
+        // n_clusters early-skip in the kernel.
         let rc = unsafe {
             crate::interferometric_adjudicator::ffi::prism_interferometric_adjudicator_step(
                 adj_dev as *mut InterferometricAdjudicatorFfi,
+                cfg.n_clusters,
                 md_stream.cu_stream() as *mut c_void,
             )
         };
