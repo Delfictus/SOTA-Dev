@@ -126,128 +126,112 @@ __device__ __forceinline__ float prism_log2_with_guard(float ratio) {
 /// adjudication_code write enforces L2 visibility before the SWITCH
 /// node read; the captured-graph topology orders this kernel before
 /// the SWITCH read.
-// Amendment 3.9 — SIMT Vector Adjudicator.
-//
-// Launch contract: `<<<1, n_clusters>>>` where n_clusters ≤ N_MAX_CLUSTERS
-// (operator-mandated 64).  Each thread `cid = threadIdx.x` independently:
-//   1. Loads its own (relaxed[cid], perturbed[cid]) ContactShellTile pair
-//   2. Computes its own KL-divergence across the 6 geo SH bands
-//   3. Applies the 3-σ noise-floor threshold to produce its local code
-//   4. Honors the SISR force_prune_mask bit-`cid` if set
-//   5. Writes its local code into `per_cluster_codes[cid]`
-//   6. Participates in a __reduce_or_sync warp aggregation
-// Block-level reduction across warps yields global_adjudication_summary,
-// written by thread 0.  F1 SWITCH continues to read offset 52 — the byte
-// is now a u32-OR over all per-thread codes (0=all-prune, 1=any-burst,
-// 2=any-violation).
 __global__ void prism_interferometric_adjudicator_step_kernel(
     InterferometricAdjudicatorFfi* __restrict__ adjudicator
 ) {
-    if (blockIdx.x != 0) return;
-    const uint32_t cid = threadIdx.x;
+    // Strict single-thread guard. Block / thread > 0 falls out
+    // immediately, avoiding any concurrent write to adjudicator state.
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
 
-    const ContactShellTile* relaxed_base   = adjudicator->relaxed_manifold_ptr;
-    const ContactShellTile* perturbed_base = adjudicator->perturbed_manifold_ptr;
+    // Note (T4): start_clock / stop_clock are owned by the pipeline
+    // bookend kernels (`prism_pipeline_clock_start_kernel` /
+    // `_stop_kernel`). T2 deliberately does NOT touch them so the
+    // SO(3)→T2→ASC pipeline-wide timing is not clobbered. T2's
+    // own internal latency is sub-µs and not separately tracked.
 
-    // Defensive null-pointer guard. Thread 0 stamps Violation; all threads
-    // skip per-cluster processing.
-    if (relaxed_base == nullptr || perturbed_base == nullptr) {
-        if (cid == 0) {
-            adjudicator->current_divergence = 0.0f;
-            __threadfence();
-            adjudicator->global_adjudication_summary = PRISM_ADJ_VIOLATION;
-        }
+    const ContactShellTile* relaxed   = adjudicator->relaxed_manifold_ptr;
+    const ContactShellTile* perturbed = adjudicator->perturbed_manifold_ptr;
+
+    // Defensive null-pointer guard. If either pointer is null (e.g. the
+    // first frame before manifolds are populated), route directly to
+    // Violation without dereferencing.
+    if (relaxed == nullptr || perturbed == nullptr) {
+        adjudicator->current_divergence = 0.0f;
+        __threadfence();
+        adjudicator->adjudication_code = PRISM_ADJ_VIOLATION;
         return;
     }
 
-    // Each thread indexes its OWN cluster pair via the contiguous tile
-    // arrays (cfg.n_clusters slots, allocated by SiteManifestFfi::alloc_bytes).
-    const ContactShellTile& relaxed   = relaxed_base[cid];
-    const ContactShellTile& perturbed = perturbed_base[cid];
-
-    // ─── Per-thread KL-divergence over the geometry plane SH bands l=0..5
+    // ─── KL-divergence over the geometry plane SH bands l=0..5 ──────
+    // Geometry is the canonical SO(3) rotationally-invariant signal
+    // (RECT-3.1.b). The other 3 planes (causality, thermodynamics,
+    // chemistry) carry orthogonal weighted projections; multi-plane
+    // KL aggregation is a future enhancement.
     float    total_kl_div    = 0.0f;
     uint32_t violation_count = 0u;
     constexpr float epsilon  = 1.0e-7f;
 
     #pragma unroll
     for (int l = 0; l < 6; ++l) {
-        float p_raw = relaxed.geo_power_spectrum[l];
-        float q_raw = perturbed.geo_power_spectrum[l];
+        float p_raw = relaxed->geo_power_spectrum[l];
+        float q_raw = perturbed->geo_power_spectrum[l];
+
+        // Dirty-input detection BEFORE any clamping. isfinite() returns
+        // false for NaN, +Inf, -Inf; true for all finite values
+        // (including ±0 and subnormals).
         if (!isfinite(p_raw) || !isfinite(q_raw)) {
             violation_count++;
+            // Substitute clean placeholders so the running sum stays
+            // finite. The violation flag will elevate the SWITCH to 2.
             if (!isfinite(p_raw)) p_raw = epsilon;
             if (!isfinite(q_raw)) q_raw = epsilon;
         }
+
+        // Defensive epsilon padding — clamps 0 / -finite to epsilon.
         const float p = fmaxf(p_raw, epsilon);
         const float q = fmaxf(q_raw, epsilon);
-        const float log_ratio = prism_log2_with_guard(p / q);
+        const float ratio = p / q;
+
+        // PTX-guarded log2 (defense-in-depth; should not fire after
+        // the clamps above on clean input).
+        const float log_ratio = prism_log2_with_guard(ratio);
+
         total_kl_div += p * log_ratio;
     }
 
-    uint32_t local_code;
+    // Race-free write order: divergence first, fence, then SWITCH code.
+    adjudicator->current_divergence = total_kl_div;
+    __threadfence();
+
+    uint32_t code;
     if (violation_count > 0u) {
-        local_code = PRISM_ADJ_VIOLATION;
+        code = PRISM_ADJ_VIOLATION;
     } else {
+        // 3-σ adjudication threshold. Aggregating across 6 SH bands by
+        // taking the band-0 noise floor as the cumulative-band proxy;
+        // future enhancement: per-band threshold with worst-band escalation.
         const float threshold =
             adjudicator->noise_floor_mu[0]
             + 3.0f * adjudicator->noise_floor_sigma[0];
-        local_code = (total_kl_div > threshold) ? PRISM_ADJ_CONSTRUCT
-                                                 : PRISM_ADJ_PRUNE;
+        code = (total_kl_div > threshold) ? PRISM_ADJ_CONSTRUCT
+                                          : PRISM_ADJ_PRUNE;
     }
 
-    // ─── G28 SISR per-cluster symmetry veto (Amendment 3.4 / 3.9) ──
-    // bit-cid set ⇒ this cluster failed bilateral-truth check.
+    // ─── G28 SISR symmetry gate (Amendment 3.4) ──────────────────────
+    // If the bilateral-symmetry kernel set the prune mask for this
+    // cluster, override the Δ_AB-based decision to PRUNE.  Single-
+    // cluster current architecture: any non-zero bit means the active
+    // cluster failed the C2-reflected AABB partner search, so the
+    // discovery is a stochastic fluke regardless of magnitude.
     if (adjudicator->force_prune_mask != nullptr) {
         const uint64_t mask = *adjudicator->force_prune_mask;
-        if ((mask & (1ull << cid)) != 0ull) {
-            local_code = PRISM_ADJ_PRUNE;
+        if (mask != 0ull) {
+            code = PRISM_ADJ_PRUNE;
         }
     }
+    adjudicator->adjudication_code = code;
 
-    // ─── Vector output: write per-cluster code ──────────────────────
-    if (adjudicator->per_cluster_codes != nullptr) {
-        adjudicator->per_cluster_codes[cid] = local_code;
-    }
-
-    // ─── Warp-level OR reduction → block-level reduction → global summary
-    // OR-reducing {0,1,2} preserves max (since 0|x = x, 1|2 = 3 — not in
-    // valid set; we clamp to PRISM_ADJ_VIOLATION below).
-    const uint32_t warp_summary = __reduce_or_sync(0xFFFFFFFFu, local_code);
-    __shared__ uint32_t warp_buf[2];   // up to 64 threads = 2 warps
-    const uint32_t lane    = threadIdx.x & 31u;
-    const uint32_t warp_id = threadIdx.x >> 5;
-    if (lane == 0u && warp_id < 2u) {
-        warp_buf[warp_id] = warp_summary;
-    }
-    __syncthreads();
-
-    if (cid == 0) {
-        uint32_t global = warp_buf[0] | warp_buf[1];
-        // Clamp to the canonical 3-value enum: any violation (2 set) →
-        // PRISM_ADJ_VIOLATION; otherwise any burst (1) → CONSTRUCT;
-        // else PRUNE.  Bitwise OR of {0,1,2} can yield 3 (=1|2), which
-        // we resolve to VIOLATION (the higher-severity outcome).
-        if ((global & 0x2u) != 0u) global = PRISM_ADJ_VIOLATION;
-        else if ((global & 0x1u) != 0u) global = PRISM_ADJ_CONSTRUCT;
-        else global = PRISM_ADJ_PRUNE;
-
-        // Stamp current_divergence with thread 0's value (cluster 0 KL).
-        // Vector codes carry per-cluster KL implicitly via per_cluster_codes;
-        // current_divergence remains a single-cluster diagnostic for legacy
-        // T4 telemetry consumers.
-        adjudicator->current_divergence = total_kl_div;
-        __threadfence();
-        adjudicator->global_adjudication_summary = global;
-
-        // Anti-Greenfield § 6.2 legacy_centroid_fallback — cluster 0 only.
-        adjudicator->legacy_centroid_fallback[0] =
-            0.5f * (relaxed.aabb_min[0] + relaxed.aabb_max[0]);
-        adjudicator->legacy_centroid_fallback[1] =
-            0.5f * (relaxed.aabb_min[1] + relaxed.aabb_max[1]);
-        adjudicator->legacy_centroid_fallback[2] =
-            0.5f * (relaxed.aabb_min[2] + relaxed.aabb_max[2]);
-    }
+    // ─── Anti-Greenfield § 6.2 — legacy_centroid_fallback (Path A) ──
+    // AABB midpoint of the relaxed manifold. Not the literal
+    // "intensity-weighted geometric mean" (would require per-spike
+    // positions that ContactShellTile doesn't retain post-SO(3)
+    // projection); operator-approved approximation per Path A.
+    adjudicator->legacy_centroid_fallback[0] =
+        0.5f * (relaxed->aabb_min[0] + relaxed->aabb_max[0]);
+    adjudicator->legacy_centroid_fallback[1] =
+        0.5f * (relaxed->aabb_min[1] + relaxed->aabb_max[1]);
+    adjudicator->legacy_centroid_fallback[2] =
+        0.5f * (relaxed->aabb_min[2] + relaxed->aabb_max[2]);
 }
 
 /// Zero-fill kernel — initialises a freshly F2-pool-allocated
@@ -265,7 +249,7 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
         adj->noise_floor_sigma[i] = 0.0f;
     }
     adj->current_divergence = 0.0f;
-    adj->global_adjudication_summary = PRISM_ADJ_PRUNE;
+    adj->adjudication_code = PRISM_ADJ_PRUNE;
     adj->relaxed_manifold_ptr = nullptr;
     adj->perturbed_manifold_ptr = nullptr;
     adj->start_clock = 0u;
@@ -343,11 +327,9 @@ __global__ void prism_asc_apply_kernel(
     if (i >= n_atoms) return;
 
     // Defensive: only fire on Construct (code 1). The F1 SWITCH
-    // already routed us here only when global_adjudication_summary == 1
-    // (any cluster went burst), but read-back guards against
-    // pointer-stability bugs upstream.  Amendment 3.9: vector path
-    // promotes single-cluster scalar to OR-reduced summary.
-    const uint32_t code = adj->global_adjudication_summary;
+    // already routed us here only when code == 1, but read-back
+    // guards against pointer-stability bugs upstream.
+    const uint32_t code = adj->adjudication_code;
     if (code != PRISM_ADJ_CONSTRUCT) return;
 
     const ContactShellTile* tile = adj->relaxed_manifold_ptr;
@@ -475,14 +457,8 @@ int prism_interferometric_adjudicator_destroy(
 int prism_interferometric_adjudicator_step(
     InterferometricAdjudicatorFfi* adj, void* stream_v
 ) {
-    // Amendment 3.9 — SIMT vector launch. blockDim.x = N_MAX_CLUSTERS = 64
-    // (operator mandate; matches PipelineConfig.n_clusters bake-in).
-    // Each thread cid computes cluster cid's KL-divergence; thread 0
-    // writes the OR-reduced global_adjudication_summary.  Single warp
-    // pair (2 warps × 32 threads = 64 threads), warp_buf shared mem
-    // sized to 2 entries.
     cudaStream_t s = static_cast<cudaStream_t>(stream_v);
-    prism_interferometric_adjudicator_step_kernel<<<1, 64, 0, s>>>(adj);
+    prism_interferometric_adjudicator_step_kernel<<<1, 1, 0, s>>>(adj);
     return static_cast<int>(cudaGetLastError());
 }
 
@@ -548,7 +524,7 @@ const uint32_t* prism_get_adjudication_code_devptr(
     // ReleaseThreshold = UINT64_MAX guarantee. Always 4-byte aligned;
     // never crosses a 128-byte L1 sector boundary (the entire
     // 128-byte struct fits in one sector).
-    return &adj->global_adjudication_summary;
+    return &adj->adjudication_code;
 }
 
 }  // extern "C"
@@ -578,7 +554,7 @@ __global__ void prism_adj_set_conditional_kernel(
     // Read the memory-resident code written by T2's adjudicator
     // kernel. The captured-graph dependency edge from T2 → here
     // guarantees stream-order visibility (operator mandate § 2.3).
-    const uint32_t code = adj->global_adjudication_summary;
+    const uint32_t code = adj->adjudication_code;
     // Forward to the F1 SWITCH handle. The 3 valid values
     // (PRUNE=0, CONSTRUCT=1, VIOLATION=2) map to the SWITCH's
     // 3 sub-graph branches.
