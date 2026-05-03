@@ -1,8 +1,5 @@
- .codex/review/context.txt                       |    8 +-
- .codex/review/pre-commit.diff                   | 3305 +++++++++++++++--------
- .codex/review/pre-commit.diffstat               |   22 +-
- crates/prism-nhs/src/bin/nhs_rt_full.rs         |   27 +
- crates/prism-nhs/src/captured_pipeline.rs       |   37 +-
- crates/prism-nhs/src/cuda/ghost_tile_kernel.cu  |   17 +-
- crates/prism-nhs/src/cuda/ghost_tile_kernel.cuh |   10 +-
- 7 files changed, 2304 insertions(+), 1122 deletions(-)
+ .codex/review/context.txt               |    4 +-
+ .codex/review/pre-commit.diff           | 5778 +++++++++++++++++++------------
+ .codex/review/pre-commit.diffstat       |   23 +-
+ crates/prism-nhs/src/bin/nhs_rt_full.rs |  136 +-
+ 4 files changed, 3673 insertions(+), 2268 deletions(-)

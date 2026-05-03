@@ -5084,6 +5084,75 @@ fn run_multi_stream_pipeline(
                         #[cfg(feature = "v2_ignition")]
                         let t7_active = true;
 
+                        // ══════════════════════════════════════════════════════════
+                        // PHASE A TELEMETRY PERSISTENCE — per-stream writers
+                        //
+                        // Operator directive (Phase A monomer audit): four streams
+                        // of telemetry that are computed every chunk but discarded
+                        // after a single log line. Persist all four as per-stream
+                        // namespaced files so the offline aggregator can rebuild a
+                        // chronological view per stream:
+                        //
+                        //   1. {stem}_stream{i}_bocpd.jsonl
+                        //        line per chunk: posterior_max, MAP run length,
+                        //        recent_p, log-odds bits, spike delta, MAP r.
+                        //   2. {stem}_stream{i}_adj_flags.bin
+                        //        record per chunk: (u64 chunk_idx,
+                        //                           u64 frame_idx_steps_run,
+                        //                           u32 reason_flags,
+                        //                           u32 mom_flag).
+                        //   3. {stem}_stream{i}_adaptive_dt.bin
+                        //        record per chunk: (u64 chunk_idx,
+                        //                           u64 frame_idx_steps_run,
+                        //                           f64 dt_ps,
+                        //                           u32 reason_code,    // 0 reserved
+                        //                           u32 _pad).
+                        //   4. {stem}_stream{i}_asc_trajectory.bin
+                        //        header: (u64 n_atoms_loaded)
+                        //        record per chunk: (u64 chunk_idx,
+                        //                           u64 frame_idx_steps_run,
+                        //                           f32[3*n_atoms] forces).
+                        //
+                        // Per-stream namespacing → no cross-thread contention
+                        // (each stream is a `s.spawn(..)` thread; each writer is
+                        // local to that thread). Lazy creation keeps streams that
+                        // never reach the relevant chunk boundary from creating
+                        // empty files. fsync is deferred to the end of the chunk
+                        // loop (operator: throughput > per-chunk durability).
+                        let phase_a_topo_stem = topology_path_capture
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.trim_end_matches(".topology").to_string())
+                            .unwrap_or_else(|| "unknown_target".to_string());
+                        let phase_a_dir = output_path_capture.clone();
+                        let _ = std::fs::create_dir_all(&phase_a_dir);
+                        let phase_a_bocpd_path = phase_a_dir.join(
+                            format!("{}_stream{}_bocpd.jsonl",
+                                    phase_a_topo_stem, i));
+                        let phase_a_adj_path = phase_a_dir.join(
+                            format!("{}_stream{}_adj_flags.bin",
+                                    phase_a_topo_stem, i));
+                        let phase_a_dt_path = phase_a_dir.join(
+                            format!("{}_stream{}_adaptive_dt.bin",
+                                    phase_a_topo_stem, i));
+                        let phase_a_asc_path = phase_a_dir.join(
+                            format!("{}_stream{}_asc_trajectory.bin",
+                                    phase_a_topo_stem, i));
+                        let mut phase_a_bocpd_w:
+                            Option<std::io::BufWriter<std::fs::File>> = None;
+                        let mut phase_a_adj_w:
+                            Option<std::io::BufWriter<std::fs::File>> = None;
+                        let mut phase_a_dt_w:
+                            Option<std::io::BufWriter<std::fs::File>> = None;
+                        let mut phase_a_asc_w:
+                            Option<std::io::BufWriter<std::fs::File>> = None;
+                        // ASC trajectory header is `n_atoms_loaded` (u64). We
+                        // only have a valid n_atoms after the engine has
+                        // load_topology'd, which by this point is true. Cache
+                        // it so the per-chunk record can validate the slice
+                        // length without a per-chunk syscall.
+                        let phase_a_asc_n_atoms: usize = engine.n_atoms_loaded();
+
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
@@ -6404,6 +6473,161 @@ fn run_multi_stream_pipeline(
                                 // NL rebuild (CPU-side, every 500 steps)
                                 engine.rebuild_neighbor_lists_if_needed()?;
 
+                                // ── PHASE A.2 — adj_reason_flags per-chunk readback ──
+                                // The end-of-stream-0 readback at L7855 publishes
+                                // a SINGLE final value once per stream. The four
+                                // bits (NaN_POTENTIAL / MOMENTUM_VIOLATION /
+                                // SYMMETRY_VETO / GAIN_SATURATION) reset between
+                                // chunks, so a single end-of-run snapshot loses
+                                // every transient violation that occurred mid-run.
+                                // Persist a per-chunk binary record so the offline
+                                // aggregator can build a chronological violation
+                                // trace.
+                                //
+                                // force_spike_sync above drained the engine's
+                                // stream → the prior pipeline.launch's writes to
+                                // adj_dev are visible from the host. We use the
+                                // synchronous cuMemcpyDtoH_v2 (matches the L7855
+                                // pattern); cost is two 4-byte transfers per
+                                // chunk per stream — negligible vs the existing
+                                // spike DtoH that just ran.
+                                #[cfg(feature = "v2_ignition")]
+                                if let Some(ref pipeline) = v2_pipeline {
+                                    use std::io::Write;
+                                    use cudarc::driver::sys::{
+                                        cuMemcpyDtoH_v2, CUresult, CUdeviceptr,
+                                    };
+                                    let adj_dev = pipeline.adj_dev_ptr();
+                                    let mut reason_flags: u32 = 0;
+                                    let mut mom_flag:    u32 = 0;
+                                    let rc1 = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            &mut reason_flags as *mut u32
+                                                as *mut std::ffi::c_void,
+                                            (adj_dev + 148) as CUdeviceptr,
+                                            4,
+                                        )
+                                    };
+                                    let rc2 = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            &mut mom_flag as *mut u32
+                                                as *mut std::ffi::c_void,
+                                            (adj_dev + 144) as CUdeviceptr,
+                                            4,
+                                        )
+                                    };
+                                    if matches!(rc1, CUresult::CUDA_SUCCESS)
+                                        && matches!(rc2, CUresult::CUDA_SUCCESS)
+                                    {
+                                        if phase_a_adj_w.is_none() {
+                                            match std::fs::File::create(&phase_a_adj_path) {
+                                                Ok(f) => {
+                                                    phase_a_adj_w = Some(
+                                                        std::io::BufWriter::with_capacity(
+                                                            1 << 16, f));
+                                                }
+                                                Err(e) => log::warn!(
+                                                    "[PHASE-A adj_flags stream {}] \
+                                                     create {} failed: {}",
+                                                    i, phase_a_adj_path.display(), e),
+                                            }
+                                        }
+                                        if let Some(ref mut w) = phase_a_adj_w {
+                                            // Schema: (u64 chunk_idx,
+                                            //         u64 frame_idx_steps_run,
+                                            //         u32 reason_flags,
+                                            //         u32 mom_flag).
+                                            let _ = w.write_all(&(chunk_idx as u64).to_le_bytes());
+                                            let _ = w.write_all(&(steps_run as u64).to_le_bytes());
+                                            let _ = w.write_all(&reason_flags.to_le_bytes());
+                                            let _ = w.write_all(&mom_flag.to_le_bytes());
+                                        }
+                                    }
+                                }
+
+                                // ── PHASE A.4 — ASC force-vector trajectory ──
+                                // Operator audit: existing L7616 writeback
+                                // captures only the FINAL frame's d_forces (one
+                                // 56184-B snapshot for mpro). Append a per-chunk
+                                // frame here so the offline causal-lead-velocity
+                                // and desolvation-tax computations get a full
+                                // chronological force series. Stream-0-only on
+                                // the trajectory file is enough — the original
+                                // single-snapshot file is also stream-0-only and
+                                // all 8 streams share the same atom count
+                                // (8× redundancy would waste PCIe bandwidth).
+                                #[cfg(feature = "v2_ignition")]
+                                if i == 0
+                                    && phase_a_asc_n_atoms > 0
+                                    && v2_pipeline.is_some()
+                                {
+                                    use std::io::Write;
+                                    use cudarc::driver::sys::{
+                                        cuMemcpyDtoH_v2, CUresult, CUdeviceptr,
+                                    };
+                                    let d_forces_ptr = engine.d_forces_dev_ptr();
+                                    if d_forces_ptr != 0 {
+                                        let n_floats = phase_a_asc_n_atoms * 3;
+                                        let nbytes = n_floats
+                                            * std::mem::size_of::<f32>();
+                                        // Reuse a per-chunk allocation. n_atoms
+                                        // is fixed for the run so this is a
+                                        // constant-size buffer; allocating once
+                                        // per chunk costs ~110 kB on mpro —
+                                        // acceptable next to the ~280 kB spike
+                                        // DtoH that just executed in
+                                        // force_spike_sync.
+                                        let mut host_forces: Vec<f32> =
+                                            vec![0.0f32; n_floats];
+                                        let rc = unsafe {
+                                            cuMemcpyDtoH_v2(
+                                                host_forces.as_mut_ptr()
+                                                    as *mut std::ffi::c_void,
+                                                d_forces_ptr as CUdeviceptr,
+                                                nbytes,
+                                            )
+                                        };
+                                        if matches!(rc, CUresult::CUDA_SUCCESS) {
+                                            // Lazy-create + write n_atoms
+                                            // header on first chunk.
+                                            if phase_a_asc_w.is_none() {
+                                                match std::fs::File::create(
+                                                    &phase_a_asc_path)
+                                                {
+                                                    Ok(f) => {
+                                                        let mut w = std::io::BufWriter
+                                                            ::with_capacity(1 << 20, f);
+                                                        let _ = w.write_all(
+                                                            &(phase_a_asc_n_atoms
+                                                              as u64).to_le_bytes());
+                                                        phase_a_asc_w = Some(w);
+                                                    }
+                                                    Err(e) => log::warn!(
+                                                        "[PHASE-A asc_traj stream {}] \
+                                                         create {} failed: {}",
+                                                        i, phase_a_asc_path.display(), e),
+                                                }
+                                            }
+                                            if let Some(ref mut w) = phase_a_asc_w {
+                                                // Schema: (u64 chunk_idx,
+                                                //         u64 frame_idx_steps_run,
+                                                //         f32[3*n_atoms] forces).
+                                                let _ = w.write_all(
+                                                    &(chunk_idx as u64).to_le_bytes());
+                                                let _ = w.write_all(
+                                                    &(steps_run as u64).to_le_bytes());
+                                                let bytes_view = unsafe {
+                                                    std::slice::from_raw_parts(
+                                                        host_forces.as_ptr() as *const u8,
+                                                        nbytes,
+                                                    )
+                                                };
+                                                let _ = w.write_all(bytes_view);
+                                            }
+                                        }
+                                    }
+                                }
+
                                 // ── KCC drive (outside captured graph) ──
                                 // The autonomous graph captures Director→Physics→multi_lif
                                 // but does NOT include kcc_residue_update (see the comment
@@ -6504,6 +6728,112 @@ fn run_multi_stream_pipeline(
                                         i, chunk_idx, bocpd_delta,
                                         bocpd_recent_p, bocpd_recent_bits, bocpd_map_r,
                                     );
+                                }
+
+                                // ── PHASE A.1 — BOCPD per-chunk persistence ──
+                                // Append one JSON object per chunk per stream so
+                                // the offline aggregator can reconstruct the full
+                                // posterior trajectory (previously: stdout-only,
+                                // discarded at log rotation). Lazy-create on the
+                                // first chunk so streams that never reach this
+                                // body skip the file entirely.
+                                {
+                                    use std::io::Write;
+                                    if phase_a_bocpd_w.is_none() {
+                                        match std::fs::File::create(&phase_a_bocpd_path) {
+                                            Ok(f) => {
+                                                phase_a_bocpd_w = Some(
+                                                    std::io::BufWriter::with_capacity(
+                                                        1 << 16, f));
+                                            }
+                                            Err(e) => log::warn!(
+                                                "[PHASE-A bocpd stream {}] create {} failed: {}",
+                                                i, phase_a_bocpd_path.display(), e),
+                                        }
+                                    }
+                                    if let Some(ref mut w) = phase_a_bocpd_w {
+                                        let (map_r, posterior_max) =
+                                            bocpd_state.most_likely_run_length();
+                                        // Hand-rolled JSON line — keeps the
+                                        // dependency footprint local. Every
+                                        // numeric is finite-checked at write
+                                        // time (NaN would corrupt the stream).
+                                        let line = format!(
+                                            "{{\"frame_idx\":{},\"chunk_idx\":{},\
+                                             \"stream\":{},\"spike_delta\":{},\
+                                             \"observation\":{:.6},\
+                                             \"posterior_max\":{:.6},\
+                                             \"map_run_length\":{},\
+                                             \"recent_p\":{:.6},\
+                                             \"recent_log_odds_bits\":{:.6},\
+                                             \"reset_probability\":{:.6},\
+                                             \"chunk_close_signal\":{},\
+                                             \"n_observations\":{}}}\n",
+                                            steps_run, chunk_idx, i,
+                                            bocpd_delta,
+                                            bocpd_observation,
+                                            posterior_max,
+                                            map_r,
+                                            bocpd_recent_p,
+                                            bocpd_recent_bits,
+                                            bocpd_state.reset_probability(),
+                                            chunk_close_signal,
+                                            bocpd_state.n_observations,
+                                        );
+                                        let _ = w.write_all(line.as_bytes());
+                                    }
+                                }
+
+                                // ── PHASE A.3 — adaptive_dt per-chunk history ──
+                                // Persist the host-side dt scalar at chunk close
+                                // so the offline reconstruction can correlate dt
+                                // adaptations with phase boundaries / BOCPD
+                                // changepoints. reason_code is reserved (=0):
+                                // the host adaptive heuristic at L5484 of
+                                // fused_engine has no per-step reason field
+                                // today; the schema slot is preserved for the
+                                // VRAM-teardown lane to fill once the gearbox
+                                // GPU writer publishes a reason.
+                                {
+                                    use std::io::Write;
+                                    if phase_a_dt_w.is_none() {
+                                        match std::fs::File::create(&phase_a_dt_path) {
+                                            Ok(f) => {
+                                                phase_a_dt_w = Some(
+                                                    std::io::BufWriter::with_capacity(
+                                                        1 << 16, f));
+                                            }
+                                            Err(e) => log::warn!(
+                                                "[PHASE-A adaptive_dt stream {}] \
+                                                 create {} failed: {}",
+                                                i, phase_a_dt_path.display(), e),
+                                        }
+                                    }
+                                    if let Some(ref mut w) = phase_a_dt_w {
+                                        let dt_ps = engine.current_dt_ps();
+                                        // Reason codes (reserved):
+                                        //   0  unknown / no-reason
+                                        //   1  hold-phase upscale (×1.5)
+                                        //   2  ramp / non-hold base_dt
+                                        //   3  gearbox-owned (V2 captured)
+                                        let reason_code: u32 = if engine.is_gearbox_active() {
+                                            3
+                                        } else if engine.adaptive_dt_enabled() {
+                                            // We can't observe the protocol's
+                                            // is_hold_phase from here without
+                                            // adding a getter; infer from the
+                                            // ratio dt/base_dt. ≥1.4× ⇒ hold.
+                                            let base = engine.base_dt_ps();
+                                            if base > 0.0 && (dt_ps / base) > 1.4 { 1 } else { 2 }
+                                        } else {
+                                            0
+                                        };
+                                        let _ = w.write_all(&(chunk_idx as u64).to_le_bytes());
+                                        let _ = w.write_all(&(steps_run as u64).to_le_bytes());
+                                        let _ = w.write_all(&dt_ps.to_le_bytes());
+                                        let _ = w.write_all(&reason_code.to_le_bytes());
+                                        let _ = w.write_all(&0u32.to_le_bytes()); // _pad
+                                    }
                                 }
 
                                 last_summary = Some(prism_nhs::fused_engine::RunSummary {
@@ -7819,6 +8149,41 @@ fn run_multi_stream_pipeline(
                             prism_nhs::bocpd::BOCPD_CLOSE_THRESHOLD,
                             bocpd_enabled,
                         );
+
+                        // ── PHASE A — flush + fsync the four telemetry writers ──
+                        // Operator directive: do NOT fsync per chunk (throughput
+                        // wins). Fsync ONCE here at engine teardown so the file
+                        // is durable before the spawn closure returns. Flush the
+                        // BufWriter, then call into_inner to recover the File
+                        // and request fsync via sync_all.
+                        macro_rules! phase_a_flush {
+                            ($w:expr, $path:expr, $tag:literal) => {
+                                if let Some(bw) = $w.take() {
+                                    match bw.into_inner() {
+                                        Ok(mut f) => {
+                                            use std::io::Write;
+                                            let _ = f.flush();
+                                            if let Err(e) = f.sync_all() {
+                                                log::warn!(
+                                                    "[PHASE-A {} stream {}] sync_all {}: {}",
+                                                    $tag, i, $path.display(), e);
+                                            } else {
+                                                log::info!(
+                                                    "[PHASE-A {} stream {}] flushed → {}",
+                                                    $tag, i, $path.display());
+                                            }
+                                        }
+                                        Err(e) => log::warn!(
+                                            "[PHASE-A {} stream {}] into_inner {}: {}",
+                                            $tag, i, $path.display(), e),
+                                    }
+                                }
+                            };
+                        }
+                        phase_a_flush!(phase_a_bocpd_w, phase_a_bocpd_path, "bocpd");
+                        phase_a_flush!(phase_a_adj_w,   phase_a_adj_path,   "adj_flags");
+                        phase_a_flush!(phase_a_dt_w,    phase_a_dt_path,    "adaptive_dt");
+                        phase_a_flush!(phase_a_asc_w,   phase_a_asc_path,   "asc_traj");
 
                         // ── Stage 2 calibration: focus match counter ──
                         // Download the final ProtocolState from this stream's

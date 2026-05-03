@@ -3578,6 +3578,18 @@ impl NhsAmberFusedEngine {
     /// Read accessor — true while the V2 captured pipeline owns dt.
     pub fn is_gearbox_active(&self) -> bool { self.gearbox_active }
 
+    /// Telemetry observer — current host-side integration timestep (ps).
+    /// Pure observer; does not mutate engine state. Used by the per-chunk
+    /// adaptive_dt history persistence in nhs_rt_full.
+    pub fn current_dt_ps(&self) -> f64 { self.dt as f64 }
+
+    /// Telemetry observer — base (pre-adaptive-scale) timestep (ps).
+    pub fn base_dt_ps(&self) -> f64 { self.base_dt as f64 }
+
+    /// Telemetry observer — true while host-side adaptive_dt heuristic
+    /// is the writer of `self.dt` (i.e., not in V2 gearbox mode).
+    pub fn adaptive_dt_enabled(&self) -> bool { self.adaptive_dt_enabled }
+
     pub fn set_adaptive_dt(&mut self, enabled: bool) {
         self.adaptive_dt_enabled = enabled;
         self.base_dt = self.dt;

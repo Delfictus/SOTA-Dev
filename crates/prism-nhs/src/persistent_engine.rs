@@ -1153,6 +1153,29 @@ impl PersistentNhsEngine {
         }
     }
 
+    /// Telemetry observer — current host-side integration timestep (ps).
+    /// Returns 0.0 if no topology loaded.
+    pub fn current_dt_ps(&self) -> f64 {
+        self.engine.as_ref().map(|e| e.current_dt_ps()).unwrap_or(0.0)
+    }
+
+    /// Telemetry observer — base (pre-adaptive-scale) integration timestep (ps).
+    /// Returns 0.0 if no topology loaded.
+    pub fn base_dt_ps(&self) -> f64 {
+        self.engine.as_ref().map(|e| e.base_dt_ps()).unwrap_or(0.0)
+    }
+
+    /// Telemetry observer — true while host-side adaptive_dt heuristic
+    /// is the writer of `self.dt` (i.e., not in V2 gearbox mode).
+    pub fn adaptive_dt_enabled(&self) -> bool {
+        self.engine.as_ref().map(|e| e.adaptive_dt_enabled()).unwrap_or(false)
+    }
+
+    /// Telemetry observer — true while the V2 captured pipeline owns dt.
+    pub fn is_gearbox_active(&self) -> bool {
+        self.engine.as_ref().map(|e| e.is_gearbox_active()).unwrap_or(false)
+    }
+
     /// Enable LADD observation kernel
     pub fn set_ladd_enabled(&mut self, enabled: bool) {
         if let Some(ref mut engine) = self.engine {
