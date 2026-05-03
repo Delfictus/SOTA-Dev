@@ -1317,6 +1317,49 @@ impl PersistentNhsEngine {
         self.engine.as_ref().map(|e| e.n_atoms()).unwrap_or(0)
     }
 
+    /// Number of aromatics in the currently loaded topology. Returns 0
+    /// if no topology has been loaded.
+    pub fn n_aromatics_loaded(&self) -> usize {
+        self.engine.as_ref().map(|e| e.n_aromatics()).unwrap_or(0)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase A teardown DtoH forwarders — read-only device-pointer + size
+    // accessors for the four VRAM-resident outputs flagged by the audit
+    // (d_warp_matrix, d_forces final, d_aromatic_centroids final,
+    // ProtocolState).  Used by nhs_rt_full.rs's per-stream cleanup block
+    // to issue cuMemcpyDtoH before stream teardown.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Raw device pointer to `d_warp_matrix`. Returns 0 if no topology.
+    pub fn d_warp_matrix_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_warp_matrix_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// Total byte size of `d_warp_matrix`.
+    pub fn d_warp_matrix_n_bytes(&self) -> usize {
+        self.engine.as_ref()
+            .map(|e| e.d_warp_matrix_n_bytes())
+            .unwrap_or(0)
+    }
+
+    /// Raw device pointer to `d_aromatic_centroids`. Returns 0 if no
+    /// topology.
+    pub fn d_aromatic_centroids_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_aromatic_centroids_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
+    /// Number of f32 elements in `d_aromatic_centroids` (n_aromatics×3).
+    pub fn d_aromatic_centroids_n_floats(&self) -> usize {
+        self.engine.as_ref()
+            .map(|e| e.d_aromatic_centroids_n_floats())
+            .unwrap_or(0)
+    }
+
     // ── M1.2.18-P1 — Forwarders for the V2 captured-pipeline build ──
     //
     // The five methods below are simple `engine.as_ref()/as_mut()` forwarders

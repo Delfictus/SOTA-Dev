@@ -8212,6 +8212,312 @@ fn run_multi_stream_pipeline(
                                 final_state.last_seen_spike_residue,
                                 closed_loop_steering,
                             );
+
+                            // ── Phase A teardown DtoH ──────────────────────────────
+                            // Write the final ProtocolState (700 B, #[repr(C)]) as a
+                            // human-readable JSON sidecar so the post-run aggregator
+                            // can reconstruct phase / state progression per stream.
+                            // The struct's [SteerEntry; 64] fixed-size array would
+                            // require serde_big_array — we serialize manually via
+                            // serde_json::json! to avoid touching the struct's derives.
+                            {
+                                let topo_stem = topology_path_capture
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .map(|s| s.trim_end_matches(".topology").to_string())
+                                    .unwrap_or_else(|| "unknown_target".to_string());
+                                let dest = output_path_capture.join(format!(
+                                    "{}_stream{}_protocol_state.json", topo_stem, i
+                                ));
+                                let focus_arr: Vec<serde_json::Value> = final_state
+                                    .steering_focus_residues
+                                    .iter()
+                                    .map(|e| serde_json::json!({
+                                        "residue_id": e.residue_id,
+                                        "weight": e.weight,
+                                    }))
+                                    .collect();
+                                // Copy packed-via-Copy fields into locals so the
+                                // serde_json::json! macro doesn't take references
+                                // to potentially unaligned struct fields.
+                                let f_current_step = final_state.current_step;
+                                let f_total_steps = final_state.total_steps;
+                                let f_current_temperature = final_state.current_temperature;
+                                let f_start_temp = final_state.start_temp;
+                                let f_end_temp = final_state.end_temp;
+                                let f_cold_hold_end = final_state.cold_hold_end;
+                                let f_ramp_end = final_state.ramp_end;
+                                let f_warm_hold_end = final_state.warm_hold_end;
+                                let f_ramp_down_end = final_state.ramp_down_end;
+                                let f_uv_burst_active = final_state.uv_burst_active;
+                                let f_uv_wavelength_nm = final_state.uv_wavelength_nm;
+                                let f_uv_target_idx = final_state.uv_target_idx;
+                                let f_dt = final_state.dt;
+                                let f_gamma = final_state.gamma;
+                                let f_effective_gamma = final_state.effective_gamma;
+                                let f_fused_step_counter = final_state.fused_step_counter;
+                                let f_coupling_phase = final_state.coupling_phase;
+                                let f_status_code = final_state.status_code;
+                                let f_steering_uv_boost = final_state.steering_uv_boost;
+                                let f_steering_temp_bias = final_state.steering_temp_bias;
+                                let f_steering_focus_residue = final_state.steering_focus_residue;
+                                let f_steering_flags = final_state.steering_flags;
+                                let f_current_phase_bits = final_state.current_phase_bits;
+                                let f_steering_focus_count = final_state.steering_focus_count;
+                                let f_focus_match_count = final_state.focus_match_count;
+                                let f_processed_spike_count = final_state.processed_spike_count;
+                                let f_last_seen_focus_id = final_state.last_seen_focus_id;
+                                let f_last_seen_spike_residue = final_state.last_seen_spike_residue;
+                                let payload = serde_json::json!({
+                                    "stream_index": i,
+                                    "struct_size_bytes": std::mem::size_of_val(&final_state),
+                                    "current_step": f_current_step,
+                                    "total_steps": f_total_steps,
+                                    "current_temperature_K": f_current_temperature,
+                                    "start_temp_K": f_start_temp,
+                                    "end_temp_K": f_end_temp,
+                                    "cold_hold_end": f_cold_hold_end,
+                                    "ramp_end": f_ramp_end,
+                                    "warm_hold_end": f_warm_hold_end,
+                                    "ramp_down_end": f_ramp_down_end,
+                                    "uv_burst_active": f_uv_burst_active,
+                                    "uv_wavelength_nm": f_uv_wavelength_nm,
+                                    "uv_target_idx": f_uv_target_idx,
+                                    "dt_ps": f_dt,
+                                    "gamma": f_gamma,
+                                    "effective_gamma": f_effective_gamma,
+                                    "fused_step_counter": f_fused_step_counter,
+                                    "coupling_phase": f_coupling_phase,
+                                    "status_code": f_status_code,
+                                    "steering_uv_boost": f_steering_uv_boost,
+                                    "steering_temp_bias": f_steering_temp_bias,
+                                    "steering_focus_residue": f_steering_focus_residue,
+                                    "steering_flags": f_steering_flags,
+                                    "current_phase_bits": f_current_phase_bits,
+                                    "steering_focus_count": f_steering_focus_count,
+                                    "focus_match_count": f_focus_match_count,
+                                    "processed_spike_count": f_processed_spike_count,
+                                    "last_seen_focus_id": f_last_seen_focus_id,
+                                    "last_seen_spike_residue": f_last_seen_spike_residue,
+                                    "steering_focus_residues": focus_arr,
+                                });
+                                let body = serde_json::to_string_pretty(&payload)
+                                    .unwrap_or_else(|_| "{}".to_string());
+                                let nbytes = body.len();
+                                match std::fs::write(&dest, body) {
+                                    Ok(()) => log::info!(
+                                        "[VRAM-Teardown stream {}] ProtocolState JSON \
+                                         → {} (size_bytes={})",
+                                        i, dest.display(), nbytes,
+                                    ),
+                                    Err(e) => log::warn!(
+                                        "[VRAM-Teardown stream {}] ProtocolState write {} failed: {}",
+                                        i, dest.display(), e,
+                                    ),
+                                }
+                            }
+                        }
+
+                        // ── Phase A teardown DtoH (warp matrix / forces / aromatics) ──
+                        // Operator directive (2026-05-03): the audit identified four
+                        // VRAM-resident outputs that die at thread join.  Pull each
+                        // before the engine's stream is reaped, write per-stream
+                        // namespaced artifact files for the offline aggregator.
+                        // All blocks are unconditional (run for every stream); we
+                        // synchronize the engine stream once at the end so every
+                        // DtoH is retired before the closure returns.
+                        {
+                            use cudarc::driver::sys::{
+                                cuMemcpyDtoH_v2, CUdeviceptr, CUresult,
+                            };
+                            let topo_stem = topology_path_capture
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .map(|s| s.trim_end_matches(".topology").to_string())
+                                .unwrap_or_else(|| "unknown_target".to_string());
+
+                            // (1) d_warp_matrix — full spatial warp/adjudication
+                            // context.  Layout: total_voxels × sizeof(GpuWarpEntry)
+                            // (= 136 B/voxel, packed).  Pulled as raw bytes; the
+                            // aggregator will reinterpret using the same #[repr(C, packed)]
+                            // layout.
+                            {
+                                let dev = engine.d_warp_matrix_dev_ptr();
+                                let nbytes = engine.d_warp_matrix_n_bytes();
+                                if dev != 0 && nbytes > 0 {
+                                    let mut host: Vec<u8> = vec![0u8; nbytes];
+                                    let rc = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            host.as_mut_ptr() as *mut std::ffi::c_void,
+                                            dev as CUdeviceptr,
+                                            nbytes,
+                                        )
+                                    };
+                                    let dest = output_path_capture.join(format!(
+                                        "{}_stream{}_warp_matrix.bin", topo_stem, i
+                                    ));
+                                    if matches!(rc, CUresult::CUDA_SUCCESS) {
+                                        match std::fs::write(&dest, &host) {
+                                            Ok(()) => log::info!(
+                                                "[VRAM-Teardown stream {}] d_warp_matrix \
+                                                 → {} (size_bytes={}, total_voxels={}, \
+                                                 record_size=136)",
+                                                i, dest.display(), nbytes,
+                                                engine.total_voxels(),
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "[VRAM-Teardown stream {}] warp_matrix \
+                                                 write {} failed: {}",
+                                                i, dest.display(), e,
+                                            ),
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "[VRAM-Teardown stream {}] cuMemcpyDtoH \
+                                             d_warp_matrix rc={}",
+                                            i, rc as i32,
+                                        );
+                                    }
+                                } else {
+                                    log::warn!(
+                                        "[VRAM-Teardown stream {}] d_warp_matrix skipped \
+                                         (dev=0x{:x} nbytes={})",
+                                        i, dev, nbytes,
+                                    );
+                                }
+                            }
+
+                            // (2) d_forces — final per-atom force vector
+                            // (n_atoms × 3 f32, AoS).  The Channel-C block above
+                            // only fires for stream 0 under feature "v2_ignition";
+                            // this writes the per-stream final-snapshot artifact
+                            // unconditionally so every stream is recoverable.
+                            {
+                                let dev = engine.d_forces_dev_ptr();
+                                let n_atoms_loaded = engine.n_atoms_loaded();
+                                if dev != 0 && n_atoms_loaded > 0 {
+                                    let n_floats = n_atoms_loaded * 3;
+                                    let nbytes = n_floats * std::mem::size_of::<f32>();
+                                    let mut host: Vec<f32> = vec![0.0f32; n_floats];
+                                    let rc = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            host.as_mut_ptr() as *mut std::ffi::c_void,
+                                            dev as CUdeviceptr,
+                                            nbytes,
+                                        )
+                                    };
+                                    let dest = output_path_capture.join(format!(
+                                        "{}_stream{}_forces_final.bin", topo_stem, i
+                                    ));
+                                    if matches!(rc, CUresult::CUDA_SUCCESS) {
+                                        let bytes_view = unsafe {
+                                            std::slice::from_raw_parts(
+                                                host.as_ptr() as *const u8,
+                                                nbytes,
+                                            )
+                                        };
+                                        match std::fs::write(&dest, bytes_view) {
+                                            Ok(()) => log::info!(
+                                                "[VRAM-Teardown stream {}] d_forces final \
+                                                 → {} (size_bytes={}, n_atoms={}, \
+                                                 layout=AoS f32[n_atoms × 3])",
+                                                i, dest.display(), nbytes, n_atoms_loaded,
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "[VRAM-Teardown stream {}] forces_final \
+                                                 write {} failed: {}",
+                                                i, dest.display(), e,
+                                            ),
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "[VRAM-Teardown stream {}] cuMemcpyDtoH \
+                                             d_forces rc={}",
+                                            i, rc as i32,
+                                        );
+                                    }
+                                } else {
+                                    log::warn!(
+                                        "[VRAM-Teardown stream {}] d_forces skipped \
+                                         (dev=0x{:x} n_atoms={})",
+                                        i, dev, n_atoms_loaded,
+                                    );
+                                }
+                            }
+
+                            // (3) d_aromatic_centroids — final per-step VRAM-updated
+                            // ring centroids (n_aromatics × 3 f32, AoS).  Topology
+                            // import only seeded the *initial* values; subsequent
+                            // aromatic-update kernels mutate them in place.  Without
+                            // this DtoH the trajectory of aromatic motion is lost
+                            // at thread join.
+                            {
+                                let dev = engine.d_aromatic_centroids_dev_ptr();
+                                let n_floats = engine.d_aromatic_centroids_n_floats();
+                                let n_aromatics_loaded = engine.n_aromatics_loaded();
+                                if dev != 0 && n_floats > 0 {
+                                    let nbytes = n_floats * std::mem::size_of::<f32>();
+                                    let mut host: Vec<f32> = vec![0.0f32; n_floats];
+                                    let rc = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            host.as_mut_ptr() as *mut std::ffi::c_void,
+                                            dev as CUdeviceptr,
+                                            nbytes,
+                                        )
+                                    };
+                                    let dest = output_path_capture.join(format!(
+                                        "{}_stream{}_aromatic_centroids_final.bin",
+                                        topo_stem, i
+                                    ));
+                                    if matches!(rc, CUresult::CUDA_SUCCESS) {
+                                        let bytes_view = unsafe {
+                                            std::slice::from_raw_parts(
+                                                host.as_ptr() as *const u8,
+                                                nbytes,
+                                            )
+                                        };
+                                        match std::fs::write(&dest, bytes_view) {
+                                            Ok(()) => log::info!(
+                                                "[VRAM-Teardown stream {}] \
+                                                 d_aromatic_centroids final → {} \
+                                                 (size_bytes={}, n_aromatics={}, \
+                                                 layout=AoS f32[n_aromatics × 3])",
+                                                i, dest.display(), nbytes,
+                                                n_aromatics_loaded,
+                                            ),
+                                            Err(e) => log::warn!(
+                                                "[VRAM-Teardown stream {}] \
+                                                 aromatic_centroids_final write {} failed: {}",
+                                                i, dest.display(), e,
+                                            ),
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "[VRAM-Teardown stream {}] cuMemcpyDtoH \
+                                             d_aromatic_centroids rc={}",
+                                            i, rc as i32,
+                                        );
+                                    }
+                                } else {
+                                    log::warn!(
+                                        "[VRAM-Teardown stream {}] \
+                                         d_aromatic_centroids skipped (dev=0x{:x} \
+                                         n_floats={})",
+                                        i, dev, n_floats,
+                                    );
+                                }
+                            }
+
+                            // Drain DtoHs through the engine's stream so every
+                            // copy is retired before the closure returns and
+                            // the engine drops on thread teardown.
+                            if let Err(e) = engine.cuda_stream().synchronize() {
+                                log::warn!(
+                                    "[VRAM-Teardown stream {}] post-DtoH \
+                                     stream synchronize failed: {:?}",
+                                    i, e,
+                                );
+                            }
                         }
 
                         // V2 trajectory: drop the sender so the writer thread sees

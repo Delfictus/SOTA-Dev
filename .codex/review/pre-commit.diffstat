@@ -1,5 +1,7 @@
- .codex/review/context.txt               |    4 +-
- .codex/review/pre-commit.diff           | 5778 +++++++++++++++++++------------
- .codex/review/pre-commit.diffstat       |   23 +-
- crates/prism-nhs/src/bin/nhs_rt_full.rs |  136 +-
- 4 files changed, 3673 insertions(+), 2268 deletions(-)
+ .codex/review/context.txt                 |    4 +-
+ .codex/review/pre-commit.diff             | 9644 ++++++++++++++++++-----------
+ .codex/review/pre-commit.diffstat         |   13 +-
+ crates/prism-nhs/src/bin/nhs_rt_full.rs   |  365 ++
+ crates/prism-nhs/src/fused_engine.rs      |   12 +
+ crates/prism-nhs/src/persistent_engine.rs |   23 +
+ 6 files changed, 6492 insertions(+), 3569 deletions(-)

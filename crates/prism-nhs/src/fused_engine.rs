@@ -2223,6 +2223,43 @@ impl NhsAmberFusedEngine {
         base + PROTOCOL_DT_OFFSET
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase A teardown DtoH (VRAM-loss audit) — read-only device-pointer
+    // accessors for the per-stream cleanup block in nhs_rt_full.rs.
+    // No new allocations; we just expose the raw cuDevicePtr + element
+    // count so the bin can issue cuMemcpyDtoH_v2 before stream teardown.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Raw device pointer to the `d_warp_matrix` buffer
+    /// (total_voxels × sizeof(GpuWarpEntry) bytes).
+    pub fn d_warp_matrix_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_warp_matrix.device_ptr(stream);
+        ptr
+    }
+
+    /// Total byte count of the `d_warp_matrix` buffer.  Equal to
+    /// `total_voxels * size_of::<GpuWarpEntry>()`.
+    pub fn d_warp_matrix_n_bytes(&self) -> usize {
+        self.d_warp_matrix.len()
+    }
+
+    /// Raw device pointer to the `d_aromatic_centroids` buffer
+    /// (n_aromatics × 3 contiguous f32, AoS).  Populated by the
+    /// aromatic-update kernel each step; the host topology import
+    /// only seeds the *initial* values.
+    pub fn d_aromatic_centroids_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_aromatic_centroids.device_ptr(stream);
+        ptr
+    }
+
+    /// Number of f32 elements in the aromatic centroids buffer
+    /// (`n_aromatics × 3`).
+    pub fn d_aromatic_centroids_n_floats(&self) -> usize {
+        self.d_aromatic_centroids.len()
+    }
+
     /// Create new fused engine from PRISM-PREP topology
     pub fn new(
         context: Arc<CudaContext>,
