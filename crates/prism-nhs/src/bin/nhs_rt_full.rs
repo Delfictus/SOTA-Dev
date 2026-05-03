@@ -267,6 +267,18 @@ struct Args {
     #[arg(long)]
     noise_floor_sigma: Option<f32>,
 
+    /// **M1.2.20.C-A / Ruling 5** — step at which the Gradient Gasp
+    /// kernel applies a 10× amplification to η_eff, producing an
+    /// unambiguous KL-divergence spike (>10.0) that the offline
+    /// Teacher Ensemble can use as a "Canonical Positive" cryptic-
+    /// pocket label.  Default: u32::MAX disables the burst (gasp
+    /// runs at baseline gain every replay).  The orchestrator
+    /// writes this value into `adj.force_burst_step` (FFI offset 140)
+    /// pre-capture; the gasp kernel reads it every replay and
+    /// multiplies η_eff by 10.0 when current_step matches.
+    #[arg(long)]
+    force_burst_at_step: Option<u32>,
+
     /// Enable true parallel replica execution via AmberSimdBatch
     /// All replicas run simultaneously on GPU (vs sequential when disabled)
     #[arg(long, default_value = "false")]
@@ -5105,6 +5117,22 @@ fn run_multi_stream_pipeline(
                                                     // emits 0xFFFFFFFFu sentinels until host argmax
                                                     // populator lands in the chunk loop below.
                                                     d_kcc_lead: 0u64,
+                                                    // M1.2.20.C-A — Gradient gasp anchor pointers.
+                                                    // d_forces_anchor → engine.d_forces (per-atom
+                                                    // f32×3 force vector).  d_masses → engine
+                                                    // d_masses (per-atom f32 mass).  Gasp kernel
+                                                    // is wired by Phase 2 (parallel-stream Path C
+                                                    // refactor); for Phase 1 we pass the pointers
+                                                    // through so the FFI plumbing is end-to-end
+                                                    // verified even though the kernel isn't yet
+                                                    // captured into the graph.
+                                                    d_forces_anchor: engine.d_forces_dev_ptr() as u64,
+                                                    d_masses: engine.d_masses_dev_ptr() as u64,
+                                                    // M1.2.20.C-A / Ruling 5 — wired from
+                                                    // --force-burst-at-step CLI flag.  None →
+                                                    // captured-pipeline build writes u32::MAX
+                                                    // sentinel into FFI offset 140.
+                                                    force_burst_step: args.force_burst_at_step,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),

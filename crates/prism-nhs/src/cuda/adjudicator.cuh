@@ -151,9 +151,15 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // §3) — null at capture time is a LANE-BLOCKED escalation.
     double*   d_external_work;      // offset 128  (POINTER)
 
-    // 136..256 implicit trailing pad (#[repr(C, align(128))] on the
-    // Rust mirror rounds the 136-byte footprint up to 256 — 2 ×
-    // Blackwell L1 sector).  C++ alignof(...) == 128 mirrors this.
+    // M1.2.20.C-A — Gradient Gasp handles (operator §4 explicit fields).
+    //   gasp_gain_eta   @ 136..140  f32   "Stiffness" Handle (η_base)
+    //   force_burst_step @ 140..144 u32   "Trigger" Handle (10× amp gate)
+    //   _reserved        @ 144..256 u8[112]  pads to 2 × L1 sector.
+    // Both fields are written by the host orchestrator at engine init
+    // and read by prism_apply_gradient_gasp_kernel each replay.
+    float    gasp_gain_eta;         // offset 136
+    uint32_t force_burst_step;      // offset 140
+    uint8_t  _reserved_m1_2_20[112];// offset 144..256
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 256,
               "FFI Size Mismatch — must be 256 bytes (Zero-Trust §1.1).");
@@ -173,6 +179,12 @@ static_assert(offsetof(InterferometricAdjudicatorFfi, d_dt) == 120,
               "d_dt offset drift: must be 120.");
 static_assert(offsetof(InterferometricAdjudicatorFfi, d_external_work) == 128,
               "External Work Offset Drift — must be 128.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, gasp_gain_eta) == 136,
+              "M1.2.20.C-A: gasp_gain_eta offset drift — must be 136.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, force_burst_step) == 140,
+              "M1.2.20.C-A: force_burst_step offset drift — must be 140.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, _reserved_m1_2_20) == 144,
+              "M1.2.20.C-A: _reserved tail offset drift — must be 144.");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)

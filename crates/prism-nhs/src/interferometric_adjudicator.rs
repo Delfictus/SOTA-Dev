@@ -330,6 +330,33 @@ pub struct InterferometricAdjudicatorFfi {
     /// `null` is the default (e.g., test fixtures) — captured pipeline
     /// gates the W_ext read on a non-null pointer.
     pub d_external_work: *mut f64,
+
+    /// **M1.2.20.C — "Stiffness" Handle.**  Offset 136..140, 4 B (`f32`).
+    /// Base η for the gradient gasp kernel; per Ruling 2 it locks to
+    /// 1.0 in the captured pipeline init.  Effective gain is
+    /// `η_base / max(spike.vib_energy, 1e-3)` per spike, multiplied by
+    /// `Q_s(λ)` from the UV LUT, multiplied by 10.0 if and only if the
+    /// engine's current step counter equals `force_burst_step` (offset
+    /// 140).  Host can rewrite at any time via `cuMemcpyHtoDAsync` on
+    /// the captured-graph stream — no kernel restart required.
+    pub gasp_gain_eta: f32,
+
+    /// **M1.2.20.C — "Trigger" Handle.**  Offset 140..144, 4 B (`u32`).
+    /// Step number at which the gasp kernel applies a 10× amplification
+    /// to η_eff.  Sentinel `u32::MAX` = no burst (gasp runs at baseline
+    /// gain every replay).  Wired to the `--force-burst-at-step` CLI
+    /// flag; the orchestrator writes this once at engine init and the
+    /// gasp kernel reads it every replay.
+    pub force_burst_step: u32,
+
+    /// **M1.2.20.C — Reserved padding.**  Offset 144..256, 112 B.
+    /// Pads `InterferometricAdjudicatorFfi` to an explicit 256-byte
+    /// dual-sector total (two Blackwell L1 sectors back-to-back); the
+    /// `align(128)` attribute would have produced this implicitly, but
+    /// making it explicit pins the size assertion to a stable
+    /// 256 == size_of::<Self>() invariant for the FFI mirror in
+    /// `cuda/adjudicator.cuh`.
+    pub _reserved_m1_2_20: [u8; 112],
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -358,8 +385,19 @@ impl InterferometricAdjudicatorFfi {
             potential_energy: 0.0,
             d_dt: std::ptr::null_mut(),
             d_external_work: std::ptr::null_mut(),
+            // M1.2.20.C-A — gasp handles default to neutral state.
+            // η_base = 1.0 per Ruling 2; force_burst_step = u32::MAX
+            // sentinel disables the 10× amplification.
+            gasp_gain_eta: 1.0,
+            force_burst_step: Self::FORCE_BURST_DISABLED,
+            _reserved_m1_2_20: [0u8; 112],
         }
     }
+
+    /// **M1.2.20.C** — sentinel value for `force_burst_step` meaning
+    /// "no burst scheduled" (gasp runs at baseline gain every replay).
+    /// Equal to `u32::MAX = 0xFFFFFFFFu`.
+    pub const FORCE_BURST_DISABLED: u32 = u32::MAX;
 
     /// B.3.2 — sentinel value for `gear_override` meaning "Auto"
     /// (the gearbox's KL-driven SFA decides the gear).  Stored as
@@ -426,6 +464,14 @@ const _: () = {
     assert!(offset_of!(InterferometricAdjudicatorFfi, potential_energy) == 112);
     assert!(offset_of!(InterferometricAdjudicatorFfi, d_dt) == 120);
     assert!(offset_of!(InterferometricAdjudicatorFfi, d_external_work) == 128);
+
+    // M1.2.20.C-A — gasp handles + reserved tail.  Pinning these keeps
+    // the FFI struct at exactly 256 B (two L1 sectors), and the C++
+    // mirror in adjudicator.cuh has matching static_asserts.
+    assert!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta)        == 136);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step)     == 140);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20)    == 144);
+    assert!(size_of::<InterferometricAdjudicatorFfi>() == 256);
 };
 
 // ============================================================================
@@ -1263,6 +1309,11 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, potential_energy),    112);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),                120);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_external_work),     128);
+        // M1.2.20.C-A — gasp handles + 256-B explicit total.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta),       136);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step),    140);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20),   144);
+        assert_eq!(std::mem::size_of::<InterferometricAdjudicatorFfi>(),           256);
     }
 
     #[test]

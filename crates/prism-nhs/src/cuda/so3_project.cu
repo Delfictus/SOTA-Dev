@@ -618,4 +618,182 @@ cudaError_t prism_so3_project_run(
 
 }  // extern "C"
 
+// ════════════════════════════════════════════════════════════════════
+// M1.2.20.C-A — Gradient Gasp Kernel + Anchor LUTs
+//
+// Per the operator's "Six Pillars" rulings 2026-05-02:
+//
+//   Ruling 1 — Q_s(λ) LUT for {260, 280, 305, 320 nm}:
+//                 {0.75, 1.00, 0.35, 0.05}
+//   Ruling 2 — η_eff = η_base / max(vib_energy, 1e-3)
+//   Ruling 3 — d_forces from NhsAmberFusedEngine (per-atom f32×3)
+//   Ruling 4 — Cα anchor: atom_idx = d_residue_to_calpha[residue_id]
+//   Ruling 5 — 10× amplification when current_step == force_burst_step
+//   Ruling 6 — d_masses from NhsAmberFusedEngine (per-atom f32)
+//
+// Math:
+//   Δr = η_eff · Q_s · (f_anchor / m_anchor) · dt²
+//   pos_perturbed = pos_relaxed + Δr
+//
+// The kernel is single-block, n-thread-per-spike (clamped to 256 per
+// block; multiple blocks for >256 spike clusters).  Each thread:
+//   1. Loads its RichSpike (64 B coalesced).
+//   2. Looks up Cα atom index in __constant__ memory.
+//   3. Reads f_anchor (3 floats) + m_anchor (1 float) via __ldg().
+//   4. Computes Δr.
+//   5. Writes the perturbed RichSpike to d_spikes_out (64 B coalesced).
+//
+// Phase 1 deliverable: kernel + LUTs + host populator + launcher.
+// The kernel is NOT yet wired into the captured graph — that's Phase 2's
+// parallel-stream Path C refactor.  This commit lands the math + the
+// FFI plumbing end-to-end so the Phase 2 wire-in is mechanical.
+// ════════════════════════════════════════════════════════════════════
+
+// Ruling 1 — Q_s(λ) Transition Dipole Moment LUT.
+// Indexed by the 2-bit UV code packed into RichSpike::intensity_packed
+// upper nibble (bits 30-31): 0 = 260 nm, 1 = 280 nm, 2 = 305 nm,
+// 3 = 320 nm.  __constant__ memory ⇒ broadcast load (1 cycle).
+__constant__ float d_mu01_lut[4] = {
+    0.75f,  // 260 nm — backbone / nucleic resonance
+    1.00f,  // 280 nm — peak aromatic trigger (TRP/TYR)
+    0.35f,  // 305 nm — near-UV tail
+    0.05f,  // 320 nm — threshold baseline
+};
+
+// Ruling 4 — Residue → Cα atom index LUT.
+// Sized to 1024 entries to cover targets up to ~1k residues without
+// reallocation.  Host populates via prism_so3_set_residue_to_calpha;
+// unpopulated entries default to 0xFFFFFFFFu (sentinel — kernel
+// treats as "no Cα available; skip displacement on this spike").
+__constant__ uint32_t d_residue_to_calpha[1024];
+
+extern "C"
+__global__ void prism_apply_gradient_gasp_kernel(
+    const RichSpike*    __restrict__ d_spikes_in,
+    RichSpike*          __restrict__ d_spikes_out,
+    const float*        __restrict__ d_forces,           // [n_atoms × 3]
+    const float*        __restrict__ d_masses,           // [n_atoms]
+    const uint8_t*      __restrict__ adj_base,           // FFI offset arithmetic
+    uint32_t                         current_step,
+    uint32_t                         n_spikes,
+    uint32_t                         n_atoms
+) {
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_spikes) return;
+
+    // Load the input spike (64-byte coalesced).
+    const RichSpike spike_in = d_spikes_in[i];
+
+    // Read FFI handles from the adjudicator state.
+    //   gasp_gain_eta    @ offset 136 (f32)
+    //   force_burst_step @ offset 140 (u32)
+    //   d_dt             @ offset 120 (*mut f32) → dereference for current dt
+    const float    eta_base = *reinterpret_cast<const float*   >(adj_base + 136);
+    const uint32_t burst_at = *reinterpret_cast<const uint32_t*>(adj_base + 140);
+    float* const* p_d_dt    =  reinterpret_cast<float* const*>(adj_base + 120);
+    const float dt = (*p_d_dt != nullptr) ? __ldg(*p_d_dt) : 0.002f;  // fallback 2 fs
+
+    // Resolve Cα anchor.  residue_id is signed (RichSpike::UNRESOLVED_RESIDUE
+    // = -1); reject negative or out-of-range and skip displacement.
+    const int32_t res_id = spike_in.residue_id;
+    if (res_id < 0 || res_id >= 1024) {
+        d_spikes_out[i] = spike_in;  // pass-through for unresolved spikes
+        return;
+    }
+    const uint32_t atom_idx = d_residue_to_calpha[res_id];
+    if (atom_idx == 0xFFFFFFFFu || atom_idx >= n_atoms) {
+        d_spikes_out[i] = spike_in;  // pass-through for unmapped residues
+        return;
+    }
+
+    // Read per-atom force + mass via __ldg() (read-only cache hint).
+    const uint32_t f_off = atom_idx * 3u;
+    const float fx = __ldg(d_forces + f_off + 0u);
+    const float fy = __ldg(d_forces + f_off + 1u);
+    const float fz = __ldg(d_forces + f_off + 2u);
+    const float mass = fmaxf(__ldg(d_masses + atom_idx), 1.0e-3f);
+
+    // Q_s(λ) lookup — top 2 bits of intensity_packed select the wavelength.
+    const uint32_t uv_code = (spike_in.intensity_packed >> 30) & 0x3u;
+    const float Q_s = d_mu01_lut[uv_code];
+
+    // Ruling 2 — stiffness-inverted effective gain with ε floor.
+    constexpr float VIB_EPS = 1.0e-3f;
+    float eta_eff = eta_base / fmaxf(spike_in.vib_energy, VIB_EPS);
+
+    // Ruling 5 — 10× amplification when this is the burst step.
+    if (current_step == burst_at) {
+        eta_eff *= 10.0f;
+    }
+
+    // Δr = η_eff · Q_s · (f / m) · dt²
+    const float scale = eta_eff * Q_s * (dt * dt) / mass;
+    const float dx = scale * fx;
+    const float dy = scale * fy;
+    const float dz = scale * fz;
+
+    // Write the perturbed spike (struct-copy with x/y/z replaced).
+    RichSpike out = spike_in;
+    out.x = spike_in.x + dx;
+    out.y = spike_in.y + dy;
+    out.z = spike_in.z + dz;
+    d_spikes_out[i] = out;
+}
+
+// ─── Host helpers ───────────────────────────────────────────────────
+
+extern "C"
+int prism_so3_set_residue_to_calpha(
+    const uint32_t* host_table,   // [n] residue → Cα atom index
+    uint32_t        n,
+    void*           stream)
+{
+    if (host_table == nullptr) return static_cast<int>(cudaErrorInvalidValue);
+    if (n == 0u) return static_cast<int>(cudaSuccess);
+    if (n > 1024u) n = 1024u;  // clamp to LUT capacity
+    cudaError_t rc = cudaMemcpyToSymbolAsync(
+        d_residue_to_calpha,
+        host_table,
+        n * sizeof(uint32_t),
+        /*offset*/ 0,
+        cudaMemcpyHostToDevice,
+        static_cast<cudaStream_t>(stream)
+    );
+    return static_cast<int>(rc);
+}
+
+extern "C"
+int prism_apply_gradient_gasp_launch(
+    const void*  d_spikes_in,
+    void*        d_spikes_out,
+    const void*  d_forces,
+    const void*  d_masses,
+    const void*  adj_base,
+    uint32_t     current_step,
+    uint32_t     n_spikes,
+    uint32_t     n_atoms,
+    void*        stream)
+{
+    if (d_spikes_in == nullptr || d_spikes_out == nullptr ||
+        d_forces == nullptr || d_masses == nullptr || adj_base == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n_spikes == 0u || n_atoms == 0u) return static_cast<int>(cudaSuccess);
+
+    constexpr uint32_t TPB = 256u;  // threads-per-block
+    const uint32_t blocks = (n_spikes + TPB - 1u) / TPB;
+    prism_apply_gradient_gasp_kernel<<<blocks, TPB, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        static_cast<const RichSpike*>(d_spikes_in),
+        static_cast<RichSpike*>(d_spikes_out),
+        static_cast<const float*>(d_forces),
+        static_cast<const float*>(d_masses),
+        static_cast<const uint8_t*>(adj_base),
+        current_step,
+        n_spikes,
+        n_atoms
+    );
+    return static_cast<int>(cudaGetLastError());
+}
+
 }}  // namespace prism_nhs::so3_project

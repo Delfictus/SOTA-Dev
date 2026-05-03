@@ -1271,6 +1271,16 @@ impl PersistentNhsEngine {
             .unwrap_or(0)
     }
 
+    /// **M1.2.20.C-A / Ruling 6** — raw device pointer to the per-atom
+    /// AMBER mass buffer (`f32 [n_atoms]`).  Returns 0 if no topology
+    /// is loaded.  Pointer-stable for the campaign.  Consumed by the
+    /// gradient gasp kernel and the Phase-3 Momentum Guard.
+    pub fn d_masses_dev_ptr(&self) -> u64 {
+        self.engine.as_ref()
+            .map(|e| e.d_masses_dev_ptr(&self.stream))
+            .unwrap_or(0)
+    }
+
     /// T6: raw device pointer to the `d_positions` buffer (n_atoms × 3 f32, AoS).
     /// Returns 0 if no topology is loaded. Pointer-stable for the campaign.
     pub fn d_positions_dev_ptr(&self) -> u64 {

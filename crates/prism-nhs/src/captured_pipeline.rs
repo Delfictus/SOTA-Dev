@@ -508,6 +508,34 @@ pub struct PipelineConfig {
     /// `nhs_rt_full.rs` populates this between chunks via
     /// `argmax|d_kcc_temporal_corr|` per cluster.
     pub d_kcc_lead: u64,
+
+    /// **M1.2.20.C-A / Ruling 3 — anchor force buffer.**
+    /// Device pointer (`u64` raw) to `NhsAmberFusedEngine::d_forces`,
+    /// the per-atom force vector (`f32 [n_atoms × 3]`).  The gradient
+    /// gasp kernel reads `f_anchor = d_forces[3*atom + (0,1,2)]` via
+    /// `LDG.E.128` (float4 vectorised load) and combines with the
+    /// per-spike anchor mass from `d_masses` to compute the
+    /// displacement Δr = η_eff · Q_s · f/m · dt².  Zero disables
+    /// the gasp (kernel becomes a no-op identity).  16-byte alignment
+    /// is asserted host-side before the captured graph build.
+    pub d_forces_anchor: u64,
+
+    /// **M1.2.20.C-A / Ruling 6 — anchor mass buffer.**
+    /// Device pointer (`u64` raw) to `NhsAmberFusedEngine::d_masses`,
+    /// the per-atom AMBER mass vector (`f32 [n_atoms]`).  Read by the
+    /// gradient gasp kernel and the (Phase 3) Momentum Guard for
+    /// Σ m_i · Δr_i center-of-mass shift checks.
+    pub d_masses: u64,
+
+    /// **M1.2.20.C-A / Ruling 5 — force-burst trigger step.**
+    /// `Some(N)` ⇒ the gasp kernel applies a 10× amplification to
+    /// η_eff when the engine's step counter equals N (produces the
+    /// "Canonical Positive" KL-divergence spike used to label
+    /// cryptic-pocket opening events for the offline Teacher
+    /// Ensemble).  `None` ⇒ no burst — the FFI field receives the
+    /// `u32::MAX` sentinel and the kernel reads it as "disabled".
+    /// Wired from the `--force-burst-at-step` CLI flag.
+    pub force_burst_step: Option<u32>,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -1135,6 +1163,50 @@ impl CapturedAdjudicationPipeline {
              captured-graph head-of-loop will cuMemsetD8Async-zero per chunk",
             cfg.d_external_work as *const f64
         );
+
+        // ── 5c.M1.2.20.C-A — Wire `gasp_gain_eta` (offset 136) and
+        //    `force_burst_step` (offset 140) into the freshly-zeroed
+        //    adjudicator state.  Per Ruling 2 the base gain is locked
+        //    to 1.0; per Ruling 5 the burst step comes from the CLI
+        //    flag `--force-burst-at-step` (None → u32::MAX disables).
+        //    Both writes precede cuStreamBeginCapture so they are not
+        //    recorded into the graph — the host can rewrite them
+        //    between replays via cuMemcpyHtoDAsync without re-recording.
+        unsafe {
+            let eta_addr = (adj_dev + 136) as CUdeviceptr;
+            let eta_value: f32 = 1.0_f32;  // Ruling 2 — η_base locked.
+            let rc_eta = cuMemcpyHtoD_v2(
+                eta_addr,
+                &eta_value as *const _ as *const c_void,
+                4,
+            );
+            if !matches!(rc_eta, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "wire adj->gasp_gain_eta (offset 136)",
+                    rc: rc_eta as i32,
+                });
+            }
+            let burst_addr = (adj_dev + 140) as CUdeviceptr;
+            let burst_value: u32 = cfg.force_burst_step.unwrap_or(u32::MAX);
+            let rc_burst = cuMemcpyHtoD_v2(
+                burst_addr,
+                &burst_value as *const _ as *const c_void,
+                4,
+            );
+            if !matches!(rc_burst, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "wire adj->force_burst_step (offset 140)",
+                    rc: rc_burst as i32,
+                });
+            }
+            log::info!(
+                "[M1.2.20.C-A] wired adj->gasp_gain_eta=1.0 at offset 136, \
+                 adj->force_burst_step={} at offset 140 ({})",
+                burst_value,
+                if burst_value == u32::MAX { "DISABLED" } else { "10× burst armed" }
+            );
+        }
+        md_stream.synchronize().map_err(BuildError::Driver)?;
 
         // ── 5a. Wave 0 / Task #68 — KL-UNITS BOOTSTRAP.
         //       Burn KL-magnitude noise-floor priors (μ=0, σ=1e-3 →
@@ -2645,6 +2717,9 @@ mod tests {
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
             d_kcc_lead: 0,
+            d_forces_anchor: 0,
+            d_masses: 0,
+            force_burst_step: None,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -2782,6 +2857,9 @@ mod tests {
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
+            d_forces_anchor: 0,
+            force_burst_step: None,
+            d_masses: 0,
             ghost_tile_ring_dev: 0,
             d_kcc_lead: 0,
             ghost_tile_max_records: 0,
@@ -2866,6 +2944,9 @@ mod tests {
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
+            force_burst_step: None,
+            d_forces_anchor: 0,
+            d_masses: 0,
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
@@ -2957,7 +3038,10 @@ mod tests {
             initial_frame_id: 0,
             asc:  None,
             zstr: None,
+            force_burst_step: None,
             sisr: None,
+            d_forces_anchor: 0,
+            d_masses: 0,
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),

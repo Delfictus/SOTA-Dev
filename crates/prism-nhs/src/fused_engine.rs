@@ -2122,6 +2122,23 @@ impl NhsAmberFusedEngine {
         self.d_forces.len()
     }
 
+    /// **M1.2.20.C-A / Ruling 6** — raw device pointer to the
+    /// per-atom AMBER mass buffer (`f32 [n_atoms]`).  Read by the
+    /// gradient gasp kernel to compute Δr = η · Q_s · f / m · dt²
+    /// and by the (Phase 3) PTX Momentum Guard for the
+    /// Σ m_i · Δr_i center-of-mass shift check.
+    /// Pointer-stable for the campaign.
+    pub fn d_masses_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
+        use cudarc::driver::DevicePtr;
+        let (ptr, _guard) = self.d_masses.device_ptr(stream);
+        ptr
+    }
+
+    /// Number of f32 elements in the masses buffer (`n_atoms`).
+    pub fn d_masses_n_floats(&self) -> usize {
+        self.d_masses.len()
+    }
+
     /// T6 ASC Position Bridge — raw device pointer to the `d_positions`
     /// buffer (current atom positions read by the Velocity Verlet integrator).
     /// Layout: `[x_0, y_0, z_0, x_1, ...]` (n_atoms × 3 contiguous f32).

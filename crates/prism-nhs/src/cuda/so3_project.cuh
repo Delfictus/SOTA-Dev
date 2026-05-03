@@ -206,6 +206,37 @@ cudaError_t prism_so3_project_run(
     cudaStream_t      stream
 );
 
+// ─────────────────────────────────────────────────────────────────────
+// M1.2.20.C-A — Gradient Gasp Kernel + LUT host entry points.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Populate the __constant__ d_residue_to_calpha[1024] lookup table
+/// from the per-residue Cα atom index array on the host.  Stream-
+/// ordered cudaMemcpyToSymbolAsync.  `n` clamped to 1024.  Sentinel
+/// 0xFFFFFFFFu in unset entries causes the gasp kernel to pass the
+/// spike through without displacement.
+int prism_so3_set_residue_to_calpha(
+    const uint32_t* host_table,
+    uint32_t        n,
+    void*           stream);
+
+/// Launch prism_apply_gradient_gasp_kernel.
+/// Reads adjudicator FFI fields (gasp_gain_eta @136, force_burst_step
+/// @140, d_dt @120) via byte-offset arithmetic; reads per-spike
+/// residue_id, looks up Cα atom index, fetches f_anchor + m_anchor,
+/// computes Δr = η_eff · Q_s · (f/m) · dt², writes the perturbed
+/// RichSpike to d_spikes_out (struct-copy with x/y/z modified).
+int prism_apply_gradient_gasp_launch(
+    const void*  d_spikes_in,
+    void*        d_spikes_out,
+    const void*  d_forces,        /* [n_atoms × 3] f32 */
+    const void*  d_masses,        /* [n_atoms]     f32 */
+    const void*  adj_base,        /* InterferometricAdjudicatorFfi*  */
+    uint32_t     current_step,
+    uint32_t     n_spikes,
+    uint32_t     n_atoms,
+    void*        stream);
+
 }  // extern "C"
 
 }}  // namespace prism_nhs::so3_project

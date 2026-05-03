@@ -204,6 +204,40 @@ pub(crate) mod ffi {
             frame_id: u32,
             stream: *mut std::ffi::c_void,
         ) -> CudaError;
+
+        // ────────────────────────────────────────────────────────────
+        // M1.2.20.C-A — Gradient Gasp Kernel + LUT host entry points.
+        // ────────────────────────────────────────────────────────────
+
+        /// Populate the __constant__ d_residue_to_calpha[1024] LUT
+        /// from a host array.  Stream-ordered cudaMemcpyToSymbolAsync.
+        /// `n` clamped to 1024.  Sentinel 0xFFFFFFFFu in unset entries
+        /// causes the gasp kernel to pass spikes through without
+        /// displacement.
+        pub fn prism_so3_set_residue_to_calpha(
+            host_table: *const u32,
+            n:          u32,
+            stream:     *mut std::ffi::c_void,
+        ) -> CudaError;
+
+        /// Launch the prism_apply_gradient_gasp_kernel.  Reads FFI
+        /// fields from `adj_base` (gasp_gain_eta @ 136, force_burst_step
+        /// @ 140, d_dt @ 120) via byte-offset arithmetic; computes
+        /// Δr = η_eff · Q_s · (f/m) · dt² per spike and writes the
+        /// perturbed RichSpike to `d_spikes_out` (struct-copy with
+        /// x/y/z modified).  Phase 1 deliverable — kernel callable
+        /// but not yet inserted into the captured graph (Phase 2).
+        pub fn prism_apply_gradient_gasp_launch(
+            d_spikes_in:  *const RichSpike,
+            d_spikes_out: *mut   RichSpike,
+            d_forces:     *const f32,
+            d_masses:     *const f32,
+            adj_base:     *const std::ffi::c_void,
+            current_step: u32,
+            n_spikes:     u32,
+            n_atoms:      u32,
+            stream:       *mut std::ffi::c_void,
+        ) -> CudaError;
     }
 }
 

@@ -426,6 +426,16 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     // graph emits cuMemsetD8Async at the head of every replay so
     // *d_external_work is fresh at chunk start.
     adj->d_external_work = nullptr;
+    // M1.2.20.C-A — Gradient Gasp handles default to neutral state.
+    // η_base = 1.0 per Ruling 2; force_burst_step = u32_MAX disables
+    // the 10× amplification.  Host overwrites both pre-capture via
+    // cuMemcpyHtoDAsync at offsets 136 and 140 respectively.
+    adj->gasp_gain_eta = 1.0f;
+    adj->force_burst_step = 0xFFFFFFFFu;
+    #pragma unroll
+    for (int k = 0; k < 112; ++k) {
+        adj->_reserved_m1_2_20[k] = 0u;
+    }
 }
 
 /// Noise-floor update kernel — Welford-style running mean+stddev over
