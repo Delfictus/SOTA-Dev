@@ -8987,7 +8987,48 @@ fn run_multi_stream_pipeline(
                 // index with density > 0).  Fall back to a one-residue stub
                 // if prior_density is empty so the validator's
                 // "0 residues" hard-fail is not tripped.
+                //
+                // Schema extension (kcc-fields lane): each emitted residue
+                // also carries the full per-residue KCC vector that the
+                // ghost-tile / so3_project kernels actually compute and
+                // memcpy_dtoh into `merged_kcc` (see fused_engine.rs:7415-7476):
+                //   temporal_corr, direction_score, motion_efficiency,
+                //   burst_motion, phase_shift, causal_lag, lag_corr_peak,
+                //   local_cov, net_dx/dy/dz, sum_m, active_causal,
+                //   residue_count.  Until the kcc_visualization writer was
+                //   patched it cherry-picked only `spike_density`; the
+                //   downstream consumer therefore observed null for every
+                //   causal field even though the kernel had populated them
+                //   and the host had read them back.  Per-group counts are
+                //   pulled from AscSharedState.group_residue_phasors (same
+                //   source phasor_kcc_state.json uses).
+                //
+                // Fields requested by the schema extension that the kernel
+                // does NOT populate today are emitted as JSON null (NOT
+                // zero-filled — zero is information-bearing for these
+                // descriptors):
+                //   * causal_vector       — kernel emits scalar `causal_lag`
+                //                            only (no per-direction array)
+                //   * lag_fields          — kernel emits scalar `lag_corr_peak`
+                //                            only (no per-shift profile)
+                //   * phase_shift_vector  — kernel emits scalar `phase_shift`
+                //                            only (no per-axis decomposition)
+                //   * directionality      — exposed as scalar `direction_score`
+                //                            (the closest kernel-computed
+                //                            analogue); set to null if no
+                //                            KCC data was downloaded.
                 let mut residues_out: Vec<serde_json::Value> = Vec::with_capacity(prior_density.len());
+
+                // Snapshot per-group, per-residue counts from the phasor
+                // accumulator so each residue can carry a `group_counts`
+                // array.  Lock once outside the loop to amortize cost.
+                let group_counts_snapshot: Option<Vec<Vec<u32>>> = asc_shared
+                    .as_ref()
+                    .and_then(|a| a.group_residue_phasors.lock().ok()
+                        .map(|p| p.iter()
+                            .map(|grp| grp.iter().map(|&(_, _, c)| c).collect::<Vec<u32>>())
+                            .collect::<Vec<_>>()));
+
                 for (idx, density) in prior_density.iter().enumerate() {
                     if *density <= 0.0 { continue; }
                     let rid = idx as i64;
@@ -9002,6 +9043,89 @@ fn run_multi_stream_pipeline(
                     if let Some(kl) = max_kl_by_rid.get(&rid) {
                         entry["max_kl"] = serde_json::json!(kl);
                     }
+
+                    // KCC scalars from merged_kcc (kernel-computed).  Use
+                    // null if KCC was not downloaded for this run or if the
+                    // residue index falls outside the kernel's tracked range.
+                    if let Some(ref kcc) = merged_kcc {
+                        if idx < kcc.n_residues {
+                            entry["temporal_corr"]     = serde_json::json!(kcc.temporal_corr[idx]);
+                            entry["direction_score"]   = serde_json::json!(kcc.direction_score[idx]);
+                            entry["directionality"]    = serde_json::json!(kcc.direction_score[idx]);
+                            entry["motion_efficiency"] = serde_json::json!(kcc.motion_efficiency[idx]);
+                            entry["burst_motion"]      = serde_json::json!(kcc.burst_motion[idx]);
+                            entry["phase_shift"]       = serde_json::json!(kcc.phase_shift[idx]);
+                            entry["causal_lag"]        = serde_json::json!(kcc.causal_lag[idx]);
+                            entry["lag_corr_peak"]     = serde_json::json!(kcc.lag_corr_peak[idx]);
+                            entry["local_cov"]         = serde_json::json!(kcc.local_cov[idx]);
+                            entry["local_covariance"]  = serde_json::json!(kcc.local_cov[idx]);
+                            entry["net_dx"]            = serde_json::json!(kcc.net_dx[idx]);
+                            entry["net_dy"]            = serde_json::json!(kcc.net_dy[idx]);
+                            entry["net_dz"]            = serde_json::json!(kcc.net_dz[idx]);
+                            entry["sum_m"]             = serde_json::json!(kcc.sum_m[idx]);
+                            entry["active_causal"]     = serde_json::json!(kcc.active_causal[idx]);
+                            entry["n_active_causal"]   = serde_json::json!(kcc.active_causal[idx]);
+                            entry["residue_count"]     = serde_json::json!(kcc.residue_count[idx]);
+                        } else {
+                            entry["temporal_corr"]     = serde_json::Value::Null;
+                            entry["direction_score"]   = serde_json::Value::Null;
+                            entry["directionality"]    = serde_json::Value::Null;
+                            entry["motion_efficiency"] = serde_json::Value::Null;
+                            entry["burst_motion"]      = serde_json::Value::Null;
+                            entry["phase_shift"]       = serde_json::Value::Null;
+                            entry["causal_lag"]        = serde_json::Value::Null;
+                            entry["lag_corr_peak"]     = serde_json::Value::Null;
+                            entry["local_cov"]         = serde_json::Value::Null;
+                            entry["local_covariance"]  = serde_json::Value::Null;
+                            entry["net_dx"]            = serde_json::Value::Null;
+                            entry["net_dy"]            = serde_json::Value::Null;
+                            entry["net_dz"]            = serde_json::Value::Null;
+                            entry["sum_m"]             = serde_json::Value::Null;
+                            entry["active_causal"]     = serde_json::Value::Null;
+                            entry["n_active_causal"]   = serde_json::Value::Null;
+                            entry["residue_count"]     = serde_json::Value::Null;
+                        }
+                    } else {
+                        entry["temporal_corr"]     = serde_json::Value::Null;
+                        entry["direction_score"]   = serde_json::Value::Null;
+                        entry["directionality"]    = serde_json::Value::Null;
+                        entry["motion_efficiency"] = serde_json::Value::Null;
+                        entry["burst_motion"]      = serde_json::Value::Null;
+                        entry["phase_shift"]       = serde_json::Value::Null;
+                        entry["causal_lag"]        = serde_json::Value::Null;
+                        entry["lag_corr_peak"]     = serde_json::Value::Null;
+                        entry["local_cov"]         = serde_json::Value::Null;
+                        entry["local_covariance"]  = serde_json::Value::Null;
+                        entry["net_dx"]            = serde_json::Value::Null;
+                        entry["net_dy"]            = serde_json::Value::Null;
+                        entry["net_dz"]            = serde_json::Value::Null;
+                        entry["sum_m"]             = serde_json::Value::Null;
+                        entry["active_causal"]     = serde_json::Value::Null;
+                        entry["n_active_causal"]   = serde_json::Value::Null;
+                        entry["residue_count"]     = serde_json::Value::Null;
+                    }
+
+                    // group_counts: per-residue array of per-group spike counts
+                    // (length = n_groups).  Source = AscSharedState phasor
+                    // accumulator (cnt component).  Null when phasors unavail.
+                    if let Some(ref snap) = group_counts_snapshot {
+                        let counts: Vec<u32> = snap.iter()
+                            .map(|grp| grp.get(idx).copied().unwrap_or(0))
+                            .collect();
+                        entry["group_counts"] = serde_json::json!(counts);
+                    } else {
+                        entry["group_counts"] = serde_json::Value::Null;
+                    }
+
+                    // Vector-valued descriptors not produced by current kernels.
+                    // Reserved-null slots so downstream consumers see a stable
+                    // schema and can distinguish "not computed" from "computed
+                    // and zero".  Populating these requires a kernel change
+                    // (operator-tracked, separate lane).
+                    entry["causal_vector"]      = serde_json::Value::Null;
+                    entry["lag_fields"]         = serde_json::Value::Null;
+                    entry["phase_shift_vector"] = serde_json::Value::Null;
+
                     residues_out.push(entry);
                 }
                 if residues_out.is_empty() {
