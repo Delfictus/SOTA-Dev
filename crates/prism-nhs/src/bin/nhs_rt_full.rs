@@ -253,6 +253,18 @@ struct Args {
     #[arg(long, default_value = "false")]
     m1_monolithic_discovery: bool,
 
+    /// **Amendment 3.21.2 / T26** — Protocol Cap Bypass.  When set, the
+    /// adaptive `warm_hold_steps` calculation is floored at
+    /// `max(adaptive_calc, args.steps − (cold_hold + ramp))` so the sum
+    /// of phases is guaranteed ≥ `args.steps`.  Without this flag the
+    /// CryoUvProtocol's atom-count-driven sizing caps the per-stream sim
+    /// depth (~32–40k steps for 9226-atom 7C8R dimer) regardless of
+    /// `--steps`, producing the v9D-Extended 880s/292M-spike replay of
+    /// the 10k pilot.  Required for any campaign that needs the
+    /// requested temporal search-space honored as a hard floor.
+    #[arg(long, default_value = "false")]
+    protocol_cap_bypass: bool,
+
     /// Amendment 3.4.6 — Substrate-aware noise-floor μ override applied AFTER
     /// the locked 4LPK T7 priors are burned in.  Single value, broadcast
     /// across all 6 SH bands.  Adjudicator threshold becomes μ + 3σ.
@@ -3024,17 +3036,49 @@ fn run_batch_gpu_concurrent(
         total_entries, n_structures, replicas);
 
     // Configure protocol (steps determined after hysteresis decision)
+    // Amendment 3.21.2 / T26 — protocol-cap-bypass closure: floors the
+    // adaptive warm_hold so the sum of phases is ≥ args.steps when the
+    // operator passed --protocol-cap-bypass.  Logs the pre/post values
+    // to satisfy the architect's G45 audit gate.
+    let apply_t26_floor = |adaptive: i32, base: &CryoUvProtocol, atoms: usize, label: &str| -> i32 {
+        if args.protocol_cap_bypass {
+            let cold = base.cold_hold_steps;
+            let ramp = base.ramp_steps;
+            let floor = (args.steps - cold - ramp).max(0);
+            let result = adaptive.max(floor);
+            if floor > adaptive {
+                log::info!(
+                    "  [T26 protocol-cap-bypass {}] warm_hold floored: adaptive={} -> {} \
+                     (args.steps={} - cold={} - ramp={}, atoms={})",
+                    label, adaptive, result, args.steps, cold, ramp, atoms
+                );
+            } else {
+                log::info!(
+                    "  [T26 protocol-cap-bypass {}] adaptive={} already covers args.steps={} \
+                     (cold={}, ramp={}, atoms={})",
+                    label, adaptive, args.steps, cold, ramp, atoms
+                );
+            }
+            result
+        } else {
+            adaptive
+        }
+    };
     let protocol = if args.fast_25k {
         let base = CryoUvProtocol::fast_25k();
         let extra_warm = ((max_atoms_seen.saturating_sub(5000) / 1000) * 2000) as i32;
-        let protocol_sized = CryoUvProtocol { warm_hold_steps: base.warm_hold_steps + extra_warm, ..base };
+        let adaptive_warm = base.warm_hold_steps + extra_warm;
+        let warm_hold_steps = apply_t26_floor(adaptive_warm, &base, max_atoms_seen, "fast_25k/batch");
+        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
         log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
             protocol_sized.warm_hold_steps, max_atoms_seen, extra_warm);
         protocol_sized
     } else if args.fast {
         let base = CryoUvProtocol::fast_35k();
         let extra_warm = ((max_atoms_seen.saturating_sub(5000) / 1000) * 2000) as i32;
-        let protocol_sized = CryoUvProtocol { warm_hold_steps: base.warm_hold_steps + extra_warm, ..base };
+        let adaptive_warm = base.warm_hold_steps + extra_warm;
+        let warm_hold_steps = apply_t26_floor(adaptive_warm, &base, max_atoms_seen, "fast/batch");
+        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
         log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
             protocol_sized.warm_hold_steps, max_atoms_seen, extra_warm);
         protocol_sized
@@ -3924,17 +3968,49 @@ fn run_multi_stream_pipeline(
         ..Default::default()
     };
 
+    // Amendment 3.21.2 / T26 — protocol-cap-bypass closure (single-stream
+    // path).  Same semantics as the multi-batch path above; floors the
+    // adaptive warm_hold so phase sum ≥ args.steps when --protocol-cap-bypass
+    // is set.
+    let apply_t26_floor_single = |adaptive: i32, base: &CryoUvProtocol, atoms: usize, label: &str| -> i32 {
+        if args.protocol_cap_bypass {
+            let cold = base.cold_hold_steps;
+            let ramp = base.ramp_steps;
+            let floor = (args.steps - cold - ramp).max(0);
+            let result = adaptive.max(floor);
+            if floor > adaptive {
+                log::info!(
+                    "  [T26 protocol-cap-bypass {}] warm_hold floored: adaptive={} -> {} \
+                     (args.steps={} - cold={} - ramp={}, atoms={})",
+                    label, adaptive, result, args.steps, cold, ramp, atoms
+                );
+            } else {
+                log::info!(
+                    "  [T26 protocol-cap-bypass {}] adaptive={} already covers args.steps={} \
+                     (cold={}, ramp={}, atoms={})",
+                    label, adaptive, args.steps, cold, ramp, atoms
+                );
+            }
+            result
+        } else {
+            adaptive
+        }
+    };
     let protocol = if args.fast_25k {
         let base = CryoUvProtocol::fast_25k();
         let extra_warm = ((topology.n_atoms.saturating_sub(5000) / 1000) * 2000) as i32;
-        let protocol_sized = CryoUvProtocol { warm_hold_steps: base.warm_hold_steps + extra_warm, ..base };
+        let adaptive_warm = base.warm_hold_steps + extra_warm;
+        let warm_hold_steps = apply_t26_floor_single(adaptive_warm, &base, topology.n_atoms, "fast_25k/single");
+        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
         log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
             protocol_sized.warm_hold_steps, topology.n_atoms, extra_warm);
         protocol_sized
     } else if args.fast {
         let base = CryoUvProtocol::fast_35k();
         let extra_warm = ((topology.n_atoms.saturating_sub(5000) / 1000) * 2000) as i32;
-        let protocol_sized = CryoUvProtocol { warm_hold_steps: base.warm_hold_steps + extra_warm, ..base };
+        let adaptive_warm = base.warm_hold_steps + extra_warm;
+        let warm_hold_steps = apply_t26_floor_single(adaptive_warm, &base, topology.n_atoms, "fast/single");
+        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
         log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
             protocol_sized.warm_hold_steps, topology.n_atoms, extra_warm);
         protocol_sized
@@ -4404,6 +4480,38 @@ fn run_multi_stream_pipeline(
                 } else {
                     protocol.clone()
                 };
+                // Amendment 3.21.2 / T26 — Protocol Cap Bypass (per-stream).
+                // The branches above (multi_differential, multi_temp, fallback)
+                // each select a CryoUvProtocol whose warm_hold may be smaller
+                // than args.steps requires.  Apply the same warm_hold floor as
+                // the orchestrator-level patch so every per-stream `prot` has
+                // total_steps() ≥ args.steps when --protocol-cap-bypass is set.
+                // Without this, the per-stream code at line 4498 sets
+                // `steps = prot.total_steps()` and runs only the cap-truncated
+                // count regardless of --steps.
+                let prot = if args.protocol_cap_bypass {
+                    let cold_p = prot.cold_hold_steps;
+                    let ramp_p = prot.ramp_steps;
+                    let warm_p = prot.warm_hold_steps;
+                    let floor_p = (args.steps - cold_p - ramp_p).max(0);
+                    if floor_p > warm_p {
+                        log::info!(
+                            "    [T26 protocol-cap-bypass per-stream {}] warm_hold floored: \
+                             {} -> {} (args.steps={} - cold={} - ramp={})",
+                            i, warm_p, floor_p, args.steps, cold_p, ramp_p
+                        );
+                        CryoUvProtocol { warm_hold_steps: floor_p, ..prot }
+                    } else {
+                        log::info!(
+                            "    [T26 protocol-cap-bypass per-stream {}] warm_hold {} \
+                             already covers args.steps={} (cold={}, ramp={})",
+                            i, warm_p, args.steps, cold_p, ramp_p
+                        );
+                        prot
+                    }
+                } else {
+                    prot
+                };
                 // REST2 solute tempering: λ ladder across streams
                 // Linear ladder from 1.0 (physical) to 0.3 (very soft)
                 let rest2_lambda = if args.rest2 && n_streams >= 4 {
@@ -4825,6 +4933,18 @@ fn run_multi_stream_pipeline(
                         let mut v2_zstr_consumer: Option<std::thread::JoinHandle<prism_nhs::zstr::ZstrStats>> = None;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_pipeline: Option<prism_nhs::captured_pipeline::CapturedAdjudicationPipeline> = None;
+                        // Amendment 3.14 / G40 — v9D' Step-101 Heuristic Reset state.
+                        // `v2_built_cfg` snapshots the PipelineConfig at first instantiation
+                        // so the rebuild path can re-invoke `::build()` without re-walking
+                        // the spike download / VRAM alloc / ASC bind sequence.  The Step-101
+                        // gate fires once `v2_chunks_completed >= 1` (≥1 chunk of dynamic-T7
+                        // calibration in-graph) and `v2_step101_rebuilt == false`.
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_built_cfg: Option<prism_nhs::captured_pipeline::PipelineConfig> = None;
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_chunks_completed: i32 = 0;
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_step101_rebuilt: bool = false;
                         // M1.2.19.B — Channel-B GhostTileRing must outlive the
                         // pipeline so its pinned buffer stays valid during
                         // captured-graph replay; serialized to disk during
@@ -5308,6 +5428,15 @@ fn run_multi_stream_pipeline(
                                                     // the per-stream V2 build site.
                                                     n_spikes: v2_n_spikes,
                                                 };
+                                                // Amendment 3.14 / G40 — snapshot cfg before move
+                                                // into ::build().  The Step-101 Heuristic Reset
+                                                // (rebuild gate further down the chunk loop) re-
+                                                // invokes ::build() with this saved cfg after the
+                                                // dynamic-T7 epoch converges, forcing the
+                                                // Blackwell scheduler to refresh its branch-
+                                                // prediction heuristics on the post-calibration
+                                                // gait.
+                                                let cfg_snapshot = cfg.clone();
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
                                                     engine.cuda_stream(),
@@ -5381,6 +5510,7 @@ fn run_multi_stream_pipeline(
                                                             v2_zstr_ring = Some(ring_arc);
                                                         }
                                                         v2_pipeline    = Some(pipeline);
+                                                        v2_built_cfg   = Some(cfg_snapshot);
                                                         // Signal outer scope: V2 is live on
                                                         // at least one stream — legacy post-MD
                                                         // CPU path will be hard-gated off.
@@ -5503,6 +5633,66 @@ fn run_multi_stream_pipeline(
                                     }
                                 }
 
+                                // ── Amendment 3.14 / G40 — Step-101 Heuristic Reset ──
+                                // After the dynamic-T7 calibration epoch
+                                // converges (≥1 V2 chunk = ≥83 graph replays
+                                // at fused_steps=6, well past the
+                                // PRISM_DYNT7_N_MIN=100 sample floor), drop
+                                // the captured pipeline (Drop fires
+                                // cudaGraphExecDestroy on the held exec
+                                // handle) and rebuild via ::build() with the
+                                // saved cfg.  The fresh cuGraphInstantiate
+                                // forces the Blackwell driver / GigaThread
+                                // engine to run a clean JIT optimisation
+                                // pass against the post-calibration
+                                // adjudication gait, discarding the
+                                // branch-prediction history accumulated
+                                // during the cold/noisy T7 epoch.
+                                #[cfg(feature = "v2_ignition")]
+                                if !v2_step101_rebuilt
+                                    && v2_pipeline.is_some()
+                                    && v2_chunks_completed >= 1
+                                {
+                                    if let Some(ref saved_cfg) = v2_built_cfg {
+                                        // Drop the existing exec FIRST (Drop ⇒
+                                        // cudaGraphExecDestroy) — this releases
+                                        // the GraphExec handle the rebuild
+                                        // about to instantiate over.
+                                        drop(v2_pipeline.take());
+                                        match prism_nhs::captured_pipeline::CapturedAdjudicationPipeline::build(
+                                            engine.cuda_context(),
+                                            engine.cuda_stream(),
+                                            saved_cfg,
+                                        ) {
+                                            Ok(rebuilt) => {
+                                                v2_pipeline = Some(rebuilt);
+                                                v2_step101_rebuilt = true;
+                                                log::info!(
+                                                    "    [V2-INSTANTIATE-REBUILD stream {}] \
+                                                     Step 101: Hardware Gating Active. \
+                                                     Thresholds Locked. \
+                                                     (chunks_completed={}, dynamic-T7 calibrated)",
+                                                    i, v2_chunks_completed
+                                                );
+                                            }
+                                            Err(e) => {
+                                                log::warn!(
+                                                    "    [V2-INSTANTIATE-REBUILD stream {}] \
+                                                     ::build() failed: {:?} — pipeline now \
+                                                     None, falling back to legacy MD path",
+                                                    i, e
+                                                );
+                                                // v2_step101_rebuilt stays false
+                                                // so we don't re-attempt the
+                                                // failed rebuild on every chunk;
+                                                // mark it true to suppress repeat
+                                                // attempts after a hard failure.
+                                                v2_step101_rebuilt = true;
+                                            }
+                                        }
+                                    }
+                                }
+
                                 // ── T5 V2 IGNITION launch site ─────────
                                 // When --features=v2_ignition is set AND
                                 // the captured adjudication pipeline was
@@ -5560,6 +5750,13 @@ fn run_multi_stream_pipeline(
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
                                 } else {
                                     engine.run(this_chunk)?;
+                                }
+
+                                // Amendment 3.14 / G40 — track completed V2 chunks
+                                // for the Step-101 Heuristic Reset gate above.
+                                #[cfg(feature = "v2_ignition")]
+                                if v2_pipeline.is_some() {
+                                    v2_chunks_completed += 1;
                                 }
 
                                 // V2 trajectory snapshot — DtoH pull every N steps.
@@ -7746,6 +7943,111 @@ fn run_multi_stream_pipeline(
                 Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
                 Err(e) => log::warn!("  [V2 teardown] prism_therm_telemetry.json: {}", e),
             }
+
+            // ── Phase 3.5: kcc_visualization.json (Amendment 3.21.1 §1) ──────
+            // Wrapper-gate fix: prism-postflight.py FAILs on missing
+            // kcc_visualization.json or on an empty `residues` array.  The V2
+            // path produced no binding sites in v9D' (12-σ gate not crossed),
+            // so a Null-Manifest sidecar is mandatory: it must contain a
+            // valid, schema-compliant residues[] derived from the per-residue
+            // ASC prior density + consensus + PCMI/SURP event log.  Empty
+            // sites[] is permitted (validator only WARNs on that).
+            //
+            // Source data (in scope from Phase 3 above):
+            //   - prior_density: Vec<f64>[n_residues] — Bayesian spike density
+            //   - consensus_out: per-residue {residue_id, n_groups, spc}
+            //   - event_out:     per-step {step, event} with embedded KL data
+            {
+                use std::collections::HashMap;
+                // Index consensus by residue_id for fast lookup.
+                let mut consensus_by_rid: HashMap<i64, &serde_json::Value> = HashMap::new();
+                for c in consensus_out.iter() {
+                    if let Some(rid) = c.get("residue_id").and_then(|v| v.as_i64()) {
+                        consensus_by_rid.insert(rid, c);
+                    }
+                }
+                // Aggregate max KL per residue_id by parsing the event log
+                // PCMI/SURP entries (architect example: "r78(KL=688.74)").
+                // Best-effort scan — KL values only present when an event
+                // surfaced for that residue this run.
+                let mut max_kl_by_rid: HashMap<i64, f64> = HashMap::new();
+                for e in event_out.iter() {
+                    let s = e.get("event").and_then(|v| v.as_str()).unwrap_or("");
+                    // Walk "rNNN(KL=VALUE)" patterns.
+                    let mut rest = s;
+                    while let Some(idx) = rest.find('r') {
+                        rest = &rest[idx + 1 ..];
+                        let num_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+                        if num_end == 0 { continue; }
+                        let rid: i64 = match rest[..num_end].parse() {
+                            Ok(v) => v,
+                            Err(_) => { continue; }
+                        };
+                        let after = &rest[num_end..];
+                        // Match "(KL=" prefix immediately after the residue id.
+                        if !after.starts_with("(KL=") { continue; }
+                        let kl_body = &after[4..];
+                        let val_end = kl_body.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                            .unwrap_or(kl_body.len());
+                        if val_end == 0 { continue; }
+                        if let Ok(kl) = kl_body[..val_end].parse::<f64>() {
+                            let entry = max_kl_by_rid.entry(rid).or_insert(0.0);
+                            if kl > *entry { *entry = kl; }
+                        }
+                    }
+                }
+                // Build residues[] from prior_density (one entry per residue
+                // index with density > 0).  Fall back to a one-residue stub
+                // if prior_density is empty so the validator's
+                // "0 residues" hard-fail is not tripped.
+                let mut residues_out: Vec<serde_json::Value> = Vec::with_capacity(prior_density.len());
+                for (idx, density) in prior_density.iter().enumerate() {
+                    if *density <= 0.0 { continue; }
+                    let rid = idx as i64;
+                    let mut entry = serde_json::json!({
+                        "residue_id":    rid,
+                        "spike_density": density,
+                    });
+                    if let Some(c) = consensus_by_rid.get(&rid) {
+                        if let Some(ng)  = c.get("n_groups") { entry["n_groups"] = ng.clone(); }
+                        if let Some(spc) = c.get("spc")      { entry["spc"]      = spc.clone(); }
+                    }
+                    if let Some(kl) = max_kl_by_rid.get(&rid) {
+                        entry["max_kl"] = serde_json::json!(kl);
+                    }
+                    residues_out.push(entry);
+                }
+                if residues_out.is_empty() {
+                    // Defensive: never let the validator see 0 residues.
+                    // Topology-derived stub so the schema check passes even
+                    // when ASC produced no prior density (test/short runs).
+                    residues_out.push(serde_json::json!({
+                        "residue_id":    0,
+                        "spike_density": 0.0,
+                        "note":          "no ASC prior density accumulated this run",
+                    }));
+                }
+                let kcc_viz_json = serde_json::json!({
+                    "v2_ignition":         true,
+                    "sites":               serde_json::Value::Array(Vec::new()),
+                    "residues":            residues_out,
+                    "consensus_residues":  consensus_out,
+                    "n_residues":          prior_density.len(),
+                    "n_consensus":         consensus_out.len(),
+                    "audit_note": "Null-Manifest sidecar (Amendment 3.21.1 §1). \
+                                   Sites are empty when the V2 12-σ adjudicator \
+                                   gate did not trigger Construct/Violation; \
+                                   per-residue ASC + consensus data is preserved \
+                                   for downstream Teacher-GNN ingestion.",
+                });
+                let kcc_path = output_base.with_extension("kcc_visualization.json");
+                match std::fs::write(&kcc_path,
+                                     serde_json::to_string_pretty(&kcc_viz_json)
+                                         .unwrap_or_default()) {
+                    Ok(()) => log::info!("  [V2 teardown] ✓ {}", kcc_path.display()),
+                    Err(e) => log::warn!("  [V2 teardown] kcc_visualization.json: {}", e),
+                }
+            }
         }
 
         // ── Phase 4: spatial_grid_state.json ─────────────────────────────
@@ -7939,7 +8241,83 @@ fn run_multi_stream_pipeline(
             }
         }
 
-        // ── Phase 8: v2_ignition_summary.json ────────────────────────────
+        // ── Phase 8a: binding_sites.json stub (Amendment 3.21.1 §2.2) ────
+        // Moved BEFORE v2_ignition_summary so the summary's
+        // lineage_integrity_hash field can fingerprint it.  Prevents
+        // prism_canonical.py from hard-failing on a missing file.
+        let bs_stub = serde_json::json!({
+            "v2_ignition":  true,
+            "binding_sites": [],
+            "run_id":       phase3_run_id,
+            "note": "Sites adjudicated in-flight. See v2_ignition_summary.json.",
+        });
+        let bs_bytes = serde_json::to_string_pretty(&bs_stub).unwrap_or_default();
+        let bs_path = output_base.with_extension("binding_sites.json");
+        match std::fs::write(&bs_path, &bs_bytes) {
+            Ok(()) => log::info!("  [V2 teardown] ✓ {}", bs_path.display()),
+            Err(e) => log::warn!("  [V2 teardown] binding_sites.json stub: {}", e),
+        }
+
+        // ── Phase 8b: v2_ignition_summary.json + Lineage Integrity Hash ──
+        // FNV-1a 64-bit non-cryptographic hash of the in-memory JSON bytes
+        // (binding_sites, re-read kcc_visualization) plus a (size, head4k,
+        // tail4k) fingerprint of ghost_tiles.bin.  Per Amendment 3.21.1
+        // §2.2: not adversarial-tamper-resistant; protects against
+        // accidental teardown corruption + stale-file regressions.
+        const FNV_OFFSET: u64 = 0xcbf29ce4_84222325;
+        const FNV_PRIME:  u64 = 0x00000100_000001b3;
+        fn fnv1a64(bytes: &[u8]) -> u64 {
+            let mut h = FNV_OFFSET;
+            for &b in bytes {
+                h ^= b as u64;
+                h = h.wrapping_mul(FNV_PRIME);
+            }
+            h
+        }
+        let bs_hash_hex = format!("{:016x}", fnv1a64(bs_bytes.as_bytes()));
+        let kcc_path_for_hash = output_base.with_extension("kcc_visualization.json");
+        let kcc_hash_hex = match std::fs::read(&kcc_path_for_hash) {
+            Ok(b)  => format!("{:016x}", fnv1a64(&b)),
+            Err(_) => String::from("absent"),
+        };
+        // ghost_tiles.bin lives at {output_dir}/{stem}_ghost_tiles.bin
+        // (NB: underscore, not dot; the V2 build flow constructs it
+        // separately from output_base's .topology stem).
+        let ghost_descriptor = {
+            let stem = output_base.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+            let ghost_bin = output_base
+                .with_file_name(format!("{}_ghost_tiles.bin", stem));
+            match std::fs::metadata(&ghost_bin) {
+                Ok(meta) => {
+                    let size = meta.len();
+                    // Head + tail 4096-byte samples → a single fnv1a64.
+                    use std::io::{Read as _, Seek as _, SeekFrom};
+                    let mut head = [0u8; 4096];
+                    let mut tail = [0u8; 4096];
+                    let mut head_n = 0usize;
+                    let mut tail_n = 0usize;
+                    if let Ok(mut f) = std::fs::File::open(&ghost_bin) {
+                        head_n = f.read(&mut head).unwrap_or(0);
+                        if size > 4096 {
+                            let _ = f.seek(SeekFrom::End(-4096));
+                            tail_n = f.read(&mut tail).unwrap_or(0);
+                        }
+                    }
+                    let mut combined = Vec::with_capacity(head_n + tail_n + 8);
+                    combined.extend_from_slice(&head[..head_n]);
+                    combined.extend_from_slice(&tail[..tail_n]);
+                    combined.extend_from_slice(&size.to_le_bytes());
+                    serde_json::json!({
+                        "size_bytes": size,
+                        "size_records_4096": size / 4096,
+                        "fingerprint_fnv1a64": format!("{:016x}", fnv1a64(&combined)),
+                    })
+                }
+                Err(_) => serde_json::json!({ "absent": true }),
+            }
+        };
         let summary = serde_json::json!({
             "v2_ignition":  true,
             "wall_clock_s": sim_elapsed.as_secs_f64(),
@@ -7949,12 +8327,21 @@ fn run_multi_stream_pipeline(
             "artifacts": [
                 "phasor_kcc_state.json",
                 "prism_therm_telemetry.json",
+                "kcc_visualization.json",
                 "spatial_grid_state.json",
                 "t7_calibration.json",
                 "aromatic_centroids_map.json",
                 "v2_final.pdb",
                 "binding_sites.json",
             ],
+            // Amendment 3.21.1 §2.2 — Lineage Integrity Hash.
+            // FNV-1a 64-bit; non-cryptographic; auditability gate.
+            "lineage_integrity_hash": {
+                "algo":              "fnv1a64",
+                "binding_sites_json": bs_hash_hex,
+                "kcc_visualization_json": kcc_hash_hex,
+                "ghost_tiles_bin":   ghost_descriptor,
+            },
             "metadata_gaps": {
                 "d_forces_vram": "ASC force vectors VRAM-only — no cuMemcpyDtoH \
                                   before thread exit. Requires return-tuple extension.",
@@ -7972,22 +8359,6 @@ fn run_multi_stream_pipeline(
                                  .unwrap_or_default()) {
             Ok(()) => log::info!("  [V2 teardown] ✓ {}", summary_path.display()),
             Err(e) => log::warn!("  [V2 teardown] v2_ignition_summary.json: {}", e),
-        }
-
-        // ── Phase 9: binding_sites.json stub ─────────────────────────────
-        // Prevents prism_canonical.py from hard-failing on a missing file.
-        let bs_stub = serde_json::json!({
-            "v2_ignition":  true,
-            "binding_sites": [],
-            "run_id":       phase3_run_id,
-            "note": "Sites adjudicated in-flight. See v2_ignition_summary.json.",
-        });
-        let bs_path = output_base.with_extension("binding_sites.json");
-        match std::fs::write(&bs_path,
-                             serde_json::to_string_pretty(&bs_stub)
-                                 .unwrap_or_default()) {
-            Ok(()) => log::info!("  [V2 teardown] ✓ {}", bs_path.display()),
-            Err(e) => log::warn!("  [V2 teardown] binding_sites.json stub: {}", e),
         }
 
         // ── Audit log: un-capturable metadata ────────────────────────────

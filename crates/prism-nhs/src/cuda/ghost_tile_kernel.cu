@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// PRISM-4D / M1.2.19.B — GhostTileFrame capture kernel (impl)
+// PRISM-4D / M1.2.19.B (Amendment 3.14 — v9D' Sector-Lock) — GhostTileFrame
+// capture kernel (impl)
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Single-block, n_clusters-thread kernel.  Each thread `i` < n_clusters
@@ -8,17 +9,18 @@
 // adjudication_code at 52, mirroring InterferometricAdjudicatorFfi); if
 // the code is Construct (1) or Violation (2), the thread atomicAdds the
 // shared counter, bounds-checks against max_records, and writes its
-// 1408-byte record (GhostTileFrame header + ContactShellTile body) into
-// the pinned-host, device-mapped ring at offset
-// `COUNTER_SECTOR (128) + slot * 1408`.
+// 4096-byte GhostTileFrame record into the pinned-host, device-mapped
+// ring at offset `COUNTER_SECTOR (4096) + slot * 4096`.
 //
-// The kernel reads `tile.geo_power_spectrum[0..6]` (offset 272 within
-// the 1280-byte ContactShellTile) into the header's power_spectrum[6]
-// for offline Φ_sym integration.
+// The kernel reads `tile.geo_power_spectrum[0..6]` into the header's
+// power_spectrum[0..6] (geometry plane); planes 1..3 are zeroed in this
+// commit (the upstream causal/thermo/chemistry plane spectra are not
+// yet surfaced to the ghost stage — follow-up commit will wire them).
 //
-// thermo_flux[2] and causal_lead_residue are sentinel-filled (NaN, MAX)
-// in this commit — gating the FFI slots as wired but unpopulated until
-// the upstream water-density derivative + KCC argmax buses surface.
+// thermo_flux[2] and causal_lead_residue follow the same sentinel-fill
+// pattern as the prior 1408-byte format — gates FFI slots as wired but
+// unpopulated until upstream telemetry buses land.  The trailing 1280-byte
+// ContactShellTile body has been retired from the on-disk format.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "ghost_tile_kernel.cuh"
@@ -90,7 +92,7 @@ __global__ void prism_ghost_pipe_stage_kernel(
     // resolves the contention on the L2 atomic engine.  __threadfence_system()
     // immediately after publishes the counter increment to the host
     // address space so the Reaper thread observes the slot reservation
-    // before the kernel starts writing the 1408-byte record below.
+    // before the kernel starts writing the 4096-byte record below.
     uint32_t* p_counter = reinterpret_cast<uint32_t*>(ring_base);
     const uint32_t slot = atomicAdd(p_counter, 1u);
     __threadfence_system();
@@ -106,7 +108,7 @@ __global__ void prism_ghost_pipe_stage_kernel(
                             + static_cast<size_t>(slot) * PRISM_GHOST_RECORD_BYTES;
     uint8_t* record_base = ring_base + record_off;
 
-    // ── 1. Write the 128-byte GhostTileFrame header ─────────────────
+    // ── Write the 4096-byte GhostTileFrame record ────────────────────
     GhostTileFrame* hdr = reinterpret_cast<GhostTileFrame*>(record_base);
     hdr->frame_idx         = frame_idx;
     hdr->site_id           = i;
@@ -139,12 +141,23 @@ __global__ void prism_ghost_pipe_stage_kernel(
     // current_divergence (f32 at offset 48) ≈ Σ_planes Δ_AB at write time.
     hdr->kl_divergence =
         *reinterpret_cast<const float*>(adj + PRISM_ADJ_CURRENT_DIVERGENCE_OFF);
-    // Geometry-plane SO(3) C_l[0..6].  geo_power_spectrum is 8 floats
-    // (6 valid + 2 pad) at ContactShellTile offset 272 — copy first 6.
+    // 4-plane SO(3) C_l[0..6] expansion (Amendment 3.14):
+    //   plane 0 (geo)        -> power_spectrum[ 0.. 6]   wired
+    //   plane 1 (causal)     -> power_spectrum[ 6..12]   zero (follow-up)
+    //   plane 2 (thermo)     -> power_spectrum[12..18]   zero (follow-up)
+    //   plane 3 (chemistry)  -> power_spectrum[18..24]   zero (follow-up)
+    // Only the geometry plane is currently surfaced from the ContactShellTile
+    // (geo_power_spectrum[0..6] at tile offset 272).  Planes 1..3 are zeroed
+    // here — kernel follow-up will read therm_/caus_/chem_power_spectrum
+    // and replace the zero-fill once those upstream tiles are validated.
     const ContactShellTile& tile_i = tiles[i];
     #pragma unroll
     for (int l = 0; l < 6; ++l) {
         hdr->power_spectrum[l] = tile_i.geo_power_spectrum[l];
+    }
+    #pragma unroll
+    for (int l = 6; l < 24; ++l) {
+        hdr->power_spectrum[l] = 0.0f;
     }
     // Wave 1 / P4 — thermo_flux populated from the relaxed manifold:
     //   thermo_flux[0] = therm_power_spectrum[0]   (water-density l=0)
@@ -163,15 +176,24 @@ __global__ void prism_ghost_pipe_stage_kernel(
     hdr->causal_lead_residue = (d_kcc_lead != nullptr)
                                ? d_kcc_lead[i]
                                : 0xFFFFFFFFu;
-    #pragma unroll
-    for (int k = 0; k < 18; ++k) hdr->_reserved[k] = 0u;
 
-    // ── 2. Write the 1280-byte ContactShellTile payload ─────────────
-    // Use memcpy (nvcc lowers to coalesced LDG/STG.E.128 cycles given
-    // the 128-byte alignment of both source and destination).
-    memcpy(record_base + sizeof(GhostTileFrame),
-           &tile_i,
-           sizeof(ContactShellTile));
+    // Zero the Pillar 5 expansion slab (32 × u32 = 128 B).  Inert until
+    // the follow-up commit wires Φ_sym phase-lock score, Γ_w desolvation
+    // tax, gear ID, hardware clock, etc.
+    #pragma unroll
+    for (int k = 0; k < 32; ++k) hdr->_reserved_payload[k] = 0u;
+
+    // The 3840-byte _slack region is left untouched: cuMemHostAlloc
+    // zero-inits the buffer, and subsequent slot reuse is gated by the
+    // host's truncate-on-open of the output file.  Skipping the write
+    // here saves 3840 B of STG bandwidth per record (= ~12% of total
+    // record bandwidth at 4096 B per record); the on-disk bytes are
+    // deterministic zero from the allocator either way.
+    //
+    // Note: the ContactShellTile body that previously followed the
+    // header has been retired (Amendment 3.14 §1.1).  The 4-plane
+    // power_spectrum field above absorbs the geometry-plane spectrum;
+    // planes 1..3 fold in on the follow-up commit.
 }
 
 // ─── Host launcher ──────────────────────────────────────────────────────────

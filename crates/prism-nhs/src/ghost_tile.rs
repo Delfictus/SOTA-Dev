@@ -15,18 +15,23 @@
 //!
 //! ## Record layout (per active site per frame)
 //!
+//! v9D' (Amendment 3.14 / Sector-Lock): each record is a single 4096-byte
+//! GhostTileFrame written via `O_DIRECT | O_DSYNC`.  The trailing 1280-byte
+//! ContactShellTile body has been retired from the on-disk format — its
+//! per-plane SO(3) spectra are now folded into the expanded 4-plane
+//! `power_spectrum[24]` field of the frame itself.
+//!
 //! ```text
 //! offset  size  field
 //! ──────  ────  ──────
-//!     0   128   GhostTileFrame header  (this struct)
-//!   128  1280   ContactShellTile        (so3_project::ContactShellTile)
+//!     0  4096   GhostTileFrame header  (this struct, sector-aligned)
 //! ──────  ────
-//!  total 1408   bytes per record
+//!  total 4096   bytes per record  (= one NVMe physical sector)
 //! ```
 //!
-//! ## GhostTileFrame header (128 bytes, align(128))
+//! ## GhostTileFrame header (4096 bytes, align(4096))
 //!
-//! Operator spec (Amendment 3.13 §2.1):
+//! Operator spec (Amendment 3.14 §1.1 — v9D' Sector-Lock):
 //!
 //! ```text
 //! offset  size  field                  purpose
@@ -35,12 +40,13 @@
 //!     8     4   site_id   u32          cluster index within frame
 //!    12     1   chain_id  u8           'A' (0x41) or 'B' (0x42), or 0
 //!    13     1   adjudication_code u8   0=Prune, 1=Construct, 2=Violation
-//!    14     2   _pad             [u8;2]  alignment
+//!    14     2   telemetry_flags u16    bit-packed: LQI, T7, Burst, Drift
 //!    16     4   kl_divergence f32      Σ_planes Δ_AB at this frame
-//!    20    24   power_spectrum [f32;6] SO(3) C_l from geo plane (Φ_sym)
-//!    44     8   thermo_flux    [f32;2] [wd_change, vib_energy]   (η)
-//!    52     4   causal_lead_residue u32  driver_id for Lag Persistence
-//!    56    72   _reserved      [u32;18] pads to 128 bytes; future fields
+//!    20    96   power_spectrum [f32;24]  4 planes × 6 bands (L=0..5)
+//!   116     8   thermo_flux    [f32;2] [wd_change, vib_energy]   (η)
+//!   124     4   causal_lead_residue u32  driver_id for Lag Persistence
+//!   128   128   _reserved_payload [u32;32]  Pillar 5 expansion slab
+//!   256  3840   _slack [u8; 3840]       4096-sector alignment pad
 //! ```
 //!
 //! ## Why mapped pinned memory (operator §1.2 Mapped Memory Standard)
@@ -60,15 +66,18 @@ use cudarc::driver::sys::{
 };
 use std::ffi::c_void;
 
-// ─── GhostTileFrame — 128-byte aligned header ───────────────────────────────
+// ─── GhostTileFrame — 4096-byte aligned header (v9D' Sector-Lock) ────────────
 
-/// Self-describing temporal/site tag preceding each exfiltrated
-/// `ContactShellTile` in the Channel-B stream.
+/// Self-describing temporal/site tag for the Channel-B exfiltration
+/// stream.  v9D' (Amendment 3.14): the frame is now sized to exactly one
+/// NVMe physical sector (4096 bytes, align 4096) so that `O_DIRECT |
+/// O_DSYNC` writes hit a unique sector per record without read-modify-
+/// write penalty on the Samsung 990 PRO controller.
 ///
 /// Layout pinned by `static_assert`s on the C++ mirror in
 /// `cuda/ghost_tile_kernel.cuh` and the const-context offset asserts at
 /// the bottom of this module.  Any drift breaks the offline replay.
-#[repr(C, align(128))]
+#[repr(C, align(4096))]
 #[derive(Debug, Clone, Copy)]
 pub struct GhostTileFrame {
     /// Monotonic frame counter — increments once per V2 captured-graph
@@ -113,10 +122,15 @@ pub struct GhostTileFrame {
     /// the adjudicator wrote the SWITCH code.
     pub kl_divergence: f32,
 
-    /// Geometry-plane SO(3) power spectrum `C_l[0..6]` from the relaxed
-    /// manifold.  Φ_sym integrates this against the Chain-B partner's
-    /// spectrum across time.
-    pub power_spectrum: [f32; 6],
+    /// 4-plane SO(3) power spectrum: `C_l[0..6]` for each of
+    /// {geometry, causal, thermo, chemistry} = 24 floats total.
+    /// Layout: `power_spectrum[plane * 6 + l]` for `plane ∈ 0..4`,
+    /// `l ∈ 0..6`.  Φ_sym integrates plane 0 against the Chain-B
+    /// partner's spectrum across time; planes 1..3 feed the
+    /// 4-plane interferometric KL.  Until the kernel populates
+    /// planes 1..3 they are written as 0.0 (not NaN) — the geo
+    /// plane is the only currently-wired source.
+    pub power_spectrum: [f32; 24],
 
     /// `[wd_change, vib_energy]` — water-density derivative + per-tile
     /// vibrational-energy snapshot.  Drives Flux-Coupling Efficiency
@@ -133,10 +147,18 @@ pub struct GhostTileFrame {
     /// FFI slot for the follow-up commit that adds it.
     pub causal_lead_residue: u32,
 
-    /// Tail padding so the struct's total size is exactly 128 bytes.
-    /// Reserved for future fields (Φ_sym phase-lock score,
-    /// Γ_w desolvation tax, gear ID, hardware clock, etc.).
-    pub _reserved: [u32; 18],
+    /// Pillar 5 expansion slab — reserved for future per-record
+    /// fields (Φ_sym phase-lock score, Γ_w desolvation tax, gear ID,
+    /// hardware clock, ASC-steering work delta, etc.).  Zeroed by
+    /// `cuMemHostAlloc`; kernels treat as inert until wired.
+    pub _reserved_payload: [u32; 32],
+
+    /// Sector-alignment slack: pads the struct to exactly 4096 bytes
+    /// so each record consumes one NVMe physical sector under
+    /// `O_DIRECT | O_DSYNC`.  Not a "dead space" — this is the
+    /// resilience layer that enables zero read-modify-write
+    /// exfiltration on PCIe Gen5.
+    pub _slack: [u8; 3840],
 }
 
 /// **Wave 1 / P4** — telemetry_flags bit definitions.
@@ -160,10 +182,11 @@ impl GhostTileFrame {
             adjudication_code: 0,
             telemetry_flags: 0,
             kl_divergence: 0.0,
-            power_spectrum: [0.0; 6],
+            power_spectrum: [0.0; 24],
             thermo_flux: [0.0; 2],
             causal_lead_residue: 0,
-            _reserved: [0u32; 18],
+            _reserved_payload: [0u32; 32],
+            _slack: [0u8; 3840],
         }
     }
 }
@@ -171,11 +194,11 @@ impl GhostTileFrame {
 unsafe impl Send for GhostTileFrame {}
 unsafe impl Sync for GhostTileFrame {}
 
-// Compile-time layout invariants (operator spec §2.1).
+// Compile-time layout invariants (operator spec Amendment 3.14 §1.1 — v9D').
 const _: () = {
     use std::mem::{align_of, offset_of, size_of};
-    assert!(size_of::<GhostTileFrame>() == 128);
-    assert!(align_of::<GhostTileFrame>() == 128);
+    assert!(size_of::<GhostTileFrame>() == 4096);
+    assert!(align_of::<GhostTileFrame>() == 4096);
     assert!(offset_of!(GhostTileFrame, frame_idx) == 0);
     assert!(offset_of!(GhostTileFrame, site_id) == 8);
     assert!(offset_of!(GhostTileFrame, chain_id) == 12);
@@ -183,13 +206,15 @@ const _: () = {
     assert!(offset_of!(GhostTileFrame, telemetry_flags) == 14);
     assert!(offset_of!(GhostTileFrame, kl_divergence) == 16);
     assert!(offset_of!(GhostTileFrame, power_spectrum) == 20);
-    assert!(offset_of!(GhostTileFrame, thermo_flux) == 44);
-    assert!(offset_of!(GhostTileFrame, causal_lead_residue) == 52);
-    assert!(offset_of!(GhostTileFrame, _reserved) == 56);
+    assert!(offset_of!(GhostTileFrame, thermo_flux) == 116);
+    assert!(offset_of!(GhostTileFrame, causal_lead_residue) == 124);
+    assert!(offset_of!(GhostTileFrame, _reserved_payload) == 128);
+    assert!(offset_of!(GhostTileFrame, _slack) == 256);
 };
 
-/// Per-record byte size: 128 (header) + 1280 (ContactShellTile).
-pub const GHOST_RECORD_BYTES: usize = 128 + 1280;
+/// Per-record byte size: 4096 (one sector, header-only — ContactShellTile
+/// retired from on-disk format in v9D' / Amendment 3.14).
+pub const GHOST_RECORD_BYTES: usize = 4096;
 
 // ─── GhostTileRing — pinned-host, device-mapped ring buffer ─────────────────
 
@@ -197,18 +222,18 @@ pub const GHOST_RECORD_BYTES: usize = 128 + 1280;
 /// writes records through the device pointer; the host reads through the
 /// host pointer with no DtoH copy.
 ///
-/// Layout in the buffer:
+/// Layout in the buffer (v9D' / Amendment 3.14):
 /// ```text
 ///   [u32 n_frames_written]         offset 0..4
-///   [u8  _pad[124]]                offset 4..128 (header sector)
-///   [GhostTileFrame + ContactShellTile] × max_records  offset 128..end
+///   [u8  _pad[4092]]               offset 4..4096 (counter sector)
+///   [GhostTileFrame] × max_records offset 4096..end (4096 B per record)
 /// ```
 ///
-/// The 128-byte leading "header sector" reserves space for the atomic
+/// The 4096-byte leading counter sector reserves space for the atomic
 /// `n_frames_written` counter that the GPU kernel atomicAdds and the
-/// host reads on teardown.  Aligning the first record to offset 128
-/// preserves Blackwell L1-sector alignment for the 1408-byte payload
-/// records that follow.
+/// host reads on teardown.  Aligning the first record to offset 4096
+/// gives every record a unique NVMe sector under `O_DIRECT | O_DSYNC`
+/// (no read-modify-write penalty on PCIe Gen5).
 pub struct GhostTileRing {
     /// Pinned-host base pointer (page-locked, mapped).  The first 128 B
     /// hold the `n_frames_written` u32 counter + padding; records start
@@ -216,7 +241,7 @@ pub struct GhostTileRing {
     pub host_base: *mut u8,
     /// Device-mapped alias of `host_base` — kernels write through this.
     pub device_base: u64,
-    /// Total bytes allocated (counter sector + max_records * 1408).
+    /// Total bytes allocated (counter sector + max_records * 4096).
     pub total_bytes: usize,
     /// Maximum number of records the buffer can hold without overflow.
     /// Kernel bounds-checks against this before writing.
@@ -228,11 +253,14 @@ unsafe impl Sync for GhostTileRing {}
 
 impl GhostTileRing {
     /// Reserved counter-sector size at the head of the buffer.  The
-    /// first record starts at offset `COUNTER_SECTOR_BYTES`.
-    pub const COUNTER_SECTOR_BYTES: usize = 128;
+    /// first record starts at offset `COUNTER_SECTOR_BYTES`.  Sized to
+    /// 4096 B in v9D' so the counter sector and the first record both
+    /// land on aligned NVMe physical sectors when the buffer base is
+    /// page-aligned (cuMemHostAlloc returns page-aligned pointers).
+    pub const COUNTER_SECTOR_BYTES: usize = 4096;
 
     /// Allocate a pinned-host, device-mapped ring sized for
-    /// `max_records` records of 1408 bytes each.  All bytes zero on
+    /// `max_records` records of 4096 bytes each.  All bytes zero on
     /// alloc (CUDA pinned-alloc behavior).
     pub fn allocate(max_records: u32) -> Result<Self, String> {
         let total_bytes = Self::COUNTER_SECTOR_BYTES
@@ -293,7 +321,7 @@ impl GhostTileRing {
 
     /// Byte slice of the live record payload (excluding the leading
     /// counter sector).  Length is clamped to `min(n_frames_written,
-    /// max_records) * 1408`.
+    /// max_records) * 4096`.
     pub fn payload_bytes(&self) -> &[u8] {
         let n = self.n_frames_written().min(self.max_records);
         let nbytes = (n as usize) * GHOST_RECORD_BYTES;

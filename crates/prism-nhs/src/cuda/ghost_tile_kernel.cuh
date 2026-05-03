@@ -1,19 +1,23 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// PRISM-4D / M1.2.19.B (Amendment 3.13) — Ghost Tile Channel-B exfiltration
+// PRISM-4D / M1.2.19.B (Amendment 3.14 — v9D' Sector-Lock) — Ghost Tile
+// Channel-B exfiltration
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Captured-graph single-thread-per-cluster kernel that pushes one record
-// of [GhostTileFrame header (128 B)][ContactShellTile payload (1280 B)]
-// = 1408 bytes to a pinned-host, device-mapped ring buffer when
-// `adj.adjudication_code >= 1`.
+// Captured-graph single-thread-per-cluster kernel that pushes one
+// 4096-byte GhostTileFrame record to a pinned-host, device-mapped ring
+// buffer when `adj.adjudication_code >= 1`.  The trailing 1280-byte
+// ContactShellTile body has been retired from the on-disk format; the
+// per-plane SO(3) spectra are folded into the expanded 4-plane
+// `power_spectrum[24]` field of the frame itself, and the ring writes
+// land on `O_DIRECT | O_DSYNC` (one record = one NVMe physical sector).
 //
-// The buffer layout:
-//   offset 0..4    : u32 n_frames_written       (atomic counter)
-//   offset 4..128  : u8  pad[124]               (counter-sector pad)
-//   offset 128..   : record[max_records]        (1408 bytes each)
+// The buffer layout (Amendment 3.14 §1.1):
+//   offset    0..4     : u32 n_frames_written       (atomic counter)
+//   offset    4..4096  : u8  pad[4092]              (counter sector)
+//   offset 4096..      : record[max_records]        (4096 bytes each)
 //
 // The kernel atomicAdds the counter, bounds-checks against max_records,
-// then performs the 1408-byte write through the device-mapped pointer
+// then writes the 4096-byte record through the device-mapped pointer
 // (lands directly in pinned host RAM via PCIe Gen5 DMA on Blackwell sm_120).
 //
 // The C struct mirror's offsets are statically asserted to match the
@@ -28,40 +32,45 @@
 
 // ─── GhostTileFrame mirror (byte-for-byte sync with ghost_tile.rs) ─────────
 
-struct __align__(128) GhostTileFrame {
-    uint64_t frame_idx;             // offset 0
-    uint32_t site_id;               // offset 8
-    uint8_t  chain_id;              // offset 12
-    uint8_t  adjudication_code;     // offset 13
-    uint16_t telemetry_flags;       // offset 14   (Wave 1 — was uint8_t _pad[2])
-    float    kl_divergence;         // offset 16
-    float    power_spectrum[6];     // offset 20
-    float    thermo_flux[2];        // offset 44
-    uint32_t causal_lead_residue;   // offset 52
-    uint32_t _reserved[18];         // offset 56..128
+struct __align__(4096) GhostTileFrame {
+    uint64_t frame_idx;                 // offset 0
+    uint32_t site_id;                   // offset 8
+    uint8_t  chain_id;                  // offset 12
+    uint8_t  adjudication_code;         // offset 13
+    uint16_t telemetry_flags;           // offset 14
+    float    kl_divergence;             // offset 16
+    float    power_spectrum[24];        // offset 20  (4 planes × 6 bands)
+    float    thermo_flux[2];            // offset 116
+    uint32_t causal_lead_residue;       // offset 124
+    uint32_t _reserved_payload[32];     // offset 128 (Pillar 5 expansion)
+    uint8_t  _slack[3840];              // offset 256..4096 (sector pad)
 };
 
 // Wave 1 / P4 — telemetry_flags bit definitions (mirrors
 // GHOST_TELEMETRY_CLASS_TAINTED in Rust ghost_tile.rs).
 constexpr uint16_t GHOST_TELEMETRY_CLASS_TAINTED = 0x0001u;
 
-static_assert(sizeof(GhostTileFrame)  == 128,
-              "GhostTileFrame size drift — must be 128 bytes (operator §2.1).");
-static_assert(alignof(GhostTileFrame) == 128,
-              "GhostTileFrame alignment drift — must be 128-byte aligned.");
-static_assert(offsetof(GhostTileFrame, frame_idx)            ==  0, "frame_idx offset drift");
-static_assert(offsetof(GhostTileFrame, site_id)              ==  8, "site_id offset drift");
-static_assert(offsetof(GhostTileFrame, chain_id)             == 12, "chain_id offset drift");
-static_assert(offsetof(GhostTileFrame, adjudication_code)    == 13, "adjudication_code offset drift");
-static_assert(offsetof(GhostTileFrame, kl_divergence)        == 16, "kl_divergence offset drift");
-static_assert(offsetof(GhostTileFrame, power_spectrum)       == 20, "power_spectrum offset drift");
-static_assert(offsetof(GhostTileFrame, thermo_flux)          == 44, "thermo_flux offset drift");
-static_assert(offsetof(GhostTileFrame, causal_lead_residue)  == 52, "causal_lead_residue offset drift");
-static_assert(offsetof(GhostTileFrame, _reserved)            == 56, "_reserved offset drift");
+static_assert(sizeof(GhostTileFrame)  == 4096,
+              "GhostTileFrame size drift — must be 4096 bytes (Amendment 3.14).");
+static_assert(alignof(GhostTileFrame) == 4096,
+              "GhostTileFrame alignment drift — must be 4096-byte aligned.");
+static_assert(offsetof(GhostTileFrame, frame_idx)            ==   0, "frame_idx offset drift");
+static_assert(offsetof(GhostTileFrame, site_id)              ==   8, "site_id offset drift");
+static_assert(offsetof(GhostTileFrame, chain_id)             ==  12, "chain_id offset drift");
+static_assert(offsetof(GhostTileFrame, adjudication_code)    ==  13, "adjudication_code offset drift");
+static_assert(offsetof(GhostTileFrame, telemetry_flags)      ==  14, "telemetry_flags offset drift");
+static_assert(offsetof(GhostTileFrame, kl_divergence)        ==  16, "kl_divergence offset drift");
+static_assert(offsetof(GhostTileFrame, power_spectrum)       ==  20, "power_spectrum offset drift");
+static_assert(offsetof(GhostTileFrame, thermo_flux)          == 116, "thermo_flux offset drift");
+static_assert(offsetof(GhostTileFrame, causal_lead_residue)  == 124, "causal_lead_residue offset drift");
+static_assert(offsetof(GhostTileFrame, _reserved_payload)    == 128, "_reserved_payload offset drift");
+static_assert(offsetof(GhostTileFrame, _slack)               == 256, "_slack offset drift");
 
-// Per-record byte size (header + ContactShellTile payload).
-constexpr size_t PRISM_GHOST_RECORD_BYTES   = 128 + 1280;
-constexpr size_t PRISM_GHOST_COUNTER_SECTOR = 128;
+// Per-record byte size (header-only post-Amendment 3.14; ContactShellTile
+// retired from on-disk format).  Counter sector enlarged to 4096 B so the
+// first record lands at sector boundary 1.
+constexpr size_t PRISM_GHOST_RECORD_BYTES   = 4096;
+constexpr size_t PRISM_GHOST_COUNTER_SECTOR = 4096;
 
 #ifdef __cplusplus
 extern "C" {

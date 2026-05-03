@@ -452,30 +452,35 @@ pub fn spawn_zstr_consumer(
             use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
 
-            // **M1.2.20.C-H / T23** — Optional Channel-B ghost output file.
-            // 1408-byte record stride is NOT 4096-aligned, so this fd is
-            // opened WITHOUT O_DIRECT (regular buffered IO; same io_uring
-            // submission queue).  When the operator authorizes a 4096-pad
-            // record-stride change, we'll switch to O_DIRECT here.
+            // **Amendment 3.14 / v9D' Sector-Lock** — Channel-B ghost output file.
+            // GhostTileFrame is now 4096-byte sector-aligned, so this fd is
+            // opened with `O_DIRECT | O_DSYNC`: every per-record SQE write
+            // bypasses the page cache and lands on a unique NVMe physical
+            // sector (no read-modify-write penalty on the Samsung 990 PRO
+            // controller under PCIe Gen5).
             let ghost_state: Option<(std::fs::File, i32)> = ghost_output_path
                 .as_ref()
                 .filter(|_| ghost_ring.is_some())
                 .and_then(|p| {
+                    use std::os::unix::fs::OpenOptionsExt;
                     match std::fs::OpenOptions::new()
-                        .write(true).create(true).truncate(true).open(p)
+                        .write(true).create(true).truncate(true)
+                        .custom_flags(libc::O_DIRECT | libc::O_DSYNC)
+                        .open(p)
                     {
                         Ok(f) => {
                             let raw = f.as_raw_fd();
                             log::info!(
-                                "[AMS T23] Channel-B fd={} opened (buffered IO; \
-                                 1408 B stride non-O_DIRECT) → {:?}",
+                                "[AMS Amendment-3.14] Channel-B fd={} opened \
+                                 (O_DIRECT | O_DSYNC; 4096 B stride sector-locked) \
+                                 → {:?}",
                                 raw, p
                             );
                             Some((f, raw))
                         }
                         Err(e) => {
                             log::warn!(
-                                "[AMS T23] Cannot open ghost output {:?}: {} \
+                                "[AMS Amendment-3.14] Cannot open ghost output {:?}: {} \
                                  — Channel-B drain disabled, teardown-only flush",
                                 p, e
                             );
@@ -488,15 +493,17 @@ pub fn spawn_zstr_consumer(
             let mut ghost_records_written: u64  = 0;
             let mut ghost_bytes_written:   u64  = 0;
             const GHOST_SAFETY_LAG:        u32  = 1;
-            const GHOST_RECORD_STRIDE:     usize = 1408;
+            const GHOST_RECORD_STRIDE:     usize = 4096;
 
-            // Wave 0 / #69 — io_uring instance.  16 entries: 5 ring slots
-            // can be inflight at most, the rest is queue headroom for
-            // bursts.  Build with default flags (no SQPOLL — we keep the
-            // submit/wait synchronous-per-frame contract so slot recycle
-            // ordering is preserved; switching to SQPOLL is a follow-up
-            // once we pipeline >1 SQE per frame).
-            let mut uring: IoUring = match IoUring::new(16) {
+            // Amendment 3.14 / v9D' — io_uring instance.  Bumped to 32
+            // entries (was 16) to absorb the high-frequency 6-step
+            // chunking emission rate without SQ saturation.  At most 5
+            // ring slots inflight from the GPU side; the remaining 27
+            // SQEs are queue headroom for ZSTR + ghost burst overlap.
+            // Build with default flags (no SQPOLL — submit/wait
+            // synchronous-per-frame contract preserves slot recycle
+            // ordering).
+            let mut uring: IoUring = match IoUring::new(32) {
                 Ok(u) => u,
                 Err(e) => {
                     log::error!(
@@ -509,7 +516,7 @@ pub fn spawn_zstr_consumer(
                 }
             };
             log::info!(
-                "[ZSTR consumer] io_uring initialised: 16 SQEs, O_DIRECT \
+                "[ZSTR consumer] io_uring initialised: 32 SQEs, O_DIRECT \
                  fd={} → {:?}",
                 fd, output_path
             );
@@ -774,8 +781,37 @@ pub fn spawn_zstr_consumer(
                 );
             }
 
-            // fdatasync to ensure NVMe commits all sectors.
-            unsafe { libc::fdatasync(fd); }
+            // Amendment 3.21.1 §2.1 — Flush-before-Join invariant.
+            // fsync(2) on BOTH Channel-A and Channel-B fds so the Samsung
+            // 990 PRO controller commits its volatile DRAM-resident
+            // metadata + data sectors to NAND before this thread joins.
+            // fsync upgraded from fdatasync to also flush inode metadata
+            // (file size, mtime) — required so the post-run validator's
+            // stat() and JSON parsers see a consistent on-disk header.
+            // Channel B is gated on ghost_fd >= 0 (-1 sentinel = Channel B
+            // disabled this run).
+            unsafe {
+                let rc_a = libc::fsync(fd);
+                if rc_a != 0 {
+                    log::warn!(
+                        "[ZSTR teardown] Channel-A fsync(fd={}) returned {} \
+                         (errno={})", fd, rc_a, *libc::__errno_location());
+                } else {
+                    log::info!("[ZSTR teardown] ✓ Channel-A fsync(fd={}) committed", fd);
+                }
+                if ghost_fd >= 0 {
+                    let rc_b = libc::fsync(ghost_fd);
+                    if rc_b != 0 {
+                        log::warn!(
+                            "[ZSTR teardown] Channel-B fsync(fd={}) returned {} \
+                             (errno={})", ghost_fd, rc_b, *libc::__errno_location());
+                    } else {
+                        log::info!(
+                            "[ZSTR teardown] ✓ Channel-B fsync(fd={}) committed",
+                            ghost_fd);
+                    }
+                }
+            }
 
             log::info!(
                 "[ZSTR consumer] exiting. frames_written={} dropped={} \

@@ -289,6 +289,7 @@ extern "C" {
 /// Pass `None` in `PipelineConfig::asc` to omit Node D (e.g. in tests).
 /// When `Some`, `prism_asc_apply_kernel` is captured after the Adjudicator
 /// node and fires at graph replay: F_total = F_newtonian + (α · Δ_AB · V_exp).
+#[derive(Clone)]
 pub struct AscConfig {
     /// `d_forces` buffer from `NhsAmberFusedEngine` (n_atoms × 3 f32, AoS).
     pub d_forces: *mut f32,
@@ -320,6 +321,7 @@ unsafe impl Send for AscConfig {}
 /// ```
 ///
 /// All four nodes run on `telemetry_stream` (non-blocking) — zero MD stall.
+#[derive(Clone)]
 pub struct ZstrCaptureParams {
     /// Device pointer to atom positions (n_atoms × 3 × f32, AoS).
     /// Same pointer as `AscConfig::d_atom_positions`; must be stable
@@ -364,6 +366,7 @@ unsafe impl Send for ZstrCaptureParams {}
 /// `force_prune_mask` field is initialised to point at the same buffer
 /// pre-capture, so each frame's bit-flags propagate to the gate without
 /// a host round-trip.
+#[derive(Clone)]
 pub struct SisrConfig {
     /// Dyad-axis 3×3 rotation matrix (row-major, 9 floats).
     /// For C2 symmetry along Z (operator default): R = diag(-1,-1,1).
@@ -398,6 +401,11 @@ impl Default for SisrConfig {
 /// (operator §3.2: "FFI Stability... destination addresses must be
 /// immutable"). `n_clusters` is the static shape of the captured graph
 /// — a shape change requires re-building the pipeline from scratch.
+///
+/// Amendment 3.14 / G40: `Clone` enables saving the config at build
+/// time so the v9D' Step-101 Heuristic Reset can rebuild the pipeline
+/// without re-walking the spike download / VRAM alloc / ASC bind path.
+#[derive(Clone)]
 pub struct PipelineConfig {
     /// Pre-clustered RichSpike buffer on device. Pointer stability is
     /// the caller's responsibility.
