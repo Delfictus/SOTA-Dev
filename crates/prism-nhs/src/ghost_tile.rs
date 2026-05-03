@@ -429,3 +429,25 @@ pub unsafe fn set_chain_offsets(
 ) -> i32 {
     prism_ghost_set_chain_offsets(offsets_host, n, stream)
 }
+
+/// **Wave 1 / Q1 — TIER 1 leak-fix (2026-05-03)** — Public host wrapper
+/// for the cluster→representative-residue LUT populator.  Loads the
+/// __constant__ d_cluster_to_repr_residue[64] slab consumed by the
+/// ghost-tile kernel for cluster→residue lookup (lining residue
+/// fallback when F2-pool d_kcc_lead is unavailable).  Without this
+/// LUT being populated, every cluster slot reads its kernel default
+/// (zero), so all per-cluster lining_residues records collapse onto
+/// residue 0.
+///
+/// # Safety
+/// `repr_residues_host` must point to at least `n` valid `u32` values.
+/// `n` is clamped to 64 inside the FFI; values past 64 are silently
+/// dropped.  `stream` must be a valid CUstream owned by the active
+/// context.
+pub unsafe fn set_cluster_repr_residue(
+    repr_residues_host: *const u32,
+    n:                  u32,
+    stream:             *mut std::ffi::c_void,
+) -> i32 {
+    prism_ghost_set_cluster_repr_residue(repr_residues_host, n, stream)
+}

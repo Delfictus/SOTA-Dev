@@ -5424,6 +5424,82 @@ fn run_multi_stream_pipeline(
                                         // End Path Ω Phase 2
                                         // ═══════════════════════════════════════════════════════════
 
+                                        // ═══════════════════════════════════════════════════════════
+                                        // TIER 1 leak-fix (2026-05-03) — d_cluster_to_repr_residue
+                                        // populator
+                                        // ═══════════════════════════════════════════════════════════
+                                        // The ghost-tile kernel reads __constant__
+                                        // d_cluster_to_repr_residue[64] to look up each cluster's
+                                        // representative residue (used for lining-residue fallback
+                                        // when F2-pool d_kcc_lead is unavailable, and for cluster→
+                                        // residue cross-reference downstream).  Until this commit
+                                        // the populator was DECLARED but NEVER CALLED — the slab
+                                        // held kernel default zeros, so every cluster's lining
+                                        // record collapsed onto residue 0.
+                                        //
+                                        // Compute per-cluster representative residue as the MODE
+                                        // of residue_id over the cluster's spike range.  Mode is
+                                        // the right choice (not centroid-nearest-Cα) because spike
+                                        // events are already biased toward the cluster's contact
+                                        // surface — the most-frequent residue in the cluster IS the
+                                        // most likely lining anchor.  Stream-ordered upload onto
+                                        // the same engine.cuda_stream() the chain LUT used.
+                                        {
+                                            use std::collections::HashMap;
+                                            const REPR_LUT_CAP: usize = 64;
+                                            let mut repr_host = vec![0u32; REPR_LUT_CAP];
+                                            let n_active = (n_clusters_actual as usize).min(REPR_LUT_CAP);
+                                            for c in 0..n_active {
+                                                let begin = offsets[c]   as usize;
+                                                let end   = offsets[c+1] as usize;
+                                                if end <= begin {
+                                                    repr_host[c] = 0u32;
+                                                    continue;
+                                                }
+                                                // Mode of residue_id within [begin, end).
+                                                let mut counts: HashMap<i32, u32> = HashMap::new();
+                                                for s in &rich[begin..end] {
+                                                    *counts.entry(s.residue_id).or_insert(0) += 1;
+                                                }
+                                                let modal_rid = counts
+                                                    .into_iter()
+                                                    .max_by_key(|&(_, n)| n)
+                                                    .map(|(rid, _)| rid)
+                                                    .unwrap_or(0);
+                                                // Negative residue_id (sentinel for "no nearby
+                                                // residue") → 0; otherwise cast.  Kernel side
+                                                // treats >= n_residues as a no-op.
+                                                repr_host[c] = if modal_rid < 0 { 0u32 } else { modal_rid as u32 };
+                                            }
+                                            let strm_raw_repr = engine.cuda_stream().cu_stream() as *mut std::ffi::c_void;
+                                            let repr_rc = unsafe {
+                                                prism_nhs::ghost_tile::set_cluster_repr_residue(
+                                                    repr_host.as_ptr(),
+                                                    n_active as u32,
+                                                    strm_raw_repr,
+                                                )
+                                            };
+                                            if repr_rc != 0 {
+                                                log::warn!(
+                                                    "    [TIER1 stream {}] prism_ghost_set_cluster_repr_residue \
+                                                     rc={} (repr LUT not populated; ghost kernel will see all-zero \
+                                                     cluster→residue map)", i, repr_rc
+                                                );
+                                            } else {
+                                                let preview: Vec<String> = repr_host[..n_active.min(8)]
+                                                    .iter().map(|v| v.to_string()).collect();
+                                                log::info!(
+                                                    "    [TIER1 stream {}] populated d_cluster_to_repr_residue \
+                                                     (n_active={}, preview=[{}{}])",
+                                                    i, n_active, preview.join(", "),
+                                                    if n_active > 8 { ", …" } else { "" }
+                                                );
+                                            }
+                                        }
+                                        // ═══════════════════════════════════════════════════════════
+                                        // End TIER 1 leak-fix
+                                        // ═══════════════════════════════════════════════════════════
+
                                         let spike_bytes   = rich.len()    * std::mem::size_of::<RichSpike>();
                                         let offset_bytes  = offsets.len() * std::mem::size_of::<u32>();
 
