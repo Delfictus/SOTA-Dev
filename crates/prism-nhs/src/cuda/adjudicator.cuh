@@ -157,9 +157,15 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     //   _reserved        @ 144..256 u8[112]  pads to 2 × L1 sector.
     // Both fields are written by the host orchestrator at engine init
     // and read by prism_apply_gradient_gasp_kernel each replay.
-    float    gasp_gain_eta;         // offset 136
-    uint32_t force_burst_step;      // offset 140
-    uint8_t  _reserved_m1_2_20[112];// offset 144..256
+    float    gasp_gain_eta;             // offset 136
+    uint32_t force_burst_step;          // offset 140
+    // M1.2.20.C-B — PTX Momentum Guard flag.  Set to 1 by
+    // prism_momentum_guard_check_kernel when the gasp-induced
+    // center-of-mass shift exceeds 1e-4 Å; the Adjudicator step
+    // kernel reads this and forces adjudication_code = VIOLATION
+    // (overrides the KL-divergence trigger).
+    uint32_t momentum_violation_flag;   // offset 144
+    uint8_t  _reserved_m1_2_20[108];    // offset 148..256
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 256,
               "FFI Size Mismatch — must be 256 bytes (Zero-Trust §1.1).");
@@ -183,8 +189,10 @@ static_assert(offsetof(InterferometricAdjudicatorFfi, gasp_gain_eta) == 136,
               "M1.2.20.C-A: gasp_gain_eta offset drift — must be 136.");
 static_assert(offsetof(InterferometricAdjudicatorFfi, force_burst_step) == 140,
               "M1.2.20.C-A: force_burst_step offset drift — must be 140.");
-static_assert(offsetof(InterferometricAdjudicatorFfi, _reserved_m1_2_20) == 144,
-              "M1.2.20.C-A: _reserved tail offset drift — must be 144.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, momentum_violation_flag) == 144,
+              "M1.2.20.C-B: momentum_violation_flag offset drift — must be 144.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, _reserved_m1_2_20) == 148,
+              "M1.2.20.C-B: _reserved tail offset drift — must be 148 (post Momentum Guard carve).");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)

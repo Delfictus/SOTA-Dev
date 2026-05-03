@@ -223,20 +223,31 @@ pub(crate) mod ffi {
         /// Launch the prism_apply_gradient_gasp_kernel.  Reads FFI
         /// fields from `adj_base` (gasp_gain_eta @ 136, force_burst_step
         /// @ 140, d_dt @ 120) via byte-offset arithmetic; computes
-        /// Δr = η_eff · Q_s · (f/m) · dt² per spike and writes the
+        /// Δr = η_eff · Q_s · (f/m) · dt² per spike, writes the
         /// perturbed RichSpike to `d_spikes_out` (struct-copy with
-        /// x/y/z modified).  Phase 1 deliverable — kernel callable
-        /// but not yet inserted into the captured graph (Phase 2).
+        /// x/y/z modified), AND atomicAdds m·Δr into d_com_shift[3]
+        /// for the post-pass Momentum Guard.  `d_com_shift` may be
+        /// null (disables COM accumulation).
         pub fn prism_apply_gradient_gasp_launch(
             d_spikes_in:  *const RichSpike,
             d_spikes_out: *mut   RichSpike,
             d_forces:     *const f32,
             d_masses:     *const f32,
             adj_base:     *const std::ffi::c_void,
+            d_com_shift:  *mut std::ffi::c_void,   // [3] f32, nullable
             current_step: u32,
             n_spikes:     u32,
             n_atoms:      u32,
             stream:       *mut std::ffi::c_void,
+        ) -> CudaError;
+
+        /// **M1.2.20.C-B** — Single-thread post-pass that reads
+        /// d_com_shift[3], computes |Σ m·Δr|, sets adj.momentum_violation_flag
+        /// (offset 144) = 1 when > 1e-4 Å.
+        pub fn prism_momentum_guard_check_launch(
+            d_com_shift: *const std::ffi::c_void,
+            adj_base:    *mut std::ffi::c_void,
+            stream:      *mut std::ffi::c_void,
         ) -> CudaError;
     }
 }
@@ -244,6 +255,29 @@ pub(crate) mod ffi {
 #[cfg(feature = "gpu")]
 pub fn link_probe() -> u32 {
     unsafe { ffi::prism_so3_project_link_probe() }
+}
+
+/// **M1.2.20.C-B / Ruling 4** — Public host-side wrapper for the
+/// `prism_so3_set_residue_to_calpha` FFI populator.  Exposed at module
+/// level so the `nhs_rt_full` bin (a separate crate root) can call it
+/// without reaching into the `pub(crate) mod ffi` block.
+///
+/// `host_table` must point to a `[u32; n]` array of Cα atom indices,
+/// with sentinel `u32::MAX` for residues without a Cα.  `n` is clamped
+/// to 1024 by the C-side launcher (the LUT capacity).  Returns 0 on
+/// success, otherwise the CUDA error code.
+///
+/// # Safety
+/// The caller guarantees `host_table` points to at least `n` valid
+/// `u32` elements, and `stream` is a valid CUstream owned by the
+/// active CUDA context.
+#[cfg(feature = "gpu")]
+pub unsafe fn set_residue_to_calpha(
+    host_table: *const u32,
+    n:          u32,
+    stream:     *mut std::ffi::c_void,
+) -> i32 {
+    ffi::prism_so3_set_residue_to_calpha(host_table, n, stream)
 }
 
 // ============================================================================

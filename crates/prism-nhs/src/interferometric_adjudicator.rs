@@ -349,14 +349,27 @@ pub struct InterferometricAdjudicatorFfi {
     /// gasp kernel reads it every replay.
     pub force_burst_step: u32,
 
-    /// **M1.2.20.C — Reserved padding.**  Offset 144..256, 112 B.
+    /// **M1.2.20.C-B — PTX Momentum Guard flag.**  Offset 144..148,
+    /// 4 B (`u32`).  Set to 1 by `prism_momentum_guard_check_kernel`
+    /// when the gasp-induced center-of-mass translation
+    /// `|Σ m_i · Δr_i|` exceeds 1e-4 Å (operator §3 Zero-Trust
+    /// invariant — a legitimate gasp is an *expansion*, not a
+    /// translation; if the protein "walks" during the perturbation
+    /// the SO(3) power spectrum becomes ungrounded noise).  The
+    /// Adjudicator step kernel reads this flag and forces
+    /// `adjudication_code = PRISM_ADJ_VIOLATION` (code = 2),
+    /// overriding the KL-divergence trigger.  Reset to 0 each
+    /// captured-graph replay via cuMemsetD8Async at offset 144.
+    pub momentum_violation_flag: u32,
+
+    /// **M1.2.20.C — Reserved padding.**  Offset 148..256, 108 B.
     /// Pads `InterferometricAdjudicatorFfi` to an explicit 256-byte
     /// dual-sector total (two Blackwell L1 sectors back-to-back); the
     /// `align(128)` attribute would have produced this implicitly, but
     /// making it explicit pins the size assertion to a stable
     /// 256 == size_of::<Self>() invariant for the FFI mirror in
     /// `cuda/adjudicator.cuh`.
-    pub _reserved_m1_2_20: [u8; 112],
+    pub _reserved_m1_2_20: [u8; 108],
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -390,7 +403,8 @@ impl InterferometricAdjudicatorFfi {
             // sentinel disables the 10× amplification.
             gasp_gain_eta: 1.0,
             force_burst_step: Self::FORCE_BURST_DISABLED,
-            _reserved_m1_2_20: [0u8; 112],
+            momentum_violation_flag: 0,
+            _reserved_m1_2_20: [0u8; 108],
         }
     }
 
@@ -468,9 +482,10 @@ const _: () = {
     // M1.2.20.C-A — gasp handles + reserved tail.  Pinning these keeps
     // the FFI struct at exactly 256 B (two L1 sectors), and the C++
     // mirror in adjudicator.cuh has matching static_asserts.
-    assert!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta)        == 136);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step)     == 140);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20)    == 144);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta)            == 136);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step)         == 140);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag)  == 144);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20)        == 148);
     assert!(size_of::<InterferometricAdjudicatorFfi>() == 256);
 };
 
@@ -1310,10 +1325,12 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),                120);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_external_work),     128);
         // M1.2.20.C-A — gasp handles + 256-B explicit total.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta),       136);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step),    140);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20),   144);
-        assert_eq!(std::mem::size_of::<InterferometricAdjudicatorFfi>(),           256);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta),            136);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step),         140);
+        // M1.2.20.C-B — Momentum Guard flag carved from _reserved.
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag),  144);
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20),        148);
+        assert_eq!(std::mem::size_of::<InterferometricAdjudicatorFfi>(),                256);
     }
 
     #[test]

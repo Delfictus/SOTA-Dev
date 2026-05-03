@@ -225,16 +225,30 @@ int prism_so3_set_residue_to_calpha(
 /// @140, d_dt @120) via byte-offset arithmetic; reads per-spike
 /// residue_id, looks up Cα atom index, fetches f_anchor + m_anchor,
 /// computes Δr = η_eff · Q_s · (f/m) · dt², writes the perturbed
-/// RichSpike to d_spikes_out (struct-copy with x/y/z modified).
+/// RichSpike to d_spikes_out (struct-copy with x/y/z modified) AND
+/// atomicAdds m·Δr into d_com_shift[3] for the post-pass Momentum
+/// Guard.  Pass `d_com_shift == nullptr` to disable the COM accumulation
+/// (e.g., legacy / Phase 1 calls without the Momentum Guard).
 int prism_apply_gradient_gasp_launch(
     const void*  d_spikes_in,
     void*        d_spikes_out,
     const void*  d_forces,        /* [n_atoms × 3] f32 */
     const void*  d_masses,        /* [n_atoms]     f32 */
     const void*  adj_base,        /* InterferometricAdjudicatorFfi*  */
+    void*        d_com_shift,     /* [3] f32 — atomic accumulator, nullable */
     uint32_t     current_step,
     uint32_t     n_spikes,
     uint32_t     n_atoms,
+    void*        stream);
+
+/// **M1.2.20.C-B / Operator §3** — Single-thread post-pass kernel
+/// that reads d_com_shift[3], computes |Σ m·Δr|, and writes the
+/// adjudicator's `momentum_violation_flag` (FFI offset 144) to 1
+/// when the magnitude exceeds 1.0e-4 Å.  The Adjudicator step kernel
+/// reads this flag and forces adjudication_code = VIOLATION.
+int prism_momentum_guard_check_launch(
+    const void*  d_com_shift,     /* [3] f32 */
+    void*        adj_base,        /* InterferometricAdjudicatorFfi* */
     void*        stream);
 
 }  // extern "C"

@@ -4447,6 +4447,70 @@ fn run_multi_stream_pipeline(
                     )?;
                     engine.load_topology(topo_ref)?;
 
+                    // ── M1.2.20.C-B / Ruling 4 — Cα anchor LUT populator ──
+                    // Push the per-residue Cα atom indices from the loaded
+                    // topology into __constant__ d_residue_to_calpha[1024]
+                    // on the GPU.  PrismPrepTopology::ca_indices is already
+                    // populated by the topology loader (one entry per
+                    // residue).  Sentinel u32::MAX for residues without a
+                    // Cα — the gasp kernel passes those spikes through
+                    // unmodified (Zero-Trust Guard).  Stream-ordered upload
+                    // on each engine's stream; constant memory is
+                    // per-device so all 8 streams hit the same window —
+                    // overwrites are idempotent.
+                    {
+                        const LUT_CAP: usize = 1024;
+                        let mut lut_host = vec![0xFFFFFFFFu32; LUT_CAP];
+                        let n_residues = topo_ref.ca_indices.len();
+                        let mut warn_drift = 0usize;
+                        for r in 0..n_residues.min(LUT_CAP) {
+                            let ca = topo_ref.ca_indices[r];
+                            if ca == usize::MAX || ca >= topo_ref.n_atoms {
+                                // Zero-Trust Guard — fall back to first
+                                // atom of this residue if topology lacks a
+                                // Cα entry (e.g., HETATM cluster).
+                                if let Some(first_atom) = topo_ref.residue_ids
+                                    .iter().position(|&rid| rid == r)
+                                {
+                                    lut_host[r] = first_atom as u32;
+                                    warn_drift += 1;
+                                }
+                            } else {
+                                lut_host[r] = ca as u32;
+                            }
+                        }
+                        if warn_drift > 0 {
+                            log::warn!(
+                                "[WARN_ANCHOR_DRIFT] {}/{} residues lacked a Cα atom; \
+                                 fell back to the residue's first atom for the gasp \
+                                 anchor LUT.",
+                                warn_drift, n_residues
+                            );
+                        }
+                        let stream_raw = engine.cuda_stream().cu_stream()
+                            as *mut std::ffi::c_void;
+                        let rc = unsafe {
+                            prism_nhs::so3_project::set_residue_to_calpha(
+                                lut_host.as_ptr(),
+                                LUT_CAP as u32,
+                                stream_raw,
+                            )
+                        };
+                        if rc != 0 {
+                            log::warn!(
+                                "[M1.2.20.C-B] prism_so3_set_residue_to_calpha rc={} \
+                                 (Cα LUT not populated; gasp kernel will pass-through)",
+                                rc
+                            );
+                        } else if i == 0 {
+                            log::info!(
+                                "[M1.2.20.C-B] populated d_residue_to_calpha[1024] \
+                                 (n_residues={}, drift={})",
+                                n_residues, warn_drift
+                            );
+                        }
+                    }
+
                     // V2 rescue tracking: per-stream current values of engine
                     // state that the rescue controller can mutate. Initialized
                     // from startup config; updated each time a V2 rescue action
@@ -5095,6 +5159,9 @@ fn run_multi_stream_pipeline(
                                                     Some(r) => (r.device_base, r.max_records),
                                                     None    => (0u64, 0u32),
                                                 };
+                                                // M1.2.20.C-B — total spike count for d_spikes_perturbed
+                                                // sizing in the captured-pipeline F2-pool allocator.
+                                                let v2_n_spikes: u32 = n_rs;
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
@@ -5133,6 +5200,12 @@ fn run_multi_stream_pipeline(
                                                     // captured-pipeline build writes u32::MAX
                                                     // sentinel into FFI offset 140.
                                                     force_burst_step: args.force_burst_at_step,
+                                                    // M1.2.20.C-B — d_spikes_perturbed sizing
+                                                    // for Path C scratchpad.  Equals
+                                                    // cluster_offsets[n_clusters] = total spike
+                                                    // count behind cfg.d_spikes; passed in by
+                                                    // the per-stream V2 build site.
+                                                    n_spikes: v2_n_spikes,
                                                 };
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),

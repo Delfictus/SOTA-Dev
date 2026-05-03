@@ -368,6 +368,21 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
         if (prune_mask != 0ull) {
             code = PRISM_ADJ_PRUNE;
         }
+
+        // M1.2.20.C-B — PTX Momentum Guard override.  The gasp kernel
+        // accumulates Σ m_i · Δr_i into com_shift_dev; the
+        // momentum_guard_check kernel sets adj.momentum_violation_flag
+        // = 1 when the magnitude exceeds 1e-4 Å (operator §3 — a
+        // legitimate gasp is an *expansion*, not a translation; if the
+        // protein "walks" during the perturbation the SO(3) power
+        // spectrum becomes ungrounded noise).  This override fires
+        // AFTER the SISR prune so a vetoed-cluster frame whose gasp
+        // also drifted bodily still surfaces as VIOLATION (the more
+        // diagnostic signal for offline triage).
+        if (adjudicator->momentum_violation_flag != 0u) {
+            code = PRISM_ADJ_VIOLATION;
+        }
+
         adjudicator->adjudication_code = code;
 
         // ─── Anti-Greenfield § 6.2 — legacy_centroid_fallback ──
@@ -432,8 +447,13 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     // cuMemcpyHtoDAsync at offsets 136 and 140 respectively.
     adj->gasp_gain_eta = 1.0f;
     adj->force_burst_step = 0xFFFFFFFFu;
+    // M1.2.20.C-B — Momentum Guard flag clear (no violation observed).
+    // The captured graph emits a cuMemsetD8Async on this 4-byte field
+    // at the head of every replay window so each chunk starts with a
+    // clean violation state.
+    adj->momentum_violation_flag = 0u;
     #pragma unroll
-    for (int k = 0; k < 112; ++k) {
+    for (int k = 0; k < 108; ++k) {
         adj->_reserved_m1_2_20[k] = 0u;
     }
 }

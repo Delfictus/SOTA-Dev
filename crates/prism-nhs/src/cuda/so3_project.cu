@@ -674,6 +674,7 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const float*        __restrict__ d_forces,           // [n_atoms × 3]
     const float*        __restrict__ d_masses,           // [n_atoms]
     const uint8_t*      __restrict__ adj_base,           // FFI offset arithmetic
+    float*              __restrict__ d_com_shift,        // [3] atomicAdd target — Σ m·Δr
     uint32_t                         current_step,
     uint32_t                         n_spikes,
     uint32_t                         n_atoms
@@ -732,12 +733,74 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const float dy = scale * fy;
     const float dz = scale * fz;
 
+    // M1.2.20.C-B — Momentum-Guard accumulator.  Σ m_i · Δr_i across
+    // all spikes; the post-pass `prism_momentum_guard_check_kernel`
+    // computes the magnitude and sets adj.momentum_violation_flag when
+    // > 1e-4 Å.  atomicAdd (sm_120 native f32) — contention is
+    // tolerable here since this kernel is ~256 threads × few blocks.
+    if (d_com_shift != nullptr) {
+        atomicAdd(d_com_shift + 0, mass * dx);
+        atomicAdd(d_com_shift + 1, mass * dy);
+        atomicAdd(d_com_shift + 2, mass * dz);
+    }
+
     // Write the perturbed spike (struct-copy with x/y/z replaced).
     RichSpike out = spike_in;
     out.x = spike_in.x + dx;
     out.y = spike_in.y + dy;
     out.z = spike_in.z + dz;
     d_spikes_out[i] = out;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// M1.2.20.C-B — PTX Momentum Guard check kernel.
+//
+// Single-thread post-pass that reads the [3 × f32] com_shift accumulator
+// populated by prism_apply_gradient_gasp_kernel, computes the
+// translation magnitude `|Σ m·Δr|`, and writes `adj.momentum_violation_flag`
+// (FFI offset 144) = 1 when the magnitude exceeds 1.0e-4 Å.  Operator's
+// Zero-Trust §3 invariant — a legitimate gasp is an EXPANSION, not a
+// translation; if the protein walks during the perturbation the SO(3)
+// power spectrum becomes ungrounded noise and the Adjudicator must
+// override to VIOLATION (Case 2 / abort).
+// ─────────────────────────────────────────────────────────────────────
+
+extern "C"
+__global__ void prism_momentum_guard_check_kernel(
+    const float*    __restrict__ d_com_shift,    // [3]
+    uint8_t*        __restrict__ adj_base        // InterferometricAdjudicatorFfi*
+) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+
+    const float sx = d_com_shift[0];
+    const float sy = d_com_shift[1];
+    const float sz = d_com_shift[2];
+    const float mag2 = sx*sx + sy*sy + sz*sz;
+
+    constexpr float MAX_TRANSLATION_AA = 1.0e-4f;   // operator §3
+    constexpr float MAX_TRANSLATION_SQ = MAX_TRANSLATION_AA * MAX_TRANSLATION_AA;
+
+    // Write momentum_violation_flag at offset 144 (u32).
+    uint32_t* p_flag = reinterpret_cast<uint32_t*>(adj_base + 144);
+    *p_flag = (mag2 > MAX_TRANSLATION_SQ) ? 1u : 0u;
+    __threadfence();
+}
+
+extern "C"
+int prism_momentum_guard_check_launch(
+    const void*  d_com_shift,
+    void*        adj_base,
+    void*        stream)
+{
+    if (d_com_shift == nullptr || adj_base == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    prism_momentum_guard_check_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        static_cast<const float*>(d_com_shift),
+        static_cast<uint8_t*>(adj_base)
+    );
+    return static_cast<int>(cudaGetLastError());
 }
 
 // ─── Host helpers ───────────────────────────────────────────────────
@@ -769,6 +832,7 @@ int prism_apply_gradient_gasp_launch(
     const void*  d_forces,
     const void*  d_masses,
     const void*  adj_base,
+    void*        d_com_shift,    // [3 × f32] — Momentum-Guard accumulator (nullable)
     uint32_t     current_step,
     uint32_t     n_spikes,
     uint32_t     n_atoms,
@@ -789,6 +853,7 @@ int prism_apply_gradient_gasp_launch(
         static_cast<const float*>(d_forces),
         static_cast<const float*>(d_masses),
         static_cast<const uint8_t*>(adj_base),
+        static_cast<float*>(d_com_shift),
         current_step,
         n_spikes,
         n_atoms

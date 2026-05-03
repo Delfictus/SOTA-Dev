@@ -536,6 +536,14 @@ pub struct PipelineConfig {
     /// `u32::MAX` sentinel and the kernel reads it as "disabled".
     /// Wired from the `--force-burst-at-step` CLI flag.
     pub force_burst_step: Option<u32>,
+
+    /// **M1.2.20.C-B — Spike count for d_spikes_perturbed allocation.**
+    /// Total RichSpike count behind `cfg.d_spikes` (== cluster_offsets[n_clusters]).
+    /// Required so the Path C parallel-stream branch can allocate a
+    /// pointer-stable d_spikes_perturbed scratchpad of matching size
+    /// from the F2 pool, sized once at pipeline build and reused across
+    /// every captured-graph replay.
+    pub n_spikes: u32,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -790,6 +798,43 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
+        // ── M1.2.20.C-B / Path C — perturbed stream + fork/join events ──
+        // The perturbed stream runs the gasp kernel + the second SO(3)
+        // projection in parallel with the relaxed-branch SO(3) on
+        // md_stream.  Both branches join into md_stream before the
+        // Adjudicator step kernel.  Created BEFORE cuStreamBeginCapture
+        // so the streams + events themselves are not captured into the
+        // graph; cuEventRecord/cuStreamWaitEvent calls inside the
+        // capture window create the actual graph dependency edges.
+        let stream_perturbed = create_non_blocking_telemetry_stream()
+            .map_err(BuildError::TelemetryStream)?;
+        let mut fork_event:           CUevent = ptr::null_mut();
+        let mut perturbed_join_event: CUevent = ptr::null_mut();
+        for (event, label) in [
+            (&mut fork_event,           "fork_event (Path C)"),
+            (&mut perturbed_join_event, "perturbed_join_event (Path C)"),
+        ] {
+            let rc = unsafe {
+                cuEventCreate(event as *mut _,
+                              CUevent_flags::CU_EVENT_DISABLE_TIMING as u32)
+            };
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: if label.starts_with("fork") {
+                        "cuEventCreate (fork_event Path C)"
+                    } else {
+                        "cuEventCreate (perturbed_join_event Path C)"
+                    },
+                    rc: rc as i32,
+                });
+            }
+        }
+        log::info!(
+            "[M1.2.20.C-B] Path C streams+events created: \
+             stream_perturbed={:p}, fork_event={:p}, perturbed_join_event={:p}",
+            stream_perturbed, fork_event, perturbed_join_event
+        );
+
         // ── 3. F2 allocations ─────────────────────────────────────────
         let tiles_bytes = SiteManifestFfi::alloc_bytes(cfg.n_clusters);
         let tiles_dev = pool.alloc_async(tiles_bytes, md_raw)
@@ -853,6 +898,34 @@ impl CapturedAdjudicationPipeline {
             let _ = cuMemsetD8_v2(dynt7_idx_dev   as CUdeviceptr, 0, DYNT7_IDX_BYTES   as usize);
             let _ = cuMemsetD8_v2(dynt7_stats_dev as CUdeviceptr, 0, DYNT7_STATS_BYTES as usize);
         }
+
+        // ── M1.2.20.C-B — Path C scratchpads ─────────────────────────
+        // d_spikes_perturbed: pointer-stable RichSpike scratchpad sized
+        //   to cfg.n_spikes × 64 bytes; the gasp kernel writes
+        //   pos_perturbed = pos_relaxed + Δr per spike, and the
+        //   stream_perturbed SO(3) consumes it as input.  L2-resident
+        //   (cudaMemPoolAttrReleaseThreshold = UINT64_MAX on the F2
+        //   pool keeps it hot per operator §3 P3 mandate).
+        // d_com_shift_dev: 3-element f32 atomic accumulator for the
+        //   PTX Momentum Guard.  Zero'd at head-of-loop on md_stream
+        //   so each chunk starts with a clean Σ m·Δr accumulator.
+        const RICH_SPIKE_BYTES: u64 = 64;
+        let spikes_perturbed_bytes: u64 =
+            (cfg.n_spikes.max(1) as u64) * RICH_SPIKE_BYTES;
+        let d_spikes_perturbed = pool.alloc_async(spikes_perturbed_bytes, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "d_spikes_perturbed", reason: s })?;
+        const COM_SHIFT_BYTES: u64 = 12;  // 3 × f32
+        let d_com_shift_dev = pool.alloc_async(COM_SHIFT_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "d_com_shift", reason: s })?;
+        unsafe {
+            let _ = cuMemsetD8_v2(d_spikes_perturbed as CUdeviceptr, 0, spikes_perturbed_bytes as usize);
+            let _ = cuMemsetD8_v2(d_com_shift_dev    as CUdeviceptr, 0, COM_SHIFT_BYTES         as usize);
+        }
+        log::info!(
+            "[M1.2.20.C-B] allocated d_spikes_perturbed={} bytes, \
+             d_com_shift_dev={} bytes (Path C scratchpads)",
+            spikes_perturbed_bytes, COM_SHIFT_BYTES
+        );
 
         // ── Wave B.1 — G26 ChronometricStateTensor (16 bytes) ─────────
         // Pre-allocated in F2 pool; persistent across captured-graph
@@ -1353,41 +1426,197 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
-        // ── 6.a Node B: SO(3) projection ──────────────────────────────
+        // ══════════════════════════════════════════════════════════════
+        // 6.a M1.2.20.C-B / PATH C — DUAL-STREAM FORK
+        // ══════════════════════════════════════════════════════════════
+        //
+        // Captured-graph topology after this section:
+        //
+        //     [head-of-loop on md_stream]
+        //         ├── cuMemsetD8Async d_com_shift (12 B)         (md_stream)
+        //         ├── cuMemsetD8Async adj.momentum_violation (4 B)(md_stream)
+        //         └── cuEventRecord(fork_event, md_stream)
+        //             │
+        //             ├──► md_stream (RELAXED branch)
+        //             │       └── SO(3)(d_spikes_raw) → tiles_baseline_dev
+        //             │       └── G28 SISR (reads tiles_baseline_dev)
+        //             │
+        //             └──► stream_perturbed (PERTURBED branch)
+        //                   ├── cuStreamWaitEvent(fork_event)
+        //                   ├── gasp_kernel(d_spikes_raw, d_com_shift)
+        //                   │      → d_spikes_perturbed
+        //                   ├── SO(3)(d_spikes_perturbed) → tiles_dev_ptr
+        //                   ├── momentum_guard_check_kernel
+        //                   │      → adj.momentum_violation_flag
+        //                   └── cuEventRecord(perturbed_join_event, …)
+        //
+        //     [join on md_stream]
+        //         └── cuStreamWaitEvent(perturbed_join_event)
+        //         └── Node C (Adjudicator) reads BOTH manifolds
+        //
+        // The Blackwell sm_120 GigaThread Engine interleaves the warps
+        // from md_stream (SO(3) on raw) and stream_perturbed (gasp +
+        // SO(3) on perturbed) — Tensor Core MMA on one branch overlaps
+        // with HBM3 LDG.E.128 on the other, hiding the perturbation
+        // latency behind the relaxed-branch baseline extraction.
+
+        // 6.a.0 — Head-of-loop zero of the COM accumulator + momentum
+        // violation flag.  Each replay must start with com_shift=0 and
+        // adj.momentum_violation_flag=0 so the gasp kernel's atomicAdds
+        // and the post-pass guard check run on a clean slate.
+        unsafe {
+            let rc = cuMemsetD8Async(
+                d_com_shift_dev as CUdeviceptr,
+                0,
+                12,
+                md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "M1.2.20.C-B head-of-loop cuMemsetD8Async (com_shift)",
+                    rc: rc as i32,
+                });
+            }
+            let rc = cuMemsetD8Async(
+                (adj_dev + 144) as CUdeviceptr,
+                0,
+                4,
+                md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "M1.2.20.C-B head-of-loop cuMemsetD8Async (momentum_violation_flag)",
+                    rc: rc as i32,
+                });
+            }
+        }
+
+        // 6.a.1 — FORK: record fork_event on md_stream; perturbed stream
+        // waits.  Both branches now have a well-defined start barrier
+        // captured into the graph.
+        unsafe {
+            let rc = cuEventRecord(fork_event, md_stream.cu_stream());
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path C cuEventRecord(fork_event, md_stream)",
+                    rc: rc as i32,
+                });
+            }
+            let rc = cuStreamWaitEvent(stream_perturbed, fork_event, 0);
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path C cuStreamWaitEvent(stream_perturbed)",
+                    rc: rc as i32,
+                });
+            }
+        }
+
+        // 6.a.2 — RELAXED branch on md_stream: SO(3)(d_spikes_raw) →
+        // tiles_baseline_dev (the RELAXED manifold buffer; was
+        // time-lagged frame N-1 pre-Path-C, now is the SO(3) of raw
+        // spikes at frame N).  The DtoDAsync time-lag copy that used
+        // to populate tiles_baseline_dev is REMOVED below — the
+        // relaxed manifold is now computed every replay rather than
+        // copied from a prior frame.
         let rc = unsafe {
             crate::so3_project::ffi::prism_so3_project_run(
                 cfg.d_spikes,
                 cfg.d_cluster_offsets,
                 cfg.n_clusters,
                 cfg.d_k_lm,
-                manifest.tiles_dev_ptr,
+                tiles_baseline_dev as *mut ContactShellTile,
                 cfg.initial_frame_id,
                 md_stream.cu_stream() as *mut c_void,
             )
         };
         if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Node B (SO(3))", rc });
+            return Err(BuildError::Cuda { stage: "Path C Node B (SO(3) RELAXED)", rc });
         }
 
-        // ── 6.b-G28 SISR symmetry consensus (Amendment 3.4 + RECT-3.4.1) ──
-        // Captured between SO(3) and Adjudicator on md_stream. The kernel
-        // zeros sisr_mask_dev then atomicOr's bits for clusters lacking a
-        // C2-reflected partner within ε_sym. Adjudicator step kernel reads
-        // *adj->force_prune_mask (offset 104 → sisr_mask_dev) and forces
-        // PRISM_ADJ_PRUNE on any non-zero bit.
-        //
-        // RECT-3.4.1 (Amendment 3.4.4) — Device-resident SISR Veto.
-        // The kernel is ALWAYS captured into the graph; topology stays
-        // immutable.  Inside the kernel, thread 0 zeros the mask, then
-        // every thread reads *sisr_count_dev: if < 2, __threadfence_block()
-        // and early-exit with mask zero.  Adjudicator reads zero mask,
-        // does not override Δ_AB.  When clustering matures and the host
-        // updates *sisr_count_dev to ≥ 2, the same captured kernel
-        // automatically begins enforcing the bilateral-truth gate.
+        // 6.a.3 — PERTURBED branch on stream_perturbed: gasp kernel
+        // computes Δr per spike from the per-atom force gradient,
+        // writes pos_perturbed = pos_raw + Δr to d_spikes_perturbed,
+        // and atomicAdds m·Δr into d_com_shift_dev for the Momentum
+        // Guard check.
+        let rc = unsafe {
+            crate::so3_project::ffi::prism_apply_gradient_gasp_launch(
+                cfg.d_spikes,
+                d_spikes_perturbed as *mut crate::rich_spike::RichSpike,
+                cfg.d_forces_anchor as *const f32,
+                cfg.d_masses        as *const f32,
+                adj_dev as *const c_void,
+                d_com_shift_dev as *mut c_void,
+                cfg.initial_frame_id,
+                cfg.n_spikes,
+                cfg.n_atoms_for_pe,
+                stream_perturbed as *mut c_void,
+            )
+        };
+        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+            return Err(BuildError::Cuda { stage: "Path C gasp kernel", rc });
+        }
+
+        // 6.a.4 — PERTURBED branch SO(3) on the kicked spikes →
+        // manifest.tiles_dev_ptr (the PERTURBED manifold buffer).
+        let rc = unsafe {
+            crate::so3_project::ffi::prism_so3_project_run(
+                d_spikes_perturbed as *const crate::rich_spike::RichSpike,
+                cfg.d_cluster_offsets,
+                cfg.n_clusters,
+                cfg.d_k_lm,
+                manifest.tiles_dev_ptr,
+                cfg.initial_frame_id,
+                stream_perturbed as *mut c_void,
+            )
+        };
+        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+            return Err(BuildError::Cuda { stage: "Path C Node B (SO(3) PERTURBED)", rc });
+        }
+
+        // 6.a.5 — PERTURBED branch Momentum Guard.  Reads d_com_shift_dev,
+        // computes |Σ m·Δr|, sets adj.momentum_violation_flag = 1 when
+        // > 1e-4 Å.  Adjudicator step kernel reads the flag and forces
+        // VIOLATION.
+        let rc = unsafe {
+            crate::so3_project::ffi::prism_momentum_guard_check_launch(
+                d_com_shift_dev as *const c_void,
+                adj_dev as *mut c_void,
+                stream_perturbed as *mut c_void,
+            )
+        };
+        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+            return Err(BuildError::Cuda { stage: "Path C Momentum Guard check", rc });
+        }
+
+        // 6.a.6 — JOIN: stream_perturbed records perturbed_join_event;
+        // md_stream waits before launching the Adjudicator.
+        unsafe {
+            let rc = cuEventRecord(perturbed_join_event, stream_perturbed);
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path C cuEventRecord(perturbed_join_event)",
+                    rc: rc as i32,
+                });
+            }
+            let rc = cuStreamWaitEvent(md_stream.cu_stream(), perturbed_join_event, 0);
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path C cuStreamWaitEvent(md_stream rejoin)",
+                    rc: rc as i32,
+                });
+            }
+        }
+
+        // ── 6.b-G28 SISR symmetry consensus ──────────────────────────
+        // Path C update: SISR reads the RELAXED manifold (tiles_baseline_dev)
+        // not the perturbed one — bilateral symmetry must be verified
+        // on the unperturbed protein, not the post-gasp state.
+        // Captured on md_stream after the SO(3) RELAXED retire (sequential
+        // dependency on md_stream is implicit).
         if let Some(ref sisr) = cfg.sisr {
             let rc = unsafe {
                 prism_sisr_launch(
-                    manifest.tiles_dev_ptr as *const c_void,
+                    tiles_baseline_dev as *const c_void,
                     sisr_count_dev as *const c_void,
                     sisr_mask_dev as *mut c_void,
                     sisr.epsilon_sym_angstrom,
@@ -1696,27 +1925,16 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
-        // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll (in-graph memcpy) ──
-        // After Adjudicator (Node C) + ASC (Node D) retire, copy the freshly-
-        // produced "perturbed" tiles into the "relaxed" baseline buffer so the
-        // NEXT frame's adjudication has a real temporal delta. The cuMemcpyDtoD
-        // is captured under MODE_GLOBAL on md_stream — entirely device-side,
-        // no host involvement per launch. This is the "Adjudicator owner"
-        // mechanism the original code TODO promised but never implemented.
-        unsafe {
-            let rc = cuMemcpyDtoDAsync_v2(
-                tiles_baseline_dev as CUdeviceptr,
-                manifest.tiles_dev_ptr as CUdeviceptr,
-                tiles_bytes as usize,
-                md_stream.cu_stream(),
-            );
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda {
-                    stage: "Path Z.2 manifold-roll DtoD memcpy",
-                    rc: rc as i32,
-                });
-            }
-        }
+        // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll — REMOVED in M1.2.20.C-B.
+        //
+        // The pre-Path-C scheme used a captured cuMemcpyDtoDAsync to copy
+        // tiles_dev → tiles_baseline_dev after every Adjudicator pass so the
+        // NEXT frame's adjudication had a temporal delta vs. the prior frame.
+        // Path C replaces this with a SAME-FRAME dual projection: relaxed and
+        // perturbed manifolds are both computed at frame N (not N vs. N-1),
+        // so there is no temporal roll to perform.  The DtoD copy that lived
+        // here would now overwrite the next replay's RELAXED manifold with
+        // the perturbed one — the opposite of intended semantics.
 
         // ── 6.c Cross-stream FORK: MD → telemetry ────────────────────
         // After Node C completes on md_stream, fire the
@@ -2720,6 +2938,7 @@ mod tests {
             d_forces_anchor: 0,
             d_masses: 0,
             force_burst_step: None,
+            n_spikes: 0,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -2858,6 +3077,7 @@ mod tests {
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
             d_forces_anchor: 0,
+            n_spikes: 0,
             force_burst_step: None,
             d_masses: 0,
             ghost_tile_ring_dev: 0,
@@ -2943,6 +3163,7 @@ mod tests {
             sisr: None,
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
+            n_spikes: 0,
             d_velocities: ptr::null_mut(),
             force_burst_step: None,
             d_forces_anchor: 0,
@@ -3036,6 +3257,7 @@ mod tests {
             n_clusters: 1,
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
+            n_spikes: 0,
             asc:  None,
             zstr: None,
             force_burst_step: None,
