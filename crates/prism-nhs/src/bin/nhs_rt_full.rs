@@ -4814,7 +4814,10 @@ fn run_multi_stream_pipeline(
                         // captured-graph replay; serialized to disk during
                         // teardown after the engine joins.
                         #[cfg(feature = "v2_ignition")]
-                        let mut v2_ghost_ring: Option<prism_nhs::ghost_tile::GhostTileRing> = None;
+                        // **M1.2.20.C-H / T23** — Wrapped in Arc so the io_uring
+                        // Reaper thread can hold a clone alongside the teardown
+                        // path that still does the legacy std::fs::write.
+                        let mut v2_ghost_ring: Option<std::sync::Arc<prism_nhs::ghost_tile::GhostTileRing>> = None;
                         // Amendment 3.4 monolithic-fusion exec — single AutonomousGraph
                         // that fuses MD physics + adjudication via cudaGraphAddChildGraphNode.
                         // When Some, the chunk loop launches this instead of the dual
@@ -5225,7 +5228,7 @@ fn run_multi_stream_pipeline(
                                                                 r.total_bytes,
                                                                 r.max_records,
                                                             );
-                                                            v2_ghost_ring = Some(r);
+                                                            v2_ghost_ring = Some(std::sync::Arc::new(r));
                                                         }
                                                         Err(e) => {
                                                             log::warn!(
@@ -5326,9 +5329,30 @@ fn run_multi_stream_pipeline(
                                                             );
                                                             let stop_clone = v2_zstr_stop.clone();
                                                             let ring_clone = ring_arc.clone();
+                                                            // **M1.2.20.C-H / T23** — Pass the
+                                                            // GhostTileRing + Channel-B output
+                                                            // path to the Reaper so the same
+                                                            // thread drains both channels
+                                                            // (multi-channel io_uring AMS).
+                                                            // None for streams 1..7 — Channel B
+                                                            // is currently single-stream.
+                                                            let ghost_clone = v2_ghost_ring.clone();
+                                                            let topo_stem_for_ghost = topology_path_capture
+                                                                .file_stem()
+                                                                .and_then(|s| s.to_str())
+                                                                .map(|s| s.trim_end_matches(".topology").to_string())
+                                                                .unwrap_or_else(|| "unknown_target".to_string());
+                                                            let ghost_path = if ghost_clone.is_some() {
+                                                                Some(output_path_capture.join(
+                                                                    format!("{}_ghost_tiles.bin", topo_stem_for_ghost)
+                                                                ))
+                                                            } else {
+                                                                None
+                                                            };
                                                             v2_zstr_consumer = Some(
                                                                 prism_nhs::zstr::spawn_zstr_consumer(
                                                                     ring_clone, zstr_out, stop_clone,
+                                                                    ghost_clone, ghost_path,
                                                                 )
                                                             );
                                                             v2_zstr_ring = Some(ring_arc);

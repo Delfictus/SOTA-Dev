@@ -391,15 +391,32 @@ pub struct ZstrStats {
 ///    f. Advances `frame_idx`.
 /// 4. Flushes (fdatasync) and closes the file when `stop` fires.
 ///
-/// Returns a `JoinHandle<ZstrStats>`.
+/// **M1.2.20.C-H / T23 — Multi-Channel AMS Reaper**.  When invoked
+/// with `ghost_ring=Some(_)` + `ghost_output_path=Some(_)`, the same
+/// Reaper thread also drains the Channel-B `GhostTileRing` to its
+/// own NVMe file.  The Ghost ring has no per-slot completion fence
+/// (the kernel atomicAdds the leading counter, threadfence_system,
+/// then writes the 1408-byte record), so the Reaper polls the
+/// counter and flushes any slots that are at least
+/// `GHOST_SAFETY_LAG=1` slots behind the live counter — this avoids
+/// racing with a kernel still mid-write of the most-recent slot.
+/// O_DIRECT is NOT used for Channel B because the 1408-byte record
+/// stride is not 4096-aligned; Channel B uses regular buffered I/O
+/// via the same io_uring SQ.  Channel A retains its O_DIRECT path.
+///
+/// Returns a `JoinHandle<ZstrStats>`.  `stats.bytes_written` is the
+/// Channel-A total only; Channel-B byte count is logged separately
+/// at thread teardown.
 ///
 /// # Safety
-/// `ring` must remain valid for the lifetime of the returned thread.
-/// The caller is responsible for joining before dropping the ring.
+/// `ring` and (if Some) `ghost_ring` must remain valid for the
+/// lifetime of the returned thread.  The caller joins before dropping.
 pub fn spawn_zstr_consumer(
     ring: Arc<ZstrRing>,
     output_path: std::path::PathBuf,
     stop: Arc<AtomicBool>,
+    ghost_ring: Option<Arc<crate::ghost_tile::GhostTileRing>>,
+    ghost_output_path: Option<std::path::PathBuf>,
 ) -> JoinHandle<ZstrStats> {
     std::thread::Builder::new()
         .name(format!("zstr-consumer"))
@@ -434,6 +451,44 @@ pub fn spawn_zstr_consumer(
 
             use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
+
+            // **M1.2.20.C-H / T23** — Optional Channel-B ghost output file.
+            // 1408-byte record stride is NOT 4096-aligned, so this fd is
+            // opened WITHOUT O_DIRECT (regular buffered IO; same io_uring
+            // submission queue).  When the operator authorizes a 4096-pad
+            // record-stride change, we'll switch to O_DIRECT here.
+            let ghost_state: Option<(std::fs::File, i32)> = ghost_output_path
+                .as_ref()
+                .filter(|_| ghost_ring.is_some())
+                .and_then(|p| {
+                    match std::fs::OpenOptions::new()
+                        .write(true).create(true).truncate(true).open(p)
+                    {
+                        Ok(f) => {
+                            let raw = f.as_raw_fd();
+                            log::info!(
+                                "[AMS T23] Channel-B fd={} opened (buffered IO; \
+                                 1408 B stride non-O_DIRECT) → {:?}",
+                                raw, p
+                            );
+                            Some((f, raw))
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[AMS T23] Cannot open ghost output {:?}: {} \
+                                 — Channel-B drain disabled, teardown-only flush",
+                                p, e
+                            );
+                            None
+                        }
+                    }
+                });
+            let ghost_fd: i32 = ghost_state.as_ref().map(|(_, fd)| *fd).unwrap_or(-1);
+            let mut last_ghost_slot_emitted: u32 = 0;
+            let mut ghost_records_written: u64  = 0;
+            let mut ghost_bytes_written:   u64  = 0;
+            const GHOST_SAFETY_LAG:        u32  = 1;
+            const GHOST_RECORD_STRIDE:     usize = 1408;
 
             // Wave 0 / #69 — io_uring instance.  16 entries: 5 ring slots
             // can be inflight at most, the rest is queue headroom for
@@ -621,7 +676,102 @@ pub fn spawn_zstr_consumer(
                     std::ptr::write_volatile(fence_ptr, 0u32);
                 }
 
+                // ── M1.2.20.C-H / T23 — Channel-B Ghost drain ──
+                // Poll the host-mapped ring counter.  For every slot at
+                // least GHOST_SAFETY_LAG behind the live counter (kernel
+                // is past it, write is committed), submit an io_uring
+                // Write SQE for the 1408-byte record.  Bounded by
+                // max_records to avoid out-of-buffer flushes.
+                if let (Some(ghost), Some(_)) = (ghost_ring.as_ref(), ghost_state.as_ref()) {
+                    let counter_now = ghost.n_frames_written().min(ghost.max_records);
+                    let safe_target = counter_now.saturating_sub(GHOST_SAFETY_LAG);
+                    while last_ghost_slot_emitted < safe_target {
+                        let slot_g = last_ghost_slot_emitted;
+                        let src_off = crate::ghost_tile::GhostTileRing::COUNTER_SECTOR_BYTES
+                            + (slot_g as usize) * GHOST_RECORD_STRIDE;
+                        let dst_off = ghost_records_written * GHOST_RECORD_STRIDE as u64;
+                        let src_ptr = unsafe {
+                            ghost.host_base.add(src_off)
+                        } as *const u8;
+                        let g_write = opcode::Write::new(
+                                types::Fd(ghost_fd),
+                                src_ptr,
+                                GHOST_RECORD_STRIDE as u32,
+                            )
+                            .offset(dst_off as i64)
+                            .build()
+                            .user_data(0xB000_0000_0000_0000u64 | slot_g as u64);
+                        let g_push = unsafe { uring.submission().push(&g_write) };
+                        if g_push.is_err() {
+                            // SQ full — break and let next outer iter retry.
+                            break;
+                        }
+                        let g_submit = uring.submit_and_wait(1);
+                        let g_result: i32 = match g_submit {
+                            Ok(_) => uring.completion().next()
+                                .map(|c| c.result()).unwrap_or(-1),
+                            Err(_) => -1,
+                        };
+                        if g_result < 0 {
+                            log::warn!(
+                                "[AMS T23] ghost slot {} write failed cqe.result={}; \
+                                 dropping",
+                                slot_g, g_result
+                            );
+                            // Skip this slot but advance the cursor so we
+                            // don't loop forever on a broken record.
+                        } else {
+                            ghost_records_written += 1;
+                            ghost_bytes_written   += g_result as u64;
+                        }
+                        last_ghost_slot_emitted += 1;
+                    }
+                }
+
                 frame_idx += 1;
+            }
+
+            // **M1.2.20.C-H / T23** — Drain any remaining Channel-B
+            // slots that the in-loop polling missed because of the
+            // GHOST_SAFETY_LAG.  The kernel has retired by this point
+            // (engine teardown invoked stop+join) so every slot up
+            // to counter-1 is committed.  Final flush to fsync.
+            if let (Some(ghost), Some((_, _))) = (ghost_ring.as_ref(), ghost_state.as_ref()) {
+                let counter_final = ghost.n_frames_written().min(ghost.max_records);
+                while last_ghost_slot_emitted < counter_final {
+                    let slot_g = last_ghost_slot_emitted;
+                    let src_off = crate::ghost_tile::GhostTileRing::COUNTER_SECTOR_BYTES
+                        + (slot_g as usize) * GHOST_RECORD_STRIDE;
+                    let dst_off = ghost_records_written * GHOST_RECORD_STRIDE as u64;
+                    let src_ptr = unsafe { ghost.host_base.add(src_off) } as *const u8;
+                    let entry = opcode::Write::new(
+                            types::Fd(ghost_fd), src_ptr, GHOST_RECORD_STRIDE as u32,
+                        )
+                        .offset(dst_off as i64)
+                        .build()
+                        .user_data(0xB000_0000_0000_0000u64 | slot_g as u64);
+                    if unsafe { uring.submission().push(&entry) }.is_err() {
+                        break;
+                    }
+                    let _ = uring.submit_and_wait(1);
+                    if let Some(c) = uring.completion().next() {
+                        let r = c.result();
+                        if r > 0 {
+                            ghost_records_written += 1;
+                            ghost_bytes_written   += r as u64;
+                        }
+                    }
+                    last_ghost_slot_emitted += 1;
+                }
+                if ghost_fd >= 0 {
+                    unsafe { libc::fdatasync(ghost_fd); }
+                }
+                log::info!(
+                    "[AMS T23] Channel-B io_uring drain summary: \
+                     records_written={} bytes_written={} (~{} MB) ghost_path={:?}",
+                    ghost_records_written, ghost_bytes_written,
+                    ghost_bytes_written >> 20, ghost_output_path
+                );
             }
 
             // fdatasync to ensure NVMe commits all sectors.
