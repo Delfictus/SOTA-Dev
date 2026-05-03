@@ -66,6 +66,21 @@ __constant__ uint32_t d_cluster_to_repr_residue[64];
 // string-matching parser on the GPU").
 __constant__ uint32_t d_chain_offsets[8];
 
+// **Path Ω Phase 2 — Geometry-Emergent Chain Identity LUT.**
+// Populated host-side at V2 build via prism_ghost_set_cluster_chain_id
+// (below).  Per cluster i ∈ [0..64), holds:
+//   0 ⇒ chain A (centroid on negative side of dyad-perpendicular normal)
+//   1 ⇒ chain B (centroid on positive side)
+//   0xFF ⇒ unset / fall back to legacy d_chain_offsets residue-boundary scan
+//
+// Computed on the host from cluster centroids and the topology's
+// dimer_dyad block: for each cluster, project its centroid onto a
+// vector perpendicular to the dyad axis and assign chain by sign.
+// This makes chain identity GEOMETRY-EMERGENT — independent of any
+// upstream prism-prep / sanitizer that may have collapsed chain
+// labels in the PDB → topology pipeline (the v9D 7C8R issue).
+__constant__ uint8_t d_cluster_to_chain_id[64];
+
 extern "C"
 __global__ void prism_ghost_pipe_stage_kernel(
     uint8_t* __restrict__              ring_base,
@@ -125,14 +140,23 @@ __global__ void prism_ghost_pipe_stage_kernel(
     // entries fails the comparison naturally (repr_res < u32_MAX is
     // true; we want the OPPOSITE direction — boundaries[k] <= repr_res
     // — so u32_MAX as a "boundary" is fine: nothing ever sits past it).
-    const uint32_t repr_res = d_cluster_to_repr_residue[i];
-    uint8_t chain_id = 0u;
-    if (repr_res != 0xFFFFFFFFu) {
-        #pragma unroll
-        for (int k = 0; k < 8; ++k) {
-            const uint32_t boundary = d_chain_offsets[k];
-            if (boundary != 0xFFFFFFFFu && boundary <= repr_res) {
-                chain_id = static_cast<uint8_t>(k);
+    // Path Ω Phase 2 — prefer geometry-emergent chain_id LUT.  When
+    // populated (sentinel 0xFFu = unset), fall back to the legacy
+    // residue-id-boundary scan against d_chain_offsets.  This makes
+    // chain identity recoverable from the SO(3) tile centroids
+    // computed every frame, independent of how the topology file
+    // labelled chains.
+    uint8_t chain_id = d_cluster_to_chain_id[i];
+    if (chain_id == 0xFFu) {
+        chain_id = 0u;
+        const uint32_t repr_res = d_cluster_to_repr_residue[i];
+        if (repr_res != 0xFFFFFFFFu) {
+            #pragma unroll
+            for (int k = 0; k < 8; ++k) {
+                const uint32_t boundary = d_chain_offsets[k];
+                if (boundary != 0xFFFFFFFFu && boundary <= repr_res) {
+                    chain_id = static_cast<uint8_t>(k);
+                }
             }
         }
     }
@@ -292,6 +316,32 @@ int prism_ghost_set_chain_offsets(
         d_chain_offsets,
         offsets_host,
         n * sizeof(uint32_t),
+        /*offset*/ 0,
+        cudaMemcpyHostToDevice,
+        static_cast<cudaStream_t>(stream)
+    );
+    return static_cast<int>(rc);
+}
+
+// Path Ω Phase 2 — host populator for d_cluster_to_chain_id LUT.
+// `chain_ids_host` is a per-cluster uint8_t (0=A, 1=B, 0xFF=unset).
+// `n` is clamped to 64 (constant array size).  Stream-ordered
+// cudaMemcpyToSymbolAsync; the kernel reads via __constant__ broadcast.
+extern "C"
+int prism_ghost_set_cluster_chain_id(
+    const uint8_t* chain_ids_host,
+    uint32_t       n,
+    void*          stream)
+{
+    if (chain_ids_host == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n == 0u) return static_cast<int>(cudaSuccess);
+    if (n > 64u) n = 64u;
+    cudaError_t rc = cudaMemcpyToSymbolAsync(
+        d_cluster_to_chain_id,
+        chain_ids_host,
+        n * sizeof(uint8_t),
         /*offset*/ 0,
         cudaMemcpyHostToDevice,
         static_cast<cudaStream_t>(stream)

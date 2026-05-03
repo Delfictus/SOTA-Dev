@@ -465,6 +465,11 @@ def prepare_topology(
     gb_radii = []  # mbondi3 radii for implicit solvent
     # Collect per-residue PDB resid mapping (index → PDB resSeq)
     _residue_pdb_map = {}  # {residue.index: (pdb_resid, resname, chain)}
+    # V2 bridge: PDB ATOM serial → topology (OpenMM-order) atom index.
+    # Heavy atoms carry their original PDB serial through addHydrogens();
+    # H atoms added by prep get OpenMM-assigned serials (not original PDB serials).
+    # Consumer should use this map only for heavy-atom cross-referencing.
+    pdb_serial_to_topo_index = {}
 
     for atom in topology.atoms():
         masses.append(atom.element.mass.value_in_unit(unit.dalton))
@@ -488,6 +493,11 @@ def prepare_topology(
             except (ValueError, TypeError):
                 pdb_resid = ridx + 1  # fallback to 1-based sequential
             _residue_pdb_map[ridx] = (pdb_resid, res_name, atom.residue.chain.id)
+        # V2: record PDB serial → topo index for this atom
+        try:
+            pdb_serial_to_topo_index[int(atom.id)] = atom.index
+        except (ValueError, TypeError):
+            pass  # non-numeric id (OpenMM-generated H); skip
 
     # Extract positions (convert to Angstroms)
     pos_flat = []
@@ -694,6 +704,13 @@ def prepare_topology(
     output["residue_to_atom_indices"] = {
         str(k): residue_to_atom_indices[k]
         for k in sorted(residue_to_atom_indices.keys())
+    }
+
+    # V2 bridge: PDB ATOM serial (int) → OpenMM-order topo atom index.
+    # Emit sorted by PDB serial for reproducible diffs.
+    output["pdb_atom_serial_to_topo_index"] = {
+        str(k): pdb_serial_to_topo_index[k]
+        for k in sorted(pdb_serial_to_topo_index.keys())
     }
 
     # Detect aromatic targets for UV pump (Cryo-UV pipeline)

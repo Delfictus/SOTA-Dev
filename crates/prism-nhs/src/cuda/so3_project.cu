@@ -689,6 +689,7 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const float*        __restrict__ d_masses,           // [n_atoms]
     const uint8_t*      __restrict__ adj_base,           // FFI offset arithmetic
     float*              __restrict__ d_com_shift,        // [3] atomicAdd target — Σ m·Δr
+    float*              __restrict__ d_total_mass,       // [1] atomicAdd target — Σ m (Path Ω Option A)
     uint32_t                         /*current_step_unused — T21 reads __constant__*/,
     uint32_t                         n_spikes,
     uint32_t                         n_atoms
@@ -773,16 +774,40 @@ __global__ void prism_apply_gradient_gasp_kernel(
 
     // M1.2.20.C-B — Momentum-Guard accumulator.  Σ m_i · Δr_i across
     // all spikes; the post-pass `prism_momentum_guard_check_kernel`
-    // computes the magnitude and sets adj.momentum_violation_flag when
-    // > 1e-4 Å.  atomicAdd (sm_120 native f32) — contention is
-    // tolerable here since this kernel is ~256 threads × few blocks.
+    // computes the magnitude.  atomicAdd (sm_120 native f32) —
+    // contention is tolerable here (~256 threads × few blocks).
+    //
+    // **Path Ω Option A (canonical interferometric formulation):**
+    // Pre-Option-A this accumulator was a strict guard: |Σ m·Δr| > 1e-4 Å
+    // ⇒ violation.  But ANY non-trivial gasp (η_eff > 0) produces a
+    // random-walk Σ ≈ √n_spikes × Δr × m that vastly exceeds 1e-4 for
+    // 500k spikes; the guard fired every chunk, the Adjudicator forked
+    // to Violation before computing KL, and Construct could never fire.
+    //
+    // The fix: accumulate Σ m alongside Σ m·Δr, and downstream the
+    // post-pass kernel computes the global COM displacement
+    //   correction[3] = Σ m·Δr / Σ m
+    // A subsequent kernel (`prism_apply_com_correction_kernel`)
+    // subtracts this correction from every perturbed spike's position
+    // BEFORE the perturbed-branch SO(3) projects.  Result: the
+    // perturbed manifold is COM-locked to the relaxed manifold by
+    // construction; the SO(3) KL captures relative structural
+    // divergence (the discovery signal), not global rigid drift.
     if (d_com_shift != nullptr) {
         atomicAdd(d_com_shift + 0, mass * dx);
         atomicAdd(d_com_shift + 1, mass * dy);
         atomicAdd(d_com_shift + 2, mass * dz);
     }
+    if (d_total_mass != nullptr) {
+        atomicAdd(d_total_mass, mass);
+    }
 
     // Write the perturbed spike (struct-copy with x/y/z replaced).
+    // The COM correction is applied LATER by
+    // `prism_apply_com_correction_kernel` after the post-pass
+    // computes the global correction vector.  Writing provisional
+    // (uncorrected) positions here is fine — they're transient until
+    // the correction pass runs on the same stream.
     RichSpike out = spike_in;
     out.x = spike_in.x + dx;
     out.y = spike_in.y + dy;
@@ -805,38 +830,122 @@ __global__ void prism_apply_gradient_gasp_kernel(
 
 extern "C"
 __global__ void prism_momentum_guard_check_kernel(
-    const float*    __restrict__ d_com_shift,    // [3]
-    uint8_t*        __restrict__ adj_base        // InterferometricAdjudicatorFfi*
+    const float*    __restrict__ d_com_shift,         // [3]   Σ m·Δr  (input)
+    const float*    __restrict__ d_total_mass,        // [1]   Σ m     (input)
+    float*          __restrict__ d_com_correction,    // [3]   output: correction vector
+    uint8_t*        __restrict__ adj_base             // InterferometricAdjudicatorFfi*
 ) {
     if (threadIdx.x != 0 || blockIdx.x != 0) return;
 
     const float sx = d_com_shift[0];
     const float sy = d_com_shift[1];
     const float sz = d_com_shift[2];
-    const float mag2 = sx*sx + sy*sy + sz*sz;
+    const float total_m = d_total_mass[0];
 
-    constexpr float MAX_TRANSLATION_AA = 1.0e-4f;   // operator §3
-    constexpr float MAX_TRANSLATION_SQ = MAX_TRANSLATION_AA * MAX_TRANSLATION_AA;
+    // Path Ω Option A — COM correction vector.  Guard against zero/tiny
+    // total mass (only when the gasp produced no valid Δr at all, e.g.
+    // every spike had unresolved residue → pass-through).  In that case
+    // the correction is zero and the apply kernel is a no-op.
+    constexpr float TOTAL_MASS_FLOOR = 1.0f;  // amu — well below any real protein
+    const float inv_m = (total_m > TOTAL_MASS_FLOOR) ? (1.0f / total_m) : 0.0f;
 
-    // Write momentum_violation_flag at offset 144 (u32).
+    const float cx = sx * inv_m;
+    const float cy = sy * inv_m;
+    const float cz = sz * inv_m;
+
+    d_com_correction[0] = cx;
+    d_com_correction[1] = cy;
+    d_com_correction[2] = cz;
+
+    // Loosened violation threshold — see header comment.  Pre-Option-A
+    // this was 1e-4 Å, which fired every chunk because the raw |Σ m·Δr|
+    // is a √n random walk that vastly exceeds 1e-4 for 500k spikes.
+    // The CORRECTION magnitude (per-atom-mass-averaged drift) is the
+    // physically meaningful quantity; >1 Å indicates the gasp is wildly
+    // off (real bug), not normal random-walk accumulation.
+    const float corr_mag2 = cx*cx + cy*cy + cz*cz;
+    constexpr float MAX_CORRECTION_AA = 1.0f;        // 1 Å COM drift cap
+    constexpr float MAX_CORRECTION_SQ = MAX_CORRECTION_AA * MAX_CORRECTION_AA;
+
     uint32_t* p_flag = reinterpret_cast<uint32_t*>(adj_base + 144);
-    *p_flag = (mag2 > MAX_TRANSLATION_SQ) ? 1u : 0u;
+    *p_flag = (corr_mag2 > MAX_CORRECTION_SQ) ? 1u : 0u;
     __threadfence();
 }
 
 extern "C"
 int prism_momentum_guard_check_launch(
     const void*  d_com_shift,
+    const void*  d_total_mass,
+    void*        d_com_correction,
     void*        adj_base,
     void*        stream)
 {
-    if (d_com_shift == nullptr || adj_base == nullptr) {
+    if (d_com_shift == nullptr || d_total_mass == nullptr ||
+        d_com_correction == nullptr || adj_base == nullptr) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
     prism_momentum_guard_check_kernel<<<1, 1, 0,
         static_cast<cudaStream_t>(stream)>>>(
         static_cast<const float*>(d_com_shift),
+        static_cast<const float*>(d_total_mass),
+        static_cast<float*>(d_com_correction),
         static_cast<uint8_t*>(adj_base)
+    );
+    return static_cast<int>(cudaGetLastError());
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Path Ω Option A — Per-spike COM correction kernel.
+//
+// Reads d_com_correction[3] (computed by the post-pass momentum-guard
+// kernel) and subtracts it from each spike's (x, y, z) in
+// d_spikes_inout.  This is what makes the perturbed manifold COM-locked
+// to the relaxed manifold so the downstream SO(3) KL captures relative
+// structural divergence (the actual discovery signal) and not the
+// global rigid drift the gradient gasp inherently produces.
+//
+// 256 threads/block, n_spikes/256 blocks.  Each thread modifies one
+// spike in place.  Pure read-modify-write; no atomics.
+// ─────────────────────────────────────────────────────────────────────
+
+extern "C"
+__global__ void prism_apply_com_correction_kernel(
+    RichSpike*        __restrict__ d_spikes_inout,
+    const float*      __restrict__ d_com_correction,
+    uint32_t                       n_spikes
+) {
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_spikes) return;
+
+    const float cx = d_com_correction[0];
+    const float cy = d_com_correction[1];
+    const float cz = d_com_correction[2];
+
+    RichSpike s = d_spikes_inout[i];
+    s.x -= cx;
+    s.y -= cy;
+    s.z -= cz;
+    d_spikes_inout[i] = s;
+}
+
+extern "C"
+int prism_apply_com_correction_launch(
+    void*        d_spikes_inout,
+    const void*  d_com_correction,
+    uint32_t     n_spikes,
+    void*        stream)
+{
+    if (d_spikes_inout == nullptr || d_com_correction == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n_spikes == 0u) return static_cast<int>(cudaSuccess);
+    constexpr uint32_t TPB = 256u;
+    const uint32_t blocks = (n_spikes + TPB - 1u) / TPB;
+    prism_apply_com_correction_kernel<<<blocks, TPB, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        static_cast<RichSpike*>(d_spikes_inout),
+        static_cast<const float*>(d_com_correction),
+        n_spikes
     );
     return static_cast<int>(cudaGetLastError());
 }
@@ -891,7 +1000,8 @@ int prism_apply_gradient_gasp_launch(
     const void*  d_forces,
     const void*  d_masses,
     const void*  adj_base,
-    void*        d_com_shift,    // [3 × f32] — Momentum-Guard accumulator (nullable)
+    void*        d_com_shift,    // [3 × f32] — Σ m·Δr accumulator (nullable)
+    void*        d_total_mass,   // [1 × f32] — Σ m accumulator (Path Ω Option A, nullable)
     uint32_t     current_step,
     uint32_t     n_spikes,
     uint32_t     n_atoms,
@@ -913,6 +1023,7 @@ int prism_apply_gradient_gasp_launch(
         static_cast<const float*>(d_masses),
         static_cast<const uint8_t*>(adj_base),
         static_cast<float*>(d_com_shift),
+        static_cast<float*>(d_total_mass),
         current_step,
         n_spikes,
         n_atoms

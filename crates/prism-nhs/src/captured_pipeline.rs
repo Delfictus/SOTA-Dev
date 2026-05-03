@@ -927,17 +927,26 @@ impl CapturedAdjudicationPipeline {
             (cfg.n_spikes.max(1) as u64) * RICH_SPIKE_BYTES;
         let d_spikes_perturbed = pool.alloc_async(spikes_perturbed_bytes, md_raw)
             .map_err(|s| BuildError::PoolAlloc { what: "d_spikes_perturbed", reason: s })?;
-        const COM_SHIFT_BYTES: u64 = 12;  // 3 × f32
+        const COM_SHIFT_BYTES: u64 = 12;  // 3 × f32 — Σ m·Δr accumulator
+        const TOTAL_MASS_BYTES: u64 = 4;  // 1 × f32 — Σ m accumulator (Path Ω Option A)
+        const COM_CORRECTION_BYTES: u64 = 12; // 3 × f32 — correction vector (Path Ω Option A)
         let d_com_shift_dev = pool.alloc_async(COM_SHIFT_BYTES, md_raw)
             .map_err(|s| BuildError::PoolAlloc { what: "d_com_shift", reason: s })?;
+        let d_total_mass_dev = pool.alloc_async(TOTAL_MASS_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "d_total_mass", reason: s })?;
+        let d_com_correction_dev = pool.alloc_async(COM_CORRECTION_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "d_com_correction", reason: s })?;
         unsafe {
-            let _ = cuMemsetD8_v2(d_spikes_perturbed as CUdeviceptr, 0, spikes_perturbed_bytes as usize);
-            let _ = cuMemsetD8_v2(d_com_shift_dev    as CUdeviceptr, 0, COM_SHIFT_BYTES         as usize);
+            let _ = cuMemsetD8_v2(d_spikes_perturbed   as CUdeviceptr, 0, spikes_perturbed_bytes  as usize);
+            let _ = cuMemsetD8_v2(d_com_shift_dev      as CUdeviceptr, 0, COM_SHIFT_BYTES         as usize);
+            let _ = cuMemsetD8_v2(d_total_mass_dev     as CUdeviceptr, 0, TOTAL_MASS_BYTES        as usize);
+            let _ = cuMemsetD8_v2(d_com_correction_dev as CUdeviceptr, 0, COM_CORRECTION_BYTES    as usize);
         }
         log::info!(
-            "[M1.2.20.C-B] allocated d_spikes_perturbed={} bytes, \
-             d_com_shift_dev={} bytes (Path C scratchpads)",
-            spikes_perturbed_bytes, COM_SHIFT_BYTES
+            "[Path Ω Option A] allocated d_spikes_perturbed={} B, \
+             d_com_shift={} B, d_total_mass={} B, d_com_correction={} B \
+             (canonical interferometric formulation: COM-locked perturbed manifold)",
+            spikes_perturbed_bytes, COM_SHIFT_BYTES, TOTAL_MASS_BYTES, COM_CORRECTION_BYTES
         );
 
         // ── Wave B.1 — G26 ChronometricStateTensor (16 bytes) ─────────
@@ -1473,10 +1482,12 @@ impl CapturedAdjudicationPipeline {
         // with HBM3 LDG.E.128 on the other, hiding the perturbation
         // latency behind the relaxed-branch baseline extraction.
 
-        // 6.a.0 — Head-of-loop zero of the COM accumulator + momentum
-        // violation flag.  Each replay must start with com_shift=0 and
-        // adj.momentum_violation_flag=0 so the gasp kernel's atomicAdds
-        // and the post-pass guard check run on a clean slate.
+        // 6.a.0 — Head-of-loop zero of the COM accumulators + momentum
+        // violation flag.  Each replay must start with com_shift=0,
+        // total_mass=0, com_correction=0, and adj.momentum_violation_flag=0
+        // so the gasp kernel's atomicAdds and the post-pass guard check
+        // run on a clean slate.  Path Ω Option A added total_mass and
+        // com_correction zeroes alongside com_shift.
         unsafe {
             let rc = cuMemsetD8Async(
                 d_com_shift_dev as CUdeviceptr,
@@ -1487,6 +1498,31 @@ impl CapturedAdjudicationPipeline {
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda {
                     stage: "M1.2.20.C-B head-of-loop cuMemsetD8Async (com_shift)",
+                    rc: rc as i32,
+                });
+            }
+            // Path Ω Option A — d_total_mass [4 B] + d_com_correction [12 B]
+            let rc = cuMemsetD8Async(
+                d_total_mass_dev as CUdeviceptr,
+                0,
+                4,
+                md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path Ω Option A head-of-loop cuMemsetD8Async (total_mass)",
+                    rc: rc as i32,
+                });
+            }
+            let rc = cuMemsetD8Async(
+                d_com_correction_dev as CUdeviceptr,
+                0,
+                12,
+                md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda {
+                    stage: "Path Ω Option A head-of-loop cuMemsetD8Async (com_correction)",
                     rc: rc as i32,
                 });
             }
@@ -1549,8 +1585,10 @@ impl CapturedAdjudicationPipeline {
         // 6.a.3 — PERTURBED branch on stream_perturbed: gasp kernel
         // computes Δr per spike from the per-atom force gradient,
         // writes pos_perturbed = pos_raw + Δr to d_spikes_perturbed,
-        // and atomicAdds m·Δr into d_com_shift_dev for the Momentum
-        // Guard check.
+        // and atomicAdds m·Δr into d_com_shift_dev plus m into
+        // d_total_mass_dev (Path Ω Option A).  Both accumulators feed
+        // the post-pass momentum-guard kernel which computes the COM
+        // correction vector.
         let rc = unsafe {
             crate::so3_project::ffi::prism_apply_gradient_gasp_launch(
                 cfg.d_spikes,
@@ -1559,6 +1597,7 @@ impl CapturedAdjudicationPipeline {
                 cfg.d_masses        as *const f32,
                 adj_dev as *const c_void,
                 d_com_shift_dev as *mut c_void,
+                d_total_mass_dev as *mut c_void,    // Path Ω Option A
                 cfg.initial_frame_id,
                 cfg.n_spikes,
                 cfg.n_atoms_for_pe,
@@ -1569,8 +1608,49 @@ impl CapturedAdjudicationPipeline {
             return Err(BuildError::Cuda { stage: "Path C gasp kernel", rc });
         }
 
-        // 6.a.4 — PERTURBED branch SO(3) on the kicked spikes →
-        // manifest.tiles_dev_ptr (the PERTURBED manifold buffer).
+        // 6.a.4 — Path Ω Option A — Momentum-Guard post-pass kernel:
+        // reads (Σ m·Δr) and (Σ m), writes correction = (Σ m·Δr) / (Σ m)
+        // to d_com_correction_dev, and sets momentum_violation_flag = 1
+        // ONLY if the correction magnitude itself exceeds 1.0 Å (the
+        // gasp produced unphysical kicks).  Pre-Option-A this kernel
+        // checked the RAW |Σ m·Δr| > 1e-4 Å which fired every chunk
+        // because that's a √n random-walk that can't be bounded that
+        // tightly — the canonical fix is to subtract the global drift
+        // and let the SO(3) KL see only the structural divergence.
+        let rc = unsafe {
+            crate::so3_project::ffi::prism_momentum_guard_check_launch(
+                d_com_shift_dev      as *const c_void,
+                d_total_mass_dev     as *const c_void,
+                d_com_correction_dev as *mut c_void,
+                adj_dev as *mut c_void,
+                stream_perturbed as *mut c_void,
+            )
+        };
+        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+            return Err(BuildError::Cuda { stage: "Path C Momentum Guard check", rc });
+        }
+
+        // 6.a.5 — Path Ω Option A — Apply the COM correction in-place
+        // to d_spikes_perturbed: each spike's (x, y, z) -= correction.
+        // Result: Σ m·(pos_perturbed - pos_relaxed) = 0 by construction;
+        // the SO(3)-PERTURBED projection now operates on a manifold
+        // that's COM-locked to the relaxed manifold, so the downstream
+        // 4-plane KL adjudication captures relative structural
+        // divergence instead of being dominated by global rigid drift.
+        let rc = unsafe {
+            crate::so3_project::ffi::prism_apply_com_correction_launch(
+                d_spikes_perturbed   as *mut c_void,
+                d_com_correction_dev as *const c_void,
+                cfg.n_spikes,
+                stream_perturbed as *mut c_void,
+            )
+        };
+        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+            return Err(BuildError::Cuda { stage: "Path C COM correction apply", rc });
+        }
+
+        // 6.a.6 — PERTURBED branch SO(3) on the COM-corrected kicked
+        // spikes → manifest.tiles_dev_ptr (the PERTURBED manifold buffer).
         let rc = unsafe {
             crate::so3_project::ffi::prism_so3_project_run(
                 d_spikes_perturbed as *const crate::rich_spike::RichSpike,
@@ -1584,21 +1664,6 @@ impl CapturedAdjudicationPipeline {
         };
         if rc != crate::so3_project::ffi::CUDA_SUCCESS {
             return Err(BuildError::Cuda { stage: "Path C Node B (SO(3) PERTURBED)", rc });
-        }
-
-        // 6.a.5 — PERTURBED branch Momentum Guard.  Reads d_com_shift_dev,
-        // computes |Σ m·Δr|, sets adj.momentum_violation_flag = 1 when
-        // > 1e-4 Å.  Adjudicator step kernel reads the flag and forces
-        // VIOLATION.
-        let rc = unsafe {
-            crate::so3_project::ffi::prism_momentum_guard_check_launch(
-                d_com_shift_dev as *const c_void,
-                adj_dev as *mut c_void,
-                stream_perturbed as *mut c_void,
-            )
-        };
-        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Path C Momentum Guard check", rc });
         }
 
         // 6.a.6 — JOIN: stream_perturbed records perturbed_join_event;

@@ -164,6 +164,7 @@ python3 scripts/p2rank_rerank.py \
 1jwp: CYS NOT REQUIRED (TEM-1)
 1p38: CYS REQUIRED (p38 MAPK)
 2hnp: CYS REQUIRED (EphB2)
+1nkp: CYS NOT REQUIRED (MYC-MAX bHLH-LZ; no catalytic CYS)
 ```
 
 ### Multichain procedure

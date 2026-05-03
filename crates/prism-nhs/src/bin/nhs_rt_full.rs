@@ -265,6 +265,19 @@ struct Args {
     #[arg(long, default_value = "false")]
     protocol_cap_bypass: bool,
 
+    /// **Phase A (2026-05-03)** — Opt-in dimer/symmetry path.  Default
+    /// OFF: PRISM-4D operates as a structure-agnostic monomer-only
+    /// cryptic-binding-site detection engine.  SISR partner-search,
+    /// bilateral Φ_sym, and dyad-perp chain partitioning are all
+    /// disabled.  Multichain inputs must be split per-chain at the
+    /// client side (prism-clean) and processed sequentially; an
+    /// off-engine aggregation tool combines per-chain dossiers.
+    /// Set --dimer-mode to restore the legacy SISR-gated path (rare;
+    /// only meaningful for true homodimers with documented dyad
+    /// metadata in the topology).
+    #[arg(long, default_value = "false")]
+    dimer_mode: bool,
+
     /// Amendment 3.4.6 — Substrate-aware noise-floor μ override applied AFTER
     /// the locked 4LPK T7 priors are burned in.  Single value, broadcast
     /// across all 6 SH bands.  Adjudicator threshold becomes μ + 3σ.
@@ -5094,7 +5107,7 @@ fn run_multi_stream_pipeline(
                                     );
 
                                     if n_ev >= 4 {
-                                        let rich: Vec<RichSpike> = spike_events.iter().map(|e| {
+                                        let rich_unsorted: Vec<RichSpike> = spike_events.iter().map(|e| {
                                             let mut rs = RichSpike::default();
                                             rs.x             = e.position[0];
                                             rs.y             = e.position[1];
@@ -5103,15 +5116,218 @@ fn run_multi_stream_pipeline(
                                             rs.water_density = e.water_density;
                                             rs.wd_change     = e.wd_change;
                                             rs.vib_energy    = e.vibrational_energy;
-                                            // residue_id is i32 in RichSpike
                                             rs.residue_id    = e.nearby_residues.iter()
                                                 .find(|&&r| r >= 0)
                                                 .copied()
                                                 .unwrap_or(0);
                                             rs
                                         }).collect();
-                                        let n_rs          = rich.len() as u32;
-                                        let offsets: Vec<u32> = vec![0u32, n_rs];
+
+                                        // ═══════════════════════════════════════════════════════════
+                                        // Path Ω Phase 1 — host-side spatial hash → multi-cluster CSR
+                                        // ═══════════════════════════════════════════════════════════
+                                        // Replaces single-cluster `vec![0, n_rs]` (which forced SO(3)
+                                        // to average all 9226-atom activity into one spherical
+                                        // basis) with a 4³=64-cell spatial partition.  Per-cluster
+                                        // SO(3) tiles get LOCAL spectra; 12-σ adjudication operates
+                                        // on localized signals.
+                                        //
+                                        // Host-side, not GPU-side.  The `prism_m1_spike_to_cluster_4d_run`
+                                        // kernel is fully implemented but invoking it on
+                                        // engine.cuda_stream() before CapturedAdjudicationPipeline::build()
+                                        // corrupts the stream's deferred-error state (CUB-internal
+                                        // cudaMallocAsync→default-mempool interaction surfaces as
+                                        // CUDA_ERROR_INVALID_VALUE at the build's first sync —
+                                        // verified by line-tagged bisect probes).  Pure-Rust hashing
+                                        // sidesteps the stream contamination; ≤10 ms for 500k spikes
+                                        // is irrelevant to runtime.  GPU-resident in-graph
+                                        // clustering belongs to v9E layer once the WHILE-graph +
+                                        // cuGraphAddNode infrastructure owns the capture window.
+                                        const K_GRID: u32 = 4;        // 4³ = 64 cells max
+                                        const K_CLUSTERS: u32 = K_GRID * K_GRID * K_GRID;
+                                        let n_rs_input = rich_unsorted.len() as u32;
+                                        let (mut bb_min, mut bb_max) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+                                        for s in rich_unsorted.iter() {
+                                            for (d, &v) in [s.x, s.y, s.z].iter().enumerate() {
+                                                if v < bb_min[d] { bb_min[d] = v; }
+                                                if v > bb_max[d] { bb_max[d] = v; }
+                                            }
+                                        }
+                                        for d in 0..3 {
+                                            let span = (bb_max[d] - bb_min[d]).max(1.0);
+                                            bb_min[d] -= span * 0.05;
+                                            bb_max[d] += span * 0.05;
+                                        }
+                                        let cell_x = ((bb_max[0] - bb_min[0]) / K_GRID as f32).max(0.1);
+                                        let cell_y = ((bb_max[1] - bb_min[1]) / K_GRID as f32).max(0.1);
+                                        let cell_z = ((bb_max[2] - bb_min[2]) / K_GRID as f32).max(0.1);
+                                        let mut paired: Vec<(u32, RichSpike)> = rich_unsorted.into_iter().map(|s| {
+                                            let ix = (((s.x - bb_min[0]) / cell_x) as i32).clamp(0, K_GRID as i32 - 1) as u32;
+                                            let iy = (((s.y - bb_min[1]) / cell_y) as i32).clamp(0, K_GRID as i32 - 1) as u32;
+                                            let iz = (((s.z - bb_min[2]) / cell_z) as i32).clamp(0, K_GRID as i32 - 1) as u32;
+                                            let cell_id = ix + iy * K_GRID + iz * K_GRID * K_GRID;
+                                            (cell_id, s)
+                                        }).collect();
+                                        paired.sort_by_key(|&(cid, _)| cid);
+
+                                        // Walk sorted, emit CSR offset on cluster_id transition;
+                                        // remap raw cell_id (0..63 with gaps) → dense 0..n_active-1.
+                                        let mut offsets_csr: Vec<u32> = Vec::with_capacity(K_CLUSTERS as usize + 1);
+                                        offsets_csr.push(0u32);
+                                        let mut rich: Vec<RichSpike> = Vec::with_capacity(paired.len());
+                                        let mut prev_cid: Option<u32> = None;
+                                        let mut dense_idx: i32 = -1;
+                                        for (idx, (cid, mut s)) in paired.into_iter().enumerate() {
+                                            let boundary = match prev_cid {
+                                                Some(p) => p != cid,
+                                                None    => true,
+                                            };
+                                            if boundary {
+                                                if prev_cid.is_some() { offsets_csr.push(idx as u32); }
+                                                dense_idx += 1;
+                                                prev_cid = Some(cid);
+                                            }
+                                            s.cluster_id = dense_idx;
+                                            rich.push(s);
+                                        }
+                                        offsets_csr.push(rich.len() as u32);
+                                        let n_clusters_actual = (offsets_csr.len() - 1) as u32;
+                                        log::info!(
+                                            "    [Path Ω Phase 1 stream {}] host spatial hash: \
+                                             n_rs={}, grid=4³=64, cells=({:.1}×{:.1}×{:.1}) Å, \
+                                             n_active_clusters={}, bbox=[{:.1}..{:.1}, {:.1}..{:.1}, \
+                                             {:.1}..{:.1}]",
+                                            i, n_rs_input, cell_x, cell_y, cell_z, n_clusters_actual,
+                                            bb_min[0], bb_max[0], bb_min[1], bb_max[1], bb_min[2], bb_max[2]
+                                        );
+                                        let n_rs = rich.len() as u32;
+                                        let offsets = offsets_csr;
+
+                                        // ═══════════════════════════════════════════════════════════
+                                        // Path Ω Phase 2 — geometry-emergent chain_id LUT
+                                        // ═══════════════════════════════════════════════════════════
+                                        // Compute per-cluster centroids from the sorted spike layout,
+                                        // project onto a normal perpendicular to the dyad axis, and
+                                        // assign chain by sign.  Populates d_cluster_to_chain_id[64]
+                                        // via prism_ghost_set_cluster_chain_id.  Sentinel 0xFF for
+                                        // unused slots ⇒ kernel falls back to legacy d_chain_offsets
+                                        // residue-boundary scan for those clusters.
+                                        //
+                                        // Why this fixes the v9D 7C8R chain collapse: prism-prep
+                                        // emitted a topology with all 9226 atoms tagged chain_id='A'
+                                        // and n_chains=1, so the engine's chain partition was a no-op
+                                        // even though the dimer is structurally present.  The dyad
+                                        // axis IS in the topology (dimer_dyad block) — we just
+                                        // weren't using it.  Now: each frame's SO(3) tile centroid
+                                        // determines chain identity via geometry, independent of any
+                                        // upstream chain-label collapse.
+                                        let mut chain_id_lut: [u8; 64] = [0xFFu8; 64];
+                                        // Phase A (2026-05-03): in monomer mode (default),
+                                        // skip dyad-perp classification entirely and emit
+                                        // all-zeros chain LUT (single chain id=0).  Schema is
+                                        // preserved for downstream binary format
+                                        // compatibility; client-side aggregation tool can
+                                        // overlay per-chain identity from its own chain map.
+                                        if !args.dimer_mode {
+                                            for slot in chain_id_lut.iter_mut().take(n_clusters_actual.min(64) as usize) {
+                                                *slot = 0u8;
+                                            }
+                                            let strm_raw_lut = engine.cuda_stream().cu_stream() as *mut std::ffi::c_void;
+                                            let lut_rc = unsafe {
+                                                prism_nhs::ghost_tile::set_cluster_chain_id(
+                                                    chain_id_lut.as_ptr(),
+                                                    n_clusters_actual.min(64),
+                                                    strm_raw_lut,
+                                                )
+                                            };
+                                            log::info!(
+                                                "    [Phase A stream {}] monomer chain LUT: \
+                                                 all-zeros for {} clusters (lut_rc={})",
+                                                i, n_clusters_actual.min(64), lut_rc
+                                            );
+                                        } else if let Some(ref dd) = topo_dyad {
+                                            let axis = [dd.axis[0], dd.axis[1], dd.axis[2]];
+                                            let center = [dd.center[0] as f32, dd.center[1] as f32, dd.center[2] as f32];
+                                            // Build a normal perpendicular to the dyad axis.  Cross
+                                            // axis with the world axis it's most orthogonal to (lower
+                                            // |dot|) to avoid the degenerate case where they're
+                                            // parallel.  For 7C8R: axis=[0.5, 0.866, 0]; cross with
+                                            // z=[0,0,1] gives [0.866, -0.5, 0] — a clean normal.
+                                            let abs_x = axis[0].abs();
+                                            let abs_y = axis[1].abs();
+                                            let abs_z = axis[2].abs();
+                                            let world = if abs_z <= abs_x && abs_z <= abs_y {
+                                                [0.0_f32, 0.0, 1.0]
+                                            } else if abs_y <= abs_x {
+                                                [0.0_f32, 1.0, 0.0]
+                                            } else {
+                                                [1.0_f32, 0.0, 0.0]
+                                            };
+                                            // normal = axis × world (safe: world is the most-orthogonal axis).
+                                            let normal = [
+                                                axis[1] * world[2] - axis[2] * world[1],
+                                                axis[2] * world[0] - axis[0] * world[2],
+                                                axis[0] * world[1] - axis[1] * world[0],
+                                            ];
+                                            let nlen = (normal[0]*normal[0] + normal[1]*normal[1] + normal[2]*normal[2]).sqrt();
+                                            let inv = if nlen > 1e-6 { 1.0 / nlen } else { 1.0 };
+                                            let normal_unit = [normal[0]*inv, normal[1]*inv, normal[2]*inv];
+                                            // Compute centroid + chain_id per cluster.
+                                            let n_active = n_clusters_actual.min(64) as usize;
+                                            let mut chain_counts = [0u32; 2];
+                                            for c in 0..n_active {
+                                                let begin = offsets[c]   as usize;
+                                                let end   = offsets[c+1] as usize;
+                                                if end <= begin { chain_id_lut[c] = 0u8; continue; }
+                                                let span = (end - begin) as f32;
+                                                let mut sum = [0.0_f32; 3];
+                                                for s in &rich[begin..end] {
+                                                    sum[0] += s.x; sum[1] += s.y; sum[2] += s.z;
+                                                }
+                                                let centroid = [sum[0]/span, sum[1]/span, sum[2]/span];
+                                                let rel = [
+                                                    centroid[0] - center[0],
+                                                    centroid[1] - center[1],
+                                                    centroid[2] - center[2],
+                                                ];
+                                                let signed = rel[0]*normal_unit[0]
+                                                           + rel[1]*normal_unit[1]
+                                                           + rel[2]*normal_unit[2];
+                                                let cid = if signed >= 0.0 { 1u8 } else { 0u8 };
+                                                chain_id_lut[c] = cid;
+                                                chain_counts[cid as usize] += 1;
+                                            }
+                                            // Push the LUT to the GPU constant slab.  Stream-ordered
+                                            // so the captured graph reads the populated LUT on every
+                                            // replay.
+                                            let strm_raw_lut = engine.cuda_stream().cu_stream() as *mut std::ffi::c_void;
+                                            let lut_rc = unsafe {
+                                                prism_nhs::ghost_tile::set_cluster_chain_id(
+                                                    chain_id_lut.as_ptr(),
+                                                    n_active as u32,
+                                                    strm_raw_lut,
+                                                )
+                                            };
+                                            log::info!(
+                                                "    [Path Ω Phase 2 stream {}] dyad-derived chain LUT: \
+                                                 axis=[{:.3}, {:.3}, {:.3}] center=[{:.2}, {:.2}, {:.2}] \
+                                                 normal=[{:.3}, {:.3}, {:.3}] chain_A={} chain_B={} (lut_rc={})",
+                                                i, axis[0], axis[1], axis[2],
+                                                center[0], center[1], center[2],
+                                                normal_unit[0], normal_unit[1], normal_unit[2],
+                                                chain_counts[0], chain_counts[1], lut_rc
+                                            );
+                                        } else {
+                                            log::info!(
+                                                "    [Path Ω Phase 2 stream {}] dimer_dyad absent in \
+                                                 topology — chain_id LUT left at 0xFF sentinel \
+                                                 (kernel falls back to legacy residue-id scan)", i
+                                            );
+                                        }
+                                        // ═══════════════════════════════════════════════════════════
+                                        // End Path Ω Phase 2
+                                        // ═══════════════════════════════════════════════════════════
+
                                         let spike_bytes   = rich.len()    * std::mem::size_of::<RichSpike>();
                                         let offset_bytes  = offsets.len() * std::mem::size_of::<u32>();
 
@@ -5270,33 +5486,51 @@ fn run_multi_stream_pipeline(
                                                 //   t = c - R c  (offset-rotation about center)
                                                 // Monomer topologies omit the dimer_dyad block ⇒
                                                 // sisr stays None and the symmetry gate is bypassed.
-                                                let sisr_cfg = topo_dyad.as_ref().map(|d| {
-                                                    let nx = d.axis[0]; let ny = d.axis[1]; let nz = d.axis[2];
-                                                    let len = (nx*nx + ny*ny + nz*nz).sqrt().max(1e-6);
-                                                    let n = [nx/len, ny/len, nz/len];
-                                                    let mut r = [0.0f32; 9];
-                                                    for ii in 0..3 {
-                                                        for jj in 0..3 {
-                                                            r[ii*3 + jj] = 2.0 * n[ii] * n[jj]
-                                                                - if ii == jj { 1.0 } else { 0.0 };
+                                                // **Phase A (2026-05-03)** — monomer-only engine.
+                                                // SISR partner-search and bilateral-coherence path
+                                                // is disabled by default; only --dimer-mode opts back
+                                                // in to the legacy SISR-gated path.  Without this
+                                                // gate, SISR's ε=1.5Å mirror-partner search
+                                                // mass-prunes 46-cluster monomers (every cluster
+                                                // fails the partner check ⇒ SYMMETRY_VETO every
+                                                // chunk ⇒ adj_code stuck at Prune ⇒ 0 binding sites).
+                                                let sisr_cfg = if args.dimer_mode {
+                                                    topo_dyad.as_ref().map(|d| {
+                                                        let nx = d.axis[0]; let ny = d.axis[1]; let nz = d.axis[2];
+                                                        let len = (nx*nx + ny*ny + nz*nz).sqrt().max(1e-6);
+                                                        let n = [nx/len, ny/len, nz/len];
+                                                        let mut r = [0.0f32; 9];
+                                                        for ii in 0..3 {
+                                                            for jj in 0..3 {
+                                                                r[ii*3 + jj] = 2.0 * n[ii] * n[jj]
+                                                                    - if ii == jj { 1.0 } else { 0.0 };
+                                                            }
                                                         }
-                                                    }
-                                                    let c = d.center;
-                                                    let rcx = r[0]*c[0] + r[1]*c[1] + r[2]*c[2];
-                                                    let rcy = r[3]*c[0] + r[4]*c[1] + r[5]*c[2];
-                                                    let rcz = r[6]*c[0] + r[7]*c[1] + r[8]*c[2];
+                                                        let c = d.center;
+                                                        let rcx = r[0]*c[0] + r[1]*c[1] + r[2]*c[2];
+                                                        let rcy = r[3]*c[0] + r[4]*c[1] + r[5]*c[2];
+                                                        let rcz = r[6]*c[0] + r[7]*c[1] + r[8]*c[2];
+                                                        log::info!(
+                                                            "    [G28 SISR stream {}] DIMER MODE: dimer_dyad active: \
+                                                             axis=[{:.3},{:.3},{:.3}] center=[{:.3},{:.3},{:.3}] \
+                                                             ε={:.2}Å",
+                                                            i, n[0], n[1], n[2], c[0], c[1], c[2], d.epsilon
+                                                        );
+                                                        prism_nhs::captured_pipeline::SisrConfig {
+                                                            dyad_R_row_major: r,
+                                                            dyad_t: [c[0] - rcx, c[1] - rcy, c[2] - rcz],
+                                                            epsilon_sym_angstrom: d.epsilon,
+                                                        }
+                                                    })
+                                                } else {
                                                     log::info!(
-                                                        "    [G28 SISR stream {}] dimer_dyad active: \
-                                                         axis=[{:.3},{:.3},{:.3}] center=[{:.3},{:.3},{:.3}] \
-                                                         ε={:.2}Å",
-                                                        i, n[0], n[1], n[2], c[0], c[1], c[2], d.epsilon
+                                                        "    [Phase A stream {}] MONOMER MODE: SISR/Φ_sym \
+                                                         disabled — single-chain cryptic-pocket detection. \
+                                                         (Pass --dimer-mode to opt back into the legacy \
+                                                         SISR-gated path.)", i
                                                     );
-                                                    prism_nhs::captured_pipeline::SisrConfig {
-                                                        dyad_R_row_major: r,
-                                                        dyad_t: [c[0] - rcx, c[1] - rcy, c[2] - rcz],
-                                                        epsilon_sym_angstrom: d.epsilon,
-                                                    }
-                                                });
+                                                    None
+                                                };
                                                 // Amendment 3.4.6: pair both flags or skip.
                                                 // B.3.2 — 7C8R Mpro dimer threshold lock-in
                                                 // (operator 2026-05-02 §3): when the topology
@@ -5306,9 +5540,14 @@ fn run_multi_stream_pipeline(
                                                 // still take precedence (explicit override).
                                                 let nf_override = match (args.noise_floor_mu, args.noise_floor_sigma) {
                                                     (Some(m), Some(s)) => Some((m, s)),
-                                                    _ if topo_dyad.is_some() => {
+                                                    // Phase A: dimer-specific lock-in only fires
+                                                    // when --dimer-mode is set.  Monomer runs use
+                                                    // dynamic-T7 calibration starting from the
+                                                    // hardcoded T7-LOCKED priors and refining via
+                                                    // the first 100 cold-hold samples.
+                                                    _ if args.dimer_mode && topo_dyad.is_some() => {
                                                         log::info!(
-                                                            "[B.3.2 LOCK] dimer topology detected — \
+                                                            "[B.3.2 LOCK] dimer topology detected (--dimer-mode) — \
                                                              defaulting noise_floor to (μ=0.005, σ=0.001) \
                                                              ⇒ threshold T = μ + 3σ = 0.008  (Mpro dimer lock-in)"
                                                         );
@@ -5386,7 +5625,9 @@ fn run_multi_stream_pipeline(
                                                 let cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
-                                                    n_clusters:        1,
+                                                    // Path Ω Phase 1 — dynamic cluster count from
+                                                    // host-side spatial hash (was hardcoded =1).
+                                                    n_clusters:        n_clusters_actual,
                                                     d_k_lm,
                                                     initial_frame_id:  steps_run as u32,
                                                     asc:               asc_cfg,
@@ -5451,12 +5692,17 @@ fn run_multi_stream_pipeline(
                                                         // 2026-05-02 RULING-1: Gearbox > Adaptive-DT).
                                                         engine.set_gearbox_active(true);
                                                         let zstr_live = cfg.zstr.is_some();
+                                                        let sisr_live = cfg.sisr.is_some();
+                                                        let n_clusters_log = cfg.n_clusters;
                                                         log::info!(
                                                             "    [V2-BUILD stream {}] ✓ PIPELINE LIVE \
-                                                             — {} spikes, 1 cluster, frame {}, \
-                                                             Node-D={} Node-ZSTR={} (n_atoms={})",
-                                                            i, n_rs, steps_run,
-                                                            cfg.asc.is_some(), zstr_live, n_atoms
+                                                             — {} spikes, {} clusters, frame {}, \
+                                                             Node-D={} Node-ZSTR={} Node-SISR={} \
+                                                             mode={} (n_atoms={})",
+                                                            i, n_rs, n_clusters_log, steps_run,
+                                                            cfg.asc.is_some(), zstr_live, sisr_live,
+                                                            if args.dimer_mode { "DIMER" } else { "MONOMER" },
+                                                            n_atoms
                                                         );
                                                         v2_spikes_raw  = d_sp;
                                                         v2_offsets_raw = d_off;

@@ -244,20 +244,41 @@ int prism_apply_gradient_gasp_launch(
     const void*  d_forces,        /* [n_atoms × 3] f32 */
     const void*  d_masses,        /* [n_atoms]     f32 */
     const void*  adj_base,        /* InterferometricAdjudicatorFfi*  */
-    void*        d_com_shift,     /* [3] f32 — atomic accumulator, nullable */
+    void*        d_com_shift,     /* [3] f32 — Σ m·Δr accumulator, nullable */
+    void*        d_total_mass,    /* [1] f32 — Σ m accumulator (Path Ω Option A), nullable */
     uint32_t     current_step,
     uint32_t     n_spikes,
     uint32_t     n_atoms,
     void*        stream);
 
-/// **M1.2.20.C-B / Operator §3** — Single-thread post-pass kernel
-/// that reads d_com_shift[3], computes |Σ m·Δr|, and writes the
-/// adjudicator's `momentum_violation_flag` (FFI offset 144) to 1
-/// when the magnitude exceeds 1.0e-4 Å.  The Adjudicator step kernel
-/// reads this flag and forces adjudication_code = VIOLATION.
+/// **Path Ω Option A** — Single-thread post-pass kernel that reads
+/// d_com_shift[3] and d_total_mass[1], computes the COM correction
+/// vector `correction = Σ m·Δr / Σ m`, writes it to d_com_correction[3]
+/// (consumed by `prism_apply_com_correction_kernel` downstream).  Also
+/// writes adj.momentum_violation_flag = 1 when the correction
+/// magnitude exceeds 1.0 Å (loose threshold; the strict 1e-4 Å gate
+/// pre-Option-A was incompatible with any non-trivial gasp because
+/// random-walk Σ scales as √n_spikes × Δr × m, ≫ 1e-4 for 500k spikes).
+/// The new threshold catches genuinely unphysical kicks (>1 Å COM
+/// drift) without blocking the gasp's intended perturbation.
 int prism_momentum_guard_check_launch(
-    const void*  d_com_shift,     /* [3] f32 */
-    void*        adj_base,        /* InterferometricAdjudicatorFfi* */
+    const void*  d_com_shift,         /* [3] f32 — Σ m·Δr */
+    const void*  d_total_mass,        /* [1] f32 — Σ m */
+    void*        d_com_correction,    /* [3] f32 — output: correction vector */
+    void*        adj_base,            /* InterferometricAdjudicatorFfi* */
+    void*        stream);
+
+/// **Path Ω Option A** — Per-spike COM-correction pass.  Reads
+/// d_com_correction[3] (computed by the post-pass momentum-guard kernel)
+/// and subtracts it from each spike's (x, y, z) in d_spikes_inout.
+/// Result: the perturbed manifold has Σ m·(pos_perturbed - pos_relaxed)
+/// = 0 by construction, so the SO(3) KL between relaxed and perturbed
+/// captures relative structural divergence (the discovery signal) and
+/// not the global rigid drift the gradient gasp inherently produces.
+int prism_apply_com_correction_launch(
+    void*        d_spikes_inout,      /* [n_spikes] RichSpike — in-place modify */
+    const void*  d_com_correction,    /* [3] f32 */
+    uint32_t     n_spikes,
     void*        stream);
 
 }  // extern "C"

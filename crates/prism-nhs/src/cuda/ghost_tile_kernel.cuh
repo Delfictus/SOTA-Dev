@@ -116,6 +116,18 @@ int prism_ghost_set_chain_offsets(
     uint32_t        n,               /* 1..=8 */
     void*           stream);
 
+/// **Path Ω Phase 2** — Geometry-Emergent Chain Identity LUT populator.
+/// `chain_ids_host[i]` is the chain assignment for cluster i:
+///   0 = chain A, 1 = chain B, 0xFF = unset (kernel falls back to legacy
+///   d_chain_offsets residue-boundary scan).
+/// Stream-ordered cudaMemcpyToSymbolAsync; n clamped to 64 (LUT size).
+/// Computed host-side from cluster centroids vs the topology's
+/// dimer_dyad axis at V2 build time.
+int prism_ghost_set_cluster_chain_id(
+    const uint8_t*  chain_ids_host,  /* [n] per-cluster chain id */
+    uint32_t        n,               /* 1..=64 */
+    void*           stream);
+
 #ifdef __cplusplus
 }
 #endif

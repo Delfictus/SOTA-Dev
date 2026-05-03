@@ -386,6 +386,31 @@ extern "C" {
         n:            u32,
         stream:       *mut std::ffi::c_void,
     ) -> i32;
+
+    /// **Path Ω Phase 2** — geometry-emergent chain_id LUT populator.
+    /// `chain_ids_host[i]` ∈ {0, 1, 0xFF} for cluster i.  Computed
+    /// host-side from cluster centroids vs dyad axis at V2 build.
+    /// Sentinel 0xFF disables the geometry-emergent path for that
+    /// slot (kernel falls back to residue-id boundary scan).
+    pub fn prism_ghost_set_cluster_chain_id(
+        chain_ids_host: *const u8,
+        n:              u32,
+        stream:         *mut std::ffi::c_void,
+    ) -> i32;
+}
+
+/// **Path Ω Phase 2** — Public host wrapper for the geometry-emergent
+/// chain_id LUT populator.
+///
+/// # Safety
+/// `chain_ids_host` must point to at least `n` valid `u8` values.
+/// `stream` must be a valid CUstream owned by the active context.
+pub unsafe fn set_cluster_chain_id(
+    chain_ids_host: *const u8,
+    n:              u32,
+    stream:         *mut std::ffi::c_void,
+) -> i32 {
+    prism_ghost_set_cluster_chain_id(chain_ids_host, n, stream)
 }
 
 /// **M1.2.20.C-C / T20 + Amendment 3.20** — Public host wrapper for

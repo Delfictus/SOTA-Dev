@@ -243,20 +243,36 @@ pub(crate) mod ffi {
             d_forces:     *const f32,
             d_masses:     *const f32,
             adj_base:     *const std::ffi::c_void,
-            d_com_shift:  *mut std::ffi::c_void,   // [3] f32, nullable
+            d_com_shift:  *mut std::ffi::c_void,   // [3] f32 — Σ m·Δr, nullable
+            d_total_mass: *mut std::ffi::c_void,   // [1] f32 — Σ m (Path Ω Option A), nullable
             current_step: u32,
             n_spikes:     u32,
             n_atoms:      u32,
             stream:       *mut std::ffi::c_void,
         ) -> CudaError;
 
-        /// **M1.2.20.C-B** — Single-thread post-pass that reads
-        /// d_com_shift[3], computes |Σ m·Δr|, sets adj.momentum_violation_flag
-        /// (offset 144) = 1 when > 1e-4 Å.
+        /// **Path Ω Option A** — Post-pass that reads d_com_shift[3]
+        /// and d_total_mass[1], computes correction = Σ m·Δr / Σ m
+        /// → d_com_correction[3], and sets adj.momentum_violation_flag
+        /// only if the correction itself exceeds 1.0 Å.
         pub fn prism_momentum_guard_check_launch(
-            d_com_shift: *const std::ffi::c_void,
-            adj_base:    *mut std::ffi::c_void,
-            stream:      *mut std::ffi::c_void,
+            d_com_shift:      *const std::ffi::c_void,  // [3] f32
+            d_total_mass:     *const std::ffi::c_void,  // [1] f32
+            d_com_correction: *mut std::ffi::c_void,    // [3] f32 (output)
+            adj_base:         *mut std::ffi::c_void,
+            stream:           *mut std::ffi::c_void,
+        ) -> CudaError;
+
+        /// **Path Ω Option A** — Per-spike COM correction kernel:
+        /// each spike's (x, y, z) -= d_com_correction[3].  Locks the
+        /// perturbed manifold to the relaxed manifold's COM so the
+        /// downstream SO(3) KL captures structural divergence and not
+        /// rigid drift.
+        pub fn prism_apply_com_correction_launch(
+            d_spikes_inout:   *mut std::ffi::c_void,    // [n_spikes] RichSpike
+            d_com_correction: *const std::ffi::c_void,  // [3] f32
+            n_spikes:         u32,
+            stream:           *mut std::ffi::c_void,
         ) -> CudaError;
     }
 }
