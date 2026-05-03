@@ -4511,6 +4511,87 @@ fn run_multi_stream_pipeline(
                         }
                     }
 
+                    // ── M1.2.20.C-C / Amendment 3.20 — Topology-Driven
+                    // Chain Boundary populator ──
+                    // Walk the topology's per-residue chain_ids column
+                    // (as stored in topology.residues[r].chain_id), find
+                    // each chain's first-residue index, and upload the
+                    // resulting [k] cumulative-boundary array to the
+                    // GPU's __constant__ d_chain_offsets[8].  Replaces
+                    // the legacy hardcoded "4613" / "301" boundaries —
+                    // the Ghost kernel is now target-agnostic for up to
+                    // 8-chain complexes (operator §1 / §2 mandate).
+                    {
+                        const MAX_CHAINS: usize = 8;
+                        let mut offsets_host = [0xFFFFFFFFu32; MAX_CHAINS];
+                        let mut n_chains_seen: usize = 0;
+                        // Topology stores chain id at the atom level
+                        // (`topology.chain_ids: Vec<String>`, one entry
+                        // per atom).  We collapse to per-residue chain
+                        // by taking the chain of the FIRST atom that
+                        // mentions each residue id, then walking residues
+                        // in increasing order to detect chain transitions.
+                        // residue_id can be sparse / non-contiguous, so
+                        // we use a HashMap then sort.
+                        use std::collections::HashMap;
+                        let mut residue_to_chain: HashMap<usize, &str> = HashMap::new();
+                        for atom_idx in 0..topo_ref.n_atoms {
+                            let res_id = topo_ref.residue_ids[atom_idx];
+                            residue_to_chain.entry(res_id)
+                                .or_insert_with(|| topo_ref.chain_ids[atom_idx].as_str());
+                        }
+                        let mut residues_sorted: Vec<&usize> =
+                            residue_to_chain.keys().collect();
+                        residues_sorted.sort();
+                        let mut last_chain: Option<&str> = None;
+                        for (idx, &res_id) in residues_sorted.iter().enumerate() {
+                            let cid = residue_to_chain[res_id];
+                            if Some(cid) != last_chain {
+                                if n_chains_seen < MAX_CHAINS {
+                                    offsets_host[n_chains_seen] = idx as u32;
+                                    n_chains_seen += 1;
+                                }
+                                last_chain = Some(cid);
+                            }
+                        }
+                        // Defensive: if topology has no chain info,
+                        // fall back to a single-chain default starting
+                        // at residue index 0.
+                        if n_chains_seen == 0 {
+                            offsets_host[0] = 0u32;
+                            n_chains_seen = 1;
+                        }
+                        let stream_raw = engine.cuda_stream().cu_stream()
+                            as *mut std::ffi::c_void;
+                        let rc = unsafe {
+                            prism_nhs::ghost_tile::set_chain_offsets(
+                                offsets_host.as_ptr(),
+                                MAX_CHAINS as u32,
+                                stream_raw,
+                            )
+                        };
+                        if rc != 0 {
+                            log::warn!(
+                                "[M1.2.20.C-C] prism_ghost_set_chain_offsets rc={} \
+                                 (chain LUT not populated; Ghost kernel emits chain_id=0)",
+                                rc
+                            );
+                        } else if i == 0 {
+                            // Print the offsets we shipped to the device
+                            // so operator can verify topology-driven
+                            // (not hardcoded) population — operator §3
+                            // verification gate G38.
+                            let off_str: Vec<String> = offsets_host[..n_chains_seen]
+                                .iter().map(|o| o.to_string()).collect();
+                            log::info!(
+                                "[M1.2.20.C-C / G38] populated d_chain_offsets \
+                                 (n_chains={}, offsets=[{}]) — derived from topology, \
+                                 NOT hardcoded",
+                                n_chains_seen, off_str.join(", ")
+                            );
+                        }
+                    }
+
                     // V2 rescue tracking: per-stream current values of engine
                     // state that the rescue controller can mutate. Initialized
                     // from startup config; updated each time a V2 rescue action

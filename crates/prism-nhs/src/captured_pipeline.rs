@@ -884,9 +884,14 @@ impl CapturedAdjudicationPipeline {
         // idx:    1 × u32 = 4 B      (atomic write counter, saturating)
         // stats:  2 × f32 = 8 B      ([mean, stddev])
         // All zero-initialised so the FIRST capture starts from a clean slate.
-        const DYNT7_ACC_BYTES:   u64 = 500 * 4;
-        const DYNT7_IDX_BYTES:   u64 = 4;
-        const DYNT7_STATS_BYTES: u64 = 2 * 4;
+        // M1.2.20.C-C / T19 — replaces the 500-sample f32 buffer with a
+        // 24-byte (32-aligned) CalibrationStateF64 holding the f64
+        // sum_kl + sum_sq_kl + count + applied accumulator.  idx and
+        // stats slots are kept for ABI compatibility but unused
+        // post-T19; the launcher ignores them.
+        const DYNT7_ACC_BYTES:   u64 = 32;   // CalibrationStateF64 (24 used + 8 pad)
+        const DYNT7_IDX_BYTES:   u64 = 4;    // unused post-T19
+        const DYNT7_STATS_BYTES: u64 = 2 * 4;// unused post-T19
         let dynt7_acc_dev = pool.alloc_async(DYNT7_ACC_BYTES, md_raw)
             .map_err(|s| BuildError::PoolAlloc { what: "dynt7_acc", reason: s })?;
         let dynt7_idx_dev = pool.alloc_async(DYNT7_IDX_BYTES, md_raw)

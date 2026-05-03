@@ -37,18 +37,32 @@ using prism_nhs::so3_project::ContactShellTile;
 static constexpr size_t PRISM_ADJ_CURRENT_DIVERGENCE_OFF = 48;
 static constexpr size_t PRISM_ADJ_ADJUDICATION_CODE_OFF  = 52;
 
-// Wave 1 / Q1 — chain-boundary residue index.  Hardcoded for the 7C8R
-// Mpro dimer: chain A spans residues 1..300, chain B starts at residue
-// 301 (in the merged-topology renumbering).  Future multi-target work
-// should turn this into a __constant__ uploaded by the host.
-static constexpr uint32_t PRISM_GHOST_CHAIN_BOUNDARY = 301u;
-
 // Wave 1 / Q1 — cluster → representative-residue lookup table.
 // Populated host-side via prism_ghost_set_cluster_repr_residue (below)
 // from the cluster's max-spike-intensity residue.  64-entry slab
 // covers the SIMT block width; unused entries are u32_MAX (sentinel
 // → chain_id falls back to 0 / "unknown").
 __constant__ uint32_t d_cluster_to_repr_residue[64];
+
+// **M1.2.20.C-C / T20 — Topology-Driven Chain Boundary LUT.**
+// Per operator's Amendment 3.20 "Purge of Hardcoded Boundaries":
+// the 7C8R-specific 4613 atom index has been excised from kernel
+// source.  d_chain_offsets[k] is the residue-id boundary at which
+// chain k STARTS.  d_chain_offsets[0] is conventionally 0 (chain A
+// origin).  Unused entries are populated with u32::MAX so the
+// linear scan terminates naturally for fewer than 8 chains.
+//
+// Kernel logic (residue-major):
+//   for i in 0..7:
+//     if d_chain_offsets[i] <= residue_id < d_chain_offsets[i+1]:
+//       chain_id = i;  break;
+//
+// 8 × u32 = 32 B → fits in a single L1 constant-cache line, single-
+// cycle broadcast load to every thread in the warp.  CPU does the
+// heavy topology parsing in nhs_rt_full.rs; the GPU only does
+// integer comparison (operator §4 — "do not implement a complex
+// string-matching parser on the GPU").
+__constant__ uint32_t d_chain_offsets[8];
 
 extern "C"
 __global__ void prism_ghost_pipe_stage_kernel(
@@ -96,14 +110,31 @@ __global__ void prism_ghost_pipe_stage_kernel(
     GhostTileFrame* hdr = reinterpret_cast<GhostTileFrame*>(record_base);
     hdr->frame_idx         = frame_idx;
     hdr->site_id           = i;
-    // Wave 1 / Q1 — chain_id resolved via __constant__ cluster→repr-residue
-    // table (host-populated in update_cluster_residue_map).  For 7C8R the
-    // chain boundary is residue 301 (chain B starts at the merged residue
-    // index 301).  Sentinel u32_MAX means "unmapped at host time" → 0.
+    // **M1.2.20.C-C / T20 + Amendment 3.20** — Topology-Driven Chain
+    // Resolver.  No hardcoded numbers in this kernel — chain_id is
+    // computed from a host-populated d_chain_offsets[8] LUT that the
+    // CPU produced by parsing the topology's per-residue chain_ids
+    // column.
+    //
+    // Algorithm: scan d_chain_offsets backwards (chain k → chain 0)
+    // and select the largest k for which d_chain_offsets[k] <= repr_res.
+    // Branchless via a fold: keep updating chain_id whenever a new
+    // (larger) k satisfies the comparison.  Sentinel u32_MAX in unset
+    // entries fails the comparison naturally (repr_res < u32_MAX is
+    // true; we want the OPPOSITE direction — boundaries[k] <= repr_res
+    // — so u32_MAX as a "boundary" is fine: nothing ever sits past it).
     const uint32_t repr_res = d_cluster_to_repr_residue[i];
-    hdr->chain_id = (repr_res == 0xFFFFFFFFu)
-                    ? 0u
-                    : (repr_res < PRISM_GHOST_CHAIN_BOUNDARY ? 0u : 1u);
+    uint8_t chain_id = 0u;
+    if (repr_res != 0xFFFFFFFFu) {
+        #pragma unroll
+        for (int k = 0; k < 8; ++k) {
+            const uint32_t boundary = d_chain_offsets[k];
+            if (boundary != 0xFFFFFFFFu && boundary <= repr_res) {
+                chain_id = static_cast<uint8_t>(k);
+            }
+        }
+    }
+    hdr->chain_id = chain_id;
     hdr->adjudication_code = adj_code;
     // current_divergence (f32 at offset 48) ≈ Σ_planes Δ_AB at write time.
     hdr->kl_divergence =
@@ -203,6 +234,41 @@ int prism_ghost_set_cluster_repr_residue(
     cudaError_t rc = cudaMemcpyToSymbolAsync(
         d_cluster_to_repr_residue,
         repr_residues_host,
+        n * sizeof(uint32_t),
+        /*offset*/ 0,
+        cudaMemcpyHostToDevice,
+        static_cast<cudaStream_t>(stream)
+    );
+    return static_cast<int>(rc);
+}
+
+// **M1.2.20.C-C / T20 + Amendment 3.20** — Topology-Driven Chain
+// Boundary populator.  Host parses the topology's per-residue
+// chain_ids column and produces:
+//
+//   d_chain_offsets[0] = 0
+//   d_chain_offsets[1] = first residue id of chain 1
+//   d_chain_offsets[2] = first residue id of chain 2
+//   ...
+//   d_chain_offsets[k] = u32::MAX  (sentinel for unused chains)
+//
+// The Ghost stage kernel scans this LUT to assign chain_id to each
+// record.  No 7C8R-specific magic numbers; works for any target the
+// CPU side knows how to parse.  Stream-ordered cudaMemcpyToSymbolAsync.
+extern "C"
+int prism_ghost_set_chain_offsets(
+    const uint32_t* offsets_host,    // [n] residue-id boundaries
+    uint32_t        n,               // 1..=8
+    void*           stream)
+{
+    if (offsets_host == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n == 0u) return static_cast<int>(cudaSuccess);
+    if (n > 8u) n = 8u;
+    cudaError_t rc = cudaMemcpyToSymbolAsync(
+        d_chain_offsets,
+        offsets_host,
         n * sizeof(uint32_t),
         /*offset*/ 0,
         cudaMemcpyHostToDevice,

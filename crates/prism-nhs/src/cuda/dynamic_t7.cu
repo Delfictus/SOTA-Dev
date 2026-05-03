@@ -1,6 +1,25 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // PRISM-4D / Dynamic T7 — substrate-aware noise-floor calibration (impl)
 // ═══════════════════════════════════════════════════════════════════════════
+//
+// M1.2.20.C-C / T19 — F64 Calibration Epoch refactor.  Pre-Phase-3 this
+// kernel triplet wrote samples into a 500-element f32 buffer and reduced
+// after PRISM_DYNT7_N_MIN with f32 math.  Operator's "Native Statistical
+// Grounding" mandate (2026-05-02) replaces that with two f64 atomic
+// accumulators (sum_kl, sum_sq_kl) plus a u32 count, computed on the
+// fly during the 100-frame cold-hold burn-in.  At count == N_MIN a
+// single-thread reduce kernel computes:
+//
+//   μ        = sum_kl    / N
+//   σ²       = sum_sq_kl / N − μ²
+//   σ        = sqrt(max(σ², 0))
+//
+// then writes (μ, σ) to adj.noise_floor_mu[0] / sigma[0] (cast f64→f32
+// at the boundary).  If σ² <= 0 the kernel sets `adj.lqi_flags |=
+// LQI_T7_VARIANCE_ZERO` (Bit-31), and the Adjudicator step kernel
+// thereafter forces VIOLATION (operator's Lineage Protection — a
+// degenerate cold-hold floor cannot be trusted to gate anything).
+// ═══════════════════════════════════════════════════════════════════════════
 
 #include "dynamic_t7.cuh"
 #include "adjudicator.cuh"  // pulls in InterferometricAdjudicatorFfi
@@ -9,156 +28,144 @@
 #include <cstdint>
 #include <cstdio>  // Amendment 3.10 — kernel-level printf triage
 
-// ─── Capture: read adj->current_divergence, accumulate into acc[idx] ──────
+// ─── M1.2.20.C-C / T19 — CalibrationStateF64 (F2-pool buffer) ─────────────
 //
-// Single thread.  Atomic increment of idx with saturation at N_SAMPLES so
-// the buffer never overflows once calibration is complete.  Subsequent
-// launches no-op (idx stays at N_SAMPLES; acc[N_SAMPLES] write is gated).
+// Layout: 8 + 8 + 4 + 4 = 24 bytes; the host allocates 32 bytes for
+// natural alignment.  Pre-capture cuMemsetD8 zero-init guarantees the
+// first kernel launch sees count = 0.
+
+struct __align__(8) CalibrationStateF64 {
+    double   sum_kl;       // 0..8    atomicAdd_f64 target
+    double   sum_sq_kl;    // 8..16   atomicAdd_f64 target
+    uint32_t count;        // 16..20  atomicAdd target — frozen at N_MIN
+    uint32_t applied;      // 20..24  set to 1 by reduce kernel; gates re-apply
+};
+
+static_assert(sizeof(CalibrationStateF64) == 24, "CalibrationStateF64 must be 24 B");
+
+// ─── Accumulate kernel ────────────────────────────────────────────────────
+//
+// Single-thread launch.  Reads adj.current_divergence (the captured-graph
+// per-frame KL-divergence scalar set by the Adjudicator step kernel),
+// atomicAdds it into sum_kl + (kl² into sum_sq_kl), increments count.
+// Frozen once count >= N_MIN — subsequent launches no-op.
+
 extern "C"
 __global__ void prism_dynamic_t7_capture_kernel(
     const InterferometricAdjudicatorFfi* __restrict__ adj,
-    float*    __restrict__ acc,
-    uint32_t* __restrict__ idx
+    CalibrationStateF64* __restrict__    state
 ) {
     if (threadIdx.x != 0 || blockIdx.x != 0) return;
 
-    // Atomic claim of next slot.  atomicAdd returns the OLD value before
-    // increment, so i is the slot we own.
-    uint32_t i = atomicAdd(idx, 1u);
-    if (i < PRISM_DYNT7_N_SAMPLES) {
-        // adj->current_divergence is written by the Adjudicator step
-        // kernel earlier in the captured-graph epoch.  __threadfence()
-        // inside that kernel + captured-graph dependency edge guarantee
-        // L2 visibility here.
-        acc[i] = adj->current_divergence;
-    } else {
-        // Saturate idx at N_SAMPLES.  atomicMin clamps any over-shoot
-        // (multiple captures in same launch would never happen with
-        // the single-thread guard, but defensively cap anyway).
-        atomicMin(idx, PRISM_DYNT7_N_SAMPLES);
-    }
+    // Freeze after burn-in — the accumulators stay frozen at their
+    // 100-sample values for the rest of the campaign.
+    const uint32_t n_now = state->count;
+    if (n_now >= PRISM_DYNT7_N_MIN) return;
+
+    // adj->current_divergence is f32 from the kernel side; cast to f64
+    // for accumulation precision (operator §1 — "do not compromise on
+    // the f64 precision for the calibration accumulator").
+    const double kl = static_cast<double>(adj->current_divergence);
+
+    // Three independent atomic accumulators.  sm_120 native f64
+    // atomicAdd; the captured-graph dependency edge from the Adjudicator
+    // (which writes current_divergence) into THIS kernel guarantees
+    // L2-visibility of the kl input.
+    atomicAdd(&state->sum_kl,    kl);
+    atomicAdd(&state->sum_sq_kl, kl * kl);
+    atomicAdd(&state->count,     1u);
+    __threadfence();
 }
 
-// ─── Reduce: mean + stddev across acc[0..min(idx, N)] ─────────────────────
+// ─── Reduce + Apply kernel ────────────────────────────────────────────────
 //
-// Single block, 256 threads.  Two-pass shared-memory reduction:
-//   Pass 1: sum → mean
-//   Pass 2: variance sum → stddev (population std with Bessel correction)
+// Single-thread.  Gated on count >= N_MIN AND applied == 0 (idempotent —
+// fires once per campaign, then the `applied` interlock prevents
+// re-entry on subsequent captured-graph replays).  Computes μ and σ
+// with f64 precision, casts to f32 at the FFI boundary, sets
+// `lqi_flags` Bit-31 if σ² <= 0 (degenerate floor — Lineage Protection).
+
 extern "C"
 __global__ void prism_dynamic_t7_reduce_kernel(
-    const float*    __restrict__ acc,
-    const uint32_t* __restrict__ idx,
-    float*          __restrict__ stats
-) {
-    __shared__ float sdata[256];
-    const uint32_t tid = threadIdx.x;
-    const uint32_t n   = min(*idx, PRISM_DYNT7_N_SAMPLES);
-
-    if (n == 0u) {
-        if (tid == 0u) { stats[0] = 0.0f; stats[1] = 0.0f; }
-        return;
-    }
-
-    // ── Pass 1: sum ────────────────────────────────────────────────
-    float sum = 0.0f;
-    for (uint32_t i = tid; i < n; i += 256u) {
-        sum += acc[i];
-    }
-    sdata[tid] = sum;
-    __syncthreads();
-
-    // Block reduction (sum, descending stride).
-    for (uint32_t s = 128u; s > 0u; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        __syncthreads();
-    }
-    const float mean = sdata[0] / static_cast<float>(n);
-    __syncthreads();
-
-    // ── Pass 2: variance ──────────────────────────────────────────
-    float var_sum = 0.0f;
-    for (uint32_t i = tid; i < n; i += 256u) {
-        const float d = acc[i] - mean;
-        var_sum += d * d;
-    }
-    sdata[tid] = var_sum;
-    __syncthreads();
-
-    for (uint32_t s = 128u; s > 0u; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        __syncthreads();
-    }
-
-    if (tid == 0u) {
-        // Bessel-corrected sample stddev (n-1 denominator); fall back to
-        // n=1 case to avoid div-by-zero on tiny windows.
-        const float denom = (n > 1u) ? static_cast<float>(n - 1u) : 1.0f;
-        const float variance = sdata[0] / denom;
-        stats[0] = mean;
-        stats[1] = sqrtf(fmaxf(variance, 0.0f));
-    }
-}
-
-// ─── Apply: write substrate-derived priors to adj noise floor ────────────
-//
-// Single thread.  Gated on n >= N_MIN; below that, the kernel is a no-op
-// and the FFI struct retains the constants written by apply_t7_calibration
-// or set_noise_floor_constants at build time.
-extern "C"
-__global__ void prism_dynamic_t7_apply_kernel(
-    const float*    __restrict__ stats,
-    const uint32_t* __restrict__ idx,
+    const CalibrationStateF64* __restrict__ state,
     InterferometricAdjudicatorFfi* __restrict__ adj
 ) {
     if (threadIdx.x != 0 || blockIdx.x != 0) return;
 
-    const uint32_t n = *idx;
+    const uint32_t n        = state->count;
     if (n < PRISM_DYNT7_N_MIN) return;
 
-    // The Adjudicator's threshold formula reads ONLY band 0:
-    //   threshold = noise_floor_mu[0] + 3 * noise_floor_sigma[0]
-    // Other 5 bands stay at whatever apply_t7_calibration set them to;
-    // future enhancement: per-band Δ_AB samples + per-band priors.
-    adj->noise_floor_mu[0]    = stats[0];
-    adj->noise_floor_sigma[0] = stats[1];
+    // Idempotency interlock.  We can't set `applied` from this const
+    // pointer; in practice, `state` is non-const-aliased on the host
+    // side (the F2-pool buffer is mutable), but the kernel takes a
+    // const pointer for safety — re-firing this kernel is a no-op
+    // because the FFI fields are written deterministically from the
+    // accumulators.
+    const uint32_t already = state->applied;
+    if (already != 0u) return;
+
+    const double inv_n = 1.0 / static_cast<double>(n);
+    const double mu    = state->sum_kl    * inv_n;
+    const double m2_n  = state->sum_sq_kl * inv_n;
+    const double var   = m2_n - mu * mu;
+
+    // Operator §1 LQI Bit-31 Quarantine — variance reduced to zero
+    // means the cold-hold KL stream was perfectly stationary
+    // (numerically degenerate).  We cannot threshold against a zero
+    // floor; flag the run for Lineage Protection.
+    if (!(var > 0.0)) {
+        atomicOr(&adj->lqi_flags, 0x80000000u);
+        __threadfence();
+        // Still write a sane fallback so subsequent captured-graph
+        // replays don't read uninitialised noise_floor values.
+        adj->noise_floor_mu[0]    = static_cast<float>(mu);
+        adj->noise_floor_sigma[0] = 1.0e-3f;  // bootstrap σ
+        // Mark applied so we don't re-enter.
+        atomicOr(reinterpret_cast<uint32_t*>(
+            const_cast<uint32_t*>(&state->applied)), 1u);
+        return;
+    }
+
+    const double sigma = sqrt(var);
+    adj->noise_floor_mu[0]    = static_cast<float>(mu);
+    adj->noise_floor_sigma[0] = static_cast<float>(sigma);
+    __threadfence();
+
+    // Set applied=1 idempotently.  Cast through const for the
+    // captured-graph buffer.
+    atomicOr(reinterpret_cast<uint32_t*>(
+        const_cast<uint32_t*>(&state->applied)), 1u);
 }
 
-// ─── C-ABI host launcher: enqueues all three kernels in order ─────────────
+// ─── Host launcher: enqueues both kernels in order ───────────────────────
+//
+// Captured-graph dependency: capture → reduce.  Both retire on the
+// adjudicator's stream so subsequent reads of adj.noise_floor_mu/sigma
+// see the post-reduce values.
 
 extern "C"
 int prism_dynamic_t7_launch(
     const void* adj,
-    void*       acc_dev,
-    void*       idx_dev,
-    void*       stats_dev,
+    void*       state_dev,
+    void*       /* idx_dev_unused — kept for ABI compat */,
+    void*       /* stats_dev_unused — kept for ABI compat */,
     void*       stream
 ) {
-    if (adj == nullptr || acc_dev == nullptr ||
-        idx_dev == nullptr || stats_dev == nullptr) {
+    if (adj == nullptr || state_dev == nullptr) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
     cudaStream_t s = static_cast<cudaStream_t>(stream);
     const InterferometricAdjudicatorFfi* adj_ptr =
         static_cast<const InterferometricAdjudicatorFfi*>(adj);
+    CalibrationStateF64* state_ptr =
+        static_cast<CalibrationStateF64*>(state_dev);
 
-    // Capture.
-    prism_dynamic_t7_capture_kernel<<<1, 1, 0, s>>>(
-        adj_ptr,
-        static_cast<float*>(acc_dev),
-        static_cast<uint32_t*>(idx_dev)
-    );
+    // Capture: atomicAdd into f64 accumulators.
+    prism_dynamic_t7_capture_kernel<<<1, 1, 0, s>>>(adj_ptr, state_ptr);
 
-    // Reduce (block-wide).
-    prism_dynamic_t7_reduce_kernel<<<1, 256, 0, s>>>(
-        static_cast<const float*>(acc_dev),
-        static_cast<const uint32_t*>(idx_dev),
-        static_cast<float*>(stats_dev)
-    );
-
-    // Apply.  Cast away const for the apply kernel (writes to adj's μ/σ).
-    prism_dynamic_t7_apply_kernel<<<1, 1, 0, s>>>(
-        static_cast<const float*>(stats_dev),
-        static_cast<const uint32_t*>(idx_dev),
+    // Reduce + Apply: gated on count >= N_MIN, idempotent via `applied`.
+    prism_dynamic_t7_reduce_kernel<<<1, 1, 0, s>>>(
+        state_ptr,
         const_cast<InterferometricAdjudicatorFfi*>(adj_ptr)
     );
 

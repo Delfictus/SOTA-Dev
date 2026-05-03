@@ -95,6 +95,18 @@ int prism_ghost_set_cluster_repr_residue(
     uint32_t        n,                    /* 1..=64 */
     void*           stream);
 
+/// **M1.2.20.C-C / T20 + Amendment 3.20** — Topology-Driven Chain
+/// Boundary populator.  Host parses topology's per-residue chain_ids
+/// column and produces a [k+1] cumulative-residue-boundary array
+/// where d_chain_offsets[i] is the first residue id of chain i.
+/// Stream-ordered cudaMemcpyToSymbolAsync; `n` clamped to 8.  Replaces
+/// any prior hardcoded chain boundary in the kernel source — the
+/// engine is now target-agnostic for up to 8-chain complexes.
+int prism_ghost_set_chain_offsets(
+    const uint32_t* offsets_host,    /* [n] residue-id boundaries */
+    uint32_t        n,               /* 1..=8 */
+    void*           stream);
+
 #ifdef __cplusplus
 }
 #endif

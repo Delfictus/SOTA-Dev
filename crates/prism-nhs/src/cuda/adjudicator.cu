@@ -383,6 +383,17 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
             code = PRISM_ADJ_VIOLATION;
         }
 
+        // M1.2.20.C-C / T19 — LQI Bit-31 Quarantine override.  Set by
+        // the Dynamic T7 reduce kernel when σ² <= 0 after the 100-frame
+        // cold-hold burn-in: all samples were numerically identical,
+        // the noise floor cannot be trusted (Lineage Protection per
+        // operator §1).  Override fires for the rest of the campaign
+        // until the calibration is rebuilt; offline triage can detect
+        // this state by reading lqi_flags from the adjudicator FFI.
+        if ((adjudicator->lqi_flags & 0x80000000u) != 0u) {
+            code = PRISM_ADJ_VIOLATION;
+        }
+
         adjudicator->adjudication_code = code;
 
         // ─── Anti-Greenfield § 6.2 — legacy_centroid_fallback ──
@@ -452,8 +463,12 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     // at the head of every replay window so each chunk starts with a
     // clean violation state.
     adj->momentum_violation_flag = 0u;
+    // M1.2.20.C-C / T19 — LQI Quarantine cleared.  This field is NOT
+    // reset per-replay (calibration is one-shot at burn-in); the zero
+    // kernel runs once at engine init.
+    adj->lqi_flags = 0u;
     #pragma unroll
-    for (int k = 0; k < 108; ++k) {
+    for (int k = 0; k < 104; ++k) {
         adj->_reserved_m1_2_20[k] = 0u;
     }
 }

@@ -346,4 +346,33 @@ extern "C" {
         n:                  u32,
         stream:             *mut std::ffi::c_void,
     ) -> i32;
+
+    /// **M1.2.20.C-C / T20 + Amendment 3.20** — Topology-Driven Chain
+    /// Boundary populator.  Host parses topology.chain_ids[] and
+    /// produces a `[k]` cumulative-residue-boundary array where
+    /// `offsets_host[i]` is the first residue id of chain `i`.
+    /// Stream-ordered cudaMemcpyToSymbolAsync; `n` clamped to 8.
+    /// Target-agnostic — replaces all prior hardcoded chain numbers.
+    pub fn prism_ghost_set_chain_offsets(
+        offsets_host: *const u32,
+        n:            u32,
+        stream:       *mut std::ffi::c_void,
+    ) -> i32;
+}
+
+/// **M1.2.20.C-C / T20 + Amendment 3.20** — Public host wrapper for
+/// the topology-driven chain offsets populator.  The underlying
+/// `prism_ghost_set_chain_offsets` extern is declared at module-level
+/// (not in a sub-module), so this just provides a documented Rust
+/// signature for the bin call site.
+///
+/// # Safety
+/// `offsets_host` must point to at least `n` valid `u32` values.
+/// `stream` must be a valid CUstream owned by the active context.
+pub unsafe fn set_chain_offsets(
+    offsets_host: *const u32,
+    n:            u32,
+    stream:       *mut std::ffi::c_void,
+) -> i32 {
+    prism_ghost_set_chain_offsets(offsets_host, n, stream)
 }
