@@ -362,17 +362,23 @@ pub struct InterferometricAdjudicatorFfi {
     /// captured-graph replay via cuMemsetD8Async at offset 144.
     pub momentum_violation_flag: u32,
 
-    /// **M1.2.20.C-C / T19 — LQI Quarantine flags.**  Offset 148..152,
-    /// 4 B (`u32`).  Bit-31 (`0x80000000`) = "T7 Calibration variance
-    /// reduced to zero after 100-frame burn-in" — operator's Lineage
-    /// Protection mandate.  Set by the Dynamic T7 reduce kernel when
-    /// `σ² <= 0`; physically means all 100 cold-hold KL samples were
-    /// numerically identical (degenerate manifold pair, no signal to
-    /// thresh).  The Adjudicator step kernel reads this flag and
-    /// forces VIOLATION when set.  Bits 0..30 reserved for future
-    /// quality flags.  Cleared by the zero kernel; persists across
-    /// captured-graph replays (calibration is one-shot, not per-replay).
-    pub lqi_flags: u32,
+    /// **M1.2.20.C-G / T24 — Adjudication Reason Flags.**  Offset
+    /// 148..152, 4 B (`u32`).  Bit-mapped self-auditing field set by
+    /// the gasp kernel + Adjudicator step kernel + Momentum Guard +
+    /// SISR; read by host at teardown via cuMemcpyDtoH and stamped
+    /// into `v2_ignition_summary.json`.  Replaces the M1.2.20.C-C
+    /// `lqi_flags` (same offset; semantic generalization per operator
+    /// Amendment §4 "self-auditing summary").
+    ///
+    /// Bit-mapping (operator §4.1):
+    ///   • Bit 0 (`0x1`)        — `NaN_POTENTIAL`  : non-finite operand
+    ///   • Bit 1 (`0x2`)        — `MOMENTUM_VIOLATION`: |Σm·Δr| > 1e-4 Å
+    ///   • Bit 2 (`0x4`)        — `SYMMETRY_VETO`  : SISR prune mask non-zero
+    ///   • Bit 3 (`0x8`)        — `GAIN_SATURATION`: η_eff hit hard cap
+    ///   • Bits 4..30           — reserved
+    ///   • Bit 31 (`0x80000000`) — `LQI_T7_VARIANCE_ZERO` (Lineage
+    ///                              Protection — kept from M1.2.20.C-C)
+    pub adjudication_reason_flags: u32,
 
     /// **M1.2.20.C — Reserved padding.**  Offset 152..256, 104 B.
     /// Pads `InterferometricAdjudicatorFfi` to an explicit 256-byte
@@ -416,16 +422,20 @@ impl InterferometricAdjudicatorFfi {
             gasp_gain_eta: 1.0,
             force_burst_step: Self::FORCE_BURST_DISABLED,
             momentum_violation_flag: 0,
-            lqi_flags: 0,
+            adjudication_reason_flags: 0,
             _reserved_m1_2_20: [0u8; 104],
         }
     }
 
-    /// **M1.2.20.C-C** — Bit-31 of `lqi_flags` indicates the T7 Calibration
-    /// reduce kernel found σ² <= 0 after 100 cold-hold samples; the
-    /// noise floor cannot be trusted and the Adjudicator forces
-    /// VIOLATION (Lineage Protection).  Equal to `0x80000000_u32`.
-    pub const LQI_T7_VARIANCE_ZERO: u32 = 0x80000000_u32;
+    /// **M1.2.20.C-G / T24** — bit-map for `adjudication_reason_flags`.
+    pub const REASON_NAN_POTENTIAL:      u32 = 0x0000_0001;
+    pub const REASON_MOMENTUM_VIOLATION: u32 = 0x0000_0002;
+    pub const REASON_SYMMETRY_VETO:      u32 = 0x0000_0004;
+    pub const REASON_GAIN_SATURATION:    u32 = 0x0000_0008;
+    /// Lineage Protection bit retained from M1.2.20.C-C.  Bit-31 of
+    /// `adjudication_reason_flags` indicates the T7 reduce kernel
+    /// found σ² <= 0 after 100 cold-hold samples.
+    pub const LQI_T7_VARIANCE_ZERO:      u32 = 0x8000_0000;
 
     /// **M1.2.20.C** — sentinel value for `force_burst_step` meaning
     /// "no burst scheduled" (gasp runs at baseline gain every replay).
@@ -503,9 +513,9 @@ const _: () = {
     // mirror in adjudicator.cuh has matching static_asserts.
     assert!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta)            == 136);
     assert!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step)         == 140);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag)  == 144);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, lqi_flags)                == 148);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20)        == 152);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag)     == 144);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, adjudication_reason_flags)   == 148);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20)           == 152);
     assert!(size_of::<InterferometricAdjudicatorFfi>() == 256);
 };
 
@@ -1349,8 +1359,8 @@ mod tests {
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step),         140);
         // M1.2.20.C-B — Momentum Guard flag carved from _reserved.
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag),  144);
-        // M1.2.20.C-C / T19 — LQI Quarantine flags carved from _reserved.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, lqi_flags),                148);
+        // M1.2.20.C-G / T24 — adjudication_reason_flags (replaces lqi_flags).
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, adjudication_reason_flags),148);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20),        152);
         assert_eq!(std::mem::size_of::<InterferometricAdjudicatorFfi>(),                256);
     }

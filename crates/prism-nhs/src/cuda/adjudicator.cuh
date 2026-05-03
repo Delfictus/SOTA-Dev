@@ -164,13 +164,15 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // center-of-mass shift exceeds 1e-4 Å; the Adjudicator step
     // kernel reads this and forces adjudication_code = VIOLATION
     // (overrides the KL-divergence trigger).
-    uint32_t momentum_violation_flag;   // offset 144
-    // M1.2.20.C-C / T19 — LQI Quarantine.  Bit-31 (0x80000000) set when
-    // the Dynamic T7 reduce kernel found σ² <= 0 after the 100-frame
-    // cold-hold burn-in (degenerate noise floor, all samples identical).
-    // Adjudicator step kernel reads this and forces VIOLATION.
-    uint32_t lqi_flags;                 // offset 148
-    uint8_t  _reserved_m1_2_20[104];    // offset 152..256
+    uint32_t momentum_violation_flag;        // offset 144
+    // M1.2.20.C-G / T24 — Adjudication Reason Flags (was lqi_flags).
+    // Bit-mapped self-auditing field.  Set by gasp + Adjudicator +
+    // Momentum Guard + SISR; read by host at teardown into
+    // v2_ignition_summary.json.  Bit map:
+    //   0 NaN_POTENTIAL  1 MOMENTUM_VIOLATION  2 SYMMETRY_VETO  3 GAIN_SATURATION
+    //   31 LQI_T7_VARIANCE_ZERO (Lineage Protection)
+    uint32_t adjudication_reason_flags;      // offset 148
+    uint8_t  _reserved_m1_2_20[104];         // offset 152..256
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 256,
               "FFI Size Mismatch — must be 256 bytes (Zero-Trust §1.1).");
@@ -196,10 +198,10 @@ static_assert(offsetof(InterferometricAdjudicatorFfi, force_burst_step) == 140,
               "M1.2.20.C-A: force_burst_step offset drift — must be 140.");
 static_assert(offsetof(InterferometricAdjudicatorFfi, momentum_violation_flag) == 144,
               "M1.2.20.C-B: momentum_violation_flag offset drift — must be 144.");
-static_assert(offsetof(InterferometricAdjudicatorFfi, lqi_flags) == 148,
-              "M1.2.20.C-C / T19: lqi_flags offset drift — must be 148.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, adjudication_reason_flags) == 148,
+              "M1.2.20.C-G / T24: adjudication_reason_flags offset drift — must be 148.");
 static_assert(offsetof(InterferometricAdjudicatorFfi, _reserved_m1_2_20) == 152,
-              "M1.2.20.C-C: _reserved tail offset drift — must be 152 (post LQI carve).");
+              "M1.2.20.C: _reserved tail offset drift — must be 152.");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)

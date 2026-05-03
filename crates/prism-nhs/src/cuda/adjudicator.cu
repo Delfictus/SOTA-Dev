@@ -379,18 +379,31 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
         // AFTER the SISR prune so a vetoed-cluster frame whose gasp
         // also drifted bodily still surfaces as VIOLATION (the more
         // diagnostic signal for offline triage).
+        // M1.2.20.C-G / T24 — stamp self-auditing reason bits as we
+        // make the routing decision.  These persist on the FFI struct
+        // across the campaign so the teardown forensic readback shows
+        // *why* the adjudicator picked the code it did (operator §4
+        // "self-auditing summary").
+
         if (adjudicator->momentum_violation_flag != 0u) {
             code = PRISM_ADJ_VIOLATION;
+            atomicOr(&adjudicator->adjudication_reason_flags, 0x2u);  // MOMENTUM_VIOLATION
         }
 
-        // M1.2.20.C-C / T19 — LQI Bit-31 Quarantine override.  Set by
-        // the Dynamic T7 reduce kernel when σ² <= 0 after the 100-frame
-        // cold-hold burn-in: all samples were numerically identical,
-        // the noise floor cannot be trusted (Lineage Protection per
-        // operator §1).  Override fires for the rest of the campaign
-        // until the calibration is rebuilt; offline triage can detect
-        // this state by reading lqi_flags from the adjudicator FFI.
-        if ((adjudicator->lqi_flags & 0x80000000u) != 0u) {
+        if (any_violation != 0u) {
+            // any_violation was set earlier when a NaN/Inf landed on
+            // the Causality (plane=1) or Thermodynamics (plane=2) lanes.
+            atomicOr(&adjudicator->adjudication_reason_flags, 0x1u);  // NaN_POTENTIAL
+        }
+
+        if (prune_mask != 0ull) {
+            atomicOr(&adjudicator->adjudication_reason_flags, 0x4u);  // SYMMETRY_VETO
+        }
+
+        // LQI Bit-31 Quarantine override (carried over from M1.2.20.C-C).
+        // Set by Dynamic T7 reduce when σ² <= 0; read here as the same
+        // bit on the renamed adjudication_reason_flags field.
+        if ((adjudicator->adjudication_reason_flags & 0x80000000u) != 0u) {
             code = PRISM_ADJ_VIOLATION;
         }
 
@@ -463,10 +476,11 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     // at the head of every replay window so each chunk starts with a
     // clean violation state.
     adj->momentum_violation_flag = 0u;
-    // M1.2.20.C-C / T19 — LQI Quarantine cleared.  This field is NOT
-    // reset per-replay (calibration is one-shot at burn-in); the zero
-    // kernel runs once at engine init.
-    adj->lqi_flags = 0u;
+    // M1.2.20.C-G / T24 — adjudication_reason_flags cleared.  Field
+    // is NOT reset per-replay (it accumulates reasons across the
+    // campaign for the teardown forensic readback); the zero kernel
+    // runs once at engine init.
+    adj->adjudication_reason_flags = 0u;
     #pragma unroll
     for (int k = 0; k < 104; ++k) {
         adj->_reserved_m1_2_20[k] = 0u;

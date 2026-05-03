@@ -667,6 +667,20 @@ __constant__ float d_mu01_lut[4] = {
 // treats as "no Cα available; skip displacement on this spike").
 __constant__ uint32_t d_residue_to_calpha[1024];
 
+// **M1.2.20.C-G / T21 — Dynamic Step Counter (Capture-Time Freeze fix).**
+// Pre-T21, the gasp kernel took `current_step` as a kernel parameter;
+// because parameters are FROZEN at cuStreamBeginCapture time, every
+// captured-graph replay saw the same value (e.g., 500 forever).  The
+// `--force-burst-at-step 5000` trigger therefore never matched.
+//
+// T21 fix: host writes the live MD step into this __constant__ via
+// `cudaMemcpyToSymbolAsync(d_current_md_step, &step, ...)` immediately
+// before each chunk's launch.  __constant__ writes are NOT captured
+// into the graph (they happen on the host stream outside the capture
+// window's kernel-launch sequence), so the kernel reads a fresh
+// value every replay.
+__constant__ uint32_t d_current_md_step;
+
 extern "C"
 __global__ void prism_apply_gradient_gasp_kernel(
     const RichSpike*    __restrict__ d_spikes_in,
@@ -675,10 +689,15 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const float*        __restrict__ d_masses,           // [n_atoms]
     const uint8_t*      __restrict__ adj_base,           // FFI offset arithmetic
     float*              __restrict__ d_com_shift,        // [3] atomicAdd target — Σ m·Δr
-    uint32_t                         current_step,
+    uint32_t                         /*current_step_unused — T21 reads __constant__*/,
     uint32_t                         n_spikes,
     uint32_t                         n_atoms
 ) {
+    // **M1.2.20.C-G / T21** — read the host-updated step from
+    // __constant__ memory.  Single-cycle broadcast load shared by
+    // every thread in the warp.  Replaces the captured-graph-frozen
+    // kernel parameter.
+    const uint32_t current_step = d_current_md_step;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_spikes) return;
 
@@ -718,9 +737,28 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const uint32_t uv_code = (spike_in.intensity_packed >> 30) & 0x3u;
     const float Q_s = d_mu01_lut[uv_code];
 
-    // Ruling 2 — stiffness-inverted effective gain with ε floor.
-    constexpr float VIB_EPS = 1.0e-3f;
-    float eta_eff = eta_base / fmaxf(spike_in.vib_energy, VIB_EPS);
+    // **M1.2.20.C-G / T22 — Gasp Gain Recalibration & Singularity Guard.**
+    // Pre-G the formula `1.0 / max(vib, 1e-3)` blew up to 1000× gain
+    // during the 50K cold-hold (vib_energy ≈ 0 in frozen states),
+    // catastrophic Σ m·Δr → uniform momentum_violation_flag = 1 → all
+    // 69 v9B records came back code=VIOLATION.  Operator §2 fix:
+    //   • η_base lowered 1.0 → 0.5 (anticipatory safety)
+    //   • soft vib floor raised 1e-3 → 1e-2 (10× lower max gain)
+    //   • hard saturation cap η_eff ≤ 5.0 (prevents single-spike runaway)
+    constexpr float VIB_SOFT_FLOOR = 1.0e-2f;
+    constexpr float ETA_HARD_CAP   = 5.0f;
+    const float soft_vib = fmaxf(spike_in.vib_energy, VIB_SOFT_FLOOR);
+    float eta_eff = (0.5f * eta_base) / soft_vib;
+    const bool gain_saturated = (eta_eff > ETA_HARD_CAP);
+    eta_eff = fminf(eta_eff, ETA_HARD_CAP);
+    // Stamp the GAIN_SATURATION bit on adj.adjudication_reason_flags
+    // (offset 148, bit 3 = 0x8).  Atomic OR survives the 256-thread
+    // block contention.  Adjudicator step kernel reads this for the
+    // CSR-Q forensic readback.
+    if (gain_saturated) {
+        atomicOr(reinterpret_cast<uint32_t*>(
+            const_cast<uint8_t*>(adj_base) + 148), 0x8u);
+    }
 
     // Ruling 5 — 10× amplification when this is the burst step.
     if (current_step == burst_at) {
@@ -818,6 +856,27 @@ int prism_so3_set_residue_to_calpha(
         d_residue_to_calpha,
         host_table,
         n * sizeof(uint32_t),
+        /*offset*/ 0,
+        cudaMemcpyHostToDevice,
+        static_cast<cudaStream_t>(stream)
+    );
+    return static_cast<int>(rc);
+}
+
+// **M1.2.20.C-G / T21** — Update the dynamic MD step counter that the
+// gasp kernel reads via __constant__.  Host calls this from the chunk
+// loop in nhs_rt_full.rs immediately BEFORE each captured-graph
+// re-launch so the gasp kernel sees the live step on every replay
+// (rather than the frozen capture-time seed).
+extern "C"
+int prism_so3_set_current_md_step(
+    uint32_t        step,
+    void*           stream)
+{
+    cudaError_t rc = cudaMemcpyToSymbolAsync(
+        d_current_md_step,
+        &step,
+        sizeof(uint32_t),
         /*offset*/ 0,
         cudaMemcpyHostToDevice,
         static_cast<cudaStream_t>(stream)

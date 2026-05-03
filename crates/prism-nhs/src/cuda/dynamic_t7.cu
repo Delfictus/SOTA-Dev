@@ -114,7 +114,9 @@ __global__ void prism_dynamic_t7_reduce_kernel(
     // (numerically degenerate).  We cannot threshold against a zero
     // floor; flag the run for Lineage Protection.
     if (!(var > 0.0)) {
-        atomicOr(&adj->lqi_flags, 0x80000000u);
+        // Bit-31 of adjudication_reason_flags = LQI_T7_VARIANCE_ZERO
+        // (Lineage Protection — operator §1, retained from M1.2.20.C-C).
+        atomicOr(&adj->adjudication_reason_flags, 0x80000000u);
         __threadfence();
         // Still write a sane fallback so subsequent captured-graph
         // replays don't read uninitialised noise_floor values.

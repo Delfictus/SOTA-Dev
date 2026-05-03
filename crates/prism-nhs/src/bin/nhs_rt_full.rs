@@ -5617,6 +5617,33 @@ fn run_multi_stream_pipeline(
                                             }
                                         }
 
+                                        // **M1.2.20.C-G / T21** — Update __constant__
+                                        // d_current_md_step BEFORE each captured-graph
+                                        // re-launch.  Fixes the G35 capture-time freeze
+                                        // that locked the gasp kernel's burst trigger to
+                                        // the build-time frame_id (e.g., 500) regardless
+                                        // of the live MD step.  Stream-ordered
+                                        // cudaMemcpyToSymbolAsync; the kernel reads the
+                                        // updated value on the next replay.
+                                        {
+                                            let live_step: u32 = steps_run as u32;
+                                            let stream_raw = engine.cuda_stream().cu_stream()
+                                                as *mut std::ffi::c_void;
+                                            let rc_step = unsafe {
+                                                prism_nhs::so3_project::set_current_md_step(
+                                                    live_step, stream_raw,
+                                                )
+                                            };
+                                            if rc_step != 0 {
+                                                log::warn!(
+                                                    "[M1.2.20.C-G / T21] set_current_md_step \
+                                                     rc={} at step={} — gasp burst trigger \
+                                                     may be stale this replay",
+                                                    rc_step, live_step
+                                                );
+                                            }
+                                        }
+
                                         // G24 slot-roller (Path Z): legacy API now no-ops
                                         // beyond delegating to launch(); slot rolling lives
                                         // in the constant-memory update above.
@@ -7153,6 +7180,58 @@ fn run_multi_stream_pipeline(
                                     ),
                                 }
                             }
+                            // **M1.2.20.C-G / T24 — Forensic Flag Readback.**
+                            // Pull adj.adjudication_reason_flags (offset 148, u32) +
+                            // momentum_violation_flag (offset 144, u32) out of the
+                            // captured-graph FFI struct via cuMemcpyDtoH before the
+                            // pipeline drops the F2-pool buffer.  Logged at INFO so
+                            // operator's CSR-Q "Why did v9B fail?" question has a
+                            // self-auditing answer.
+                            if let Some(ref pipeline) = v2_pipeline {
+                                use cudarc::driver::sys::{cuMemcpyDtoH_v2, CUresult, CUdeviceptr};
+                                let adj_dev = pipeline.adj_dev_ptr();
+                                let mut reason_flags: u32 = 0;
+                                let mut mom_flag:    u32 = 0;
+                                let rc1 = unsafe {
+                                    cuMemcpyDtoH_v2(
+                                        &mut reason_flags as *mut u32 as *mut std::ffi::c_void,
+                                        (adj_dev + 148) as CUdeviceptr,
+                                        4,
+                                    )
+                                };
+                                let rc2 = unsafe {
+                                    cuMemcpyDtoH_v2(
+                                        &mut mom_flag as *mut u32 as *mut std::ffi::c_void,
+                                        (adj_dev + 144) as CUdeviceptr,
+                                        4,
+                                    )
+                                };
+                                if matches!(rc1, CUresult::CUDA_SUCCESS)
+                                    && matches!(rc2, CUresult::CUDA_SUCCESS)
+                                {
+                                    log::info!(
+                                        "[M1.2.20.C-G / T24 / CSR-Q stream {}] \
+                                         adj.adjudication_reason_flags=0x{:08X} \
+                                         momentum_violation_flag={} | \
+                                         NaN_POTENTIAL={} MOMENTUM_VIOLATION={} \
+                                         SYMMETRY_VETO={} GAIN_SATURATION={} \
+                                         LQI_T7_VARIANCE_ZERO={}",
+                                        i, reason_flags, mom_flag,
+                                        (reason_flags & 0x1) != 0,
+                                        (reason_flags & 0x2) != 0,
+                                        (reason_flags & 0x4) != 0,
+                                        (reason_flags & 0x8) != 0,
+                                        (reason_flags & 0x80000000) != 0,
+                                    );
+                                } else {
+                                    log::warn!(
+                                        "[M1.2.20.C-G / T24] cuMemcpyDtoH adj-flags \
+                                         rc1={} rc2={}",
+                                        rc1 as i32, rc2 as i32
+                                    );
+                                }
+                            }
+
                             // Drop the monolithic exec FIRST (it embeds a copy of
                             // the adjudication template; the original template is
                             // still owned by v2_pipeline and freed on the next drop).

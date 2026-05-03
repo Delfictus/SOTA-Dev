@@ -220,6 +220,15 @@ pub(crate) mod ffi {
             stream:     *mut std::ffi::c_void,
         ) -> CudaError;
 
+        /// **M1.2.20.C-G / T21** — Update __constant__ d_current_md_step.
+        /// Call this from the chunk loop BEFORE each captured-graph
+        /// relaunch so the gasp kernel sees the live MD step number
+        /// instead of the build-time frozen value.
+        pub fn prism_so3_set_current_md_step(
+            step:   u32,
+            stream: *mut std::ffi::c_void,
+        ) -> CudaError;
+
         /// Launch the prism_apply_gradient_gasp_kernel.  Reads FFI
         /// fields from `adj_base` (gasp_gain_eta @ 136, force_burst_step
         /// @ 140, d_dt @ 120) via byte-offset arithmetic; computes
@@ -278,6 +287,20 @@ pub unsafe fn set_residue_to_calpha(
     stream:     *mut std::ffi::c_void,
 ) -> i32 {
     ffi::prism_so3_set_residue_to_calpha(host_table, n, stream)
+}
+
+/// **M1.2.20.C-G / T21** — Public host wrapper for the dynamic-step
+/// __constant__ updater.  Call from the chunk loop BEFORE each
+/// captured-graph re-launch.
+///
+/// # Safety
+/// `stream` must be a valid CUstream owned by the active context.
+#[cfg(feature = "gpu")]
+pub unsafe fn set_current_md_step(
+    step:   u32,
+    stream: *mut std::ffi::c_void,
+) -> i32 {
+    ffi::prism_so3_set_current_md_step(step, stream)
 }
 
 // ============================================================================

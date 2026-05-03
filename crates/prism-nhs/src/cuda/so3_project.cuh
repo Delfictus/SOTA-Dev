@@ -220,6 +220,15 @@ int prism_so3_set_residue_to_calpha(
     uint32_t        n,
     void*           stream);
 
+/// **M1.2.20.C-G / T21** — Update __constant__ d_current_md_step.
+/// Host calls this from the chunk loop in nhs_rt_full.rs immediately
+/// BEFORE each captured-graph re-launch so the gasp kernel sees the
+/// live MD step on every replay.  Fixes the G35 capture-time-freeze
+/// that prevented the --force-burst-at-step trigger from firing.
+int prism_so3_set_current_md_step(
+    uint32_t        step,
+    void*           stream);
+
 /// Launch prism_apply_gradient_gasp_kernel.
 /// Reads adjudicator FFI fields (gasp_gain_eta @136, force_burst_step
 /// @140, d_dt @120) via byte-offset arithmetic; reads per-spike
