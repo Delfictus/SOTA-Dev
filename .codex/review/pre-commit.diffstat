@@ -1,15 +1,8 @@
- .codex/review/.gitkeep                          |    0
- .codex/review/context.txt                       |    6 +
- .codex/review/pre-commit.diff                   | 1155 +++++++++++++++++++++++
- .codex/review/pre-commit.diffstat               |    7 +
- CLAUDE.md                                       |    1 +
- crates/prism-nhs/src/bin/nhs_rt_full.rs         |  316 ++++++-
- crates/prism-nhs/src/captured_pipeline.rs       |  123 ++-
- crates/prism-nhs/src/cuda/ghost_tile_kernel.cu  |   66 +-
- crates/prism-nhs/src/cuda/ghost_tile_kernel.cuh |   12 +
- crates/prism-nhs/src/cuda/so3_project.cu        |  137 ++-
- crates/prism-nhs/src/cuda/so3_project.cuh       |   37 +-
- crates/prism-nhs/src/ghost_tile.rs              |   25 +
- crates/prism-nhs/src/so3_project.rs             |   30 +-
- scripts/stage2_topology.py                      |   17 +
- 14 files changed, 1832 insertions(+), 100 deletions(-)
+ .codex/review/context.txt                       |    8 +-
+ .codex/review/pre-commit.diff                   | 3305 +++++++++++++++--------
+ .codex/review/pre-commit.diffstat               |   22 +-
+ crates/prism-nhs/src/bin/nhs_rt_full.rs         |   27 +
+ crates/prism-nhs/src/captured_pipeline.rs       |   37 +-
+ crates/prism-nhs/src/cuda/ghost_tile_kernel.cu  |   17 +-
+ crates/prism-nhs/src/cuda/ghost_tile_kernel.cuh |   10 +-
+ 7 files changed, 2304 insertions(+), 1122 deletions(-)

@@ -5071,12 +5071,18 @@ fn run_multi_stream_pipeline(
                         let mut t7_cl_samples: Vec<[f32; 6]> = Vec::with_capacity(512);
                         #[cfg(feature = "v2_ignition")]
                         let t7_k_lm_table = prism_nhs::sh_basis::k_lm_table();
-                        // Stream 0 only — multi-stream pipelines all see the
-                        // same cold-hold thermal physics; single-stream
-                        // capture is sufficient for noise-floor calibration
-                        // and avoids per-stream JSON merging.
+                        // Multi-stream fan-out (operator directive 2026-05-03):
+                        // every stream builds its own V2 captured pipeline,
+                        // accumulates its own T7 noise-floor samples, and
+                        // writes its own per-stream artifacts (suffixed with
+                        // the stream index).  Previously gated to stream 0
+                        // only ("one per process") which silently dropped
+                        // 7/8 of the GPU work — the orchestrator ran MD
+                        // physics on all 8 streams but only stream 0 ever
+                        // entered the V2 pipeline, so 7/8 produced no
+                        // persisted scientific output.
                         #[cfg(feature = "v2_ignition")]
-                        let t7_active = i == 0;
+                        let t7_active = true;
 
                         for chunk_idx in 0..n_chunks {
                             if steps_run < steps {
@@ -5088,8 +5094,11 @@ fn run_multi_stream_pipeline(
                                 // records, upload to VRAM (single-cluster CSR), init the
                                 // SO(3) SH basis, and build the CapturedAdjudicationPipeline.
                                 // After this one-time handshake, the V2 launch below routes
-                                // all subsequent chunks through the GPU-only loop. Per operator
-                                // directive: only stream 0 builds the pipeline (t7_active gate).
+                                // all subsequent chunks through the GPU-only loop.
+                                // Multi-stream fan-out (2026-05-03): every stream
+                                // builds its own pipeline (t7_active is now
+                                // unconditionally true) so all 8 streams emit
+                                // their own ZSTR / Ghost / ASC / T7 artifacts.
                                 #[cfg(feature = "v2_ignition")]
                                 if args.m1_monolithic_discovery
                                     && t7_active && v2_pipeline.is_none()
@@ -5603,11 +5612,12 @@ fn run_multi_stream_pipeline(
                                                 // per-frame [GhostTileFrame + ContactShellTile] stream.
                                                 // Sized for ~32k records (≈45 MB) — generous for any
                                                 // V2 chunk count up to the 18,643-target campaign.
-                                                // Stream 0 owns the ring (one per process, not per
-                                                // stream — t7_active gate already restricts pipeline
-                                                // build to stream 0).
+                                                // Multi-stream fan-out (2026-05-03): every stream
+                                                // owns its own ring (8× ≈45 MB ≈ 360 MB pinned)
+                                                // so each stream can write its independent
+                                                // GhostTileFrame stream without contention.
                                                 let ghost_max_records: u32 = 32768;
-                                                if i == 0 && v2_ghost_ring.is_none() {
+                                                if v2_ghost_ring.is_none() {
                                                     match prism_nhs::ghost_tile::GhostTileRing::allocate(
                                                         ghost_max_records,
                                                     ) {
@@ -5767,9 +5777,13 @@ fn run_multi_stream_pipeline(
                                                                 .and_then(|s| s.to_str())
                                                                 .map(|s| s.trim_end_matches(".topology").to_string())
                                                                 .unwrap_or_else(|| "unknown_target".to_string());
+                                                            // Multi-stream fan-out (2026-05-03):
+                                                            // each stream's Reaper writes its
+                                                            // own per-stream ghost_tiles binary.
                                                             let ghost_path = if ghost_clone.is_some() {
                                                                 Some(output_path_capture.join(
-                                                                    format!("{}_ghost_tiles.bin", topo_stem_for_ghost)
+                                                                    format!("{}_stream{:02}_ghost_tiles.bin",
+                                                                            topo_stem_for_ghost, i)
                                                                 ))
                                                             } else {
                                                                 None
@@ -6212,9 +6226,10 @@ fn run_multi_stream_pipeline(
 
                                 // ── T7 NOISE-FLOOR CAPTURE (per-chunk) ─────────
                                 // Sample the SO(3) C_l[0..6] from real cold-hold
-                                // GpuSpikeEvent positions. Fires only on
-                                // stream 0, only during cold_hold (steps_run <
-                                // kcc_cold_hold_steps), only with v2_ignition.
+                                // GpuSpikeEvent positions. Fires on every stream
+                                // (multi-stream fan-out 2026-05-03), only during
+                                // cold_hold (steps_run < kcc_cold_hold_steps),
+                                // only with v2_ignition.
                                 #[cfg(feature = "v2_ignition")]
                                 if t7_active {
                                     log::info!(
@@ -7473,10 +7488,12 @@ fn run_multi_stream_pipeline(
                         }
 
                         // ── T7 CALIBRATION: dump captured C_l samples ───────
-                        // Path B output (operator directive 2026-04-30).
-                        // Writes per-frame C_l[0..6] arrays (real cold-hold,
-                        // L2-normalized, stream 0 only) to a JSON file the
-                        // operator + Claude-2 can post-process for μ/σ.
+                        // Path B output (operator directive 2026-04-30; multi-
+                        // stream fan-out 2026-05-03).  Writes per-frame
+                        // C_l[0..6] arrays (real cold-hold, L2-normalized,
+                        // one file per stream → `_streamNN_noise_floor.json`)
+                        // to JSON files the operator + Claude-2 can post-
+                        // process for per-stream μ/σ.
                         //
                         // M1.2.19.A — Substrate Lock: derive both the output
                         // path and the in-JSON `target` field from the actual
@@ -7492,12 +7509,22 @@ fn run_multi_stream_pipeline(
                                 .and_then(|s| s.to_str())
                                 .map(|s| s.trim_end_matches(".topology").to_string())
                                 .unwrap_or_else(|| "unknown_target".to_string());
+                            // Multi-stream fan-out (2026-05-03): per-stream
+                            // suffix prevents 8× concurrent writers from
+                            // racing on the same JSON path.
                             let default_path = output_path_capture
-                                .join(format!("{}_noise_floor.json", topo_stem))
+                                .join(format!("{}_stream{:02}_noise_floor.json", topo_stem, i))
                                 .to_string_lossy()
                                 .into_owned();
-                            let path = std::env::var("PRISM_T7_CALIBRATION_OUTPUT")
-                                .unwrap_or(default_path);
+                            // PRISM_T7_CALIBRATION_OUTPUT only honoured for
+                            // stream 0 (back-compat with single-stream
+                            // calibration shims that hard-code one filename).
+                            let path = if i == 0 {
+                                std::env::var("PRISM_T7_CALIBRATION_OUTPUT")
+                                    .unwrap_or(default_path)
+                            } else {
+                                default_path
+                            };
                             let n = t7_cl_samples.len();
                             // Compute μ / σ on the fly so they appear in the
                             // JSON alongside the raw samples.
@@ -7552,7 +7579,7 @@ fn run_multi_stream_pipeline(
                             );
                         }
 
-                        // ── M1.2.19.C — ASC FORCE-VECTOR DtoH (Channel C, Stream 0 only) ──
+                        // ── M1.2.19.C — ASC FORCE-VECTOR DtoH (Channel C, per-stream) ──
                         // Operator Amendment 3.13 §2: exfiltrate the post-ASC d_forces
                         // buffer to disk so the offline Causal-Lead-Velocity (v_c) and
                         // Desolvation-Tax (Γ_w) computations can read where steering
@@ -7563,15 +7590,20 @@ fn run_multi_stream_pipeline(
                         // cudaStreamSynchronize (operator's "guaranteed retired before
                         // Rust thread joins" requirement).
                         //
-                        // Output: {output_dir}/{stem}_asc_vectors.bin — exactly
+                        // Output: {output_dir}/{stem}_streamNN_asc_vectors.bin — exactly
                         // n_atoms × 3 × sizeof(f32) = n_atoms × 12 bytes.  For 7C8R
                         // dimer (n_atoms=9226) that's 110,712 bytes (operator's
                         // Section AMS Channel C exact-byte gate).
                         //
-                        // Stream 0 only — all 8 streams share the same atom count
-                        // and 8× redundant DtoH would waste PCIe bandwidth.
+                        // Multi-stream fan-out (2026-05-03): each stream
+                        // writes its own ASC force-vector dump.  Streams are
+                        // physically distinct (different REST2 λ, different
+                        // seeds, different ASC steering); the d_forces buffer
+                        // values diverge across streams and must be persisted
+                        // independently.  PCIe cost: 8× ~110 KB per teardown
+                        // is negligible.
                         #[cfg(feature = "v2_ignition")]
-                        if i == 0 {
+                        {
                             use cudarc::driver::sys::{
                                 cuMemcpyDtoHAsync_v2, CUdeviceptr, CUresult,
                             };
@@ -7603,7 +7635,7 @@ fn run_multi_stream_pipeline(
                                     .map(|s| s.trim_end_matches(".topology").to_string())
                                     .unwrap_or_else(|| "unknown_target".to_string());
                                 let dest = output_path_capture
-                                    .join(format!("{}_asc_vectors.bin", topo_stem));
+                                    .join(format!("{}_stream{:02}_asc_vectors.bin", topo_stem, i));
                                 let bytes_view = unsafe {
                                     std::slice::from_raw_parts(
                                         host_forces.as_ptr() as *const u8,
@@ -7634,20 +7666,26 @@ fn run_multi_stream_pipeline(
                         }
 
                         // ── M1.2.19.B — Channel B GhostTileFrame stream serialization ─
-                        // Stream-0-only.  Read GPU-written counter, slice the live
+                        // Per-stream (multi-stream fan-out 2026-05-03; was
+                        // Stream-0-only).  Read GPU-written counter, slice the live
                         // record payload, and dump it as a single contiguous binary
-                        // file: `{output_dir}/{stem}_ghost_tiles.bin`.  Each record
-                        // is 1408 bytes (128 B header + 1280 B ContactShellTile).
-                        // The number of records on disk = `n_frames_written` clamped
-                        // to `max_records`.
+                        // file: `{output_dir}/{stem}_streamNN_ghost_tiles.bin`.
+                        // Each record is 1408 bytes (128 B header + 1280 B
+                        // ContactShellTile).  The number of records on disk =
+                        // `n_frames_written` clamped to `max_records`.
                         //
                         // The pinned-host ring is mapped, so no DtoH is needed —
                         // the GPU writes through the device-mapped alias and the
                         // host reads directly.  The cuda_stream().synchronize()
                         // above (Channel C) already retired any in-flight Channel-B
                         // writes; the pinned host pages are coherent at this point.
+                        // Multi-stream fan-out (2026-05-03): every stream owns
+                        // a private ring and writes its own per-stream
+                        // ghost_tiles binary on the legacy teardown path
+                        // (the io_uring Reaper writes a separate per-stream
+                        // file when --ghost-telemetry-io-uring=true).
                         #[cfg(feature = "v2_ignition")]
-                        if i == 0 {
+                        {
                             if let Some(ref ring) = v2_ghost_ring {
                                 let n_records = ring.n_frames_written().min(ring.max_records);
                                 let payload   = ring.payload_bytes();
@@ -7657,7 +7695,7 @@ fn run_multi_stream_pipeline(
                                     .map(|s| s.trim_end_matches(".topology").to_string())
                                     .unwrap_or_else(|| "unknown_target".to_string());
                                 let dest = output_path_capture
-                                    .join(format!("{}_ghost_tiles.bin", topo_stem));
+                                    .join(format!("{}_stream{:02}_ghost_tiles.bin", topo_stem, i));
                                 match std::fs::write(&dest, payload) {
                                     Ok(()) => log::info!(
                                         "[Channel-B stream {}] GhostTileFrame stream → {} \
@@ -7982,12 +8020,16 @@ fn run_multi_stream_pipeline(
 
                     // V2 streaming trajectory path: snapshots Vec is empty because
                     // the chunk loop used graph.run_chunk() and streamed frames
-                    // directly to /tmp/prism_v2_{pid}_{stream}.bin.
-                    // Move the file into the output directory and read the
-                    // n_frames header so the stream summary is accurate.
+                    // directly to {args.output}/prism_v2_{pid}_{stream}.bin.
+                    // (Source path was /tmp/ in M1.2.19.D and earlier; the writer
+                    // was relocated to args.output to eliminate cross-device
+                    // rename failures, but this teardown lookup was missed
+                    // until the multi-stream fan-out audit on 2026-05-03.)
+                    // Move the file into its final per-stream slot and read
+                    // the n_frames header so the stream summary is accurate.
                     if snapshots.is_empty() {
-                        let tmp_src = std::path::PathBuf::from(
-                            format!("/tmp/prism_v2_{}_{}.bin",
+                        let tmp_src = args.output.join(
+                            format!("prism_v2_{}_{}.bin",
                                     std::process::id(), i)
                         );
                         if tmp_src.exists() {
@@ -8011,8 +8053,9 @@ fn run_multi_stream_pipeline(
                                         i, disk_frames, dst.display());
                                 }
                                 Err(e) => log::warn!(
-                                    "  [V2 teardown] stream {} move tmp→output \
-                                     failed: {}", i, e),
+                                    "  [V2 teardown] stream {} move {}→{} \
+                                     failed: {}", i, tmp_src.display(),
+                                     dst.display(), e),
                             }
                         }
                     }
@@ -8553,15 +8596,20 @@ fn run_multi_stream_pipeline(
             Ok(b)  => format!("{:016x}", fnv1a64(&b)),
             Err(_) => String::from("absent"),
         };
-        // ghost_tiles.bin lives at {output_dir}/{stem}_ghost_tiles.bin
+        // ghost_tiles.bin lives at {output_dir}/{stem}_stream00_ghost_tiles.bin
         // (NB: underscore, not dot; the V2 build flow constructs it
         // separately from output_base's .topology stem).
+        // Multi-stream fan-out (2026-05-03): each stream emits its own
+        // _streamNN_ghost_tiles.bin; the lineage hash continues to
+        // canonicalise on stream 0's file (stable across single-stream
+        // and multi-stream runs).  Per-stream artifacts can be hashed
+        // independently by an external auditor if desired.
         let ghost_descriptor = {
             let stem = output_base.file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
             let ghost_bin = output_base
-                .with_file_name(format!("{}_ghost_tiles.bin", stem));
+                .with_file_name(format!("{}_stream00_ghost_tiles.bin", stem));
             match std::fs::metadata(&ghost_bin) {
                 Ok(meta) => {
                     let size = meta.len();
