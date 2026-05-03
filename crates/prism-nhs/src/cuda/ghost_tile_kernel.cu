@@ -89,7 +89,8 @@ __global__ void prism_ghost_pipe_stage_kernel(
     const uint32_t* __restrict__       d_kcc_lead,   // Wave 1 / Q2 — F2-pool [n_clusters]
     uint64_t                           frame_idx,
     uint32_t                           n_clusters,
-    uint32_t                           max_records
+    uint32_t                           max_records,
+    uint32_t                           firehose_enable  // 0 = adj-gated; nonzero = ALWAYS emit
 ) {
     const uint32_t i = threadIdx.x;
     if (i >= n_clusters) return;
@@ -99,7 +100,13 @@ __global__ void prism_ghost_pipe_stage_kernel(
     // For now read the global code; all clusters share the same SWITCH.
     const uint8_t adj_code =
         *reinterpret_cast<const uint8_t*>(adj + PRISM_ADJ_ADJUDICATION_CODE_OFF);
-    if (adj_code < 1u) return;  // Prune (0): nothing to record
+    // Diagnostic firehose mode: when enabled, ALWAYS emit a record per
+    // cluster per replay regardless of adj_code (operator post-audit
+    // 2026-05-03 — full per-cluster KL trajectory + 4-plane spectrum
+    // time series captured even on null-manifest runs).  The emitted
+    // record still carries the actual adj_code so downstream tools
+    // can distinguish "construct event" from "diagnostic sample".
+    if (firehose_enable == 0u && adj_code < 1u) return;  // Prune (0): nothing to record
 
     // Bounds-check + atomic claim.
     // Wave 1 / P5 — atomicAdd on a host-mapped pinned counter; multiple
@@ -231,7 +238,8 @@ int prism_ghost_pipe_stage_launch(
     uint64_t      frame_idx,
     uint32_t      n_clusters,
     uint32_t      max_records,
-    void*         stream)
+    void*         stream,
+    uint32_t      firehose_enable)  // 0 = adj-gated emission; nonzero = unconditional per-cluster
 {
     if (ring_base_dev == 0ull || tiles == nullptr || adj == nullptr) {
         return static_cast<int>(cudaErrorInvalidValue);
@@ -251,7 +259,8 @@ int prism_ghost_pipe_stage_launch(
         static_cast<const uint32_t*>(d_kcc_lead),
         frame_idx,
         n_clusters,
-        max_records
+        max_records,
+        firehose_enable
     );
     return static_cast<int>(cudaGetLastError());
 }

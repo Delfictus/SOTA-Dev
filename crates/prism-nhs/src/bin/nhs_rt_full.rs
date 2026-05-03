@@ -304,6 +304,20 @@ struct Args {
     #[arg(long)]
     force_burst_at_step: Option<u32>,
 
+    /// **Ghost-tile diagnostic firehose (post-audit operator directive
+    /// 2026-05-03).**  Default ON.  When enabled, the Channel-B Ghost
+    /// stage kernel emits one GhostTileFrame per cluster per replay
+    /// regardless of `adj.adjudication_code`, capturing the full
+    /// per-cluster KL trajectory + 4-plane SO(3) spectrum time series
+    /// even on null-manifest runs (where the V2 12-σ adjudicator gate
+    /// never triggers and the legacy gated path produces zero-byte
+    /// `ghost_tiles_bin` artifacts).  Records still carry the actual
+    /// adj_code so downstream tools distinguish construct events from
+    /// diagnostic samples.  Pass `--ghost-diagnostic-firehose=false`
+    /// to restore the legacy adj-gated emission path.
+    #[arg(long, default_value = "true")]
+    ghost_diagnostic_firehose: bool,
+
     // M1.2.20.C-I / Amendment 3.22 §2.1 — Hardware-Path Selector
     // (`--m1-monolithic-discovery`) is already declared above at
     // line ~254 (pre-dating Amendment 3.22).  Operator §2.1 semantics:
@@ -5096,6 +5110,10 @@ fn run_multi_stream_pipeline(
                                          downloading spikes for pipeline seed…",
                                         i, steps_run
                                     );
+                                    log::info!(
+                                        "    [FIREHOSE] ghost-tile diagnostic firehose mode = {}",
+                                        if args.ghost_diagnostic_firehose { "ENABLED" } else { "DISABLED" }
+                                    );
                                     // get_accumulated_spikes returns the host-side ring already
                                     // populated by force_spike_sync during cold_hold chunks.
                                     let spike_events: Vec<prism_nhs::fused_engine::GpuSpikeEvent> =
@@ -5641,6 +5659,15 @@ fn run_multi_stream_pipeline(
                                                     d_external_work:   d_external_work_ptr as *mut f64,
                                                     ghost_tile_ring_dev:    ghost_dev,
                                                     ghost_tile_max_records: ghost_caps,
+                                                    // Diagnostic firehose: post-audit operator
+                                                    // directive 2026-05-03 — capture full
+                                                    // per-cluster KL trajectory + 4-plane SO(3)
+                                                    // spectrum time series even on null-manifest
+                                                    // runs where the 12-σ adjudicator gate
+                                                    // never trips.  Default ON; pass
+                                                    // `--ghost-diagnostic-firehose=false` to
+                                                    // restore the legacy adj-gated path.
+                                                    firehose_enable: if args.ghost_diagnostic_firehose { 1 } else { 0 },
                                                     // Wave 1 / Q2 — F2-pool d_kcc_lead[n_clusters]
                                                     // not yet plumbed through the engine; kernel
                                                     // emits 0xFFFFFFFFu sentinels until host argmax

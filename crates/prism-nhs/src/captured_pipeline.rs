@@ -143,14 +143,15 @@ extern "C" {
 // ============================================================================
 extern "C" {
     fn prism_ghost_pipe_stage_launch(
-        ring_base_dev: u64,
-        tiles:         *const c_void,
-        adj:           *const c_void,
-        d_kcc_lead:    *const c_void,   // Wave 1 / Q2 — F2-pool [n_clusters] u32, nullable
-        frame_idx:     u64,
-        n_clusters:    u32,
-        max_records:   u32,
-        stream:        *mut c_void,
+        ring_base_dev:   u64,
+        tiles:           *const c_void,
+        adj:             *const c_void,
+        d_kcc_lead:      *const c_void,   // Wave 1 / Q2 — F2-pool [n_clusters] u32, nullable
+        frame_idx:       u64,
+        n_clusters:      u32,
+        max_records:     u32,
+        stream:          *mut c_void,
+        firehose_enable: u32,             // 0 = adj-gated; nonzero = always emit per cluster per replay
     ) -> i32;
 
     /// Wave 1 / Q1 — populate __constant__ d_cluster_to_repr_residue[64].
@@ -505,6 +506,21 @@ pub struct PipelineConfig {
     /// bounds-checks against this before atomic-add'ing a new record.
     /// Sized at engine init based on expected V2 chunk count.
     pub ghost_tile_max_records: u32,
+
+    /// **Diagnostic firehose (post-audit operator directive 2026-05-03).**
+    /// `0` ⇒ default Adjudicator-gated emission (record only when
+    /// `adj.adjudication_code >= 1` — Construct or Violation events).
+    /// Nonzero ⇒ kernel ALWAYS emits one GhostTileFrame per cluster per
+    /// replay regardless of adj_code, capturing the full per-cluster KL
+    /// trajectory + 4-plane SO(3) spectrum time series even on
+    /// null-manifest runs (where the V2 12-σ adjudicator gate never
+    /// triggers and the legacy gated path produces zero-byte
+    /// `ghost_tiles_bin` artifacts).  Records still carry the actual
+    /// adj_code so downstream tools distinguish construct events from
+    /// diagnostic samples.  Wired from the
+    /// `--ghost-diagnostic-firehose` CLI flag in `nhs_rt_full.rs`
+    /// (default ON post-audit).
+    pub firehose_enable: u32,
 
     /// **Wave 1 / Q2 — Causal-lead residue F2-pool buffer.**
     /// Device pointer (`u64` raw) to a `[u32; n_clusters]` buffer
@@ -1780,6 +1796,7 @@ impl CapturedAdjudicationPipeline {
                     cfg.n_clusters,
                     cfg.ghost_tile_max_records,
                     md_stream.cu_stream() as *mut c_void,
+                    cfg.firehose_enable,
                 )
             };
             if rc != 0 {
@@ -3012,6 +3029,7 @@ mod tests {
             d_external_work: ptr::null_mut(),
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
+            firehose_enable: 0,
             d_kcc_lead: 0,
             d_forces_anchor: 0,
             d_masses: 0,
@@ -3161,6 +3179,7 @@ mod tests {
             ghost_tile_ring_dev: 0,
             d_kcc_lead: 0,
             ghost_tile_max_records: 0,
+            firehose_enable: 0,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -3252,6 +3271,7 @@ mod tests {
             d_kcc_lead: 0,
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
+            firehose_enable: 0,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -3351,6 +3371,7 @@ mod tests {
             d_external_work: ptr::null_mut(),
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
+            firehose_enable: 0,
         };
 
         // Closure that captures the conditional-node handle written

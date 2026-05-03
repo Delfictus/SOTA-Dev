@@ -86,6 +86,13 @@ extern "C" {
 /// between chunks via argmax|d_kcc_temporal_corr|).  Pass `nullptr` to
 /// have the kernel emit `0xFFFFFFFFu` sentinels in causal_lead_residue
 /// — typical bootstrap state during the first chunk.
+///
+/// Diagnostic firehose: when `firehose_enable != 0`, the kernel ALWAYS
+/// emits one record per cluster per replay regardless of adj_code
+/// (post-audit operator directive 2026-05-03 — full per-cluster KL
+/// trajectory + 4-plane spectrum time series even on null-manifest runs).
+/// Emitted records still carry the actual adjudication_code so downstream
+/// consumers can distinguish construct events from diagnostic samples.
 int prism_ghost_pipe_stage_launch(
     uint64_t       ring_base_dev,    /* GhostTileRing::device_base */
     const void*    tiles,            /* baseline manifold (n_clusters × ContactShellTile) */
@@ -94,7 +101,8 @@ int prism_ghost_pipe_stage_launch(
     uint64_t       frame_idx,        /* monotonic frame counter */
     uint32_t       n_clusters,
     uint32_t       max_records,
-    void*          stream);
+    void*          stream,
+    uint32_t       firehose_enable); /* 0 = adj-gated; nonzero = unconditional emission */
 
 /// Wave 1 / Q1 — host-side populator for the __constant__ cluster→repr
 /// residue table.  Call once per campaign after Pillar 1 clustering

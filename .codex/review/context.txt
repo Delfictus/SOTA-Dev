@@ -1,6 +1,6 @@
-timestamp: 2026-05-03T10:24:42Z
+timestamp: 2026-05-03T19:27:18Z
 branch:    producer-repair-causal-truthing-20260426
-head:      534c44aa
-phase:     Phase 2 — Transform Audit Spine
-baseline:  2416bf6a
+head:      7e3a0327
+phase:     UNSPECIFIED
+baseline:  unknown
 hook:      pre-commit
