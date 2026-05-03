@@ -279,6 +279,22 @@ struct Args {
     #[arg(long)]
     force_burst_at_step: Option<u32>,
 
+    // M1.2.20.C-I / Amendment 3.22 §2.1 — Hardware-Path Selector
+    // (`--m1-monolithic-discovery`) is already declared above at
+    // line ~254 (pre-dating Amendment 3.22).  Operator §2.1 semantics:
+    // ON = V2 captured-graph monolithic CUgraph; OFF = V1 fallback
+    // overlay mode.  We re-use the existing flag without duplication.
+
+    /// **M1.2.20.C-I / Amendment 3.22 §2.2 — I/O Conduit Selector.**
+    /// ON: the ZSTR Reaper consumer thread uses io_uring SQ/CQ for
+    /// both Channel A (positions/forces) and Channel B (Ghost tiles)
+    /// per the T23 multi-channel architecture.  OFF: legacy
+    /// std::fs::write at teardown for Channel B (Channel A still
+    /// uses io_uring; only Channel B's drain path is gated).  Default:
+    /// ON.  Use OFF for restricted/non-NVMe environments.
+    #[arg(long, default_value = "true")]
+    ghost_telemetry_io_uring: bool,
+
     /// Enable true parallel replica execution via AmberSimdBatch
     /// All replicas run simultaneously on GPU (vs sequential when disabled)
     #[arg(long, default_value = "false")]
@@ -4928,7 +4944,8 @@ fn run_multi_stream_pipeline(
                                 // all subsequent chunks through the GPU-only loop. Per operator
                                 // directive: only stream 0 builds the pipeline (t7_active gate).
                                 #[cfg(feature = "v2_ignition")]
-                                if t7_active && v2_pipeline.is_none()
+                                if args.m1_monolithic_discovery
+                                    && t7_active && v2_pipeline.is_none()
                                     && steps_run >= v2_trigger_step
                                     && steps_run > 0
                                 {
@@ -5329,14 +5346,20 @@ fn run_multi_stream_pipeline(
                                                             );
                                                             let stop_clone = v2_zstr_stop.clone();
                                                             let ring_clone = ring_arc.clone();
-                                                            // **M1.2.20.C-H / T23** — Pass the
+                                                            // **M1.2.20.C-H / T23** + **M1.2.20.C-I / Amend 3.22 §2.2**
                                                             // GhostTileRing + Channel-B output
-                                                            // path to the Reaper so the same
-                                                            // thread drains both channels
-                                                            // (multi-channel io_uring AMS).
-                                                            // None for streams 1..7 — Channel B
-                                                            // is currently single-stream.
-                                                            let ghost_clone = v2_ghost_ring.clone();
+                                                            // path passed to the Reaper iff the
+                                                            // operator's CLI selector
+                                                            // `--ghost-telemetry-io-uring=true`
+                                                            // is set (default ON).  When OFF the
+                                                            // Reaper drives Channel A only and
+                                                            // Channel B falls back to the legacy
+                                                            // teardown std::fs::write.
+                                                            let ghost_clone = if args.ghost_telemetry_io_uring {
+                                                                v2_ghost_ring.clone()
+                                                            } else {
+                                                                None
+                                                            };
                                                             let topo_stem_for_ghost = topology_path_capture
                                                                 .file_stem()
                                                                 .and_then(|s| s.to_str())
