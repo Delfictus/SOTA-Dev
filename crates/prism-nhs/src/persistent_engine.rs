@@ -19,7 +19,7 @@
 //! ```
 
 use anyhow::{bail, Context, Result};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::path::Path;
 use std::time::Instant;
 
@@ -32,6 +32,50 @@ use cudarc::driver::{
 use cudarc::nvrtc::Ptx;
 
 use crate::input::PrismPrepTopology;
+
+#[cfg(feature = "gpu")]
+fn tier8_capture_driver_error_text(
+    rc: cudarc::driver::sys::CUresult,
+) -> (String, String) {
+    let err = cudarc::driver::DriverError(rc);
+    let name = err.error_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("cuGetErrorName failed: {:?}", e));
+    let text = err.error_string()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("cuGetErrorString failed: {:?}", e));
+    (name, text)
+}
+
+#[cfg(feature = "gpu")]
+static TIER8_DEFERRED_DRAIN_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(feature = "gpu")]
+fn tier8_capture_verbose_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("PRISM_TIER8_VERBOSE_DIAG")
+            .ok()
+            .map(|v| {
+                let v = v.trim();
+                v == "1"
+                    || v.eq_ignore_ascii_case("true")
+                    || v.eq_ignore_ascii_case("yes")
+                    || v.eq_ignore_ascii_case("on")
+            })
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(feature = "gpu")]
+macro_rules! tier8_capture_verbose {
+    ($($arg:tt)*) => {
+        if tier8_capture_verbose_enabled() {
+            log::info!($($arg)*);
+        }
+    };
+}
 
 #[allow(deprecated)]
 use crate::fused_engine::{
@@ -1490,11 +1534,270 @@ impl PersistentNhsEngine {
         use crate::graph_capture::{StreamCaptureTagger, CapturedTemplate};
         let stream = self.stream.clone();
 
-        // Same pre-capture posture as the legacy path: bind context, sync.
-        stream.context().bind_to_thread()
-            .map_err(|e| anyhow::anyhow!("Pre-capture context bind: {:?}", e))?;
-        stream.synchronize()
-            .map_err(|e| anyhow::anyhow!("Pre-capture sync: {:?}", e))?;
+        // Same pre-capture posture as the legacy path, but use raw CUDA
+        // context ownership here. The focused TIER 8 gate showed
+        // ctx.bind_to_thread() can report CUDA_ERROR_INVALID_VALUE before
+        // the monolithic parent template capture; keep this replacement
+        // scoped to that proven failing gate.
+        let ctx = stream.context();
+        let raw_stream = stream.cu_stream();
+        let expected_ctx = ctx.cu_ctx();
+        let diag_thread_id = format!("{:?}", std::thread::current().id());
+
+        // Cudarc launch_builder() still calls bind_to_thread() internally.
+        // In capture mode that call skips cuCtxGetCurrent/cuCtxSetCurrent,
+        // but it still checks and clears the wrapper's deferred error_state.
+        // Drain exactly one deferred state here, with evidence, so the raw
+        // context guard remains the context authority for this gate.
+        match ctx.check_err() {
+            Ok(()) => {
+                tier8_capture_verbose!(
+                    "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err \
+                     result=OK stream_id=unavailable protocol_group=monolithic_parent_template \
+                     raw_stream={:p} expected_ctx={:p} thread_id={}",
+                    raw_stream,
+                    expected_ctx,
+                    diag_thread_id
+                );
+            }
+            Err(first) => {
+                let drain_count = TIER8_DEFERRED_DRAIN_COUNT.fetch_add(
+                    1,
+                    std::sync::atomic::Ordering::Relaxed,
+                ) + 1;
+                let (name, text) = tier8_capture_driver_error_text(first.0);
+                log::warn!(
+                    "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err \
+                     result=DRAINED stream_id=unavailable protocol_group=monolithic_parent_template \
+                     rc={} cuda_name={} cuda_string=\"{}\" raw_stream={:p} \
+                     expected_ctx={:p} thread_id={} deferred_drain_count={} \
+                     call_site=capture_autonomous_template::pre_capture_ctx_check",
+                    first.0 as i32,
+                    name,
+                    text,
+                    raw_stream,
+                    expected_ctx,
+                    diag_thread_id,
+                    drain_count
+                );
+                if let Err(second) = ctx.check_err() {
+                    let (second_name, second_text) =
+                        tier8_capture_driver_error_text(second.0);
+                    log::error!(
+                        "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err(second) \
+                         result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                         rc={} cuda_name={} cuda_string=\"{}\" raw_stream={:p} \
+                         expected_ctx={:p} thread_id={}",
+                        second.0 as i32,
+                        second_name,
+                        second_text,
+                        raw_stream,
+                        expected_ctx,
+                        diag_thread_id
+                    );
+                    anyhow::bail!(
+                        "TIER8 pre-capture cudarc deferred error persisted: first={:?}, second={:?}",
+                        first,
+                        second
+                    );
+                }
+            }
+        }
+
+        let mut before_ctx: sys::CUcontext = std::ptr::null_mut();
+        let rc_get_before = unsafe { sys::cuCtxGetCurrent(&mut before_ctx as *mut _) };
+        let (get_before_name, get_before_text) =
+            tier8_capture_driver_error_text(rc_get_before);
+        if !matches!(rc_get_before, sys::CUresult::CUDA_SUCCESS) {
+            log::error!(
+                "[TIER8-CAPTURE raw-context-guard] call=cuCtxGetCurrent(before) \
+                 result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                 rc={} cuda_name={} cuda_string=\"{}\" expected_ctx={:p} \
+                 before_ctx={:p} raw_stream={:p} thread_id={}",
+                rc_get_before as i32,
+                get_before_name,
+                get_before_text,
+                expected_ctx,
+                before_ctx,
+                raw_stream,
+                diag_thread_id
+            );
+            anyhow::bail!(
+                "TIER8 pre-capture cuCtxGetCurrent(before) failed: rc={} expected={:p} before={:p}",
+                rc_get_before as i32,
+                expected_ctx,
+                before_ctx
+            );
+        }
+
+        let mut did_set_current = false;
+        let mut rc_set_current = sys::CUresult::CUDA_SUCCESS;
+        let mut set_current_name = "CUDA_SUCCESS".to_string();
+        let mut set_current_text = "no error".to_string();
+        if before_ctx.is_null() || before_ctx != expected_ctx {
+            did_set_current = true;
+            rc_set_current = unsafe { sys::cuCtxSetCurrent(expected_ctx) };
+            let (name, text) = tier8_capture_driver_error_text(rc_set_current);
+            set_current_name = name;
+            set_current_text = text;
+            if !matches!(rc_set_current, sys::CUresult::CUDA_SUCCESS) {
+                log::error!(
+                    "[TIER8-CAPTURE raw-context-guard] call=cuCtxSetCurrent \
+                     result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                     rc={} cuda_name={} cuda_string=\"{}\" expected_ctx={:p} \
+                     before_ctx={:p} raw_stream={:p} thread_id={}",
+                    rc_set_current as i32,
+                    set_current_name,
+                    set_current_text,
+                    expected_ctx,
+                    before_ctx,
+                    raw_stream,
+                    diag_thread_id
+                );
+                anyhow::bail!(
+                    "TIER8 pre-capture cuCtxSetCurrent failed: rc={} expected={:p} before={:p}",
+                    rc_set_current as i32,
+                    expected_ctx,
+                    before_ctx
+                );
+            }
+        }
+
+        let mut after_ctx: sys::CUcontext = std::ptr::null_mut();
+        let rc_get_after = unsafe { sys::cuCtxGetCurrent(&mut after_ctx as *mut _) };
+        let (get_after_name, get_after_text) =
+            tier8_capture_driver_error_text(rc_get_after);
+        if !matches!(rc_get_after, sys::CUresult::CUDA_SUCCESS) {
+            log::error!(
+                "[TIER8-CAPTURE raw-context-guard] call=cuCtxGetCurrent(after) \
+                 result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                 rc={} cuda_name={} cuda_string=\"{}\" expected_ctx={:p} \
+                 before_ctx={:p} after_ctx={:p} did_set_current={} \
+                 set_rc={} set_name={} set_string=\"{}\" raw_stream={:p} \
+                 thread_id={}",
+                rc_get_after as i32,
+                get_after_name,
+                get_after_text,
+                expected_ctx,
+                before_ctx,
+                after_ctx,
+                did_set_current,
+                rc_set_current as i32,
+                set_current_name,
+                set_current_text,
+                raw_stream,
+                diag_thread_id
+            );
+            anyhow::bail!(
+                "TIER8 pre-capture cuCtxGetCurrent(after) failed: rc={} expected={:p} before={:p} after={:p}",
+                rc_get_after as i32,
+                expected_ctx,
+                before_ctx,
+                after_ctx
+            );
+        }
+
+        if after_ctx != expected_ctx {
+            log::error!(
+                "[TIER8-CAPTURE raw-context-guard] call=raw_context_guard \
+                 result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                 reason=context_mismatch expected_ctx={:p} before_ctx={:p} \
+                 after_ctx={:p} did_set_current={} get_before_rc={} \
+                 get_before_name={} get_before_string=\"{}\" set_rc={} \
+                 set_name={} set_string=\"{}\" get_after_rc={} \
+                 get_after_name={} get_after_string=\"{}\" raw_stream={:p} \
+                 thread_id={}",
+                expected_ctx,
+                before_ctx,
+                after_ctx,
+                did_set_current,
+                rc_get_before as i32,
+                get_before_name,
+                get_before_text,
+                rc_set_current as i32,
+                set_current_name,
+                set_current_text,
+                rc_get_after as i32,
+                get_after_name,
+                get_after_text,
+                raw_stream,
+                diag_thread_id
+            );
+            anyhow::bail!(
+                "TIER8 pre-capture context mismatch: expected={:p} before={:p} after={:p}",
+                expected_ctx,
+                before_ctx,
+                after_ctx
+            );
+        }
+        tier8_capture_verbose!(
+            "[TIER8-CAPTURE raw-context-guard] call=raw_context_guard \
+             result=OK stream_id=unavailable protocol_group=monolithic_parent_template \
+             expected_ctx={:p} before_ctx={:p} after_ctx={:p} did_set_current={} \
+             get_before_rc={} get_before_name={} get_before_string=\"{}\" \
+             set_rc={} set_name={} set_string=\"{}\" get_after_rc={} \
+             get_after_name={} get_after_string=\"{}\" raw_stream={:p} thread_id={}",
+            expected_ctx,
+            before_ctx,
+            after_ctx,
+            did_set_current,
+            rc_get_before as i32,
+            get_before_name,
+            get_before_text,
+            rc_set_current as i32,
+            set_current_name,
+            set_current_text,
+            rc_get_after as i32,
+            get_after_name,
+            get_after_text,
+            raw_stream,
+            diag_thread_id
+        );
+
+        let rc_sync = unsafe { sys::cuStreamSynchronize(raw_stream) };
+        if !matches!(rc_sync, sys::CUresult::CUDA_SUCCESS) {
+            let (sync_name, sync_text) = tier8_capture_driver_error_text(rc_sync);
+            let mut current_ctx: sys::CUcontext = std::ptr::null_mut();
+            let rc_get_current = unsafe { sys::cuCtxGetCurrent(&mut current_ctx as *mut _) };
+            log::error!(
+                "[TIER8-CAPTURE raw-context-guard] call=cuStreamSynchronize \
+                 result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                 rc={} cuda_name={} cuda_string=\"{}\" raw_stream={:p} \
+                 expected_ctx={:p} before_ctx={:p} after_ctx={:p} \
+                 did_set_current={} current_ctx={:p} current_ctx_rc={} \
+                 thread_id={}",
+                rc_sync as i32,
+                sync_name,
+                sync_text,
+                raw_stream,
+                expected_ctx,
+                before_ctx,
+                after_ctx,
+                did_set_current,
+                current_ctx,
+                rc_get_current as i32,
+                diag_thread_id
+            );
+            anyhow::bail!(
+                "TIER8 pre-capture raw cuStreamSynchronize failed: rc={} expected={:p} before={:p} after={:p}",
+                rc_sync as i32,
+                expected_ctx,
+                before_ctx,
+                after_ctx
+            );
+        }
+        tier8_capture_verbose!(
+            "[TIER8-CAPTURE raw-context-guard] call=cuStreamSynchronize \
+             result=OK stream_id=unavailable protocol_group=monolithic_parent_template \
+             rc=0 raw_stream={:p} expected_ctx={:p} before_ctx={:p} \
+             after_ctx={:p} did_set_current={} thread_id={}",
+            raw_stream,
+            expected_ctx,
+            before_ctx,
+            after_ctx,
+            did_set_current,
+            diag_thread_id
+        );
 
         let engine = self.engine.as_mut()
             .ok_or_else(|| anyhow::anyhow!("No engine loaded"))?;
@@ -1510,7 +1813,6 @@ impl PersistentNhsEngine {
         let _guard = CaptureGuard;
 
         // ── Begin capture (raw sys, RELAXED mode matches legacy path) ──
-        let raw_stream = stream.cu_stream();
         let rc = unsafe {
             sys::cuStreamBeginCapture_v2(
                 raw_stream,

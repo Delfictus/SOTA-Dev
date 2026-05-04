@@ -21,20 +21,62 @@
 
 use anyhow::{bail, Context, Result};
 use serde::{Serialize, Deserialize};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::net::TcpStream;
 use std::io::Write;
+use std::ptr;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
+    sys, CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
     LaunchConfig, PushKernelArg, DevicePtrMut, DevicePtr,
+    DriverError,
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
 
 use crate::input::PrismPrepTopology;
+
+#[cfg(feature = "gpu")]
+fn tier8_director_driver_error_text(
+    rc: sys::CUresult,
+) -> (String, String) {
+    let err = DriverError(rc);
+    let name = err.error_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("cuGetErrorName failed: {:?}", e));
+    let text = err.error_string()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| format!("cuGetErrorString failed: {:?}", e));
+    (name, text)
+}
+
+#[cfg(feature = "gpu")]
+fn tier8_director_diag_verbose_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("PRISM_TIER8_VERBOSE_DIAG")
+            .ok()
+            .map(|v| {
+                let v = v.trim();
+                v == "1"
+                    || v.eq_ignore_ascii_case("true")
+                    || v.eq_ignore_ascii_case("yes")
+                    || v.eq_ignore_ascii_case("on")
+            })
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(feature = "gpu")]
+macro_rules! tier8_director_diag_verbose {
+    ($($arg:tt)*) => {
+        if tier8_director_diag_verbose_enabled() {
+            log::info!($($arg)*);
+        }
+    };
+}
 use crate::config::{
     extinction_to_cross_section, wavelength_to_ev, KB_EV_K,
     CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD,
@@ -7010,6 +7052,7 @@ impl NhsAmberFusedEngine {
         mut tagger: Option<&mut dyn crate::graph_capture::CaptureTagger>,
     ) -> Result<()> {
         let n_atoms_i32 = self.n_atoms as i32;
+        let capture_tagger_active = tagger.is_some();
 
         // Director kernel — use the standard (non-graph) variant.
         // The _graph variant requires conditional graph handles as extra args
@@ -7017,11 +7060,160 @@ impl NhsAmberFusedEngine {
         // stream capture. Basic stream capture works fine with the 1-arg variant.
         {
             let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+            let grid_dim = cfg.grid_dim;
+            let block_dim = cfg.block_dim;
+            let shared_mem_bytes = cfg.shared_mem_bytes;
+            let raw_stream = stream.cu_stream();
+            let expected_ctx = stream.context().cu_ctx();
+            let mut capture_status =
+                sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+            let mut capture_id: sys::cuuint64_t = 0;
+            let mut capture_graph: sys::CUgraph = ptr::null_mut();
+            let mut deps_ptr: *const sys::CUgraphNode = ptr::null();
+            let mut n_deps: usize = 0;
+            let capture_info_rc = if capture_tagger_active {
+                unsafe {
+                    sys::cuStreamGetCaptureInfo_v2(
+                        raw_stream,
+                        &mut capture_status as *mut _,
+                        &mut capture_id as *mut _,
+                        &mut capture_graph as *mut _,
+                        &mut deps_ptr as *mut _,
+                        &mut n_deps as *mut _,
+                    )
+                }
+            } else {
+                sys::CUresult::CUDA_SUCCESS
+            };
+            let capture_active = capture_tagger_active
+                && matches!(
+                    capture_info_rc,
+                    sys::CUresult::CUDA_SUCCESS
+                )
+                && matches!(
+                    capture_status,
+                    sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_ACTIVE
+                );
+            let (current_ctx_label, current_ctx_rc, current_ctx_name, current_ctx_text) =
+                if capture_tagger_active
+                    && matches!(capture_info_rc, sys::CUresult::CUDA_SUCCESS)
+                    && !capture_active
+                {
+                    let mut current_ctx: sys::CUcontext = ptr::null_mut();
+                    let rc = unsafe { sys::cuCtxGetCurrent(&mut current_ctx as *mut _) };
+                    let (name, text) = tier8_director_driver_error_text(rc);
+                    (format!("{:p}", current_ctx), rc as i32, name, text)
+                } else if capture_tagger_active {
+                    (
+                        "skipped_active_capture".to_string(),
+                        0,
+                        "SKIPPED_ACTIVE_CAPTURE".to_string(),
+                        "not queried inside active stream capture".to_string(),
+                    )
+                } else {
+                    (
+                        "not_logged_non_capture".to_string(),
+                        0,
+                        "NOT_LOGGED".to_string(),
+                        "non-capture Director launch".to_string(),
+                    )
+                };
+            let protocol_state_debug = if capture_tagger_active {
+                format!("{:?}", &self.d_protocol_state)
+            } else {
+                String::new()
+            };
             let res = unsafe {
                 stream.launch_builder(&self.director_fn)
                     .arg(&mut self.d_protocol_state)
                     .launch(cfg)
             };
+            if capture_tagger_active {
+                let (rc, result_label, cuda_name, cuda_string) = match &res {
+                    Ok(_) => {
+                        let (name, text) =
+                            tier8_director_driver_error_text(sys::CUresult::CUDA_SUCCESS);
+                        (0, "OK", name, text)
+                    }
+                    Err(e) => {
+                        let (name, text) = tier8_director_driver_error_text(e.0);
+                        (e.0 as i32, "FAIL", name, text)
+                    }
+                };
+                let (capture_info_name, capture_info_text) =
+                    tier8_director_driver_error_text(capture_info_rc);
+                if matches!(res, Err(_)) {
+                    log::error!(
+                        "[TIER8-DIAG director-launch] call=launch_builder(director) \
+                         result={} stream_id=unavailable raw_stream={:p} expected_ctx={:p} \
+                         current_ctx={} current_ctx_rc={} current_ctx_name={} \
+                         current_ctx_string={:?} director_fn_handle=unavailable_private_cudarc \
+                         d_protocol_state_debug={} grid_dim={:?} \
+                         block_dim={:?} shared_mem_bytes={} capture_probe_rc={} \
+                         capture_probe_name={} capture_probe_string={:?} capture_status={:?} \
+                         capture_active={} capture_id={} capture_graph={:p} deps_ptr={:p} \
+                         n_deps={} rc={} cuda_name={} cuda_string={:?}",
+                        result_label,
+                        raw_stream,
+                        expected_ctx,
+                        current_ctx_label,
+                        current_ctx_rc,
+                        current_ctx_name,
+                        current_ctx_text,
+                        protocol_state_debug,
+                        grid_dim,
+                        block_dim,
+                        shared_mem_bytes,
+                        capture_info_rc as i32,
+                        capture_info_name,
+                        capture_info_text,
+                        capture_status,
+                        capture_active,
+                        capture_id,
+                        capture_graph,
+                        deps_ptr,
+                        n_deps,
+                        rc,
+                        cuda_name,
+                        cuda_string
+                    );
+                } else {
+                    tier8_director_diag_verbose!(
+                        "[TIER8-DIAG director-launch] call=launch_builder(director) \
+                         result={} stream_id=unavailable raw_stream={:p} expected_ctx={:p} \
+                         current_ctx={} current_ctx_rc={} current_ctx_name={} \
+                         current_ctx_string={:?} director_fn_handle=unavailable_private_cudarc \
+                         d_protocol_state_debug={} grid_dim={:?} \
+                         block_dim={:?} shared_mem_bytes={} capture_probe_rc={} \
+                         capture_probe_name={} capture_probe_string={:?} capture_status={:?} \
+                         capture_active={} capture_id={} capture_graph={:p} deps_ptr={:p} \
+                         n_deps={} rc={} cuda_name={} cuda_string={:?}",
+                        result_label,
+                        raw_stream,
+                        expected_ctx,
+                        current_ctx_label,
+                        current_ctx_rc,
+                        current_ctx_name,
+                        current_ctx_text,
+                        protocol_state_debug,
+                        grid_dim,
+                        block_dim,
+                        shared_mem_bytes,
+                        capture_info_rc as i32,
+                        capture_info_name,
+                        capture_info_text,
+                        capture_status,
+                        capture_active,
+                        capture_id,
+                        capture_graph,
+                        deps_ptr,
+                        n_deps,
+                        rc,
+                        cuda_name,
+                        cuda_string
+                    );
+                }
+            }
             if let Err(e) = res {
                 return Err(anyhow::anyhow!("step_autonomous: Director launch failed: {:?}", e));
             }
