@@ -126,6 +126,11 @@ pub mod twin_kernels;
 pub mod protocol_state;
 #[cfg(feature = "gpu")]
 pub mod graph_capture;
+// TIER 7 (2026-05-03) — CUDA 13.x cuGraphAddNode wrappers for the
+// monolithic-splice migration; see crates/prism-nhs/src/graph_node.rs
+// for status + rationale.
+#[cfg(feature = "gpu")]
+pub mod graph_node;
 #[cfg(feature = "gpu")]
 pub mod active_sensing;
 #[cfg(feature = "gpu")]

@@ -43,6 +43,9 @@ fn main() {
     // M1.2.19.B — Asynchronous Manifold Sequencer Channel-B (ghost tiles).
     println!("cargo:rerun-if-changed=src/cuda/ghost_tile_kernel.cu");
     println!("cargo:rerun-if-changed=src/cuda/ghost_tile_kernel.cuh");
+    // TIER 7 (2026-05-03) — CUDA 13.x cuGraphAddNode FFI wrappers.
+    println!("cargo:rerun-if-changed=src/cuda/graph_node.cu");
+    println!("cargo:rerun-if-changed=src/cuda/graph_node.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
@@ -202,6 +205,23 @@ fn main() {
         &nvcc,
         "src/cuda/adjudicator.cu",
         "adjudicator",
+        &out_dir,
+    );
+
+    // TIER 7 (2026-05-03) — CUDA 13.x cuGraphAddNode unified
+    // graph-builder FFI wrappers. Two host-only helpers
+    // (`prism_graph_add_child_node_v3_ffi`,
+    // `prism_graph_add_memset_node_v3_ffi`) that internally invoke
+    // `cudaGraphAddNode` with `cudaGraphNodeParams`. Replaces Rust-
+    // side calls to legacy per-type adders (`cuGraphAddChildGraphNode`,
+    // `cuGraphAddMemsetNode`) which mishandle CUDA 13.x conditional-
+    // handle metadata attached to body subgraphs (the
+    // childgraph-IF failure class).  See
+    // `crates/prism-nhs/src/cuda/graph_node.cuh` for full rationale.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/graph_node.cu",
+        "graph_node",
         &out_dir,
     );
 

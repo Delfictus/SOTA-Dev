@@ -1,5 +1,17 @@
 # PRISM4D — Canonical System Rules
 
+## EXECUTION POLICY (LOCKED 2026-05-03)
+
+Runtime is a strict three-layer system. Crossing the boundary is a policy violation.
+
+- **Rust** — owns orchestration, lifecycle, typing, audit, safety boundaries, error propagation, persistence, CLI, threading model, FFI typed wrappers.
+- **CUDA / C++ FFI** — owns kernels, graph-node construction (`cudaGraphAddNode` family), conditional handle creation, stream capture begin/end, graph launch, device state, `__constant__` symbol writes, VRAM pool internals.
+- **Python** — offline only: artifact inspection, dossier aggregation, validation reports, plotting, post-run analysis. **Forbidden in the runtime/hot path.** Must NEVER own CUDA graph construction, stream capture, graph launch, branch selection, device buffer lifetime, or runtime orchestration.
+
+Direct `sys::cuGraphAdd*` calls from Rust are prohibited — route through C++ FFI helpers in `crates/prism-nhs/src/cuda/graph_node.cu` (TIER 7).
+
+Full text + boundary-enforcement table + drift-prevention rules: **[docs/EXECUTION_POLICY.md](docs/EXECUTION_POLICY.md)**.
+
 ## SYSTEM ARCHITECTURE
 Rust + CUDA engine (`nhs_rt_full`) → Python canonical pipeline (`prism_canonical.py`) → Consensus (`prism_replicate.py`)
 

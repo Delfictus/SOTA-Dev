@@ -21,6 +21,7 @@
 
 use anyhow::{bail, Context, Result};
 use serde::{Serialize, Deserialize};
+use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 use std::net::TcpStream;
 use std::io::Write;
@@ -76,6 +77,36 @@ macro_rules! tier8_director_diag_verbose {
             log::info!($($arg)*);
         }
     };
+}
+
+#[cfg(feature = "gpu")]
+#[derive(Clone, Debug)]
+pub(crate) struct Tier8DeferredDrainContext {
+    pub stream_slot: u32,
+    pub raw_stream: usize,
+    pub call_site: &'static str,
+    pub drain_count: usize,
+    pub rc: i32,
+    pub cuda_name: String,
+    pub cuda_string: String,
+}
+
+#[cfg(feature = "gpu")]
+thread_local! {
+    static TIER8_DEFERRED_DRAIN_CONTEXT: RefCell<Option<Tier8DeferredDrainContext>> =
+        const { RefCell::new(None) };
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) fn tier8_set_deferred_drain_context(ctx: Option<Tier8DeferredDrainContext>) {
+    TIER8_DEFERRED_DRAIN_CONTEXT.with(|slot| {
+        *slot.borrow_mut() = ctx;
+    });
+}
+
+#[cfg(feature = "gpu")]
+fn tier8_get_deferred_drain_context() -> Option<Tier8DeferredDrainContext> {
+    TIER8_DEFERRED_DRAIN_CONTEXT.with(|slot| slot.borrow().clone())
 }
 use crate::config::{
     extinction_to_cross_section, wavelength_to_ev, KB_EV_K,
@@ -7123,6 +7154,40 @@ impl NhsAmberFusedEngine {
             } else {
                 String::new()
             };
+            let deferred_drain_ctx = if capture_tagger_active {
+                tier8_get_deferred_drain_context()
+            } else {
+                None
+            };
+            let deferred_drain_matches_stream = deferred_drain_ctx
+                .as_ref()
+                .map(|ctx| ctx.raw_stream == (raw_stream as usize))
+                .unwrap_or(false);
+            let director_stream_id = deferred_drain_ctx
+                .as_ref()
+                .filter(|ctx| ctx.raw_stream == (raw_stream as usize))
+                .map(|ctx| ctx.stream_slot.to_string())
+                .unwrap_or_else(|| "unavailable".to_string());
+            let deferred_drain_call_site = deferred_drain_ctx
+                .as_ref()
+                .map(|ctx| ctx.call_site)
+                .unwrap_or("none");
+            let deferred_drain_count = deferred_drain_ctx
+                .as_ref()
+                .map(|ctx| ctx.drain_count)
+                .unwrap_or(0);
+            let deferred_drain_rc = deferred_drain_ctx
+                .as_ref()
+                .map(|ctx| ctx.rc)
+                .unwrap_or(0);
+            let deferred_drain_name = deferred_drain_ctx
+                .as_ref()
+                .map(|ctx| ctx.cuda_name.as_str())
+                .unwrap_or("none");
+            let deferred_drain_text = deferred_drain_ctx
+                .as_ref()
+                .map(|ctx| ctx.cuda_string.as_str())
+                .unwrap_or("none");
             let res = unsafe {
                 stream.launch_builder(&self.director_fn)
                     .arg(&mut self.d_protocol_state)
@@ -7145,15 +7210,19 @@ impl NhsAmberFusedEngine {
                 if matches!(res, Err(_)) {
                     log::error!(
                         "[TIER8-DIAG director-launch] call=launch_builder(director) \
-                         result={} stream_id=unavailable raw_stream={:p} expected_ctx={:p} \
+                         result={} stream_id={} raw_stream={:p} expected_ctx={:p} \
                          current_ctx={} current_ctx_rc={} current_ctx_name={} \
                          current_ctx_string={:?} director_fn_handle=unavailable_private_cudarc \
                          d_protocol_state_debug={} grid_dim={:?} \
                          block_dim={:?} shared_mem_bytes={} capture_probe_rc={} \
                          capture_probe_name={} capture_probe_string={:?} capture_status={:?} \
                          capture_active={} capture_id={} capture_graph={:p} deps_ptr={:p} \
-                         n_deps={} rc={} cuda_name={} cuda_string={:?}",
+                         n_deps={} rc={} cuda_name={} cuda_string={:?} \
+                         deferred_drain_preceded={} deferred_drain_call_site={} \
+                         deferred_drain_count={} deferred_drain_rc={} \
+                         deferred_drain_name={} deferred_drain_string={:?}",
                         result_label,
+                        director_stream_id,
                         raw_stream,
                         expected_ctx,
                         current_ctx_label,
@@ -7175,20 +7244,30 @@ impl NhsAmberFusedEngine {
                         n_deps,
                         rc,
                         cuda_name,
-                        cuda_string
+                        cuda_string,
+                        deferred_drain_matches_stream,
+                        deferred_drain_call_site,
+                        deferred_drain_count,
+                        deferred_drain_rc,
+                        deferred_drain_name,
+                        deferred_drain_text
                     );
                 } else {
                     tier8_director_diag_verbose!(
                         "[TIER8-DIAG director-launch] call=launch_builder(director) \
-                         result={} stream_id=unavailable raw_stream={:p} expected_ctx={:p} \
+                         result={} stream_id={} raw_stream={:p} expected_ctx={:p} \
                          current_ctx={} current_ctx_rc={} current_ctx_name={} \
                          current_ctx_string={:?} director_fn_handle=unavailable_private_cudarc \
                          d_protocol_state_debug={} grid_dim={:?} \
                          block_dim={:?} shared_mem_bytes={} capture_probe_rc={} \
                          capture_probe_name={} capture_probe_string={:?} capture_status={:?} \
                          capture_active={} capture_id={} capture_graph={:p} deps_ptr={:p} \
-                         n_deps={} rc={} cuda_name={} cuda_string={:?}",
+                         n_deps={} rc={} cuda_name={} cuda_string={:?} \
+                         deferred_drain_preceded={} deferred_drain_call_site={} \
+                         deferred_drain_count={} deferred_drain_rc={} \
+                         deferred_drain_name={} deferred_drain_string={:?}",
                         result_label,
+                        director_stream_id,
                         raw_stream,
                         expected_ctx,
                         current_ctx_label,
@@ -7210,7 +7289,13 @@ impl NhsAmberFusedEngine {
                         n_deps,
                         rc,
                         cuda_name,
-                        cuda_string
+                        cuda_string,
+                        deferred_drain_matches_stream,
+                        deferred_drain_call_site,
+                        deferred_drain_count,
+                        deferred_drain_rc,
+                        deferred_drain_name,
+                        deferred_drain_text
                     );
                 }
             }

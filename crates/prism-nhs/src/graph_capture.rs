@@ -149,28 +149,48 @@ impl CapturedTemplate {
     }
 
     /// Insert `child_template` as a child-graph node downstream of `deps`.
-    /// Returns the new child-graph node handle.  Per CUDA 13.2:
-    /// `cudaGraphAddChildGraphNode(pGraphNode, parent, deps, n_deps, childGraph)`.
+    /// Returns the new child-graph node handle.
+    ///
+    /// **TIER 7 (2026-05-03) — monolithic-splice migration.**
+    /// Was `cuGraphAddChildGraphNode` (legacy CUDA 11.x per-type
+    /// adder).  Now routes through the unified CUDA 13.x
+    /// `cudaGraphAddNode` via `crate::graph_node::add_child_graph_node_v3`,
+    /// which is the actual "monolithic splice" — one
+    /// `cudaGraphAddNode(graph, deps, dependencyData, n_deps,
+    /// &nodeParams{type=GRAPH, .graph=child})` call replaces the
+    /// legacy adder.  The legacy adder mishandles the conditional-
+    /// handle metadata that CUDA 13.x attaches to body subgraphs
+    /// (the source of the operator's reported ChildGraph-IF
+    /// failures) — the unified API is the canonical post-CUDA-13.x
+    /// way to splice templates that may carry such metadata.
+    ///
+    /// Returns `Err` with cudaError_t cast to `i32` (wrapped via
+    /// `anyhow::anyhow!`) on failure, plus null-handle defensive
+    /// check.  Behaviour at the call-site is otherwise identical to
+    /// the legacy path — CUDA still copies the child template by
+    /// value; future mutations to `child_template` do NOT propagate.
     pub fn add_child_graph_node(
         &mut self,
         deps: &[sys::CUgraphNode],
         child_template: sys::CUgraph,
     ) -> Result<sys::CUgraphNode> {
-        let mut child_node: sys::CUgraphNode = ptr::null_mut();
-        let rc = unsafe {
-            sys::cuGraphAddChildGraphNode(
-                &mut child_node as *mut _,
+        // TIER 7 + TIER 8: routes through the v3 path AND runs the
+        // splice-legality preflight before any cudaGraphAddNode call.
+        // SpliceError::Illegal carries a SpliceLegalityReport describing
+        // exactly which child template failed and why — surfaces well
+        // before CUDA's own cudaErrorNotSupported (801).
+        let child_node = unsafe {
+            crate::graph_node::add_child_graph_node_v3(
                 self.cu_graph,
-                deps.as_ptr(),
-                deps.len(),
+                deps,
                 child_template,
             )
-        };
-        if !matches!(rc, sys::CUresult::CUDA_SUCCESS) {
-            bail!("cuGraphAddChildGraphNode failed: {:?}", rc);
-        }
+        }.map_err(|e| anyhow::anyhow!("add_child_graph_node: {}", e))?;
+        // The v3 helper already null-checks (SpliceError::NullNode) but
+        // re-assert here for defence-in-depth — a null handle past this
+        // point would corrupt the caller's dependency frontier.
         if child_node.is_null() {
-            bail!("cuGraphAddChildGraphNode returned null node handle");
+            bail!("add_child_graph_node_v3 returned null node handle (post-check)");
         }
         Ok(child_node)
     }

@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Instant;
 
+static MONOLITHIC_GRAPH_BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(feature = "gpu")]
 use prism_nhs::{
     PersistentBatchConfig, PersistentNhsEngine, CryoUvProtocol,
@@ -4972,6 +4974,8 @@ fn run_multi_stream_pipeline(
                         let mut v2_chunks_completed: i32 = 0;
                         #[cfg(feature = "v2_ignition")]
                         let mut v2_step101_rebuilt: bool = false;
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_build_terminal_failure: bool = false;
                         // M1.2.19.B — Channel-B GhostTileRing must outlive the
                         // pipeline so its pinned buffer stays valid during
                         // captured-graph replay; serialized to disk during
@@ -5171,6 +5175,7 @@ fn run_multi_stream_pipeline(
                                 #[cfg(feature = "v2_ignition")]
                                 if args.m1_monolithic_discovery
                                     && t7_active && v2_pipeline.is_none()
+                                    && !v2_build_terminal_failure
                                     && steps_run >= v2_trigger_step
                                     && steps_run > 0
                                 {
@@ -5803,12 +5808,14 @@ fn run_multi_stream_pipeline(
                                                     n_clusters:        n_clusters_actual,
                                                     d_k_lm,
                                                     initial_frame_id:  steps_run as u32,
+                                                    diagnostic_stream_id: Some(i as u32),
                                                     asc:               asc_cfg,
                                                     zstr:              zstr_cfg,
                                                     sisr:              sisr_cfg,
                                                     noise_floor_override: nf_override,
                                                     d_dt:              d_protocol_dt_ptr as *mut f32,
                                                     d_velocities:      d_velocities_ptr as *mut f32,
+                                                    g26_parent_cond_handle: 0,
                                                     d_pe_components:   d_pe_components_ptr as *const f64,
                                                     n_atoms_for_pe,
                                                     d_external_work:   d_external_work_ptr as *mut f64,
@@ -5860,6 +5867,310 @@ fn run_multi_stream_pipeline(
                                                 // prediction heuristics on the post-calibration
                                                 // gait.
                                                 let cfg_snapshot = cfg.clone();
+                                                if args.m1_monolithic_discovery {
+                                                    let mut mono_success = false;
+                                                    log::info!(
+                                                        "    [MONO-FUSE stream {}] waiting for \
+                                                         monolithic graph-build lock",
+                                                        i
+                                                    );
+                                                    let _mono_graph_build_guard =
+                                                        MONOLITHIC_GRAPH_BUILD_LOCK
+                                                            .lock()
+                                                            .unwrap_or_else(|poisoned| {
+                                                                log::warn!(
+                                                                    "    [MONO-FUSE stream {}] \
+                                                                     graph-build lock was poisoned; \
+                                                                     continuing with recovered guard",
+                                                                    i
+                                                                );
+                                                                poisoned.into_inner()
+                                                            });
+                                                    log::info!(
+                                                        "    [MONO-FUSE stream {}] acquired \
+                                                         monolithic graph-build lock",
+                                                        i
+                                                    );
+                                                    'mono_attempt: {
+                                                        log::info!(
+                                                            "    [V2-INSTANTIATE-START stream {}] \
+                                                             beginning monolithic splice",
+                                                            i
+                                                        );
+                                                        match engine.capture_autonomous_template() {
+                                                            Ok(mut auto_tmpl) => {
+                                                                let parent_graph = auto_tmpl.cu_graph();
+                                                                match unsafe {
+                                                                    prism_nhs::graph_node::splice_legality_check(parent_graph)
+                                                                } {
+                                                                    Ok(r) => log::info!(
+                                                                        "    [TIER8-PREFLIGHT stream {} \
+                                                                         protocol_group=monolithic_discovery \
+                                                                         graph_id={:p}] parent_total_nodes={} \
+                                                                         parent_conditional_nodes={} \
+                                                                         parent_alloc_nodes={} parent_free_nodes={}",
+                                                                        i,
+                                                                        parent_graph,
+                                                                        r.total_nodes,
+                                                                        r.conditional_count,
+                                                                        r.allocation_count,
+                                                                        r.free_count,
+                                                                    ),
+                                                                    Err(rc) => log::warn!(
+                                                                        "    [TIER8-PREFLIGHT stream {}] \
+                                                                         parent graph inspection failed rc={} \
+                                                                         — monolithic path failed",
+                                                                        i, rc
+                                                                    ),
+                                                                }
+
+                                                                let parent_g26_handle = match unsafe {
+                                                                    CapturedAdjudicationPipeline::create_parent_g26_cond_handle(
+                                                                        parent_graph,
+                                                                    )
+                                                                } {
+                                                                    Ok(h) => h,
+                                                                    Err(e) => {
+                                                                        log::warn!(
+                                                                            "    [MONO-FUSE stream {}] parent G26 \
+                                                                             handle creation failed: {} — monolithic path failed",
+                                                                            i, e
+                                                                        );
+                                                                        break 'mono_attempt;
+                                                                    }
+                                                                };
+
+                                                                let mut mono_cfg = cfg.clone();
+                                                                mono_cfg.g26_parent_cond_handle = parent_g26_handle;
+                                                                let mono_pipeline = match CapturedAdjudicationPipeline::build(
+                                                                    engine.cuda_context(),
+                                                                    engine.cuda_stream(),
+                                                                    &mono_cfg,
+                                                                ) {
+                                                                    Ok(p) => p,
+                                                                    Err(e) => {
+                                                                        log::warn!(
+                                                                            "    [MONO-FUSE stream {}] parent-owned \
+                                                                             G26 child build failed: {:?} — monolithic path failed",
+                                                                            i, e
+                                                                        );
+                                                                        break 'mono_attempt;
+                                                                    }
+                                                                };
+
+                                                                let adj_tmpl = mono_pipeline.cu_graph_raw();
+                                                                match unsafe {
+                                                                    prism_nhs::graph_node::splice_legality_check(adj_tmpl)
+                                                                } {
+                                                                    Ok(r) => log::info!(
+                                                                        "    [TIER8-PREFLIGHT stream {} \
+                                                                         protocol_group=monolithic_discovery \
+                                                                         graph_id={:p}] child_total_nodes={} \
+                                                                         child_conditional_nodes={} \
+                                                                         child_alloc_nodes={} child_free_nodes={}",
+                                                                        i,
+                                                                        adj_tmpl,
+                                                                        r.total_nodes,
+                                                                        r.conditional_count,
+                                                                        r.allocation_count,
+                                                                        r.free_count,
+                                                                    ),
+                                                                    Err(rc) => log::warn!(
+                                                                        "    [TIER8-PREFLIGHT stream {}] \
+                                                                         child graph inspection failed rc={} \
+                                                                         — monolithic path failed",
+                                                                        i, rc
+                                                                    ),
+                                                                }
+
+                                                                match (auto_tmpl.node("fused_step"),
+                                                                       auto_tmpl.node("multi_lif")) {
+                                                                    (Some(fused_node), Some(multi_lif_node)) => {
+                                                                        match auto_tmpl.add_child_graph_node(
+                                                                            &[fused_node],
+                                                                            adj_tmpl,
+                                                                        ) {
+                                                                            Ok(child_node) => {
+                                                                                let mono_n_floats = mono_cfg.asc.as_ref()
+                                                                                    .map(|asc| (asc.n_atoms.max(0) as u32)
+                                                                                        .saturating_mul(3))
+                                                                                    .unwrap_or(0);
+                                                                                let parent_g26_node = match unsafe {
+                                                                                    mono_pipeline.wire_parent_g26_switch(
+                                                                                        parent_graph,
+                                                                                        child_node,
+                                                                                        mono_cfg.d_velocities,
+                                                                                        mono_n_floats,
+                                                                                    )
+                                                                                } {
+                                                                                    Ok(n) => n,
+                                                                                    Err(e) => {
+                                                                                        log::warn!(
+                                                                                            "    [MONO-FUSE stream {}] parent G26 \
+                                                                                             SWITCH wire failed: {} — monolithic path failed",
+                                                                                            i, e
+                                                                                        );
+                                                                                        break 'mono_attempt;
+                                                                                    }
+                                                                                };
+                                                                                match unsafe {
+                                                                                    prism_nhs::graph_node::splice_legality_check(parent_graph)
+                                                                                } {
+                                                                                    Ok(r) => log::info!(
+                                                                                        "    [TIER8-PREFLIGHT stream {} \
+                                                                                         protocol_group=monolithic_discovery \
+                                                                                         graph_id={:p}] parent_total_nodes={} \
+                                                                                         parent_conditional_nodes={} \
+                                                                                         parent_alloc_nodes={} parent_free_nodes={}",
+                                                                                        i,
+                                                                                        parent_graph,
+                                                                                        r.total_nodes,
+                                                                                        r.conditional_count,
+                                                                                        r.allocation_count,
+                                                                                        r.free_count,
+                                                                                    ),
+                                                                                    Err(rc) => log::warn!(
+                                                                                        "    [TIER8-PREFLIGHT stream {}] \
+                                                                                         parent post-G26 inspection failed rc={}",
+                                                                                        i, rc
+                                                                                    ),
+                                                                                }
+                                                                                if let Err(e) = auto_tmpl.add_dependency(
+                                                                                    parent_g26_node, multi_lif_node,
+                                                                                ) {
+                                                                                    log::warn!(
+                                                                                        "    [MONO-FUSE stream {}] add_dependency \
+                                                                                         G26→multi_lif failed: {} — monolithic path failed",
+                                                                                        i, e
+                                                                                    );
+                                                                                    break 'mono_attempt;
+                                                                                }
+
+                                                                                let exec = match auto_tmpl.instantiate() {
+                                                                                    Ok(exec) => exec,
+                                                                                    Err(e) => {
+                                                                                        log::warn!(
+                                                                                            "    [MONO-FUSE stream {}] instantiate \
+                                                                                             failed: {} — monolithic path failed",
+                                                                                            i, e
+                                                                                        );
+                                                                                        break 'mono_attempt;
+                                                                                    }
+                                                                                };
+
+                                                                                engine.set_gearbox_active(true);
+                                                                                let zstr_live = mono_cfg.zstr.is_some();
+                                                                                let sisr_live = mono_cfg.sisr.is_some();
+                                                                                let n_clusters_log = mono_cfg.n_clusters;
+                                                                                log::info!(
+                                                                                    "    [V2-BUILD stream {}] ✓ PIPELINE LIVE \
+                                                                                     — {} spikes, {} clusters, frame {}, \
+                                                                                     Node-D={} Node-ZSTR={} Node-SISR={} \
+                                                                                     mode={} (n_atoms={})",
+                                                                                    i, n_rs, n_clusters_log, steps_run,
+                                                                                    mono_cfg.asc.is_some(), zstr_live, sisr_live,
+                                                                                    if args.dimer_mode { "DIMER" } else { "MONOMER" },
+                                                                                    n_atoms
+                                                                                );
+                                                                                v2_spikes_raw  = d_sp;
+                                                                                v2_offsets_raw = d_off;
+                                                                                v2_mask_raw    = d_mask;
+
+                                                                                if let Ok(ring) = zstr_ring_new {
+                                                                                    if ring.alignment_ok {
+                                                                                        let ring_arc = std::sync::Arc::new(ring);
+                                                                                        let zstr_out = output_path_capture.join(
+                                                                                            format!("prism_zstr_{}_{}.bin",
+                                                                                                    std::process::id(), i)
+                                                                                        );
+                                                                                        let stop_clone = v2_zstr_stop.clone();
+                                                                                        let ring_clone = ring_arc.clone();
+                                                                                        let ghost_clone = if args.ghost_telemetry_io_uring {
+                                                                                            v2_ghost_ring.clone()
+                                                                                        } else {
+                                                                                            None
+                                                                                        };
+                                                                                        let topo_stem_for_ghost = topology_path_capture
+                                                                                            .file_stem()
+                                                                                            .and_then(|s| s.to_str())
+                                                                                            .map(|s| s.trim_end_matches(".topology").to_string())
+                                                                                            .unwrap_or_else(|| "unknown_target".to_string());
+                                                                                        let ghost_path = if ghost_clone.is_some() {
+                                                                                            Some(output_path_capture.join(
+                                                                                                format!("{}_stream{:02}_ghost_tiles.bin",
+                                                                                                        topo_stem_for_ghost, i)
+                                                                                            ))
+                                                                                        } else {
+                                                                                            None
+                                                                                        };
+                                                                                        v2_zstr_consumer = Some(
+                                                                                            prism_nhs::zstr::spawn_zstr_consumer(
+                                                                                                ring_clone, zstr_out, stop_clone,
+                                                                                                ghost_clone, ghost_path,
+                                                                                            )
+                                                                                        );
+                                                                                        v2_zstr_ring = Some(ring_arc);
+                                                                                    } else {
+                                                                                        log::warn!(
+                                                                                            "    [G21 stream {}] alignment gate failed; \
+                                                                                             skipping ZSTR consumer spawn",
+                                                                                            i
+                                                                                        );
+                                                                                    }
+                                                                                }
+
+                                                                                log::info!(
+                                                                                    "    [MONO-FUSE stream {}] ✓ \
+                                                                                     monolithic exec instantiated \
+                                                                                     (FusedStep → ChildAdj → ParentG26 → MultiLIF)",
+                                                                                    i
+                                                                                );
+                                                                                v2_built_cfg = Some(mono_cfg);
+                                                                                v2_pipeline = Some(mono_pipeline);
+                                                                                v2_monolithic = Some(exec);
+                                                                                v2_was_live.store(true, std::sync::atomic::Ordering::Release);
+                                                                                mono_success = true;
+                                                                            }
+                                                                            Err(e) => log::warn!(
+                                                                                "    [MONO-FUSE stream {}] add_child_graph_node \
+                                                                                 failed: {} — monolithic path failed",
+                                                                                i, e
+                                                                            ),
+                                                                        }
+                                                                    }
+                                                                    _ => log::warn!(
+                                                                        "    [MONO-FUSE stream {}] tagger missing \
+                                                                         fused_step/multi_lif handles — monolithic path failed", i
+                                                                    ),
+                                                                }
+                                                            }
+                                                            Err(e) => log::warn!(
+                                                                "    [MONO-FUSE stream {}] capture_autonomous_template \
+                                                                 failed: {} — monolithic path failed", i, e
+                                                            ),
+                                                        }
+                                                    }
+                                                    log::info!(
+                                                        "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                         monolithic splice attempt finished",
+                                                        i
+                                                    );
+                                                    if !mono_success {
+                                                        v2_build_terminal_failure = true;
+                                                        unsafe {
+                                                            let _ = cuMemFree_v2(d_sp);
+                                                            let _ = cuMemFree_v2(d_off);
+                                                            if d_mask != 0 { let _ = cuMemFree_v2(d_mask); }
+                                                        }
+                                                        log::warn!(
+                                                            "    [MONO-FUSE stream {}] REQUIRED \
+                                                             monolithic path did not instantiate; \
+                                                             overlay fallback not retained; V2 disabled \
+                                                             for this stream",
+                                                            i
+                                                        );
+                                                    }
+                                                } else {
                                                 match CapturedAdjudicationPipeline::build(
                                                     engine.cuda_context(),
                                                     engine.cuda_stream(),
@@ -5892,54 +6203,62 @@ fn run_multi_stream_pipeline(
                                                         // Store ring: must outlive pipeline
                                                         // (pipeline holds raw ptrs into ring).
                                                         if let Ok(ring) = zstr_ring_new {
-                                                            let ring_arc = std::sync::Arc::new(ring);
-                                                            // G24 Reaper: spawn io_uring + O_DIRECT consumer thread.
-                                                            // Wave 0 / #69: path /tmp → args.output, so the ZSTR
-                                                            // ring lands on the campaign output volume (typically
-                                                            // /mnt/storage) and survives across reboot/cleanup.
-                                                            let zstr_out = output_path_capture.join(
-                                                                format!("prism_zstr_{}_{}.bin",
-                                                                        std::process::id(), i)
-                                                            );
-                                                            let stop_clone = v2_zstr_stop.clone();
-                                                            let ring_clone = ring_arc.clone();
-                                                            // **M1.2.20.C-H / T23** + **M1.2.20.C-I / Amend 3.22 §2.2**
-                                                            // GhostTileRing + Channel-B output
-                                                            // path passed to the Reaper iff the
-                                                            // operator's CLI selector
-                                                            // `--ghost-telemetry-io-uring=true`
-                                                            // is set (default ON).  When OFF the
-                                                            // Reaper drives Channel A only and
-                                                            // Channel B falls back to the legacy
-                                                            // teardown std::fs::write.
-                                                            let ghost_clone = if args.ghost_telemetry_io_uring {
-                                                                v2_ghost_ring.clone()
+                                                            if ring.alignment_ok {
+                                                                let ring_arc = std::sync::Arc::new(ring);
+                                                                // G24 Reaper: spawn io_uring + O_DIRECT consumer thread.
+                                                                // Wave 0 / #69: path /tmp → args.output, so the ZSTR
+                                                                // ring lands on the campaign output volume (typically
+                                                                // /mnt/storage) and survives across reboot/cleanup.
+                                                                let zstr_out = output_path_capture.join(
+                                                                    format!("prism_zstr_{}_{}.bin",
+                                                                            std::process::id(), i)
+                                                                );
+                                                                let stop_clone = v2_zstr_stop.clone();
+                                                                let ring_clone = ring_arc.clone();
+                                                                // **M1.2.20.C-H / T23** + **M1.2.20.C-I / Amend 3.22 §2.2**
+                                                                // GhostTileRing + Channel-B output
+                                                                // path passed to the Reaper iff the
+                                                                // operator's CLI selector
+                                                                // `--ghost-telemetry-io-uring=true`
+                                                                // is set (default ON).  When OFF the
+                                                                // Reaper drives Channel A only and
+                                                                // Channel B falls back to the legacy
+                                                                // teardown std::fs::write.
+                                                                let ghost_clone = if args.ghost_telemetry_io_uring {
+                                                                    v2_ghost_ring.clone()
+                                                                } else {
+                                                                    None
+                                                                };
+                                                                let topo_stem_for_ghost = topology_path_capture
+                                                                    .file_stem()
+                                                                    .and_then(|s| s.to_str())
+                                                                    .map(|s| s.trim_end_matches(".topology").to_string())
+                                                                    .unwrap_or_else(|| "unknown_target".to_string());
+                                                                // Multi-stream fan-out (2026-05-03):
+                                                                // each stream's Reaper writes its
+                                                                // own per-stream ghost_tiles binary.
+                                                                let ghost_path = if ghost_clone.is_some() {
+                                                                    Some(output_path_capture.join(
+                                                                        format!("{}_stream{:02}_ghost_tiles.bin",
+                                                                                topo_stem_for_ghost, i)
+                                                                    ))
+                                                                } else {
+                                                                    None
+                                                                };
+                                                                v2_zstr_consumer = Some(
+                                                                    prism_nhs::zstr::spawn_zstr_consumer(
+                                                                        ring_clone, zstr_out, stop_clone,
+                                                                        ghost_clone, ghost_path,
+                                                                    )
+                                                                );
+                                                                v2_zstr_ring = Some(ring_arc);
                                                             } else {
-                                                                None
-                                                            };
-                                                            let topo_stem_for_ghost = topology_path_capture
-                                                                .file_stem()
-                                                                .and_then(|s| s.to_str())
-                                                                .map(|s| s.trim_end_matches(".topology").to_string())
-                                                                .unwrap_or_else(|| "unknown_target".to_string());
-                                                            // Multi-stream fan-out (2026-05-03):
-                                                            // each stream's Reaper writes its
-                                                            // own per-stream ghost_tiles binary.
-                                                            let ghost_path = if ghost_clone.is_some() {
-                                                                Some(output_path_capture.join(
-                                                                    format!("{}_stream{:02}_ghost_tiles.bin",
-                                                                            topo_stem_for_ghost, i)
-                                                                ))
-                                                            } else {
-                                                                None
-                                                            };
-                                                            v2_zstr_consumer = Some(
-                                                                prism_nhs::zstr::spawn_zstr_consumer(
-                                                                    ring_clone, zstr_out, stop_clone,
-                                                                    ghost_clone, ghost_path,
-                                                                )
-                                                            );
-                                                            v2_zstr_ring = Some(ring_arc);
+                                                                log::warn!(
+                                                                    "    [G21 stream {}] alignment gate failed; \
+                                                                     skipping ZSTR consumer spawn",
+                                                                    i
+                                                                );
+                                                            }
                                                         }
                                                         v2_pipeline    = Some(pipeline);
                                                         v2_built_cfg   = Some(cfg_snapshot);
@@ -5962,15 +6281,113 @@ fn run_multi_stream_pipeline(
                                                                  --m1-monolithic-discovery not set; \
                                                                  V2 runs in overlay mode", i
                                                             );
-                                                        } else {
+                                                        } else { 'mono_attempt: {
                                                         log::info!(
                                                             "    [V2-INSTANTIATE-START stream {}] \
                                                              beginning monolithic splice", i
                                                         );
+                                                        drop(v2_pipeline.take());
+                                                        v2_built_cfg = None;
+                                                        log::info!(
+                                                            "    [MONO-FUSE stream {}] monolithic mode: \
+                                                             provisional overlay child dropped before \
+                                                             parent-owned G26 child build",
+                                                            i
+                                                        );
                                                         match engine.capture_autonomous_template() {
                                                             Ok(mut auto_tmpl) => {
-                                                                let pipe_ref = v2_pipeline.as_ref().unwrap();
-                                                                let adj_tmpl = pipe_ref.cu_graph_raw();
+                                                                let parent_graph = auto_tmpl.cu_graph();
+                                                                match unsafe {
+                                                                    prism_nhs::graph_node::splice_legality_check(parent_graph)
+                                                                } {
+                                                                    Ok(r) => log::info!(
+                                                                        "    [TIER8-PREFLIGHT stream {} \
+                                                                         protocol_group=monolithic_discovery \
+                                                                         graph_id={:p}] parent_total_nodes={} \
+                                                                         parent_conditional_nodes={} \
+                                                                         parent_alloc_nodes={} parent_free_nodes={}",
+                                                                        i,
+                                                                        parent_graph,
+                                                                        r.total_nodes,
+                                                                        r.conditional_count,
+                                                                        r.allocation_count,
+                                                                        r.free_count,
+                                                                    ),
+                                                                    Err(rc) => log::warn!(
+                                                                        "    [TIER8-PREFLIGHT stream {}] \
+                                                                         parent graph inspection failed rc={} \
+                                                                         — monolithic path failed",
+                                                                        i, rc
+                                                                    ),
+                                                                }
+                                                                let parent_g26_handle = match unsafe {
+                                                                    CapturedAdjudicationPipeline::create_parent_g26_cond_handle(
+                                                                        parent_graph,
+                                                                    )
+                                                                } {
+                                                                    Ok(h) => h,
+                                                                    Err(e) => {
+                                                                        log::warn!(
+                                                                            "    [MONO-FUSE stream {}] parent G26 \
+                                                                             handle creation failed: {} — monolithic path failed",
+                                                                            i, e
+                                                                        );
+                                                                        log::info!(
+                                                                            "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                                             monolithic splice attempt finished",
+                                                                            i
+                                                                        );
+                                                                        break 'mono_attempt;
+                                                                    }
+                                                                };
+
+                                                                let mut mono_cfg = cfg.clone();
+                                                                mono_cfg.g26_parent_cond_handle = parent_g26_handle;
+                                                                let mono_pipeline = match CapturedAdjudicationPipeline::build(
+                                                                    engine.cuda_context(),
+                                                                    engine.cuda_stream(),
+                                                                    &mono_cfg,
+                                                                ) {
+                                                                    Ok(p) => p,
+                                                                    Err(e) => {
+                                                                        log::warn!(
+                                                                            "    [MONO-FUSE stream {}] parent-owned \
+                                                                             G26 child build failed: {:?} — monolithic path failed",
+                                                                            i, e
+                                                                        );
+                                                                        log::info!(
+                                                                            "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                                             monolithic splice attempt finished",
+                                                                            i
+                                                                        );
+                                                                        break 'mono_attempt;
+                                                                    }
+                                                                };
+
+                                                                let adj_tmpl = mono_pipeline.cu_graph_raw();
+                                                                match unsafe {
+                                                                    prism_nhs::graph_node::splice_legality_check(adj_tmpl)
+                                                                } {
+                                                                    Ok(r) => log::info!(
+                                                                        "    [TIER8-PREFLIGHT stream {} \
+                                                                         protocol_group=monolithic_discovery \
+                                                                         graph_id={:p}] child_total_nodes={} \
+                                                                         child_conditional_nodes={} \
+                                                                         child_alloc_nodes={} child_free_nodes={}",
+                                                                        i,
+                                                                        adj_tmpl,
+                                                                        r.total_nodes,
+                                                                        r.conditional_count,
+                                                                        r.allocation_count,
+                                                                        r.free_count,
+                                                                    ),
+                                                                    Err(rc) => log::warn!(
+                                                                        "    [TIER8-PREFLIGHT stream {}] \
+                                                                         child graph inspection failed rc={} \
+                                                                         — monolithic path failed",
+                                                                        i, rc
+                                                                    ),
+                                                                }
                                                                 match (auto_tmpl.node("fused_step"),
                                                                        auto_tmpl.node("multi_lif")) {
                                                                     (Some(fused_node), Some(multi_lif_node)) => {
@@ -5979,12 +6396,61 @@ fn run_multi_stream_pipeline(
                                                                             adj_tmpl,
                                                                         ) {
                                                                             Ok(child_node) => {
+                                                                                let mono_n_floats = cfg.asc.as_ref()
+                                                                                    .map(|asc| (asc.n_atoms.max(0) as u32)
+                                                                                        .saturating_mul(3))
+                                                                                    .unwrap_or(0);
+                                                                                let parent_g26_node = match unsafe {
+                                                                                    mono_pipeline.wire_parent_g26_switch(
+                                                                                        parent_graph,
+                                                                                        child_node,
+                                                                                        cfg.d_velocities,
+                                                                                        mono_n_floats,
+                                                                                    )
+                                                                                } {
+                                                                                    Ok(n) => n,
+                                                                                    Err(e) => {
+                                                                                        log::warn!(
+                                                                                            "    [MONO-FUSE stream {}] parent G26 \
+                                                                                             SWITCH wire failed: {} — monolithic path failed",
+                                                                                            i, e
+                                                                                        );
+                                                                                        log::info!(
+                                                                                            "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                                                             monolithic splice attempt finished",
+                                                                                            i
+                                                                                        );
+                                                                                        break 'mono_attempt;
+                                                                                    }
+                                                                                };
+                                                                                match unsafe {
+                                                                                    prism_nhs::graph_node::splice_legality_check(parent_graph)
+                                                                                } {
+                                                                                    Ok(r) => log::info!(
+                                                                                        "    [TIER8-PREFLIGHT stream {} \
+                                                                                         protocol_group=monolithic_discovery \
+                                                                                         graph_id={:p}] parent_total_nodes={} \
+                                                                                         parent_conditional_nodes={} \
+                                                                                         parent_alloc_nodes={} parent_free_nodes={}",
+                                                                                        i,
+                                                                                        parent_graph,
+                                                                                        r.total_nodes,
+                                                                                        r.conditional_count,
+                                                                                        r.allocation_count,
+                                                                                        r.free_count,
+                                                                                    ),
+                                                                                    Err(rc) => log::warn!(
+                                                                                        "    [TIER8-PREFLIGHT stream {}] \
+                                                                                         parent post-G26 inspection failed rc={}",
+                                                                                        i, rc
+                                                                                    ),
+                                                                                }
                                                                                 if let Err(e) = auto_tmpl.add_dependency(
-                                                                                    child_node, multi_lif_node,
+                                                                                    parent_g26_node, multi_lif_node,
                                                                                 ) {
                                                                                     log::warn!(
                                                                                         "    [MONO-FUSE stream {}] add_dependency \
-                                                                                         child→multi_lif failed: {} — overlay path",
+                                                                                         G26→multi_lif failed: {} — monolithic path failed",
                                                                                         i, e
                                                                                     );
                                                                                 } else {
@@ -5993,40 +6459,54 @@ fn run_multi_stream_pipeline(
                                                                                             log::info!(
                                                                                                 "    [MONO-FUSE stream {}] ✓ \
                                                                                                  monolithic exec instantiated \
-                                                                                                 (FusedStep → ChildAdj → MultiLIF)",
+                                                                                                 (FusedStep → ChildAdj → ParentG26 → MultiLIF)",
                                                                                                 i
                                                                                             );
+                                                                                            v2_pipeline = Some(mono_pipeline);
+                                                                                            v2_built_cfg = Some(mono_cfg);
                                                                                             v2_monolithic = Some(exec);
                                                                                         }
                                                                                         Err(e) => log::warn!(
                                                                                             "    [MONO-FUSE stream {}] instantiate \
-                                                                                             failed: {} — overlay path", i, e
+                                                                                             failed: {} — monolithic path failed", i, e
                                                                                         ),
                                                                                     }
                                                                                 }
                                                                             }
                                                                             Err(e) => log::warn!(
                                                                                 "    [MONO-FUSE stream {}] add_child_graph_node \
-                                                                                 failed: {} — overlay path", i, e
+                                                                                 failed: {} — monolithic path failed", i, e
                                                                             ),
                                                                         }
                                                                     }
                                                                     _ => log::warn!(
                                                                         "    [MONO-FUSE stream {}] tagger missing \
-                                                                         fused_step/multi_lif handles — overlay path", i
+                                                                         fused_step/multi_lif handles — monolithic path failed", i
                                                                     ),
                                                                 }
                                                             }
                                                             Err(e) => log::warn!(
                                                                 "    [MONO-FUSE stream {}] capture_autonomous_template \
-                                                                 failed: {} — overlay path", i, e
+                                                                 failed: {} — monolithic path failed", i, e
                                                             ),
                                                         }
                                                         log::info!(
                                                             "    [V2-INSTANTIATE-COMPLETE stream {}] \
                                                              monolithic splice attempt finished", i
                                                         );
-                                                        } // end if !args.m1_monolithic_discovery else
+                                                        if v2_monolithic.is_none() {
+                                                            v2_build_terminal_failure = true;
+                                                            v2_pipeline = None;
+                                                            v2_built_cfg = None;
+                                                            log::warn!(
+                                                                "    [MONO-FUSE stream {}] REQUIRED \
+                                                                 monolithic path did not instantiate; \
+                                                                 overlay fallback not retained; V2 disabled \
+                                                                 for this stream",
+                                                                i
+                                                            );
+                                                        }
+                                                        } } // end if !args.m1_monolithic_discovery else
                                                     }
                                                     Err(e) => {
                                                         log::warn!(
@@ -6039,7 +6519,11 @@ fn run_multi_stream_pipeline(
                                                             let _ = cuMemFree_v2(d_off);
                                                             if d_mask != 0 { let _ = cuMemFree_v2(d_mask); }
                                                         }
+                                                        if args.m1_monolithic_discovery {
+                                                            v2_build_terminal_failure = true;
+                                                        }
                                                     }
+                                                }
                                                 }
                                             } else {
                                                 unsafe {
@@ -6050,11 +6534,20 @@ fn run_multi_stream_pipeline(
                                         } else {
                                             if d_sp  != 0 { unsafe { let _ = cuMemFree_v2(d_sp);  } }
                                             if d_off != 0 { unsafe { let _ = cuMemFree_v2(d_off); } }
-                                            log::warn!(
-                                                "    [V2-BUILD stream {}] VRAM alloc/copy failed — \
-                                                 legacy path",
-                                                i
-                                            );
+                                            if args.m1_monolithic_discovery {
+                                                v2_build_terminal_failure = true;
+                                                log::warn!(
+                                                    "    [V2-BUILD stream {}] VRAM alloc/copy failed — \
+                                                     monolithic path disabled; overlay fallback not retained",
+                                                    i
+                                                );
+                                            } else {
+                                                log::warn!(
+                                                    "    [V2-BUILD stream {}] VRAM alloc/copy failed — \
+                                                     legacy path",
+                                                    i
+                                                );
+                                            }
                                         }
                                     } else {
                                         log::warn!(
@@ -6083,6 +6576,7 @@ fn run_multi_stream_pipeline(
                                 #[cfg(feature = "v2_ignition")]
                                 if !v2_step101_rebuilt
                                     && v2_pipeline.is_some()
+                                    && v2_monolithic.is_none()
                                     && v2_chunks_completed >= 1
                                 {
                                     if let Some(ref saved_cfg) = v2_built_cfg {

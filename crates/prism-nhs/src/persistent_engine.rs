@@ -19,7 +19,10 @@
 //! ```
 
 use anyhow::{bail, Context, Result};
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::path::Path;
 use std::time::Instant;
 
@@ -50,6 +53,17 @@ fn tier8_capture_driver_error_text(
 #[cfg(feature = "gpu")]
 static TIER8_DEFERRED_DRAIN_COUNT: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(feature = "gpu")]
+fn tier8_capture_stream_slot(raw_stream: usize) -> u32 {
+    static NEXT_SLOT: AtomicU32 = AtomicU32::new(0);
+    static SLOT_MAP: OnceLock<Mutex<HashMap<usize, u32>>> = OnceLock::new();
+    let map = SLOT_MAP.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = map.lock().expect("tier8 stream slot map poisoned");
+    *map.entry(raw_stream).or_insert_with(|| {
+        NEXT_SLOT.fetch_add(1, Ordering::Relaxed)
+    })
+}
 
 #[cfg(feature = "gpu")]
 fn tier8_capture_verbose_enabled() -> bool {
@@ -1541,8 +1555,10 @@ impl PersistentNhsEngine {
         // scoped to that proven failing gate.
         let ctx = stream.context();
         let raw_stream = stream.cu_stream();
+        let stream_slot = tier8_capture_stream_slot(raw_stream as usize);
         let expected_ctx = ctx.cu_ctx();
         let diag_thread_id = format!("{:?}", std::thread::current().id());
+        let mut deferred_drain_context: Option<crate::fused_engine::Tier8DeferredDrainContext> = None;
 
         // Cudarc launch_builder() still calls bind_to_thread() internally.
         // In capture mode that call skips cuCtxGetCurrent/cuCtxSetCurrent,
@@ -1553,8 +1569,9 @@ impl PersistentNhsEngine {
             Ok(()) => {
                 tier8_capture_verbose!(
                     "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err \
-                     result=OK stream_id=unavailable protocol_group=monolithic_parent_template \
+                     result=OK stream_id={} protocol_group=monolithic_parent_template \
                      raw_stream={:p} expected_ctx={:p} thread_id={}",
+                    stream_slot,
                     raw_stream,
                     expected_ctx,
                     diag_thread_id
@@ -1568,10 +1585,11 @@ impl PersistentNhsEngine {
                 let (name, text) = tier8_capture_driver_error_text(first.0);
                 log::warn!(
                     "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err \
-                     result=DRAINED stream_id=unavailable protocol_group=monolithic_parent_template \
+                     result=DRAINED stream_id={} protocol_group=monolithic_parent_template \
                      rc={} cuda_name={} cuda_string=\"{}\" raw_stream={:p} \
                      expected_ctx={:p} thread_id={} deferred_drain_count={} \
                      call_site=capture_autonomous_template::pre_capture_ctx_check",
+                    stream_slot,
                     first.0 as i32,
                     name,
                     text,
@@ -1580,14 +1598,24 @@ impl PersistentNhsEngine {
                     diag_thread_id,
                     drain_count
                 );
+                deferred_drain_context = Some(crate::fused_engine::Tier8DeferredDrainContext {
+                    stream_slot,
+                    raw_stream: raw_stream as usize,
+                    call_site: "capture_autonomous_template::pre_capture_ctx_check",
+                    drain_count,
+                    rc: first.0 as i32,
+                    cuda_name: name.clone(),
+                    cuda_string: text.clone(),
+                });
                 if let Err(second) = ctx.check_err() {
                     let (second_name, second_text) =
                         tier8_capture_driver_error_text(second.0);
                     log::error!(
                         "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err(second) \
-                         result=FAIL stream_id=unavailable protocol_group=monolithic_parent_template \
+                         result=FAIL stream_id={} protocol_group=monolithic_parent_template \
                          rc={} cuda_name={} cuda_string=\"{}\" raw_stream={:p} \
                          expected_ctx={:p} thread_id={}",
+                        stream_slot,
                         second.0 as i32,
                         second_name,
                         second_text,
@@ -1828,10 +1856,32 @@ impl PersistentNhsEngine {
 
         // Launch the captured kernel sequence. On error, abort capture
         // cleanly and propagate.
+        crate::fused_engine::tier8_set_deferred_drain_context(
+            deferred_drain_context.clone(),
+        );
         let kernel_result = engine.step_autonomous_kernels_tagged(
             &stream,
             Some(&mut tagger),
         );
+        crate::fused_engine::tier8_set_deferred_drain_context(None);
+        if let Some(ref drain) = deferred_drain_context {
+            let build_succeeded = kernel_result.is_ok();
+            let failure_within_n = kernel_result.is_err();
+            log::info!(
+                "[TIER8-CAPTURE deferred-summary] stream_id={} raw_stream=0x{:x} \
+                 call_site={} drain_count={} rc={} cuda_name={} cuda_string=\"{}\" \
+                 subsequent_build_succeeded={} failure_within_3_milestones={}",
+                drain.stream_slot,
+                drain.raw_stream,
+                drain.call_site,
+                drain.drain_count,
+                drain.rc,
+                drain.cuda_name,
+                drain.cuda_string,
+                build_succeeded,
+                failure_within_n
+            );
+        }
         if let Err(e) = kernel_result {
             // Abort capture: end and discard the template.
             let mut discard: sys::CUgraph = std::ptr::null_mut();
