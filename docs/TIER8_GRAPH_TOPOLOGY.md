@@ -1,7 +1,7 @@
 # TIER 8 Graph Topology
 
 Date: 2026-05-04
-Status: PASS (all-8 instantiate gate frozen), with deferred-drain caveat tracked
+Status: PASS (all-8 instantiate gate frozen). TIER 8.1 runtime hygiene: GREEN with deferred-drain caveat tracked
 
 ## Invariant
 
@@ -105,6 +105,37 @@ Deferred drain diagnostics still occurred and remain intentionally visible:
 - One non-fatal `post-gasp-sync` drained check on stream 6
 
 These did not prevent all-8 instantiate success, but they remain tracked and are not normalized away.
+
+## TIER 8.1 G21 Isolation (ZSTR)
+
+Scoped fix landed for G21 alignment hygiene:
+
+- `ZstrRing` now tracks both raw allocation base and 4096-aligned usable base.
+- Allocation over-reserves by 4095 B and aligns usable pointer up to 4096 B.
+- `Drop` frees only the raw allocation pointer (`cuMemFreeHost`).
+- G21 logs now report raw pointer, aligned pointer, offset, usable bytes, alloc bytes, and pass/fail.
+- ZSTR consumer spawn is gated by `alignment_ok` (skip cleanly when false).
+
+Focused smoke evidence (same TIER 8.1 command, 300s timeout each):
+
+- `/mnt/storage/prism_tier8_1Z3A_20260504_093200/run.log`
+- `/mnt/storage/prism_tier8_1Z3B_20260504_093728/run.log`
+- `/mnt/storage/prism_tier8_1Z3C_20260504_094257/run.log`
+
+Gate outcomes across all three:
+
+- `G21` failures: `0`
+- `post_t7_sync` failures: `0`
+- non-deferred `INVALID_VALUE` failures: `0`
+- `801/900/901`: `0`
+- `STREAM_CAPTURE_INVALIDATED`: `0`
+- teardown: clean (no compute process, `P8/P0 idle`, VRAM baseline ~15 MiB)
+
+Deferred-drain diagnostics remained visible (not normalized away):
+
+- each smoke reported `TIER8-CAPTURE deferred-summary` at
+  `capture_autonomous_template::pre_capture_ctx_check`
+- observed stream IDs in this gate: `0` (all three smokes)
 
 ## Rollback Path
 

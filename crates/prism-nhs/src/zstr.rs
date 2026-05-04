@@ -122,11 +122,15 @@ pub struct ZstrFrameHeader {
 
 /// Triple-buffered pinned-host ring for ZSTR frame exfiltration.
 ///
-/// Owns a single `cuMemAllocHost_v2` allocation covering 3 slots of
-/// `frame_size` bytes each.  `frame_size` is computed from `n_atoms`
-/// and padded to the next 4096-byte multiple for `O_DIRECT` compat.
+/// Owns a single `cuMemHostAlloc` allocation with:
+/// - a raw allocation base pointer used only for `cuMemFreeHost`
+/// - a 4096-aligned usable base pointer used for ring payload access.
+///
+/// The usable region covers exactly `frame_size * N_SLOTS` bytes.
 pub struct ZstrRing {
-    /// Base of the pinned allocation (page-locked; DMA-accessible).
+    /// Raw base returned by `cuMemHostAlloc` (must be freed as-is).
+    pub raw_pinned_ptr: *mut u8,
+    /// 4096-aligned usable base for all ring operations.
     pub pinned_ptr: *mut u8,
     /// Per-slot byte size (4096-byte padded).
     pub frame_size: usize,
@@ -178,6 +182,7 @@ impl ZstrRing {
         // Round up to next 4096-byte multiple for O_DIRECT sector alignment.
         let frame_size   = (raw_frame + 4095) & !4095;
         let total_bytes  = frame_size * Self::N_SLOTS;
+        let alloc_bytes  = total_bytes + 4095;
 
         // M1.2.19.D — Mapped-memory standard (operator Amendment 3.13 §1.2).
         // Use cuMemHostAlloc with PORTABLE + DEVICEMAP so the page-locked
@@ -191,39 +196,62 @@ impl ZstrRing {
         let flags = cudarc::driver::sys::CU_MEMHOSTALLOC_PORTABLE
                   | cudarc::driver::sys::CU_MEMHOSTALLOC_DEVICEMAP;
         let rc = unsafe {
-            cudarc::driver::sys::cuMemHostAlloc(&mut ptr, total_bytes, flags)
+            cudarc::driver::sys::cuMemHostAlloc(&mut ptr, alloc_bytes, flags)
         };
 
         if !matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS) {
             return Err(format!(
                 "cuMemHostAlloc(PORTABLE|DEVICEMAP) failed: {:?} \
-                 (requested {} bytes for {} atoms × 3 slots)",
-                rc, total_bytes, n_atoms
+                 (requested {} bytes usable / {} bytes allocated for {} atoms × {} slots)",
+                rc, total_bytes, alloc_bytes, n_atoms, Self::N_SLOTS
             ));
         }
 
-        let pinned_ptr   = ptr as *mut u8;
+        let raw_pinned_ptr = ptr as *mut u8;
+        let raw_addr = raw_pinned_ptr as usize;
+        let aligned_addr = (raw_addr + 4095) & !4095usize;
+        let alignment_offset = aligned_addr.saturating_sub(raw_addr);
+        let pinned_ptr = aligned_addr as *mut u8;
         let alignment_ok = (pinned_ptr as usize) % 4096 == 0;
 
         // Zero-init: clears all completion_fence fields to 0 (GPU-owned).
-        unsafe { std::ptr::write_bytes(pinned_ptr, 0u8, total_bytes); }
+        unsafe { std::ptr::write_bytes(raw_pinned_ptr, 0u8, alloc_bytes); }
 
-        if !alignment_ok {
-            log::error!(
-                "[ZSTR G21 FAIL] pinned_ptr {:p} not 4096-aligned — \
-                 O_DIRECT writes will fault.  cuMemAllocHost_v2 \
-                 guarantees page alignment; this is a driver bug.",
+        log::info!(
+            "[ZSTR G21] raw_ptr={:p} aligned_ptr={:p} align_offset={} \
+             frame_size={} usable_bytes={} alloc_bytes={} n_atoms={} \
+             alignment_pass={}",
+            raw_pinned_ptr,
+            pinned_ptr,
+            alignment_offset,
+            frame_size,
+            total_bytes,
+            alloc_bytes,
+            n_atoms,
+            alignment_ok
+        );
+        if alignment_ok {
+            log::info!(
+                "[ZSTR G21 PASS] aligned_ptr {:p} 4096-aligned ✓",
                 pinned_ptr
             );
         } else {
-            log::info!(
-                "[ZSTR G21 PASS] pinned_ptr {:p} 4096-aligned ✓  \
-                 frame_size={} bytes  total={} bytes  n_atoms={}",
-                pinned_ptr, frame_size, total_bytes, n_atoms
+            log::error!(
+                "[ZSTR G21 FAIL] aligned_ptr {:p} not 4096-aligned \
+                 (raw_ptr={:p}, offset={}) — O_DIRECT writes will fault.",
+                pinned_ptr,
+                raw_pinned_ptr,
+                alignment_offset
             );
         }
 
-        Ok(Self { pinned_ptr, frame_size, n_atoms, alignment_ok })
+        Ok(Self {
+            raw_pinned_ptr,
+            pinned_ptr,
+            frame_size,
+            n_atoms,
+            alignment_ok,
+        })
     }
 
     /// Pointer to the `ZstrFrameHeader` for ring slot `slot` (0..N_SLOTS).
@@ -297,12 +325,13 @@ impl ZstrRing {
 
 impl Drop for ZstrRing {
     fn drop(&mut self) {
-        if !self.pinned_ptr.is_null() {
+        if !self.raw_pinned_ptr.is_null() {
             unsafe {
                 let _ = cudarc::driver::sys::cuMemFreeHost(
-                    self.pinned_ptr as *mut c_void
+                    self.raw_pinned_ptr as *mut c_void
                 );
             }
+            self.raw_pinned_ptr = std::ptr::null_mut();
             self.pinned_ptr = std::ptr::null_mut();
         }
     }
