@@ -155,6 +155,86 @@ int prism_graph_is_splice_legal_ffi(
     size_t                *pOutAllocNodes,
     size_t                *pOutFreeNodes);
 
+// ─────────────────────────────────────────────────────────────────────
+// prism_graph_create_while_handle_ffi — parent-owned WHILE handle
+// ─────────────────────────────────────────────────────────────────────
+//
+// TIER 8 — operator directive (WHILE-FFI-SCAFFOLD-001, 2026-05-04):
+// "WHILE bounded micro-loop scaffold, parent-owned, size = 1, default
+// value semantically driven by predicate-bridge kernel."
+//
+// Mirrors `prism_gearbox_create_handle_ffi` (adjudicator.cu:1119) which
+// drives the SWITCH path; specialised for the WHILE invariant
+// `cudaGraphCondTypeWhile = 1` (driver_types.h:3560) and `size = 1`
+// (driver_types.h:3572 — "Allowed values are 1 for cudaGraphCondTypeWhile").
+//
+// `default_value` controls whether the body runs at least once at
+// instantiation:
+//   `1` — enter body once by default; predicate-bridge kernel
+//         falsifies via cudaGraphSetConditional to exit.
+//   `0` — body NEVER runs unless predicate-bridge sets it true; this
+//         is the safe default for "no-op WHILE" (loop terminates
+//         immediately if predicate never set).
+//
+// CUDA 12.4 floor (CUDART_VERSION >= 12040). Below that, the helper
+// returns `cudaErrorNotSupported` per existing scaffold convention.
+//
+// Args:
+//   parent_graph     — parent CUgraph that will host the WHILE node;
+//                      handle is bound to this graph at creation
+//   default_value    — initial conditional value at launch (see above)
+//   pOutHandle       — receives the conditional handle as a u64 (the
+//                      CUDA `cudaGraphConditionalHandle` typedef is
+//                      `unsigned long long`)
+//
+// Returns: cudaError_t cast to int. 0 on success.
+int prism_graph_create_while_handle_ffi(
+    cudaGraph_t   parent_graph,
+    uint32_t      default_value,
+    uint64_t     *pOutHandle);
+
+// ─────────────────────────────────────────────────────────────────────
+// prism_graph_add_while_node_ffi — parent-owned WHILE conditional node
+// ─────────────────────────────────────────────────────────────────────
+//
+// TIER 8 — adds a single CONDITIONAL node of type
+// `cudaGraphCondTypeWhile` with `size = 1` to `parent_graph`, downstream
+// of `pDependencies`. After successful add, the body subgraph (the
+// single WHILE body) is returned via `pOutBodySubgraph` so the caller
+// (R6 lane / `captured_pipeline.rs`) can populate the body with the
+// predicate-bridge kernel + drain pump.
+//
+// Per CUDA 13.x semantics (driver_types.h:3574-3592): the
+// `cudaConditionalNodeParams.phGraph_out` array is CUDA-OWNED and
+// populated DURING the `cudaGraphAddNode` call. Its lifetime equals
+// the lifetime of the conditional node itself. We copy
+// `phGraph_out[0]` into the caller-provided slot so callers do not
+// need to keep the `nodeParams` struct alive.
+//
+// Mirrors `prism_gearbox_wire_with_handle_ffi` (adjudicator.cu:1137);
+// specialised to `size = 1` (the SWITCH variant uses `size = 4`).
+//
+// Args:
+//   parent_graph        — destination parent CUgraph; MUST be the same
+//                         graph the handle was created against
+//   pDependencies       — array of CUgraphNode* dependencies (may be
+//                         null when num_deps = 0)
+//   numDependencies     — count (0 if pDependencies null)
+//   handle_v            — handle returned by
+//                         prism_graph_create_while_handle_ffi
+//   pOutConditionalNode — receives the new WHILE conditional node
+//   pOutBodySubgraph    — receives the (single) body subgraph
+//                         (`phGraph_out[0]`) for caller population
+//
+// Returns: cudaError_t cast to int. 0 on success.
+int prism_graph_add_while_node_ffi(
+    cudaGraph_t            parent_graph,
+    const cudaGraphNode_t *pDependencies,
+    size_t                 numDependencies,
+    uint64_t               handle_v,
+    cudaGraphNode_t       *pOutConditionalNode,
+    cudaGraph_t           *pOutBodySubgraph);
+
 #ifdef __cplusplus
 }
 #endif

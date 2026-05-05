@@ -188,3 +188,130 @@ extern "C" int prism_graph_add_memset_node_v3_ffi(
         &nodeParams);
     return static_cast<int>(err);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// TIER 8 — WHILE FFI scaffold (WHILE-FFI-SCAFFOLD-001, 2026-05-04).
+//
+// Mirrors the G26 SWITCH FFI pattern from
+// crates/prism-nhs/src/cuda/adjudicator.cu:1119 (handle creator) and
+// :1137 (node wirer) but specialised to:
+//   - cudaGraphCondTypeWhile  (driver_types.h:3560, value = 1)
+//   - conditional.size = 1u   (driver_types.h:3572 — the only allowed
+//                              value for WHILE: "Allowed values are 1
+//                              for cudaGraphCondTypeWhile")
+//   - 1 body subgraph         (vs. SWITCH's 4)
+//
+// CUDA 12.4 floor. cudaGraphCondTypeWhile is supported since CUDA 12.4
+// (CUDART_VERSION >= 12040). The G26 SWITCH path uses a stricter
+// >= 12060 gate because cudaGraphCondTypeSwitch requires CUDA 12.6;
+// WHILE landed two minor releases earlier.
+//
+// FFI scaffold is added but NOT WIRED into any production graph this
+// commit — captured graphs remain unchanged. R6 lane will install the
+// bounded post-T7 deferred-drain WHILE in a follow-up commit via
+// captured_pipeline.rs.
+// ═══════════════════════════════════════════════════════════════════════
+
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12040
+
+extern "C" int prism_graph_create_while_handle_ffi(
+    cudaGraph_t   parent_graph,
+    uint32_t      default_value,
+    uint64_t     *pOutHandle)
+{
+    if (parent_graph == nullptr || pOutHandle == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    // cudaGraphConditionalHandle is `typedef unsigned long long`; we
+    // round-trip via uint64_t so the FFI ABI is stable.
+    cudaGraphConditionalHandle handle = 0;
+    cudaError_t err = cudaGraphConditionalHandleCreate(
+        &handle,
+        parent_graph,
+        /*defaultLaunchValue=*/ default_value,
+        /*flags=*/              cudaGraphCondAssignDefault);
+    if (err != cudaSuccess) {
+        return static_cast<int>(err);
+    }
+    *pOutHandle = static_cast<uint64_t>(handle);
+    return static_cast<int>(cudaSuccess);
+}
+
+extern "C" int prism_graph_add_while_node_ffi(
+    cudaGraph_t            parent_graph,
+    const cudaGraphNode_t *pDependencies,
+    size_t                 numDependencies,
+    uint64_t               handle_v,
+    cudaGraphNode_t       *pOutConditionalNode,
+    cudaGraph_t           *pOutBodySubgraph)
+{
+    if (parent_graph == nullptr ||
+        pOutConditionalNode == nullptr ||
+        pOutBodySubgraph == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (numDependencies > 0 && pDependencies == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+
+    *pOutBodySubgraph = nullptr;
+
+    // CUDA 13.x deletes the default ctor on `cudaGraphNodeParams`
+    // (the union-bearing fields force explicit init). Brace-init
+    // value-initializes (zeroes) every byte; we then set the active
+    // union arm + the discriminating `type` field.
+    cudaGraphNodeParams nodeParams{};
+    nodeParams.type                 = cudaGraphNodeTypeConditional;
+    nodeParams.conditional.handle   = handle;
+    nodeParams.conditional.type     = cudaGraphCondTypeWhile;
+    // INVARIANT: WHILE size MUST be 1 (driver_types.h:3572).
+    nodeParams.conditional.size     = 1u;
+    nodeParams.conditional.ctx      = nullptr;
+
+    cudaError_t err = cudaGraphAddNode(
+        pOutConditionalNode,
+        parent_graph,
+        /*pDependencies=*/   pDependencies,
+        /*dependencyData=*/  nullptr,
+        /*numDependencies=*/ numDependencies,
+        &nodeParams);
+    if (err != cudaSuccess) {
+        return static_cast<int>(err);
+    }
+
+    // Per driver_types.h:3574-3588, phGraph_out is CUDA-owned and
+    // populated during the cudaGraphAddNode call. For WHILE,
+    // phGraph_out[0] is the loop body. Copy the handle for the caller
+    // so they can populate the body without holding the nodeParams
+    // struct alive.
+    if (nodeParams.conditional.phGraph_out != nullptr) {
+        *pOutBodySubgraph = nodeParams.conditional.phGraph_out[0];
+    }
+
+    return static_cast<int>(cudaSuccess);
+}
+
+#else  // CUDART_VERSION < 12040
+
+extern "C" int prism_graph_create_while_handle_ffi(
+    cudaGraph_t /*parent_graph*/,
+    uint32_t    /*default_value*/,
+    uint64_t   */*pOutHandle*/)
+{
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C" int prism_graph_add_while_node_ffi(
+    cudaGraph_t           /*parent_graph*/,
+    const cudaGraphNode_t */*pDependencies*/,
+    size_t                /*numDependencies*/,
+    uint64_t              /*handle_v*/,
+    cudaGraphNode_t      */*pOutConditionalNode*/,
+    cudaGraph_t          */*pOutBodySubgraph*/)
+{
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+#endif  // CUDART_VERSION >= 12040
