@@ -369,6 +369,11 @@ pub mod rescue_controller;
 /// Pure Rust data-plane types for tagged control records; this module does
 /// not install runtime wiring or touch CUDA graph topology.
 pub mod control_trace;
+/// F2 evidence-plane sidecar schema.
+///
+/// Pure Rust data-plane types for ring status, write commits, and artifact
+/// completeness; runtime emission remains separately gated.
+pub mod f2_evidence;
 
 pub mod composition;
 pub mod batch_scheduler;
