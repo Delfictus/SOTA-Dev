@@ -46,13 +46,28 @@ fn main() {
     // TIER 7 (2026-05-03) — CUDA 13.x cuGraphAddNode FFI wrappers.
     println!("cargo:rerun-if-changed=src/cuda/graph_node.cu");
     println!("cargo:rerun-if-changed=src/cuda/graph_node.cuh");
+    // TIER 7+8 / WHILE bounded micro-loop (2026-05-04) — predicate
+    // kernel + host shim for the post-T7 deferred-drain WHILE
+    // conditional (sub-ticket WHILE-POST-T7-DRAIN-001, kernel portion).
+    // Single-thread `__global__` reads device-resident queue depth +
+    // iteration counter, enforces a kernel-level `max_iterations` cap,
+    // and writes the boolean to a `cudaGraphConditionalHandle` via
+    // `cudaGraphSetConditional`. Parent-graph-resident, host_mutation
+    // = false, max_iterations is the hard cap. NOT yet wired into any
+    // captured graph — `captured_pipeline.rs` wire-in deferred to a
+    // follow-up commit after R4 (F1 pipeline wiring) lands; WHILE FFI
+    // scaffold is R5's commit.
+    println!("cargo:rerun-if-changed=src/cuda/while_drain_bridge.cu");
+    println!("cargo:rerun-if-changed=src/cuda/while_drain_bridge.cuh");
 
     // Embed RPATH for libsdst.so so the nhs_rt_full binary finds it at runtime.
     // cargo:rustc-link-arg from a dependency build.rs does not propagate to the
     // final binary, so we set it here in the binary crate's build.rs.
     let workspace = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .parent().unwrap()  // crates/
-        .parent().unwrap()  // workspace root
+        .parent()
+        .unwrap() // crates/
+        .parent()
+        .unwrap() // workspace root
         .to_path_buf();
     let sdst_lib = workspace.join("crates/sdst/lib");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", sdst_lib.display());
@@ -75,7 +90,11 @@ fn main() {
     // that violates the §M2 anti-legacy-centroid rule.
     run_atomic_or_grep_gate();
 
-    compile_kernel(&nvcc, "src/cuda/spike_density.cu", &out_dir.join("spike_density.ptx"));
+    compile_kernel(
+        &nvcc,
+        "src/cuda/spike_density.cu",
+        &out_dir.join("spike_density.ptx"),
+    );
 
     // M1.2: compile the SpikeToCluster4D producer to a static archive
     // (NOT PTX). This .cu file contains both __global__ kernels and
@@ -99,12 +118,7 @@ fn main() {
     // launched from an extern "C" host orchestrator. No CUB usage in
     // this archive (Phase 1 is a single kernel). Phase 2 (Karras
     // tree builder + sort) will land alongside.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/lbvh_morton.cu",
-        "lbvh_morton",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/lbvh_morton.cu", "lbvh_morton", &out_dir);
 
     // F2 lane: stream-ordered memory pool (cudaMemPool_t-backed) +
     // VRAM audit telemetry struct. Three single-thread atomic
@@ -112,12 +126,7 @@ fn main() {
     // orchestrators that wrap cudaMemPool runtime API calls. Static
     // archive so the cudaMemPool_t / cudaMallocFromPoolAsync runtime
     // calls link in.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/vram_pool.cu",
-        "vram_pool",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/vram_pool.cu", "vram_pool", &out_dir);
 
     // Rectification Phase 1: hard-trap GPU invariant enforcement.
     // Single audit kernel + gpu_hard_assert __device__ helper that
@@ -135,24 +144,14 @@ fn main() {
     // schema. Header-only struct + helpers; .cu is the link-probe
     // anchor. Future kernels (Morton encoder upgrade, telemetry
     // compression) extend this archive.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/rich_spike.cu",
-        "rich_spike",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/rich_spike.cu", "rich_spike", &out_dir);
 
     // LBVH Phase 2: Karras 2012 radix-tree builder + last-arrival
     // atomic-flag bottom-up AABB reduce. Two kernels + one init
     // kernel + extern "C" host orchestration. 64-byte cache-line-
     // aligned LBVHNode for line-aligned LDG.E.128 access during the
     // reduce.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/lbvh_tree.cu",
-        "lbvh_tree",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/lbvh_tree.cu", "lbvh_tree", &out_dir);
 
     // Rectification Phase 2: shift-left MAR pre-rank adjudicator.
     // Three single-purpose kernels (compute_aabb_volumes,
@@ -161,24 +160,14 @@ fn main() {
     // cudaGraphConditionalNode SWITCH selector. Includes the §2.3
     // SAD-PATH guard: NaN/Inf observables route to Case 2
     // (Violation).
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/pre_rank.cu",
-        "pre_rank",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/pre_rank.cu", "pre_rank", &out_dir);
 
     // RECT-3.1.a: Spherical Harmonics Y_lm evaluator (Lmax=5).
     // Straight-line PTX device helper + init kernel that populates
     // the device-side K_LM normalization table. Feeds RECT-3.1.b
     // (so3_project_manifold_kernel) which accumulates a_lm via WMMA
     // Tensor Core fragments.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/sh_basis.cu",
-        "sh_basis",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/sh_basis.cu", "sh_basis", &out_dir);
 
     // RECT-3.1.b: SO(3) projection kernel + ContactShellTile
     // (alignas(128), 384 B). Consumes RichSpike clusters, evaluates
@@ -187,12 +176,7 @@ fn main() {
     // C_l = Σ_m |a_lm|², writes one ContactShellTile per cluster.
     // RECT-3.1.c will replace the warp-shuffle reduction with WMMA
     // Tensor Core fragments without changing the on-tile layout.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/so3_project.cu",
-        "so3_project",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/so3_project.cu", "so3_project", &out_dir);
 
     // T0/T1/T2/T3/T4: InterferometricAdjudicator + Quantum-Photonic
     // Bridge + KL-Divergence + ASC + clock64 telemetry (Blackwell
@@ -201,12 +185,7 @@ fn main() {
     // PTX NaN/le0 guards make the kernel a Total Function over all
     // 32-bit f32 inputs. ASC kernel atomicAdds into the existing
     // `fused_engine.rs::d_forces` buffer (Anti-Greenfield § 2.1).
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/adjudicator.cu",
-        "adjudicator",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/adjudicator.cu", "adjudicator", &out_dir);
 
     // TIER 7 (2026-05-03) — CUDA 13.x cuGraphAddNode unified
     // graph-builder FFI wrappers. Two host-only helpers
@@ -218,10 +197,23 @@ fn main() {
     // handle metadata attached to body subgraphs (the
     // childgraph-IF failure class).  See
     // `crates/prism-nhs/src/cuda/graph_node.cuh` for full rationale.
+    compile_to_static_archive(&nvcc, "src/cuda/graph_node.cu", "graph_node", &out_dir);
+
+    // TIER 7+8 / WHILE bounded micro-loop (2026-05-04) —
+    // `while_drain_bridge.cu` exposes
+    // `prism_while_drain_predicate_kernel` (single-thread predicate
+    // bridge driving a `cudaGraphCondTypeWhile` conditional handle)
+    // and `prism_while_drain_launch_predicate` (host shim). Mirrors
+    // the `gearbox.cu:436-477` predicate-bridge pattern and gates on
+    // `CUDART_VERSION >= 12040` for `cudaGraphSetConditional`
+    // availability. See `while_drain_bridge.cuh` for full topology
+    // rationale. Wire-in to `captured_pipeline.rs` is deferred to a
+    // post-R4 follow-up commit; this archive only stages the symbols
+    // for R5's WHILE FFI scaffold to reference.
     compile_to_static_archive(
         &nvcc,
-        "src/cuda/graph_node.cu",
-        "graph_node",
+        "src/cuda/while_drain_bridge.cu",
+        "while_drain_bridge",
         &out_dir,
     );
 
@@ -230,23 +222,13 @@ fn main() {
     // write at end of captured graph epoch.
     // zstr_pos_stage_f4_kernel: vectorized LDG.E.128 → STG.E.128 position
     // staging into pinned triple-buffer slot.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/zstr_kernels.cu",
-        "zstr_kernels",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/zstr_kernels.cu", "zstr_kernels", &out_dir);
 
     // ZSTR Phase 2: Vectorized ASC repulsion force injection.
     // asc_inject_repulsion_v4_kernel: float4 loads + atom.global.add.v4.f32
     // for concurrent 4-wide force accumulation into d_forces.
     // Gate G22_ATOMIC_v4_VERIFIED: ptxas audit required post-compile.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/asc_steering.cu",
-        "asc_steering",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/asc_steering.cu", "asc_steering", &out_dir);
 
     // G28 SISR (Spatially-Indexed Symmetric Reflection) — bilateral-truth
     // symmetry consensus gate for homodimer targets.  Operates on
@@ -267,12 +249,7 @@ fn main() {
     // no host bridges per launch.  Replaces the locked 4LPK priors with
     // values derived from the running substrate's thermal-equilibrium Δ_AB
     // distribution after PRISM_DYNT7_N_MIN samples accumulate.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/dynamic_t7.cu",
-        "dynamic_t7",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/dynamic_t7.cu", "dynamic_t7", &out_dir);
 
     // Wave B.1 — G26 Chronometric Gearbox foundation.  __constant__ float
     // d_gearbox_table[16] (3 active gears + NaN-sentinel Gear 3) +
@@ -282,12 +259,7 @@ fn main() {
     // gear's dt through *(adj->d_dt) — the address T12 Pre-Flight wired
     // to &d_protocol->dt).  Hello-world test in gearbox.rs proves the
     // 2.0fs → 4.0fs flip without host intervention.
-    compile_to_static_archive(
-        &nvcc,
-        "src/cuda/gearbox.cu",
-        "gearbox",
-        &out_dir,
-    );
+    compile_to_static_archive(&nvcc, "src/cuda/gearbox.cu", "gearbox", &out_dir);
 
     // Wave B.3.2 — Hamiltonian Auditor (CUB-based potential-energy reduce).
     // Captured node at the end of the FusedStep sequence reduces the
@@ -349,8 +321,10 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf) {
 /// summary line into the cargo log.
 fn run_atomic_or_grep_gate() {
     let workspace = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .to_path_buf();
     let script = workspace.join("scripts/m1_atomic_or_grep.sh");
     if !script.exists() {
@@ -364,10 +338,7 @@ fn run_atomic_or_grep_gate() {
         );
         return;
     }
-    println!(
-        "cargo:rerun-if-changed={}",
-        script.display()
-    );
+    println!("cargo:rerun-if-changed={}", script.display());
 
     let status = Command::new(&script)
         .current_dir(&workspace)
@@ -392,12 +363,7 @@ fn run_atomic_or_grep_gate() {
 /// Used for `.cu` files that contain CUB device-wide algorithm calls
 /// (which internally launch their own kernels from host code) — these
 /// can NOT be compiled to PTX because PTX is device-only.
-fn compile_to_static_archive(
-    nvcc: &str,
-    source: &str,
-    lib_name: &str,
-    out_dir: &PathBuf,
-) {
+fn compile_to_static_archive(nvcc: &str, source: &str, lib_name: &str, out_dir: &PathBuf) {
     let obj_path = out_dir.join(format!("{}.o", lib_name));
     let lib_path = out_dir.join(format!("lib{}.a", lib_name));
 
@@ -410,8 +376,10 @@ fn compile_to_static_archive(
     let nvcc_status = Command::new(nvcc)
         .arg("-c")
         .arg("--compile")
-        .arg("-Xcompiler").arg("-fPIC")
-        .arg("-Xcompiler").arg("-Wall")
+        .arg("-Xcompiler")
+        .arg("-fPIC")
+        .arg("-Xcompiler")
+        .arg("-Wall")
         .arg("-O3")
         .arg("--use_fast_math")
         .arg("--restrict")
@@ -425,7 +393,8 @@ fn compile_to_static_archive(
         // `#include <cub/cub.cuh>` resolve under either layout.
         .arg("-I/usr/local/cuda/include/cccl")
         .arg("-Isrc/cuda")
-        .arg("-o").arg(&obj_path)
+        .arg("-o")
+        .arg(&obj_path)
         .arg(source)
         .status()
         .expect("Failed to execute nvcc for static-archive compile");
