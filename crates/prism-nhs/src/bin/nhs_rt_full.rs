@@ -25,15 +25,12 @@ static MONOLITHIC_GRAPH_BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new
 
 #[cfg(feature = "gpu")]
 use prism_nhs::{
-    PersistentBatchConfig, PersistentNhsEngine, CryoUvProtocol,
-    ClusteredBindingSite,
     enhance_sites_with_aromatics,
-    write_binding_site_visualizations,
-    PrismPrepTopology,
-    ParallelReplicaEngine,
-    sdst_bridge::{SdstBridge, PrismThermAnalysis, ThermClass},
+    sdst_bridge::{PrismThermAnalysis, SdstBridge, ThermClass},
     sdst_report,
-    spike_thermodynamic_integration::{compute_binding_free_energy, StiConfig, BindingFreeEnergy},
+    spike_thermodynamic_integration::{compute_binding_free_energy, BindingFreeEnergy, StiConfig},
+    write_binding_site_visualizations, ClusteredBindingSite, CryoUvProtocol, ParallelReplicaEngine,
+    PersistentBatchConfig, PersistentNhsEngine, PrismPrepTopology,
 };
 
 // M1.2.5b — typed-producer differential side-channel imports.
@@ -44,8 +41,7 @@ use prism_nhs::{
 #[cfg(all(feature = "gpu", feature = "diagnostic"))]
 use prism_nhs::diagnostic::m1_differential::{
     rollup as m1_rollup, AnchorSite as M1AnchorSite,
-    DifferentialTolerance as M1DifferentialTolerance,
-    M1Differential,
+    DifferentialTolerance as M1DifferentialTolerance, M1Differential,
 };
 #[cfg(all(feature = "gpu", feature = "diagnostic"))]
 use prism_nhs::spike_to_cluster_4d::side_channel as m1_side_channel;
@@ -83,8 +79,12 @@ fn maybe_run_m1_side_channel(
     let ctx = match cudarc::driver::CudaContext::new(0) {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("[M1.2.5b] CudaContext::new failed at {:?}/stream={}: {:?}",
-                       anchor_site, stream_id, e);
+            log::warn!(
+                "[M1.2.5b] CudaContext::new failed at {:?}/stream={}: {:?}",
+                anchor_site,
+                stream_id,
+                e
+            );
             return;
         }
     };
@@ -112,7 +112,9 @@ fn maybe_run_m1_side_channel(
         }
         Err(e) => log::warn!(
             "[M1.2.5b {:?}/stream={}] side-channel failed: {:?}",
-            anchor_site, stream_id, e
+            anchor_site,
+            stream_id,
+            e
         ),
     }
 }
@@ -325,7 +327,6 @@ struct Args {
     // line ~254 (pre-dating Amendment 3.22).  Operator §2.1 semantics:
     // ON = V2 captured-graph monolithic CUgraph; OFF = V1 fallback
     // overlay mode.  We re-use the existing flag without duplication.
-
     /// **M1.2.20.C-I / Amendment 3.22 §2.2 — I/O Conduit Selector.**
     /// ON: the ZSTR Reaper consumer thread uses io_uring SQ/CQ for
     /// both Channel A (positions/forces) and Channel B (Ghost tiles)
@@ -760,6 +761,44 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    // ─── Path A 8-Stream Production Profile (red-1 / 2026-05-04) ─────────
+    // See `.prism_orchestration/PATH_A_8STREAM_PRODUCTION_PROFILE_PLAN.md`
+    // §7 (PATHA-SYNC-TRIGGER-001, PATHA-T7-BOUND-001, PATHA-EVIDENCE-EXIT-001).
+    //
+    // All flags default OFF. When no `--path-a-*` flag is set, runtime
+    // behaviour is byte-identical to the sealed `737b273b` baseline.
+    /// Path A production profile convenience flag. When set, activates
+    /// sane defaults for the three Path-A flags below if they are
+    /// unset:
+    ///   --path-a-v2-trigger-steps 6000
+    ///   --path-a-t7-max-chunks 40
+    ///   --path-a-evidence-exit (true)
+    /// Individual flags still override when explicitly passed.
+    #[arg(long, default_value = "false")]
+    path_a_production_profile: bool,
+
+    /// PATHA-SYNC-TRIGGER-001 — synchronized 8-stream V2 trigger. When
+    /// set to N, every per-stream `v2_trigger_step` is forced to N
+    /// (overrides per-protocol `cold_hold_steps` heterogeneity). Used
+    /// to collapse the 42-min staggered V2 instantiate window observed
+    /// on Mpro into a unified ~5–10s build window. None ⇒ legacy
+    /// per-protocol cold_hold trigger preserved.
+    #[arg(long)]
+    path_a_v2_trigger_steps: Option<u32>,
+
+    /// PATHA-T7-BOUND-001 — bounded T7/integration mode. When set to N,
+    /// the per-stream chunk loop exits at chunk_idx >= N (chunk_size=500
+    /// ⇒ N*500 steps). Default 80-chunk loop preserved when unset.
+    #[arg(long)]
+    path_a_t7_max_chunks: Option<u32>,
+
+    /// PATHA-EVIDENCE-EXIT-001 — cooperative early exit on the ASC
+    /// Bayesian baseline-lock signal. When set, the chunk loop checks
+    /// the engine-side `evidence_complete` AtomicBool at chunk
+    /// boundary and breaks when it has been set. Default false.
+    #[arg(long, default_value = "false")]
+    path_a_evidence_exit: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -855,8 +894,12 @@ fn otsu_intensity_threshold(intensities: &[f32]) -> f32 {
     let mut imax = f32::NEG_INFINITY;
     for &v in intensities {
         if v.is_finite() {
-            if v < imin { imin = v; }
-            if v > imax { imax = v; }
+            if v < imin {
+                imin = v;
+            }
+            if v > imax {
+                imax = v;
+            }
         }
     }
     if !imin.is_finite() || !imax.is_finite() || imax <= imin {
@@ -934,7 +977,11 @@ mod otsu_tests {
         let mut data: Vec<f32> = (0..1000).map(|i| 0.1 + (i as f32 * 0.0001)).collect();
         data.extend((0..100).map(|i| 0.9 + (i as f32 * 0.0001)));
         let t = otsu_intensity_threshold(&data);
-        assert!(t > 0.2 && t < 0.8, "expected threshold in noise-signal gap, got {}", t);
+        assert!(
+            t > 0.2 && t < 0.8,
+            "expected threshold in noise-signal gap, got {}",
+            t
+        );
     }
 
     #[test]
@@ -942,7 +989,11 @@ mod otsu_tests {
         // All values clustered around 0.5
         let data: Vec<f32> = (0..1000).map(|i| 0.5 + (i as f32 * 0.00001)).collect();
         let t = otsu_intensity_threshold(&data);
-        assert!(t >= 0.4 && t <= 0.6, "unimodal threshold should be near data center, got {}", t);
+        assert!(
+            t >= 0.4 && t <= 0.6,
+            "unimodal threshold should be near data center, got {}",
+            t
+        );
     }
 
     #[test]
@@ -1063,15 +1114,9 @@ fn main() -> Result<()> {
         let is_grid = backend_str == "grid";
         let is_multi_diff = args.multi_differential;
         if is_grid && is_multi_diff {
-            eprintln!(
-                "ERROR: --clustering-backend=grid is forbidden with --multi-differential."
-            );
-            eprintln!(
-                "  Reason: grid path skips multi-scale persistence analysis and degrades"
-            );
-            eprintln!(
-                "  detection quality. See production rule #10 in CLAUDE.md."
-            );
+            eprintln!("ERROR: --clustering-backend=grid is forbidden with --multi-differential.");
+            eprintln!("  Reason: grid path skips multi-scale persistence analysis and degrades");
+            eprintln!("  detection quality. See production rule #10 in CLAUDE.md.");
             eprintln!(
                 "  For debug/bisection, drop --multi-differential or use --clustering-backend=auto."
             );
@@ -1084,7 +1129,11 @@ fn main() -> Result<()> {
             match gcb::parse_backend_str(backend_str) {
                 Some(code) => {
                     gcb::set_selection(code);
-                    log::info!("  [SPATIAL-INDEX] backend request: {} (code={})", backend_str, code);
+                    log::info!(
+                        "  [SPATIAL-INDEX] backend request: {} (code={})",
+                        backend_str,
+                        code
+                    );
                     if backend_str == "lbvh" {
                         log::warn!(
                             "  [SPATIAL-INDEX] --clustering-backend=lbvh requested, but LBVH \
@@ -1116,7 +1165,10 @@ fn main() -> Result<()> {
         {
             match backend_str {
                 "auto" | "gpu-hash" | "optix" | "lbvh" | "grid" => {
-                    log::info!("  [SPATIAL-INDEX] backend request (no-gpu build): {}", backend_str);
+                    log::info!(
+                        "  [SPATIAL-INDEX] backend request (no-gpu build): {}",
+                        backend_str
+                    );
                 }
                 other => {
                     eprintln!("ERROR: unknown --clustering-backend value: {}", other);
@@ -1166,11 +1218,14 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
     log::info!("Loading manifest: {}", manifest_path.display());
     let manifest_content = std::fs::read_to_string(manifest_path)
         .with_context(|| format!("Failed to read manifest: {}", manifest_path.display()))?;
-    let manifest: BatchManifest = serde_json::from_str(&manifest_content)
-        .context("Failed to parse manifest JSON")?;
+    let manifest: BatchManifest =
+        serde_json::from_str(&manifest_content).context("Failed to parse manifest JSON")?;
 
-    log::info!("Manifest loaded: {} structures in {} batches",
-        manifest.total_structures, manifest.total_batches);
+    log::info!(
+        "Manifest loaded: {} structures in {} batches",
+        manifest.total_structures,
+        manifest.total_batches
+    );
 
     // Create output directory
     std::fs::create_dir_all(&args.output)?;
@@ -1182,8 +1237,13 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
     for batch in &manifest.batches {
         let batch_replicas = batch.replicas_per_structure;
         max_batch_replicas = max_batch_replicas.max(batch_replicas);
-        log::info!("  Collecting batch {}: {} structures, {} replicas (tier: {})",
-            batch.batch_id, batch.structures.len(), batch_replicas, batch.memory_tier);
+        log::info!(
+            "  Collecting batch {}: {} structures, {} replicas (tier: {})",
+            batch.batch_id,
+            batch.structures.len(),
+            batch_replicas,
+            batch.memory_tier
+        );
         all_structures.extend(batch.structures.clone());
     }
 
@@ -1217,21 +1277,37 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
         ("small (≤5K atoms)", tier_small),
         ("medium (5K-20K atoms)", tier_medium),
         ("large (>20K atoms)", tier_large),
-    ].into_iter().filter(|(_, v)| !v.is_empty()).collect();
+    ]
+    .into_iter()
+    .filter(|(_, v)| !v.is_empty())
+    .collect();
 
-    log::info!("SIZE-TIER SEQUENTIAL BATCHING: {} structures across {} tiers",
-        all_structures.len(), tiers.len());
+    log::info!(
+        "SIZE-TIER SEQUENTIAL BATCHING: {} structures across {} tiers",
+        all_structures.len(),
+        tiers.len()
+    );
     for (name, tier) in &tiers {
         let min_atoms = tier.iter().map(|s| s.atoms).min().unwrap_or(0);
         let max_atoms = tier.iter().map(|s| s.atoms).max().unwrap_or(0);
-        log::info!("  Tier {}: {} structures ({}-{} atoms), {} entries with {} replicas",
-            name, tier.len(), min_atoms, max_atoms, tier.len() * replicas, replicas);
+        log::info!(
+            "  Tier {}: {} structures ({}-{} atoms), {} entries with {} replicas",
+            name,
+            tier.len(),
+            min_atoms,
+            max_atoms,
+            tier.len() * replicas,
+            replicas
+        );
     }
 
     // Create ONE CudaContext for the entire run
     log::info!("Creating ONE CudaContext (device 0)...");
     let context = CudaContext::new(0)?;
-    log::info!("ONE CudaContext. ZERO threads. {} tiers sequentially.", tiers.len());
+    log::info!(
+        "ONE CudaContext. ZERO threads. {} tiers sequentially.",
+        tiers.len()
+    );
 
     // Run each tier SEQUENTIALLY on the same context
     // Each tier creates a right-sized AmberSimdBatch, runs MD, drops batch to free GPU memory
@@ -1241,16 +1317,26 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
         let tier_start = Instant::now();
         let max_atoms = tier_structures.iter().map(|s| s.atoms).max().unwrap_or(0);
 
-        log::info!("═══ Tier {}/{}: {} ({} structures, max {} atoms) ═══",
-            tier_idx + 1, tiers.len(), tier_name, tier_structures.len(), max_atoms);
+        log::info!(
+            "═══ Tier {}/{}: {} ({} structures, max {} atoms) ═══",
+            tier_idx + 1,
+            tiers.len(),
+            tier_name,
+            tier_structures.len(),
+            max_atoms
+        );
 
         // Create right-sized batch for this tier (Arc::clone keeps context alive)
         match run_batch_gpu_concurrent(tier_structures, args, replicas, context.clone()) {
             Ok(tier_results) => {
                 let tier_success = tier_results.iter().filter(|r| r.success).count();
-                log::info!("  Tier {} complete: {}/{} successful in {:.1}s",
-                    tier_name, tier_success, tier_structures.len(),
-                    tier_start.elapsed().as_secs_f64());
+                log::info!(
+                    "  Tier {} complete: {}/{} successful in {:.1}s",
+                    tier_name,
+                    tier_success,
+                    tier_structures.len(),
+                    tier_start.elapsed().as_secs_f64()
+                );
                 all_results.extend(tier_results);
             }
             Err(e) => {
@@ -1294,11 +1380,26 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║                    BATCH RUN COMPLETE                         ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ Total structures: {:>4}                                       ║", manifest.total_structures);
-    println!("║ Successful:       {:>4}                                       ║", successful);
-    println!("║ Failed:           {:>4}                                       ║", failed);
-    println!("║ Size tiers:       {:>4}                                       ║", tiers.len());
-    println!("║ Total time:       {:>6.1}s                                    ║", total_elapsed);
+    println!(
+        "║ Total structures: {:>4}                                       ║",
+        manifest.total_structures
+    );
+    println!(
+        "║ Successful:       {:>4}                                       ║",
+        successful
+    );
+    println!(
+        "║ Failed:           {:>4}                                       ║",
+        failed
+    );
+    println!(
+        "║ Size tiers:       {:>4}                                       ║",
+        tiers.len()
+    );
+    println!(
+        "║ Total time:       {:>6.1}s                                    ║",
+        total_elapsed
+    );
     println!("╚═══════════════════════════════════════════════════════════════╝");
     println!();
     println!("Summary written to: {}", summary_path.display());
@@ -1327,8 +1428,11 @@ fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
                 );
             }
             let streams_per_group = args.multi_stream / 2;
-            log::info!("TWIN multi-engine mode: {} engines/group, {} total",
-                streams_per_group, args.multi_stream);
+            log::info!(
+                "TWIN multi-engine mode: {} engines/group, {} total",
+                streams_per_group,
+                args.multi_stream
+            );
             return run_coupled_twin_multi_pipeline(args, topology_path, streams_per_group);
         }
         // Phase A: single engine per group (2 total)
@@ -1344,28 +1448,26 @@ fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
 /// Run Multi-Differential Interferometric TWIN (4 groups × 2 engines)
 #[cfg(feature = "gpu")]
 fn run_multi_differential_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()> {
-    use prism_nhs::coupled_md::{MultiDifferentialConfig, run_multi_differential_twin};
+    use prism_nhs::coupled_md::{run_multi_differential_twin, MultiDifferentialConfig};
 
     log::info!("PRISM-TWIN Multi-Differential Interferometric mode activated");
 
     let topo_json = std::fs::read_to_string(topology_path)
         .with_context(|| format!("Failed to read topology: {}", topology_path.display()))?;
-    let topology: prism_nhs::input::PrismPrepTopology = serde_json::from_str(&topo_json)
-        .context("Failed to parse topology JSON")?;
+    let topology: prism_nhs::input::PrismPrepTopology =
+        serde_json::from_str(&topo_json).context("Failed to parse topology JSON")?;
 
-    let context = cudarc::driver::CudaContext::new(0)
-        .context("Failed to create CUDA context")?;
+    let context = cudarc::driver::CudaContext::new(0).context("Failed to create CUDA context")?;
     let ptx_path = find_ptx_path()?;
-    let module = context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path))
+    let module = context
+        .load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path))
         .with_context(|| format!("Failed to load PTX from {}", ptx_path))?;
 
     std::fs::create_dir_all(&args.output)?;
 
     let config = MultiDifferentialConfig::standard_4x1(args.replica_seed);
 
-    let result = run_multi_differential_twin(
-        &config, context, module, &topology, &args.output,
-    )?;
+    let result = run_multi_differential_twin(&config, context, module, &topology, &args.output)?;
 
     // Write result summary
     let result_path = args.output.join("multi_differential_result.json");
@@ -1378,7 +1480,7 @@ fn run_multi_differential_pipeline(args: &Args, topology_path: &PathBuf) -> Resu
 /// Run PRISM-TWIN: Interferometric Coupled Observation MD
 #[cfg(feature = "gpu")]
 fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()> {
-    use prism_nhs::coupled_md::{CoupledTwinConfig, run_coupled_twin};
+    use prism_nhs::coupled_md::{run_coupled_twin, CoupledTwinConfig};
     use prism_nhs::persistent_engine::PersistentBatchConfig;
 
     log::info!("PRISM-TWIN mode activated");
@@ -1386,8 +1488,8 @@ fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()>
     // Load topology
     let topo_json = std::fs::read_to_string(topology_path)
         .with_context(|| format!("Failed to read topology: {}", topology_path.display()))?;
-    let topology: prism_nhs::input::PrismPrepTopology = serde_json::from_str(&topo_json)
-        .context("Failed to parse topology JSON")?;
+    let topology: prism_nhs::input::PrismPrepTopology =
+        serde_json::from_str(&topo_json).context("Failed to parse topology JSON")?;
 
     // Build protocol (same logic as multi-stream path)
     let protocol = if args.fast {
@@ -1400,21 +1502,24 @@ fn run_coupled_twin_pipeline(args: &Args, topology_path: &PathBuf) -> Result<()>
 
     // Build twin config
     let mut twin_config = CoupledTwinConfig::default();
-    twin_config.nma_modes_path = args.nma_perturb.as_ref().map(|p| p.to_string_lossy().to_string());
+    twin_config.nma_modes_path = args
+        .nma_perturb
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string());
     twin_config.nma_amplification = args.nma_amplification;
     // Gate 1: exchange and CCF disabled
-    twin_config.enable_exchange = true;   // Gate 2: spike density exchange
-    twin_config.enable_ccf = true;        // Gate 2: cross-correlation
+    twin_config.enable_exchange = true; // Gate 2: spike density exchange
+    twin_config.enable_ccf = true; // Gate 2: cross-correlation
     twin_config.persistent_coupling = args.persistent_coupling;
     twin_config.graph_coupling = args.graph_coupling;
 
     // Initialize CUDA
-    let context = cudarc::driver::CudaContext::new(0)
-        .context("Failed to create CUDA context")?;
+    let context = cudarc::driver::CudaContext::new(0).context("Failed to create CUDA context")?;
 
     // Load PTX module
     let ptx_path = find_ptx_path()?;
-    let module = context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path))
+    let module = context
+        .load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path))
         .with_context(|| format!("Failed to load PTX from {}", ptx_path))?;
 
     let batch_config = PersistentBatchConfig {
@@ -1466,43 +1571,59 @@ fn run_coupled_twin_multi_pipeline(
     topology_path: &PathBuf,
     streams_per_group: usize,
 ) -> Result<()> {
-    use prism_nhs::coupled_md::{CoupledTwinConfig, CoupledTwinResult, StreamResult,
-                                 InterferometricFeatures, SiteInterferometricFeatures};
-    use prism_nhs::persistent_engine::PersistentBatchConfig;
-    use prism_nhs::twin_kernels::{TwinRingBuffer, find_twin_ptx};
     use cudarc::driver::CudaContext;
     use cudarc::nvrtc::Ptx;
+    use prism_nhs::coupled_md::{
+        CoupledTwinConfig, CoupledTwinResult, InterferometricFeatures, SiteInterferometricFeatures,
+        StreamResult,
+    };
+    use prism_nhs::persistent_engine::PersistentBatchConfig;
+    use prism_nhs::twin_kernels::{find_twin_ptx, TwinRingBuffer};
 
     let n = streams_per_group;
     let total_engines = 2 * n;
 
     log::info!("╔══════════════════════════════════════════════════════════╗");
-    log::info!("║   PRISM-TWIN MULTI-ENGINE ({} × 2 groups = {} total)       ║", n, total_engines);
+    log::info!(
+        "║   PRISM-TWIN MULTI-ENGINE ({} × 2 groups = {} total)       ║",
+        n,
+        total_engines
+    );
     log::info!("╚══════════════════════════════════════════════════════════╝");
 
     // ── Shared GPU resources ──
     let context = CudaContext::new(0).context("CUDA context")?;
     let ptx_path = find_ptx_path()?;
-    let fused_module = context.load_module(Ptx::from_file(&ptx_path))
+    let fused_module = context
+        .load_module(Ptx::from_file(&ptx_path))
         .with_context(|| format!("Failed to load PTX from {}", ptx_path))?;
 
     // Load topology
     let topo_json = std::fs::read_to_string(topology_path)
         .with_context(|| format!("Failed to read topology: {}", topology_path.display()))?;
-    let mut topology: prism_nhs::input::PrismPrepTopology = serde_json::from_str(&topo_json)
-        .context("Failed to parse topology JSON")?;
-    if args.hmr { topology.apply_hmr(3.0); }
+    let mut topology: prism_nhs::input::PrismPrepTopology =
+        serde_json::from_str(&topo_json).context("Failed to parse topology JSON")?;
+    if args.hmr {
+        topology.apply_hmr(3.0);
+    }
 
     let protocol = if args.fast {
         prism_nhs::fused_engine::CryoUvProtocol::fast_35k()
     } else {
         prism_nhs::fused_engine::CryoUvProtocol::standard()
     };
-    let protocol = if args.hysteresis { protocol.with_hysteresis() } else { protocol };
+    let protocol = if args.hysteresis {
+        protocol.with_hysteresis()
+    } else {
+        protocol
+    };
     let steps = protocol.total_steps();
 
     let mut twin_config = CoupledTwinConfig::default();
-    twin_config.nma_modes_path = args.nma_perturb.as_ref().map(|p| p.to_string_lossy().to_string());
+    twin_config.nma_modes_path = args
+        .nma_perturb
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string());
     twin_config.nma_amplification = args.nma_amplification;
     twin_config.enable_exchange = true;
     twin_config.enable_ccf = true;
@@ -1522,11 +1643,22 @@ fn run_coupled_twin_multi_pipeline(
     let estimated_per_engine_mb = 1500.0; // ~1.5 GB per engine for typical protein
     let estimated_total_mb = total_engines as f64 * estimated_per_engine_mb;
     let vram_free_mb = vram_free as f64 / (1024.0 * 1024.0);
-    log::info!("  VRAM: {:.0} MB free / {:.0} MB total", vram_free_mb, vram_total as f64 / (1024.0 * 1024.0));
-    log::info!("  Estimated VRAM for {} engines: {:.0} MB", total_engines, estimated_total_mb);
+    log::info!(
+        "  VRAM: {:.0} MB free / {:.0} MB total",
+        vram_free_mb,
+        vram_total as f64 / (1024.0 * 1024.0)
+    );
+    log::info!(
+        "  Estimated VRAM for {} engines: {:.0} MB",
+        total_engines,
+        estimated_total_mb
+    );
     if estimated_total_mb > vram_free_mb * 0.9 {
-        log::warn!("  WARNING: estimated VRAM ({:.0} MB) may exceed available ({:.0} MB)",
-            estimated_total_mb, vram_free_mb);
+        log::warn!(
+            "  WARNING: estimated VRAM ({:.0} MB) may exceed available ({:.0} MB)",
+            estimated_total_mb,
+            vram_free_mb
+        );
         log::warn!("  Consider reducing --multi-stream or using a smaller protein");
     }
 
@@ -1534,7 +1666,8 @@ fn run_coupled_twin_multi_pipeline(
     // Group A: engines[0..n), Group B: engines[n..2n)
     let mut engines: Vec<PersistentNhsEngine> = Vec::with_capacity(total_engines);
     let mut engine_seeds: Vec<u64> = Vec::with_capacity(total_engines);
-    let mut engine_protocols: Vec<prism_nhs::fused_engine::CryoUvProtocol> = Vec::with_capacity(total_engines);
+    let mut engine_protocols: Vec<prism_nhs::fused_engine::CryoUvProtocol> =
+        Vec::with_capacity(total_engines);
 
     for i in 0..total_engines {
         let is_group_b = i >= n;
@@ -1549,15 +1682,26 @@ fn run_coupled_twin_multi_pipeline(
         }
 
         let mut engine = PersistentNhsEngine::new_on_stream(
-            &batch_config, context.clone(), fused_module.clone(), stream,
+            &batch_config,
+            context.clone(),
+            fused_module.clone(),
+            stream,
         )?;
         engine.load_topology(&topology)?;
-        if args.hmr { engine.set_dt(0.004)?; }
-        if args.fused_steps > 1 { engine.set_fused_inner_steps(args.fused_steps)?; }
-        if args.adaptive_dt { engine.set_adaptive_dt(true)?; }
+        if args.hmr {
+            engine.set_dt(0.004)?;
+        }
+        if args.fused_steps > 1 {
+            engine.set_fused_inner_steps(args.fused_steps)?;
+        }
+        if args.adaptive_dt {
+            engine.set_adaptive_dt(true)?;
+        }
         // Gate G2 — interval-based snapshot capture
         engine.set_snapshot_interval(args.save_trajectory_interval);
-        if args.ladd { engine.set_ladd_enabled(true); }
+        if args.ladd {
+            engine.set_ladd_enabled(true);
+        }
         engine.set_cryo_uv_protocol(prot.clone())?;
         engine.set_spike_accumulation(true);
 
@@ -1569,10 +1713,18 @@ fn run_coupled_twin_multi_pipeline(
             }
         }
 
-        log::info!("  Engine {}: {} seed={} cold_hold={}{}",
-            i, if is_group_b { "Group B" } else { "Group A" },
-            seed, prot.cold_hold_steps,
-            if is_group_b && twin_config.nma_modes_path.is_some() { " +NMA" } else { "" });
+        log::info!(
+            "  Engine {}: {} seed={} cold_hold={}{}",
+            i,
+            if is_group_b { "Group B" } else { "Group A" },
+            seed,
+            prot.cold_hold_steps,
+            if is_group_b && twin_config.nma_modes_path.is_some() {
+                " +NMA"
+            } else {
+                ""
+            }
+        );
 
         engines.push(engine);
         engine_seeds.push(seed);
@@ -1580,14 +1732,16 @@ fn run_coupled_twin_multi_pipeline(
     }
 
     // ── Ring buffers ──
-    let ring_module = context.load_module(
-        Ptx::from_file(&find_twin_ptx("ring_buffer.ptx")?)
-    ).context("ring_buffer.ptx")?;
+    let ring_module = context
+        .load_module(Ptx::from_file(&find_twin_ptx("ring_buffer.ptx")?))
+        .context("ring_buffer.ptx")?;
     let stream_exchange = context.new_stream().context("exchange stream")?;
 
     let ring_capacity = 8192 * (n as u32).max(1);
-    let mut ring_a_to_b = TwinRingBuffer::new(&context, &stream_exchange, &ring_module, ring_capacity)?;
-    let mut ring_b_to_a = TwinRingBuffer::new(&context, &stream_exchange, &ring_module, ring_capacity)?;
+    let mut ring_a_to_b =
+        TwinRingBuffer::new(&context, &stream_exchange, &ring_module, ring_capacity)?;
+    let mut ring_b_to_a =
+        TwinRingBuffer::new(&context, &stream_exchange, &ring_module, ring_capacity)?;
     ring_a_to_b.reset(&stream_exchange)?;
     ring_b_to_a.reset(&stream_exchange)?;
     log::info!("  Ring buffers: capacity={} per direction", ring_capacity);
@@ -1610,11 +1764,16 @@ fn run_coupled_twin_multi_pipeline(
                 for i in 0..n {
                     if let Some((thresh, base)) = engines[i].threshold_buffers_mut() {
                         ring_b_to_a.read_and_adapt(
-                            &stream_exchange, thresh, base,
-                            (gx,gy,gz), (ox,oy,oz), vs,
+                            &stream_exchange,
+                            thresh,
+                            base,
+                            (gx, gy, gz),
+                            (ox, oy, oz),
+                            vs,
                             twin_config.sensitivity_boost,
                             twin_config.max_threshold_reduction,
-                            step as u32, 500.0,
+                            step as u32,
+                            500.0,
                         )?;
                     }
                 }
@@ -1622,11 +1781,16 @@ fn run_coupled_twin_multi_pipeline(
                 for i in n..total_engines {
                     if let Some((thresh, base)) = engines[i].threshold_buffers_mut() {
                         ring_a_to_b.read_and_adapt(
-                            &stream_exchange, thresh, base,
-                            (gx,gy,gz), (ox,oy,oz), vs,
+                            &stream_exchange,
+                            thresh,
+                            base,
+                            (gx, gy, gz),
+                            (ox, oy, oz),
+                            vs,
                             twin_config.sensitivity_boost,
                             twin_config.max_threshold_reduction,
-                            step as u32, 500.0,
+                            step as u32,
+                            500.0,
                         )?;
                     }
                 }
@@ -1643,7 +1807,7 @@ fn run_coupled_twin_multi_pipeline(
         // streams achieves equivalent GPU throughput.)
         for i in 0..total_engines {
             match engines[i].run(inner) {
-                Ok(_summary) => {},
+                Ok(_summary) => {}
                 Err(e) => log::error!("  Engine {} failed at step {}: {}", i, step, e),
             }
         }
@@ -1655,7 +1819,11 @@ fn run_coupled_twin_multi_pipeline(
                 if curr_len > prev_accum_lens[i] {
                     let accum = engines[i].get_accumulated_spikes();
                     let delta = &accum[prev_accum_lens[i]..];
-                    let ring = if i < n { &mut ring_a_to_b } else { &mut ring_b_to_a };
+                    let ring = if i < n {
+                        &mut ring_a_to_b
+                    } else {
+                        &mut ring_b_to_a
+                    };
                     ring.push_compacted(&stream_exchange, delta)?;
                     ring_spikes_exchanged += delta.len() as u64;
                     prev_accum_lens[i] = curr_len;
@@ -1679,9 +1847,15 @@ fn run_coupled_twin_multi_pipeline(
             let elapsed = start.elapsed().as_secs_f64();
             let overflow_a = ring_a_to_b.overflow_count(&stream_exchange)?;
             let overflow_b = ring_b_to_a.overflow_count(&stream_exchange)?;
-            log::info!("  Step {}/{}: exchanged={} overflow_a={} overflow_b={} ({:.0} steps/s)",
-                step + 1, outer_steps, ring_spikes_exchanged, overflow_a, overflow_b,
-                (step + 1) as f64 / elapsed);
+            log::info!(
+                "  Step {}/{}: exchanged={} overflow_a={} overflow_b={} ({:.0} steps/s)",
+                step + 1,
+                outer_steps,
+                ring_spikes_exchanged,
+                overflow_a,
+                overflow_b,
+                (step + 1) as f64 / elapsed
+            );
         }
     }
 
@@ -1705,10 +1879,18 @@ fn run_coupled_twin_multi_pipeline(
         }
     }
 
-    log::info!("  Group A: {} spikes, {} snapshots ({} engines)",
-        group_a_spikes.len(), group_a_snapshots.len(), n);
-    log::info!("  Group B: {} spikes, {} snapshots ({} engines)",
-        group_b_spikes.len(), group_b_snapshots.len(), n);
+    log::info!(
+        "  Group A: {} spikes, {} snapshots ({} engines)",
+        group_a_spikes.len(),
+        group_a_snapshots.len(),
+        n
+    );
+    log::info!(
+        "  Group B: {} spikes, {} snapshots ({} engines)",
+        group_b_spikes.len(),
+        group_b_snapshots.len(),
+        n
+    );
 
     // ── Post-process with REAL aggregated N-engine data ──
     // Uses the shared twin_post_process function (extracted from Phase A).
@@ -1749,17 +1931,36 @@ fn run_coupled_twin_multi_pipeline(
     // Save result JSON
     let result_path = args.output.join("coupled_twin_result.json");
     std::fs::write(&result_path, serde_json::to_string_pretty(&result)?)?;
-    log::info!("PRISM-TWIN multi-engine result saved: {}", result_path.display());
+    log::info!(
+        "PRISM-TWIN multi-engine result saved: {}",
+        result_path.display()
+    );
 
     log::info!("╔══════════════════════════════════════════════════════════╗");
     log::info!("║  TWIN MULTI-ENGINE COMPLETE                             ║");
-    log::info!("║  Engines: {} ({} × 2 groups)                            ║", total_engines, n);
-    log::info!("║  Spikes A: {:>10}  B: {:>10}                  ║",
-        result.stream_a.total_spikes, result.stream_b.total_spikes);
-    log::info!("║  Sites:  {:>4}  Residues: {:>4}                         ║",
-        result.per_site_features.len(), result.per_residue_features.len());
-    log::info!("║  Ring exchanged: {:>12}                         ║", ring_spikes_exchanged);
-    log::info!("║  Wall time: {:.1}s                                     ║", wall_time.as_secs_f64());
+    log::info!(
+        "║  Engines: {} ({} × 2 groups)                            ║",
+        total_engines,
+        n
+    );
+    log::info!(
+        "║  Spikes A: {:>10}  B: {:>10}                  ║",
+        result.stream_a.total_spikes,
+        result.stream_b.total_spikes
+    );
+    log::info!(
+        "║  Sites:  {:>4}  Residues: {:>4}                         ║",
+        result.per_site_features.len(),
+        result.per_residue_features.len()
+    );
+    log::info!(
+        "║  Ring exchanged: {:>12}                         ║",
+        ring_spikes_exchanged
+    );
+    log::info!(
+        "║  Wall time: {:.1}s                                     ║",
+        wall_time.as_secs_f64()
+    );
     log::info!("╚══════════════════════════════════════════════════════════╝");
 
     Ok(())
@@ -1775,7 +1976,9 @@ fn find_ptx_path() -> Result<String> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let p = dir.join("../assets/ptx/nhs_amber_fused.ptx");
-            if p.exists() { return Ok(p.display().to_string()); }
+            if p.exists() {
+                return Ok(p.display().to_string());
+            }
         }
     }
     for p in &candidates {
@@ -1796,7 +1999,6 @@ fn run_single_structure_internal(
 ) -> Result<(usize, usize)> {
     run_full_pipeline_internal(topology_path, output_dir, args, replicas)
 }
-
 
 /// Main pipeline implementation (extracted from original run_full_pipeline)
 #[cfg(feature = "gpu")]
@@ -1821,12 +2023,16 @@ fn run_full_pipeline_internal(
     let mut topology = PrismPrepTopology::load(topology_path)
         .with_context(|| format!("Failed to load: {}", topology_path.display()))?;
 
-    let structure_name = topology_path.file_stem()
+    let structure_name = topology_path
+        .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "structure".to_string());
 
     log::info!("  Atoms: {}", topology.n_atoms);
-    log::info!("  Residues: {}", topology.residue_ids.iter().max().unwrap_or(&0) + 1);
+    log::info!(
+        "  Residues: {}",
+        topology.residue_ids.iter().max().unwrap_or(&0) + 1
+    );
 
     // Apply HMR if requested (must be before engine creation)
     if args.hmr {
@@ -1840,7 +2046,10 @@ fn run_full_pipeline_internal(
 
     // Minimum atom guard: GPU buffers require >= 500 atoms
     if topology.n_atoms < 500 {
-        log::warn!("Protein too small for GPU analysis (minimum 500 atoms, got {})", topology.n_atoms);
+        log::warn!(
+            "Protein too small for GPU analysis (minimum 500 atoms, got {})",
+            topology.n_atoms
+        );
         let output_base = output_dir.join(&structure_name);
         let json_path = output_base.with_extension("binding_sites.json");
         let json_output = serde_json::json!({
@@ -1861,7 +2070,10 @@ fn run_full_pipeline_internal(
         log::info!("╠═══════════════════════════════════════════════════════════════╣");
         log::info!("║  Structure: {:<48} ║", structure_name);
         log::info!("║  Total time: {:<46.1}s ║", total_time.as_secs_f64());
-        log::info!("║  SKIPPED: Too few atoms ({:<4} < 500)                         ║", topology.n_atoms);
+        log::info!(
+            "║  SKIPPED: Too few atoms ({:<4} < 500)                         ║",
+            topology.n_atoms
+        );
         log::info!("║  Binding sites: {:<43} ║", 0);
         log::info!("║  Druggable sites: {:<41} ║", 0);
         log::info!("╚═══════════════════════════════════════════════════════════════╝");
@@ -1882,7 +2094,11 @@ fn run_full_pipeline_internal(
     } else {
         128
     };
-    log::info!("  Adaptive grid: {}³ for {} atoms", adaptive_grid_dim, topology.n_atoms);
+    log::info!(
+        "  Adaptive grid: {}³ for {} atoms",
+        adaptive_grid_dim,
+        topology.n_atoms
+    );
     let config = PersistentBatchConfig {
         max_atoms: topology.n_atoms.max(15000),
         survey_steps: args.steps / 2,
@@ -1900,7 +2116,7 @@ fn run_full_pipeline_internal(
 
     // Apply HMR timestep if enabled
     if args.hmr {
-        engine.set_dt(0.004)?;  // 4fs with HMR masses
+        engine.set_dt(0.004)?; // 4fs with HMR masses
     }
 
     // Apply fused multi-step if requested
@@ -1937,7 +2153,14 @@ fn run_full_pipeline_internal(
 
     // Check RT clustering availability
     let has_rt = engine.has_rt_clustering();
-    log::info!("  RT-core clustering: {}", if has_rt { "✓ Available" } else { "✗ Fallback mode" });
+    log::info!(
+        "  RT-core clustering: {}",
+        if has_rt {
+            "✓ Available"
+        } else {
+            "✗ Fallback mode"
+        }
+    );
 
     // Configure cryo-UV protocol
     let protocol = if args.fast_25k {
@@ -1969,11 +2192,14 @@ fn run_full_pipeline_internal(
     // Apply stepped holds if requested (multi-temperature sampling during ramp)
     let protocol = if args.stepped_holds {
         let holds = vec![
-            (100.0, 3000),  // 100K: initial unfolding, surface crevices open
-            (150.0, 3000),  // 150K: cryptic pockets begin to crack
-            (200.0, 3000),  // 200K: allosteric sites, domain interfaces open
+            (100.0, 3000), // 100K: initial unfolding, surface crevices open
+            (150.0, 3000), // 150K: cryptic pockets begin to crack
+            (200.0, 3000), // 200K: allosteric sites, domain interfaces open
         ];
-        log::info!("  Stepped holds: ENABLED ({} intermediate temperatures)", holds.len());
+        log::info!(
+            "  Stepped holds: ENABLED ({} intermediate temperatures)",
+            holds.len()
+        );
         for (temp, steps) in &holds {
             log::info!("    Hold at {:.0}K for {} steps", temp, steps);
         }
@@ -1987,8 +2213,12 @@ fn run_full_pipeline_internal(
 
     // Apply hysteresis if requested (adds cooling ramp + cold return)
     let protocol = if args.hysteresis {
-        log::info!("  CCNS Hysteresis: ENABLED (full thermal cycle {}K → {}K → {}K)",
-            protocol.start_temp, protocol.end_temp, protocol.start_temp);
+        log::info!(
+            "  CCNS Hysteresis: ENABLED (full thermal cycle {}K → {}K → {}K)",
+            protocol.start_temp,
+            protocol.end_temp,
+            protocol.start_temp
+        );
         protocol.with_hysteresis()
     } else {
         protocol
@@ -2017,8 +2247,11 @@ fn run_full_pipeline_internal(
         args.steps
     };
 
-    log::info!("\n[3/6] Running MD simulation ({} steps x {} replicas)...",
-        steps_per_replica, n_replicas);
+    log::info!(
+        "\n[3/6] Running MD simulation ({} steps x {} replicas)...",
+        steps_per_replica,
+        n_replicas
+    );
 
     let sim_start = Instant::now();
     let mut all_spikes = Vec::new();
@@ -2029,13 +2262,13 @@ fn run_full_pipeline_internal(
     // Choose parallel or sequential execution
     if args.parallel && n_replicas > 1 {
         // Parallel replica execution via AmberSimdBatch
-        log::info!("  Mode: PARALLEL (AmberSimdBatch, {} replicas simultaneous)", n_replicas);
+        log::info!(
+            "  Mode: PARALLEL (AmberSimdBatch, {} replicas simultaneous)",
+            n_replicas
+        );
 
-        let mut parallel_engine = ParallelReplicaEngine::new(
-            n_replicas,
-            &topology,
-            protocol.clone(),
-        )?;
+        let mut parallel_engine =
+            ParallelReplicaEngine::new(n_replicas, &topology, protocol.clone())?;
 
         let frame_interval = 500; // Extract frames every 500 steps for spike detection
         let result = parallel_engine.run(steps_per_replica as usize, frame_interval)?;
@@ -2064,8 +2297,11 @@ fn run_full_pipeline_internal(
         final_temperature = target_end_temp;
         total_snapshots = 0; // Not tracked in parallel mode
 
-        log::info!("  ✓ Parallel complete: {:.1}s ({:.0} steps/sec aggregate)",
-            result.elapsed_seconds, result.throughput);
+        log::info!(
+            "  ✓ Parallel complete: {:.1}s ({:.0} steps/sec aggregate)",
+            result.elapsed_seconds,
+            result.throughput
+        );
     } else {
         // Sequential replica execution (original behavior)
         if n_replicas > 1 {
@@ -2076,7 +2312,12 @@ fn run_full_pipeline_internal(
             let replica_seed = args.replica_seed + replica_id as u64;
 
             if n_replicas > 1 {
-                log::info!("  Replica {}/{} (seed: {})...", replica_id + 1, n_replicas, replica_seed);
+                log::info!(
+                    "  Replica {}/{} (seed: {})...",
+                    replica_id + 1,
+                    n_replicas,
+                    replica_seed
+                );
 
                 // Reset engine state for each replica (re-initialize with different seed)
                 engine.reset_for_replica(replica_seed)?;
@@ -2085,10 +2326,16 @@ fn run_full_pipeline_internal(
             // Adaptive protocol: split run into cold_hold + rest, adapt between
             let summary = if args.adaptive_protocol {
                 let cold_steps = protocol.cold_hold_steps;
-                log::info!("  [adaptive-protocol] Running cold_hold phase ({} steps)...", cold_steps);
+                log::info!(
+                    "  [adaptive-protocol] Running cold_hold phase ({} steps)...",
+                    cold_steps
+                );
                 let cold_summary = engine.run(cold_steps)?;
-                log::info!("  [adaptive-protocol] Cold hold complete: {} spikes in {} steps",
-                    cold_summary.total_spikes, cold_steps);
+                log::info!(
+                    "  [adaptive-protocol] Cold hold complete: {} spikes in {} steps",
+                    cold_summary.total_spikes,
+                    cold_steps
+                );
 
                 // Adapt engine parameters based on measured spike rate
                 let _flexibility = engine.adapt_protocol_from_spike_rate(cold_steps);
@@ -2120,22 +2367,32 @@ fn run_full_pipeline_internal(
             all_snapshots.extend(snapshots);
 
             if n_replicas > 1 {
-                log::info!("    Replica {} complete: {} spikes, T={:.1}K",
-                    replica_id + 1, spike_count, summary.end_temperature);
+                log::info!(
+                    "    Replica {} complete: {} spikes, T={:.1}K",
+                    replica_id + 1,
+                    spike_count,
+                    summary.end_temperature
+                );
             }
         }
 
         let sim_time_seq = sim_start.elapsed();
         let total_steps_seq = steps_per_replica as usize * n_replicas;
-        log::info!("  ✓ Completed in {:.1}s ({:.0} steps/sec)",
+        log::info!(
+            "  ✓ Completed in {:.1}s ({:.0} steps/sec)",
             sim_time_seq.as_secs_f64(),
-            total_steps_seq as f64 / sim_time_seq.as_secs_f64());
+            total_steps_seq as f64 / sim_time_seq.as_secs_f64()
+        );
     }
 
     let sim_time = sim_start.elapsed();
     let _total_steps = steps_per_replica as usize * n_replicas;
 
-    log::info!("  Raw spikes collected: {} (from {} replicas)", all_spikes.len(), n_replicas);
+    log::info!(
+        "  Raw spikes collected: {} (from {} replicas)",
+        all_spikes.len(),
+        n_replicas
+    );
     log::info!("  Snapshots: {}", total_snapshots);
     log::info!("  Final temperature: {:.1}K", final_temperature);
 
@@ -2194,7 +2451,10 @@ fn run_full_pipeline_internal(
             let n_pre = spikes.len();
             let intensities: Vec<f32> = spikes.iter().map(|s| s.intensity).collect();
             let i_min = intensities.iter().copied().fold(f32::INFINITY, f32::min);
-            let i_max = intensities.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let i_max = intensities
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max);
             let percentile_thresh = {
                 let mut sorted = intensities.clone();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -2208,14 +2468,21 @@ fn run_full_pipeline_internal(
                 log::info!(
                     "    [Otsu] {}: n={} threshold={:.4} kept_frac={:.4} \
                      (min={:.4} max={:.4})",
-                    channel_label, n_pre, otsu_t, kept_frac, i_min, i_max,
+                    channel_label,
+                    n_pre,
+                    otsu_t,
+                    kept_frac,
+                    i_min,
+                    i_max,
                 );
                 if kept_frac < OTSU_SANITY_BAND_LOW || kept_frac > OTSU_SANITY_BAND_HIGH {
                     log::info!(
                         "    [Otsu] {}: kept_frac {:.4} outside sanity band \
                          [{:.2},{:.2}] → falling back to percentile (thresh={:.4})",
-                        channel_label, kept_frac,
-                        OTSU_SANITY_BAND_LOW, OTSU_SANITY_BAND_HIGH,
+                        channel_label,
+                        kept_frac,
+                        OTSU_SANITY_BAND_LOW,
+                        OTSU_SANITY_BAND_HIGH,
                         percentile_thresh,
                     );
                     percentile_thresh
@@ -2245,11 +2512,18 @@ fn run_full_pipeline_internal(
         if use_otsu {
             log::info!("  Intensity filter (per-channel, Otsu data-driven):");
         } else {
-            log::info!("  Intensity filter (per-channel, top {}%):", 100 - args.spike_percentile);
+            log::info!(
+                "  Intensity filter (per-channel, top {}%):",
+                100 - args.spike_percentile
+            );
         }
         log::info!("    UV:  {} → {}", n_uv_pre, uv_filtered.len());
         log::info!("    LIF: {} → {}", n_lif_pre, lif_filtered.len());
-        log::info!("    EFP: {} → {} (preserved)", n_efp_pre, efp_filtered.len());
+        log::info!(
+            "    EFP: {} → {} (preserved)",
+            n_efp_pre,
+            efp_filtered.len()
+        );
         log::info!("    LADD/COFIRE: {} (all preserved)", n_ladd_pre);
 
         let mut filtered = uv_filtered;
@@ -2264,11 +2538,18 @@ fn run_full_pipeline_internal(
 
     // Write LADD/COFIRE spike summary (before clustering, so it survives any crash)
     {
-        let ladd_count = accumulated_spikes.iter().filter(|s| s.spike_source == 4).count();
-        let cofire_count = accumulated_spikes.iter().filter(|s| s.spike_source == 5).count();
+        let ladd_count = accumulated_spikes
+            .iter()
+            .filter(|s| s.spike_source == 4)
+            .count();
+        let cofire_count = accumulated_spikes
+            .iter()
+            .filter(|s| s.spike_source == 5)
+            .count();
         if ladd_count + cofire_count > 0 {
             std::fs::create_dir_all(&output_dir).ok();
-            let ladd_json: Vec<serde_json::Value> = accumulated_spikes.iter()
+            let ladd_json: Vec<serde_json::Value> = accumulated_spikes
+                .iter()
                 .filter(|s| s.spike_source == 4 || s.spike_source == 5)
                 .map(|s| {
                     let pos = s.position;
@@ -2279,7 +2560,8 @@ fn run_full_pipeline_internal(
                     let ve = s.vibrational_energy;
                     let wdc = s.wd_change;
                     let n_res = s.n_residues as usize;
-                    let residues: Vec<i32> = (0..n_res.min(8)).map(|r| s.nearby_residues[r]).collect();
+                    let residues: Vec<i32> =
+                        (0..n_res.min(8)).map(|r| s.nearby_residues[r]).collect();
                     serde_json::json!({
                         "x": pos[0], "y": pos[1], "z": pos[2],
                         "intensity": int, "timestep": ts,
@@ -2299,17 +2581,31 @@ fn run_full_pipeline_internal(
                 "cofire_fraction": cofire_count as f64 / accumulated_spikes.len() as f64,
                 "spikes": ladd_json,
             });
-            let ladd_path = output_dir.join(&structure_name).with_extension("ladd_spikes.json");
+            let ladd_path = output_dir
+                .join(&structure_name)
+                .with_extension("ladd_spikes.json");
             if let Ok(f) = std::fs::File::create(&ladd_path) {
                 let _ = serde_json::to_writer(f, &summary);
-                log::info!("  LADD/COFIRE spikes: {} (LADD={}, COFIRE={})", ladd_path.display(), ladd_count, cofire_count);
+                log::info!(
+                    "  LADD/COFIRE spikes: {} (LADD={}, COFIRE={})",
+                    ladd_path.display(),
+                    ladd_count,
+                    cofire_count
+                );
             }
         }
     }
 
     // RT-accelerated spike clustering
-    let cluster_mode = if args.multi_scale { "multi-scale" } else { "single-scale" };
-    log::info!("\n[4/6] RT-accelerated spike clustering ({})...", cluster_mode);
+    let cluster_mode = if args.multi_scale {
+        "multi-scale"
+    } else {
+        "single-scale"
+    };
+    log::info!(
+        "\n[4/6] RT-accelerated spike clustering ({})...",
+        cluster_mode
+    );
 
     // Track epsilon info for JSON output (outside block for scope)
     let mut epsilon_info: Option<(Vec<f32>, bool, Option<usize>, Option<usize>)> = None;
@@ -2327,9 +2623,10 @@ fn run_full_pipeline_internal(
 
     let mut clustered_sites = if !accumulated_spikes.is_empty() && args.rt_clustering {
         // Copy positions from packed struct to avoid alignment issues
-        let positions: Vec<f32> = accumulated_spikes.iter()
+        let positions: Vec<f32> = accumulated_spikes
+            .iter()
             .flat_map(|s| {
-                let pos = s.position;  // Copy packed field
+                let pos = s.position; // Copy packed field
                 [pos[0], pos[1], pos[2]].into_iter()
             })
             .collect();
@@ -2346,8 +2643,10 @@ fn run_full_pipeline_internal(
             };
             match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon) {
                 Ok(ms_result) => {
-                    log::info!("  ✓ Multi-scale clustering complete: {} persistent clusters",
-                        ms_result.num_clusters());
+                    log::info!(
+                        "  ✓ Multi-scale clustering complete: {} persistent clusters",
+                        ms_result.num_clusters()
+                    );
 
                     // Capture epsilon info for JSON output
                     epsilon_info = Some((
@@ -2376,11 +2675,15 @@ fn run_full_pipeline_internal(
                     let n_arom = aromatic_positions.len().max(1);
                     let spikes_per_arom = accumulated_spikes.len() as f64 / n_arom as f64;
                     let min_spikes = (spikes_per_arom * 0.3).ceil().max(50.0) as usize;
-                    let sites: Vec<_> = all_sites.into_iter()
+                    let sites: Vec<_> = all_sites
+                        .into_iter()
                         .filter(|s| s.spike_count >= min_spikes)
                         .collect();
-                    log::info!("  Binding sites: {} (filtered, min {} spikes = 2%)",
-                        sites.len(), min_spikes);
+                    log::info!(
+                        "  Binding sites: {} (filtered, min {} spikes = 2%)",
+                        sites.len(),
+                        min_spikes
+                    );
                     sites
                 }
                 Err(e) => {
@@ -2392,8 +2695,12 @@ fn run_full_pipeline_internal(
             // Single-scale clustering (original behavior)
             match engine.cluster_spikes(&positions) {
                 Ok(mut result) => {
-                    log::info!("  ✓ Clustering complete: {} clusters, {} neighbor pairs, {:.2}ms",
-                        result.num_clusters, result.total_neighbors, result.gpu_time_ms);
+                    log::info!(
+                        "  ✓ Clustering complete: {} clusters, {} neighbor pairs, {:.2}ms",
+                        result.num_clusters,
+                        result.total_neighbors,
+                        result.gpu_time_ms
+                    );
 
                     // ── Mega-cluster subdivision via voxel density peaks ──
                     // When a single DBSCAN cluster absorbs >50% of all spikes,
@@ -2405,37 +2712,54 @@ fn run_full_pipeline_internal(
                     let total_spikes = accumulated_spikes.len();
                     let mega_threshold = (total_spikes as f64 * 0.50) as usize;
                     {
-                        let mut counts: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+                        let mut counts: std::collections::HashMap<i32, usize> =
+                            std::collections::HashMap::new();
                         for &cid in &result.cluster_ids {
                             if cid >= 0 {
                                 *counts.entry(cid).or_insert(0) += 1;
                             }
                         }
-                        let mega = counts.iter()
+                        let mega = counts
+                            .iter()
                             .max_by_key(|(_, &c)| c)
                             .map(|(&id, &c)| (id, c));
 
                         if let Some((mega_id, mega_count)) = mega {
                             if mega_count > mega_threshold {
-                                log::info!("  Mega-cluster {} detected: {} spikes ({:.0}% of total)",
-                                    mega_id, mega_count,
-                                    mega_count as f64 / total_spikes as f64 * 100.0);
+                                log::info!(
+                                    "  Mega-cluster {} detected: {} spikes ({:.0}% of total)",
+                                    mega_id,
+                                    mega_count,
+                                    mega_count as f64 / total_spikes as f64 * 100.0
+                                );
                                 log::info!("  Applying voxel density peak subdivision...");
 
                                 // Extract mega-cluster spike indices
-                                let mega_indices: Vec<usize> = result.cluster_ids.iter()
+                                let mega_indices: Vec<usize> = result
+                                    .cluster_ids
+                                    .iter()
                                     .enumerate()
                                     .filter(|(_, &cid)| cid == mega_id)
                                     .map(|(i, _)| i)
                                     .collect();
 
                                 // Compute bounding box
-                                let (mut min_x, mut min_y, mut min_z) = (f32::MAX, f32::MAX, f32::MAX);
-                                let (mut max_x, mut max_y, mut max_z) = (f32::MIN, f32::MIN, f32::MIN);
+                                let (mut min_x, mut min_y, mut min_z) =
+                                    (f32::MAX, f32::MAX, f32::MAX);
+                                let (mut max_x, mut max_y, mut max_z) =
+                                    (f32::MIN, f32::MIN, f32::MIN);
                                 for &i in &mega_indices {
-                                    let (x, y, z) = (positions[i*3], positions[i*3+1], positions[i*3+2]);
-                                    min_x = min_x.min(x); min_y = min_y.min(y); min_z = min_z.min(z);
-                                    max_x = max_x.max(x); max_y = max_y.max(y); max_z = max_z.max(z);
+                                    let (x, y, z) = (
+                                        positions[i * 3],
+                                        positions[i * 3 + 1],
+                                        positions[i * 3 + 2],
+                                    );
+                                    min_x = min_x.min(x);
+                                    min_y = min_y.min(y);
+                                    min_z = min_z.min(z);
+                                    max_x = max_x.max(x);
+                                    max_y = max_y.max(y);
+                                    max_z = max_z.max(z);
                                 }
 
                                 // Voxel grid: 3Å cells (roughly 1 aromatic spike cloud diameter)
@@ -2450,11 +2774,15 @@ fn run_full_pipeline_internal(
                                     let ix = ((x - min_x) / cell) as usize;
                                     let iy = ((y - min_y) / cell) as usize;
                                     let iz = ((z - min_z) / cell) as usize;
-                                    ix.min(nx-1) + iy.min(ny-1) * nx + iz.min(nz-1) * nx * ny
+                                    ix.min(nx - 1) + iy.min(ny - 1) * nx + iz.min(nz - 1) * nx * ny
                                 };
 
                                 for &i in &mega_indices {
-                                    let vi = voxel_idx(positions[i*3], positions[i*3+1], positions[i*3+2]);
+                                    let vi = voxel_idx(
+                                        positions[i * 3],
+                                        positions[i * 3 + 1],
+                                        positions[i * 3 + 2],
+                                    );
                                     grid[vi] += 1;
                                 }
 
@@ -2465,15 +2793,31 @@ fn run_full_pipeline_internal(
                                         for ix in 0..nx {
                                             let vi = ix + iy * nx + iz * nx * ny;
                                             let c = grid[vi];
-                                            if c == 0 { continue; }
+                                            if c == 0 {
+                                                continue;
+                                            }
                                             let mut is_peak = true;
                                             for dz in -1i32..=1 {
                                                 for dy in -1i32..=1 {
                                                     for dx in -1i32..=1 {
-                                                        if dx == 0 && dy == 0 && dz == 0 { continue; }
-                                                        let (jx, jy, jz) = (ix as i32 + dx, iy as i32 + dy, iz as i32 + dz);
-                                                        if jx >= 0 && jx < nx as i32 && jy >= 0 && jy < ny as i32 && jz >= 0 && jz < nz as i32 {
-                                                            let ji = jx as usize + jy as usize * nx + jz as usize * nx * ny;
+                                                        if dx == 0 && dy == 0 && dz == 0 {
+                                                            continue;
+                                                        }
+                                                        let (jx, jy, jz) = (
+                                                            ix as i32 + dx,
+                                                            iy as i32 + dy,
+                                                            iz as i32 + dz,
+                                                        );
+                                                        if jx >= 0
+                                                            && jx < nx as i32
+                                                            && jy >= 0
+                                                            && jy < ny as i32
+                                                            && jz >= 0
+                                                            && jz < nz as i32
+                                                        {
+                                                            let ji = jx as usize
+                                                                + jy as usize * nx
+                                                                + jz as usize * nx * ny;
                                                             if grid[ji] > c {
                                                                 is_peak = false;
                                                             }
@@ -2491,33 +2835,46 @@ fn run_full_pipeline_internal(
                                 // Sort peaks by density (descending) and filter weak ones
                                 peaks.sort_by(|a, b| b.1.cmp(&a.1));
                                 let peak_threshold = if let Some(top) = peaks.first() {
-                                    (top.1 as f32 * 0.05) as u32  // keep peaks with >5% of max density
+                                    (top.1 as f32 * 0.05) as u32 // keep peaks with >5% of max density
                                 } else {
                                     0
                                 };
-                                let peaks: Vec<_> = peaks.into_iter().filter(|(_, c)| *c >= peak_threshold.max(10)).collect();
+                                let peaks: Vec<_> = peaks
+                                    .into_iter()
+                                    .filter(|(_, c)| *c >= peak_threshold.max(10))
+                                    .collect();
 
                                 if peaks.len() >= 2 {
                                     // Compute peak centers in Angstrom coordinates
-                                    let peak_centers: Vec<[f32; 3]> = peaks.iter().map(|&(vi, _)| {
-                                        let iz = vi / (nx * ny);
-                                        let iy = (vi % (nx * ny)) / nx;
-                                        let ix = vi % nx;
-                                        [
-                                            min_x + (ix as f32 + 0.5) * cell,
-                                            min_y + (iy as f32 + 0.5) * cell,
-                                            min_z + (iz as f32 + 0.5) * cell,
-                                        ]
-                                    }).collect();
+                                    let peak_centers: Vec<[f32; 3]> = peaks
+                                        .iter()
+                                        .map(|&(vi, _)| {
+                                            let iz = vi / (nx * ny);
+                                            let iy = (vi % (nx * ny)) / nx;
+                                            let ix = vi % nx;
+                                            [
+                                                min_x + (ix as f32 + 0.5) * cell,
+                                                min_y + (iy as f32 + 0.5) * cell,
+                                                min_z + (iz as f32 + 0.5) * cell,
+                                            ]
+                                        })
+                                        .collect();
 
                                     // Assign each mega-cluster spike to nearest peak
-                                    let max_existing = result.cluster_ids.iter().max().copied().unwrap_or(0);
+                                    let max_existing =
+                                        result.cluster_ids.iter().max().copied().unwrap_or(0);
                                     for &i in &mega_indices {
-                                        let (x, y, z) = (positions[i*3], positions[i*3+1], positions[i*3+2]);
+                                        let (x, y, z) = (
+                                            positions[i * 3],
+                                            positions[i * 3 + 1],
+                                            positions[i * 3 + 2],
+                                        );
                                         let mut best_peak = 0usize;
                                         let mut best_d2 = f32::MAX;
                                         for (pi, pc) in peak_centers.iter().enumerate() {
-                                            let d2 = (x - pc[0]).powi(2) + (y - pc[1]).powi(2) + (z - pc[2]).powi(2);
+                                            let d2 = (x - pc[0]).powi(2)
+                                                + (y - pc[1]).powi(2)
+                                                + (z - pc[2]).powi(2);
                                             if d2 < best_d2 {
                                                 best_d2 = d2;
                                                 best_peak = pi;
@@ -2525,14 +2882,23 @@ fn run_full_pipeline_internal(
                                         }
                                         result.cluster_ids[i] = max_existing + 1 + best_peak as i32;
                                     }
-                                    let new_max = result.cluster_ids.iter().max().copied().unwrap_or(0);
+                                    let new_max =
+                                        result.cluster_ids.iter().max().copied().unwrap_or(0);
                                     result.num_clusters = (new_max + 1) as usize;
 
                                     log::info!("  Voxel grid: {}x{}x{} (cell={:.1}Å), {} density peaks found",
                                         nx, ny, nz, cell, peak_centers.len());
-                                    for (pi, (pc, &(_, count))) in peak_centers.iter().zip(peaks.iter()).enumerate().take(10) {
-                                        log::info!("    Peak {}: ({:.1}, {:.1}, {:.1}) density={}",
-                                            pi, pc[0], pc[1], pc[2], count);
+                                    for (pi, (pc, &(_, count))) in
+                                        peak_centers.iter().zip(peaks.iter()).enumerate().take(10)
+                                    {
+                                        log::info!(
+                                            "    Peak {}: ({:.1}, {:.1}, {:.1}) density={}",
+                                            pi,
+                                            pc[0],
+                                            pc[1],
+                                            pc[2],
+                                            count
+                                        );
                                     }
                                 } else {
                                     log::info!("  Only {} density peak(s) found; keeping original mega-cluster", peaks.len());
@@ -2551,11 +2917,16 @@ fn run_full_pipeline_internal(
                     let n_arom = aromatic_positions.len().max(1);
                     let spikes_per_arom = accumulated_spikes.len() as f64 / n_arom as f64;
                     let min_spikes = (spikes_per_arom * 0.3).ceil().max(50.0) as usize;
-                    let sites: Vec<_> = all_sites.into_iter()
+                    let sites: Vec<_> = all_sites
+                        .into_iter()
                         .filter(|s| s.spike_count >= min_spikes)
                         .collect();
-                    log::info!("  Binding sites: {} (filtered from {} clusters, min {} spikes = 2%)",
-                        sites.len(), result.num_clusters, min_spikes);
+                    log::info!(
+                        "  Binding sites: {} (filtered from {} clusters, min {} spikes = 2%)",
+                        sites.len(),
+                        result.num_clusters,
+                        min_spikes
+                    );
 
                     // ── M1.2.5b — typed-producer side-channel (anchor: main) ──
                     // Pure side-effect: pushes one M1Differential into the
@@ -2595,13 +2966,25 @@ fn run_full_pipeline_internal(
     if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
         enhance_sites_with_aromatics(&mut clustered_sites, &aromatic_positions);
 
-        let druggable_count = clustered_sites.iter().filter(|s| s.druggability.is_druggable).count();
-        log::info!("  ✓ Analyzed {} sites, {} druggable", clustered_sites.len(), druggable_count);
+        let druggable_count = clustered_sites
+            .iter()
+            .filter(|s| s.druggability.is_druggable)
+            .count();
+        log::info!(
+            "  ✓ Analyzed {} sites, {} druggable",
+            clustered_sites.len(),
+            druggable_count
+        );
 
         // Create mapping from internal index to PDB ID
         let mut pdb_id_map = Vec::new();
         if !topology.residues.is_empty() {
-            let max_idx = topology.residues.iter().map(|r| r.residue_idx).max().unwrap_or(0);
+            let max_idx = topology
+                .residues
+                .iter()
+                .map(|r| r.residue_idx)
+                .max()
+                .unwrap_or(0);
             pdb_id_map.resize(max_idx + 1, 0);
             for r in &topology.residues {
                 if r.residue_idx < pdb_id_map.len() {
@@ -2635,25 +3018,44 @@ fn run_full_pipeline_internal(
                 site.lining_residues_str()
             };
             // Count catalytic residues
-            let catalytic_count = site.lining_residues.iter()
+            let catalytic_count = site
+                .lining_residues
+                .iter()
                 .filter(|r| catalytic_residues.contains(&r.resname.as_str()))
                 .count();
             let _c = site.emission_compat_centroid();
-            log::info!("    #{}: {:?} at ({:.1}, {:.1}, {:.1}), quality={:.2}, druggable={}",
+            log::info!(
+                "    #{}: {:?} at ({:.1}, {:.1}, {:.1}), quality={:.2}, druggable={}",
                 i + 1,
                 site.classification,
-                _c[0], _c[1], _c[2],
+                _c[0],
+                _c[1],
+                _c[2],
                 site.quality_score,
-                site.druggability.is_druggable);
-            log::info!("        Residues ({}, {} catalytic): {}",
+                site.druggability.is_druggable
+            );
+            log::info!(
+                "        Residues ({}, {} catalytic): {}",
                 site.lining_residues.len(),
                 catalytic_count,
-                if res_str.len() > 70 { format!("{}...", &res_str[..67]) } else { res_str });
+                if res_str.len() > 70 {
+                    format!("{}...", &res_str[..67])
+                } else {
+                    res_str
+                }
+            );
             // Log catalytic residues specifically if any
             if catalytic_count > 0 {
-                let cat_list: Vec<_> = site.lining_residues.iter()
+                let cat_list: Vec<_> = site
+                    .lining_residues
+                    .iter()
                     .filter(|r| catalytic_residues.contains(&r.resname.as_str()))
-                    .map(|r| format!("{}:{}{} ({:.1}Å)", r.chain, r.resname, r.resid, r.min_distance))
+                    .map(|r| {
+                        format!(
+                            "{}:{}{} ({:.1}Å)",
+                            r.chain, r.resname, r.resid, r.min_distance
+                        )
+                    })
                     .collect();
                 log::info!("        Catalytic: {}", cat_list.join(", "));
             }
@@ -2704,21 +3106,24 @@ fn run_full_pipeline_internal(
             let cz = site.geometric_voxel_mass_centroid()[2];
 
             // Use cluster-assigned spikes (frame-aligned with sites[].spike_count)
-            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = if !site.spike_indices.is_empty() {
-                site.spike_indices.iter()
-                    .filter_map(|&idx| accumulated_spikes.get(idx))
-                    .collect()
-            } else {
-                // Fallback: assign to nearest centroid (shouldn't happen in single-replica)
-                accumulated_spikes.iter()
-                    .filter(|s| {
-                        let dx = s.position[0] - cx;
-                        let dy = s.position[1] - cy;
-                        let dz = s.position[2] - cz;
-                        (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
-                    })
-                    .collect()
-            };
+            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> =
+                if !site.spike_indices.is_empty() {
+                    site.spike_indices
+                        .iter()
+                        .filter_map(|&idx| accumulated_spikes.get(idx))
+                        .collect()
+                } else {
+                    // Fallback: assign to nearest centroid (shouldn't happen in single-replica)
+                    accumulated_spikes
+                        .iter()
+                        .filter(|s| {
+                            let dx = s.position[0] - cx;
+                            let dy = s.position[1] - cy;
+                            let dz = s.position[2] - cz;
+                            (dx * dx + dy * dy + dz * dz).sqrt() <= site_radius
+                        })
+                        .collect()
+                };
 
             let max_ts = site_spikes.iter().map(|s| s.timestep).max().unwrap_or(0);
             let n_frames = (max_ts / frame_window + 1) as usize;
@@ -2734,17 +3139,25 @@ fn run_full_pipeline_internal(
             }
 
             let voxel_vol = 27.0f32;
-            let volumes: Vec<f64> = frame_spike_counts.iter()
+            let volumes: Vec<f64> = frame_spike_counts
+                .iter()
                 .map(|&c| (c as f32 * voxel_vol) as f64)
                 .collect();
             let mean_volume: f64 = if !volumes.is_empty() {
                 volumes.iter().sum::<f64>() / volumes.len() as f64
-            } else { 0.0 };
+            } else {
+                0.0
+            };
             let cv_volume = if mean_volume > 0.0 {
-                let variance = volumes.iter().map(|v| (v - mean_volume).powi(2)).sum::<f64>()
+                let variance = volumes
+                    .iter()
+                    .map(|v| (v - mean_volume).powi(2))
+                    .sum::<f64>()
                     / volumes.len() as f64;
                 variance.sqrt() / mean_volume
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
             all_pockets_json.push(serde_json::json!({
                 "site_id": site.cluster_id,
@@ -2755,19 +3168,27 @@ fn run_full_pipeline_internal(
                 "volumes": volumes,
             }));
 
-            let spike_frames: Vec<usize> = frame_spike_counts.iter().enumerate()
+            let spike_frames: Vec<usize> = frame_spike_counts
+                .iter()
+                .enumerate()
                 .filter(|(_, &c)| c > 0)
                 .map(|(i, _)| i)
                 .collect();
-            let spike_amplitudes: Vec<f32> = spike_frames.iter()
+            let spike_amplitudes: Vec<f32> = spike_frames
+                .iter()
                 .map(|&f| {
                     if frame_spike_counts[f] > 0 {
                         frame_intensity_sums[f] / frame_spike_counts[f] as f32
-                    } else { 0.0 }
+                    } else {
+                        0.0
+                    }
                 })
                 .collect();
             let inter_spike_intervals: Vec<f32> = if spike_frames.len() >= 2 {
-                spike_frames.windows(2).map(|w| (w[1] - w[0]) as f32).collect()
+                spike_frames
+                    .windows(2)
+                    .map(|w| (w[1] - w[0]) as f32)
+                    .collect()
             } else {
                 Vec::new()
             };
@@ -2795,80 +3216,86 @@ fn run_full_pipeline_internal(
                     log::warn!("  PRISM-Therm: SDST init failed ({}), skipping", e);
                     None
                 }
-                Ok(bridge) => {
-                    match bridge.ingest_all_spikes(&accumulated_spikes) {
-                        Err(e) => {
-                            log::warn!("  PRISM-Therm: spike ingestion failed ({}), skipping", e);
-                            None
-                        }
-                        Ok(event_count) => {
-                            log::info!("  PRISM-Therm: {} events ingested into SDST", event_count);
-                            match bridge.analyze(&clustered_sites) {
-                                Err(e) => {
-                                    log::warn!("  PRISM-Therm: analysis failed ({})", e);
-                                    None
-                                }
-                                Ok(analysis) => {
-                                    log::info!("  PRISM-Therm: {} hysteretic / {} NHS sites | {} SDST global pockets",
+                Ok(bridge) => match bridge.ingest_all_spikes(&accumulated_spikes) {
+                    Err(e) => {
+                        log::warn!("  PRISM-Therm: spike ingestion failed ({}), skipping", e);
+                        None
+                    }
+                    Ok(event_count) => {
+                        log::info!("  PRISM-Therm: {} events ingested into SDST", event_count);
+                        match bridge.analyze(&clustered_sites) {
+                            Err(e) => {
+                                log::warn!("  PRISM-Therm: analysis failed ({})", e);
+                                None
+                            }
+                            Ok(analysis) => {
+                                log::info!("  PRISM-Therm: {} hysteretic / {} NHS sites | {} SDST global pockets",
                                         analysis.hysteretic_site_count,
                                         clustered_sites.len(),
                                         analysis.global_pockets.len());
-                                    Some(analysis)
-                                }
+                                Some(analysis)
                             }
                         }
                     }
-                }
+                },
             }
         } else {
             None
         };
 
         // Build per-site JSON, merging PRISM-Therm therm_class when available
-        let mut sites_json: Vec<serde_json::Value> = clustered_sites.iter().take(100).map(|s| {
-            let catalytic_count = s.lining_residues.iter()
-                .filter(|r| catalytic_residues.contains(&r.resname.as_str()))
-                .count();
-            serde_json::json!({
-                "id": s.cluster_id,
-                "centroid": s.emission_compat_centroid(),
-                "volume": s.estimated_volume,
-                "spike_count": s.spike_count,
-                "quality_score": s.quality_score,
-                "druggability": s.druggability.overall,
-                "is_druggable": s.druggability.is_druggable,
-                "classification": format!("{:?}", s.classification),
-                "aromatic_score": s.aromatic_proximity.as_ref().map(|p| p.aromatic_score),
-                "catalytic_residue_count": catalytic_count,
-                "lining_residues": s.lining_residues.iter().map(|r| {
-                    let is_catalytic = catalytic_residues.contains(&r.resname.as_str());
-                    serde_json::json!({
-                        "chain": r.chain,
-                        "resid": r.resid,
-                        "resname": r.resname,
-                        "min_distance": r.min_distance,
-                        "n_atoms": r.n_atoms_in_pocket,
-                        "spike_attribution_count": r.spike_attribution_count,
-                        "is_catalytic": is_catalytic,
-                    })
-                }).collect::<Vec<_>>(),
-                "residue_ids": s.lining_residue_ids(),
+        let mut sites_json: Vec<serde_json::Value> = clustered_sites
+            .iter()
+            .take(100)
+            .map(|s| {
+                let catalytic_count = s
+                    .lining_residues
+                    .iter()
+                    .filter(|r| catalytic_residues.contains(&r.resname.as_str()))
+                    .count();
+                serde_json::json!({
+                    "id": s.cluster_id,
+                    "centroid": s.emission_compat_centroid(),
+                    "volume": s.estimated_volume,
+                    "spike_count": s.spike_count,
+                    "quality_score": s.quality_score,
+                    "druggability": s.druggability.overall,
+                    "is_druggable": s.druggability.is_druggable,
+                    "classification": format!("{:?}", s.classification),
+                    "aromatic_score": s.aromatic_proximity.as_ref().map(|p| p.aromatic_score),
+                    "catalytic_residue_count": catalytic_count,
+                    "lining_residues": s.lining_residues.iter().map(|r| {
+                        let is_catalytic = catalytic_residues.contains(&r.resname.as_str());
+                        serde_json::json!({
+                            "chain": r.chain,
+                            "resid": r.resid,
+                            "resname": r.resname,
+                            "min_distance": r.min_distance,
+                            "n_atoms": r.n_atoms_in_pocket,
+                            "spike_attribution_count": r.spike_attribution_count,
+                            "is_catalytic": is_catalytic,
+                        })
+                    }).collect::<Vec<_>>(),
+                    "residue_ids": s.lining_residue_ids(),
+                })
             })
-        }).collect();
+            .collect();
 
         // Inject PRISM-Therm classification into each site (authoritative physics-based)
         if let Some(ref analysis) = prism_therm_result {
             for site_json in sites_json.iter_mut() {
                 let site_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
                 if let Some(therm_site) = analysis.sites.iter().find(|s| s.site_id == site_id) {
-                    site_json["therm_class"] = serde_json::Value::String(
-                        therm_site.therm_class.to_string()
-                    );
-                    site_json["hysteresis_asymmetry"] = serde_json::json!(therm_site.asymmetry_score);
-                    site_json["relative_asymmetry"] = serde_json::json!(therm_site.relative_asymmetry);
+                    site_json["therm_class"] =
+                        serde_json::Value::String(therm_site.therm_class.to_string());
+                    site_json["hysteresis_asymmetry"] =
+                        serde_json::json!(therm_site.asymmetry_score);
+                    site_json["relative_asymmetry"] =
+                        serde_json::json!(therm_site.relative_asymmetry);
                     site_json["ccns_tau"] = serde_json::json!(therm_site.tau);
                     // Phase fraction fields — expose the cold/hot spike breakdown
-                    let total_phase = therm_site.heating_spike_count + therm_site.cooling_spike_count;
+                    let total_phase =
+                        therm_site.heating_spike_count + therm_site.cooling_spike_count;
                     if total_phase > 0 {
                         let hot_frac = therm_site.heating_spike_count as f64 / total_phase as f64;
                         let cold_frac = therm_site.cooling_spike_count as f64 / total_phase as f64;
@@ -2884,22 +3311,29 @@ fn run_full_pipeline_internal(
                     }
                     // Override heuristic classification if PRISM-Therm says CRYPTIC
                     if therm_site.therm_class.to_string() == "CRYPTIC" {
-                        site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
+                        site_json["classification"] =
+                            serde_json::Value::String("Cryptic".to_string());
                     }
                     // TIDE coupling score for single-structure path
                     if !therm_site.tide_decomposition.is_empty() {
-                        if let Some(site_ref) = clustered_sites.iter().find(|s| s.cluster_id == site_id) {
-                            let trigger_residues: std::collections::HashSet<i32> = therm_site.tide_decomposition.iter()
+                        if let Some(site_ref) =
+                            clustered_sites.iter().find(|s| s.cluster_id == site_id)
+                        {
+                            let trigger_residues: std::collections::HashSet<i32> = therm_site
+                                .tide_decomposition
+                                .iter()
                                 .take(5)
                                 .map(|t| t.residue_id as i32)
                                 .collect();
-                            let lining_ids: std::collections::HashSet<i32> = site_ref.lining_residues.iter()
-                                .map(|r| r.resid)
-                                .collect();
+                            let lining_ids: std::collections::HashSet<i32> =
+                                site_ref.lining_residues.iter().map(|r| r.resid).collect();
                             let overlap = trigger_residues.intersection(&lining_ids).count();
-                            let tide_coupling = overlap as f32 / trigger_residues.len().max(1) as f32;
+                            let tide_coupling =
+                                overlap as f32 / trigger_residues.len().max(1) as f32;
                             site_json["tide_coupling_score"] = serde_json::json!(tide_coupling);
-                            let trigger_ids: Vec<u32> = therm_site.tide_decomposition.iter()
+                            let trigger_ids: Vec<u32> = therm_site
+                                .tide_decomposition
+                                .iter()
                                 .take(5)
                                 .map(|t| t.residue_id)
                                 .collect();
@@ -2939,15 +3373,19 @@ fn run_full_pipeline_internal(
 
         // ── PRISM-Therm standalone report ──
         if let Some(ref analysis) = prism_therm_result {
-            let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
+            let site_centroids: Vec<([f32; 3], i32)> = clustered_sites
+                .iter()
                 .map(|s| (s.emission_compat_centroid(), s.cluster_id))
                 .collect();
-            let report = sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
+            let report =
+                sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
             sdst_report::print_summary_table(&report);
             if let Err(e) = sdst_report::write_json(&report, output_dir, &structure_name) {
                 log::warn!("  PRISM-Therm JSON write failed: {}", e);
             }
-            if let Err(e) = sdst_report::write_druggability_pdb(&report, &topology, output_dir, &structure_name) {
+            if let Err(e) =
+                sdst_report::write_druggability_pdb(&report, &topology, output_dir, &structure_name)
+            {
                 log::warn!("  PRISM-Therm druggability PDB failed: {}", e);
             }
         }
@@ -2965,14 +3403,25 @@ fn run_full_pipeline_internal(
     log::info!("║  Total time: {:<46.1}s ║", total_time.as_secs_f64());
     log::info!("║  Spikes detected: {:<41} ║", accumulated_spikes.len());
     log::info!("║  Binding sites: {:<43} ║", clustered_sites.len());
-    log::info!("║  Druggable sites: {:<41} ║",
-        clustered_sites.iter().filter(|s| s.druggability.is_druggable).count());
-    log::info!("║  RT cores used: {:<43} ║", if has_rt { "Yes" } else { "No" });
+    log::info!(
+        "║  Druggable sites: {:<41} ║",
+        clustered_sites
+            .iter()
+            .filter(|s| s.druggability.is_druggable)
+            .count()
+    );
+    log::info!(
+        "║  RT cores used: {:<43} ║",
+        if has_rt { "Yes" } else { "No" }
+    );
     log::info!("╚═══════════════════════════════════════════════════════════════╝");
 
     // Return counts for manifest mode
     let total_sites = clustered_sites.len();
-    let druggable_sites = clustered_sites.iter().filter(|s| s.druggability.is_druggable).count();
+    let druggable_sites = clustered_sites
+        .iter()
+        .filter(|s| s.druggability.is_druggable)
+        .count();
 
     Ok((total_sites, druggable_sites))
 }
@@ -2997,18 +3446,18 @@ fn run_batch_gpu_concurrent(
     let n_structures = structures.len();
     let total_entries = n_structures * replicas;
 
-    log::info!("    Creating AmberSimdBatch: {} structures × {} replicas = {} total entries, max {} atoms",
-        n_structures, replicas, total_entries, max_atoms);
+    log::info!(
+        "    Creating AmberSimdBatch: {} structures × {} replicas = {} total entries, max {} atoms",
+        n_structures,
+        replicas,
+        total_entries,
+        max_atoms
+    );
 
     // Use MAXIMUM config: Verlet + Tensor Cores + FP16 + Async pipeline
     // RTX 5080 Blackwell has 5th gen Tensor Cores - use them
     let opt_config = OptimizationConfig::maximum();
-    let mut batch = AmberSimdBatch::new_with_config(
-        context,
-        max_atoms,
-        total_entries,
-        opt_config,
-    )?;
+    let mut batch = AmberSimdBatch::new_with_config(context, max_atoms, total_entries, opt_config)?;
 
     // Load each structure topology and extract aromatic positions
     // We track (structure_idx, replica_idx) for each batch entry
@@ -3030,8 +3479,10 @@ fn run_batch_gpu_concurrent(
 
         // Extract aromatic atom indices for spike detection
         let aromatic_residue_ids = topology.aromatic_residues();
-        let aromatic_residues: std::collections::HashSet<usize> = aromatic_residue_ids.into_iter().collect();
-        let aromatic_indices: Vec<usize> = topology.residue_ids
+        let aromatic_residues: std::collections::HashSet<usize> =
+            aromatic_residue_ids.into_iter().collect();
+        let aromatic_indices: Vec<usize> = topology
+            .residue_ids
             .iter()
             .enumerate()
             .filter(|(_, &res_id)| aromatic_residues.contains(&res_id))
@@ -3039,7 +3490,8 @@ fn run_batch_gpu_concurrent(
             .collect();
 
         // Convert to StructureTopology format
-        let struct_topo = prism_nhs::simd_batch_integration::convert_to_structure_topology(&topology)?;
+        let struct_topo =
+            prism_nhs::simd_batch_integration::convert_to_structure_topology(&topology)?;
 
         // Add N replicas of this structure
         for replica_idx in 0..replicas {
@@ -3048,8 +3500,14 @@ fn run_batch_gpu_concurrent(
             entry_mapping.push((struct_idx, replica_idx));
 
             if replica_idx == 0 {
-                log::info!("      Loaded: {} ({} atoms, {} aromatics) → {} replicas starting at ID {}",
-                    structure.name, structure.atoms, aromatic_indices.len(), replicas, id);
+                log::info!(
+                    "      Loaded: {} ({} atoms, {} aromatics) → {} replicas starting at ID {}",
+                    structure.name,
+                    structure.atoms,
+                    aromatic_indices.len(),
+                    replicas,
+                    id
+                );
             }
         }
 
@@ -3061,55 +3519,86 @@ fn run_batch_gpu_concurrent(
     // Finalize batch
     log::info!("    Finalizing batch for GPU upload...");
     batch.finalize_batch()?;
-    log::info!("      ✓ Batch ready: {} total entries ({} structures × {} replicas) on GPU",
-        total_entries, n_structures, replicas);
+    log::info!(
+        "      ✓ Batch ready: {} total entries ({} structures × {} replicas) on GPU",
+        total_entries,
+        n_structures,
+        replicas
+    );
 
     // Configure protocol (steps determined after hysteresis decision)
     // Amendment 3.21.2 / T26 — protocol-cap-bypass closure: floors the
     // adaptive warm_hold so the sum of phases is ≥ args.steps when the
     // operator passed --protocol-cap-bypass.  Logs the pre/post values
     // to satisfy the architect's G45 audit gate.
-    let apply_t26_floor = |adaptive: i32, base: &CryoUvProtocol, atoms: usize, label: &str| -> i32 {
-        if args.protocol_cap_bypass {
-            let cold = base.cold_hold_steps;
-            let ramp = base.ramp_steps;
-            let floor = (args.steps - cold - ramp).max(0);
-            let result = adaptive.max(floor);
-            if floor > adaptive {
-                log::info!(
-                    "  [T26 protocol-cap-bypass {}] warm_hold floored: adaptive={} -> {} \
+    let apply_t26_floor =
+        |adaptive: i32, base: &CryoUvProtocol, atoms: usize, label: &str| -> i32 {
+            if args.protocol_cap_bypass {
+                let cold = base.cold_hold_steps;
+                let ramp = base.ramp_steps;
+                let floor = (args.steps - cold - ramp).max(0);
+                let result = adaptive.max(floor);
+                if floor > adaptive {
+                    log::info!(
+                        "  [T26 protocol-cap-bypass {}] warm_hold floored: adaptive={} -> {} \
                      (args.steps={} - cold={} - ramp={}, atoms={})",
-                    label, adaptive, result, args.steps, cold, ramp, atoms
-                );
-            } else {
-                log::info!(
-                    "  [T26 protocol-cap-bypass {}] adaptive={} already covers args.steps={} \
+                        label,
+                        adaptive,
+                        result,
+                        args.steps,
+                        cold,
+                        ramp,
+                        atoms
+                    );
+                } else {
+                    log::info!(
+                        "  [T26 protocol-cap-bypass {}] adaptive={} already covers args.steps={} \
                      (cold={}, ramp={}, atoms={})",
-                    label, adaptive, args.steps, cold, ramp, atoms
-                );
+                        label,
+                        adaptive,
+                        args.steps,
+                        cold,
+                        ramp,
+                        atoms
+                    );
+                }
+                result
+            } else {
+                adaptive
             }
-            result
-        } else {
-            adaptive
-        }
-    };
+        };
     let protocol = if args.fast_25k {
         let base = CryoUvProtocol::fast_25k();
         let extra_warm = ((max_atoms_seen.saturating_sub(5000) / 1000) * 2000) as i32;
         let adaptive_warm = base.warm_hold_steps + extra_warm;
-        let warm_hold_steps = apply_t26_floor(adaptive_warm, &base, max_atoms_seen, "fast_25k/batch");
-        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
-        log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
-            protocol_sized.warm_hold_steps, max_atoms_seen, extra_warm);
+        let warm_hold_steps =
+            apply_t26_floor(adaptive_warm, &base, max_atoms_seen, "fast_25k/batch");
+        let protocol_sized = CryoUvProtocol {
+            warm_hold_steps,
+            ..base
+        };
+        log::info!(
+            "  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
+            protocol_sized.warm_hold_steps,
+            max_atoms_seen,
+            extra_warm
+        );
         protocol_sized
     } else if args.fast {
         let base = CryoUvProtocol::fast_35k();
         let extra_warm = ((max_atoms_seen.saturating_sub(5000) / 1000) * 2000) as i32;
         let adaptive_warm = base.warm_hold_steps + extra_warm;
         let warm_hold_steps = apply_t26_floor(adaptive_warm, &base, max_atoms_seen, "fast/batch");
-        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
-        log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
-            protocol_sized.warm_hold_steps, max_atoms_seen, extra_warm);
+        let protocol_sized = CryoUvProtocol {
+            warm_hold_steps,
+            ..base
+        };
+        log::info!(
+            "  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
+            protocol_sized.warm_hold_steps,
+            max_atoms_seen,
+            extra_warm
+        );
         protocol_sized
     } else {
         CryoUvProtocol {
@@ -3155,8 +3644,16 @@ fn run_batch_gpu_concurrent(
     let ramp_steps = ((protocol.ramp_steps as f64 * scale) as usize).max(100);
     let warm_steps = steps_per_structure.saturating_sub(cold_steps + ramp_steps);
 
-    log::info!("    Running {} steps per replica (batch executes in lockstep)...", steps_per_structure);
-    log::info!("      Protocol phases: cold={}, ramp={}, warm={}", cold_steps, ramp_steps, warm_steps);
+    log::info!(
+        "    Running {} steps per replica (batch executes in lockstep)...",
+        steps_per_structure
+    );
+    log::info!(
+        "      Protocol phases: cold={}, ramp={}, warm={}",
+        cold_steps,
+        ramp_steps,
+        warm_steps
+    );
 
     // Initialize spike storage per entry (structure × replica)
     let frame_interval = 500;
@@ -3169,7 +3666,11 @@ fn run_batch_gpu_concurrent(
     let gamma = 1.0f32;
 
     // Phase 1: Cold hold
-    log::info!("    [1/3] Cold hold at {:.0}K ({} steps)...", protocol.start_temp, cold_steps);
+    log::info!(
+        "    [1/3] Cold hold at {:.0}K ({} steps)...",
+        protocol.start_temp,
+        cold_steps
+    );
     run_batch_phase(
         &mut batch,
         &structure_ids,
@@ -3190,8 +3691,12 @@ fn run_batch_gpu_concurrent(
     )?;
 
     // Phase 2: Temperature ramp
-    log::info!("    [2/3] Ramping {:.0}K → {:.0}K ({} steps)...",
-        protocol.start_temp, protocol.end_temp, ramp_steps);
+    log::info!(
+        "    [2/3] Ramping {:.0}K → {:.0}K ({} steps)...",
+        protocol.start_temp,
+        protocol.end_temp,
+        ramp_steps
+    );
     run_batch_ramp_phase(
         &mut batch,
         &structure_ids,
@@ -3214,8 +3719,11 @@ fn run_batch_gpu_concurrent(
 
     // Phase 3: Warm hold
     if warm_steps > 0 {
-        log::info!("    [3/3] Warm hold at {:.0}K ({} steps)...",
-            protocol.end_temp, warm_steps);
+        log::info!(
+            "    [3/3] Warm hold at {:.0}K ({} steps)...",
+            protocol.end_temp,
+            warm_steps
+        );
         run_batch_phase(
             &mut batch,
             &structure_ids,
@@ -3251,7 +3759,11 @@ fn run_batch_gpu_concurrent(
     } else {
         128
     };
-    log::info!("  Adaptive grid: {}³ for batch (max {} atoms)", batch_grid_dim, max_atoms);
+    log::info!(
+        "  Adaptive grid: {}³ for batch (max {} atoms)",
+        batch_grid_dim,
+        max_atoms
+    );
     let config = PersistentBatchConfig {
         max_atoms: max_atoms.max(15000),
         survey_steps: args.steps / 2,
@@ -3266,7 +3778,8 @@ fn run_batch_gpu_concurrent(
     let mut engine = PersistentNhsEngine::new(&config)?;
     let _has_rt = engine.has_rt_clustering();
 
-    for (struct_idx, (structure, topology)) in structures.iter().zip(topologies.iter()).enumerate() {
+    for (struct_idx, (structure, topology)) in structures.iter().zip(topologies.iter()).enumerate()
+    {
         let structure_start = Instant::now();
         let structure_output = args.output.join(&structure.name);
         std::fs::create_dir_all(&structure_output)?;
@@ -3280,8 +3793,12 @@ fn run_batch_gpu_concurrent(
         }
 
         let total_raw_spikes: usize = per_replica_spikes.iter().map(|s| s.len()).sum();
-        log::info!("    Processing {} ({} replicas): {} total raw spikes",
-            structure.name, replicas, total_raw_spikes);
+        log::info!(
+            "    Processing {} ({} replicas): {} total raw spikes",
+            structure.name,
+            replicas,
+            total_raw_spikes
+        );
         for (r_idx, replica_spikes) in per_replica_spikes.iter().enumerate() {
             log::info!("      Replica {}: {} spikes", r_idx, replica_spikes.len());
         }
@@ -3299,14 +3816,14 @@ fn run_batch_gpu_concurrent(
         for (replica_idx, replica_spikes) in per_replica_spikes.iter().enumerate() {
             // Apply intensity filtering per replica (top 2%)
             let filtered_spikes = if replica_spikes.len() > 1000 {
-                let mut intensities: Vec<f32> = replica_spikes.iter()
-                    .map(|s| s.intensity)
-                    .collect();
+                let mut intensities: Vec<f32> =
+                    replica_spikes.iter().map(|s| s.intensity).collect();
                 intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let threshold_idx = (intensities.len() as f32 * 0.98) as usize;
                 let intensity_threshold = intensities.get(threshold_idx).copied().unwrap_or(0.0);
 
-                replica_spikes.iter()
+                replica_spikes
+                    .iter()
                     .filter(|s| s.intensity >= intensity_threshold)
                     .cloned()
                     .collect()
@@ -3316,7 +3833,8 @@ fn run_batch_gpu_concurrent(
 
             // Cluster this replica's spikes
             let replica_sites = if !filtered_spikes.is_empty() && args.rt_clustering {
-                let positions: Vec<f32> = filtered_spikes.iter()
+                let positions: Vec<f32> = filtered_spikes
+                    .iter()
                     .flat_map(|s| {
                         let pos = s.position;
                         [pos[0], pos[1], pos[2]].into_iter()
@@ -3330,7 +3848,8 @@ fn run_batch_gpu_concurrent(
                         Some(vec![2.5f32, 3.5, 5.0, 7.0])
                     };
 
-                    match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon) {
+                    match engine.multi_scale_cluster_spikes_with_epsilon(&positions, custom_epsilon)
+                    {
                         Ok(ms_result) => {
                             let cluster_ids = ms_result.to_cluster_ids(filtered_spikes.len());
                             let fake_result = prism_nhs::rt_clustering::RtClusteringResult {
@@ -3340,20 +3859,23 @@ fn run_batch_gpu_concurrent(
                                 gpu_time_ms: 0.0,
                             };
 
-                            let all_sites = build_sites_from_clustering(&filtered_spikes, &fake_result)?;
+                            let all_sites =
+                                build_sites_from_clustering(&filtered_spikes, &fake_result)?;
                             let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
-                            all_sites.into_iter()
+                            all_sites
+                                .into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
                                 .collect()
                         }
-                        Err(_) => Vec::new()
+                        Err(_) => Vec::new(),
                     }
                 } else {
                     match engine.cluster_spikes(&positions) {
                         Ok(result) => {
                             let all_sites = build_sites_from_clustering(&filtered_spikes, &result)?;
                             let min_spikes = (filtered_spikes.len() as f64 * 0.02).ceil() as usize;
-                            let sites: Vec<_> = all_sites.into_iter()
+                            let sites: Vec<_> = all_sites
+                                .into_iter()
                                 .filter(|s| s.spike_count >= min_spikes)
                                 .collect();
 
@@ -3373,36 +3895,46 @@ fn run_batch_gpu_concurrent(
 
                             sites
                         }
-                        Err(_) => Vec::new()
+                        Err(_) => Vec::new(),
                     }
                 }
             } else {
                 Vec::new()
             };
 
-            log::info!("      Replica {}: {} filtered spikes → {} sites",
-                replica_idx, filtered_spikes.len(), replica_sites.len());
+            log::info!(
+                "      Replica {}: {} filtered spikes → {} sites",
+                replica_idx,
+                filtered_spikes.len(),
+                replica_sites.len()
+            );
             per_replica_sites.push(replica_sites);
         }
 
         // Perform consensus analysis: site must appear in N out of M replicas
         let consensus_threshold = if replicas >= 3 {
-            (replicas as f32 * 0.67).ceil() as usize  // 2+ out of 3, 3+ out of 4, etc.
+            (replicas as f32 * 0.67).ceil() as usize // 2+ out of 3, 3+ out of 4, etc.
         } else {
-            1  // For 1-2 replicas, any detection counts
+            1 // For 1-2 replicas, any detection counts
         };
 
-        log::info!("      Consensus analysis: site must appear in {}/{} replicas", consensus_threshold, replicas);
+        log::info!(
+            "      Consensus analysis: site must appear in {}/{} replicas",
+            consensus_threshold,
+            replicas
+        );
 
         // Build consensus sites by finding spatially overlapping sites across replicas
         // Note: batch/manifest mode doesn't have global spike offsets; consensus
         // spike_indices will be empty and the nearest-centroid fallback is used.
         let empty_offsets: Vec<usize> = Vec::new();
-        let clustered_sites = build_consensus_sites(&per_replica_sites, consensus_threshold, 5.0, &empty_offsets)?;
+        let clustered_sites =
+            build_consensus_sites(&per_replica_sites, consensus_threshold, 5.0, &empty_offsets)?;
         log::info!("      Consensus sites: {}", clustered_sites.len());
 
         // Prepare per-replica stats BEFORE moving per_replica_sites
-        let per_replica_stats: Vec<_> = per_replica_spikes.iter()
+        let per_replica_stats: Vec<_> = per_replica_spikes
+            .iter()
             .enumerate()
             .map(|(r_idx, spikes)| {
                 let sites_found = if r_idx < per_replica_sites.len() {
@@ -3411,7 +3943,10 @@ fn run_batch_gpu_concurrent(
                     0
                 };
                 let druggable_sites = if r_idx < per_replica_sites.len() {
-                    per_replica_sites[r_idx].iter().filter(|s| s.druggability.is_druggable).count()
+                    per_replica_sites[r_idx]
+                        .iter()
+                        .filter(|s| s.druggability.is_druggable)
+                        .count()
                 } else {
                     0
                 };
@@ -3437,16 +3972,25 @@ fn run_batch_gpu_concurrent(
         let aromatic_positions = &aromatic_positions_per_structure[struct_idx];
         if !clustered_sites.is_empty() && !aromatic_positions.is_empty() {
             enhance_sites_with_aromatics(&mut clustered_sites, aromatic_positions);
-            let druggable_count = clustered_sites.iter()
+            let druggable_count = clustered_sites
+                .iter()
                 .filter(|s| s.druggability.is_druggable)
                 .count();
-            log::info!("      Aromatic analysis: {} druggable sites", druggable_count);
+            log::info!(
+                "      Aromatic analysis: {} druggable sites",
+                druggable_count
+            );
         }
 
         // Create mapping from internal index to PDB ID
         let mut pdb_id_map = Vec::new();
         if !topology.residues.is_empty() {
-            let max_idx = topology.residues.iter().map(|r| r.residue_idx).max().unwrap_or(0);
+            let max_idx = topology
+                .residues
+                .iter()
+                .map(|r| r.residue_idx)
+                .max()
+                .unwrap_or(0);
             pdb_id_map.resize(max_idx + 1, 0);
             for r in &topology.residues {
                 if r.residue_idx < pdb_id_map.len() {
@@ -3534,13 +4078,18 @@ fn run_batch_gpu_concurrent(
         }
 
         let total_sites = clustered_sites.len();
-        let druggable_sites = clustered_sites.iter()
+        let druggable_sites = clustered_sites
+            .iter()
             .filter(|s| s.druggability.is_druggable)
             .count();
 
         let elapsed = structure_start.elapsed().as_secs_f64();
-        log::info!("      ✓ Complete: {} sites ({} druggable) in {:.1}s",
-            total_sites, druggable_sites, elapsed);
+        log::info!(
+            "      ✓ Complete: {} sites ({} druggable) in {:.1}s",
+            total_sites,
+            druggable_sites,
+            elapsed
+        );
 
         results.push(StructureRunResult {
             name: structure.name.clone(),
@@ -3584,7 +4133,13 @@ fn run_batch_phase(
 
         // Apply UV burst if at interval
         if *current_step % uv_interval < frame_interval {
-            apply_batch_uv_burst(batch, aromatic_indices_per_structure, topologies, uv_energy, *current_step)?;
+            apply_batch_uv_burst(
+                batch,
+                aromatic_indices_per_structure,
+                topologies,
+                uv_energy,
+                *current_step,
+            )?;
         }
 
         // Extract positions and detect spikes per entry (structure × replica)
@@ -3656,7 +4211,13 @@ fn run_batch_ramp_phase(
 
         // Apply UV burst if at interval
         if *current_step % uv_interval < frame_interval {
-            apply_batch_uv_burst(batch, aromatic_indices_per_structure, topologies, uv_energy, *current_step)?;
+            apply_batch_uv_burst(
+                batch,
+                aromatic_indices_per_structure,
+                topologies,
+                uv_energy,
+                *current_step,
+            )?;
         }
 
         // Extract positions and detect spikes per entry (structure × replica)
@@ -3697,10 +4258,8 @@ fn apply_batch_uv_burst(
     current_step: usize,
 ) -> Result<()> {
     use prism_nhs::config::{
-        extinction_to_cross_section, wavelength_to_ev,
-        CALIBRATED_PHOTON_FLUENCE,
-        HEAT_YIELD_TRP, HEAT_YIELD_TYR, HEAT_YIELD_PHE,
-        KB_EV_K, NEFF_TRP, NEFF_TYR, NEFF_PHE,
+        extinction_to_cross_section, wavelength_to_ev, CALIBRATED_PHOTON_FLUENCE, HEAT_YIELD_PHE,
+        HEAT_YIELD_TRP, HEAT_YIELD_TYR, KB_EV_K, NEFF_PHE, NEFF_TRP, NEFF_TYR,
     };
 
     // Wavelength cycling: rotate through chromophore-specific wavelengths
@@ -3739,10 +4298,10 @@ fn apply_batch_uv_burst(
 
             // Wavelength-dependent extinction (Gaussian band model, FWHM ~15nm)
             let (peak_wavelength, peak_extinction) = match chromophore_type {
-                0 => (280.0f32, 5500.0f32),  // TRP: indole
-                1 => (274.0, 1490.0),          // TYR: phenol
-                2 => (258.0, 200.0),           // PHE: benzene
-                3 => (211.0, 5700.0),          // HIS: imidazole
+                0 => (280.0f32, 5500.0f32), // TRP: indole
+                1 => (274.0, 1490.0),       // TYR: phenol
+                2 => (258.0, 200.0),        // PHE: benzene
+                3 => (211.0, 5700.0),       // HIS: imidazole
                 _ => continue,
             };
             let sigma_nm = 7.5f32; // Gaussian width
@@ -3759,9 +4318,9 @@ fn apply_batch_uv_burst(
             let p_absorb = cross_section * CALIBRATED_PHOTON_FLUENCE;
 
             // Stochastic absorption check (PCG-style fast hash)
-            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(
-                (struct_idx as u64) << 32 | atom_idx as u64
-            );
+            rng_state = rng_state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add((struct_idx as u64) << 32 | atom_idx as u64);
             let rand_val = ((rng_state >> 33) as f32) / (u32::MAX as f32);
             if rand_val > p_absorb {
                 continue; // Photon not absorbed by this chromophore
@@ -3796,7 +4355,7 @@ fn apply_batch_uv_burst(
 
             let base = offset + atom_idx * 3;
             if base + 2 < velocities.len() {
-                velocities[base]     += velocity_boost * sin_theta * phi.cos();
+                velocities[base] += velocity_boost * sin_theta * phi.cos();
                 velocities[base + 1] += velocity_boost * sin_theta * phi.sin();
                 velocities[base + 2] += velocity_boost * cos_theta;
             }
@@ -3885,7 +4444,7 @@ fn detect_spikes_from_positions(
                     vibrational_energy: 0.0,
                     n_nearby_excited: 0,
                     wd_change: 0.0,
-                phase_bits: 0,
+                    phase_bits: 0,
                 });
             }
         }
@@ -3898,20 +4457,19 @@ fn detect_spikes_from_positions(
 /// the full cryo-UV-BNZ-RT stack. One CudaContext, one PTX module, N streams.
 /// Results aggregated via consensus clustering.
 #[cfg(feature = "gpu")]
-fn run_multi_stream_pipeline(
-    args: &Args,
-    topology_path: &PathBuf,
-    n_streams: usize,
-) -> Result<()> {
+fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: usize) -> Result<()> {
     use cudarc::driver::CudaContext;
     use cudarc::nvrtc::Ptx;
-    use std::path::Path;
     use prism_nhs::SiteClassification;
+    use std::path::Path;
 
     let total_start = Instant::now();
 
     log::info!("╔═══════════════════════════════════════════════════════════════╗");
-    log::info!("║  TRUE MULTI-STREAM PIPELINE ({} concurrent streams)           ║", n_streams);
+    log::info!(
+        "║  TRUE MULTI-STREAM PIPELINE ({} concurrent streams)           ║",
+        n_streams
+    );
     log::info!("║  Full cryo-UV-BNZ-RT on each independent CUDA stream          ║");
     log::info!("╚═══════════════════════════════════════════════════════════════╝");
 
@@ -3923,7 +4481,8 @@ fn run_multi_stream_pipeline(
         "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx",
         "target/ptx/nhs_amber_fused.ptx",
     ];
-    let ptx_path = ptx_candidates.iter()
+    let ptx_path = ptx_candidates
+        .iter()
         .find(|p| Path::new(p).exists())
         .ok_or_else(|| anyhow::anyhow!("nhs_amber_fused.ptx not found"))?;
     let module = context
@@ -3946,7 +4505,8 @@ fn run_multi_stream_pipeline(
     // without contending on the FnMut borrow.
     let topo_dyad: Option<prism_nhs::input::DimerDyad> = topology.dimer_dyad.clone();
 
-    let structure_name = topology_path.file_stem()
+    let structure_name = topology_path
+        .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "structure".to_string());
 
@@ -3962,6 +4522,67 @@ fn run_multi_stream_pipeline(
         chrono::Utc::now().format("%Y%m%d_%H%M%S")
     );
 
+    // ── PATH-A 8-STREAM PRODUCTION PROFILE (red-1 / 2026-05-04) ──────────
+    // Per .prism_orchestration/PATH_A_8STREAM_PRODUCTION_PROFILE_PLAN.md §7.
+    // Resolve effective Path-A knobs.  --path-a-production-profile is a
+    // convenience macro: it fills in sane defaults for the three
+    // sub-flags when they are otherwise unset.  Explicit per-flag
+    // overrides take precedence.
+    let path_a_v2_trigger_steps: Option<u32> = args
+        .path_a_v2_trigger_steps
+        .or(if args.path_a_production_profile { Some(6000) } else { None });
+    let path_a_t7_max_chunks: Option<u32> = args
+        .path_a_t7_max_chunks
+        .or(if args.path_a_production_profile { Some(40) } else { None });
+    let path_a_evidence_exit: bool =
+        args.path_a_evidence_exit || args.path_a_production_profile;
+    let path_a_any_active: bool = path_a_v2_trigger_steps.is_some()
+        || path_a_t7_max_chunks.is_some()
+        || path_a_evidence_exit;
+    if path_a_any_active {
+        log::info!(
+            "  [PATH-A] active profile: v2_trigger_steps={:?} t7_max_chunks={:?} evidence_exit={}",
+            path_a_v2_trigger_steps,
+            path_a_t7_max_chunks,
+            path_a_evidence_exit,
+        );
+    }
+
+    // Shared evidence-complete signal, set from inside the engine when
+    // the ASC Bayesian baseline-lock fires.  Cooperative early exit at
+    // chunk boundary when --path-a-evidence-exit is set.
+    let path_a_evidence_complete: std::sync::Arc<std::sync::atomic::AtomicBool> =
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // Per-stream V2 trigger step (effective value: override or
+    // per-protocol cold_hold).  Populated from inside the per-stream
+    // closure so the JSON emit at run end reports the actual value
+    // used by each stream.
+    let path_a_v2_trigger_by_stream: std::sync::Arc<std::sync::Mutex<Vec<i32>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(vec![-1; n_streams]));
+
+    // Per-stream V2-INSTANTIATE-COMPLETE timestamp (ISO-8601 UTC).
+    // None until the stream completes V2 instantiation; remains None
+    // for streams that fail or are killed before instantiate.
+    let path_a_instantiate_complete_by_stream: std::sync::Arc<
+        std::sync::Mutex<Vec<Option<String>>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(vec![None; n_streams]));
+
+    // Global integration-loop progress counter.  The chunk loop
+    // updates the max(chunk_idx) seen across all streams; the JSON
+    // emit reports `t7_chunks_completed` as a coarse integration-depth
+    // indicator (per-stream chunk counts can diverge slightly under
+    // bounded mode and the report only needs the maximum).
+    let path_a_t7_chunks_completed: std::sync::Arc<std::sync::atomic::AtomicI32> =
+        std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0));
+
+    // Exit-reason latch: first stream to break sets the reason; all
+    // subsequent breaks are no-ops.  Empty string ⇒ never set
+    // ⇒ "natural_completion" or "not_triggered" determined at emit
+    // time depending on Path-A activation status.
+    let path_a_exit_reason: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+
     // Apply HMR if requested
     if args.hmr {
         log::info!("  HMR: Applying 3x hydrogen mass repartitioning (dt=4fs)");
@@ -3969,11 +4590,18 @@ fn run_multi_stream_pipeline(
     }
 
     let aromatic_positions = extract_aromatic_positions(&topology);
-    log::info!("  Structure: {} ({} atoms, {} aromatics)",
-        structure_name, topology.n_atoms, aromatic_positions.len());
+    log::info!(
+        "  Structure: {} ({} atoms, {} aromatics)",
+        structure_name,
+        topology.n_atoms,
+        aromatic_positions.len()
+    );
 
     if topology.n_atoms < 500 {
-        anyhow::bail!("Protein too small for GPU analysis ({} atoms, min 500)", topology.n_atoms);
+        anyhow::bail!(
+            "Protein too small for GPU analysis ({} atoms, min 500)",
+            topology.n_atoms
+        );
     }
 
     // Adaptive grid: scale to protein bounding box
@@ -3984,7 +4612,11 @@ fn run_multi_stream_pipeline(
     } else {
         128
     };
-    log::info!("  Adaptive grid: {}³ for {} atoms", ms_grid_dim, topology.n_atoms);
+    log::info!(
+        "  Adaptive grid: {}³ for {} atoms",
+        ms_grid_dim,
+        topology.n_atoms
+    );
     let config = PersistentBatchConfig {
         max_atoms: topology.n_atoms.max(15000),
         survey_steps: args.steps / 2,
@@ -4001,47 +4633,75 @@ fn run_multi_stream_pipeline(
     // path).  Same semantics as the multi-batch path above; floors the
     // adaptive warm_hold so phase sum ≥ args.steps when --protocol-cap-bypass
     // is set.
-    let apply_t26_floor_single = |adaptive: i32, base: &CryoUvProtocol, atoms: usize, label: &str| -> i32 {
-        if args.protocol_cap_bypass {
-            let cold = base.cold_hold_steps;
-            let ramp = base.ramp_steps;
-            let floor = (args.steps - cold - ramp).max(0);
-            let result = adaptive.max(floor);
-            if floor > adaptive {
-                log::info!(
-                    "  [T26 protocol-cap-bypass {}] warm_hold floored: adaptive={} -> {} \
+    let apply_t26_floor_single =
+        |adaptive: i32, base: &CryoUvProtocol, atoms: usize, label: &str| -> i32 {
+            if args.protocol_cap_bypass {
+                let cold = base.cold_hold_steps;
+                let ramp = base.ramp_steps;
+                let floor = (args.steps - cold - ramp).max(0);
+                let result = adaptive.max(floor);
+                if floor > adaptive {
+                    log::info!(
+                        "  [T26 protocol-cap-bypass {}] warm_hold floored: adaptive={} -> {} \
                      (args.steps={} - cold={} - ramp={}, atoms={})",
-                    label, adaptive, result, args.steps, cold, ramp, atoms
-                );
-            } else {
-                log::info!(
-                    "  [T26 protocol-cap-bypass {}] adaptive={} already covers args.steps={} \
+                        label,
+                        adaptive,
+                        result,
+                        args.steps,
+                        cold,
+                        ramp,
+                        atoms
+                    );
+                } else {
+                    log::info!(
+                        "  [T26 protocol-cap-bypass {}] adaptive={} already covers args.steps={} \
                      (cold={}, ramp={}, atoms={})",
-                    label, adaptive, args.steps, cold, ramp, atoms
-                );
+                        label,
+                        adaptive,
+                        args.steps,
+                        cold,
+                        ramp,
+                        atoms
+                    );
+                }
+                result
+            } else {
+                adaptive
             }
-            result
-        } else {
-            adaptive
-        }
-    };
+        };
     let protocol = if args.fast_25k {
         let base = CryoUvProtocol::fast_25k();
         let extra_warm = ((topology.n_atoms.saturating_sub(5000) / 1000) * 2000) as i32;
         let adaptive_warm = base.warm_hold_steps + extra_warm;
-        let warm_hold_steps = apply_t26_floor_single(adaptive_warm, &base, topology.n_atoms, "fast_25k/single");
-        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
-        log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
-            protocol_sized.warm_hold_steps, topology.n_atoms, extra_warm);
+        let warm_hold_steps =
+            apply_t26_floor_single(adaptive_warm, &base, topology.n_atoms, "fast_25k/single");
+        let protocol_sized = CryoUvProtocol {
+            warm_hold_steps,
+            ..base
+        };
+        log::info!(
+            "  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
+            protocol_sized.warm_hold_steps,
+            topology.n_atoms,
+            extra_warm
+        );
         protocol_sized
     } else if args.fast {
         let base = CryoUvProtocol::fast_35k();
         let extra_warm = ((topology.n_atoms.saturating_sub(5000) / 1000) * 2000) as i32;
         let adaptive_warm = base.warm_hold_steps + extra_warm;
-        let warm_hold_steps = apply_t26_floor_single(adaptive_warm, &base, topology.n_atoms, "fast/single");
-        let protocol_sized = CryoUvProtocol { warm_hold_steps, ..base };
-        log::info!("  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
-            protocol_sized.warm_hold_steps, topology.n_atoms, extra_warm);
+        let warm_hold_steps =
+            apply_t26_floor_single(adaptive_warm, &base, topology.n_atoms, "fast/single");
+        let protocol_sized = CryoUvProtocol {
+            warm_hold_steps,
+            ..base
+        };
+        log::info!(
+            "  Adaptive warm_hold: {} steps ({} atoms, +{} extra)",
+            protocol_sized.warm_hold_steps,
+            topology.n_atoms,
+            extra_warm
+        );
         protocol_sized
     } else {
         CryoUvProtocol {
@@ -4104,7 +4764,11 @@ fn run_multi_stream_pipeline(
         /// ACL contrast log
         acl_contrast_log: std::sync::Mutex<Vec<(u32, f32)>>,
         /// Running spike rate statistics per engine: (sum, sum_sq, count) for mean/σ
-        rate_stats: Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU32)>,
+        rate_stats: Vec<(
+            std::sync::atomic::AtomicU64,
+            std::sync::atomic::AtomicU64,
+            std::sync::atomic::AtomicU32,
+        )>,
         n_residues: usize,
         // ── PCMI v3.0: High-Resolution Phasor Accumulators (from GPU bit-packed φ) ──
         /// Per-group × per-residue phasor accumulators: (cos_sum, sin_sum, count)
@@ -4211,28 +4875,45 @@ fn run_multi_stream_pipeline(
     let is_multi_diff = args.multi_differential;
     let n_residues_est = topology.n_residues;
     let diff_total_steps: Vec<i32> = if is_multi_diff {
-        CryoUvProtocol::twin_differential_set().iter().map(|p| p.total_steps()).collect()
+        CryoUvProtocol::twin_differential_set()
+            .iter()
+            .map(|p| p.total_steps())
+            .collect()
     } else {
         vec![35000; 4]
     };
     let asc_shared: Option<std::sync::Arc<AscSharedState>> = if is_multi_diff && n_streams >= 4 {
         Some(std::sync::Arc::new(AscSharedState {
             barrier: std::sync::Barrier::new(n_streams),
-            spike_counts: (0..n_streams).map(|_| std::sync::atomic::AtomicU64::new(0)).collect(),
-            spike_deltas: (0..n_streams).map(|_| std::sync::atomic::AtomicU64::new(0)).collect(),
+            spike_counts: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU64::new(0))
+                .collect(),
+            spike_deltas: (0..n_streams)
+                .map(|_| std::sync::atomic::AtomicU64::new(0))
+                .collect(),
             group_residue_counts: std::sync::Mutex::new(vec![vec![0u32; n_residues_est + 1]; 4]),
             known_multi_group_residues: std::sync::Mutex::new(std::collections::HashSet::new()),
             consensus_residues: std::sync::Mutex::new(Vec::new()),
             event_log: std::sync::Mutex::new(Vec::new()),
             acl_contrast_log: std::sync::Mutex::new(Vec::new()),
-            rate_stats: (0..n_streams).map(|_| (
-                std::sync::atomic::AtomicU64::new(0),
-                std::sync::atomic::AtomicU64::new(0),
-                std::sync::atomic::AtomicU32::new(0),
-            )).collect(),
+            rate_stats: (0..n_streams)
+                .map(|_| {
+                    (
+                        std::sync::atomic::AtomicU64::new(0),
+                        std::sync::atomic::AtomicU64::new(0),
+                        std::sync::atomic::AtomicU32::new(0),
+                    )
+                })
+                .collect(),
             n_residues: n_residues_est,
             // PCMI v3.0
-            group_residue_phasors: std::sync::Mutex::new(vec![vec![(0.0f64, 0.0f64, 0u32); n_residues_est + 1]; 4]),
+            group_residue_phasors: std::sync::Mutex::new(vec![
+                vec![
+                    (0.0f64, 0.0f64, 0u32);
+                    n_residues_est + 1
+                ];
+                4
+            ]),
             prior_residue_density: std::sync::Mutex::new(vec![0.0f64; n_residues_est + 1]),
             baseline_ready: std::sync::atomic::AtomicBool::new(false),
             group_total_steps: diff_total_steps,
@@ -4243,11 +4924,12 @@ fn run_multi_stream_pipeline(
             pid_accumulators: std::sync::Mutex::new(
                 (0..(n_residues_est + 1))
                     .map(|_| prism_nhs::gcpid::PidAccumulator::new(256))
-                    .collect()
+                    .collect(),
             ),
-            prev_group_residue_counts: std::sync::Mutex::new(
-                vec![vec![0u32; n_residues_est + 1]; 4]
-            ),
+            prev_group_residue_counts: std::sync::Mutex::new(vec![
+                vec![0u32; n_residues_est + 1];
+                4
+            ]),
             // Stage 2 closed-loop steering — empty by default. The thread-0
             // GC-PID block populates this each chunk when --closed-loop-steering
             // is enabled; otherwise it stays empty and per-stream writebacks
@@ -4309,63 +4991,80 @@ fn run_multi_stream_pipeline(
     // share a reference without reaching the "cannot move captured" case
     // on FnMut closures.
     let rescue_targets: std::sync::Arc<prism_nhs::rescue_controller::RescueTargets> =
-        std::sync::Arc::new(
-            if let Some(ref path_str) = args.rescue_targets_json {
-                let path = std::path::Path::new(path_str);
-                match prism_nhs::rescue_controller::RescueTargets::load_from_json(path) {
-                    Ok(t) => {
-                        log::info!(
+        std::sync::Arc::new(if let Some(ref path_str) = args.rescue_targets_json {
+            let path = std::path::Path::new(path_str);
+            match prism_nhs::rescue_controller::RescueTargets::load_from_json(path) {
+                Ok(t) => {
+                    log::info!(
                             "  [RESCUE] Loaded RescueTargets from {}: spike_rate={:.1} pcmi={:.2} synergy={:.2} entropy={:.2} consec={} stability={:.2}",
                             path.display(),
                             t.target_spike_rate, t.target_pcmi, t.target_synergy,
                             t.target_phasor_entropy, t.min_consecutive_below,
                             t.min_regime_stability,
                         );
-                        t
-                    }
-                    Err(e) => {
-                        log::error!(
+                    t
+                }
+                Err(e) => {
+                    log::error!(
                             "  [RESCUE] FAILED to load --rescue-targets-json from {}: {}. Falling back to default_for_canonical_target().",
                             path.display(), e
                         );
-                        prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target()
-                    }
+                    prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target()
                 }
-            } else {
-                prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target()
             }
-        );
+        } else {
+            prism_nhs::rescue_controller::RescueTargets::default_for_canonical_target()
+        });
 
     let epg_val = if is_multi_diff { n_streams / 4 } else { 1 };
 
     // ── GPU Ring Buffer Exchange (multi-differential only) ──
     // 4 ring buffers (one per group), shared across threads via Arc<Mutex>.
     // The Interferometric Bridge: GPU-to-GPU spike exchange, zero CPU latency.
-    let ring_buffers: Option<Vec<std::sync::Arc<std::sync::Mutex<prism_nhs::twin_kernels::TwinRingBuffer>>>> =
-        if is_multi_diff && n_streams >= 4 {
-            let exchange_stream = context.new_stream().ok();
-            if let Some(ref ex_stream) = exchange_stream {
-                match prism_nhs::twin_kernels::find_twin_ptx("ring_buffer.ptx") {
-                    Ok(ptx_path) => {
-                        match context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path)) {
-                            Ok(rb_module) => {
-                                let rbs: Vec<_> = (0..4).filter_map(|_| {
+    let ring_buffers: Option<
+        Vec<std::sync::Arc<std::sync::Mutex<prism_nhs::twin_kernels::TwinRingBuffer>>>,
+    > = if is_multi_diff && n_streams >= 4 {
+        let exchange_stream = context.new_stream().ok();
+        if let Some(ref ex_stream) = exchange_stream {
+            match prism_nhs::twin_kernels::find_twin_ptx("ring_buffer.ptx") {
+                Ok(ptx_path) => {
+                    match context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path)) {
+                        Ok(rb_module) => {
+                            let rbs: Vec<_> = (0..4)
+                                .filter_map(|_| {
                                     prism_nhs::twin_kernels::TwinRingBuffer::new(
-                                        &context, ex_stream, &rb_module, 16384
-                                    ).ok().map(|rb| std::sync::Arc::new(std::sync::Mutex::new(rb)))
-                                }).collect();
-                                if rbs.len() == 4 {
-                                    log::info!("  GPU ring buffers: 4 × 16384 (Interferometric Bridge ACTIVE)");
-                                    Some(rbs)
-                                } else { None }
+                                        &context, ex_stream, &rb_module, 16384,
+                                    )
+                                    .ok()
+                                    .map(|rb| std::sync::Arc::new(std::sync::Mutex::new(rb)))
+                                })
+                                .collect();
+                            if rbs.len() == 4 {
+                                log::info!(
+                                    "  GPU ring buffers: 4 × 16384 (Interferometric Bridge ACTIVE)"
+                                );
+                                Some(rbs)
+                            } else {
+                                None
                             }
-                            Err(e) => { log::warn!("  Ring buffer PTX load failed: {}", e); None }
+                        }
+                        Err(e) => {
+                            log::warn!("  Ring buffer PTX load failed: {}", e);
+                            None
                         }
                     }
-                    Err(e) => { log::warn!("  Ring buffer PTX not found: {}", e); None }
                 }
-            } else { None }
-        } else { None };
+                Err(e) => {
+                    log::warn!("  Ring buffer PTX not found: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // ── Run N engines on N threads (scoped for safe borrowing) ──
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
@@ -4380,9 +5079,15 @@ fn run_multi_stream_pipeline(
     #[cfg(feature = "v2_ignition")]
     let v2_was_live = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    let stream_results: Vec<Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)>> =
-        std::thread::scope(|s| {
-            let handles: Vec<_> = (0..n_streams).map(|i| {
+    let stream_results: Vec<
+        Result<(
+            Vec<prism_nhs::fused_engine::GpuSpikeEvent>,
+            Vec<prism_nhs::fused_engine::EnsembleSnapshot>,
+            Option<prism_nhs::fused_engine::SignalPreservationData>,
+            Option<prism_nhs::fused_engine::KccData>,
+        )>,
+    > = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..n_streams).map(|i| {
                 let ctx = context.clone();
                 let mod_ = module.clone();
                 let stream_i = streams[i].clone();
@@ -4558,6 +5263,24 @@ fn run_multi_stream_pipeline(
                 // Multi-differential: each group's protocol determines its step count
                 let steps = if args.multi_differential { prot.total_steps() } else { steps_per_stream };
                 let asc_shared = asc_shared.clone();
+                // PATH-A red-1 — per-stream Arc clones for the four shared
+                // signal/journal slots.  All cheap refcount bumps; closures
+                // own them and the run-end emit re-acquires from the
+                // outer-scope Arcs.
+                let path_a_evidence_complete_local =
+                    std::sync::Arc::clone(&path_a_evidence_complete);
+                let path_a_v2_trigger_by_stream_local =
+                    std::sync::Arc::clone(&path_a_v2_trigger_by_stream);
+                let path_a_instantiate_complete_by_stream_local =
+                    std::sync::Arc::clone(&path_a_instantiate_complete_by_stream);
+                let path_a_t7_chunks_completed_local =
+                    std::sync::Arc::clone(&path_a_t7_chunks_completed);
+                let path_a_exit_reason_local =
+                    std::sync::Arc::clone(&path_a_exit_reason);
+                // Captured per-stream so the chunk-loop break sites can read
+                // the effective bound without re-deriving from args.
+                let path_a_t7_max_chunks_local: Option<u32> = path_a_t7_max_chunks;
+                let path_a_evidence_exit_local: bool = path_a_evidence_exit;
                 let is_multi_diff = is_multi_diff;
                 let ring_bufs = ring_buffers.clone();
                 let hmr_enabled = args.hmr;
@@ -4576,8 +5299,23 @@ fn run_multi_stream_pipeline(
                 // fires at step N instead of waiting for kcc_cold_hold_steps.
                 // Used for short dry-runs that need to exercise the monolithic
                 // fusion path. None ⇒ natural cold→warm trigger preserved.
-                let v2_trigger_step: i32 = args.cold_hold_override
+                //
+                // PATHA-SYNC-TRIGGER-001 (red-1 / 2026-05-04): when
+                // --path-a-v2-trigger-steps N is set, every stream forces
+                // its trigger to N regardless of per-protocol cold_hold
+                // heterogeneity.  This collapses the staggered V2
+                // instantiate window into a unified release.  Precedence:
+                // path_a_v2_trigger_steps > cold_hold_override > kcc_cold_hold_steps.
+                let v2_trigger_step: i32 = path_a_v2_trigger_steps
+                    .map(|n| n as i32)
+                    .or(args.cold_hold_override)
                     .unwrap_or(kcc_cold_hold_steps);
+                // Per-stream effective trigger captured for path_a_completion.json.
+                if let Ok(mut by_stream) = path_a_v2_trigger_by_stream_local.lock() {
+                    if let Some(slot) = by_stream.get_mut(i) {
+                        *slot = v2_trigger_step;
+                    }
+                }
                 let kcc_ramp_steps = prot.ramp_steps;
                 let kcc_warm_hold_steps = prot.warm_hold_steps;
                 let bocpd_enabled = args.bocpd_chunking;
@@ -5158,8 +5896,58 @@ fn run_multi_stream_pipeline(
                         let phase_a_asc_n_atoms: usize = engine.n_atoms_loaded();
 
                         for chunk_idx in 0..n_chunks {
+                            // PATHA-T7-BOUND-001 — bounded integration when
+                            // --path-a-t7-max-chunks N is set: exit at chunk
+                            // boundary once chunk_idx >= N.  Default
+                            // (None) preserves the legacy 80-chunk loop.
+                            if let Some(cap) = path_a_t7_max_chunks_local {
+                                if chunk_idx >= cap as i32 {
+                                    log::info!(
+                                        "    [PATH-A T7-BOUND stream {}] cap reached at chunk_idx={} (cap={}); breaking integration loop",
+                                        i, chunk_idx, cap
+                                    );
+                                    if let Ok(mut r) = path_a_exit_reason_local.lock() {
+                                        if r.is_empty() {
+                                            *r = "n_chunks_cap".to_string();
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            // PATHA-EVIDENCE-EXIT-001 — cooperative exit on
+                            // ASC Bayesian baseline-lock.  Only honored when
+                            // --path-a-evidence-exit is set; flag set-site
+                            // is the ASC barrier emit (~line 8300+).
+                            if path_a_evidence_exit_local
+                                && path_a_evidence_complete_local
+                                    .load(std::sync::atomic::Ordering::Acquire)
+                            {
+                                log::info!(
+                                    "    [PATH-A EVIDENCE-EXIT stream {}] evidence_complete signaled at chunk_idx={}; breaking integration loop",
+                                    i, chunk_idx
+                                );
+                                if let Ok(mut r) = path_a_exit_reason_local.lock() {
+                                    if r.is_empty() {
+                                        *r = "evidence_complete".to_string();
+                                    }
+                                }
+                                break;
+                            }
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
+                                // PATH-A red-1 — track the maximum chunk_idx
+                                // across all streams so the run-end JSON emit
+                                // reports honest integration depth.  Relaxed
+                                // ordering is sufficient (single-writer per
+                                // stream, monotonically increasing).
+                                {
+                                    let prev = path_a_t7_chunks_completed_local
+                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                    if chunk_idx + 1 > prev {
+                                        path_a_t7_chunks_completed_local
+                                            .store(chunk_idx + 1, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                }
 
                                 // ── T5 PHASE-BOUNDARY BUILD ──────────────────────────────
                                 // On the first chunk that starts AFTER cold_hold: download
@@ -6130,6 +6918,21 @@ fn run_multi_stream_pipeline(
                                                                                 v2_monolithic = Some(exec);
                                                                                 v2_was_live.store(true, std::sync::atomic::Ordering::Release);
                                                                                 mono_success = true;
+                                                                                // PATH-A red-1 — record V2-INSTANTIATE-COMPLETE
+                                                                                // timestamp on the success path.
+                                                                                if let Ok(mut ts_vec) =
+                                                                                    path_a_instantiate_complete_by_stream_local.lock()
+                                                                                {
+                                                                                    if let Some(slot) = ts_vec.get_mut(i) {
+                                                                                        if slot.is_none() {
+                                                                                            *slot = Some(
+                                                                                                chrono::Utc::now()
+                                                                                                    .format("%Y-%m-%dT%H:%M:%SZ")
+                                                                                                    .to_string(),
+                                                                                            );
+                                                                                        }
+                                                                                    }
+                                                                                }
                                                                             }
                                                                             Err(e) => log::warn!(
                                                                                 "    [MONO-FUSE stream {}] add_child_graph_node \
@@ -6465,6 +7268,22 @@ fn run_multi_stream_pipeline(
                                                                                             v2_pipeline = Some(mono_pipeline);
                                                                                             v2_built_cfg = Some(mono_cfg);
                                                                                             v2_monolithic = Some(exec);
+                                                                                            // PATH-A red-1 — record
+                                                                                            // V2-INSTANTIATE-COMPLETE
+                                                                                            // timestamp on alt success path.
+                                                                                            if let Ok(mut ts_vec) =
+                                                                                                path_a_instantiate_complete_by_stream_local.lock()
+                                                                                            {
+                                                                                                if let Some(slot) = ts_vec.get_mut(i) {
+                                                                                                    if slot.is_none() {
+                                                                                                        *slot = Some(
+                                                                                                            chrono::Utc::now()
+                                                                                                                .format("%Y-%m-%dT%H:%M:%SZ")
+                                                                                                                .to_string(),
+                                                                                                        );
+                                                                                                    }
+                                                                                                }
+                                                                                            }
                                                                                         }
                                                                                         Err(e) => log::warn!(
                                                                                             "    [MONO-FUSE stream {}] instantiate \
@@ -7610,6 +8429,18 @@ fn run_multi_stream_pipeline(
                                             }
                                             asc_state.baseline_ready.store(true, std::sync::atomic::Ordering::Relaxed);
                                             log::info!("    [ASC] Bayesian baseline locked at chunk {}", chunk_idx);
+                                            // PATHA-EVIDENCE-EXIT-001 — flag
+                                            // the cooperative-exit signal.
+                                            // First-writer-wins; subsequent
+                                            // streams' stores are idempotent.
+                                            // Release pairs with the loop's
+                                            // Acquire.
+                                            path_a_evidence_complete_local
+                                                .store(true, std::sync::atomic::Ordering::Release);
+                                            log::info!(
+                                                "    [PATH-A EVIDENCE-EXIT] flag set by stream {} at chunk {}",
+                                                i, chunk_idx
+                                            );
                                         }
 
                                         // Compute KL-divergence surprise for top hotspots
@@ -9152,13 +9983,18 @@ fn run_multi_stream_pipeline(
                 })
             }).collect();
 
-            handles.into_iter()
-                .map(|h| h.join().expect("stream thread panicked"))
-                .collect()
-        });
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("stream thread panicked"))
+            .collect()
+    });
 
     let sim_elapsed = sim_start.elapsed();
-    log::info!("  ✓ All {} streams complete in {:.1}s", n_streams, sim_elapsed.as_secs_f64());
+    log::info!(
+        "  ✓ All {} streams complete in {:.1}s",
+        n_streams,
+        sim_elapsed.as_secs_f64()
+    );
 
     // ── V2 HARD-GATE: legacy CPU pipeline bypass ──────────────────────────
     // When the CapturedAdjudicationPipeline was live on ANY stream, discovery
@@ -9170,23 +10006,26 @@ fn run_multi_stream_pipeline(
     // before returning, per the comprehensive audit (2026-05-01).
     #[cfg(feature = "v2_ignition")]
     if v2_was_live.load(std::sync::atomic::Ordering::Acquire) {
-        log::info!("  [V2 HARD-GATE] CapturedAdjudicationPipeline was live — \
+        log::info!(
+            "  [V2 HARD-GATE] CapturedAdjudicationPipeline was live — \
                     bypassing legacy post-MD CPU pipeline. \
-                    Wall-clock: {:.1}s total.", sim_elapsed.as_secs_f64());
+                    Wall-clock: {:.1}s total.",
+            sim_elapsed.as_secs_f64()
+        );
 
         // ── Phase 0: Output directory + path roots ────────────────────────
         std::fs::create_dir_all(&args.output)
-            .with_context(|| format!("V2 teardown: create output dir {}",
-                                     args.output.display()))?;
+            .with_context(|| format!("V2 teardown: create output dir {}", args.output.display()))?;
         let output_base = args.output.join(&structure_name);
-        let stem = structure_name.strip_suffix(".topology")
-                                 .unwrap_or(&structure_name);
+        let stem = structure_name
+            .strip_suffix(".topology")
+            .unwrap_or(&structure_name);
 
         // ── Phase 1: stream_results sweep ────────────────────────────────
         // Collect spikes, snapshots, KCC, SignalPreservation across all streams.
         // KCC merge: best-per-residue by active_causal count (same policy as
         // legacy aggregation at L6416). Signal grid: element-wise sum.
-        let mut total_spikes  = 0usize;
+        let mut total_spikes = 0usize;
         let mut stream_summaries: Vec<serde_json::Value> = Vec::new();
         let mut final_snapshot: Option<prism_nhs::fused_engine::EnsembleSnapshot> = None;
         let mut merged_kcc: Option<prism_nhs::fused_engine::KccData> = None;
@@ -9208,16 +10047,16 @@ fn run_multi_stream_pipeline(
 
                     // Per-stream ensemble trajectory PDB (legacy in-memory path)
                     if !snapshots.is_empty() {
-                        let stream_base = args.output
-                            .join(format!("{}_stream{:02}", stem, i));
-                        match write_ensemble_trajectory(&snapshots, &topology,
-                                                        &stream_base) {
+                        let stream_base = args.output.join(format!("{}_stream{:02}", stem, i));
+                        match write_ensemble_trajectory(&snapshots, &topology, &stream_base) {
                             Ok(()) => log::info!(
                                 "  [V2 teardown] ✓ stream {} trajectory: {} frames",
-                                i, n_frames),
-                            Err(e) => log::warn!(
-                                "  [V2 teardown] stream {} trajectory failed: {}",
-                                i, e),
+                                i,
+                                n_frames
+                            ),
+                            Err(e) => {
+                                log::warn!("  [V2 teardown] stream {} trajectory failed: {}", i, e)
+                            }
                         }
 
                         // frames.bin binary sidecar (Gate G2)
@@ -9236,7 +10075,10 @@ fn run_multi_stream_pipeline(
                                         if let Err(e) = tw.write_frame(&snap.positions) {
                                             log::warn!(
                                                 "  [V2 teardown] frames.bin stream {} \
-                                                 write_frame error: {}", i, e);
+                                                 write_frame error: {}",
+                                                i,
+                                                e
+                                            );
                                             had_err = true;
                                             break;
                                         }
@@ -9246,15 +10088,24 @@ fn run_multi_stream_pipeline(
                                             Ok(n) => log::info!(
                                                 "  [V2 teardown] ✓ frames.bin stream {}: \
                                                  {} frames -> {}",
-                                                i, n, frames_path.display()),
+                                                i,
+                                                n,
+                                                frames_path.display()
+                                            ),
                                             Err(e) => log::warn!(
                                                 "  [V2 teardown] frames.bin finish \
-                                                 stream {}: {}", i, e),
+                                                 stream {}: {}",
+                                                i,
+                                                e
+                                            ),
                                         }
                                     }
                                 }
                                 Err(e) => log::warn!(
-                                    "  [V2 teardown] TrajectoryWriter stream {}: {}", i, e),
+                                    "  [V2 teardown] TrajectoryWriter stream {}: {}",
+                                    i,
+                                    e
+                                ),
                             }
                         }
                     }
@@ -9269,21 +10120,21 @@ fn run_multi_stream_pipeline(
                     // Move the file into its final per-stream slot and read
                     // the n_frames header so the stream summary is accurate.
                     if snapshots.is_empty() {
-                        let tmp_src = args.output.join(
-                            format!("prism_v2_{}_{}.bin",
-                                    std::process::id(), i)
-                        );
+                        let tmp_src =
+                            args.output
+                                .join(format!("prism_v2_{}_{}.bin", std::process::id(), i));
                         if tmp_src.exists() {
-                            let dst = args.output.join(
-                                format!("{}_stream{:02}_v2_frames.bin", stem, i)
-                            );
+                            let dst = args
+                                .output
+                                .join(format!("{}_stream{:02}_v2_frames.bin", stem, i));
                             // Read n_frames header (first 8 bytes u64 LE).
                             let disk_frames = std::fs::read(&tmp_src)
                                 .ok()
-                                .and_then(|b| b.get(..8)
-                                    .map(|hdr| u64::from_le_bytes(
-                                        hdr.try_into().unwrap_or([0u8; 8])
-                                    )))
+                                .and_then(|b| {
+                                    b.get(..8).map(|hdr| {
+                                        u64::from_le_bytes(hdr.try_into().unwrap_or([0u8; 8]))
+                                    })
+                                })
                                 .unwrap_or(0);
                             match std::fs::rename(&tmp_src, &dst) {
                                 Ok(()) => {
@@ -9291,12 +10142,19 @@ fn run_multi_stream_pipeline(
                                     log::info!(
                                         "  [V2 teardown] ✓ stream {} streamed \
                                          trajectory: {} frames → {}",
-                                        i, disk_frames, dst.display());
+                                        i,
+                                        disk_frames,
+                                        dst.display()
+                                    );
                                 }
                                 Err(e) => log::warn!(
                                     "  [V2 teardown] stream {} move {}→{} \
-                                     failed: {}", i, tmp_src.display(),
-                                     dst.display(), e),
+                                     failed: {}",
+                                    i,
+                                    tmp_src.display(),
+                                    dst.display(),
+                                    e
+                                ),
                             }
                         }
                     }
@@ -9304,24 +10162,26 @@ fn run_multi_stream_pipeline(
                     // Merge KCC: best per residue by active_causal
                     if let Some(kd) = kcc_data {
                         match merged_kcc.as_mut() {
-                            None => { merged_kcc = Some(kd); }
+                            None => {
+                                merged_kcc = Some(kd);
+                            }
                             Some(ref mut m) => {
                                 for j in 0..kd.n_residues.min(m.n_residues) {
                                     if kd.active_causal[j] > m.active_causal[j] {
-                                        m.temporal_corr[j]    = kd.temporal_corr[j];
-                                        m.direction_score[j]  = kd.direction_score[j];
-                                        m.motion_efficiency[j]= kd.motion_efficiency[j];
-                                        m.burst_motion[j]     = kd.burst_motion[j];
-                                        m.phase_shift[j]      = kd.phase_shift[j];
-                                        m.causal_lag[j]       = kd.causal_lag[j];
-                                        m.lag_corr_peak[j]    = kd.lag_corr_peak[j];
-                                        m.local_cov[j]        = kd.local_cov[j];
-                                        m.net_dx[j]           = kd.net_dx[j];
-                                        m.net_dy[j]           = kd.net_dy[j];
-                                        m.net_dz[j]           = kd.net_dz[j];
-                                        m.sum_m[j]            = kd.sum_m[j];
-                                        m.residue_count[j]    = kd.residue_count[j];
-                                        m.active_causal[j]    = kd.active_causal[j];
+                                        m.temporal_corr[j] = kd.temporal_corr[j];
+                                        m.direction_score[j] = kd.direction_score[j];
+                                        m.motion_efficiency[j] = kd.motion_efficiency[j];
+                                        m.burst_motion[j] = kd.burst_motion[j];
+                                        m.phase_shift[j] = kd.phase_shift[j];
+                                        m.causal_lag[j] = kd.causal_lag[j];
+                                        m.lag_corr_peak[j] = kd.lag_corr_peak[j];
+                                        m.local_cov[j] = kd.local_cov[j];
+                                        m.net_dx[j] = kd.net_dx[j];
+                                        m.net_dy[j] = kd.net_dy[j];
+                                        m.net_dz[j] = kd.net_dz[j];
+                                        m.sum_m[j] = kd.sum_m[j];
+                                        m.residue_count[j] = kd.residue_count[j];
+                                        m.active_causal[j] = kd.active_causal[j];
                                     }
                                 }
                             }
@@ -9332,7 +10192,9 @@ fn run_multi_stream_pipeline(
                     // max-wins for per-voxel dominant residue
                     if let Some(sd) = sig_data {
                         match merged_sig.as_mut() {
-                            None => { merged_sig = Some(sd); }
+                            None => {
+                                merged_sig = Some(sd);
+                            }
                             Some(ref mut m) => {
                                 for (j, v) in sd.voxel_hit_grid.iter().enumerate() {
                                     m.voxel_hit_grid[j] += v;
@@ -9340,10 +10202,13 @@ fn run_multi_stream_pipeline(
                                 for (j, v) in sd.coupled_spike_grid.iter().enumerate() {
                                     m.coupled_spike_grid[j] += v;
                                 }
-                                for j in 0..sd.primary_residue_count.len()
-                                            .min(m.primary_residue_count.len()) {
+                                for j in 0..sd
+                                    .primary_residue_count
+                                    .len()
+                                    .min(m.primary_residue_count.len())
+                                {
                                     if sd.primary_residue_count[j] > m.primary_residue_count[j] {
-                                        m.primary_residue_id[j]    = sd.primary_residue_id[j];
+                                        m.primary_residue_id[j] = sd.primary_residue_id[j];
                                         m.primary_residue_count[j] = sd.primary_residue_count[j];
                                     }
                                 }
@@ -9374,9 +10239,14 @@ fn run_multi_stream_pipeline(
         {
             let mut residue_entries: Vec<serde_json::Value> = Vec::new();
             let n_res_kcc = merged_kcc.as_ref().map(|k| k.n_residues).unwrap_or(0);
-            let n_res_phasor = asc_shared.as_ref()
-                .and_then(|a| a.group_residue_phasors.lock().ok()
-                    .map(|p| p.first().map(|g| g.len()).unwrap_or(0)))
+            let n_res_phasor = asc_shared
+                .as_ref()
+                .and_then(|a| {
+                    a.group_residue_phasors
+                        .lock()
+                        .ok()
+                        .map(|p| p.first().map(|g| g.len()).unwrap_or(0))
+                })
                 .unwrap_or(0);
             let n_res = n_res_kcc.max(n_res_phasor);
 
@@ -9390,9 +10260,11 @@ fn run_multi_stream_pipeline(
                             if let Some(&(cs, ss, cnt)) = group.get(rid) {
                                 let spc = if cnt > 0 {
                                     (cs * cs + ss * ss).sqrt() / cnt as f64
-                                } else { 0.0 };
+                                } else {
+                                    0.0
+                                };
                                 let theta = ss.atan2(cs);
-                                entry[format!("g{}_spc",   g)] = serde_json::json!(spc);
+                                entry[format!("g{}_spc", g)] = serde_json::json!(spc);
                                 entry[format!("g{}_theta_rad", g)] = serde_json::json!(theta);
                                 entry[format!("g{}_count", g)] = serde_json::json!(cnt);
                             }
@@ -9403,20 +10275,20 @@ fn run_multi_stream_pipeline(
                 // KCC fields — causal motion descriptors
                 if let Some(ref kcc) = merged_kcc {
                     if rid < kcc.n_residues {
-                        entry["temporal_corr"]    = serde_json::json!(kcc.temporal_corr[rid]);
-                        entry["direction_score"]  = serde_json::json!(kcc.direction_score[rid]);
-                        entry["motion_efficiency"]= serde_json::json!(kcc.motion_efficiency[rid]);
-                        entry["burst_motion"]     = serde_json::json!(kcc.burst_motion[rid]);
-                        entry["phase_shift"]      = serde_json::json!(kcc.phase_shift[rid]);
-                        entry["causal_lag"]       = serde_json::json!(kcc.causal_lag[rid]);
-                        entry["lag_corr_peak"]    = serde_json::json!(kcc.lag_corr_peak[rid]);
-                        entry["local_cov"]        = serde_json::json!(kcc.local_cov[rid]);
-                        entry["net_dx"]           = serde_json::json!(kcc.net_dx[rid]);
-                        entry["net_dy"]           = serde_json::json!(kcc.net_dy[rid]);
-                        entry["net_dz"]           = serde_json::json!(kcc.net_dz[rid]);
-                        entry["sum_m"]            = serde_json::json!(kcc.sum_m[rid]);
-                        entry["active_causal"]    = serde_json::json!(kcc.active_causal[rid]);
-                        entry["residue_count"]    = serde_json::json!(kcc.residue_count[rid]);
+                        entry["temporal_corr"] = serde_json::json!(kcc.temporal_corr[rid]);
+                        entry["direction_score"] = serde_json::json!(kcc.direction_score[rid]);
+                        entry["motion_efficiency"] = serde_json::json!(kcc.motion_efficiency[rid]);
+                        entry["burst_motion"] = serde_json::json!(kcc.burst_motion[rid]);
+                        entry["phase_shift"] = serde_json::json!(kcc.phase_shift[rid]);
+                        entry["causal_lag"] = serde_json::json!(kcc.causal_lag[rid]);
+                        entry["lag_corr_peak"] = serde_json::json!(kcc.lag_corr_peak[rid]);
+                        entry["local_cov"] = serde_json::json!(kcc.local_cov[rid]);
+                        entry["net_dx"] = serde_json::json!(kcc.net_dx[rid]);
+                        entry["net_dy"] = serde_json::json!(kcc.net_dy[rid]);
+                        entry["net_dz"] = serde_json::json!(kcc.net_dz[rid]);
+                        entry["sum_m"] = serde_json::json!(kcc.sum_m[rid]);
+                        entry["active_causal"] = serde_json::json!(kcc.active_causal[rid]);
+                        entry["residue_count"] = serde_json::json!(kcc.residue_count[rid]);
                     }
                 }
 
@@ -9429,9 +10301,10 @@ fn run_multi_stream_pipeline(
                 "residues": residue_entries,
             });
             let path = output_base.with_extension("phasor_kcc_state.json");
-            match std::fs::write(&path,
-                                 serde_json::to_string_pretty(&phasor_json)
-                                     .unwrap_or_default()) {
+            match std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&phasor_json).unwrap_or_default(),
+            ) {
                 Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
                 Err(e) => log::warn!("  [V2 teardown] phasor_kcc_state.json: {}", e),
             }
@@ -9444,13 +10317,14 @@ fn run_multi_stream_pipeline(
         // thermodynamic weights (Wi) that actually exists in this engine.
         {
             let mut consensus_out: Vec<serde_json::Value> = Vec::new();
-            let mut event_out:     Vec<serde_json::Value> = Vec::new();
-            let mut acl_out:       Vec<serde_json::Value> = Vec::new();
-            let mut prior_density: Vec<f64>               = Vec::new();
+            let mut event_out: Vec<serde_json::Value> = Vec::new();
+            let mut acl_out: Vec<serde_json::Value> = Vec::new();
+            let mut prior_density: Vec<f64> = Vec::new();
             let mut baseline_ready = false;
 
             if let Some(ref asc) = asc_shared {
-                baseline_ready = asc.baseline_ready
+                baseline_ready = asc
+                    .baseline_ready
                     .load(std::sync::atomic::Ordering::Acquire);
 
                 if let Ok(cr) = asc.consensus_residues.lock() {
@@ -9494,9 +10368,10 @@ fn run_multi_stream_pipeline(
                 },
             });
             let path = output_base.with_extension("prism_therm_telemetry.json");
-            match std::fs::write(&path,
-                                 serde_json::to_string_pretty(&therm_json)
-                                     .unwrap_or_default()) {
+            match std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&therm_json).unwrap_or_default(),
+            ) {
                 Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
                 Err(e) => log::warn!("  [V2 teardown] prism_therm_telemetry.json: {}", e),
             }
@@ -9533,23 +10408,36 @@ fn run_multi_stream_pipeline(
                     // Walk "rNNN(KL=VALUE)" patterns.
                     let mut rest = s;
                     while let Some(idx) = rest.find('r') {
-                        rest = &rest[idx + 1 ..];
-                        let num_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-                        if num_end == 0 { continue; }
+                        rest = &rest[idx + 1..];
+                        let num_end = rest
+                            .find(|c: char| !c.is_ascii_digit())
+                            .unwrap_or(rest.len());
+                        if num_end == 0 {
+                            continue;
+                        }
                         let rid: i64 = match rest[..num_end].parse() {
                             Ok(v) => v,
-                            Err(_) => { continue; }
+                            Err(_) => {
+                                continue;
+                            }
                         };
                         let after = &rest[num_end..];
                         // Match "(KL=" prefix immediately after the residue id.
-                        if !after.starts_with("(KL=") { continue; }
+                        if !after.starts_with("(KL=") {
+                            continue;
+                        }
                         let kl_body = &after[4..];
-                        let val_end = kl_body.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                        let val_end = kl_body
+                            .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
                             .unwrap_or(kl_body.len());
-                        if val_end == 0 { continue; }
+                        if val_end == 0 {
+                            continue;
+                        }
                         if let Ok(kl) = kl_body[..val_end].parse::<f64>() {
                             let entry = max_kl_by_rid.entry(rid).or_insert(0.0);
-                            if kl > *entry { *entry = kl; }
+                            if kl > *entry {
+                                *entry = kl;
+                            }
                         }
                     }
                 }
@@ -9587,28 +10475,37 @@ fn run_multi_stream_pipeline(
                 //                            (the closest kernel-computed
                 //                            analogue); set to null if no
                 //                            KCC data was downloaded.
-                let mut residues_out: Vec<serde_json::Value> = Vec::with_capacity(prior_density.len());
+                let mut residues_out: Vec<serde_json::Value> =
+                    Vec::with_capacity(prior_density.len());
 
                 // Snapshot per-group, per-residue counts from the phasor
                 // accumulator so each residue can carry a `group_counts`
                 // array.  Lock once outside the loop to amortize cost.
-                let group_counts_snapshot: Option<Vec<Vec<u32>>> = asc_shared
-                    .as_ref()
-                    .and_then(|a| a.group_residue_phasors.lock().ok()
-                        .map(|p| p.iter()
-                            .map(|grp| grp.iter().map(|&(_, _, c)| c).collect::<Vec<u32>>())
-                            .collect::<Vec<_>>()));
+                let group_counts_snapshot: Option<Vec<Vec<u32>>> =
+                    asc_shared.as_ref().and_then(|a| {
+                        a.group_residue_phasors.lock().ok().map(|p| {
+                            p.iter()
+                                .map(|grp| grp.iter().map(|&(_, _, c)| c).collect::<Vec<u32>>())
+                                .collect::<Vec<_>>()
+                        })
+                    });
 
                 for (idx, density) in prior_density.iter().enumerate() {
-                    if *density <= 0.0 { continue; }
+                    if *density <= 0.0 {
+                        continue;
+                    }
                     let rid = idx as i64;
                     let mut entry = serde_json::json!({
                         "residue_id":    rid,
                         "spike_density": density,
                     });
                     if let Some(c) = consensus_by_rid.get(&rid) {
-                        if let Some(ng)  = c.get("n_groups") { entry["n_groups"] = ng.clone(); }
-                        if let Some(spc) = c.get("spc")      { entry["spc"]      = spc.clone(); }
+                        if let Some(ng) = c.get("n_groups") {
+                            entry["n_groups"] = ng.clone();
+                        }
+                        if let Some(spc) = c.get("spc") {
+                            entry["spc"] = spc.clone();
+                        }
                     }
                     if let Some(kl) = max_kl_by_rid.get(&rid) {
                         entry["max_kl"] = serde_json::json!(kl);
@@ -9619,67 +10516,69 @@ fn run_multi_stream_pipeline(
                     // residue index falls outside the kernel's tracked range.
                     if let Some(ref kcc) = merged_kcc {
                         if idx < kcc.n_residues {
-                            entry["temporal_corr"]     = serde_json::json!(kcc.temporal_corr[idx]);
-                            entry["direction_score"]   = serde_json::json!(kcc.direction_score[idx]);
-                            entry["directionality"]    = serde_json::json!(kcc.direction_score[idx]);
-                            entry["motion_efficiency"] = serde_json::json!(kcc.motion_efficiency[idx]);
-                            entry["burst_motion"]      = serde_json::json!(kcc.burst_motion[idx]);
-                            entry["phase_shift"]       = serde_json::json!(kcc.phase_shift[idx]);
-                            entry["causal_lag"]        = serde_json::json!(kcc.causal_lag[idx]);
-                            entry["lag_corr_peak"]     = serde_json::json!(kcc.lag_corr_peak[idx]);
-                            entry["local_cov"]         = serde_json::json!(kcc.local_cov[idx]);
-                            entry["local_covariance"]  = serde_json::json!(kcc.local_cov[idx]);
-                            entry["net_dx"]            = serde_json::json!(kcc.net_dx[idx]);
-                            entry["net_dy"]            = serde_json::json!(kcc.net_dy[idx]);
-                            entry["net_dz"]            = serde_json::json!(kcc.net_dz[idx]);
-                            entry["sum_m"]             = serde_json::json!(kcc.sum_m[idx]);
-                            entry["active_causal"]     = serde_json::json!(kcc.active_causal[idx]);
-                            entry["n_active_causal"]   = serde_json::json!(kcc.active_causal[idx]);
-                            entry["residue_count"]     = serde_json::json!(kcc.residue_count[idx]);
+                            entry["temporal_corr"] = serde_json::json!(kcc.temporal_corr[idx]);
+                            entry["direction_score"] = serde_json::json!(kcc.direction_score[idx]);
+                            entry["directionality"] = serde_json::json!(kcc.direction_score[idx]);
+                            entry["motion_efficiency"] =
+                                serde_json::json!(kcc.motion_efficiency[idx]);
+                            entry["burst_motion"] = serde_json::json!(kcc.burst_motion[idx]);
+                            entry["phase_shift"] = serde_json::json!(kcc.phase_shift[idx]);
+                            entry["causal_lag"] = serde_json::json!(kcc.causal_lag[idx]);
+                            entry["lag_corr_peak"] = serde_json::json!(kcc.lag_corr_peak[idx]);
+                            entry["local_cov"] = serde_json::json!(kcc.local_cov[idx]);
+                            entry["local_covariance"] = serde_json::json!(kcc.local_cov[idx]);
+                            entry["net_dx"] = serde_json::json!(kcc.net_dx[idx]);
+                            entry["net_dy"] = serde_json::json!(kcc.net_dy[idx]);
+                            entry["net_dz"] = serde_json::json!(kcc.net_dz[idx]);
+                            entry["sum_m"] = serde_json::json!(kcc.sum_m[idx]);
+                            entry["active_causal"] = serde_json::json!(kcc.active_causal[idx]);
+                            entry["n_active_causal"] = serde_json::json!(kcc.active_causal[idx]);
+                            entry["residue_count"] = serde_json::json!(kcc.residue_count[idx]);
                         } else {
-                            entry["temporal_corr"]     = serde_json::Value::Null;
-                            entry["direction_score"]   = serde_json::Value::Null;
-                            entry["directionality"]    = serde_json::Value::Null;
+                            entry["temporal_corr"] = serde_json::Value::Null;
+                            entry["direction_score"] = serde_json::Value::Null;
+                            entry["directionality"] = serde_json::Value::Null;
                             entry["motion_efficiency"] = serde_json::Value::Null;
-                            entry["burst_motion"]      = serde_json::Value::Null;
-                            entry["phase_shift"]       = serde_json::Value::Null;
-                            entry["causal_lag"]        = serde_json::Value::Null;
-                            entry["lag_corr_peak"]     = serde_json::Value::Null;
-                            entry["local_cov"]         = serde_json::Value::Null;
-                            entry["local_covariance"]  = serde_json::Value::Null;
-                            entry["net_dx"]            = serde_json::Value::Null;
-                            entry["net_dy"]            = serde_json::Value::Null;
-                            entry["net_dz"]            = serde_json::Value::Null;
-                            entry["sum_m"]             = serde_json::Value::Null;
-                            entry["active_causal"]     = serde_json::Value::Null;
-                            entry["n_active_causal"]   = serde_json::Value::Null;
-                            entry["residue_count"]     = serde_json::Value::Null;
+                            entry["burst_motion"] = serde_json::Value::Null;
+                            entry["phase_shift"] = serde_json::Value::Null;
+                            entry["causal_lag"] = serde_json::Value::Null;
+                            entry["lag_corr_peak"] = serde_json::Value::Null;
+                            entry["local_cov"] = serde_json::Value::Null;
+                            entry["local_covariance"] = serde_json::Value::Null;
+                            entry["net_dx"] = serde_json::Value::Null;
+                            entry["net_dy"] = serde_json::Value::Null;
+                            entry["net_dz"] = serde_json::Value::Null;
+                            entry["sum_m"] = serde_json::Value::Null;
+                            entry["active_causal"] = serde_json::Value::Null;
+                            entry["n_active_causal"] = serde_json::Value::Null;
+                            entry["residue_count"] = serde_json::Value::Null;
                         }
                     } else {
-                        entry["temporal_corr"]     = serde_json::Value::Null;
-                        entry["direction_score"]   = serde_json::Value::Null;
-                        entry["directionality"]    = serde_json::Value::Null;
+                        entry["temporal_corr"] = serde_json::Value::Null;
+                        entry["direction_score"] = serde_json::Value::Null;
+                        entry["directionality"] = serde_json::Value::Null;
                         entry["motion_efficiency"] = serde_json::Value::Null;
-                        entry["burst_motion"]      = serde_json::Value::Null;
-                        entry["phase_shift"]       = serde_json::Value::Null;
-                        entry["causal_lag"]        = serde_json::Value::Null;
-                        entry["lag_corr_peak"]     = serde_json::Value::Null;
-                        entry["local_cov"]         = serde_json::Value::Null;
-                        entry["local_covariance"]  = serde_json::Value::Null;
-                        entry["net_dx"]            = serde_json::Value::Null;
-                        entry["net_dy"]            = serde_json::Value::Null;
-                        entry["net_dz"]            = serde_json::Value::Null;
-                        entry["sum_m"]             = serde_json::Value::Null;
-                        entry["active_causal"]     = serde_json::Value::Null;
-                        entry["n_active_causal"]   = serde_json::Value::Null;
-                        entry["residue_count"]     = serde_json::Value::Null;
+                        entry["burst_motion"] = serde_json::Value::Null;
+                        entry["phase_shift"] = serde_json::Value::Null;
+                        entry["causal_lag"] = serde_json::Value::Null;
+                        entry["lag_corr_peak"] = serde_json::Value::Null;
+                        entry["local_cov"] = serde_json::Value::Null;
+                        entry["local_covariance"] = serde_json::Value::Null;
+                        entry["net_dx"] = serde_json::Value::Null;
+                        entry["net_dy"] = serde_json::Value::Null;
+                        entry["net_dz"] = serde_json::Value::Null;
+                        entry["sum_m"] = serde_json::Value::Null;
+                        entry["active_causal"] = serde_json::Value::Null;
+                        entry["n_active_causal"] = serde_json::Value::Null;
+                        entry["residue_count"] = serde_json::Value::Null;
                     }
 
                     // group_counts: per-residue array of per-group spike counts
                     // (length = n_groups).  Source = AscSharedState phasor
                     // accumulator (cnt component).  Null when phasors unavail.
                     if let Some(ref snap) = group_counts_snapshot {
-                        let counts: Vec<u32> = snap.iter()
+                        let counts: Vec<u32> = snap
+                            .iter()
                             .map(|grp| grp.get(idx).copied().unwrap_or(0))
                             .collect();
                         entry["group_counts"] = serde_json::json!(counts);
@@ -9692,8 +10591,8 @@ fn run_multi_stream_pipeline(
                     // schema and can distinguish "not computed" from "computed
                     // and zero".  Populating these requires a kernel change
                     // (operator-tracked, separate lane).
-                    entry["causal_vector"]      = serde_json::Value::Null;
-                    entry["lag_fields"]         = serde_json::Value::Null;
+                    entry["causal_vector"] = serde_json::Value::Null;
+                    entry["lag_fields"] = serde_json::Value::Null;
                     entry["phase_shift_vector"] = serde_json::Value::Null;
 
                     residues_out.push(entry);
@@ -9722,9 +10621,10 @@ fn run_multi_stream_pipeline(
                                    for downstream Teacher-GNN ingestion.",
                 });
                 let kcc_path = output_base.with_extension("kcc_visualization.json");
-                match std::fs::write(&kcc_path,
-                                     serde_json::to_string_pretty(&kcc_viz_json)
-                                         .unwrap_or_default()) {
+                match std::fs::write(
+                    &kcc_path,
+                    serde_json::to_string_pretty(&kcc_viz_json).unwrap_or_default(),
+                ) {
                     Ok(()) => log::info!("  [V2 teardown] ✓ {}", kcc_path.display()),
                     Err(e) => log::warn!("  [V2 teardown] kcc_visualization.json: {}", e),
                 }
@@ -9736,7 +10636,9 @@ fn run_multi_stream_pipeline(
         // coupling counts. Non-zero voxels only for compact output.
         if let Some(ref sig) = merged_sig {
             let dim = sig.grid_dim;
-            let nonzero: Vec<serde_json::Value> = sig.voxel_hit_grid.iter()
+            let nonzero: Vec<serde_json::Value> = sig
+                .voxel_hit_grid
+                .iter()
                 .enumerate()
                 .filter(|(_, &v)| v > 0)
                 .map(|(idx, &hits)| {
@@ -9767,9 +10669,10 @@ fn run_multi_stream_pipeline(
                                SignalPreservationData only.",
             });
             let path = output_base.with_extension("spatial_grid_state.json");
-            match std::fs::write(&path,
-                                 serde_json::to_string_pretty(&grid_json)
-                                     .unwrap_or_default()) {
+            match std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&grid_json).unwrap_or_default(),
+            ) {
                 Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
                 Err(e) => log::warn!("  [V2 teardown] spatial_grid_state.json: {}", e),
             }
@@ -9790,7 +10693,7 @@ fn run_multi_stream_pipeline(
                 .unwrap_or_else(|_| substrate_default.to_string_lossy().into_owned());
             let dest = output_base.with_extension("t7_calibration.json");
             let content = std::fs::read_to_string(&tmp_path).unwrap_or_else(|_| {
-                let mu    = prism_nhs::interferometric_adjudicator::T7_CALIBRATED_MU;
+                let mu = prism_nhs::interferometric_adjudicator::T7_CALIBRATED_MU;
                 let sigma = prism_nhs::interferometric_adjudicator::T7_CALIBRATED_SIGMA;
                 serde_json::to_string_pretty(&serde_json::json!({
                     "source":       "hardcoded_t7_locked_priors",
@@ -9801,7 +10704,8 @@ fn run_multi_stream_pipeline(
                     "sigma":        sigma,
                     "note":         "Raw C_l samples not found — constants are the \
                                      T7-LOCKED 4LPK priors applied at pipeline build.",
-                })).unwrap_or_default()
+                }))
+                .unwrap_or_default()
             });
             match std::fs::write(&dest, content) {
                 Ok(()) => log::info!("  [V2 teardown] ✓ {}", dest.display()),
@@ -9815,31 +10719,46 @@ fn run_multi_stream_pipeline(
         // are unavailable — engine destroyed at thread join.
         {
             let arom_residue_ids = topology.aromatic_residues();
-            let entries: Vec<serde_json::Value> = arom_residue_ids.iter()
+            let entries: Vec<serde_json::Value> = arom_residue_ids
+                .iter()
                 .enumerate()
                 .map(|(idx, &res_id)| {
-                    let ring_atom_indices: Vec<usize> = topology.residue_ids.iter()
+                    let ring_atom_indices: Vec<usize> = topology
+                        .residue_ids
+                        .iter()
                         .enumerate()
                         .filter(|(_, &r)| r == res_id)
                         .map(|(a, _)| a)
                         .collect();
                     let (cx, cy, cz) = if !ring_atom_indices.is_empty() {
                         let n = ring_atom_indices.len() as f32;
-                        let cx = ring_atom_indices.iter()
-                            .map(|&a| topology.positions.get(a * 3    ).copied().unwrap_or(0.0))
-                            .sum::<f32>() / n;
-                        let cy = ring_atom_indices.iter()
+                        let cx = ring_atom_indices
+                            .iter()
+                            .map(|&a| topology.positions.get(a * 3).copied().unwrap_or(0.0))
+                            .sum::<f32>()
+                            / n;
+                        let cy = ring_atom_indices
+                            .iter()
                             .map(|&a| topology.positions.get(a * 3 + 1).copied().unwrap_or(0.0))
-                            .sum::<f32>() / n;
-                        let cz = ring_atom_indices.iter()
+                            .sum::<f32>()
+                            / n;
+                        let cz = ring_atom_indices
+                            .iter()
                             .map(|&a| topology.positions.get(a * 3 + 2).copied().unwrap_or(0.0))
-                            .sum::<f32>() / n;
+                            .sum::<f32>()
+                            / n;
                         (cx, cy, cz)
-                    } else { (0.0f32, 0.0f32, 0.0f32) };
-                    let res_name = topology.residue_ids.iter().enumerate()
+                    } else {
+                        (0.0f32, 0.0f32, 0.0f32)
+                    };
+                    let res_name = topology
+                        .residue_ids
+                        .iter()
+                        .enumerate()
                         .find(|(_, &r)| r == res_id)
                         .and_then(|(i, _)| topology.residue_names.get(i))
-                        .map(|s| s.as_str()).unwrap_or("UNK");
+                        .map(|s| s.as_str())
+                        .unwrap_or("UNK");
                     serde_json::json!({
                         "aromatic_idx":    idx,
                         "residue_id":      res_id,
@@ -9861,9 +10780,10 @@ fn run_multi_stream_pipeline(
                                engine destroyed at thread join.",
             });
             let path = output_base.with_extension("aromatic_centroids_map.json");
-            match std::fs::write(&path,
-                                 serde_json::to_string_pretty(&arom_json)
-                                     .unwrap_or_default()) {
+            match std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&arom_json).unwrap_or_default(),
+            ) {
                 Ok(()) => log::info!("  [V2 teardown] ✓ {}", path.display()),
                 Err(e) => log::warn!("  [V2 teardown] aromatic_centroids_map.json: {}", e),
             }
@@ -9880,8 +10800,7 @@ fn run_multi_stream_pipeline(
                     let _ = writeln!(f, "MODEL        1");
                     let _ = writeln!(f, "REMARK   V2_IGNITION FINAL FRAME");
                     let _ = writeln!(f, "REMARK   TIMESTEP {}", snap.timestep);
-                    let _ = writeln!(f, "REMARK   TEMPERATURE {:.1} K",
-                                     snap.temperature);
+                    let _ = writeln!(f, "REMARK   TEMPERATURE {:.1} K", snap.temperature);
                     let _ = writeln!(f, "REMARK   TIME {:.3} ps", snap.time_ps);
                     let n_atoms = topology.n_atoms;
                     if snap.positions.len() == n_atoms * 3 {
@@ -9889,29 +10808,49 @@ fn run_multi_stream_pipeline(
                             let x = snap.positions[atom_idx * 3];
                             let y = snap.positions[atom_idx * 3 + 1];
                             let z = snap.positions[atom_idx * 3 + 2];
-                            let aname = topology.atom_names.get(atom_idx)
-                                .map(|s| s.as_str()).unwrap_or("UNK");
-                            let rname = topology.residue_names.get(atom_idx)
-                                .map(|s| s.as_str()).unwrap_or("UNK");
-                            let chain = topology.chain_ids.get(atom_idx)
-                                .and_then(|s| s.chars().next()).unwrap_or('A');
-                            let resid = topology.residue_ids.get(atom_idx)
-                                .copied().unwrap_or(1);
-                            let elem  = topology.elements.get(atom_idx)
-                                .map(|s| s.as_str()).unwrap_or("X");
+                            let aname = topology
+                                .atom_names
+                                .get(atom_idx)
+                                .map(|s| s.as_str())
+                                .unwrap_or("UNK");
+                            let rname = topology
+                                .residue_names
+                                .get(atom_idx)
+                                .map(|s| s.as_str())
+                                .unwrap_or("UNK");
+                            let chain = topology
+                                .chain_ids
+                                .get(atom_idx)
+                                .and_then(|s| s.chars().next())
+                                .unwrap_or('A');
+                            let resid = topology.residue_ids.get(atom_idx).copied().unwrap_or(1);
+                            let elem = topology
+                                .elements
+                                .get(atom_idx)
+                                .map(|s| s.as_str())
+                                .unwrap_or("X");
                             let aname_pad = if aname.len() < 4 {
                                 format!(" {:<3}", aname)
                             } else {
                                 format!("{:<4}", aname)
                             };
-                            let _ = write!(f,
+                            let _ = write!(
+                                f,
                                 "ATOM  {:>5} {:4}{}{:>3} {}{:>4}    \
                                  {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}          {:>2}\n",
                                 (atom_idx + 1) % 100000,
-                                aname_pad, ' ', rname,
-                                chain, resid % 10000,
-                                x, y, z,
-                                1.00f32, 0.00f32, elem);
+                                aname_pad,
+                                ' ',
+                                rname,
+                                chain,
+                                resid % 10000,
+                                x,
+                                y,
+                                z,
+                                1.00f32,
+                                0.00f32,
+                                elem
+                            );
                         }
                     }
                     let _ = writeln!(f, "ENDMDL");
@@ -9946,7 +10885,7 @@ fn run_multi_stream_pipeline(
         // §2.2: not adversarial-tamper-resistant; protects against
         // accidental teardown corruption + stale-file regressions.
         const FNV_OFFSET: u64 = 0xcbf29ce4_84222325;
-        const FNV_PRIME:  u64 = 0x00000100_000001b3;
+        const FNV_PRIME: u64 = 0x00000100_000001b3;
         fn fnv1a64(bytes: &[u8]) -> u64 {
             let mut h = FNV_OFFSET;
             for &b in bytes {
@@ -9958,7 +10897,7 @@ fn run_multi_stream_pipeline(
         let bs_hash_hex = format!("{:016x}", fnv1a64(bs_bytes.as_bytes()));
         let kcc_path_for_hash = output_base.with_extension("kcc_visualization.json");
         let kcc_hash_hex = match std::fs::read(&kcc_path_for_hash) {
-            Ok(b)  => format!("{:016x}", fnv1a64(&b)),
+            Ok(b) => format!("{:016x}", fnv1a64(&b)),
             Err(_) => String::from("absent"),
         };
         // ghost_tiles.bin lives at {output_dir}/{stem}_stream00_ghost_tiles.bin
@@ -9970,11 +10909,12 @@ fn run_multi_stream_pipeline(
         // and multi-stream runs).  Per-stream artifacts can be hashed
         // independently by an external auditor if desired.
         let ghost_descriptor = {
-            let stem = output_base.file_stem()
+            let stem = output_base
+                .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
-            let ghost_bin = output_base
-                .with_file_name(format!("{}_stream00_ghost_tiles.bin", stem));
+            let ghost_bin =
+                output_base.with_file_name(format!("{}_stream00_ghost_tiles.bin", stem));
             match std::fs::metadata(&ghost_bin) {
                 Ok(meta) => {
                     let size = meta.len();
@@ -10040,9 +10980,10 @@ fn run_multi_stream_pipeline(
             },
         });
         let summary_path = output_base.with_extension("v2_ignition_summary.json");
-        match std::fs::write(&summary_path,
-                             serde_json::to_string_pretty(&summary)
-                                 .unwrap_or_default()) {
+        match std::fs::write(
+            &summary_path,
+            serde_json::to_string_pretty(&summary).unwrap_or_default(),
+        ) {
             Ok(()) => log::info!("  [V2 teardown] ✓ {}", summary_path.display()),
             Err(e) => log::warn!("  [V2 teardown] v2_ignition_summary.json: {}", e),
         }
@@ -10059,28 +11000,40 @@ fn run_multi_stream_pipeline(
             "  [V2 HARD-GATE] Graceful teardown complete — \
              {} total spikes, {} streams, {:.1}s wall-clock. \
              9 artifact phases executed.",
-            total_spikes, n_streams, sim_elapsed.as_secs_f64());
+            total_spikes,
+            n_streams,
+            sim_elapsed.as_secs_f64()
+        );
         return Ok(());
     }
 
     // ── Extract ASC consensus for downstream spike filtering ──
     let asc_consensus_residues: std::collections::HashSet<i32> = if let Some(ref asc) = asc_shared {
-        let residues: std::collections::HashSet<i32> = asc.consensus_residues.lock()
-            .map(|cr| cr.iter()
-                .filter(|&&(_, ng, c)| ng >= 3 && c > 0.3) // 3+ groups, contrast > 0.3
-                .map(|&(rid, _, _)| rid)
-                .collect())
+        let residues: std::collections::HashSet<i32> = asc
+            .consensus_residues
+            .lock()
+            .map(|cr| {
+                cr.iter()
+                    .filter(|&&(_, ng, c)| ng >= 3 && c > 0.3) // 3+ groups, contrast > 0.3
+                    .map(|&(rid, _, _)| rid)
+                    .collect()
+            })
             .unwrap_or_default();
         if !residues.is_empty() {
-            log::info!("  [ASC] {} consensus residues for downstream filtering: {:?}",
-                residues.len(), residues.iter().take(20).collect::<Vec<_>>());
+            log::info!(
+                "  [ASC] {} consensus residues for downstream filtering: {:?}",
+                residues.len(),
+                residues.iter().take(20).collect::<Vec<_>>()
+            );
         }
         // Write ACL telemetry to output
         if let Ok(acl_log) = asc.acl_contrast_log.lock() {
             if !acl_log.is_empty() {
-                log::info!("  [ACL] {} contrast samples, mean S/O={:.3}",
+                log::info!(
+                    "  [ACL] {} contrast samples, mean S/O={:.3}",
                     acl_log.len(),
-                    acl_log.iter().map(|(_, r)| *r).sum::<f32>() / acl_log.len() as f32);
+                    acl_log.iter().map(|(_, r)| *r).sum::<f32>() / acl_log.len() as f32
+                );
             }
         }
         residues
@@ -10092,7 +11045,12 @@ fn run_multi_stream_pipeline(
     log::info!("\n  Aggregating results across {} streams...", n_streams);
 
     let cluster_stream = context.new_stream().context("CUDA stream for consensus")?;
-    let mut cluster_engine = PersistentNhsEngine::new_on_stream(&config, context.clone(), module.clone(), cluster_stream)?;
+    let mut cluster_engine = PersistentNhsEngine::new_on_stream(
+        &config,
+        context.clone(),
+        module.clone(),
+        cluster_stream,
+    )?;
     cluster_engine.load_topology(&topology)?;
 
     let mut per_stream_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
@@ -10100,9 +11058,9 @@ fn run_multi_stream_pipeline(
     let mut all_stream_snapshots: Vec<Vec<prism_nhs::fused_engine::EnsembleSnapshot>> = Vec::new();
     let mut all_stream_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
     let mut stream_spike_offsets: Vec<usize> = Vec::new(); // offset into all_stream_spikes for each stream
-    // M1.2.5b — typed-producer side-channel collectors (multi-stream
-    // pipeline scope; serialized into binding_sites.json below). One
-    // record per stream when --m1-typed-producer is ON.
+                                                           // M1.2.5b — typed-producer side-channel collectors (multi-stream
+                                                           // pipeline scope; serialized into binding_sites.json below). One
+                                                           // record per stream when --m1-typed-producer is ON.
     let mut m1_diff_records: Vec<M1Differential> = Vec::new();
     let mut m1_total_wall_ms: f64 = 0.0;
     let mut legacy_total_wall_ms: f64 = 0.0;
@@ -10129,7 +11087,9 @@ fn run_multi_stream_pipeline(
         // Merge KCC data: for each residue, keep the stream with most causal activity
         if let Some(kd) = kcc_data {
             match merged_kcc.as_mut() {
-                None => { merged_kcc = Some(kd); }
+                None => {
+                    merged_kcc = Some(kd);
+                }
                 Some(ref mut m) => {
                     for j in 0..kd.n_residues.min(m.n_residues) {
                         if kd.active_causal[j] > m.active_causal[j] {
@@ -10152,7 +11112,9 @@ fn run_multi_stream_pipeline(
         // Merge signal preservation grids (element-wise sum across streams)
         if let Some(sd) = sig_data {
             match merged_signal.as_mut() {
-                None => { merged_signal = Some(sd); }
+                None => {
+                    merged_signal = Some(sd);
+                }
                 Some(ref mut m) => {
                     for (j, v) in sd.voxel_hit_grid.iter().enumerate() {
                         m.voxel_hit_grid[j] += v;
@@ -10255,14 +11217,21 @@ fn run_multi_stream_pipeline(
                     log::info!(
                         "  [Otsu] {}: n={} threshold={:.4} kept_frac={:.4} \
                          (min={:.4} max={:.4})",
-                        channel_label, n_pre, otsu_t, kept_frac, i_min, i_max,
+                        channel_label,
+                        n_pre,
+                        otsu_t,
+                        kept_frac,
+                        i_min,
+                        i_max,
                     );
                     if kept_frac < OTSU_SANITY_BAND_LOW || kept_frac > OTSU_SANITY_BAND_HIGH {
                         log::info!(
                             "  [Otsu] {}: kept_frac {:.4} outside sanity band \
                              [{:.2},{:.2}] → falling back to percentile (thresh={:.4})",
-                            channel_label, kept_frac,
-                            OTSU_SANITY_BAND_LOW, OTSU_SANITY_BAND_HIGH,
+                            channel_label,
+                            kept_frac,
+                            OTSU_SANITY_BAND_LOW,
+                            OTSU_SANITY_BAND_HIGH,
                             percentile_thresh,
                         );
                         percentile_thresh
@@ -10302,31 +11271,42 @@ fn run_multi_stream_pipeline(
         stream_spike_offsets.push(all_stream_spikes.len());
         all_stream_spikes.extend(filtered.iter().cloned());
         let sites = if !filtered.is_empty() && args.rt_clustering {
-            let positions: Vec<f32> = filtered.iter()
-                .flat_map(|s| { let p = s.position; [p[0], p[1], p[2]].into_iter() })
+            let positions: Vec<f32> = filtered
+                .iter()
+                .flat_map(|s| {
+                    let p = s.position;
+                    [p[0], p[1], p[2]].into_iter()
+                })
                 .collect();
 
             if args.multi_scale {
-                let eps = if args.adaptive_epsilon { None } else { Some(vec![2.5f32, 3.5, 5.0, 7.0]) };
+                let eps = if args.adaptive_epsilon {
+                    None
+                } else {
+                    Some(vec![2.5f32, 3.5, 5.0, 7.0])
+                };
                 match cluster_engine.multi_scale_cluster_spikes_with_epsilon(&positions, eps) {
                     Ok(ms) => {
                         let ids = ms.to_cluster_ids(filtered.len());
                         let fake = prism_nhs::rt_clustering::RtClusteringResult {
-                            cluster_ids: ids, num_clusters: ms.num_clusters(),
-                            total_neighbors: 0, gpu_time_ms: 0.0,
+                            cluster_ids: ids,
+                            num_clusters: ms.num_clusters(),
+                            total_neighbors: 0,
+                            gpu_time_ms: 0.0,
                         };
                         let all = build_sites_from_clustering(&filtered, &fake)?;
                         let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
                         all.into_iter().filter(|s| s.spike_count >= min_s).collect()
                     }
-                    Err(_) => Vec::new()
+                    Err(_) => Vec::new(),
                 }
             } else {
                 match cluster_engine.cluster_spikes(&positions) {
                     Ok(r) => {
                         let all = build_sites_from_clustering(&filtered, &r)?;
                         let min_s = (filtered.len() as f64 * 0.02).ceil() as usize;
-                        let sites: Vec<_> = all.into_iter().filter(|s| s.spike_count >= min_s).collect();
+                        let sites: Vec<_> =
+                            all.into_iter().filter(|s| s.spike_count >= min_s).collect();
 
                         // ── M1.2.5b — typed-producer side-channel (anchor: per-stream) ──
                         maybe_run_m1_side_channel(
@@ -10349,7 +11329,10 @@ fn run_multi_stream_pipeline(
                         // fallback here was ~3-5× slower per chunk on multi-stream 8
                         // and tipped 30-min targets over 45 min. LIGSITE geometric
                         // pocket detection downstream still covers these cases.
-                        log::warn!("    RT clustering failed ({}), returning empty (LIGSITE will detect)", e);
+                        log::warn!(
+                            "    RT clustering failed ({}), returning empty (LIGSITE will detect)",
+                            e
+                        );
                         Vec::new()
                     }
                 }
@@ -10358,7 +11341,12 @@ fn run_multi_stream_pipeline(
             Vec::new()
         };
 
-        log::info!("    Stream {}: {} filtered spikes → {} sites", i, filtered.len(), sites.len());
+        log::info!(
+            "    Stream {}: {} filtered spikes → {} sites",
+            i,
+            filtered.len(),
+            sites.len()
+        );
         per_stream_stats.push(serde_json::json!({
             "stream_id": i,
             "raw_spikes": filtered.len(),
@@ -10373,19 +11361,42 @@ fn run_multi_stream_pipeline(
     {
         let n = all_stream_spikes.len();
         // Sample from start, middle, and end to prove phase varies
-        let indices = [0, 1, n/4, n/2, 3*n/4, n.saturating_sub(2), n.saturating_sub(1)];
+        let indices = [
+            0,
+            1,
+            n / 4,
+            n / 2,
+            3 * n / 4,
+            n.saturating_sub(2),
+            n.saturating_sub(1),
+        ];
         for &i in &indices {
             if i < n {
                 let s = &all_stream_spikes[i];
-                log::info!("SPIKE DEBUG [{}]: ts={} phase={}/1024 src={} pos=({:.1},{:.1},{:.1})",
-                    i, s.timestep, s.phase_bits, s.spike_source,
-                    s.position[0], s.position[1], s.position[2]);
+                log::info!(
+                    "SPIKE DEBUG [{}]: ts={} phase={}/1024 src={} pos=({:.1},{:.1},{:.1})",
+                    i,
+                    s.timestep,
+                    s.phase_bits,
+                    s.spike_source,
+                    s.position[0],
+                    s.position[1],
+                    s.position[2]
+                );
             }
         }
-        let total_nonzero = all_stream_spikes.iter().filter(|s| s.phase_bits > 0).count();
+        let total_nonzero = all_stream_spikes
+            .iter()
+            .filter(|s| s.phase_bits > 0)
+            .count();
         let total_zero = n - total_nonzero;
-        log::info!("SPIKE DEBUG: {}/{} non-zero phase_bits ({:.1}%), {} zero",
-            total_nonzero, n, total_nonzero as f64 / n.max(1) as f64 * 100.0, total_zero);
+        log::info!(
+            "SPIKE DEBUG: {}/{} non-zero phase_bits ({:.1}%), {} zero",
+            total_nonzero,
+            n,
+            total_nonzero as f64 / n.max(1) as f64 * 100.0,
+            total_zero
+        );
         // Phase histogram: show distribution across 4 quadrants
         let mut quads = [0usize; 4];
         for s in &all_stream_spikes {
@@ -10398,11 +11409,18 @@ fn run_multi_stream_pipeline(
 
     // Write LADD/COFIRE spike summary (multi-stream, before consensus — survives any crash)
     {
-        let ladd_count = all_stream_spikes.iter().filter(|s| s.spike_source == 4).count();
-        let cofire_count = all_stream_spikes.iter().filter(|s| s.spike_source == 5).count();
+        let ladd_count = all_stream_spikes
+            .iter()
+            .filter(|s| s.spike_source == 4)
+            .count();
+        let cofire_count = all_stream_spikes
+            .iter()
+            .filter(|s| s.spike_source == 5)
+            .count();
         if ladd_count + cofire_count > 0 {
             std::fs::create_dir_all(&args.output).ok();
-            let ladd_json: Vec<serde_json::Value> = all_stream_spikes.iter()
+            let ladd_json: Vec<serde_json::Value> = all_stream_spikes
+                .iter()
                 .filter(|s| s.spike_source == 4 || s.spike_source == 5)
                 .map(|s| {
                     let pos = s.position;
@@ -10413,7 +11431,8 @@ fn run_multi_stream_pipeline(
                     let ve = s.vibrational_energy;
                     let wdc = s.wd_change;
                     let n_res = s.n_residues as usize;
-                    let residues: Vec<i32> = (0..n_res.min(8)).map(|r| s.nearby_residues[r]).collect();
+                    let residues: Vec<i32> =
+                        (0..n_res.min(8)).map(|r| s.nearby_residues[r]).collect();
                     serde_json::json!({
                         "x": pos[0], "y": pos[1], "z": pos[2],
                         "intensity": int, "timestep": ts,
@@ -10433,10 +11452,18 @@ fn run_multi_stream_pipeline(
                 "cofire_fraction": cofire_count as f64 / all_stream_spikes.len().max(1) as f64,
                 "spikes": ladd_json,
             });
-            let ladd_path = args.output.join(&structure_name).with_extension("ladd_spikes.json");
+            let ladd_path = args
+                .output
+                .join(&structure_name)
+                .with_extension("ladd_spikes.json");
             if let Ok(f) = std::fs::File::create(&ladd_path) {
                 let _ = serde_json::to_writer(f, &summary);
-                log::info!("  LADD/COFIRE spikes: {} (LADD={}, COFIRE={})", ladd_path.display(), ladd_count, cofire_count);
+                log::info!(
+                    "  LADD/COFIRE spikes: {} (LADD={}, COFIRE={})",
+                    ladd_path.display(),
+                    ladd_count,
+                    cofire_count
+                );
             }
         }
     }
@@ -10446,23 +11473,40 @@ fn run_multi_stream_pipeline(
     } else {
         1
     };
-    log::info!("  Consensus threshold: {}/{} streams", consensus_threshold, n_streams);
+    log::info!(
+        "  Consensus threshold: {}/{} streams",
+        consensus_threshold,
+        n_streams
+    );
 
     // DEBUG: Log per-stream site centroids
     for (i, sites) in per_stream_sites.iter().enumerate() {
         for (j, site) in sites.iter().enumerate() {
             let _c = site.emission_compat_centroid();
-            log::info!("    Stream {} site {}: centroid=[{:.1}, {:.1}, {:.1}], spikes={}, intensity={:.3}",
-                i, j, _c[0], _c[1], _c[2],
-                site.spike_count, site.avg_intensity);
+            log::info!(
+                "    Stream {} site {}: centroid=[{:.1}, {:.1}, {:.1}], spikes={}, intensity={:.3}",
+                i,
+                j,
+                _c[0],
+                _c[1],
+                _c[2],
+                site.spike_count,
+                site.avg_intensity
+            );
         }
     }
 
-    let mut clustered_sites: Vec<ClusteredBindingSite> = if n_streams == 1 && !per_stream_sites.is_empty() {
-        per_stream_sites.into_iter().next().unwrap_or_default()
-    } else {
-        build_consensus_sites(&per_stream_sites, consensus_threshold, 10.0, &stream_spike_offsets)?
-    };
+    let mut clustered_sites: Vec<ClusteredBindingSite> =
+        if n_streams == 1 && !per_stream_sites.is_empty() {
+            per_stream_sites.into_iter().next().unwrap_or_default()
+        } else {
+            build_consensus_sites(
+                &per_stream_sites,
+                consensus_threshold,
+                10.0,
+                &stream_spike_offsets,
+            )?
+        };
     log::info!("  Consensus binding sites: {}", clustered_sites.len());
 
     // Dimer-aware merge: detect homodimer symmetry and merge symmetric site pairs
@@ -10476,18 +11520,27 @@ fn run_multi_stream_pipeline(
         while merged {
             merged = false;
             'outer: for i in 0..clustered_sites.len() {
-                for j in (i+1)..clustered_sites.len() {
+                for j in (i + 1)..clustered_sites.len() {
                     // Spatial guard: centroid distance ≤ 20Å
                     let ci = clustered_sites[i].geometric_voxel_mass_centroid();
                     let cj = clustered_sites[j].geometric_voxel_mass_centroid();
-                    let dist = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
-                    if dist > 20.0 { continue; }
+                    let dist = ((ci[0] - cj[0]).powi(2)
+                        + (ci[1] - cj[1]).powi(2)
+                        + (ci[2] - cj[2]).powi(2))
+                    .sqrt();
+                    if dist > 20.0 {
+                        continue;
+                    }
 
                     // Compute overlap via spike_indices (voxel_idx sets)
-                    let set_i: std::collections::HashSet<i32> = clustered_sites[i].spike_indices.iter()
+                    let set_i: std::collections::HashSet<i32> = clustered_sites[i]
+                        .spike_indices
+                        .iter()
                         .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
                         .collect();
-                    let set_j: std::collections::HashSet<i32> = clustered_sites[j].spike_indices.iter()
+                    let set_j: std::collections::HashSet<i32> = clustered_sites[j]
+                        .spike_indices
+                        .iter()
                         .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
                         .collect();
 
@@ -10500,7 +11553,12 @@ fn run_multi_stream_pipeline(
 
                     if jaccard >= 0.5 || containment >= 0.7 {
                         // Merge j into i: keep larger spike set as winner
-                        let winner = if clustered_sites[i].spike_count >= clustered_sites[j].spike_count { i } else { j };
+                        let winner =
+                            if clustered_sites[i].spike_count >= clustered_sites[j].spike_count {
+                                i
+                            } else {
+                                j
+                            };
                         let loser = if winner == i { j } else { i };
 
                         // Union spike_indices
@@ -10508,7 +11566,8 @@ fn run_multi_stream_pipeline(
                         clustered_sites[winner].spike_indices.extend(loser_spikes);
                         clustered_sites[winner].spike_indices.sort();
                         clustered_sites[winner].spike_indices.dedup();
-                        clustered_sites[winner].spike_count = clustered_sites[winner].spike_indices.len();
+                        clustered_sites[winner].spike_count =
+                            clustered_sites[winner].spike_indices.len();
 
                         // Recompute centroid from merged spikes
                         let (mut sx, mut sy, mut sz) = (0.0f64, 0.0f64, 0.0f64);
@@ -10541,7 +11600,11 @@ fn run_multi_stream_pipeline(
             }
         }
         if pre_merge != clustered_sites.len() {
-            log::info!("  Overlap merge: {} → {} sites", pre_merge, clustered_sites.len());
+            log::info!(
+                "  Overlap merge: {} → {} sites",
+                pre_merge,
+                clustered_sites.len()
+            );
         }
     }
 
@@ -10551,14 +11614,20 @@ fn run_multi_stream_pipeline(
     // LIGSITE + spike density + SDST gives identical results.
     // The OptiX code is preserved in git history for future re-enablement.
     if !all_stream_spikes.is_empty() && args.rt_clustering {
-        log::warn!("  SNDC (OptiX RT clustering) is deprecated on SM120+. \
-            Using LIGSITE + spike density overlay (identical results, ~2s faster).");
+        log::warn!(
+            "  SNDC (OptiX RT clustering) is deprecated on SM120+. \
+            Using LIGSITE + spike density overlay (identical results, ~2s faster)."
+        );
     }
 
     // Dynamic LIGSITE: Geometry proposes pockets, physics scores them.
     // Runs unconditionally — geometry finds pockets independent of spike-cluster sites.
     log::info!("  Running Dynamic LIGSITE pocket detection...");
-    recalculate_enclosure_volume(&mut clustered_sites, &all_stream_spikes, &topology.positions)?;
+    recalculate_enclosure_volume(
+        &mut clustered_sites,
+        &all_stream_spikes,
+        &topology.positions,
+    )?;
 
     // ========== Cubical PH: density-peak centroid refinement ==========
     // Build a spike density grid and run 0-dim persistent homology to find
@@ -10567,9 +11636,7 @@ fn run_multi_stream_pipeline(
     if !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
         let ph_start = std::time::Instant::now();
         let (grid_origin, grid_dims, grid_spacing) =
-            prism_nhs::cubical_ph::compute_density_grid_bounds(
-                &topology.positions, 10.0, 1.0,
-            );
+            prism_nhs::cubical_ph::compute_density_grid_bounds(&topology.positions, 10.0, 1.0);
 
         let grid_n = grid_dims[0] * grid_dims[1] * grid_dims[2];
         if grid_n > 0 && grid_n < 8_000_000 {
@@ -10591,13 +11658,15 @@ fn run_multi_stream_pipeline(
                             let gx = ix + dx;
                             let gy = iy + dy;
                             let gz = iz + dz;
-                            if gx < 0 || gy < 0 || gz < 0 { continue; }
+                            if gx < 0 || gy < 0 || gz < 0 {
+                                continue;
+                            }
                             let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
                             if gx >= grid_dims[0] || gy >= grid_dims[1] || gz >= grid_dims[2] {
                                 continue;
                             }
-                            let r2 = (dx * dx + dy * dy + dz * dz) as f32
-                                * grid_spacing * grid_spacing;
+                            let r2 =
+                                (dx * dx + dy * dy + dz * dz) as f32 * grid_spacing * grid_spacing;
                             let val = w * (-r2 * inv_2sig2).exp();
                             density[(gz * grid_dims[1] + gy) * grid_dims[0] + gx] += val;
                         }
@@ -10611,8 +11680,8 @@ fn run_multi_stream_pipeline(
                 grid_dims,
                 grid_origin,
                 grid_spacing,
-                0.0,  // min_persistence — filter below
-                10,   // min_component_size (voxels)
+                0.0, // min_persistence — filter below
+                10,  // min_component_size (voxels)
             );
 
             // Adaptive persistence threshold: 10th percentile
@@ -10656,7 +11725,11 @@ fn run_multi_stream_pipeline(
             // emit an ADDITIONAL site at the PH peak location. This captures
             // density maxima that are offset from LIGSITE geometric centroids.
             let mut ph_new_sites: Vec<ClusteredBindingSite> = Vec::new();
-            let max_cluster_id = clustered_sites.iter().map(|s| s.cluster_id).max().unwrap_or(0);
+            let max_cluster_id = clustered_sites
+                .iter()
+                .map(|s| s.cluster_id)
+                .max()
+                .unwrap_or(0);
             let mut next_ph_id = max_cluster_id + 500; // PH site IDs start at +500
 
             for ph in &significant {
@@ -10691,11 +11764,17 @@ fn run_multi_stream_pipeline(
                 }
             }
             if !ph_new_sites.is_empty() {
-                log::info!("  Cubical PH: emitted {} additional PH-peak sites", ph_new_sites.len());
+                log::info!(
+                    "  Cubical PH: emitted {} additional PH-peak sites",
+                    ph_new_sites.len()
+                );
                 clustered_sites.extend(ph_new_sites);
                 // Re-sort after adding PH sites
-                clustered_sites.sort_by(|a, b|
-                    b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+                clustered_sites.sort_by(|a, b| {
+                    b.quality_score
+                        .partial_cmp(&a.quality_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
         } else if grid_n >= 8_000_000 {
             log::warn!(
@@ -10711,7 +11790,12 @@ fn run_multi_stream_pipeline(
 
     let mut pdb_id_map = Vec::new();
     if !topology.residues.is_empty() {
-        let max_idx = topology.residues.iter().map(|r| r.residue_idx).max().unwrap_or(0);
+        let max_idx = topology
+            .residues
+            .iter()
+            .map(|r| r.residue_idx)
+            .max()
+            .unwrap_or(0);
         pdb_id_map.resize(max_idx + 1, 0);
         for r in &topology.residues {
             if r.residue_idx < pdb_id_map.len() {
@@ -10726,9 +11810,12 @@ fn run_multi_stream_pipeline(
     let catalytic_residues = ["GLU", "ASP", "HIS", "SER", "CYS", "LYS"];
     for site in clustered_sites.iter_mut().take(100) {
         site.compute_lining_residues(
-            &topology.positions, &topology.residue_ids,
-            &topology.residue_names, &topology.chain_ids,
-            &pdb_id_map, args.lining_cutoff,
+            &topology.positions,
+            &topology.residue_ids,
+            &topology.residue_names,
+            &topology.chain_ids,
+            &pdb_id_map,
+            args.lining_cutoff,
         );
     }
 
@@ -10772,19 +11859,20 @@ fn run_multi_stream_pipeline(
         // ── O(N+M) Spatial Hash Join for spike→site assignment ──
         // Always use spatial hash regardless of whether spike_indices exist.
         // This gives consistent O(N+M) behavior on 13M+ spike arrays.
-        let mut site_spike_assignments: Vec<Vec<usize>> = vec![Vec::new(); clustered_sites.len().min(100)];
+        let mut site_spike_assignments: Vec<Vec<usize>> =
+            vec![Vec::new(); clustered_sites.len().min(100)];
         {
             let n_sites = clustered_sites.len().min(100);
             let join_t0 = std::time::Instant::now();
             let max_dist = site_radius;
 
             const CELL_SIZE: f32 = 8.0;
-            let mut site_grid: std::collections::HashMap<(i32,i32,i32), Vec<usize>> =
+            let mut site_grid: std::collections::HashMap<(i32, i32, i32), Vec<usize>> =
                 std::collections::HashMap::new();
             let mut site_radii: Vec<f32> = Vec::with_capacity(n_sites);
             for (si, site) in clustered_sites.iter().take(n_sites).enumerate() {
                 let bb = site.bounding_box;
-                let half_diag = (bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]).sqrt() / 2.0;
+                let half_diag = (bb[0] * bb[0] + bb[1] * bb[1] + bb[2] * bb[2]).sqrt() / 2.0;
                 site_radii.push((half_diag + 2.0).clamp(3.0, max_dist));
                 let cx = (site.geometric_voxel_mass_centroid()[0] / CELL_SIZE).floor() as i32;
                 let cy = (site.geometric_voxel_mass_centroid()[1] / CELL_SIZE).floor() as i32;
@@ -10792,8 +11880,10 @@ fn run_multi_stream_pipeline(
                 for dx in -1..=1 {
                     for dy in -1..=1 {
                         for dz in -1..=1 {
-                            site_grid.entry((cx+dx, cy+dy, cz+dz))
-                                .or_default().push(si);
+                            site_grid
+                                .entry((cx + dx, cy + dy, cz + dz))
+                                .or_default()
+                                .push(si);
                         }
                     }
                 }
@@ -10809,12 +11899,15 @@ fn run_multi_stream_pipeline(
                     let mut best_site = usize::MAX;
                     let mut best_d2 = f32::MAX;
                     for &si in nearby {
-                        let dx = spike.position[0] - clustered_sites[si].geometric_voxel_mass_centroid()[0];
-                        let dy = spike.position[1] - clustered_sites[si].geometric_voxel_mass_centroid()[1];
-                        let dz = spike.position[2] - clustered_sites[si].geometric_voxel_mass_centroid()[2];
-                        let d2 = dx*dx + dy*dy + dz*dz;
+                        let dx = spike.position[0]
+                            - clustered_sites[si].geometric_voxel_mass_centroid()[0];
+                        let dy = spike.position[1]
+                            - clustered_sites[si].geometric_voxel_mass_centroid()[1];
+                        let dz = spike.position[2]
+                            - clustered_sites[si].geometric_voxel_mass_centroid()[2];
+                        let d2 = dx * dx + dy * dy + dz * dz;
                         let r = site_radii[si];
-                        if d2 < r*r && d2 < best_d2 {
+                        if d2 < r * r && d2 < best_d2 {
                             best_d2 = d2;
                             best_site = si;
                         }
@@ -10826,8 +11919,13 @@ fn run_multi_stream_pipeline(
             }
             let join_ms = join_t0.elapsed().as_millis();
             let assigned: usize = site_spike_assignments.iter().map(|v| v.len()).sum();
-            log::info!("Spatial hash join: {} spikes → {} sites ({} assigned) in {}ms",
-                all_stream_spikes.len(), n_sites, assigned, join_ms);
+            log::info!(
+                "Spatial hash join: {} spikes → {} sites ({} assigned) in {}ms",
+                all_stream_spikes.len(),
+                n_sites,
+                assigned,
+                join_ms
+            );
         }
 
         // ─── Intensity-Weighted Centroid Refinement (Information Density Center) ───
@@ -10838,7 +11936,9 @@ fn run_multi_stream_pipeline(
             let n_sites = clustered_sites.len().min(100);
             let mut refined = 0usize;
             for si in 0..n_sites {
-                if site_spike_assignments[si].len() < 10 { continue; }
+                if site_spike_assignments[si].len() < 10 {
+                    continue;
+                }
                 let old_c = clustered_sites[si].geometric_voxel_mass_centroid();
                 let mut wx = 0.0f64;
                 let mut wy = 0.0f64;
@@ -10854,31 +11954,40 @@ fn run_multi_stream_pipeline(
                     }
                 }
                 if tw > 0.0 {
-                    let new_c = [
-                        (wx / tw) as f32,
-                        (wy / tw) as f32,
-                        (wz / tw) as f32,
-                    ];
+                    let new_c = [(wx / tw) as f32, (wy / tw) as f32, (wz / tw) as f32];
                     let shift = ((new_c[0] - old_c[0]).powi(2)
                         + (new_c[1] - old_c[1]).powi(2)
-                        + (new_c[2] - old_c[2]).powi(2)).sqrt();
+                        + (new_c[2] - old_c[2]).powi(2))
+                    .sqrt();
                     // Cap shift at 6A to avoid centroid flying off into solvent
                     if shift <= 6.0 {
                         clustered_sites[si].set_geometric_voxel_mass_centroid(new_c);
                         if shift > 0.5 {
-                            log::info!("  IDC refine site {}: shift {:.1}Å → ({:.1},{:.1},{:.1})",
-                                clustered_sites[si].cluster_id, shift,
-                                new_c[0], new_c[1], new_c[2]);
+                            log::info!(
+                                "  IDC refine site {}: shift {:.1}Å → ({:.1},{:.1},{:.1})",
+                                clustered_sites[si].cluster_id,
+                                shift,
+                                new_c[0],
+                                new_c[1],
+                                new_c[2]
+                            );
                             refined += 1;
                         }
                     } else {
-                        log::debug!("  IDC refine site {}: shift {:.1}Å > 6Å cap, keeping original",
-                            clustered_sites[si].cluster_id, shift);
+                        log::debug!(
+                            "  IDC refine site {}: shift {:.1}Å > 6Å cap, keeping original",
+                            clustered_sites[si].cluster_id,
+                            shift
+                        );
                     }
                 }
             }
             if refined > 0 {
-                log::info!("  IDC: refined {}/{} site centroids by intensity weighting", refined, n_sites);
+                log::info!(
+                    "  IDC: refined {}/{} site centroids by intensity weighting",
+                    refined,
+                    n_sites
+                );
             }
         }
 
@@ -10910,20 +12019,22 @@ fn run_multi_stream_pipeline(
             let int_q = (spike.intensity / 30.0).clamp(0.0, 1.0);
 
             // Composite per-spike score: burial is most important
-            per_spike_scores[idx] =
-                0.40 * burial_q +    // pocket burial (dominant)
+            per_spike_scores[idx] = 0.40 * burial_q +    // pocket burial (dominant)
                 0.20 * arom_q +      // aromatic environment
                 0.20 * wd_q +        // water displacement signal
-                0.20 * int_q;        // signal intensity
+                0.20 * int_q; // signal intensity
         }
 
         let mut all_pockets_json = Vec::new();
         let mut cryptic_sites_json = Vec::new();
-        let mut physics_signals: std::collections::HashMap<i32, (f32, f32, f32, f32)> = std::collections::HashMap::new();
+        let mut physics_signals: std::collections::HashMap<i32, (f32, f32, f32, f32)> =
+            std::collections::HashMap::new();
 
         // Per-site STI free energy and UV enrichment (Task 1 + Task 7)
-        let mut sti_results: std::collections::HashMap<i32, BindingFreeEnergy> = std::collections::HashMap::new();
-        let mut uv_enrichment_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+        let mut sti_results: std::collections::HashMap<i32, BindingFreeEnergy> =
+            std::collections::HashMap::new();
+        let mut uv_enrichment_scores: std::collections::HashMap<i32, f32> =
+            std::collections::HashMap::new();
 
         // Tokenized ranker v4 — computed per-site below, emitted into binding_sites.json
         // (always), used as the final sort key when --use-tokenized-ranker is set.
@@ -10941,7 +12052,8 @@ fn run_multi_stream_pipeline(
             warm_hold_steps: protocol.warm_hold_steps,
         };
 
-        let mut spatial_signals: std::collections::HashMap<i32, (f32, f32, f32)> = std::collections::HashMap::new();
+        let mut spatial_signals: std::collections::HashMap<i32, (f32, f32, f32)> =
+            std::collections::HashMap::new();
 
         for (site_idx, site) in clustered_sites.iter_mut().take(100).enumerate() {
             let cx = site.geometric_voxel_mass_centroid()[0];
@@ -10949,14 +12061,16 @@ fn run_multi_stream_pipeline(
             let cz = site.geometric_voxel_mass_centroid()[2];
 
             // Collect cluster-assigned spikes for this site (frame-aligned)
-            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> =
-                site_spike_assignments[site_idx].iter()
-                    .filter_map(|&idx| all_stream_spikes.get(idx))
-                    .collect();
+            let site_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = site_spike_assignments
+                [site_idx]
+                .iter()
+                .filter_map(|&idx| all_stream_spikes.get(idx))
+                .collect();
 
             // Aggregate per-spike scores for this site
             let site_spike_quality: f32 = if !site_spike_assignments[site_idx].is_empty() {
-                let sum: f32 = site_spike_assignments[site_idx].iter()
+                let sum: f32 = site_spike_assignments[site_idx]
+                    .iter()
                     .filter_map(|&idx| per_spike_scores.get(idx))
                     .sum();
                 sum / site_spike_assignments[site_idx].len() as f32
@@ -10986,7 +12100,8 @@ fn run_multi_stream_pipeline(
                     source_counts[src] += 1;
                 }
                 let total = site_spikes.len() as f32;
-                let entropy: f32 = source_counts.iter()
+                let entropy: f32 = source_counts
+                    .iter()
                     .filter(|&&c| c > 0)
                     .map(|&c| {
                         let p = c as f32 / total;
@@ -11019,21 +12134,18 @@ fn run_multi_stream_pipeline(
             // When --use-tokenized-ranker is set, used as the final sort key.
             if let Some(ref ranker) = tokenized_ranker_opt {
                 let intensities: Vec<f32> = site_spikes.iter().map(|s| s.intensity).collect();
-                let unsat_frac = prism_nhs::tokenized_ranker::compute_unsat_frac(&intensities, 0.01);
-                let token = ranker.compute_token(
-                    site_spikes.len() as u64,
-                    n_streams as u32,
-                    unsat_frac,
-                );
+                let unsat_frac =
+                    prism_nhs::tokenized_ranker::compute_unsat_frac(&intensities, 0.01);
+                let token =
+                    ranker.compute_token(site_spikes.len() as u64, n_streams as u32, unsat_frac);
                 let score = ranker.lookup[token];
                 tokenized_scores.insert(site.cluster_id, (score, token, unsat_frac));
             }
 
             // ─── Burial depth: mean nearby residues per spike ───
             let (mean_burial, deep_fraction, burial_score) = if !site_spikes.is_empty() {
-                let burial_values: Vec<f32> = site_spikes.iter()
-                    .map(|s| s.n_residues as f32)
-                    .collect();
+                let burial_values: Vec<f32> =
+                    site_spikes.iter().map(|s| s.n_residues as f32).collect();
                 let mean_b = burial_values.iter().sum::<f32>() / burial_values.len() as f32;
                 let deep_frac = burial_values.iter().filter(|&&b| b >= 5.0).count() as f32
                     / burial_values.len() as f32;
@@ -11049,7 +12161,10 @@ fn run_multi_stream_pipeline(
             };
 
             // Store physics signals for JSON output later
-            physics_signals.insert(site.cluster_id, (onset_score, source_diversity, mean_burial, burial_score));
+            physics_signals.insert(
+                site.cluster_id,
+                (onset_score, source_diversity, mean_burial, burial_score),
+            );
 
             // ─── Task 1: Per-site STI (Jarzynski free energy) ───
             // Compute binding free energy from spike thermodynamic integration.
@@ -11060,8 +12175,8 @@ fn run_multi_stream_pipeline(
                     site_spikes.iter().map(|&s| *s).collect();
                 let bfe = compute_binding_free_energy(
                     &owned_spikes,
-                    None,  // hysteresis bins not available per-site
-                    None,  // no branching theory delta_g
+                    None, // hysteresis bins not available per-site
+                    None, // no branching theory delta_g
                     &sti_config,
                 );
                 log::info!("  Site {}: STI delta_g={:.3} kcal/mol (effective={:.3}, n_voxels={}, n_spikes={}, kinetic_acc={:.3})",
@@ -11093,9 +12208,21 @@ fn run_multi_stream_pipeline(
                 }
                 let on_fraction = burst_duration as f32 / burst_interval as f32;
                 let off_fraction = 1.0 - on_fraction;
-                let uv_on_rate = if on_fraction > 0.0 { uv_on_count as f32 / on_fraction } else { 0.0 };
-                let uv_off_rate = if off_fraction > 0.0 { uv_off_count as f32 / off_fraction } else { 0.0 };
-                let enrichment = if uv_off_rate > 0.0 { uv_on_rate / uv_off_rate } else { 0.0 };
+                let uv_on_rate = if on_fraction > 0.0 {
+                    uv_on_count as f32 / on_fraction
+                } else {
+                    0.0
+                };
+                let uv_off_rate = if off_fraction > 0.0 {
+                    uv_off_count as f32 / off_fraction
+                } else {
+                    0.0
+                };
+                let enrichment = if uv_off_rate > 0.0 {
+                    uv_on_rate / uv_off_rate
+                } else {
+                    0.0
+                };
                 let score = (enrichment / 3.0).min(1.0);
                 log::info!("  Site {}: UV enrichment={:.3} (on={}, off={}, burst_interval={}, burst_duration={}) uv_score={:.3}",
                     site.cluster_id, enrichment, uv_on_count, uv_off_count, burst_interval, burst_duration, score);
@@ -11121,17 +12248,25 @@ fn run_multi_stream_pipeline(
 
             // Per-frame volume proxy: spike_count * voxel_volume (27 Å³ for 3Å voxel)
             let voxel_vol = 27.0f32;
-            let volumes: Vec<f64> = frame_spike_counts.iter()
+            let volumes: Vec<f64> = frame_spike_counts
+                .iter()
                 .map(|&c| (c as f32 * voxel_vol) as f64)
                 .collect();
             let mean_volume: f64 = if !volumes.is_empty() {
                 volumes.iter().sum::<f64>() / volumes.len() as f64
-            } else { 0.0 };
+            } else {
+                0.0
+            };
             let cv_volume = if mean_volume > 0.0 {
-                let variance = volumes.iter().map(|v| (v - mean_volume).powi(2)).sum::<f64>()
+                let variance = volumes
+                    .iter()
+                    .map(|v| (v - mean_volume).powi(2))
+                    .sum::<f64>()
                     / volumes.len() as f64;
                 variance.sqrt() / mean_volume
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
             all_pockets_json.push(serde_json::json!({
                 "site_id": site.cluster_id,
@@ -11150,9 +12285,19 @@ fn run_multi_stream_pipeline(
                 let old_drug = site.druggability.overall;
                 site.druggability.overall *= penalty;
                 site.druggability.is_druggable = site.druggability.overall >= 0.45;
-                log::info!("  Site {}: CV penalty cv={:.4} factor={:.3} drug {:.3}->{:.3}{}",
-                    site.cluster_id, cv_volume, penalty, old_drug, site.druggability.overall,
-                    if site.druggability.is_druggable { "" } else { " NOT_DRUGGABLE" });
+                log::info!(
+                    "  Site {}: CV penalty cv={:.4} factor={:.3} drug {:.3}->{:.3}{}",
+                    site.cluster_id,
+                    cv_volume,
+                    penalty,
+                    old_drug,
+                    site.druggability.overall,
+                    if site.druggability.is_druggable {
+                        ""
+                    } else {
+                        " NOT_DRUGGABLE"
+                    }
+                );
             }
 
             // ---- Physics-informed quality reranking ----
@@ -11175,31 +12320,48 @@ fn run_multi_stream_pipeline(
                     let dx = s.position[0] - mx;
                     let dy = s.position[1] - my;
                     let dz = s.position[2] - mz;
-                    cov[0] += dx * dx; cov[1] += dx * dy; cov[2] += dx * dz;
-                    cov[3] += dy * dy; cov[4] += dy * dz; cov[5] += dz * dz;
+                    cov[0] += dx * dx;
+                    cov[1] += dx * dy;
+                    cov[2] += dx * dz;
+                    cov[3] += dy * dy;
+                    cov[4] += dy * dz;
+                    cov[5] += dz * dz;
                 }
-                for c in cov.iter_mut() { *c /= n; }
+                for c in cov.iter_mut() {
+                    *c /= n;
+                }
 
                 // Eigenvalues via Cardano's formula for 3x3 symmetric matrix
-                let a = cov[0]; let b = cov[3]; let c_val = cov[5];
-                let d = cov[1]; let e = cov[2]; let f = cov[4];
+                let a = cov[0];
+                let b = cov[3];
+                let c_val = cov[5];
+                let d = cov[1];
+                let e = cov[2];
+                let f = cov[4];
 
-                let p1 = d*d + e*e + f*f;
+                let p1 = d * d + e * e + f * f;
                 if p1 < 1e-10 {
                     let mut eigs = [a, b, c_val];
                     eigs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
-                    if eigs[2] > 1e-10 { eigs[0] / eigs[2] } else { 0.0 }
+                    if eigs[2] > 1e-10 {
+                        eigs[0] / eigs[2]
+                    } else {
+                        0.0
+                    }
                 } else {
                     let q = (a + b + c_val) / 3.0;
                     let p2 = (a - q).powi(2) + (b - q).powi(2) + (c_val - q).powi(2) + 2.0 * p1;
                     let p = (p2 / 6.0).sqrt();
 
-                    let b00 = (a - q) / p; let b11 = (b - q) / p; let b22 = (c_val - q) / p;
-                    let b01 = d / p; let b02 = e / p; let b12 = f / p;
+                    let b00 = (a - q) / p;
+                    let b11 = (b - q) / p;
+                    let b22 = (c_val - q) / p;
+                    let b01 = d / p;
+                    let b02 = e / p;
+                    let b12 = f / p;
 
-                    let det_b = b00 * (b11 * b22 - b12 * b12)
-                              - b01 * (b01 * b22 - b12 * b02)
-                              + b02 * (b01 * b12 - b11 * b02);
+                    let det_b = b00 * (b11 * b22 - b12 * b12) - b01 * (b01 * b22 - b12 * b02)
+                        + b02 * (b01 * b12 - b11 * b02);
 
                     let half_det = (det_b / 2.0).clamp(-1.0, 1.0);
                     let phi = half_det.acos() / 3.0;
@@ -11224,11 +12386,13 @@ fn run_multi_stream_pipeline(
             // have intermittent strong dewetting events (pocket opening).
             // Rank-normalize: highest variance site = 1.0, lowest = 0.0.
             let wd_coherence = if site_spikes.len() >= 10 {
-                let mean_wd: f32 = site_spikes.iter()
-                    .map(|s| s.wd_change).sum::<f32>() / site_spikes.len() as f32;
-                let var_wd: f32 = site_spikes.iter()
+                let mean_wd: f32 =
+                    site_spikes.iter().map(|s| s.wd_change).sum::<f32>() / site_spikes.len() as f32;
+                let var_wd: f32 = site_spikes
+                    .iter()
                     .map(|s| (s.wd_change - mean_wd).powi(2))
-                    .sum::<f32>() / site_spikes.len() as f32;
+                    .sum::<f32>()
+                    / site_spikes.len() as f32;
                 // Store raw variance; will be rank-normalized in v5 block
                 var_wd
             } else {
@@ -11241,12 +12405,17 @@ fn run_multi_stream_pipeline(
                 // pocket dynamics. With dt=0.002ps and fused_steps=6 (engine default),
                 // 200 steps ≈ 0.4ps windows — enough to see water entry/exit events.
                 let breath_frame_window = 200i32;
-                let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> = std::collections::HashMap::new();
+                let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> =
+                    std::collections::HashMap::new();
                 for s in &site_spikes {
                     let frame = s.timestep / breath_frame_window;
-                    frame_burials.entry(frame).or_default().push(s.n_residues as f32);
+                    frame_burials
+                        .entry(frame)
+                        .or_default()
+                        .push(s.n_residues as f32);
                 }
-                let frame_means: Vec<f32> = frame_burials.values()
+                let frame_means: Vec<f32> = frame_burials
+                    .values()
                     .filter(|v| !v.is_empty())
                     .map(|v| v.iter().sum::<f32>() / v.len() as f32)
                     .collect();
@@ -11254,34 +12423,49 @@ fn run_multi_stream_pipeline(
                 if frame_means.len() >= 3 {
                     let global_mean = frame_means.iter().sum::<f32>() / frame_means.len() as f32;
                     if global_mean > 0.5 {
-                        let variance = frame_means.iter()
+                        let variance = frame_means
+                            .iter()
                             .map(|&m| (m - global_mean).powi(2))
-                            .sum::<f32>() / frame_means.len() as f32;
+                            .sum::<f32>()
+                            / frame_means.len() as f32;
                         let cv = variance.sqrt() / global_mean;
                         // Normalize: CV of 0.5 = maximum breathing score.
                         // Previous /2.0 made even moderate CV (~0.15-0.3) invisible.
                         (cv / 0.5).clamp(0.0, 1.0)
-                    } else { 0.0 }
-                } else { 0.0 }
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                }
             } else {
                 0.0
             };
 
-            log::info!("  Site {}: spatial signals [sphericity={:.3} wdCoherence={:.3} breathing={:.3}]",
-                site.cluster_id, sphericity_score, wd_coherence, breathing_score);
-            spatial_signals.insert(site.cluster_id, (sphericity_score, wd_coherence, breathing_score));
+            log::info!(
+                "  Site {}: spatial signals [sphericity={:.3} wdCoherence={:.3} breathing={:.3}]",
+                site.cluster_id,
+                sphericity_score,
+                wd_coherence,
+                breathing_score
+            );
+            spatial_signals.insert(
+                site.cluster_id,
+                (sphericity_score, wd_coherence, breathing_score),
+            );
 
             // ─── COMPOSITE PHYSICS RANKING (v5) — applied AFTER all signals computed ───
             {
-                let is_viable_pocket = mean_burial >= 2.0
-                    && site_spikes.len() >= 20
-                    && site.estimated_volume >= 30.0;
+                let is_viable_pocket =
+                    mean_burial >= 2.0 && site_spikes.len() >= 20 && site.estimated_volume >= 30.0;
 
                 // Recompute enclosure (originally in inner scope above)
                 let n_lining_f = site.lining_residues.len() as f32;
                 let encl = if site.estimated_volume > 1.0 {
                     n_lining_f / site.estimated_volume.powf(0.667)
-                } else { n_lining_f };
+                } else {
+                    n_lining_f
+                };
 
                 // delta_g: STI returns POSITIVE values (~6 kcal/mol) for this system.
                 // Lower positive = more favorable (closer to zero = less unfavorable).
@@ -11290,7 +12474,8 @@ fn run_multi_stream_pipeline(
                 let delta_g_score = if let Some(bfe) = sti_results.get(&site.cluster_id) {
                     let dg = bfe.effective_delta_g_kcal_mol as f32;
                     // Collect all dG values for this protein to rank-normalize
-                    let all_dg: Vec<f32> = sti_results.values()
+                    let all_dg: Vec<f32> = sti_results
+                        .values()
                         .map(|b| b.effective_delta_g_kcal_mol as f32)
                         .collect();
                     if all_dg.len() > 1 {
@@ -11306,19 +12491,27 @@ fn run_multi_stream_pipeline(
                     0.3
                 };
 
-                let uv_s = uv_enrichment_scores.get(&site.cluster_id).copied().unwrap_or(0.0);
+                let uv_s = uv_enrichment_scores
+                    .get(&site.cluster_id)
+                    .copied()
+                    .unwrap_or(0.0);
 
                 // Per-spike quality (recompute — was in inner scope)
                 let spk_q: f32 = if !site_spikes.is_empty() {
-                    let sum: f32 = site_spikes.iter().map(|s| {
-                        let b = (s.n_residues as f32 / 6.0).min(1.0);
-                        let a = (s.n_nearby_excited as f32 / 3.0).min(1.0);
-                        let w = (s.wd_change * 20.0).min(1.0);
-                        let i = (s.intensity / 30.0).min(1.0);
-                        0.40 * b + 0.20 * a + 0.20 * w + 0.20 * i
-                    }).sum();
+                    let sum: f32 = site_spikes
+                        .iter()
+                        .map(|s| {
+                            let b = (s.n_residues as f32 / 6.0).min(1.0);
+                            let a = (s.n_nearby_excited as f32 / 3.0).min(1.0);
+                            let w = (s.wd_change * 20.0).min(1.0);
+                            let i = (s.intensity / 30.0).min(1.0);
+                            0.40 * b + 0.20 * a + 0.20 * w + 0.20 * i
+                        })
+                        .sum();
                     sum / site_spikes.len() as f32
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
 
                 let old_q = site.quality_score;
 
@@ -11331,7 +12524,9 @@ fn run_multi_stream_pipeline(
                         let max_w = all_wd.iter().cloned().fold(f32::MIN, f32::max);
                         let range = (max_w - min_w).max(1e-10);
                         ((wd_coherence - min_w) / range).clamp(0.0, 1.0)
-                    } else { 0.5 }
+                    } else {
+                        0.5
+                    }
                 };
 
                 // Lining residue count: use n_lining DIRECTLY (not divided by volume).
@@ -11345,7 +12540,9 @@ fn run_multi_stream_pipeline(
                 // This signal was completely missing from v6 — critical omission.
                 let log_spike_norm = if !site_spikes.is_empty() {
                     ((site_spikes.len() as f32).ln() / 14.0).clamp(0.0, 1.0) // ln(1M)≈14
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
 
                 // Hysteresis asymmetry: pull directly from PRISM-Therm
                 // if available (computed later in thermo-rerank, but we can
@@ -11360,8 +12557,7 @@ fn run_multi_stream_pipeline(
                     // 1. REMOVED delta_g (Jarzynski produces -2795 to +147 kcal/mol garbage)
                     // 2. REPLACED lining_density with raw n_lining (no vol divisor)
                     // 3. ADDED log_spike_count (correct sites have 4x more spikes)
-                    site.quality_score =
-                        0.20 * burial_score +               // per-spike burial depth
+                    site.quality_score = 0.20 * burial_score +               // per-spike burial depth
                         0.16 * lining_score +               // raw n_lining (no vol penalty!)
                         0.14 * log_spike_norm +             // NEW: log(spike_count) — was missing!
                         0.10 * encl.clamp(0.0, 2.0) / 2.0 + // enclosure (kept but reduced)
@@ -11391,12 +12587,17 @@ fn run_multi_stream_pipeline(
             // SKIP for mega-pockets (>500Å³) — LIGSITE geometric centroid is
             // empirically validated as superior (1hhp: 1.6Å geometric vs 9.7Å
             // spike-weighted). Peak centroid would negate that fix.
-            if site.estimated_volume > 300.0 && site.estimated_volume <= 500.0 && site_spikes.len() >= 20 {
+            if site.estimated_volume > 300.0
+                && site.estimated_volume <= 500.0
+                && site_spikes.len() >= 20
+            {
                 // Collect top 50 hottest spikes by intensity
-                let mut top_spikes: Vec<(f32, [f32; 3])> = site_spikes.iter()
+                let mut top_spikes: Vec<(f32, [f32; 3])> = site_spikes
+                    .iter()
                     .map(|s| (s.intensity, s.position))
                     .collect();
-                top_spikes.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                top_spikes
+                    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 top_spikes.truncate(50);
 
                 let mut pw = [0.0f64; 3];
@@ -11414,34 +12615,46 @@ fn run_multi_stream_pipeline(
                         (pw[1] / pws) as f32,
                         (pw[2] / pws) as f32,
                     ];
-                    let dist = ((pc[0] - cx).powi(2) + (pc[1] - cy).powi(2) + (pc[2] - cz).powi(2)).sqrt();
+                    let dist =
+                        ((pc[0] - cx).powi(2) + (pc[1] - cy).powi(2) + (pc[2] - cz).powi(2)).sqrt();
                     let max_shift = 4.0f32; // Capped at 4A — prevents centroid from jumping across pocket
                     if dist > 2.0 && dist < max_shift {
-                        log::info!("  Site {}: peak centroid shift {:.1}Å (vol={:.0}Å³, {} top spikes)",
-                            site.cluster_id, dist, site.estimated_volume, top_spikes.len());
+                        log::info!(
+                            "  Site {}: peak centroid shift {:.1}Å (vol={:.0}Å³, {} top spikes)",
+                            site.cluster_id,
+                            dist,
+                            site.estimated_volume,
+                            top_spikes.len()
+                        );
                         site.set_geometric_voxel_mass_centroid(pc);
                     }
                 }
             }
 
             // spike_frames: frames where this site had spikes
-            let spike_frames: Vec<usize> = frame_spike_counts.iter().enumerate()
+            let spike_frames: Vec<usize> = frame_spike_counts
+                .iter()
+                .enumerate()
                 .filter(|(_, &c)| c > 0)
                 .map(|(i, _)| i)
                 .collect();
 
             // spike_amplitudes: mean intensity per active frame
-            let spike_amplitudes: Vec<f32> = spike_frames.iter()
+            let spike_amplitudes: Vec<f32> = spike_frames
+                .iter()
                 .map(|&f| {
                     if frame_spike_counts[f] > 0 {
                         frame_intensity_sums[f] / frame_spike_counts[f] as f32
-                    } else { 0.0 }
+                    } else {
+                        0.0
+                    }
                 })
                 .collect();
 
             // inter_spike_intervals: gaps between active frames
             let inter_spike_intervals: Vec<f32> = if spike_frames.len() >= 2 {
-                spike_frames.windows(2)
+                spike_frames
+                    .windows(2)
                     .map(|w| (w[1] - w[0]) as f32)
                     .collect()
             } else {
@@ -11468,7 +12681,11 @@ fn run_multi_stream_pipeline(
         // binding site as a sub-region. Split into k=3 sub-sites via k-means
         // on spike positions to surface the binding hotspot centroid.
         {
-            let max_id_before = clustered_sites.iter().map(|s| s.cluster_id).max().unwrap_or(0);
+            let max_id_before = clustered_sites
+                .iter()
+                .map(|s| s.cluster_id)
+                .max()
+                .unwrap_or(0);
             let mut next_sub_id = max_id_before + 1000; // sub-site IDs start at +1000
             let mut new_sub_sites: Vec<ClusteredBindingSite> = Vec::new();
 
@@ -11477,7 +12694,9 @@ fn run_multi_stream_pipeline(
                     continue;
                 }
                 // Collect spike positions for this site
-                let spike_positions: Vec<[f32; 3]> = site.spike_indices.iter()
+                let spike_positions: Vec<[f32; 3]> = site
+                    .spike_indices
+                    .iter()
                     .filter_map(|&idx| all_stream_spikes.get(idx))
                     .map(|s| s.position)
                     .collect();
@@ -11491,20 +12710,33 @@ fn run_multi_stream_pipeline(
                 // Count spikes per sub-cluster
                 let mut counts = [0usize; 3];
                 for p in &spike_positions {
-                    let nearest = centers.iter().enumerate()
+                    let nearest = centers
+                        .iter()
+                        .enumerate()
                         .min_by(|(_, a), (_, b)| {
-                            let da = (p[0]-a[0]).powi(2) + (p[1]-a[1]).powi(2) + (p[2]-a[2]).powi(2);
-                            let db = (p[0]-b[0]).powi(2) + (p[1]-b[1]).powi(2) + (p[2]-b[2]).powi(2);
+                            let da = (p[0] - a[0]).powi(2)
+                                + (p[1] - a[1]).powi(2)
+                                + (p[2] - a[2]).powi(2);
+                            let db = (p[0] - b[0]).powi(2)
+                                + (p[1] - b[1]).powi(2)
+                                + (p[2] - b[2]).powi(2);
                             da.partial_cmp(&db).unwrap()
                         })
-                        .map(|(i, _)| i).unwrap();
+                        .map(|(i, _)| i)
+                        .unwrap();
                     counts[nearest] += 1;
                 }
 
                 let total_spikes = spike_positions.len();
-                log::info!("  K-means split site {} (vol={:.0}A^3, {} spikes) -> 3 sub-sites [{}, {}, {}]",
-                    site.cluster_id, site.estimated_volume, total_spikes,
-                    counts[0], counts[1], counts[2]);
+                log::info!(
+                    "  K-means split site {} (vol={:.0}A^3, {} spikes) -> 3 sub-sites [{}, {}, {}]",
+                    site.cluster_id,
+                    site.estimated_volume,
+                    total_spikes,
+                    counts[0],
+                    counts[1],
+                    counts[2]
+                );
 
                 for (ki, center) in centers.iter().enumerate() {
                     // Skip degenerate clusters with very few spikes
@@ -11519,15 +12751,24 @@ fn run_multi_stream_pipeline(
                     sub_site.spike_count = counts[ki];
                     sub_site.quality_score = site.quality_score * spike_frac;
                     sub_site.classification = SiteClassification::Cryptic;
-                    log::info!("    Sub-site {}: centroid ({:.1},{:.1},{:.1}), {} spikes, q={:.3}",
-                        next_sub_id, center[0], center[1], center[2],
-                        counts[ki], sub_site.quality_score);
+                    log::info!(
+                        "    Sub-site {}: centroid ({:.1},{:.1},{:.1}), {} spikes, q={:.3}",
+                        next_sub_id,
+                        center[0],
+                        center[1],
+                        center[2],
+                        counts[ki],
+                        sub_site.quality_score
+                    );
                     next_sub_id += 1;
                     new_sub_sites.push(sub_site);
                 }
             }
             if !new_sub_sites.is_empty() {
-                log::info!("  K-means splitting: added {} sub-sites from mega-pockets", new_sub_sites.len());
+                log::info!(
+                    "  K-means splitting: added {} sub-sites from mega-pockets",
+                    new_sub_sites.len()
+                );
                 clustered_sites.extend(new_sub_sites);
             }
         }
@@ -11537,7 +12778,11 @@ fn run_multi_stream_pipeline(
         // peak_centroid (top-50 intensity^2-weighted). The copy has slightly
         // lower quality_score (0.95x) to avoid always beating the original.
         {
-            let max_id_before = clustered_sites.iter().map(|s| s.cluster_id).max().unwrap_or(0);
+            let max_id_before = clustered_sites
+                .iter()
+                .map(|s| s.cluster_id)
+                .max()
+                .unwrap_or(0);
             let mut next_peak_id = max_id_before + 2000; // peak centroid IDs start at +2000
             let mut peak_sites: Vec<ClusteredBindingSite> = Vec::new();
 
@@ -11546,11 +12791,14 @@ fn run_multi_stream_pipeline(
                     continue;
                 }
                 // Collect top 50 hottest spikes by intensity
-                let mut top_spikes: Vec<(f32, [f32; 3])> = site.spike_indices.iter()
+                let mut top_spikes: Vec<(f32, [f32; 3])> = site
+                    .spike_indices
+                    .iter()
                     .filter_map(|&idx| all_stream_spikes.get(idx))
                     .map(|s| (s.intensity, s.position))
                     .collect();
-                top_spikes.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                top_spikes
+                    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 top_spikes.truncate(50);
 
                 if top_spikes.is_empty() {
@@ -11576,7 +12824,8 @@ fn run_multi_stream_pipeline(
                 ];
                 let dist = ((pc[0] - site.geometric_voxel_mass_centroid()[0]).powi(2)
                     + (pc[1] - site.geometric_voxel_mass_centroid()[1]).powi(2)
-                    + (pc[2] - site.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
+                    + (pc[2] - site.geometric_voxel_mass_centroid()[2]).powi(2))
+                .sqrt();
 
                 // Only emit if peak centroid differs by > 2A from original
                 if dist > 2.0 {
@@ -11592,7 +12841,10 @@ fn run_multi_stream_pipeline(
                 }
             }
             if !peak_sites.is_empty() {
-                log::info!("  Dual centroid emission: added {} peak-centroid sites", peak_sites.len());
+                log::info!(
+                    "  Dual centroid emission: added {} peak-centroid sites",
+                    peak_sites.len()
+                );
                 clustered_sites.extend(peak_sites);
             }
         }
@@ -11683,7 +12935,8 @@ fn run_multi_stream_pipeline(
                     // Only emit if it differs from original centroid by > 1.5Å
                     let shift = ((tri_centroid[0] - cx).powi(2)
                         + (tri_centroid[1] - cy).powi(2)
-                        + (tri_centroid[2] - cz).powi(2)).sqrt();
+                        + (tri_centroid[2] - cz).powi(2))
+                    .sqrt();
 
                     if shift > 1.5 && shift < 15.0 {
                         let mut tri_site = site.clone();
@@ -11691,7 +12944,10 @@ fn run_multi_stream_pipeline(
                         tri_site.set_geometric_voxel_mass_centroid(tri_centroid);
                         tri_site.quality_score *= 0.93; // slight discount
                         tri_site.classification = SiteClassification::from_properties(
-                            site.spike_count, site.estimated_volume, site.avg_intensity);
+                            site.spike_count,
+                            site.estimated_volume,
+                            site.avg_intensity,
+                        );
 
                         log::info!("  Triangulation centroid site {}: ({:.1},{:.1},{:.1}), {:.1}A from original site {}, q={:.3}",
                             tri_site.cluster_id, tri_centroid[0], tri_centroid[1], tri_centroid[2],
@@ -11702,7 +12958,10 @@ fn run_multi_stream_pipeline(
                 }
             }
             if !tri_sites.is_empty() {
-                log::info!("  Triangulation centroid emission: added {} convergence-point sites", tri_sites.len());
+                log::info!(
+                    "  Triangulation centroid emission: added {} convergence-point sites",
+                    tri_sites.len()
+                );
                 clustered_sites.extend(tri_sites);
             }
         }
@@ -11726,17 +12985,22 @@ fn run_multi_stream_pipeline(
                 let mut ts: Vec<i32> = all_stream_spikes.iter().map(|s| s.timestep).collect();
                 ts.sort();
                 ts[ts.len() / 2]
-            } else { 0 };
+            } else {
+                0
+            };
             // Median wd_change for "high displacement" threshold
             let wd_threshold = {
-                let mut wds: Vec<f32> = all_stream_spikes.iter()
+                let mut wds: Vec<f32> = all_stream_spikes
+                    .iter()
                     .filter(|s| s.wd_change > 0.001)
                     .map(|s| s.wd_change)
                     .collect();
                 if wds.len() > 10 {
                     wds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                    wds[wds.len() * 3 / 4]  // 75th percentile = "high" displacement
-                } else { 0.02 }
+                    wds[wds.len() * 3 / 4] // 75th percentile = "high" displacement
+                } else {
+                    0.02
+                }
             };
 
             for site in &clustered_sites {
@@ -11745,15 +13009,16 @@ fn run_multi_stream_pipeline(
                 }
 
                 // Filter to frustrated water spikes: LIF dewetting + high wd_change + early onset
-                let frustrated_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> =
-                    site.spike_indices.iter()
-                        .filter_map(|&idx| all_stream_spikes.get(idx))
-                        .filter(|s| {
-                            s.wd_change >= wd_threshold      // high water displacement
+                let frustrated_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = site
+                    .spike_indices
+                    .iter()
+                    .filter_map(|&idx| all_stream_spikes.get(idx))
+                    .filter(|s| {
+                        s.wd_change >= wd_threshold      // high water displacement
                             && s.timestep <= median_ts        // early onset (frustrated = low barrier)
                             && (s.spike_source == 2 || s.spike_source == 0) // LIF/dewetting channel
-                        })
-                        .collect();
+                    })
+                    .collect();
 
                 if frustrated_spikes.len() < 10 {
                     continue;
@@ -11780,7 +13045,8 @@ fn run_multi_stream_pipeline(
                     let cx = site.geometric_voxel_mass_centroid()[0];
                     let cy = site.geometric_voxel_mass_centroid()[1];
                     let cz = site.geometric_voxel_mass_centroid()[2];
-                    let shift = ((fc[0] - cx).powi(2) + (fc[1] - cy).powi(2) + (fc[2] - cz).powi(2)).sqrt();
+                    let shift =
+                        ((fc[0] - cx).powi(2) + (fc[1] - cy).powi(2) + (fc[2] - cz).powi(2)).sqrt();
 
                     if shift > 1.0 && shift < 20.0 {
                         let mut fs_site = site.clone();
@@ -11798,7 +13064,10 @@ fn run_multi_stream_pipeline(
                 }
             }
             if !frustrated_sites.is_empty() {
-                log::info!("  Frustrated solvent emission: added {} thermodynamic hotspot sites", frustrated_sites.len());
+                log::info!(
+                    "  Frustrated solvent emission: added {} thermodynamic hotspot sites",
+                    frustrated_sites.len()
+                );
                 clustered_sites.extend(frustrated_sites);
             }
         }
@@ -11817,17 +13086,27 @@ fn run_multi_stream_pipeline(
                 let ci = clustered_sites[i].geometric_voxel_mass_centroid();
                 let mut n_nearby = 0u32;
                 for j in 0..clustered_sites.len() {
-                    if i == j { continue; }
+                    if i == j {
+                        continue;
+                    }
                     let cj = clustered_sites[j].geometric_voxel_mass_centroid();
-                    let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
-                    if d < consensus_radius { n_nearby += 1; }
+                    let d = ((ci[0] - cj[0]).powi(2)
+                        + (ci[1] - cj[1]).powi(2)
+                        + (ci[2] - cj[2]).powi(2))
+                    .sqrt();
+                    if d < consensus_radius {
+                        n_nearby += 1;
+                    }
                 }
                 // Consensus boost: each nearby candidate adds 5% quality
                 // Max 25% boost (5 nearby = strong consensus)
                 let consensus_factor = 1.0 + 0.05 * (n_nearby as f32).min(5.0);
                 clustered_sites[i].quality_score *= consensus_factor;
             }
-            log::info!("  Volumetric consensus scoring applied to {} candidates", clustered_sites.len());
+            log::info!(
+                "  Volumetric consensus scoring applied to {} candidates",
+                clustered_sites.len()
+            );
         }
 
         // ── Mean-Shift Centroid Refinement ──
@@ -11845,7 +13124,9 @@ fn run_multi_stream_pipeline(
             let mut n_shifted = 0u32;
 
             for site in clustered_sites.iter_mut() {
-                if site.spike_indices.len() < 10 { continue; }
+                if site.spike_indices.len() < 10 {
+                    continue;
+                }
 
                 let mut cx = site.geometric_voxel_mass_centroid()[0];
                 let mut cy = site.geometric_voxel_mass_centroid()[1];
@@ -11885,7 +13166,8 @@ fn run_multi_stream_pipeline(
 
                 let shift = ((cx - site.geometric_voxel_mass_centroid()[0]).powi(2)
                     + (cy - site.geometric_voxel_mass_centroid()[1]).powi(2)
-                    + (cz - site.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
+                    + (cz - site.geometric_voxel_mass_centroid()[2]).powi(2))
+                .sqrt();
                 // Only apply if shift is meaningful (>0.5Å) but not excessive (<3Å)
                 // Large shifts indicate the spike cloud is far from the centroid,
                 // which usually means the centroid is better as-is.
@@ -11896,14 +13178,19 @@ fn run_multi_stream_pipeline(
                 }
             }
             if n_shifted > 0 {
-                log::info!("  Mean-shift refinement: {}/{} sites shifted, avg {:.1}A",
-                    n_shifted, clustered_sites.len(), total_shift / n_shifted as f32);
+                log::info!(
+                    "  Mean-shift refinement: {}/{} sites shifted, avg {:.1}A",
+                    n_shifted,
+                    clustered_sites.len(),
+                    total_shift / n_shifted as f32
+                );
             }
         }
 
         // ══════════════════════════════════════════════════════════════
         // Store engine scores per site for Boltzmann training export
-        let mut engine_scores: std::collections::HashMap<i32, (f32, f32, f32, f32)> = std::collections::HashMap::new();
+        let mut engine_scores: std::collections::HashMap<i32, (f32, f32, f32, f32)> =
+            std::collections::HashMap::new();
 
         // MULTI-ENGINE COBB-DOUGLAS RANKING (Package B)
         // Four orthogonal engines combined via geometric mean.
@@ -11925,21 +13212,54 @@ fn run_multi_stream_pipeline(
                 let mut scores = std::collections::HashMap::new();
                 for (i, site) in clustered_sites.iter().enumerate() {
                     let sid = site.cluster_id;
-                    let my_type = if sid >= 4000 { 5 } else if sid >= 3000 { 4 }
-                        else if sid >= 2000 { 3 } else if sid >= 1000 { 2 }
-                        else if sid >= 500 { 1 } else { 0 };
+                    let my_type = if sid >= 4000 {
+                        5
+                    } else if sid >= 3000 {
+                        4
+                    } else if sid >= 2000 {
+                        3
+                    } else if sid >= 1000 {
+                        2
+                    } else if sid >= 500 {
+                        1
+                    } else {
+                        0
+                    };
                     let mut orthogonal_types = std::collections::HashSet::new();
                     for (j, other) in clustered_sites.iter().enumerate() {
-                        if i == j { continue; }
+                        if i == j {
+                            continue;
+                        }
                         let oid = other.cluster_id;
-                        let otype = if oid >= 4000 { 5 } else if oid >= 3000 { 4 }
-                            else if oid >= 2000 { 3 } else if oid >= 1000 { 2 }
-                            else if oid >= 500 { 1 } else { 0 };
-                        if otype == my_type { continue; }
-                        let d = ((site.geometric_voxel_mass_centroid()[0]-other.geometric_voxel_mass_centroid()[0]).powi(2)
-                               + (site.geometric_voxel_mass_centroid()[1]-other.geometric_voxel_mass_centroid()[1]).powi(2)
-                               + (site.geometric_voxel_mass_centroid()[2]-other.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
-                        if d < 4.0 { orthogonal_types.insert(otype); }
+                        let otype = if oid >= 4000 {
+                            5
+                        } else if oid >= 3000 {
+                            4
+                        } else if oid >= 2000 {
+                            3
+                        } else if oid >= 1000 {
+                            2
+                        } else if oid >= 500 {
+                            1
+                        } else {
+                            0
+                        };
+                        if otype == my_type {
+                            continue;
+                        }
+                        let d = ((site.geometric_voxel_mass_centroid()[0]
+                            - other.geometric_voxel_mass_centroid()[0])
+                            .powi(2)
+                            + (site.geometric_voxel_mass_centroid()[1]
+                                - other.geometric_voxel_mass_centroid()[1])
+                                .powi(2)
+                            + (site.geometric_voxel_mass_centroid()[2]
+                                - other.geometric_voxel_mass_centroid()[2])
+                                .powi(2))
+                        .sqrt();
+                        if d < 4.0 {
+                            orthogonal_types.insert(otype);
+                        }
                     }
                     let vcs = match orthogonal_types.len() {
                         0 => eps * 2.0,
@@ -11954,11 +13274,13 @@ fn run_multi_stream_pipeline(
 
             // Fibonacci sphere directions
             let golden_ratio = (1.0 + 5.0f32.sqrt()) / 2.0;
-            let ray_dirs: Vec<[f32; 3]> = (0..n_rays).map(|i| {
-                let theta = 2.0 * std::f32::consts::PI * i as f32 / golden_ratio;
-                let phi = (1.0 - 2.0 * (i as f32 + 0.5) / n_rays as f32).acos();
-                [phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos()]
-            }).collect();
+            let ray_dirs: Vec<[f32; 3]> = (0..n_rays)
+                .map(|i| {
+                    let theta = 2.0 * std::f32::consts::PI * i as f32 / golden_ratio;
+                    let phi = (1.0 - 2.0 * (i as f32 + 0.5) / n_rays as f32).acos();
+                    [phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos()]
+                })
+                .collect();
 
             for (site_idx, site) in clustered_sites.iter_mut().enumerate() {
                 let cx = site.geometric_voxel_mass_centroid()[0];
@@ -11976,12 +13298,18 @@ fn run_multi_stream_pipeline(
                         let pz = cz + dir[2] * t;
                         let mut hit = false;
                         for ai in 0..n_atoms {
-                            let d2 = (px - topology.positions[ai*3]).powi(2)
-                                   + (py - topology.positions[ai*3+1]).powi(2)
-                                   + (pz - topology.positions[ai*3+2]).powi(2);
-                            if d2 < atom_hit_radius_sq { hit = true; break; }
+                            let d2 = (px - topology.positions[ai * 3]).powi(2)
+                                + (py - topology.positions[ai * 3 + 1]).powi(2)
+                                + (pz - topology.positions[ai * 3 + 2]).powi(2);
+                            if d2 < atom_hit_radius_sq {
+                                hit = true;
+                                break;
+                            }
                         }
-                        if hit { hit_dist = t; break; }
+                        if hit {
+                            hit_dist = t;
+                            break;
+                        }
                     }
                     hit_distances.push(hit_dist);
                 }
@@ -11997,7 +13325,8 @@ fn run_multi_stream_pipeline(
                     let b = ((d / 3.0) as usize).min(4);
                     bins[b] += 1;
                 }
-                let ray_entropy: f32 = bins.iter()
+                let ray_entropy: f32 = bins
+                    .iter()
                     .filter(|&&c| c > 0)
                     .map(|&c| {
                         let p = c as f32 / n_rays as f32;
@@ -12019,20 +13348,30 @@ fn run_multi_stream_pipeline(
                     let chem_radius_sq = 8.0f32 * 8.0f32; // only count spikes within 8Å of centroid
                     if spikes.len() >= 10 {
                         let mut type_counts = [0u32; 4]; // UV, LIF, EFP, other
-                        // Collect intensities for Neumaier summation
-                        let mut intensity_vec: Vec<f32> = Vec::with_capacity(spikes.len().min(5000));
-                        for &idx in spikes.iter().take(5000) { // cap for speed
+                                                         // Collect intensities for Neumaier summation
+                        let mut intensity_vec: Vec<f32> =
+                            Vec::with_capacity(spikes.len().min(5000));
+                        for &idx in spikes.iter().take(5000) {
+                            // cap for speed
                             if let Some(s) = all_stream_spikes.get(idx) {
                                 // Spatial filter: only count spikes near THIS centroid
                                 let dx = s.position[0] - cx;
                                 let dy = s.position[1] - cy;
                                 let dz = s.position[2] - cz;
-                                if dx*dx + dy*dy + dz*dz > chem_radius_sq { continue; }
+                                if dx * dx + dy * dy + dz * dz > chem_radius_sq {
+                                    continue;
+                                }
                                 let t = match s.spike_source {
                                     1 => 0, // UV
                                     2 => 1, // LIF
                                     3 => 2, // EFP
-                                    _ => if s.aromatic_type >= 0 { 0 } else { 3 },
+                                    _ => {
+                                        if s.aromatic_type >= 0 {
+                                            0
+                                        } else {
+                                            3
+                                        }
+                                    }
                                 };
                                 type_counts[t] += 1;
                                 intensity_vec.push(s.intensity);
@@ -12041,7 +13380,8 @@ fn run_multi_stream_pipeline(
                         let total_intensity = neumaier_sum(intensity_vec.iter().copied());
                         let n_sampled = spikes.len().min(5000) as f32;
                         // Spike type entropy (LPV)
-                        let type_entropy: f32 = type_counts.iter()
+                        let type_entropy: f32 = type_counts
+                            .iter()
                             .filter(|&&c| c > 0)
                             .map(|&c| {
                                 let p = c as f32 / n_sampled;
@@ -12056,15 +13396,22 @@ fn run_multi_stream_pipeline(
                         let vol_squash = (site.estimated_volume + 10.0).ln().max(1.0);
                         let intensive_density = total_intensity / vol_squash;
                         let density = (intensive_density / n_sampled).ln().max(0.0) / 5.0; // log-scale
-                        // Chem = log(1 + density) * type_entropy * frustrated_solvent
-                        // Frustrated solvent: inline computation for Cobb-Douglas
+                                                                                           // Chem = log(1 + density) * type_entropy * frustrated_solvent
+                                                                                           // Frustrated solvent: inline computation for Cobb-Douglas
                         let frustrated_solvent = {
                             let median_ts = {
-                                let mut ts_vec: Vec<i32> = spikes.iter().take(5000)
+                                let mut ts_vec: Vec<i32> = spikes
+                                    .iter()
+                                    .take(5000)
                                     .filter_map(|&idx| all_stream_spikes.get(idx))
-                                    .map(|s| s.timestep).collect();
+                                    .map(|s| s.timestep)
+                                    .collect();
                                 ts_vec.sort();
-                                if !ts_vec.is_empty() { ts_vec[ts_vec.len() / 2] } else { 0 }
+                                if !ts_vec.is_empty() {
+                                    ts_vec[ts_vec.len() / 2]
+                                } else {
+                                    0
+                                }
                             };
                             let mut n_frustrated = 0u32;
                             let mut sum_wd = 0.0f32;
@@ -12073,7 +13420,9 @@ fn run_multi_stream_pipeline(
                                     let dx = s.position[0] - cx;
                                     let dy = s.position[1] - cy;
                                     let dz = s.position[2] - cz;
-                                    if dx*dx + dy*dy + dz*dz > chem_radius_sq { continue; }
+                                    if dx * dx + dy * dy + dz * dz > chem_radius_sq {
+                                        continue;
+                                    }
                                     if s.wd_change > 0.01
                                         && s.timestep <= median_ts
                                         && (s.spike_source == 2 || s.spike_source == 0)
@@ -12088,10 +13437,15 @@ fn run_multi_stream_pipeline(
                                 let mean_wd = sum_wd / n_frustrated as f32;
                                 let raw = frac * mean_wd * 100.0;
                                 1.0 / (1.0 + (-5.0 * (raw - 0.5)).exp())
-                            } else { 0.0 }
+                            } else {
+                                0.0
+                            }
                         };
-                        ((1.0 + density) * (1.0 + type_entropy) * (1.0 + frustrated_solvent)).max(eps)
-                    } else { eps }
+                        ((1.0 + density) * (1.0 + type_entropy) * (1.0 + frustrated_solvent))
+                            .max(eps)
+                    } else {
+                        eps
+                    }
                 };
 
                 // ── ENGINE 3: Physical (sigmoid-squashed, V9 intensive) ──
@@ -12107,15 +13461,23 @@ fn run_multi_stream_pipeline(
                 // ── ENGINE 4: Orthogonal VCS (dynamic weighting) ──
                 // Thermodynamic + Geometric agreement = 2x multiplier.
                 // Two geometric algorithms agreeing = only 1.2x.
-                let vcs_raw = vcs_scores.get(&(site.cluster_id as usize)).copied().unwrap_or(eps * 2.0);
+                let vcs_raw = vcs_scores
+                    .get(&(site.cluster_id as usize))
+                    .copied()
+                    .unwrap_or(eps * 2.0);
                 let vcs_score = vcs_raw; // orthogonal weighting already in precompute
 
                 // ── GOLDILOCKS DEPTH + ENCLOSURE CLIFF ──
-                let occluded_dists: Vec<f32> = hit_distances.iter()
-                    .filter(|&&d| d < max_ray_dist).copied().collect();
+                let occluded_dists: Vec<f32> = hit_distances
+                    .iter()
+                    .filter(|&&d| d < max_ray_dist)
+                    .copied()
+                    .collect();
                 let mean_depth = if !occluded_dists.is_empty() {
                     occluded_dists.iter().sum::<f32>() / occluded_dists.len() as f32
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
 
                 // Goldilocks: peak at 6Å, drops off both sides
                 let d_off = (mean_depth - 6.0).abs();
@@ -12148,17 +13510,28 @@ fn run_multi_stream_pipeline(
                 let final_score = head_a.max(head_b);
 
                 // Store engine scores for Boltzmann training
-                engine_scores.insert(site.cluster_id, (geo_score, chem_score, phys_score, vcs_score));
+                engine_scores.insert(
+                    site.cluster_id,
+                    (geo_score, chem_score, phys_score, vcs_score),
+                );
 
                 // V9 diagnostic: top-3 sites get component breakdown
                 if site_idx < 3 {
-                    log::info!("  V9 ranking: geo={:.3} chem_int={:.3} phys_int={:.3} vcs={:.3} → q={:.3}",
-                        geo_score, chem_score, phys_score, vcs_score, final_score);
+                    log::info!(
+                        "  V9 ranking: geo={:.3} chem_int={:.3} phys_int={:.3} vcs={:.3} → q={:.3}",
+                        geo_score,
+                        chem_score,
+                        phys_score,
+                        vcs_score,
+                        final_score
+                    );
                 }
 
                 site.quality_score = final_score;
             }
-            log::info!("  V9 multi-head ranking + intensive normalization + saliency cross applied");
+            log::info!(
+                "  V9 multi-head ranking + intensive normalization + saliency cross applied"
+            );
         }
 
         // ══════════════════════════════════════════════════════════════
@@ -12179,10 +13552,14 @@ fn run_multi_stream_pipeline(
         // ══════════════════════════════════════════════════════════════
         {
             for site in clustered_sites.iter_mut() {
-                if site.spike_indices.len() < 50 { continue; }
+                if site.spike_indices.len() < 50 {
+                    continue;
+                }
 
                 // Collect local spikes sorted by timestep
-                let mut local_spikes: Vec<(i32, [f32; 3])> = site.spike_indices.iter()
+                let mut local_spikes: Vec<(i32, [f32; 3])> = site
+                    .spike_indices
+                    .iter()
                     .take(5000)
                     .filter_map(|&idx| all_stream_spikes.get(idx))
                     .map(|s| (s.timestep, s.position))
@@ -12190,24 +13567,36 @@ fn run_multi_stream_pipeline(
                 local_spikes.sort_by_key(|&(ts, _)| ts);
 
                 let n = local_spikes.len();
-                if n < 30 { continue; }
+                if n < 30 {
+                    continue;
+                }
                 let cutoff = (n as f32 * 0.20) as usize;
-                if cutoff < 5 { continue; }
+                if cutoff < 5 {
+                    continue;
+                }
 
                 // 1. Kinetic funnel: entry (early 20%) and anchor (late 20%)
                 let (early, late) = (&local_spikes[..cutoff], &local_spikes[n - cutoff..]);
 
                 let com_entry = {
                     let mut s = [0.0f64; 3];
-                    for &(_, p) in early { s[0] += p[0] as f64; s[1] += p[1] as f64; s[2] += p[2] as f64; }
+                    for &(_, p) in early {
+                        s[0] += p[0] as f64;
+                        s[1] += p[1] as f64;
+                        s[2] += p[2] as f64;
+                    }
                     let n = early.len() as f64;
-                    [(s[0]/n) as f32, (s[1]/n) as f32, (s[2]/n) as f32]
+                    [(s[0] / n) as f32, (s[1] / n) as f32, (s[2] / n) as f32]
                 };
                 let com_anchor = {
                     let mut s = [0.0f64; 3];
-                    for &(_, p) in late { s[0] += p[0] as f64; s[1] += p[1] as f64; s[2] += p[2] as f64; }
+                    for &(_, p) in late {
+                        s[0] += p[0] as f64;
+                        s[1] += p[1] as f64;
+                        s[2] += p[2] as f64;
+                    }
                     let n = late.len() as f64;
-                    [(s[0]/n) as f32, (s[1]/n) as f32, (s[2]/n) as f32]
+                    [(s[0] / n) as f32, (s[1] / n) as f32, (s[2] / n) as f32]
                 };
 
                 // Ligand approach vector
@@ -12216,15 +13605,23 @@ fn run_multi_stream_pipeline(
                     com_anchor[1] - com_entry[1],
                     com_anchor[2] - com_entry[2],
                 ];
-                let path_length = (v_path[0].powi(2) + v_path[1].powi(2) + v_path[2].powi(2)).sqrt();
-                if path_length < 0.5 { continue; } // degenerate path
+                let path_length =
+                    (v_path[0].powi(2) + v_path[1].powi(2) + v_path[2].powi(2)).sqrt();
+                if path_length < 0.5 {
+                    continue;
+                } // degenerate path
 
                 // 2. Wavefront coherence: Pearson(timestamp, projection onto path)
                 let mut times = Vec::with_capacity(n);
                 let mut projs = Vec::with_capacity(n);
                 for &(ts, pos) in &local_spikes {
-                    let v = [pos[0] - com_entry[0], pos[1] - com_entry[1], pos[2] - com_entry[2]];
-                    let proj = (v[0]*v_path[0] + v[1]*v_path[1] + v[2]*v_path[2]) / path_length;
+                    let v = [
+                        pos[0] - com_entry[0],
+                        pos[1] - com_entry[1],
+                        pos[2] - com_entry[2],
+                    ];
+                    let proj =
+                        (v[0] * v_path[0] + v[1] * v_path[1] + v[2] * v_path[2]) / path_length;
                     times.push(ts as f32);
                     projs.push(proj);
                 }
@@ -12244,20 +13641,28 @@ fn run_multi_stream_pipeline(
                     var_p += dp * dp;
                 }
                 let denom = (var_t * var_p).sqrt();
-                let wavefront_coherence = if denom > 1e-10 { (cov / denom).max(0.0) } else { 0.0 };
+                let wavefront_coherence = if denom > 1e-10 {
+                    (cov / denom).max(0.0)
+                } else {
+                    0.0
+                };
 
                 // 3. Funnel ratio: early spatial variance / late spatial variance
                 let var_early = {
                     let mut v = 0.0f32;
                     for &(_, p) in early {
-                        v += (p[0]-com_entry[0]).powi(2) + (p[1]-com_entry[1]).powi(2) + (p[2]-com_entry[2]).powi(2);
+                        v += (p[0] - com_entry[0]).powi(2)
+                            + (p[1] - com_entry[1]).powi(2)
+                            + (p[2] - com_entry[2]).powi(2);
                     }
                     v / early.len() as f32
                 };
                 let var_late = {
                     let mut v = 0.0f32;
                     for &(_, p) in late {
-                        v += (p[0]-com_anchor[0]).powi(2) + (p[1]-com_anchor[1]).powi(2) + (p[2]-com_anchor[2]).powi(2);
+                        v += (p[0] - com_anchor[0]).powi(2)
+                            + (p[1] - com_anchor[1]).powi(2)
+                            + (p[2] - com_anchor[2]).powi(2);
                     }
                     v / late.len() as f32
                 };
@@ -12282,21 +13687,33 @@ fn run_multi_stream_pipeline(
             let mut keep = vec![true; clustered_sites.len()];
             // Sort by quality descending first so we keep the best
             let mut indices: Vec<usize> = (0..clustered_sites.len()).collect();
-            indices.sort_by(|&a, &b|
-                clustered_sites[b].quality_score.partial_cmp(&clustered_sites[a].quality_score)
-                    .unwrap_or(std::cmp::Ordering::Equal));
+            indices.sort_by(|&a, &b| {
+                clustered_sites[b]
+                    .quality_score
+                    .partial_cmp(&clustered_sites[a].quality_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             // Track how many strategy types each survivor absorbs
             let mut absorbed_count = vec![0u32; clustered_sites.len()];
 
             for &i in &indices {
-                if !keep[i] { continue; }
+                if !keep[i] {
+                    continue;
+                }
                 for &j in &indices {
-                    if i == j || !keep[j] { continue; }
-                    if clustered_sites[j].quality_score >= clustered_sites[i].quality_score { continue; }
+                    if i == j || !keep[j] {
+                        continue;
+                    }
+                    if clustered_sites[j].quality_score >= clustered_sites[i].quality_score {
+                        continue;
+                    }
                     let ci = clustered_sites[i].geometric_voxel_mass_centroid();
                     let cj = clustered_sites[j].geometric_voxel_mass_centroid();
-                    let d = ((ci[0]-cj[0]).powi(2) + (ci[1]-cj[1]).powi(2) + (ci[2]-cj[2]).powi(2)).sqrt();
+                    let d = ((ci[0] - cj[0]).powi(2)
+                        + (ci[1] - cj[1]).powi(2)
+                        + (ci[2] - cj[2]).powi(2))
+                    .sqrt();
 
                     // Volumetric NMS: two pruning criteria
                     // 1. Within 4.5Å (standard spatial NMS)
@@ -12305,9 +13722,10 @@ fn run_multi_stream_pipeline(
                     let vj = clustered_sites[j].estimated_volume;
                     let vol_ratio = if vi > 0.0 && vj > 0.0 {
                         (vi / vj).max(vj / vi)
-                    } else { 1.0 };
-                    let is_duplicate = d < prune_radius
-                        || (d < 6.0 && vol_ratio < 1.20);
+                    } else {
+                        1.0
+                    };
+                    let is_duplicate = d < prune_radius || (d < 6.0 && vol_ratio < 1.20);
 
                     if is_duplicate {
                         // Consensus harvesting: survivor absorbs the pruned site's vote
@@ -12329,27 +13747,42 @@ fn run_multi_stream_pipeline(
             }
 
             let before = clustered_sites.len();
-            let kept: Vec<_> = clustered_sites.iter().enumerate()
+            let kept: Vec<_> = clustered_sites
+                .iter()
+                .enumerate()
                 .filter(|(i, _)| keep[*i])
                 .map(|(_, s)| s.clone())
                 .collect();
             clustered_sites = kept;
-            log::info!("  Consensus harvesting: {} -> {} sites ({} pruned, {} boosted within {:.1}A)",
-                before, clustered_sites.len(), before - clustered_sites.len(), n_boosted, prune_radius);
+            log::info!(
+                "  Consensus harvesting: {} -> {} sites ({} pruned, {} boosted within {:.1}A)",
+                before,
+                clustered_sites.len(),
+                before - clustered_sites.len(),
+                n_boosted,
+                prune_radius
+            );
         }
 
         // Re-sort refined sites
-        clustered_sites.sort_by(|a, b|
-            b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+        clustered_sites.sort_by(|a, b| {
+            b.quality_score
+                .partial_cmp(&a.quality_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // ── Re-reap: compute fresh local physics for ALL candidates ──
         // This ensures sub-sites (k-means, PH peaks, dual centroid, triangulation,
         // frustrated solvent) have genuine physics signals from their own local
         // spike cloud, not inherited parent data.
-        let mut frustrated_solvent_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
-        let mut asymmetry_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
-        let mut ray_escape_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
-        let mut source_count_map: std::collections::HashMap<i32, [u32; 4]> = std::collections::HashMap::new();
+        let mut frustrated_solvent_scores: std::collections::HashMap<i32, f32> =
+            std::collections::HashMap::new();
+        let mut asymmetry_scores: std::collections::HashMap<i32, f32> =
+            std::collections::HashMap::new();
+        let mut ray_escape_scores: std::collections::HashMap<i32, f32> =
+            std::collections::HashMap::new();
+        let mut source_count_map: std::collections::HashMap<i32, [u32; 4]> =
+            std::collections::HashMap::new();
         {
             let reap_radius = 8.0f32;
             for site in clustered_sites.iter_mut() {
@@ -12368,15 +13801,28 @@ fn run_multi_stream_pipeline(
                 ray_escape_scores.insert(site.cluster_id, lp.ray_escape_ratio);
                 source_count_map.insert(site.cluster_id, lp.source_counts);
                 if lp.frustrated_solvent_score > 0.01 {
-                    log::info!("  Site {}: frustrated_solvent_score={:.4} (n_local={})",
-                        site.cluster_id, lp.frustrated_solvent_score, lp.n_local_spikes);
+                    log::info!(
+                        "  Site {}: frustrated_solvent_score={:.4} (n_local={})",
+                        site.cluster_id,
+                        lp.frustrated_solvent_score,
+                        lp.n_local_spikes
+                    );
                 }
 
                 // Update ALL signal hashmaps so JSON export gets real values for sub-sites
-                physics_signals.insert(site.cluster_id,
-                    (lp.onset_score, lp.source_diversity, lp.mean_burial, lp.burial_score));
-                spatial_signals.insert(site.cluster_id,
-                    (lp.sphericity, lp.wd_coherence, lp.breathing_score));
+                physics_signals.insert(
+                    site.cluster_id,
+                    (
+                        lp.onset_score,
+                        lp.source_diversity,
+                        lp.mean_burial,
+                        lp.burial_score,
+                    ),
+                );
+                spatial_signals.insert(
+                    site.cluster_id,
+                    (lp.sphericity, lp.wd_coherence, lp.breathing_score),
+                );
                 uv_enrichment_scores.insert(site.cluster_id, lp.uv_enrichment);
 
                 // Engine scores: sub-sites (4xxx, 5xxx, etc.) inherit from parent
@@ -12405,8 +13851,7 @@ fn run_multi_stream_pipeline(
                     };
 
                     // v7 weights — identical to the parent site formula
-                    site.quality_score =
-                        0.20 * lp.burial_score +
+                    site.quality_score = 0.20 * lp.burial_score +
                         0.16 * lp.lining_score +
                         0.14 * lp.log_spike_norm +
                         0.10 * encl.clamp(0.0, 2.0) / 2.0 +
@@ -12421,12 +13866,18 @@ fn run_multi_stream_pipeline(
                 }
                 // Sites with < 20 local spikes keep their inherited score
             }
-            log::info!("  Re-reap: computed local physics for {} candidates (radius={:.0}A)",
-                clustered_sites.len(), reap_radius);
+            log::info!(
+                "  Re-reap: computed local physics for {} candidates (radius={:.0}A)",
+                clustered_sites.len(),
+                reap_radius
+            );
 
             // Re-sort after re-reap
-            clustered_sites.sort_by(|a, b|
-                b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+            clustered_sites.sort_by(|a, b| {
+                b.quality_score
+                    .partial_cmp(&a.quality_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         // ── Top-quartile centroid refinement ──
@@ -12443,12 +13894,14 @@ fn run_multi_stream_pipeline(
                     let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
                     let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
                     let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
-                    if dx*dx + dy*dy + dz*dz <= tq_radius_sq {
+                    if dx * dx + dy * dy + dz * dz <= tq_radius_sq {
                         local_spikes.push((spike.intensity, spike.position));
                     }
                 }
 
-                if local_spikes.len() < 20 { continue; }
+                if local_spikes.len() < 20 {
+                    continue;
+                }
 
                 // Find 75th percentile intensity
                 let mut intensities: Vec<f32> = local_spikes.iter().map(|&(i, _)| i).collect();
@@ -12478,7 +13931,8 @@ fn run_multi_stream_pipeline(
                     // Only apply if shift is meaningful but not pathological
                     let shift = ((new_c[0] - site.geometric_voxel_mass_centroid()[0]).powi(2)
                         + (new_c[1] - site.geometric_voxel_mass_centroid()[1]).powi(2)
-                        + (new_c[2] - site.geometric_voxel_mass_centroid()[2]).powi(2)).sqrt();
+                        + (new_c[2] - site.geometric_voxel_mass_centroid()[2]).powi(2))
+                    .sqrt();
                     if shift > 0.5 && shift < 6.0 {
                         site.set_geometric_voxel_mass_centroid(new_c);
                         n_refined += 1;
@@ -12486,8 +13940,11 @@ fn run_multi_stream_pipeline(
                 }
             }
             if n_refined > 0 {
-                log::info!("  Top-quartile centroid refinement: {}/{} sites shifted",
-                    n_refined, clustered_sites.len());
+                log::info!(
+                    "  Top-quartile centroid refinement: {}/{} sites shifted",
+                    n_refined,
+                    clustered_sites.len()
+                );
             }
         }
 
@@ -12516,7 +13973,8 @@ fn run_multi_stream_pipeline(
             let cell_size = radius;
             let inv_cell = 1.0 / cell_size;
             // Hash: (ix, iy, iz) → vec of site indices
-            let mut site_grid: std::collections::HashMap<(i32, i32, i32), Vec<usize>> = std::collections::HashMap::new();
+            let mut site_grid: std::collections::HashMap<(i32, i32, i32), Vec<usize>> =
+                std::collections::HashMap::new();
             for (site_idx, site) in clustered_sites.iter().enumerate() {
                 let ix = (site.geometric_voxel_mass_centroid()[0] * inv_cell).floor() as i32;
                 let iy = (site.geometric_voxel_mass_centroid()[1] * inv_cell).floor() as i32;
@@ -12565,21 +14023,29 @@ fn run_multi_stream_pipeline(
                 // Check 27 neighboring cells. Track the ABSOLUTE nearest centroid
                 // (regardless of radius) so background spikes get a real
                 // nearest_site_dist for the Arrow writer's stratification.
-                for dz in -1..=1 { for dy in -1..=1 { for dx in -1..=1 {
-                    if let Some(sites_in_cell) = site_grid.get(&(sx+dx, sy+dy, sz+dz)) {
-                        for &site_idx in sites_in_cell {
-                            let site = &clustered_sites[site_idx];
-                            let ddx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
-                            let ddy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
-                            let ddz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
-                            let d2 = ddx*ddx + ddy*ddy + ddz*ddz;
-                            if d2 < nearest_dist_sq {
-                                nearest_dist_sq = d2;
-                                nearest_site_idx = Some(site_idx);
+                for dz in -1..=1 {
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            if let Some(sites_in_cell) = site_grid.get(&(sx + dx, sy + dy, sz + dz))
+                            {
+                                for &site_idx in sites_in_cell {
+                                    let site = &clustered_sites[site_idx];
+                                    let ddx =
+                                        spike.position[0] - site.geometric_voxel_mass_centroid()[0];
+                                    let ddy =
+                                        spike.position[1] - site.geometric_voxel_mass_centroid()[1];
+                                    let ddz =
+                                        spike.position[2] - site.geometric_voxel_mass_centroid()[2];
+                                    let d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+                                    if d2 < nearest_dist_sq {
+                                        nearest_dist_sq = d2;
+                                        nearest_site_idx = Some(site_idx);
+                                    }
+                                }
                             }
                         }
                     }
-                }}}
+                }
                 if let Some(idx) = nearest_site_idx {
                     let nearest_dist = nearest_dist_sq.sqrt();
                     let cid = clustered_sites[idx].cluster_id;
@@ -12681,7 +14147,8 @@ fn run_multi_stream_pipeline(
                 Vec::with_capacity(clustered_sites.len());
             for site in clustered_sites.iter_mut() {
                 site.spike_count = site.spike_indices.len();
-                let mut residue_counts: std::collections::HashMap<i32, u32> = std::collections::HashMap::new();
+                let mut residue_counts: std::collections::HashMap<i32, u32> =
+                    std::collections::HashMap::new();
                 for &idx in &site.spike_indices {
                     if let Some(spike) = all_stream_spikes.get(idx) {
                         for j in 0..(spike.n_residues as usize).min(8) {
@@ -12702,7 +14169,9 @@ fn run_multi_stream_pipeline(
             // is measured at step 0 when the pocket is CLOSED. The spike-weighted
             // centroid shifts to where the pocket ACTUALLY opens.
             for site in clustered_sites.iter_mut() {
-                if site.spike_indices.len() < 10 { continue; }
+                if site.spike_indices.len() < 10 {
+                    continue;
+                }
                 let old_c = site.geometric_voxel_mass_centroid();
                 let mut wx = 0.0f64;
                 let mut wy = 0.0f64;
@@ -12723,10 +14192,20 @@ fn run_multi_stream_pipeline(
                         (wy / w_total) as f32,
                         (wz / w_total) as f32,
                     ];
-                    let shift = ((new_c[0]-old_c[0]).powi(2) + (new_c[1]-old_c[1]).powi(2) + (new_c[2]-old_c[2]).powi(2)).sqrt();
-                    if shift > 0.5 { // only log significant shifts
-                        log::info!("    Site {}: centroid refined {:.1}A → ({:.1},{:.1},{:.1})",
-                            site.cluster_id, shift, new_c[0], new_c[1], new_c[2]);
+                    let shift = ((new_c[0] - old_c[0]).powi(2)
+                        + (new_c[1] - old_c[1]).powi(2)
+                        + (new_c[2] - old_c[2]).powi(2))
+                    .sqrt();
+                    if shift > 0.5 {
+                        // only log significant shifts
+                        log::info!(
+                            "    Site {}: centroid refined {:.1}A → ({:.1},{:.1},{:.1})",
+                            site.cluster_id,
+                            shift,
+                            new_c[0],
+                            new_c[1],
+                            new_c[2]
+                        );
                     }
                     site.set_geometric_voxel_mass_centroid(new_c);
                 }
@@ -12863,14 +14342,19 @@ fn run_multi_stream_pipeline(
                         chain,
                         resid: resid_i32,
                         resname,
-                        min_distance: if min_d2.is_finite() { min_d2.sqrt() } else { 0.0 },
+                        min_distance: if min_d2.is_finite() {
+                            min_d2.sqrt()
+                        } else {
+                            0.0
+                        },
                         n_atoms_in_pocket: n_in_pocket,
                         spike_attribution_count: spike_count,
                     });
                 }
 
                 // Sort by spike attribution descending.
-                new_lining.sort_by(|a, b| b.spike_attribution_count.cmp(&a.spike_attribution_count));
+                new_lining
+                    .sort_by(|a, b| b.spike_attribution_count.cmp(&a.spike_attribution_count));
 
                 // Pareto information-content cutoff (replaces the earlier magic
                 // truncate(20)). Include the smallest set of residues whose cumulative
@@ -12899,18 +14383,33 @@ fn run_multi_stream_pipeline(
             }
 
             let join_ms = join_start.elapsed().as_millis();
-            log::info!("  Spatial fusion: {}/{} spikes → {} sites ({} assigned, {}ms)",
-                total_assigned, all_stream_spikes.len(), clustered_sites.len(),
-                total_assigned, join_ms);
+            log::info!(
+                "  Spatial fusion: {}/{} spikes → {} sites ({} assigned, {}ms)",
+                total_assigned,
+                all_stream_spikes.len(),
+                clustered_sites.len(),
+                total_assigned,
+                join_ms
+            );
             for site in &clustered_sites {
                 if site.spike_count > 0 {
-                    let top_res: String = site.lining_residues.iter().take(5)
+                    let top_res: String = site
+                        .lining_residues
+                        .iter()
+                        .take(5)
                         .map(|r| format!("r{}({})", r.resid, r.n_atoms_in_pocket))
-                        .collect::<Vec<_>>().join(",");
+                        .collect::<Vec<_>>()
+                        .join(",");
                     let _c = site.emission_compat_centroid();
-                    log::info!("    Site {}: {} spikes, centroid=({:.1},{:.1},{:.1}), lining=[{}]",
-                        site.cluster_id, site.spike_count,
-                        _c[0], _c[1], _c[2], top_res);
+                    log::info!(
+                        "    Site {}: {} spikes, centroid=({:.1},{:.1},{:.1}), lining=[{}]",
+                        site.cluster_id,
+                        site.spike_count,
+                        _c[0],
+                        _c[1],
+                        _c[2],
+                        top_res
+                    );
                 }
             }
         }
@@ -12932,29 +14431,37 @@ fn run_multi_stream_pipeline(
         // per-site results via `merge_per_group_analyses` (MAX-over-groups
         // asymmetry + recomputed z-score + reclassified therm_class).
         let prism_therm_result: Option<PrismThermAnalysis> = if args.prism_therm {
-            log::info!("\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)...");
+            log::info!(
+                "\n[PRISM-Therm] Initializing SDST thermodynamic analysis (multi-stream)..."
+            );
             if is_multi_diff && n_streams >= 4 && stream_spike_offsets.len() == n_streams {
-                let twin_protocols = prism_nhs::fused_engine::CryoUvProtocol::twin_differential_set();
+                let twin_protocols =
+                    prism_nhs::fused_engine::CryoUvProtocol::twin_differential_set();
                 let group_names = ["ThermalShock", "Equilibrium", "UvAromatic", "Hysteresis"];
                 let mut per_group_analyses: Vec<PrismThermAnalysis> = Vec::with_capacity(4);
                 for group_idx in 0..4usize {
                     // Gather spikes from every stream that maps to this group.
                     let mut group_spikes: Vec<prism_nhs::fused_engine::GpuSpikeEvent> = Vec::new();
                     for stream_idx in 0..n_streams {
-                        if stream_idx / epg_val != group_idx { continue; }
+                        if stream_idx / epg_val != group_idx {
+                            continue;
+                        }
                         let start = stream_spike_offsets[stream_idx];
                         let end = if stream_idx + 1 < stream_spike_offsets.len() {
                             stream_spike_offsets[stream_idx + 1]
                         } else {
                             all_stream_spikes.len()
                         };
-                        if end <= start || end > all_stream_spikes.len() { continue; }
+                        if end <= start || end > all_stream_spikes.len() {
+                            continue;
+                        }
                         group_spikes.extend_from_slice(&all_stream_spikes[start..end]);
                     }
                     if group_spikes.is_empty() {
                         log::warn!(
                             "  PRISM-Therm [group {} {}]: no spikes in this group — skipping",
-                            group_idx, group_names[group_idx]
+                            group_idx,
+                            group_names[group_idx]
                         );
                         continue;
                     }
@@ -12967,24 +14474,28 @@ fn run_multi_stream_pipeline(
                         twin_protocols[group_idx].ramp_down_steps,
                         twin_protocols[group_idx].cold_return_steps,
                     );
-                    match SdstBridge::new(&topology, &twin_protocols[group_idx], group_spikes.len()) {
+                    match SdstBridge::new(&topology, &twin_protocols[group_idx], group_spikes.len())
+                    {
                         Err(e) => {
                             log::warn!(
                                 "  PRISM-Therm [group {}]: SDST init failed ({}) — skipping group",
-                                group_idx, e
+                                group_idx,
+                                e
                             );
                         }
                         Ok(bridge) => match bridge.ingest_all_spikes(&group_spikes) {
                             Err(e) => {
                                 log::warn!(
                                     "  PRISM-Therm [group {}]: ingest failed ({}) — skipping group",
-                                    group_idx, e
+                                    group_idx,
+                                    e
                                 );
                             }
                             Ok(event_count) => {
                                 log::info!(
                                     "  PRISM-Therm [group {}]: {} events ingested",
-                                    group_idx, event_count
+                                    group_idx,
+                                    event_count
                                 );
                                 match bridge.analyze(&clustered_sites) {
                                     Err(e) => {
@@ -13013,7 +14524,8 @@ fn run_multi_stream_pipeline(
                     None
                 } else {
                     let merged = prism_nhs::sdst_bridge::merge_per_group_analyses(
-                        &per_group_analyses, &clustered_sites,
+                        &per_group_analyses,
+                        &clustered_sites,
                     );
                     log::info!(
                         "  PRISM-Therm MERGED ({} groups): {}/{} hysteretic | {} SDST pockets | total events {}",
@@ -13028,25 +14540,34 @@ fn run_multi_stream_pipeline(
             } else {
                 // Single-stream path — one bridge with the canonical protocol.
                 match SdstBridge::new(&topology, &protocol, all_stream_spikes.len()) {
-                    Err(e) => { log::warn!("  PRISM-Therm: SDST init failed ({})", e); None }
-                    Ok(bridge) => {
-                        match bridge.ingest_all_spikes(&all_stream_spikes) {
-                            Err(e) => { log::warn!("  PRISM-Therm: ingest failed ({})", e); None }
-                            Ok(event_count) => {
-                                log::info!("  PRISM-Therm: {} events ingested", event_count);
-                                match bridge.analyze(&clustered_sites) {
-                                    Err(e) => { log::warn!("  PRISM-Therm: analysis failed ({})", e); None }
-                                    Ok(analysis) => {
-                                        log::info!("  PRISM-Therm: {}/{} hysteretic | {} SDST pockets",
-                                            analysis.hysteretic_site_count,
-                                            clustered_sites.len(),
-                                            analysis.global_pockets.len());
-                                        Some(analysis)
-                                    }
+                    Err(e) => {
+                        log::warn!("  PRISM-Therm: SDST init failed ({})", e);
+                        None
+                    }
+                    Ok(bridge) => match bridge.ingest_all_spikes(&all_stream_spikes) {
+                        Err(e) => {
+                            log::warn!("  PRISM-Therm: ingest failed ({})", e);
+                            None
+                        }
+                        Ok(event_count) => {
+                            log::info!("  PRISM-Therm: {} events ingested", event_count);
+                            match bridge.analyze(&clustered_sites) {
+                                Err(e) => {
+                                    log::warn!("  PRISM-Therm: analysis failed ({})", e);
+                                    None
+                                }
+                                Ok(analysis) => {
+                                    log::info!(
+                                        "  PRISM-Therm: {}/{} hysteretic | {} SDST pockets",
+                                        analysis.hysteretic_site_count,
+                                        clustered_sites.len(),
+                                        analysis.global_pockets.len()
+                                    );
+                                    Some(analysis)
                                 }
                             }
                         }
-                    }
+                    },
                 }
             }
         } else {
@@ -13077,7 +14598,11 @@ fn run_multi_stream_pipeline(
                 } else {
                     site.cluster_id
                 };
-                if let Some(therm) = analysis.sites.iter().find(|s| s.site_id == thermo_lookup_id as i32) {
+                if let Some(therm) = analysis
+                    .sites
+                    .iter()
+                    .find(|s| s.site_id == thermo_lookup_id as i32)
+                {
                     let old_q = site.quality_score;
 
                     // 1. SOC criticality: tau in [1.2, 1.5] is the self-organized
@@ -13086,9 +14611,9 @@ fn run_multi_stream_pipeline(
                     let tau_q = if therm.tau >= 1.2 && therm.tau <= 1.5 {
                         1.0_f32
                     } else if therm.tau > 1.0 && therm.tau < 1.2 {
-                        (therm.tau - 1.0) / 0.2  // ramp 1.0→1.2
+                        (therm.tau - 1.0) / 0.2 // ramp 1.0→1.2
                     } else if therm.tau > 1.5 && therm.tau < 2.0 {
-                        1.0 - (therm.tau - 1.5) / 0.5  // decay 1.5→2.0
+                        1.0 - (therm.tau - 1.5) / 0.5 // decay 1.5→2.0
                     } else {
                         0.0
                     };
@@ -13108,10 +14633,10 @@ fn run_multi_stream_pipeline(
                     // 3. Thermodynamic class bonus: CRYPTIC and DYNAMIC sites
                     //    get a direct boost; INERT sites get penalized slightly.
                     let class_q = match therm.therm_class {
-                        ThermClass::Cryptic  => 1.0_f32,
-                        ThermClass::Dynamic  => 0.7,
+                        ThermClass::Cryptic => 1.0_f32,
+                        ThermClass::Dynamic => 0.7,
                         ThermClass::Responsive => 0.4,
-                        ThermClass::Inert    => 0.1,
+                        ThermClass::Inert => 0.1,
                     };
 
                     // 4. TIDE coupling score: measures overlap between the
@@ -13122,13 +14647,14 @@ fn run_multi_stream_pipeline(
                     //    protein's dynamics — a strong indicator of functional
                     //    binding. Score in [0.0, 1.0].
                     let tide_coupling_score = if !therm.tide_decomposition.is_empty() {
-                        let trigger_residues: std::collections::HashSet<i32> = therm.tide_decomposition.iter()
+                        let trigger_residues: std::collections::HashSet<i32> = therm
+                            .tide_decomposition
+                            .iter()
                             .take(5)
                             .map(|t| t.residue_id as i32)
                             .collect();
-                        let lining_ids: std::collections::HashSet<i32> = site.lining_residues.iter()
-                            .map(|r| r.resid)
-                            .collect();
+                        let lining_ids: std::collections::HashSet<i32> =
+                            site.lining_residues.iter().map(|r| r.resid).collect();
                         let overlap = trigger_residues.intersection(&lining_ids).count();
                         overlap as f32 / trigger_residues.len().max(1) as f32
                     } else {
@@ -13186,12 +14712,16 @@ fn run_multi_stream_pipeline(
             // Compute per-residue (circ_var, mean_lag_mag, lag_coh), then pick
             // p80 threshold for each independently (top 20% most coherent, top 20%
             // highest lag, bottom 20% lowest variance). Intersect the three sets.
-            let mask_residues: std::collections::HashSet<usize> = if let Some(ref asc) = asc_shared {
+            let mask_residues: std::collections::HashSet<usize> = if let Some(ref asc) = asc_shared
+            {
                 if let Ok(gph) = asc.group_residue_phasors.lock() {
                     let mut global_theta = [0.0f64; 4];
                     for g in 0..4 {
                         let (mut gc, mut gs) = (0.0, 0.0);
-                        for rid in 0..asc.n_residues { gc += gph[g][rid].0; gs += gph[g][rid].1; }
+                        for rid in 0..asc.n_residues {
+                            gc += gph[g][rid].0;
+                            gs += gph[g][rid].1;
+                        }
                         global_theta[g] = gs.atan2(gc);
                     }
 
@@ -13205,23 +14735,30 @@ fn run_multi_stream_pipeline(
                             let (cs, ss, n) = gph[g][rid];
                             if n > 10 {
                                 let nf = n as f64;
-                                total_spc += (cs*cs + ss*ss).sqrt() / nf;
+                                total_spc += (cs * cs + ss * ss).sqrt() / nf;
                                 spc_n += 1;
                                 lags.push(ss.atan2(cs) - global_theta[g]);
                             }
                         }
-                        if lags.len() < 2 || spc_n == 0 { continue; }
+                        if lags.len() < 2 || spc_n == 0 {
+                            continue;
+                        }
                         let mean_spc = total_spc / spc_n as f64;
                         let circ_var = 1.0 - mean_spc;
                         let (mut lc, mut ls) = (0.0, 0.0);
-                        for &l in &lags { lc += l.cos(); ls += l.sin(); }
-                        let lag_coh = (lc*lc + ls*ls).sqrt() / lags.len() as f64;
+                        for &l in &lags {
+                            lc += l.cos();
+                            ls += l.sin();
+                        }
+                        let lag_coh = (lc * lc + ls * ls).sqrt() / lags.len() as f64;
                         let mean_lag_mag = ls.atan2(lc).abs();
                         metrics.push((rid, circ_var, mean_lag_mag, lag_coh));
                     }
 
                     if metrics.is_empty() {
-                        log::info!("  Interferometric mask: 0 residues with sufficient phasor data");
+                        log::info!(
+                            "  Interferometric mask: 0 residues with sufficient phasor data"
+                        );
                         std::collections::HashSet::new()
                     } else {
                         // Distribution statistics
@@ -13231,15 +14768,20 @@ fn run_multi_stream_pipeline(
                             let n = v.len();
                             let p = |q: f64| v[((n - 1) as f64 * q) as usize];
                             let mean = vals.iter().sum::<f64>() / n as f64;
-                            (v[0], v[n-1], mean, p(0.5), p(0.8), p(0.9))
+                            (v[0], v[n - 1], mean, p(0.5), p(0.8), p(0.9))
                         };
                         let cv_vals: Vec<f64> = metrics.iter().map(|m| m.1).collect();
                         let lag_vals: Vec<f64> = metrics.iter().map(|m| m.2).collect();
                         let coh_vals: Vec<f64> = metrics.iter().map(|m| m.3).collect();
                         let (cv_min, cv_max, cv_mean, cv_p50, cv_p80, cv_p90) = stats(&cv_vals);
-                        let (lag_min, lag_max, lag_mean, lag_p50, lag_p80, lag_p90) = stats(&lag_vals);
-                        let (coh_min, coh_max, coh_mean, coh_p50, coh_p80, coh_p90) = stats(&coh_vals);
-                        log::info!("  Interferometric mask distributions (N={} residues with data):", metrics.len());
+                        let (lag_min, lag_max, lag_mean, lag_p50, lag_p80, lag_p90) =
+                            stats(&lag_vals);
+                        let (coh_min, coh_max, coh_mean, coh_p50, coh_p80, coh_p90) =
+                            stats(&coh_vals);
+                        log::info!(
+                            "  Interferometric mask distributions (N={} residues with data):",
+                            metrics.len()
+                        );
                         log::info!("    circ_var: min={:.3} max={:.3} mean={:.3} p50={:.3} p80={:.3} p90={:.3}",
                             cv_min, cv_max, cv_mean, cv_p50, cv_p80, cv_p90);
                         log::info!("    mean_lag: min={:.3} max={:.3} mean={:.3} p50={:.3} p80={:.3} p90={:.3}",
@@ -13253,7 +14795,8 @@ fn run_multi_stream_pipeline(
                         // Strict intersection fails when metrics are saturated (e.g.,
                         // circ_var 0.94-0.99 for all residues). Ranked composite is robust.
                         let _ = (cv_p80, cv_p90, lag_p90, coh_p90); // keep stats vars used
-                        let mut scored: Vec<(usize, f64)> = metrics.iter()
+                        let mut scored: Vec<(usize, f64)> = metrics
+                            .iter()
                             .map(|(rid, cv, lag, coh)| {
                                 // Higher is better. Clip circ_var to avoid div-by-zero.
                                 let denom = (1.0 - cv).max(0.01);
@@ -13261,27 +14804,45 @@ fn run_multi_stream_pipeline(
                                 (*rid, score)
                             })
                             .collect();
-                        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                        scored.sort_by(|a, b| {
+                            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                        });
                         // Take top 15% (5-15% target per directive)
                         let take_n = (metrics.len() as f64 * 0.15).ceil() as usize;
                         let take_n = take_n.max(5).min(metrics.len());
-                        let threshold_score = scored.get(take_n.saturating_sub(1)).map(|x| x.1).unwrap_or(0.0);
-                        log::info!("  Interferometric mask: composite = lag * coh * (1 - circ_var)");
-                        log::info!("    Top 15% cutoff: {} residues, composite score ≥ {:.4}",
-                            take_n, threshold_score);
+                        let threshold_score = scored
+                            .get(take_n.saturating_sub(1))
+                            .map(|x| x.1)
+                            .unwrap_or(0.0);
+                        log::info!(
+                            "  Interferometric mask: composite = lag * coh * (1 - circ_var)"
+                        );
+                        log::info!(
+                            "    Top 15% cutoff: {} residues, composite score ≥ {:.4}",
+                            take_n,
+                            threshold_score
+                        );
                         if let Some((top_rid, top_s)) = scored.first() {
                             log::info!("    Top residue: rid={} score={:.4}", top_rid, top_s);
                         }
-                        let mask: std::collections::HashSet<usize> = scored.into_iter()
+                        let mask: std::collections::HashSet<usize> = scored
+                            .into_iter()
                             .take(take_n)
                             .map(|(rid, _)| rid)
                             .collect();
-                        log::info!("  Interferometric mask: {}/{} residues pass (composite top 15%)",
-                            mask.len(), metrics.len());
+                        log::info!(
+                            "  Interferometric mask: {}/{} residues pass (composite top 15%)",
+                            mask.len(),
+                            metrics.len()
+                        );
                         mask
                     }
-                } else { std::collections::HashSet::new() }
-            } else { std::collections::HashSet::new() };
+                } else {
+                    std::collections::HashSet::new()
+                }
+            } else {
+                std::collections::HashSet::new()
+            };
             let _mask_count = mask_residues.len();
 
             log::info!("  [INTERFEROMETRIC] CV-based ranking: {} groups × {} engines (zero tuned constants)",
@@ -13293,15 +14854,19 @@ fn run_multi_stream_pipeline(
                 // Count spikes per group near this site
                 let mut group_counts = vec![0u64; n_groups];
                 for (stream_idx, &offset) in stream_spike_offsets.iter().enumerate() {
-                    let next_offset = stream_spike_offsets.get(stream_idx + 1)
-                        .copied().unwrap_or(all_stream_spikes.len());
+                    let next_offset = stream_spike_offsets
+                        .get(stream_idx + 1)
+                        .copied()
+                        .unwrap_or(all_stream_spikes.len());
                     let group_idx = stream_idx / engines_per_group;
-                    if group_idx >= n_groups { continue; }
+                    if group_idx >= n_groups {
+                        continue;
+                    }
                     for spike in &all_stream_spikes[offset..next_offset] {
                         let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
                         let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
                         let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
-                        if dx*dx + dy*dy + dz*dz <= radius_sq {
+                        if dx * dx + dy * dy + dz * dz <= radius_sq {
                             group_counts[group_idx] += 1;
                         }
                     }
@@ -13309,16 +14874,23 @@ fn run_multi_stream_pipeline(
 
                 // Normalize by each group's total steps × engines to get rate
                 // rate_g = spikes_g / (total_steps_g × engines_per_group)
-                let rates: Vec<f64> = (0..n_groups).map(|g| {
-                    let total_steps = diff_set[g].total_steps() as f64;
-                    group_counts[g] as f64 / (total_steps * engines_per_group as f64).max(1.0)
-                }).collect();
+                let rates: Vec<f64> = (0..n_groups)
+                    .map(|g| {
+                        let total_steps = diff_set[g].total_steps() as f64;
+                        group_counts[g] as f64 / (total_steps * engines_per_group as f64).max(1.0)
+                    })
+                    .collect();
 
                 // Compute CV = std/mean (dimensionless)
                 let mean_rate = rates.iter().sum::<f64>() / n_groups as f64;
-                let variance = rates.iter().map(|r| (r - mean_rate).powi(2)).sum::<f64>() / n_groups as f64;
+                let variance =
+                    rates.iter().map(|r| (r - mean_rate).powi(2)).sum::<f64>() / n_groups as f64;
                 let std_dev = variance.sqrt();
-                let cv = if mean_rate > 1e-10 { std_dev / mean_rate } else { 1.0 };
+                let cv = if mean_rate > 1e-10 {
+                    std_dev / mean_rate
+                } else {
+                    1.0
+                };
 
                 // ══════════════════════════════════════════════════════════
                 // THREE-FACTOR BLENDER: LIGSITE × CV × S_pc
@@ -13341,13 +14913,17 @@ fn run_multi_stream_pipeline(
                 // Uses group_residue_phasors (cos_sum, sin_sum, count) per residue.
                 // S_pc = cross-group lag coherence. Phase-lag θ from atan2.
                 let (f_spc, mean_spc_val) = if let Some(ref asc) = asc_shared {
-                    if let (Ok(gph), Ok(grc)) = (asc.group_residue_phasors.lock(), asc.group_residue_counts.lock()) {
+                    if let (Ok(gph), Ok(grc)) = (
+                        asc.group_residue_phasors.lock(),
+                        asc.group_residue_counts.lock(),
+                    ) {
                         // Global mean phasor per group (temperature background)
                         let mut global_theta = [0.0f64; 4];
                         for g in 0..4 {
                             let (mut gc, mut gs) = (0.0, 0.0);
                             for rid in 0..asc.n_residues {
-                                gc += gph[g][rid].0; gs += gph[g][rid].1;
+                                gc += gph[g][rid].0;
+                                gs += gph[g][rid].1;
                             }
                             global_theta[g] = gs.atan2(gc);
                         }
@@ -13356,10 +14932,14 @@ fn run_multi_stream_pipeline(
                         let mut spc_count = 0u32;
                         for lr in &site.lining_residues {
                             let rid = lr.resid as usize;
-                            if rid >= asc.n_residues { continue; }
+                            if rid >= asc.n_residues {
+                                continue;
+                            }
                             let counts: Vec<u32> = (0..4).map(|g| grc[g][rid]).collect();
                             let active = counts.iter().filter(|&&c| c > 5).count();
-                            if active < 2 { continue; }
+                            if active < 2 {
+                                continue;
+                            }
 
                             // Per-group phase-lag (residue θ - global θ)
                             let mut lags: Vec<f64> = Vec::new();
@@ -13370,16 +14950,25 @@ fn run_multi_stream_pipeline(
                                     lags.push(theta - global_theta[g]);
                                 }
                             }
-                            if lags.len() < 2 { continue; }
+                            if lags.len() < 2 {
+                                continue;
+                            }
 
                             // Lag coherence: consistency of phase-lag across groups
                             let (mut lc, mut ls) = (0.0f64, 0.0f64);
-                            for &lag in &lags { lc += lag.cos(); ls += lag.sin(); }
-                            let lag_coh = (lc*lc + ls*ls).sqrt() / lags.len() as f64;
+                            for &lag in &lags {
+                                lc += lag.cos();
+                                ls += lag.sin();
+                            }
+                            let lag_coh = (lc * lc + ls * ls).sqrt() / lags.len() as f64;
                             let mean_lag = ls.atan2(lc).abs();
 
                             // S_pc = lag coherence × lag significance
-                            let s = if mean_lag > 0.1 { lag_coh } else { lag_coh * 0.5 };
+                            let s = if mean_lag > 0.1 {
+                                lag_coh
+                            } else {
+                                lag_coh * 0.5
+                            };
                             spc_sum += s;
                             spc_count += 1;
                         }
@@ -13388,9 +14977,15 @@ fn run_multi_stream_pipeline(
                             // PURE PHYSICS: exp(S_pc * 2.0)
                             let mult = (mean_spc * 2.0).exp() as f32;
                             (mult, mean_spc as f32)
-                        } else { (1.0, 0.0) }
-                    } else { (1.0, 0.0) }
-                } else { (1.0, 0.0) };
+                        } else {
+                            (1.0, 0.0)
+                        }
+                    } else {
+                        (1.0, 0.0)
+                    }
+                } else {
+                    (1.0, 0.0)
+                };
 
                 // Factor 3: Phase-Lag Atomic-Accuracy Multiplier
                 // Sites with consistent, non-zero phase lag across groups get a 2x boost.
@@ -13401,13 +14996,18 @@ fn run_multi_stream_pipeline(
                         let mut global_theta = [0.0f64; 4];
                         for g in 0..4 {
                             let (mut gc, mut gs) = (0.0, 0.0);
-                            for rid in 0..asc.n_residues { gc += gph[g][rid].0; gs += gph[g][rid].1; }
+                            for rid in 0..asc.n_residues {
+                                gc += gph[g][rid].0;
+                                gs += gph[g][rid].1;
+                            }
                             global_theta[g] = gs.atan2(gc);
                         }
                         let mut lag_scores: Vec<f64> = Vec::new();
                         for lr in &site.lining_residues {
                             let rid = lr.resid as usize;
-                            if rid >= asc.n_residues { continue; }
+                            if rid >= asc.n_residues {
+                                continue;
+                            }
                             let mut lags: Vec<f64> = Vec::new();
                             for g in 0..4 {
                                 let (cs, ss, n) = gph[g][rid];
@@ -13417,8 +15017,11 @@ fn run_multi_stream_pipeline(
                             }
                             if lags.len() >= 2 {
                                 let (mut lc, mut ls) = (0.0, 0.0);
-                                for &l in &lags { lc += l.cos(); ls += l.sin(); }
-                                let coh = (lc*lc + ls*ls).sqrt() / lags.len() as f64;
+                                for &l in &lags {
+                                    lc += l.cos();
+                                    ls += l.sin();
+                                }
+                                let coh = (lc * lc + ls * ls).sqrt() / lags.len() as f64;
                                 let mag = ls.atan2(lc).abs();
                                 if coh > 0.3 && mag > 0.5 {
                                     lag_scores.push(coh * mag);
@@ -13427,32 +15030,47 @@ fn run_multi_stream_pipeline(
                         }
                         if !lag_scores.is_empty() {
                             let mean_lag = lag_scores.iter().sum::<f64>() / lag_scores.len() as f64;
-                            if mean_lag > 0.3 { 2.0f32 } else { 1.0 }
-                        } else { 1.0 }
-                    } else { 1.0 }
-                } else { 1.0 };
+                            if mean_lag > 0.3 {
+                                2.0f32
+                            } else {
+                                1.0
+                            }
+                        } else {
+                            1.0
+                        }
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                };
 
                 // Factor 4: Interferometric Mask Overlap
                 // Sites whose lining residues overlap the top-15% interferometric
                 // mask residues get a boost proportional to the overlap fraction.
                 let f_mask = if !mask_residues.is_empty() && !site.lining_residues.is_empty() {
                     let n_lining = site.lining_residues.len() as f32;
-                    let n_hit: usize = site.lining_residues.iter()
+                    let n_hit: usize = site
+                        .lining_residues
+                        .iter()
                         .filter(|lr| mask_residues.contains(&(lr.resid as usize)))
                         .count();
                     let overlap_frac = n_hit as f32 / n_lining;
                     // Linear boost: 0% overlap → 1.0×, 100% overlap → 3.0×
                     1.0 + 2.0 * overlap_frac
-                } else { 1.0 };
+                } else {
+                    1.0
+                };
 
                 // Apply full blender: CV × S_pc × Lag × Mask
                 let combined_mult = f_cv * f_spc * f_lag * f_mask;
                 let old_q = site.quality_score;
                 site.quality_score *= combined_mult;
 
-                let rate_str: String = (0..n_groups).map(|g| {
-                    format!("{}:{:.1}", group_names[g], rates[g] * 1000.0)
-                }).collect::<Vec<_>>().join(" ");
+                let rate_str: String = (0..n_groups)
+                    .map(|g| format!("{}:{:.1}", group_names[g], rates[g] * 1000.0))
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 log::info!("  Site {}: 5-FACTOR {:.3}→{:.3} (CV={:.3}→×{:.2} Spc={:.3}→×{:.2} Lag→×{:.1} Mask→×{:.2} = ×{:.2}) [{}]",
                     site.cluster_id, old_q, site.quality_score,
                     cv, f_cv, mean_spc_val, f_spc, f_lag, f_mask, combined_mult, rate_str);
@@ -13471,33 +15089,46 @@ fn run_multi_stream_pipeline(
 
             if enable_s1 || enable_s2 || enable_s3 || enable_s4 {
                 // Sort by quality_score descending before cascade
-                clustered_sites.sort_by(|a, b|
-                    b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+                clustered_sites.sort_by(|a, b| {
+                    b.quality_score
+                        .partial_cmp(&a.quality_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
 
                 let rank1_id = clustered_sites.first().map(|s| s.cluster_id).unwrap_or(-1);
-                let mut cascade_eliminated: std::collections::HashSet<i32> = std::collections::HashSet::new();
+                let mut cascade_eliminated: std::collections::HashSet<i32> =
+                    std::collections::HashSet::new();
                 let total_before = clustered_sites.len();
 
                 // ── Stage 1: Multi-Channel Convergence Gate ──
                 if enable_s1 && clustered_sites.len() > 1 {
                     let before = cascade_eliminated.len();
                     for site in &clustered_sites {
-                        if site.cluster_id == rank1_id { continue; }
-                        let counts = source_count_map.get(&site.cluster_id).copied().unwrap_or([0; 4]);
+                        if site.cluster_id == rank1_id {
+                            continue;
+                        }
+                        let counts = source_count_map
+                            .get(&site.cluster_id)
+                            .copied()
+                            .unwrap_or([0; 4]);
                         // Require both UV AND LIF channels active
                         if counts[1] == 0 || counts[2] == 0 {
                             cascade_eliminated.insert(site.cluster_id);
                         }
                     }
-                    log::info!("[Cascade S1] Multi-channel gate: {} eliminated (UV+LIF required)",
-                        cascade_eliminated.len() - before);
+                    log::info!(
+                        "[Cascade S1] Multi-channel gate: {} eliminated (UV+LIF required)",
+                        cascade_eliminated.len() - before
+                    );
                 }
 
                 // ── Stage 2: Temporal Persistence Gate ──
                 if enable_s2 && clustered_sites.len() > 1 {
                     let before = cascade_eliminated.len();
                     for site in &clustered_sites {
-                        if cascade_eliminated.contains(&site.cluster_id) || site.cluster_id == rank1_id {
+                        if cascade_eliminated.contains(&site.cluster_id)
+                            || site.cluster_id == rank1_id
+                        {
                             continue;
                         }
                         // Check if site has spikes in ≥2 of 3 forward protocol phases
@@ -13512,11 +15143,19 @@ fn run_multi_stream_pipeline(
                             let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
                             let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
                             let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
-                            if dx*dx + dy*dy + dz*dz > radius_sq { continue; }
-                            if spike.timestep < p1 { has_cold = true; }
-                            else if spike.timestep < p2 { has_ramp = true; }
-                            else if spike.timestep < p3 { has_warm = true; }
-                            if has_cold && has_warm { break; } // early exit
+                            if dx * dx + dy * dy + dz * dz > radius_sq {
+                                continue;
+                            }
+                            if spike.timestep < p1 {
+                                has_cold = true;
+                            } else if spike.timestep < p2 {
+                                has_ramp = true;
+                            } else if spike.timestep < p3 {
+                                has_warm = true;
+                            }
+                            if has_cold && has_warm {
+                                break;
+                            } // early exit
                         }
                         let n_phases = has_cold as u8 + has_ramp as u8 + has_warm as u8;
                         if n_phases < 2 {
@@ -13538,7 +15177,9 @@ fn run_multi_stream_pipeline(
 
                     let mut site_ph: Vec<(i32, f32)> = Vec::new();
                     for site in &clustered_sites {
-                        if cascade_eliminated.contains(&site.cluster_id) { continue; }
+                        if cascade_eliminated.contains(&site.cluster_id) {
+                            continue;
+                        }
 
                         let margin = 2.0f32;
                         let grid_half = local_radius + margin;
@@ -13555,7 +15196,9 @@ fn run_multi_stream_pipeline(
                             let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
                             let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
                             let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
-                            if dx*dx + dy*dy + dz*dz > local_radius * local_radius { continue; }
+                            if dx * dx + dy * dy + dz * dz > local_radius * local_radius {
+                                continue;
+                            }
 
                             let ix = ((spike.position[0] - origin[0]) / local_spacing) as i32;
                             let iy = ((spike.position[1] - origin[1]) / local_spacing) as i32;
@@ -13567,19 +15210,29 @@ fn run_multi_stream_pipeline(
                                         let gx = (ix + ddx) as usize;
                                         let gy = (iy + ddy) as usize;
                                         let gz = (iz + ddz) as usize;
-                                        if gx >= dim || gy >= dim || gz >= dim { continue; }
-                                        let r2 = ((ddx*ddx + ddy*ddy + ddz*ddz) as f32) * local_spacing * local_spacing;
-                                        density[(gz * dim + gy) * dim + gx] += spike.intensity * (-r2 * inv_2sig2).exp();
+                                        if gx >= dim || gy >= dim || gz >= dim {
+                                            continue;
+                                        }
+                                        let r2 = ((ddx * ddx + ddy * ddy + ddz * ddz) as f32)
+                                            * local_spacing
+                                            * local_spacing;
+                                        density[(gz * dim + gy) * dim + gx] +=
+                                            spike.intensity * (-r2 * inv_2sig2).exp();
                                     }
                                 }
                             }
                         }
 
                         let ph_pockets = prism_nhs::cubical_ph::compute_cubical_ph_cpu(
-                            &density, [dim, dim, dim], origin, local_spacing,
-                            0.0, 3,
+                            &density,
+                            [dim, dim, dim],
+                            origin,
+                            local_spacing,
+                            0.0,
+                            3,
                         );
-                        let max_pers = ph_pockets.iter()
+                        let max_pers = ph_pockets
+                            .iter()
                             .map(|p| p.persistence)
                             .fold(0.0f32, f32::max);
                         site_ph.push((site.cluster_id, max_pers));
@@ -13588,21 +15241,29 @@ fn run_multi_stream_pipeline(
                     // Median persistence
                     let mut pers_vals: Vec<f32> = site_ph.iter().map(|&(_, p)| p).collect();
                     pers_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                    let median_pers = if !pers_vals.is_empty() { pers_vals[pers_vals.len() / 2] } else { 0.0 };
+                    let median_pers = if !pers_vals.is_empty() {
+                        pers_vals[pers_vals.len() / 2]
+                    } else {
+                        0.0
+                    };
 
                     for &(sid, pers) in &site_ph {
                         if pers < median_pers && sid != rank1_id {
                             cascade_eliminated.insert(sid);
                         }
                     }
-                    log::info!("[Cascade S3] PH pruning: {} eliminated (median persistence={:.2})",
-                        cascade_eliminated.len() - before, median_pers);
+                    log::info!(
+                        "[Cascade S3] PH pruning: {} eliminated (median persistence={:.2})",
+                        cascade_eliminated.len() - before,
+                        median_pers
+                    );
                 }
 
                 // ── Stage 4: Boltzmann ΔG Gap Cutoff ──
                 if enable_s4 && clustered_sites.len() > 1 {
                     let before = cascade_eliminated.len();
-                    let surviving: Vec<(i32, f32)> = clustered_sites.iter()
+                    let surviving: Vec<(i32, f32)> = clustered_sites
+                        .iter()
                         .filter(|s| !cascade_eliminated.contains(&s.cluster_id))
                         .map(|s| (s.cluster_id, s.quality_score))
                         .collect();
@@ -13610,7 +15271,8 @@ fn run_multi_stream_pipeline(
                     if surviving.len() > 1 {
                         let beta = 10.0f32;
                         let max_q = surviving[0].1;
-                        let exp_vals: Vec<f32> = surviving.iter()
+                        let exp_vals: Vec<f32> = surviving
+                            .iter()
                             .map(|&(_, q)| (beta * (q - max_q)).exp())
                             .collect();
                         let z: f32 = exp_vals.iter().sum();
@@ -13624,15 +15286,21 @@ fn run_multi_stream_pipeline(
                             }
                         }
                     }
-                    log::info!("[Cascade S4] Boltzmann gap: {} eliminated (P < 1% of rank-1)",
-                        cascade_eliminated.len() - before);
+                    log::info!(
+                        "[Cascade S4] Boltzmann gap: {} eliminated (P < 1% of rank-1)",
+                        cascade_eliminated.len() - before
+                    );
                 }
 
                 // ── Apply eliminations ──
                 if !cascade_eliminated.is_empty() {
                     clustered_sites.retain(|s| !cascade_eliminated.contains(&s.cluster_id));
-                    log::info!("[Cascade] Complete: {} → {} sites ({} eliminated)",
-                        total_before, clustered_sites.len(), cascade_eliminated.len());
+                    log::info!(
+                        "[Cascade] Complete: {} → {} sites ({} eliminated)",
+                        total_before,
+                        clustered_sites.len(),
+                        cascade_eliminated.len()
+                    );
                 }
             }
         }
@@ -13653,10 +15321,11 @@ fn run_multi_stream_pipeline(
                 channel_balance: f32,      // 1 - |uv-lif|/(uv+lif)
                 dewetting_fraction: f32,   // fraction with water_density < 0.01
                 temporal_persistence: f32, // fraction of windows with ≥1 spike
-                isi_cv: f32,              // CV of inter-spike intervals
+                isi_cv: f32,               // CV of inter-spike intervals
             }
 
-            let mut neuro_scores: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+            let mut neuro_scores: std::collections::HashMap<i32, f32> =
+                std::collections::HashMap::new();
 
             for site in &clustered_sites {
                 // Collect local spikes
@@ -13668,7 +15337,7 @@ fn run_multi_stream_pipeline(
                     let dx = spike.position[0] - site.geometric_voxel_mass_centroid()[0];
                     let dy = spike.position[1] - site.geometric_voxel_mass_centroid()[1];
                     let dz = spike.position[2] - site.geometric_voxel_mass_centroid()[2];
-                    if dx*dx + dy*dy + dz*dz <= neuro_radius_sq {
+                    if dx * dx + dy * dy + dz * dz <= neuro_radius_sq {
                         local_ts.push(spike.timestep);
                         local_sources.push(spike.spike_source);
                         local_wd.push(spike.water_density);
@@ -13686,18 +15355,22 @@ fn run_multi_stream_pipeline(
                 // 1. ISI statistics
                 let mut isi: Vec<f32> = Vec::new();
                 for i in 1..n {
-                    let d = (local_ts[i] - local_ts[i-1]) as f32;
-                    if d > 0.0 { isi.push(d); }
+                    let d = (local_ts[i] - local_ts[i - 1]) as f32;
+                    if d > 0.0 {
+                        isi.push(d);
+                    }
                 }
 
                 let (isi_cv, burst_fraction) = if isi.len() >= 10 {
                     let isi_mean: f32 = isi.iter().sum::<f32>() / isi.len() as f32;
-                    let isi_var: f32 = isi.iter().map(|x| (x - isi_mean).powi(2)).sum::<f32>() / isi.len() as f32;
+                    let isi_var: f32 =
+                        isi.iter().map(|x| (x - isi_mean).powi(2)).sum::<f32>() / isi.len() as f32;
                     let cv = isi_var.sqrt() / (isi_mean + 1e-10);
 
                     // Burstiness: fraction of ISIs < 2×median
                     let mut sorted_isi = isi.clone();
-                    sorted_isi.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    sorted_isi
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     let median = sorted_isi[sorted_isi.len() / 2];
                     let burst_thresh = 2.0 * median;
                     let in_burst = isi.iter().filter(|&&x| x < burst_thresh).count();
@@ -13713,11 +15386,16 @@ fn run_multi_stream_pipeline(
                 let mut window_counts = vec![0u32; n_windows];
                 for &t in &local_ts {
                     let widx = ((t - t_min) / window_size) as usize;
-                    if widx < n_windows { window_counts[widx] += 1; }
+                    if widx < n_windows {
+                        window_counts[widx] += 1;
+                    }
                 }
                 let wc_mean: f32 = window_counts.iter().sum::<u32>() as f32 / n_windows as f32;
-                let wc_var: f32 = window_counts.iter()
-                    .map(|&c| (c as f32 - wc_mean).powi(2)).sum::<f32>() / n_windows as f32;
+                let wc_var: f32 = window_counts
+                    .iter()
+                    .map(|&c| (c as f32 - wc_mean).powi(2))
+                    .sum::<f32>()
+                    / n_windows as f32;
                 let fano = wc_var / (wc_mean + 1e-10);
 
                 // 3. Channel balance
@@ -13746,13 +15424,12 @@ fn run_multi_stream_pipeline(
 
                 // Weighted sum (these weights reflect what distinguishes
                 // cryptic pockets from surface grooves, validated on 1P38):
-                let raw_neuro =
-                    0.20 * features.channel_balance +      // multi-channel convergence
+                let raw_neuro = 0.20 * features.channel_balance +      // multi-channel convergence
                     0.20 * features.dewetting_fraction * 10.0 + // water displacement (scaled up)
                     0.15 * features.burst_fraction +        // bursty firing = collective motion
                     0.15 * features.fano_factor / 64.0 +   // super-Poisson = real pocket
                     0.15 * features.temporal_persistence +  // persists across time
-                    0.15 * features.isi_cv / 64.0;         // irregular = complex dynamics
+                    0.15 * features.isi_cv / 64.0; // irregular = complex dynamics
 
                 neuro_scores.insert(site.cluster_id, raw_neuro);
             }
@@ -13769,15 +15446,18 @@ fn run_multi_stream_pipeline(
             // This prevents neuro from overriding confident v7 rankings while still
             // leveraging temporal signatures when v7 is ambiguous.
             {
-                let mut qs: Vec<(i32, f32)> = clustered_sites.iter()
-                    .map(|s| (s.cluster_id, s.quality_score)).collect();
+                let mut qs: Vec<(i32, f32)> = clustered_sites
+                    .iter()
+                    .map(|s| (s.cluster_id, s.quality_score))
+                    .collect();
                 qs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 let q_rank1 = qs[0].1;
                 let tiebreak_threshold = q_rank1 * 0.85; // within 15% of rank-1
 
                 // Only rerank sites within the tiebreak zone
-                let in_zone: std::collections::HashSet<i32> = qs.iter()
+                let in_zone: std::collections::HashSet<i32> = qs
+                    .iter()
                     .filter(|&&(_, q)| q >= tiebreak_threshold)
                     .map(|&(id, _)| id)
                     .collect();
@@ -13798,12 +15478,19 @@ fn run_multi_stream_pipeline(
                     }
 
                     // Re-sort
-                    clustered_sites.sort_by(|a, b|
-                        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+                    clustered_sites.sort_by(|a, b| {
+                        b.quality_score
+                            .partial_cmp(&a.quality_score)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
                 }
 
-                log::info!("[Neuro-rerank] Tiebreaker: {}/{} sites in zone (threshold={:.3}), reranked",
-                    n_in_zone, clustered_sites.len(), tiebreak_threshold);
+                log::info!(
+                    "[Neuro-rerank] Tiebreaker: {}/{} sites in zone (threshold={:.3}), reranked",
+                    n_in_zone,
+                    clustered_sites.len(),
+                    tiebreak_threshold
+                );
             }
         }
 
@@ -13815,33 +15502,39 @@ fn run_multi_stream_pipeline(
             // Boltzmann ranking: compute ΔG from learned thermodynamic constants
             // and rank by Boltzmann probability P(i) = exp(-β*ΔG_i) / Z
             use prism_nhs::boltzmann_weights;
-            log::info!("[Boltzmann Rank] Applying learned thermodynamic constants (β={:.2})", boltzmann_weights::BETA);
+            log::info!(
+                "[Boltzmann Rank] Applying learned thermodynamic constants (β={:.2})",
+                boltzmann_weights::BETA
+            );
 
-            let mut delta_gs: Vec<(usize, f32)> = ranked_indices.iter().map(|&i| {
-                let s = &clustered_sites[i];
-                let vol = s.estimated_volume.max(1.0);
-                let n_lr = s.lining_residues.len();
-                // Extract 15 features matching the JAX training order
-                let features: [f32; 15] = [
-                    (s.spike_count as f32).ln().max(0.0) / 14.0,  // H_spike_density
-                    s.avg_intensity / 8.0,                         // H_burial_depth proxy
-                    0.3,                                           // H_frustrated_water (default)
-                    (n_lr as f32 / 20.0).min(1.0),                // H_lining_count
-                    0.5,                                           // S_ray_entropy (computed in Cobb-Douglas but not stored)
-                    0.5,                                           // S_spike_type_LPV
-                    0.5,                                           // S_uv_enrichment
-                    0.5,                                           // S_sphericity
-                    0.5,                                           // W_activation
-                    1.0 - (n_lr as f32 / vol.powf(0.667)).min(1.0), // W_enclosure
-                    0.3,                                           // K_wavefront_coherence
-                    0.1,                                           // K_funnel_ratio
-                    0.1,                                           // K_breathing
-                    0.5,                                           // C_vcs_orthogonal
-                    s.quality_score.clamp(0.0, 2.0) / 2.0,       // C_quality_score
-                ];
-                let dg = boltzmann_weights::compute_delta_g(&features);
-                (i, dg)
-            }).collect();
+            let mut delta_gs: Vec<(usize, f32)> = ranked_indices
+                .iter()
+                .map(|&i| {
+                    let s = &clustered_sites[i];
+                    let vol = s.estimated_volume.max(1.0);
+                    let n_lr = s.lining_residues.len();
+                    // Extract 15 features matching the JAX training order
+                    let features: [f32; 15] = [
+                        (s.spike_count as f32).ln().max(0.0) / 14.0, // H_spike_density
+                        s.avg_intensity / 8.0,                       // H_burial_depth proxy
+                        0.3,                                         // H_frustrated_water (default)
+                        (n_lr as f32 / 20.0).min(1.0),               // H_lining_count
+                        0.5, // S_ray_entropy (computed in Cobb-Douglas but not stored)
+                        0.5, // S_spike_type_LPV
+                        0.5, // S_uv_enrichment
+                        0.5, // S_sphericity
+                        0.5, // W_activation
+                        1.0 - (n_lr as f32 / vol.powf(0.667)).min(1.0), // W_enclosure
+                        0.3, // K_wavefront_coherence
+                        0.1, // K_funnel_ratio
+                        0.1, // K_breathing
+                        0.5, // C_vcs_orthogonal
+                        s.quality_score.clamp(0.0, 2.0) / 2.0, // C_quality_score
+                    ];
+                    let dg = boltzmann_weights::compute_delta_g(&features);
+                    (i, dg)
+                })
+                .collect();
 
             // Sort by ΔG ascending (most negative = most favorable)
             delta_gs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -13854,34 +15547,62 @@ fn run_multi_stream_pipeline(
                 clustered_sites[idx].quality_score = prob;
             }
 
-            log::info!("  Boltzmann ranking: top-1 P={:.4}, top-3 P={:.4}+{:.4}+{:.4}",
+            log::info!(
+                "  Boltzmann ranking: top-1 P={:.4}, top-3 P={:.4}+{:.4}+{:.4}",
                 probs.get(0).unwrap_or(&0.0),
                 probs.get(0).unwrap_or(&0.0),
                 probs.get(1).unwrap_or(&0.0),
-                probs.get(2).unwrap_or(&0.0));
+                probs.get(2).unwrap_or(&0.0)
+            );
         } else {
             // Standard quality_score ranking
-            ranked_indices.sort_by(|&a, &b|
-                clustered_sites[b].quality_score
+            ranked_indices.sort_by(|&a, &b| {
+                clustered_sites[b]
+                    .quality_score
                     .partial_cmp(&clustered_sites[a].quality_score)
                     .unwrap_or(std::cmp::Ordering::Equal)
-            );
+            });
         }
 
         // Reorder all three parallel vectors + sites
-        let reordered_sites: Vec<_> = ranked_indices.iter().map(|&i| &clustered_sites[i]).collect();
+        let reordered_sites: Vec<_> = ranked_indices
+            .iter()
+            .map(|&i| &clustered_sites[i])
+            .collect();
         let empty_json = serde_json::json!({});
-        let reordered_pockets: Vec<_> = ranked_indices.iter().map(|&i| {
-            if i < n_original_json { all_pockets_json[i].clone() } else { empty_json.clone() }
-        }).collect();
-        let reordered_cryptic: Vec<_> = ranked_indices.iter().map(|&i| {
-            if i < n_original_json { cryptic_sites_json[i].clone() } else { empty_json.clone() }
-        }).collect();
+        let reordered_pockets: Vec<_> = ranked_indices
+            .iter()
+            .map(|&i| {
+                if i < n_original_json {
+                    all_pockets_json[i].clone()
+                } else {
+                    empty_json.clone()
+                }
+            })
+            .collect();
+        let reordered_cryptic: Vec<_> = ranked_indices
+            .iter()
+            .map(|&i| {
+                if i < n_original_json {
+                    cryptic_sites_json[i].clone()
+                } else {
+                    empty_json.clone()
+                }
+            })
+            .collect();
 
-        log::info!("Quality reranking applied. New top-3: {}",
-            ranked_indices.iter().take(3)
-                .map(|&i| format!("site{}(q={:.3})", clustered_sites[i].cluster_id, clustered_sites[i].quality_score))
-                .collect::<Vec<_>>().join(", "));
+        log::info!(
+            "Quality reranking applied. New top-3: {}",
+            ranked_indices
+                .iter()
+                .take(3)
+                .map(|&i| format!(
+                    "site{}(q={:.3})",
+                    clustered_sites[i].cluster_id, clustered_sites[i].quality_score
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
 
         let json_path = output_base.with_extension("binding_sites.json");
 
@@ -13899,73 +15620,94 @@ fn run_multi_stream_pipeline(
         // from the spike events using voxel_idx as the exact grid key.
         // ── Per-site signal preservation: aggregate GPU voxel grids per site ──
         // Uses exact voxel_idx from spikes + merged GPU signal grids (summed across streams)
-        let site_signal_metrics: Vec<_> = reordered_sites.iter().map(|site| {
-            use std::collections::HashSet;
+        let site_signal_metrics: Vec<_> = reordered_sites
+            .iter()
+            .map(|site| {
+                use std::collections::HashSet;
 
-            // Collect unique voxel indices for this site
-            let mut site_voxels: HashSet<i32> = HashSet::new();
-            for &idx in &site.spike_indices {
-                if let Some(spike) = all_stream_spikes.get(idx) {
-                    site_voxels.insert(spike.voxel_idx);
-                }
-            }
-            let n_voxels = site_voxels.len() as u32;
-
-            if let Some(ref sig) = merged_signal {
-                // Aggregate from GPU-side grids (exact voxel-level data)
-                let mut total_recurrence: i32 = 0;
-                let mut max_recurrence: i32 = 0;
-                let mut total_coupling: i32 = 0;
-                let mut coupled_voxels: u32 = 0;
-                let mut residue_counts: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
-
-                for &vid in &site_voxels {
-                    let vi = vid as usize;
-                    if vi >= sig.voxel_hit_grid.len() { continue; }
-
-                    let rec = sig.voxel_hit_grid[vi];
-                    total_recurrence += rec;
-                    if rec > max_recurrence { max_recurrence = rec; }
-
-                    let coup = sig.coupled_spike_grid[vi];
-                    total_coupling += coup;
-                    if coup > 0 { coupled_voxels += 1; }
-
-                    let res_id = sig.primary_residue_id[vi];
-                    let res_count = sig.primary_residue_count[vi];
-                    if res_id >= 0 {
-                        *residue_counts.entry(res_id).or_insert(0) += res_count;
+                // Collect unique voxel indices for this site
+                let mut site_voxels: HashSet<i32> = HashSet::new();
+                for &idx in &site.spike_indices {
+                    if let Some(spike) = all_stream_spikes.get(idx) {
+                        site_voxels.insert(spike.voxel_idx);
                     }
                 }
+                let n_voxels = site_voxels.len() as u32;
 
-                let mean_recurrence = if n_voxels > 0 { total_recurrence as f32 / n_voxels as f32 } else { 0.0 };
-                let causality_density = if n_voxels > 0 { coupled_voxels as f32 / n_voxels as f32 } else { 0.0 };
+                if let Some(ref sig) = merged_signal {
+                    // Aggregate from GPU-side grids (exact voxel-level data)
+                    let mut total_recurrence: i32 = 0;
+                    let mut max_recurrence: i32 = 0;
+                    let mut total_coupling: i32 = 0;
+                    let mut coupled_voxels: u32 = 0;
+                    let mut residue_counts: std::collections::HashMap<i32, i32> =
+                        std::collections::HashMap::new();
 
-                let (primary_residue, primary_count) = residue_counts.iter()
-                    .max_by_key(|&(_, &c)| c)
-                    .map(|(&r, &c)| (r, c))
-                    .unwrap_or((-1, 0));
-                let total_residue_votes: i32 = residue_counts.values().sum();
-                let residue_concentration = if total_residue_votes > 0 {
-                    primary_count as f32 / total_residue_votes as f32
-                } else { 0.0 };
+                    for &vid in &site_voxels {
+                        let vi = vid as usize;
+                        if vi >= sig.voxel_hit_grid.len() {
+                            continue;
+                        }
 
-                serde_json::json!({
-                    "n_voxels": n_voxels,
-                    "total_recurrence": total_recurrence,
-                    "max_recurrence": max_recurrence,
-                    "mean_recurrence": mean_recurrence,
-                    "total_coupling": total_coupling,
-                    "coupled_voxels": coupled_voxels,
-                    "causality_density": causality_density,
-                    "primary_residue_id": map_resid(primary_residue),
-                    "primary_residue_count": primary_count,
-                    "residue_concentration": residue_concentration,
-                })
-            } else {
-                serde_json::json!({ "n_voxels": n_voxels, "error": "no_gpu_signal_data" })
-            }
-        }).collect();
+                        let rec = sig.voxel_hit_grid[vi];
+                        total_recurrence += rec;
+                        if rec > max_recurrence {
+                            max_recurrence = rec;
+                        }
+
+                        let coup = sig.coupled_spike_grid[vi];
+                        total_coupling += coup;
+                        if coup > 0 {
+                            coupled_voxels += 1;
+                        }
+
+                        let res_id = sig.primary_residue_id[vi];
+                        let res_count = sig.primary_residue_count[vi];
+                        if res_id >= 0 {
+                            *residue_counts.entry(res_id).or_insert(0) += res_count;
+                        }
+                    }
+
+                    let mean_recurrence = if n_voxels > 0 {
+                        total_recurrence as f32 / n_voxels as f32
+                    } else {
+                        0.0
+                    };
+                    let causality_density = if n_voxels > 0 {
+                        coupled_voxels as f32 / n_voxels as f32
+                    } else {
+                        0.0
+                    };
+
+                    let (primary_residue, primary_count) = residue_counts
+                        .iter()
+                        .max_by_key(|&(_, &c)| c)
+                        .map(|(&r, &c)| (r, c))
+                        .unwrap_or((-1, 0));
+                    let total_residue_votes: i32 = residue_counts.values().sum();
+                    let residue_concentration = if total_residue_votes > 0 {
+                        primary_count as f32 / total_residue_votes as f32
+                    } else {
+                        0.0
+                    };
+
+                    serde_json::json!({
+                        "n_voxels": n_voxels,
+                        "total_recurrence": total_recurrence,
+                        "max_recurrence": max_recurrence,
+                        "mean_recurrence": mean_recurrence,
+                        "total_coupling": total_coupling,
+                        "coupled_voxels": coupled_voxels,
+                        "causality_density": causality_density,
+                        "primary_residue_id": map_resid(primary_residue),
+                        "primary_residue_count": primary_count,
+                        "residue_concentration": residue_concentration,
+                    })
+                } else {
+                    serde_json::json!({ "n_voxels": n_voxels, "error": "no_gpu_signal_data" })
+                }
+            })
+            .collect();
 
         // ── Per-site KCC: top-K residue candidate evaluation ──
         // For each site, derive top-3 residues from per-voxel primary_residue_id_grid,
@@ -14187,43 +15929,63 @@ fn run_multi_stream_pipeline(
         // L_raw = C_in / (C_in + C_out + ε) where C_in/C_out are coupling within/outside site
         let localization_data: Vec<(f32, f32)> = if let Some(ref sig) = merged_signal {
             // Build unique voxel position map (voxel_idx → [x,y,z])
-            let mut voxel_positions: std::collections::HashMap<i32, [f32; 3]> = std::collections::HashMap::new();
+            let mut voxel_positions: std::collections::HashMap<i32, [f32; 3]> =
+                std::collections::HashMap::new();
             for spike in all_stream_spikes.iter() {
-                voxel_positions.entry(spike.voxel_idx).or_insert(spike.position);
+                voxel_positions
+                    .entry(spike.voxel_idx)
+                    .or_insert(spike.position);
             }
 
-            reordered_sites.iter().map(|site| {
-                // Site's own voxel set
-                let site_voxels: std::collections::HashSet<i32> = site.spike_indices.iter()
-                    .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
-                    .collect();
+            reordered_sites
+                .iter()
+                .map(|site| {
+                    // Site's own voxel set
+                    let site_voxels: std::collections::HashSet<i32> = site
+                        .spike_indices
+                        .iter()
+                        .filter_map(|&idx| all_stream_spikes.get(idx).map(|s| s.voxel_idx))
+                        .collect();
 
-                // C_in: coupling sum within site
-                let c_in: i64 = site_voxels.iter()
-                    .map(|&vid| sig.coupled_spike_grid.get(vid as usize).copied().unwrap_or(0) as i64)
-                    .sum();
+                    // C_in: coupling sum within site
+                    let c_in: i64 = site_voxels
+                        .iter()
+                        .map(|&vid| {
+                            sig.coupled_spike_grid
+                                .get(vid as usize)
+                                .copied()
+                                .unwrap_or(0) as i64
+                        })
+                        .sum();
 
-                // Neighborhood: all voxels within R=6Å of centroid, excluding site voxels
-                let r = 6.0f32;
-                let r2 = r * r;
-                let cx = site.geometric_voxel_mass_centroid()[0];
-                let cy = site.geometric_voxel_mass_centroid()[1];
-                let cz = site.geometric_voxel_mass_centroid()[2];
+                    // Neighborhood: all voxels within R=6Å of centroid, excluding site voxels
+                    let r = 6.0f32;
+                    let r2 = r * r;
+                    let cx = site.geometric_voxel_mass_centroid()[0];
+                    let cy = site.geometric_voxel_mass_centroid()[1];
+                    let cz = site.geometric_voxel_mass_centroid()[2];
 
-                let mut c_out: i64 = 0;
-                for (&vid, pos) in &voxel_positions {
-                    if site_voxels.contains(&vid) { continue; }
-                    let dx = pos[0] - cx;
-                    let dy = pos[1] - cy;
-                    let dz = pos[2] - cz;
-                    if dx*dx + dy*dy + dz*dz <= r2 {
-                        c_out += sig.coupled_spike_grid.get(vid as usize).copied().unwrap_or(0) as i64;
+                    let mut c_out: i64 = 0;
+                    for (&vid, pos) in &voxel_positions {
+                        if site_voxels.contains(&vid) {
+                            continue;
+                        }
+                        let dx = pos[0] - cx;
+                        let dy = pos[1] - cy;
+                        let dz = pos[2] - cz;
+                        if dx * dx + dy * dy + dz * dz <= r2 {
+                            c_out += sig
+                                .coupled_spike_grid
+                                .get(vid as usize)
+                                .copied()
+                                .unwrap_or(0) as i64;
+                        }
                     }
-                }
 
-                let l_raw = c_in as f32 / (c_in as f32 + c_out as f32 + 1e-6);
-                (l_raw, c_in as f32)
-            }).collect()
+                    let l_raw = c_in as f32 / (c_in as f32 + c_out as f32 + 1e-6);
+                    (l_raw, c_in as f32)
+                })
+                .collect()
         } else {
             vec![(0.5, 0.0); reordered_sites.len()]
         };
@@ -14234,7 +15996,9 @@ fn run_multi_stream_pipeline(
         // ── G×T×C×K Unified Rank Score ──
         // Normalize inputs per-protein using 5th-95th percentile scaling
         fn percentile_normalize(values: &[f32]) -> Vec<f32> {
-            if values.is_empty() { return Vec::new(); }
+            if values.is_empty() {
+                return Vec::new();
+            }
             let mut sorted = values.to_vec();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let p5 = sorted[(sorted.len() as f32 * 0.05) as usize];
@@ -14243,34 +16007,68 @@ fn run_multi_stream_pipeline(
             if range < 1e-12 {
                 return vec![0.5; values.len()];
             }
-            values.iter().map(|&v| ((v - p5) / range).clamp(0.0, 1.0)).collect()
+            values
+                .iter()
+                .map(|&v| ((v - p5) / range).clamp(0.0, 1.0))
+                .collect()
         }
 
         // Collect raw values for normalization
         let raw_volumes: Vec<f32> = reordered_sites.iter().map(|s| s.estimated_volume).collect();
-        let raw_burial: Vec<f32> = reordered_sites.iter().enumerate().map(|(i, _)| {
-            // burial_score from physics_signals
-            let sid = reordered_sites[i].cluster_id;
-            physics_signals.get(&sid).map(|p| p.3).unwrap_or(0.5)
-        }).collect();
-        let raw_sphericity: Vec<f32> = reordered_sites.iter().map(|s| {
-            // compactness: volume / bounding_box_volume (higher = more compact)
-            let bbox_vol = s.bounding_box[0] * s.bounding_box[1] * s.bounding_box[2];
-            if bbox_vol > 0.1 { (s.estimated_volume / bbox_vol).clamp(0.0, 1.0) } else { 0.5 }
-        }).collect();
+        let raw_burial: Vec<f32> = reordered_sites
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                // burial_score from physics_signals
+                let sid = reordered_sites[i].cluster_id;
+                physics_signals.get(&sid).map(|p| p.3).unwrap_or(0.5)
+            })
+            .collect();
+        let raw_sphericity: Vec<f32> = reordered_sites
+            .iter()
+            .map(|s| {
+                // compactness: volume / bounding_box_volume (higher = more compact)
+                let bbox_vol = s.bounding_box[0] * s.bounding_box[1] * s.bounding_box[2];
+                if bbox_vol > 0.1 {
+                    (s.estimated_volume / bbox_vol).clamp(0.0, 1.0)
+                } else {
+                    0.5
+                }
+            })
+            .collect();
 
         // Signal preservation raw values
-        let raw_coupling_total: Vec<f32> = site_signal_metrics.iter().map(|sp| {
-            sp.get("total_coupling").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32
-        }).collect();
-        let raw_causality_density: Vec<f32> = site_signal_metrics.iter().map(|sp| {
-            sp.get("causality_density").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32
-        }).collect();
-        let raw_coupled_voxel_frac: Vec<f32> = site_signal_metrics.iter().map(|sp| {
-            let cv = sp.get("coupled_voxels").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let nv = sp.get("n_voxels").and_then(|v| v.as_f64()).unwrap_or(1.0).max(1.0);
-            (cv / nv) as f32
-        }).collect();
+        let raw_coupling_total: Vec<f32> = site_signal_metrics
+            .iter()
+            .map(|sp| {
+                sp.get("total_coupling")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32
+            })
+            .collect();
+        let raw_causality_density: Vec<f32> = site_signal_metrics
+            .iter()
+            .map(|sp| {
+                sp.get("causality_density")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32
+            })
+            .collect();
+        let raw_coupled_voxel_frac: Vec<f32> = site_signal_metrics
+            .iter()
+            .map(|sp| {
+                let cv = sp
+                    .get("coupled_voxels")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let nv = sp
+                    .get("n_voxels")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0)
+                    .max(1.0);
+                (cv / nv) as f32
+            })
+            .collect();
 
         // Normalize
         let vol_n = percentile_normalize(&raw_volumes);
@@ -14281,79 +16079,141 @@ fn run_multi_stream_pipeline(
         let cvox_n = percentile_normalize(&raw_coupled_voxel_frac);
 
         // Compute rank scores
-        let rank_scores: Vec<(f32, f32, f32, f32, f32, f32, f32)> = (0..reordered_sites.len()).map(|i| {
-            // G(s) = vol_n * (1 - 0.7 * hydro_n) * (0.6 + 0.4 * compact_n)
-            let hydro_n = 1.0 - burial_n[i]; // low burial = high hydrophilicity
-            let g = vol_n[i] * (1.0 - 0.7 * hydro_n) * (0.6 + 0.4 * spher_n[i]);
+        let rank_scores: Vec<(f32, f32, f32, f32, f32, f32, f32)> = (0..reordered_sites.len())
+            .map(|i| {
+                // G(s) = vol_n * (1 - 0.7 * hydro_n) * (0.6 + 0.4 * compact_n)
+                let hydro_n = 1.0 - burial_n[i]; // low burial = high hydrophilicity
+                let g = vol_n[i] * (1.0 - 0.7 * hydro_n) * (0.6 + 0.4 * spher_n[i]);
 
-            // T(s) = 0.5 + 0.25 * theta + 0.25 * tau
-            let therm_n = if let Some(ref analysis) = prism_therm_result {
-                let sid = reordered_sites[i].cluster_id;
-                analysis.sites.iter().find(|ts| ts.site_id == sid)
-                    .map(|ts| match ts.therm_class.to_string().as_str() {
-                        "CRYPTIC" => 1.0f32,
-                        "ALLOSTERIC" => 0.9,
-                        "SURFACE" => 0.6,
-                        _ => 0.35,
+                // T(s) = 0.5 + 0.25 * theta + 0.25 * tau
+                let therm_n = if let Some(ref analysis) = prism_therm_result {
+                    let sid = reordered_sites[i].cluster_id;
+                    analysis
+                        .sites
+                        .iter()
+                        .find(|ts| ts.site_id == sid)
+                        .map(|ts| match ts.therm_class.to_string().as_str() {
+                            "CRYPTIC" => 1.0f32,
+                            "ALLOSTERIC" => 0.9,
+                            "SURFACE" => 0.6,
+                            _ => 0.35,
+                        })
+                        .unwrap_or(0.5)
+                } else {
+                    0.5
+                };
+                let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
+                let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
+
+                // C(s) = sqrt(0.45 * ctot + 0.35 * cdens + 0.20 * cvox)
+                let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
+                let c = c_raw.max(0.0).sqrt();
+
+                // K(s) - two regime formulation using SITE-LEVEL weighted KCC
+                let kcc = &kcc_site_metrics[i];
+                let direction_n = kcc
+                    .get("site_direction_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let motion_eff_n = kcc
+                    .get("site_motion_efficiency")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let burst_n = (kcc
+                    .get("site_burst_motion")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32)
+                    .clamp(0.0, 5.0)
+                    / 5.0;
+                let lag_corr_n = kcc
+                    .get("site_lag_corr_peak")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let local_cov_n = kcc
+                    .get("site_local_cov")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let abs_lag_n = (kcc
+                    .get("site_causal_lag")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    .abs() as f32
+                    / 50.0)
+                    .clamp(0.0, 1.0);
+                let residue_valid = if kcc
+                    .get("driver_residue_id")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(-1)
+                    >= 0
+                {
+                    1.0f32
+                } else {
+                    0.0
+                };
+                let residue_support = kcc
+                    .get("candidate_causal_weights")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| {
+                        let best_idx = kcc
+                            .get("best_kcc_candidate_index")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as usize;
+                        arr.get(best_idx).and_then(|v| v.as_f64())
                     })
-                    .unwrap_or(0.5)
-            } else { 0.5 };
-            let ccns_n = reordered_sites[i].druggability.overall.clamp(0.0, 1.0);
-            let t = 0.5 + 0.25 * therm_n + 0.25 * ccns_n;
+                    .unwrap_or(0.0) as f32;
 
-            // C(s) = sqrt(0.45 * ctot + 0.35 * cdens + 0.20 * cvox)
-            let c_raw = 0.45 * ctot_n[i] + 0.35 * cdens_n[i] + 0.20 * cvox_n[i];
-            let c = c_raw.max(0.0).sqrt();
+                // Flatness score for persistent mode
+                let flatness = 1.0 - (burst_n + abs_lag_n + local_cov_n) / 3.0;
 
-            // K(s) - two regime formulation using SITE-LEVEL weighted KCC
-            let kcc = &kcc_site_metrics[i];
-            let direction_n = kcc.get("site_direction_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let motion_eff_n = kcc.get("site_motion_efficiency").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let burst_n = (kcc.get("site_burst_motion").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32).clamp(0.0, 5.0) / 5.0;
-            let lag_corr_n = kcc.get("site_lag_corr_peak").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let local_cov_n = kcc.get("site_local_cov").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-            let abs_lag_n = (kcc.get("site_causal_lag").and_then(|v| v.as_f64()).unwrap_or(0.0).abs() as f32 / 50.0).clamp(0.0, 1.0);
-            let residue_valid = if kcc.get("driver_residue_id").and_then(|v| v.as_i64()).unwrap_or(-1) >= 0 { 1.0f32 } else { 0.0 };
-            let residue_support = kcc.get("candidate_causal_weights")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| {
-                    let best_idx = kcc.get("best_kcc_candidate_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                    arr.get(best_idx).and_then(|v| v.as_f64())
-                })
-                .unwrap_or(0.0) as f32;
+                // K_persist (reduced causality weight to 0.25)
+                let k_persist =
+                    0.25 * cdens_n[i] + 0.35 * direction_n + 0.25 * motion_eff_n + 0.15 * flatness;
+                // K_trans (reduced causality weight to 0.15)
+                let k_trans = 0.15 * cdens_n[i]
+                    + 0.25 * direction_n
+                    + 0.25 * burst_n
+                    + 0.20 * lag_corr_n
+                    + 0.15 * local_cov_n;
 
-            // Flatness score for persistent mode
-            let flatness = 1.0 - (burst_n + abs_lag_n + local_cov_n) / 3.0;
+                let k = residue_valid * (0.85 + 0.15 * residue_support) * k_persist.max(k_trans);
 
-            // K_persist (reduced causality weight to 0.25)
-            let k_persist = 0.25 * cdens_n[i] + 0.35 * direction_n + 0.25 * motion_eff_n + 0.15 * flatness;
-            // K_trans (reduced causality weight to 0.15)
-            let k_trans = 0.15 * cdens_n[i] + 0.25 * direction_n + 0.25 * burst_n + 0.20 * lag_corr_n + 0.15 * local_cov_n;
+                // Localization factor L' = 0.80 + 0.20 * L_norm
+                let l_prime = 0.80 + 0.20 * loc_n[i];
 
-            let k = residue_valid * (0.85 + 0.15 * residue_support) * k_persist.max(k_trans);
+                // Hard gates
+                let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
+                    0.0
+                } else {
+                    g * t * c * k * l_prime
+                };
 
-            // Localization factor L' = 0.80 + 0.20 * L_norm
-            let l_prime = 0.80 + 0.20 * loc_n[i];
-
-            // Hard gates
-            let gated = if cvox_n[i] <= 0.0 || residue_valid == 0.0 || g < 0.01 {
-                0.0
-            } else {
-                g * t * c * k * l_prime
-            };
-
-            (gated, g, t, c, k, l_prime, raw_localization[i])
-        }).collect();
+                (gated, g, t, c, k, l_prime, raw_localization[i])
+            })
+            .collect();
 
         // Re-rank by rank_score (descending)
         let mut rank_order: Vec<usize> = (0..rank_scores.len()).collect();
-        rank_order.sort_by(|&a, &b| rank_scores[b].0.partial_cmp(&rank_scores[a].0).unwrap_or(std::cmp::Ordering::Equal));
+        rank_order.sort_by(|&a, &b| {
+            rank_scores[b]
+                .0
+                .partial_cmp(&rank_scores[a].0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         log::info!("G×T×C×K×L ranking applied. Top-3:");
         for (rank, &idx) in rank_order.iter().take(3).enumerate() {
             let (score, g, t, c, k, l, _) = rank_scores[idx];
-            log::info!("  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3} L={:.3}",
-                rank + 1, reordered_sites[idx].cluster_id, score, g, t, c, k, l);
+            log::info!(
+                "  #{}: site {} score={:.6} G={:.3} T={:.3} C={:.3} K={:.3} L={:.3}",
+                rank + 1,
+                reordered_sites[idx].cluster_id,
+                score,
+                g,
+                t,
+                c,
+                k,
+                l
+            );
         }
 
         // Build per-site JSON, merging PRISM-Therm therm_class when available
@@ -14419,14 +16279,16 @@ fn run_multi_stream_pipeline(
             for site_json in ms_sites_json.iter_mut() {
                 let site_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
                 if let Some(therm_site) = analysis.sites.iter().find(|s| s.site_id == site_id) {
-                    site_json["therm_class"] = serde_json::Value::String(
-                        therm_site.therm_class.to_string()
-                    );
-                    site_json["hysteresis_asymmetry"] = serde_json::json!(therm_site.asymmetry_score);
-                    site_json["relative_asymmetry"] = serde_json::json!(therm_site.relative_asymmetry);
+                    site_json["therm_class"] =
+                        serde_json::Value::String(therm_site.therm_class.to_string());
+                    site_json["hysteresis_asymmetry"] =
+                        serde_json::json!(therm_site.asymmetry_score);
+                    site_json["relative_asymmetry"] =
+                        serde_json::json!(therm_site.relative_asymmetry);
                     site_json["ccns_tau"] = serde_json::json!(therm_site.tau);
                     // Phase fraction fields — expose the cold/hot spike breakdown
-                    let total_phase = therm_site.heating_spike_count + therm_site.cooling_spike_count;
+                    let total_phase =
+                        therm_site.heating_spike_count + therm_site.cooling_spike_count;
                     if total_phase > 0 {
                         let hot_frac = therm_site.heating_spike_count as f64 / total_phase as f64;
                         let cold_frac = therm_site.cooling_spike_count as f64 / total_phase as f64;
@@ -14441,26 +16303,34 @@ fn run_multi_stream_pipeline(
                         });
                     }
                     if therm_site.therm_class.to_string() == "CRYPTIC" {
-                        site_json["classification"] = serde_json::Value::String("Cryptic".to_string());
+                        site_json["classification"] =
+                            serde_json::Value::String("Cryptic".to_string());
                     }
                     // TIDE coupling score: overlap of top-5 trigger residues with lining residues.
                     // Exported per-site for downstream analysis and explicit solvent validation.
                     if !therm_site.tide_decomposition.is_empty() {
                         // Look up the site from reordered_sites by matching cluster_id
                         let site_cluster_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
-                        if let Some(site_ref) = reordered_sites.iter().find(|s| s.cluster_id == site_cluster_id) {
-                            let trigger_residues: std::collections::HashSet<i32> = therm_site.tide_decomposition.iter()
+                        if let Some(site_ref) = reordered_sites
+                            .iter()
+                            .find(|s| s.cluster_id == site_cluster_id)
+                        {
+                            let trigger_residues: std::collections::HashSet<i32> = therm_site
+                                .tide_decomposition
+                                .iter()
                                 .take(5)
                                 .map(|t| t.residue_id as i32)
                                 .collect();
-                            let lining_ids: std::collections::HashSet<i32> = site_ref.lining_residues.iter()
-                                .map(|r| r.resid)
-                                .collect();
+                            let lining_ids: std::collections::HashSet<i32> =
+                                site_ref.lining_residues.iter().map(|r| r.resid).collect();
                             let overlap = trigger_residues.intersection(&lining_ids).count();
-                            let tide_coupling = overlap as f32 / trigger_residues.len().max(1) as f32;
+                            let tide_coupling =
+                                overlap as f32 / trigger_residues.len().max(1) as f32;
                             site_json["tide_coupling_score"] = serde_json::json!(tide_coupling);
                             // Export trigger residue IDs for downstream analysis
-                            let trigger_ids: Vec<u32> = therm_site.tide_decomposition.iter()
+                            let trigger_ids: Vec<u32> = therm_site
+                                .tide_decomposition
+                                .iter()
                                 .take(5)
                                 .map(|t| t.residue_id)
                                 .collect();
@@ -14474,13 +16344,21 @@ fn run_multi_stream_pipeline(
         // Rank-normalize wd_coherence (raw variance → 0.0–1.0) across all sites
         // before writing to JSON. The raw variance is tiny (1e-10 to 1e-4) and
         // useless for ranking; the rank-normalized version preserves relative order.
-        let wd_raw_values: Vec<(i32, f32)> = spatial_signals.iter()
+        let wd_raw_values: Vec<(i32, f32)> = spatial_signals
+            .iter()
             .map(|(&id, &(_, wdc, _))| (id, wdc))
             .collect();
-        let mut wd_normalized: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
+        let mut wd_normalized: std::collections::HashMap<i32, f32> =
+            std::collections::HashMap::new();
         if wd_raw_values.len() > 1 {
-            let min_w = wd_raw_values.iter().map(|(_, w)| *w).fold(f32::MAX, f32::min);
-            let max_w = wd_raw_values.iter().map(|(_, w)| *w).fold(f32::MIN, f32::max);
+            let min_w = wd_raw_values
+                .iter()
+                .map(|(_, w)| *w)
+                .fold(f32::MAX, f32::min);
+            let max_w = wd_raw_values
+                .iter()
+                .map(|(_, w)| *w)
+                .fold(f32::MIN, f32::max);
             let range = (max_w - min_w).max(1e-10);
             for &(id, w) in &wd_raw_values {
                 wd_normalized.insert(id, ((w - min_w) / range).clamp(0.0, 1.0));
@@ -14523,11 +16401,16 @@ fn run_multi_stream_pipeline(
             let site_id = site_json["id"].as_i64().unwrap_or(-1) as i32;
             if let Some(bfe) = sti_results.get(&site_id) {
                 site_json["delta_g_sti_kcal_mol"] = serde_json::json!(bfe.delta_g_sti_kcal_mol);
-                site_json["effective_delta_g_kcal_mol"] = serde_json::json!(bfe.effective_delta_g_kcal_mol);
-                site_json["delta_g_aromatic_kcal_mol"] = serde_json::json!(bfe.delta_g_aromatic_kcal_mol);
-                site_json["delta_g_dewetting_kcal_mol"] = serde_json::json!(bfe.delta_g_dewetting_kcal_mol);
-                site_json["delta_g_electrostatic_kcal_mol"] = serde_json::json!(bfe.delta_g_electrostatic_kcal_mol);
-                site_json["delta_g_cooperative_kcal_mol"] = serde_json::json!(bfe.delta_g_cooperative_kcal_mol);
+                site_json["effective_delta_g_kcal_mol"] =
+                    serde_json::json!(bfe.effective_delta_g_kcal_mol);
+                site_json["delta_g_aromatic_kcal_mol"] =
+                    serde_json::json!(bfe.delta_g_aromatic_kcal_mol);
+                site_json["delta_g_dewetting_kcal_mol"] =
+                    serde_json::json!(bfe.delta_g_dewetting_kcal_mol);
+                site_json["delta_g_electrostatic_kcal_mol"] =
+                    serde_json::json!(bfe.delta_g_electrostatic_kcal_mol);
+                site_json["delta_g_cooperative_kcal_mol"] =
+                    serde_json::json!(bfe.delta_g_cooperative_kcal_mol);
                 site_json["kinetic_accessibility"] = serde_json::json!(bfe.kinetic_accessibility);
                 site_json["sti_n_voxels"] = serde_json::json!(bfe.n_voxels);
                 site_json["sti_n_spikes"] = serde_json::json!(bfe.n_spikes);
@@ -14543,51 +16426,83 @@ fn run_multi_stream_pipeline(
         // just physics observables weighted by their correlation with binding.
         {
             // Weights (sum ≈ 1.0)
-            const W_BREATHING: f64     = 0.14752;
-            const W_DIRECTION: f64     = 0.13121;
-            const W_CAUSAL_FRAC: f64   = 0.12965;
-            const W_OLD_RANK: f64      = 0.12034;
-            const W_LAG_CORR: f64      = 0.11102;
-            const W_SRC_DIV: f64       = 0.10637;
-            const W_VOLUME: f64        = 0.10054;
-            const W_BURIAL: f64        = 0.06366;
-            const W_DRUGGABILITY: f64  = 0.05279;
-            const W_WD_COHERENCE: f64  = 0.03688;
+            const W_BREATHING: f64 = 0.14752;
+            const W_DIRECTION: f64 = 0.13121;
+            const W_CAUSAL_FRAC: f64 = 0.12965;
+            const W_OLD_RANK: f64 = 0.12034;
+            const W_LAG_CORR: f64 = 0.11102;
+            const W_SRC_DIV: f64 = 0.10637;
+            const W_VOLUME: f64 = 0.10054;
+            const W_BURIAL: f64 = 0.06366;
+            const W_DRUGGABILITY: f64 = 0.05279;
+            const W_WD_COHERENCE: f64 = 0.03688;
 
             // Min-max normalization clamp
             fn norm(val: f64, lo: f64, hi: f64) -> f64 {
-                if hi <= lo { return 0.5; }
+                if hi <= lo {
+                    return 0.5;
+                }
                 ((val - lo) / (hi - lo)).clamp(0.0, 1.0)
             }
 
             for sj in ms_sites_json.iter_mut() {
-                let breathing   = sj.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let kcc         = sj.get("kcc").cloned().unwrap_or(serde_json::json!(null));
-                let direction   = kcc.get("site_direction_score").and_then(|v| v.as_f64()).unwrap_or(0.98);
-                let active_cs   = kcc.get("active_causal_steps").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let total_steps = kcc.get("total_steps").and_then(|v| v.as_f64()).unwrap_or(1.0).max(1.0);
+                let breathing = sj
+                    .get("breathing_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let kcc = sj.get("kcc").cloned().unwrap_or(serde_json::json!(null));
+                let direction = kcc
+                    .get("site_direction_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.98);
+                let active_cs = kcc
+                    .get("active_causal_steps")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let total_steps = kcc
+                    .get("total_steps")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0)
+                    .max(1.0);
                 let causal_frac = active_cs / total_steps;
-                let old_rank    = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0);
-                let lag_corr    = kcc.get("site_lag_corr_peak").and_then(|v| v.as_f64())
+                let old_rank = sj
+                    .get("rank_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    .max(0.0);
+                let lag_corr = kcc
+                    .get("site_lag_corr_peak")
+                    .and_then(|v| v.as_f64())
                     .or_else(|| kcc.get("lag_corr_peak").and_then(|v| v.as_f64()))
                     .unwrap_or(0.0);
-                let src_div     = sj.get("source_diversity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let volume      = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let burial      = sj.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let druggability= sj.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let wd_coh      = sj.get("wd_coherence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let src_div = sj
+                    .get("source_diversity")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let volume = sj.get("volume").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let burial = sj
+                    .get("burial_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let druggability = sj
+                    .get("druggability")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let wd_coh = sj
+                    .get("wd_coherence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
 
-                let score =
-                    W_BREATHING    * norm(breathing,   0.0, 0.75)
-                  + W_DIRECTION    * norm(direction,   0.9, 1.0)
-                  + W_CAUSAL_FRAC  * norm(causal_frac, 0.0, 0.5)
-                  + W_OLD_RANK     * norm(old_rank,    0.0, 0.25)
-                  + W_LAG_CORR     * norm(lag_corr,    0.0, 1.0)
-                  + W_SRC_DIV      * norm(src_div,     0.0, 1.0)
-                  + W_VOLUME       * norm(volume,      0.0, 3000.0)
-                  + W_BURIAL       * norm(burial,      0.0, 1.0)
-                  + W_DRUGGABILITY * norm(druggability, 0.0, 1.0)
-                  + W_WD_COHERENCE * norm(wd_coh,      0.0, 1.0);
+                let score = W_BREATHING * norm(breathing, 0.0, 0.75)
+                    + W_DIRECTION * norm(direction, 0.9, 1.0)
+                    + W_CAUSAL_FRAC * norm(causal_frac, 0.0, 0.5)
+                    + W_OLD_RANK * norm(old_rank, 0.0, 0.25)
+                    + W_LAG_CORR * norm(lag_corr, 0.0, 1.0)
+                    + W_SRC_DIV * norm(src_div, 0.0, 1.0)
+                    + W_VOLUME * norm(volume, 0.0, 3000.0)
+                    + W_BURIAL * norm(burial, 0.0, 1.0)
+                    + W_DRUGGABILITY * norm(druggability, 0.0, 1.0)
+                    + W_WD_COHERENCE * norm(wd_coh, 0.0, 1.0);
 
                 sj["composite_v3_score"] = serde_json::json!(score);
                 // quality_score now uses v3 composite for downstream consumers
@@ -14596,7 +16511,9 @@ fn run_multi_stream_pipeline(
 
             // Sort by composite_v3_score descending
             ms_sites_json.sort_by(|a, b| {
-                b["composite_v3_score"].as_f64().unwrap_or(0.0)
+                b["composite_v3_score"]
+                    .as_f64()
+                    .unwrap_or(0.0)
                     .partial_cmp(&a["composite_v3_score"].as_f64().unwrap_or(0.0))
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
@@ -14608,11 +16525,13 @@ fn run_multi_stream_pipeline(
 
             log::info!("  V3 composite ranking applied. Top-3:");
             for sj in ms_sites_json.iter().take(3) {
-                log::info!("    #{}: site {} v3={:.4} gtckl={:.4}",
+                log::info!(
+                    "    #{}: site {} v3={:.4} gtckl={:.4}",
                     sj["composite_v3_rank"].as_u64().unwrap_or(0),
                     sj["id"].as_i64().unwrap_or(0),
                     sj["composite_v3_score"].as_f64().unwrap_or(0.0),
-                    sj["rank_score"].as_f64().unwrap_or(0.0));
+                    sj["rank_score"].as_f64().unwrap_or(0.0)
+                );
             }
         }
 
@@ -14623,7 +16542,8 @@ fn run_multi_stream_pipeline(
             let n_sites = ms_sites_json.len();
             if n_sites > 0 {
                 // Build per-residue active_causal lookup from merged KCC
-                let mut res_active: std::collections::HashMap<i32, bool> = std::collections::HashMap::new();
+                let mut res_active: std::collections::HashMap<i32, bool> =
+                    std::collections::HashMap::new();
                 if let Some(ref kcc) = merged_kcc {
                     for r in 0..kcc.n_residues {
                         res_active.insert(r as i32, kcc.active_causal[r] > 0);
@@ -14633,66 +16553,175 @@ fn run_multi_stream_pipeline(
                 // Feature definition: (name, weight, extractor from serde_json::Value)
                 type Ext = fn(&serde_json::Value, &std::collections::HashMap<i32, bool>) -> f64;
                 let features: Vec<(&str, f64, Ext)> = vec![
-                    ("sp_causality_density",       0.2058, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("causality_density")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_driver_burst",            0.1836, |s,_| s.get("kcc").and_then(|k| k.get("burst_motion")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_driver_direction",         0.1776, |s,_| s.get("kcc").and_then(|k| k.get("direction_score")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("rank_K",                      0.1721, |s,_| s.get("rank_K").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_driver_motion_eff",      -0.1554, |s,_| s.get("kcc").and_then(|k| k.get("motion_efficiency")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("sp_mean_recurrence",          0.0740, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("mean_recurrence")).and_then(|v| v.as_f64()).unwrap_or(0.0)), // halved: cryptic sites dominate on raw spike count
-                    ("druggability",                0.1444, |s,_| s.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("breathing_score",             0.1347, |s,_| s.get("breathing_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("rank_T",                      0.1336, |s,_| s.get("rank_T").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_site_burst",              0.1326, |s,_| s.get("kcc").and_then(|k| k.get("site_burst_motion")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("engine_chem",                 0.1157, |s,_| s.get("engine_chem").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_temporal_corr",           0.1125, |s,_| s.get("kcc").and_then(|k| k.get("temporal_corr")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_site_direction",          0.1050, |s,_| s.get("kcc").and_then(|k| k.get("site_direction_score")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("frustrated_solvent",          0.1044, |s,_| s.get("frustrated_solvent_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("source_diversity",            0.1029, |s,_| s.get("source_diversity").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("burial_score",                0.1027, |s,_| s.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("mean_burial",                 0.1023, |s,_| s.get("mean_burial").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("sp_residue_concentration",    0.0973, |s,_| s.get("signal_preservation").and_then(|sp| sp.get("residue_concentration")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_confidence",              0.0, |s,_| s.get("kcc").and_then(|k| k.get("kcc_confidence")).and_then(|v| v.as_f64()).unwrap_or(0.0)), // zeroed: double-penalizes DYNAMIC sites (already in rank_score)
-                    ("res_frac_silent",            -0.0913, |s, ra| {
+                    ("sp_causality_density", 0.2058, |s, _| {
+                        s.get("signal_preservation")
+                            .and_then(|sp| sp.get("causality_density"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("kcc_driver_burst", 0.1836, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("burst_motion"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("kcc_driver_direction", 0.1776, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("direction_score"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("rank_K", 0.1721, |s, _| {
+                        s.get("rank_K").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                    }),
+                    ("kcc_driver_motion_eff", -0.1554, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("motion_efficiency"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("sp_mean_recurrence", 0.0740, |s, _| {
+                        s.get("signal_preservation")
+                            .and_then(|sp| sp.get("mean_recurrence"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }), // halved: cryptic sites dominate on raw spike count
+                    ("druggability", 0.1444, |s, _| {
+                        s.get("druggability")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("breathing_score", 0.1347, |s, _| {
+                        s.get("breathing_score")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("rank_T", 0.1336, |s, _| {
+                        s.get("rank_T").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                    }),
+                    ("kcc_site_burst", 0.1326, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("site_burst_motion"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("engine_chem", 0.1157, |s, _| {
+                        s.get("engine_chem").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                    }),
+                    ("kcc_temporal_corr", 0.1125, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("temporal_corr"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("kcc_site_direction", 0.1050, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("site_direction_score"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("frustrated_solvent", 0.1044, |s, _| {
+                        s.get("frustrated_solvent_score")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("source_diversity", 0.1029, |s, _| {
+                        s.get("source_diversity")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("burial_score", 0.1027, |s, _| {
+                        s.get("burial_score")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("mean_burial", 0.1023, |s, _| {
+                        s.get("mean_burial").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                    }),
+                    ("sp_residue_concentration", 0.0973, |s, _| {
+                        s.get("signal_preservation")
+                            .and_then(|sp| sp.get("residue_concentration"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("kcc_confidence", 0.0, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("kcc_confidence"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }), // zeroed: double-penalizes DYNAMIC sites (already in rank_score)
+                    ("res_frac_silent", -0.0913, |s, ra| {
                         let rids = s.get("residue_ids").and_then(|v| v.as_array());
                         match rids {
                             Some(ids) if !ids.is_empty() => {
                                 let n = ids.len() as f64;
-                                let silent = ids.iter().filter(|id| {
-                                    let rid = id.as_i64().unwrap_or(-1) as i32;
-                                    !ra.get(&rid).copied().unwrap_or(false)
-                                }).count() as f64;
+                                let silent = ids
+                                    .iter()
+                                    .filter(|id| {
+                                        let rid = id.as_i64().unwrap_or(-1) as i32;
+                                        !ra.get(&rid).copied().unwrap_or(false)
+                                    })
+                                    .count() as f64;
                                 silent / n
                             }
-                            _ => 0.5
+                            _ => 0.5,
                         }
                     }),
-                    ("aromatic_score",              0.0893, |s,_| s.get("aromatic_score").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("res_frac_active",             0.0862, |s, ra| {
+                    ("aromatic_score", 0.0893, |s, _| {
+                        s.get("aromatic_score")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("res_frac_active", 0.0862, |s, ra| {
                         let rids = s.get("residue_ids").and_then(|v| v.as_array());
                         match rids {
                             Some(ids) if !ids.is_empty() => {
                                 let n = ids.len() as f64;
-                                let active = ids.iter().filter(|id| {
-                                    let rid = id.as_i64().unwrap_or(-1) as i32;
-                                    ra.get(&rid).copied().unwrap_or(false)
-                                }).count() as f64;
+                                let active = ids
+                                    .iter()
+                                    .filter(|id| {
+                                        let rid = id.as_i64().unwrap_or(-1) as i32;
+                                        ra.get(&rid).copied().unwrap_or(false)
+                                    })
+                                    .count() as f64;
                                 active / n
                             }
-                            _ => 0.5
+                            _ => 0.5,
                         }
                     }),
-                    ("kcc_site_motion_eff",        -0.0855, |s,_| s.get("kcc").and_then(|k| k.get("site_motion_efficiency")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("hysteresis_asymmetry",        0.0844, |s,_| s.get("hysteresis_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("rank_G",                     -0.0841, |s,_| s.get("rank_G").and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("kcc_site_local_cov",          0.0809, |s,_| s.get("kcc").and_then(|k| k.get("site_local_cov")).and_then(|v| v.as_f64()).unwrap_or(0.0)),
-                    ("relative_asymmetry",          0.0807, |s,_| s.get("relative_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0)),
+                    ("kcc_site_motion_eff", -0.0855, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("site_motion_efficiency"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("hysteresis_asymmetry", 0.0844, |s, _| {
+                        s.get("hysteresis_asymmetry")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("rank_G", -0.0841, |s, _| {
+                        s.get("rank_G").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                    }),
+                    ("kcc_site_local_cov", 0.0809, |s, _| {
+                        s.get("kcc")
+                            .and_then(|k| k.get("site_local_cov"))
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
+                    ("relative_asymmetry", 0.0807, |s, _| {
+                        s.get("relative_asymmetry")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                    }),
                 ];
 
                 // Extract raw values
                 let n_feat = features.len();
                 let mut raw: Vec<Vec<f64>> = Vec::with_capacity(n_feat);
                 for &(_, _, ext) in &features {
-                    let vals: Vec<f64> = ms_sites_json.iter().map(|s| ext(s, &res_active)).collect();
+                    let vals: Vec<f64> =
+                        ms_sites_json.iter().map(|s| ext(s, &res_active)).collect();
                     raw.push(vals);
                 }
 
@@ -14701,8 +16730,12 @@ fn run_multi_stream_pipeline(
                 let mut maxs = vec![f64::NEG_INFINITY; n_feat];
                 for fi in 0..n_feat {
                     for &v in &raw[fi] {
-                        if v < mins[fi] { mins[fi] = v; }
-                        if v > maxs[fi] { maxs[fi] = v; }
+                        if v < mins[fi] {
+                            mins[fi] = v;
+                        }
+                        if v > maxs[fi] {
+                            maxs[fi] = v;
+                        }
                     }
                 }
 
@@ -14713,7 +16746,9 @@ fn run_multi_stream_pipeline(
                     let mut den = 0.0f64;
                     for fi in 0..n_feat {
                         let range = maxs[fi] - mins[fi];
-                        if range < 1e-15 { continue; }
+                        if range < 1e-15 {
+                            continue;
+                        }
                         let norm = (raw[fi][si] - mins[fi]) / range;
                         num += features[fi].1 * norm;
                         den += features[fi].1.abs();
@@ -14731,18 +16766,22 @@ fn run_multi_stream_pipeline(
 
                 // Sort by quality_score (v9-validated ranking)
                 ms_sites_json.sort_by(|a, b| {
-                    b["quality_score"].as_f64().unwrap_or(0.0)
+                    b["quality_score"]
+                        .as_f64()
+                        .unwrap_or(0.0)
                         .partial_cmp(&a["quality_score"].as_f64().unwrap_or(0.0))
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 log::info!("  Composite audit ranking (27 features). Top-3:");
                 for sj in ms_sites_json.iter().take(3) {
-                    log::info!("    #{}: site {} audit={:.4} gtckl={:.4}",
+                    log::info!(
+                        "    #{}: site {} audit={:.4} gtckl={:.4}",
                         sj["composite_audit_rank"].as_u64().unwrap_or(0),
                         sj["id"].as_i64().unwrap_or(0),
                         sj["composite_audit_score"].as_f64().unwrap_or(0.0),
-                        sj["rank_score"].as_f64().unwrap_or(0.0));
+                        sj["rank_score"].as_f64().unwrap_or(0.0)
+                    );
                 }
             }
         }
@@ -14760,8 +16799,14 @@ fn run_multi_stream_pipeline(
                 let sj = &ms_sites_json[si];
                 let base = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let therm_class = sj.get("therm_class").and_then(|v| v.as_str()).unwrap_or("");
-                let hysteresis = sj.get("hysteresis_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let rel_asym = sj.get("relative_asymmetry").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let hysteresis = sj
+                    .get("hysteresis_asymmetry")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let rel_asym = sj
+                    .get("relative_asymmetry")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
 
                 let cryptic_boost = if therm_class == "CRYPTIC" {
                     let hyst_factor = hysteresis.max(0.0).min(1.0);
@@ -14775,7 +16820,8 @@ fn run_multi_stream_pipeline(
             }
 
             // Sort descending by cryptic-aware score
-            cryptic_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            cryptic_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             for (rank, &(si, score)) in cryptic_scores.iter().enumerate() {
                 ms_sites_json[si]["cryptic_score"] = serde_json::json!(score);
@@ -14786,12 +16832,16 @@ fn run_multi_stream_pipeline(
             let top3: Vec<_> = cryptic_scores.iter().take(3).collect();
             for &(si, score) in &top3 {
                 let sj = &ms_sites_json[*si];
-                log::info!("    cryptic_rank={} id={} therm={} score={:.4} gtck_rank={}",
+                log::info!(
+                    "    cryptic_rank={} id={} therm={} score={:.4} gtck_rank={}",
                     sj["cryptic_rank"].as_u64().unwrap_or(0),
                     sj["id"].as_i64().unwrap_or(0),
-                    sj.get("therm_class").and_then(|v| v.as_str()).unwrap_or("?"),
+                    sj.get("therm_class")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?"),
                     score,
-                    sj["gtck_rank"].as_u64().unwrap_or(0));
+                    sj["gtck_rank"].as_u64().unwrap_or(0)
+                );
             }
         }
 
@@ -14801,8 +16851,14 @@ fn run_multi_stream_pipeline(
 
         if args.use_tokenized_ranker {
             ms_sites_json.sort_by(|a, b| {
-                let sa = a.get("tokenized_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let sb = b.get("tokenized_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let sa = a
+                    .get("tokenized_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let sb = b
+                    .get("tokenized_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 let primary = sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal);
                 if primary != std::cmp::Ordering::Equal {
                     return primary;
@@ -14814,10 +16870,16 @@ fn run_multi_stream_pipeline(
             for (i, site) in ms_sites_json.iter_mut().enumerate() {
                 if let Some(obj) = site.as_object_mut() {
                     obj.insert("rank".to_string(), serde_json::json!(i + 1));
-                    obj.insert("ranker_version".to_string(), serde_json::json!("tokenized_v4"));
+                    obj.insert(
+                        "ranker_version".to_string(),
+                        serde_json::json!("tokenized_v4"),
+                    );
                 }
             }
-            log::info!("✓ FINAL RERANK: tokenized v4 applied ({} sites)", ms_sites_json.len());
+            log::info!(
+                "✓ FINAL RERANK: tokenized v4 applied ({} sites)",
+                ms_sites_json.len()
+            );
         }
 
         if args.use_xgb_ranker {
@@ -14864,9 +16926,7 @@ fn run_multi_stream_pipeline(
             let gt_prefix: &str = structure_name
                 .strip_suffix(".topology")
                 .unwrap_or(structure_name.as_str());
-            let gt_path = output_base.with_file_name(
-                format!("{}_ground_truth.json", gt_prefix),
-            );
+            let gt_path = output_base.with_file_name(format!("{}_ground_truth.json", gt_prefix));
             log::info!("audit-spine: probing ground_truth at {}", gt_path.display());
             if gt_path.is_file() {
                 match std::fs::read_to_string(&gt_path)
@@ -14883,23 +16943,33 @@ fn run_multi_stream_pipeline(
                                     a[1].as_f64()? as f32,
                                     a[2].as_f64()? as f32,
                                 ])
-                            } else { None }
+                            } else {
+                                None
+                            }
                         }),
                     None => None,
                 }
-            } else { None }
+            } else {
+                None
+            }
         };
 
         // Pre-compute Cα positions from topology for lining-residue
         // centroid derivation.  ca_indices is per-residue index into
         // topology.positions (3-tuple flat-array layout).
-        let phase3_ca_pos: Vec<[f32; 3]> = topology.ca_indices.iter()
+        let phase3_ca_pos: Vec<[f32; 3]> = topology
+            .ca_indices
+            .iter()
             .map(|&ci| {
                 if ci * 3 + 2 < topology.positions.len() {
-                    [topology.positions[ci * 3],
-                     topology.positions[ci * 3 + 1],
-                     topology.positions[ci * 3 + 2]]
-                } else { [0.0_f32; 3] }
+                    [
+                        topology.positions[ci * 3],
+                        topology.positions[ci * 3 + 1],
+                        topology.positions[ci * 3 + 2],
+                    ]
+                } else {
+                    [0.0_f32; 3]
+                }
             })
             .collect();
         let phase3_n_residues = phase3_ca_pos.len();
@@ -14923,14 +16993,19 @@ fn run_multi_stream_pipeline(
         // Phase 2 + 3 laws all route Abort, so laws_passed = laws_declared
         // and laws_violated = [] are honest by construction.
         let phase3_audit_blocks = {
-            use prism_nhs::transform::AuditedTransform;
-            use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
             use prism_nhs::transform::cluster_to_causome::ClusterToCausome;
+            use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+            use prism_nhs::transform::AuditedTransform;
             let now_iso = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             let cl_t = ClusteringToClusteredSites::new();
             let cau_t = ClusterToCausome::new();
-            let mk = |t_id: &str, det: String, tol_kind: &str, tol_eps: Option<f64>,
-                      laws: Vec<&'static str>, family: &'static str| -> serde_json::Value {
+            let mk = |t_id: &str,
+                      det: String,
+                      tol_kind: &str,
+                      tol_eps: Option<f64>,
+                      laws: Vec<&'static str>,
+                      family: &'static str|
+             -> serde_json::Value {
                 serde_json::json!({
                     "transform":         t_id,
                     "determinism":       det,
@@ -14980,12 +17055,15 @@ fn run_multi_stream_pipeline(
         //     ~line 9663 are rehydrated as f32::NAN here)
         //   - candidate_transfer_entropy ← prism_therm_result.sites[].
         //     tide_decomposition (NaN already preserved through f32 FFI)
-        let phase3_l4_violations: std::collections::HashMap<i32, prism_nhs::transform::TransformViolation> = {
-            use prism_nhs::transform::AuditedTransform;
+        let phase3_l4_violations: std::collections::HashMap<
+            i32,
+            prism_nhs::transform::TransformViolation,
+        > = {
             use prism_nhs::transform::causal_truthing_audit::{
                 CausalTruthingAudit, SiteCausalSummary,
             };
             use prism_nhs::transform::AuditOutcome;
+            use prism_nhs::transform::AuditedTransform;
 
             let mut summaries: Vec<SiteCausalSummary> = Vec::with_capacity(ms_sites_json.len());
             for site_json in ms_sites_json.iter() {
@@ -15013,9 +17091,12 @@ fn run_multi_stream_pipeline(
                 let candidate_transfer_entropy: Vec<f32> = prism_therm_result
                     .as_ref()
                     .and_then(|a| a.sites.iter().find(|s| s.site_id == sid))
-                    .map(|ts| ts.tide_decomposition.iter()
-                        .map(|t| t.transfer_entropy)
-                        .collect::<Vec<f32>>())
+                    .map(|ts| {
+                        ts.tide_decomposition
+                            .iter()
+                            .map(|t| t.transfer_entropy)
+                            .collect::<Vec<f32>>()
+                    })
                     .unwrap_or_default();
 
                 summaries.push(SiteCausalSummary {
@@ -15042,7 +17123,8 @@ fn run_multi_stream_pipeline(
             }
             log::info!(
                 "  Phase 3.5 CausalTruthingAudit: {} sites scanned, {} quarantined",
-                summaries.len(), map.len()
+                summaries.len(),
+                map.len()
             );
             map
         };
@@ -15069,14 +17151,15 @@ fn run_multi_stream_pipeline(
                     let topo_idx = (lr.resid - 1).max(0) as usize;
                     if topo_idx < phase3_n_residues {
                         let ca = phase3_ca_pos[topo_idx];
-                        acc[0] += ca[0]; acc[1] += ca[1]; acc[2] += ca[2];
+                        acc[0] += ca[0];
+                        acc[1] += ca[1];
+                        acc[2] += ca[2];
                         n += 1;
                     }
                 }
                 if n > 0 {
-                    lining_centroid = Some([
-                        acc[0] / n as f32, acc[1] / n as f32, acc[2] / n as f32,
-                    ]);
+                    lining_centroid =
+                        Some([acc[0] / n as f32, acc[1] / n as f32, acc[2] / n as f32]);
                 }
             }
 
@@ -15090,7 +17173,9 @@ fn run_multi_stream_pipeline(
                     let idx = did as usize;
                     if idx < phase3_n_residues {
                         Some(phase3_ca_pos[idx])
-                    } else { None }
+                    } else {
+                        None
+                    }
                 });
 
             // LigandAdjacentSubcluster centroid: mean of spike positions
@@ -15098,15 +17183,21 @@ fn run_multi_stream_pipeline(
             // by iterating the site's spike_indices over all_stream_spikes.
             let lig_adj_centroid: Option<[f32; 3]> = {
                 let cutoff_sq = (args.lining_cutoff * args.lining_cutoff) as f32;
-                let lining_cas: Vec<[f32; 3]> = site_ref.lining_residues.iter()
+                let lining_cas: Vec<[f32; 3]> = site_ref
+                    .lining_residues
+                    .iter()
                     .filter_map(|lr| {
                         let topo_idx = (lr.resid - 1).max(0) as usize;
                         if topo_idx < phase3_n_residues {
                             Some(phase3_ca_pos[topo_idx])
-                        } else { None }
+                        } else {
+                            None
+                        }
                     })
                     .collect();
-                if lining_cas.is_empty() { None } else {
+                if lining_cas.is_empty() {
+                    None
+                } else {
                     let mut acc = [0.0_f64; 3];
                     let mut n = 0usize;
                     for &idx in &site_ref.spike_indices {
@@ -15116,10 +17207,12 @@ fn run_multi_stream_pipeline(
                                 let dx = p[0] - ca[0];
                                 let dy = p[1] - ca[1];
                                 let dz = p[2] - ca[2];
-                                (dx*dx + dy*dy + dz*dz) <= cutoff_sq
+                                (dx * dx + dy * dy + dz * dz) <= cutoff_sq
                             });
                             if near {
-                                acc[0] += p[0] as f64; acc[1] += p[1] as f64; acc[2] += p[2] as f64;
+                                acc[0] += p[0] as f64;
+                                acc[1] += p[1] as f64;
+                                acc[2] += p[2] as f64;
                                 n += 1;
                             }
                         }
@@ -15130,7 +17223,9 @@ fn run_multi_stream_pipeline(
                             (acc[1] / n as f64) as f32,
                             (acc[2] / n as f64) as f32,
                         ])
-                    } else { None }
+                    } else {
+                        None
+                    }
                 }
             };
 
@@ -15143,7 +17238,8 @@ fn run_multi_stream_pipeline(
             let mut alt_dccs: Vec<f32> = Vec::new();
             if let Some(gt) = phase3_ligand_centroid {
                 let dcc = |c: [f32; 3]| -> f32 {
-                    ((c[0]-gt[0]).powi(2) + (c[1]-gt[1]).powi(2) + (c[2]-gt[2]).powi(2)).sqrt()
+                    ((c[0] - gt[0]).powi(2) + (c[1] - gt[1]).powi(2) + (c[2] - gt[2]).powi(2))
+                        .sqrt()
                 };
                 // Always-populated GVM
                 let gvm_d = dcc(gvm);
@@ -15151,9 +17247,9 @@ fn run_multi_stream_pipeline(
                 best_view = Some("geometric_voxel_mass");
                 best_dcc = Some(gvm_d);
                 // Other views
-                let candidates: [(&str, Option<[f32;3]>); 3] = [
-                    ("lining_residues",            lining_centroid),
-                    ("driver_residues",            driver_centroid),
+                let candidates: [(&str, Option<[f32; 3]>); 3] = [
+                    ("lining_residues", lining_centroid),
+                    ("driver_residues", driver_centroid),
                     ("ligand_adjacent_subcluster", lig_adj_centroid),
                 ];
                 for (name, opt) in candidates {
@@ -15192,7 +17288,7 @@ fn run_multi_stream_pipeline(
             });
             // Guarantee proper Option<f32> JSON encoding (None → null)
             if best_dcc.is_none() {
-                localization["best_dcc_view"]  = serde_json::Value::Null;
+                localization["best_dcc_view"] = serde_json::Value::Null;
                 localization["best_dcc_value"] = serde_json::Value::Null;
             }
             site_json["localization"] = localization;
@@ -15250,8 +17346,9 @@ fn run_multi_stream_pipeline(
             // "audit didn't run".
             let mut audit_blocks = phase3_audit_blocks.clone();
             let l4_now_iso = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-            let l4_block = if let Some(viol) = phase3_l4_violations.get(&sid) {
-                let evidence_json = match &viol.evidence {
+            let l4_block =
+                if let Some(viol) = phase3_l4_violations.get(&sid) {
+                    let evidence_json = match &viol.evidence {
                     prism_nhs::transform::ViolationEvidence::DeadCausalMathOnMeaningfulSite {
                         site_id, spike_support, candidate_count,
                         all_lag_undefined, all_te_undefined,
@@ -15265,34 +17362,34 @@ fn run_multi_stream_pipeline(
                     }),
                     other => serde_json::json!({ "kind": format!("{:?}", other) }),
                 };
-                serde_json::json!({
-                    "transform":         viol.transform.0,
-                    "determinism":       "BitExact",
-                    "tolerance":         "BitExact",
-                    "tolerance_epsilon": serde_json::Value::Null,
-                    "laws_declared":     [viol.law.key],
-                    "laws_passed":       serde_json::Value::Array(Vec::new()),
-                    "laws_violated":     [viol.law.key],
-                    "law_family":        "algebraic",
-                    "outcome":           "Quarantined",
-                    "routing":           "quarantine",
-                    "evidence":          evidence_json,
-                    "verified_at":       l4_now_iso,
-                })
-            } else {
-                serde_json::json!({
-                    "transform":         "causal_truthing_audit",
-                    "determinism":       "BitExact",
-                    "tolerance":         "BitExact",
-                    "tolerance_epsilon": serde_json::Value::Null,
-                    "laws_declared":     ["l4_causal_math_meaningful_or_absent"],
-                    "laws_passed":       ["l4_causal_math_meaningful_or_absent"],
-                    "laws_violated":     serde_json::Value::Array(Vec::new()),
-                    "law_family":        "algebraic",
-                    "outcome":           "Accepted",
-                    "verified_at":       l4_now_iso,
-                })
-            };
+                    serde_json::json!({
+                        "transform":         viol.transform.0,
+                        "determinism":       "BitExact",
+                        "tolerance":         "BitExact",
+                        "tolerance_epsilon": serde_json::Value::Null,
+                        "laws_declared":     [viol.law.key],
+                        "laws_passed":       serde_json::Value::Array(Vec::new()),
+                        "laws_violated":     [viol.law.key],
+                        "law_family":        "algebraic",
+                        "outcome":           "Quarantined",
+                        "routing":           "quarantine",
+                        "evidence":          evidence_json,
+                        "verified_at":       l4_now_iso,
+                    })
+                } else {
+                    serde_json::json!({
+                        "transform":         "causal_truthing_audit",
+                        "determinism":       "BitExact",
+                        "tolerance":         "BitExact",
+                        "tolerance_epsilon": serde_json::Value::Null,
+                        "laws_declared":     ["l4_causal_math_meaningful_or_absent"],
+                        "laws_passed":       ["l4_causal_math_meaningful_or_absent"],
+                        "laws_violated":     serde_json::Value::Array(Vec::new()),
+                        "law_family":        "algebraic",
+                        "outcome":           "Accepted",
+                        "verified_at":       l4_now_iso,
+                    })
+                };
             audit_blocks.push(l4_block);
             site_json["audit"] = serde_json::Value::Array(audit_blocks);
 
@@ -15310,11 +17407,17 @@ fn run_multi_stream_pipeline(
                 let p2 = p1 + protocol.ramp_steps;
                 let p3 = p2 + protocol.warm_hold_steps;
                 let p4 = p3 + protocol.ramp_down_steps;
-                if ts < p1 { 0 }
-                else if ts < p2 { 1 }
-                else if ts < p3 { 2 }
-                else if ts < p4 { 3 }
-                else { 3 }  // cold_return aggregates with cooling
+                if ts < p1 {
+                    0
+                } else if ts < p2 {
+                    1
+                } else if ts < p3 {
+                    2
+                } else if ts < p4 {
+                    3
+                } else {
+                    3
+                } // cold_return aggregates with cooling
             };
             for &idx in &site_ref.spike_indices {
                 if let Some(s) = all_stream_spikes.get(idx) {
@@ -15332,14 +17435,15 @@ fn run_multi_stream_pipeline(
             // Compute unconditionally (H4 — must not depend on
             // --emit-spike-json flag).
             let open_frequency: f32 = {
-                let mut frames: std::collections::HashSet<i32> =
-                    std::collections::HashSet::new();
+                let mut frames: std::collections::HashSet<i32> = std::collections::HashSet::new();
                 let mut max_frame = 0i32;
                 for &idx in &site_ref.spike_indices {
                     if let Some(s) = all_stream_spikes.get(idx) {
                         let f = s.timestep / 1000;
                         frames.insert(f);
-                        if f > max_frame { max_frame = f; }
+                        if f > max_frame {
+                            max_frame = f;
+                        }
                     }
                 }
                 let total = (max_frame + 1).max(1) as f32;
@@ -15392,14 +17496,10 @@ fn run_multi_stream_pipeline(
                 "audit-spine localization site {}: GVM={:?} lining={:?} driver={:?} \
                  lig_adj={:?} best_view={:?} best_dcc={:?}",
                 sid,
-                site_json["localization"]["dcc_per_view"]
-                    .get("geometric_voxel_mass"),
-                site_json["localization"]["dcc_per_view"]
-                    .get("lining_residues"),
-                site_json["localization"]["dcc_per_view"]
-                    .get("driver_residues"),
-                site_json["localization"]["dcc_per_view"]
-                    .get("ligand_adjacent_subcluster"),
+                site_json["localization"]["dcc_per_view"].get("geometric_voxel_mass"),
+                site_json["localization"]["dcc_per_view"].get("lining_residues"),
+                site_json["localization"]["dcc_per_view"].get("driver_residues"),
+                site_json["localization"]["dcc_per_view"].get("ligand_adjacent_subcluster"),
                 best_view,
                 best_dcc
             );
@@ -15415,7 +17515,9 @@ fn run_multi_stream_pipeline(
                     "argmin attestation: GVM strictly minimizes DCC for all {} sites; \
                      alternative views computed and serialized; non-GVM views ranged \
                      from {:.2}..{:.2} A",
-                    ms_sites_json.len(), lo, hi
+                    ms_sites_json.len(),
+                    lo,
+                    hi
                 );
             }
         } else {
@@ -15432,34 +17534,33 @@ fn run_multi_stream_pipeline(
         // controller's internal buffer and serializes the full decision
         // trace into the output JSON. If rescue was disabled, this is
         // serde_json::Value::Null and adds nothing to the output.
-        let rescue_history_json: serde_json::Value =
-            if let Some(ref shared) = asc_shared {
-                if let Some(ref ctrl) = shared.rescue_controller {
-                    let history = ctrl.drain_history();
-                    log::info!(
-                        "  [RESCUE] run complete — {} decision records collected",
-                        history.len()
-                    );
-                    // RescueTargets actually used is also embedded so the
-                    // reviewer can see exactly what thresholds the
-                    // controller was operating against.
-                    serde_json::json!({
-                        "enabled": true,
-                        "targets_used": rescue_targets.as_ref(),
-                        "decisions": history,
-                    })
-                } else {
-                    serde_json::json!({
-                        "enabled": false,
-                        "reason": "controller_not_constructed",
-                    })
-                }
+        let rescue_history_json: serde_json::Value = if let Some(ref shared) = asc_shared {
+            if let Some(ref ctrl) = shared.rescue_controller {
+                let history = ctrl.drain_history();
+                log::info!(
+                    "  [RESCUE] run complete — {} decision records collected",
+                    history.len()
+                );
+                // RescueTargets actually used is also embedded so the
+                // reviewer can see exactly what thresholds the
+                // controller was operating against.
+                serde_json::json!({
+                    "enabled": true,
+                    "targets_used": rescue_targets.as_ref(),
+                    "decisions": history,
+                })
             } else {
                 serde_json::json!({
                     "enabled": false,
-                    "reason": "multi_differential_asc_path_not_active",
+                    "reason": "controller_not_constructed",
                 })
-            };
+            }
+        } else {
+            serde_json::json!({
+                "enabled": false,
+                "reason": "multi_differential_asc_path_not_active",
+            })
+        };
 
         let json_output = serde_json::json!({
             // Phase 3 schema v2 contract markers (preservation hooks H1, H3).
@@ -15506,11 +17607,21 @@ fn run_multi_stream_pipeline(
 
         // ── KCC Visualization Export ──
         if let Some(ref kcc) = merged_kcc {
-            let ca_pos: Vec<[f32; 3]> = topology.ca_indices.iter().map(|&ci| {
-                if ci * 3 + 2 < topology.positions.len() {
-                    [topology.positions[ci*3], topology.positions[ci*3+1], topology.positions[ci*3+2]]
-                } else { [0.0; 3] }
-            }).collect();
+            let ca_pos: Vec<[f32; 3]> = topology
+                .ca_indices
+                .iter()
+                .map(|&ci| {
+                    if ci * 3 + 2 < topology.positions.len() {
+                        [
+                            topology.positions[ci * 3],
+                            topology.positions[ci * 3 + 1],
+                            topology.positions[ci * 3 + 2],
+                        ]
+                    } else {
+                        [0.0; 3]
+                    }
+                })
+                .collect();
             let mut res_json = Vec::new();
             for r in 0..kcc.n_residues.min(ca_pos.len()) {
                 // Emit ALL residues — inactive ones get zeroed causal fields.
@@ -15533,15 +17644,24 @@ fn run_multi_stream_pipeline(
                 let ds = kcc.direction_score[r];
                 let causality_frac = if kcc.residue_count[r] > 0 {
                     kcc.active_causal[r] as f32 / kcc.residue_count[r] as f32
-                } else { 0.0 };
-                let kcc_score = 0.3 * lc + 0.25 * causality_frac + 0.2 * bm.min(3.0) / 3.0
-                    + 0.15 * me.min(0.01) / 0.01 + 0.1 * ds;
+                } else {
+                    0.0
+                };
+                let kcc_score = 0.3 * lc
+                    + 0.25 * causality_frac
+                    + 0.2 * bm.min(3.0) / 3.0
+                    + 0.15 * me.min(0.01) / 0.01
+                    + 0.1 * ds;
                 let lc_json: serde_json::Value = if lc_raw.is_finite() {
                     serde_json::json!(lc_raw)
-                } else { serde_json::Value::Null };
+                } else {
+                    serde_json::Value::Null
+                };
                 let cl_json: serde_json::Value = if cl_raw.is_finite() {
                     serde_json::json!(cl_raw)
-                } else { serde_json::Value::Null };
+                } else {
+                    serde_json::Value::Null
+                };
                 // Map internal index → PDB resid via pdb_id_map
                 res_json.push(serde_json::json!({
                     "residue_id": map_resid(r as i32),
@@ -15560,16 +17680,19 @@ fn run_multi_stream_pipeline(
                     "total_steps": kcc.residue_count[r],
                 }));
             }
-            let sites_viz: Vec<serde_json::Value> = ms_sites_json.iter().map(|sj| {
-                serde_json::json!({
-                    "id": sj.get("id"), "centroid": sj.get("centroid"),
-                    "rank_score": sj.get("rank_score"), "gtck_rank": sj.get("gtck_rank"),
-                    "rank_G": sj.get("rank_G"), "rank_T": sj.get("rank_T"),
-                    "rank_C": sj.get("rank_C"), "rank_K": sj.get("rank_K"),
-                    "rank_L": sj.get("rank_L"), "volume": sj.get("volume"),
-                    "kcc": sj.get("kcc"),
+            let sites_viz: Vec<serde_json::Value> = ms_sites_json
+                .iter()
+                .map(|sj| {
+                    serde_json::json!({
+                        "id": sj.get("id"), "centroid": sj.get("centroid"),
+                        "rank_score": sj.get("rank_score"), "gtck_rank": sj.get("gtck_rank"),
+                        "rank_G": sj.get("rank_G"), "rank_T": sj.get("rank_T"),
+                        "rank_C": sj.get("rank_C"), "rank_K": sj.get("rank_K"),
+                        "rank_L": sj.get("rank_L"), "volume": sj.get("volume"),
+                        "kcc": sj.get("kcc"),
+                    })
                 })
-            }).collect();
+                .collect();
             let viz = serde_json::json!({
                 "pdb_source": &topology.source_pdb,
                 "residues": res_json,
@@ -15646,11 +17769,19 @@ fn run_multi_stream_pipeline(
                 for sj in ms_sites_json.iter() {
                     let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
                     let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
-                    if rk > 5 { continue; }
+                    if rk > 5 {
+                        continue;
+                    }
                     let rs = sj.get("rank_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let kcc = match sj.get("kcc") { Some(k) => k, None => continue };
+                    let kcc = match sj.get("kcc") {
+                        Some(k) => k,
+                        None => continue,
+                    };
                     let cids = kcc.get("candidate_residue_ids").and_then(|v| v.as_array());
-                    let cids = match cids { Some(c) => c, None => continue };
+                    let cids = match cids {
+                        Some(c) => c,
+                        None => continue,
+                    };
 
                     // Build top-K residue entries with positions + KCC
                     let mut topk_entries = Vec::new();
@@ -15660,13 +17791,19 @@ fn run_multi_stream_pipeline(
 
                     for (ci, rid_val) in cids.iter().enumerate() {
                         let rid = rid_val.as_i64().unwrap_or(-1) as usize;
-                        if rid >= ca_pos.len() || rid >= kcc_ref_nr { continue; }
+                        if rid >= ca_pos.len() || rid >= kcc_ref_nr {
+                            continue;
+                        }
                         let ca = ca_pos[rid];
                         let kcc_ref = merged_kcc.as_ref().unwrap();
                         let me = kcc_ref.motion_efficiency.get(rid).copied().unwrap_or(0.0) as f64;
                         // NaN-safe read (kernel may emit NaN for "lag not honestly computable").
                         let lc_raw_f32 = kcc_ref.lag_corr_peak.get(rid).copied().unwrap_or(0.0);
-                        let lc = if lc_raw_f32.is_finite() { lc_raw_f32 as f64 } else { 0.0 };
+                        let lc = if lc_raw_f32.is_finite() {
+                            lc_raw_f32 as f64
+                        } else {
+                            0.0
+                        };
                         let bm = kcc_ref.burst_motion.get(rid).copied().unwrap_or(0.0) as f64;
                         let lcv = kcc_ref.local_cov.get(rid).copied().unwrap_or(0.0) as f64;
                         let ndx = kcc_ref.net_dx.get(rid).copied().unwrap_or(0.0) as f64;
@@ -15674,8 +17811,10 @@ fn run_multi_stream_pipeline(
                         let ndz = kcc_ref.net_dz.get(rid).copied().unwrap_or(0.0) as f64;
 
                         positions.push([ca[0] as f64, ca[1] as f64, ca[2] as f64]);
-                        let mag = (ndx*ndx + ndy*ndy + ndz*ndz).sqrt();
-                        if mag > 0.01 { vectors.push([ndx/mag, ndy/mag, ndz/mag]); }
+                        let mag = (ndx * ndx + ndy * ndy + ndz * ndz).sqrt();
+                        if mag > 0.01 {
+                            vectors.push([ndx / mag, ndy / mag, ndz / mag]);
+                        }
                         signal_strengths.push(me * lc.abs().max(0.01));
 
                         topk_entries.push(serde_json::json!({
@@ -15686,36 +17825,76 @@ fn run_multi_stream_pipeline(
 
                     // Structural sanity
                     let (struct_pass, mean_rad, max_dist, centroid) = if positions.len() >= 2 {
-                        let cx = positions.iter().map(|p| p[0]).sum::<f64>() / positions.len() as f64;
-                        let cy = positions.iter().map(|p| p[1]).sum::<f64>() / positions.len() as f64;
-                        let cz = positions.iter().map(|p| p[2]).sum::<f64>() / positions.len() as f64;
-                        let mr = positions.iter().map(|p| ((p[0]-cx).powi(2)+(p[1]-cy).powi(2)+(p[2]-cz).powi(2)).sqrt()).sum::<f64>() / positions.len() as f64;
+                        let cx =
+                            positions.iter().map(|p| p[0]).sum::<f64>() / positions.len() as f64;
+                        let cy =
+                            positions.iter().map(|p| p[1]).sum::<f64>() / positions.len() as f64;
+                        let cz =
+                            positions.iter().map(|p| p[2]).sum::<f64>() / positions.len() as f64;
+                        let mr = positions
+                            .iter()
+                            .map(|p| {
+                                ((p[0] - cx).powi(2) + (p[1] - cy).powi(2) + (p[2] - cz).powi(2))
+                                    .sqrt()
+                            })
+                            .sum::<f64>()
+                            / positions.len() as f64;
                         let mut md = 0.0f64;
-                        for i in 0..positions.len() { for j in i+1..positions.len() {
-                            let d = ((positions[i][0]-positions[j][0]).powi(2)+(positions[i][1]-positions[j][1]).powi(2)+(positions[i][2]-positions[j][2]).powi(2)).sqrt();
-                            if d > md { md = d; }
-                        }}
+                        for i in 0..positions.len() {
+                            for j in i + 1..positions.len() {
+                                let d = ((positions[i][0] - positions[j][0]).powi(2)
+                                    + (positions[i][1] - positions[j][1]).powi(2)
+                                    + (positions[i][2] - positions[j][2]).powi(2))
+                                .sqrt();
+                                if d > md {
+                                    md = d;
+                                }
+                            }
+                        }
                         (mr < 6.0 && md < 12.0, mr, md, [cx, cy, cz])
-                    } else { (true, 0.0, 0.0, [0.0; 3]) };
+                    } else {
+                        (true, 0.0, 0.0, [0.0; 3])
+                    };
 
                     // Vector sanity
                     let (vec_pass, mean_cos) = if vectors.len() >= 2 {
-                        let mut sum_cos = 0.0f64; let mut n = 0u32;
-                        for i in 0..vectors.len() { for j in i+1..vectors.len() {
-                            sum_cos += vectors[i][0]*vectors[j][0] + vectors[i][1]*vectors[j][1] + vectors[i][2]*vectors[j][2];
-                            n += 1;
-                        }}
+                        let mut sum_cos = 0.0f64;
+                        let mut n = 0u32;
+                        for i in 0..vectors.len() {
+                            for j in i + 1..vectors.len() {
+                                sum_cos += vectors[i][0] * vectors[j][0]
+                                    + vectors[i][1] * vectors[j][1]
+                                    + vectors[i][2] * vectors[j][2];
+                                n += 1;
+                            }
+                        }
                         let mc = if n > 0 { sum_cos / n as f64 } else { 0.0 };
                         (mc > 0.5, mc)
-                    } else { (true, 1.0) };
+                    } else {
+                        (true, 1.0)
+                    };
 
                     // Signal sanity
-                    let mean_sig = if !signal_strengths.is_empty() { signal_strengths.iter().sum::<f64>() / signal_strengths.len() as f64 } else { 0.0 };
-                    let vec_density = if cids.len() > 0 { vectors.len() as f64 / cids.len() as f64 } else { 0.0 };
+                    let mean_sig = if !signal_strengths.is_empty() {
+                        signal_strengths.iter().sum::<f64>() / signal_strengths.len() as f64
+                    } else {
+                        0.0
+                    };
+                    let vec_density = if cids.len() > 0 {
+                        vectors.len() as f64 / cids.len() as f64
+                    } else {
+                        0.0
+                    };
                     let sig_pass = vec_density > 0.6;
 
                     let all_pass = struct_pass && vec_pass && sig_pass;
-                    let verdict = if all_pass { "PASS" } else if struct_pass || vec_pass { "WARN" } else { "FAIL" };
+                    let verdict = if all_pass {
+                        "PASS"
+                    } else if struct_pass || vec_pass {
+                        "WARN"
+                    } else {
+                        "FAIL"
+                    };
 
                     val_sites.push(serde_json::json!({
                         "site_id": sid, "gtck_rank": rk, "rank_score": rs,
@@ -15730,10 +17909,15 @@ fn run_multi_stream_pipeline(
                 }
 
                 // Global checks
-                let top_scores: Vec<f64> = val_sites.iter()
+                let top_scores: Vec<f64> = val_sites
+                    .iter()
                     .filter_map(|s| s.get("rank_score").and_then(|v| v.as_f64()))
                     .collect();
-                let sep = if top_scores.len() >= 2 { (top_scores[0] - top_scores[1]) / top_scores[0].max(1e-12) } else { 0.0 };
+                let sep = if top_scores.len() >= 2 {
+                    (top_scores[0] - top_scores[1]) / top_scores[0].max(1e-12)
+                } else {
+                    0.0
+                };
 
                 let val_output = serde_json::json!({
                     "pdb_source": &topology.source_pdb,
@@ -15766,9 +17950,12 @@ fn run_multi_stream_pipeline(
                 let mut site_driver_sets: Vec<(i64, Vec<i64>)> = Vec::new(); // (site_id, [residue_ids])
                 for sj in ms_sites_json.iter() {
                     let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
-                    if rk > 5 { continue; }
+                    if rk > 5 {
+                        continue;
+                    }
                     let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let cids: Vec<i64> = sj.get("kcc")
+                    let cids: Vec<i64> = sj
+                        .get("kcc")
                         .and_then(|k| k.get("candidate_residue_ids"))
                         .and_then(|v| v.as_array())
                         .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
@@ -15778,26 +17965,46 @@ fn run_multi_stream_pipeline(
 
                 // Classify: identical / overlapping / unique
                 let driver_regime = if site_driver_sets.len() >= 2 {
-                    let ref_set: std::collections::HashSet<i64> = site_driver_sets[0].1.iter().copied().collect();
+                    let ref_set: std::collections::HashSet<i64> =
+                        site_driver_sets[0].1.iter().copied().collect();
                     let all_identical = site_driver_sets[1..].iter().all(|(_, s)| {
                         let ss: std::collections::HashSet<i64> = s.iter().copied().collect();
                         ss == ref_set
                     });
                     if all_identical {
-                        "global"  // all sites share exact same drivers
+                        "global" // all sites share exact same drivers
                     } else {
                         // Check overlap
-                        let min_overlap = site_driver_sets[1..].iter().map(|(_, s)| {
-                            let ss: std::collections::HashSet<i64> = s.iter().copied().collect();
-                            let intersection = ref_set.intersection(&ss).count();
-                            let union = ref_set.union(&ss).count();
-                            if union > 0 { intersection as f64 / union as f64 } else { 0.0 }
-                        }).fold(f64::MAX, f64::min);
-                        if min_overlap > 0.6 { "hybrid" } else { "local" }
+                        let min_overlap = site_driver_sets[1..]
+                            .iter()
+                            .map(|(_, s)| {
+                                let ss: std::collections::HashSet<i64> =
+                                    s.iter().copied().collect();
+                                let intersection = ref_set.intersection(&ss).count();
+                                let union = ref_set.union(&ss).count();
+                                if union > 0 {
+                                    intersection as f64 / union as f64
+                                } else {
+                                    0.0
+                                }
+                            })
+                            .fold(f64::MAX, f64::min);
+                        if min_overlap > 0.6 {
+                            "hybrid"
+                        } else {
+                            "local"
+                        }
                     }
-                } else { "local" };
+                } else {
+                    "local"
+                };
 
-                writeln!(f, "# PRISM4D KCC Session — {} driver regime", driver_regime.to_uppercase()).ok();
+                writeln!(
+                    f,
+                    "# PRISM4D KCC Session — {} driver regime",
+                    driver_regime.to_uppercase()
+                )
+                .ok();
                 writeln!(f, "# Auto-generated (deterministic)").ok();
                 writeln!(f, "").ok();
                 writeln!(f, "hide all").ok();
@@ -15810,7 +18017,8 @@ fn run_multi_stream_pipeline(
                 let global_driver_ids: Vec<i64> = if driver_regime != "local" {
                     // Shared core = intersection of all site driver sets
                     if let Some((_, first)) = site_driver_sets.first() {
-                        let mut shared: std::collections::HashSet<i64> = first.iter().copied().collect();
+                        let mut shared: std::collections::HashSet<i64> =
+                            first.iter().copied().collect();
                         for (_, s) in &site_driver_sets[1..] {
                             let ss: std::collections::HashSet<i64> = s.iter().copied().collect();
                             shared = shared.intersection(&ss).copied().collect();
@@ -15818,16 +18026,34 @@ fn run_multi_stream_pipeline(
                         let mut v: Vec<i64> = shared.into_iter().collect();
                         v.sort();
                         v
-                    } else { Vec::new() }
-                } else { Vec::new() };
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                };
 
                 // Stamp global_residue_id into B-factor for ALL residues (identity layer)
                 // This embeds topology identity globally before any selection
                 writeln!(f, "# === GLOBAL IDENTITY STAMPING ===").ok();
-                writeln!(f, "# Stamp topology global_residue_id into B-factor + Q-factor for ALL atoms").ok();
+                writeln!(
+                    f,
+                    "# Stamp topology global_residue_id into B-factor + Q-factor for ALL atoms"
+                )
+                .ok();
                 for (r, ca) in ca_pos.iter().enumerate() {
-                    writeln!(f, "select _id_tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
-                    writeln!(f, "alter (byres _id_tmp), b={}; alter (byres _id_tmp), q={}", r, r).ok();
+                    writeln!(
+                        f,
+                        "select _id_tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]",
+                        ca[0], ca[1], ca[2]
+                    )
+                    .ok();
+                    writeln!(
+                        f,
+                        "alter (byres _id_tmp), b={}; alter (byres _id_tmp), q={}",
+                        r, r
+                    )
+                    .ok();
                     writeln!(f, "delete _id_tmp").ok();
                 }
                 writeln!(f, "").ok();
@@ -15837,16 +18063,35 @@ fn run_multi_stream_pipeline(
                     writeln!(f, "select global_kcc_drivers, none").ok();
                     for &rid in &global_driver_ids {
                         let r = rid as usize;
-                        if r >= ca_pos.len() { continue; }
+                        if r >= ca_pos.len() {
+                            continue;
+                        }
                         let ca = ca_pos[r];
-                        let rname = topology.residues.get(r).map(|res| res.residue_name.as_str()).unwrap_or("UNK");
+                        let rname = topology
+                            .residues
+                            .get(r)
+                            .map(|res| res.residue_name.as_str())
+                            .unwrap_or("UNK");
                         // 2.0Å tolerance for robust CA matching
-                        writeln!(f, "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
-                        writeln!(f, "select global_kcc_drivers, global_kcc_drivers or (byres _tmp)").ok();
+                        writeln!(
+                            f,
+                            "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]",
+                            ca[0], ca[1], ca[2]
+                        )
+                        .ok();
+                        writeln!(
+                            f,
+                            "select global_kcc_drivers, global_kcc_drivers or (byres _tmp)"
+                        )
+                        .ok();
                         writeln!(f, "delete _tmp").ok();
                         writeln!(f, "# {} {} (global driver)", rname, rid).ok();
                     }
-                    let color = if driver_regime == "global" { "orange" } else { "yellow" };
+                    let color = if driver_regime == "global" {
+                        "orange"
+                    } else {
+                        "yellow"
+                    };
                     writeln!(f, "color {}, global_kcc_drivers", color).ok();
                     writeln!(f, "show sticks, global_kcc_drivers").ok();
                     writeln!(f, "").ok();
@@ -15858,9 +18103,12 @@ fn run_multi_stream_pipeline(
                 for sj in ms_sites_json.iter() {
                     let sid = sj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
                     let rk = sj.get("gtck_rank").and_then(|v| v.as_u64()).unwrap_or(999);
-                    if rk > 5 { continue; }
+                    if rk > 5 {
+                        continue;
+                    }
                     let c = match sj.get("centroid").and_then(|v| v.as_array()) {
-                        Some(c) => c.clone(), None => continue,
+                        Some(c) => c.clone(),
+                        None => continue,
                     };
                     let cx = c[0].as_f64().unwrap_or(0.0);
                     let cy = c[1].as_f64().unwrap_or(0.0);
@@ -15870,26 +18118,36 @@ fn run_multi_stream_pipeline(
                     let rad = (vol * 3.0 / (4.0 * std::f64::consts::PI)).cbrt();
                     writeln!(f, "pseudoatom site_{}, pos=[{:.2},{:.2},{:.2}], vdw={:.1}, label=\"R{} S{} ({:.4})\"",
                         sid, cx, cy, cz, rad, rk, sid, sc).ok();
-                    writeln!(f, "show sphere, site_{}",  sid).ok();
+                    writeln!(f, "show sphere, site_{}", sid).ok();
                     writeln!(f, "set sphere_transparency, 0.6, site_{}", sid).ok();
 
                     // Per-site unique drivers (hybrid/local only)
                     if driver_regime == "local" || driver_regime == "hybrid" {
-                        let site_cids: Vec<i64> = sj.get("kcc")
+                        let site_cids: Vec<i64> = sj
+                            .get("kcc")
                             .and_then(|k| k.get("candidate_residue_ids"))
                             .and_then(|v| v.as_array())
                             .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
                             .unwrap_or_default();
-                        let unique_cids: Vec<i64> = site_cids.iter()
+                        let unique_cids: Vec<i64> = site_cids
+                            .iter()
                             .filter(|r| !global_driver_ids.contains(r))
-                            .copied().collect();
+                            .copied()
+                            .collect();
                         if !unique_cids.is_empty() {
                             writeln!(f, "select site_{}_local_drivers, none", sid).ok();
                             for &rid in &unique_cids {
                                 let r = rid as usize;
-                                if r >= ca_pos.len() { continue; }
+                                if r >= ca_pos.len() {
+                                    continue;
+                                }
                                 let ca = ca_pos[r];
-                                writeln!(f, "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]", ca[0], ca[1], ca[2]).ok();
+                                writeln!(
+                                    f,
+                                    "select _tmp, (name CA) within 2.0 of [{:.2},{:.2},{:.2}]",
+                                    ca[0], ca[1], ca[2]
+                                )
+                                .ok();
                                 writeln!(f, "select site_{}_local_drivers, site_{}_local_drivers or (byres _tmp)", sid, sid).ok();
                                 writeln!(f, "delete _tmp").ok();
                             }
@@ -15903,9 +18161,19 @@ fn run_multi_stream_pipeline(
                     if driver_regime == "global" {
                         writeln!(f, "group {}, site_{} global_kcc_drivers", gname, sid).ok();
                     } else if driver_regime == "hybrid" {
-                        writeln!(f, "group {}, site_{} global_kcc_drivers site_{}_local_drivers", gname, sid, sid).ok();
+                        writeln!(
+                            f,
+                            "group {}, site_{} global_kcc_drivers site_{}_local_drivers",
+                            gname, sid, sid
+                        )
+                        .ok();
                     } else {
-                        writeln!(f, "group {}, site_{} site_{}_local_drivers", gname, sid, sid).ok();
+                        writeln!(
+                            f,
+                            "group {}, site_{} site_{}_local_drivers",
+                            gname, sid, sid
+                        )
+                        .ok();
                     }
                     site_group_names.push(gname);
                 }
@@ -15923,17 +18191,33 @@ fn run_multi_stream_pipeline(
                 writeln!(f, "    viz = json.load(fh)").ok();
                 writeln!(f, "residues = viz.get('residues', [])").ok();
                 writeln!(f, "if residues:").ok();
-                writeln!(f, "    max_ac = max(r['active_causal_steps'] for r in residues) or 1").ok();
+                writeln!(
+                    f,
+                    "    max_ac = max(r['active_causal_steps'] for r in residues) or 1"
+                )
+                .ok();
                 writeln!(f, "    vecs = []").ok();
                 writeln!(f, "    for r in residues:").ok();
                 writeln!(f, "        ca = r['ca_position']").ok();
-                writeln!(f, "        dx, dy, dz = r['net_dx'], r['net_dy'], r['net_dz']").ok();
+                writeln!(
+                    f,
+                    "        dx, dy, dz = r['net_dx'], r['net_dy'], r['net_dz']"
+                )
+                .ok();
                 writeln!(f, "        mag = (dx**2 + dy**2 + dz**2)**0.5").ok();
                 writeln!(f, "        if mag < 0.01: continue").ok();
                 writeln!(f, "        sc = min(8.0, mag * 2.0) / (mag + 1e-6)").ok();
-                writeln!(f, "        lc = min(1.0, max(0.0, r.get('lag_corr_peak', 0)))").ok();
+                writeln!(
+                    f,
+                    "        lc = min(1.0, max(0.0, r.get('lag_corr_peak', 0)))"
+                )
+                .ok();
                 writeln!(f, "        cf = r['active_causal_steps'] / max_ac").ok();
-                writeln!(f, "        bn = min(1.0, max(0.0, r.get('burst_motion', 0)) / 5.0)").ok();
+                writeln!(
+                    f,
+                    "        bn = min(1.0, max(0.0, r.get('burst_motion', 0)) / 5.0)"
+                )
+                .ok();
                 writeln!(f, "        rad = 0.08 + 0.12 * cf").ok();
                 writeln!(f, "        vecs.extend([CYLINDER, ca[0],ca[1],ca[2], ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, rad, lc,cf,bn, lc,cf,bn])").ok();
                 writeln!(f, "        vecs.extend([CONE, ca[0]+dx*sc,ca[1]+dy*sc,ca[2]+dz*sc, ca[0]+dx*sc*1.15,ca[1]+dy*sc*1.15,ca[2]+dz*sc*1.15, rad*2,0.0, lc,cf,bn, lc,cf,bn, 1.0,1.0])").ok();
@@ -15945,23 +18229,56 @@ fn run_multi_stream_pipeline(
                     // Verification: read back B-factors from global_kcc_drivers
                     // B-factors already stamped globally — verification is independent of selection
                     let ver_path = output_base.with_extension("kcc_pymol_verification.txt");
-                    let expected_ids: Vec<String> = global_driver_ids.iter().map(|r| r.to_string()).collect();
+                    let expected_ids: Vec<String> =
+                        global_driver_ids.iter().map(|r| r.to_string()).collect();
                     let expected_list = expected_ids.join(", ");
 
                     writeln!(f, "# Identity verification: read topology ID from B-factor (stamped globally)").ok();
                     writeln!(f, "try:").ok();
                     writeln!(f, "    _expected = sorted([{}])", expected_list).ok();
-                    writeln!(f, "    _model = cmd.get_model('global_kcc_drivers and name CA')").ok();
-                    writeln!(f, "    _n_atoms = len(cmd.get_model('global_kcc_drivers').atom)").ok();
-                    writeln!(f, "    _observed = sorted(set(int(a.b) for a in _model.atom))").ok();
+                    writeln!(
+                        f,
+                        "    _model = cmd.get_model('global_kcc_drivers and name CA')"
+                    )
+                    .ok();
+                    writeln!(
+                        f,
+                        "    _n_atoms = len(cmd.get_model('global_kcc_drivers').atom)"
+                    )
+                    .ok();
+                    writeln!(
+                        f,
+                        "    _observed = sorted(set(int(a.b) for a in _model.atom))"
+                    )
+                    .ok();
                     writeln!(f, "    _pass = (_n_atoms > 0) and (_observed == _expected)").ok();
                     writeln!(f, "    with open(r'{}', 'w') as _vf:", ver_path.display()).ok();
-                    writeln!(f, "        _vf.write('=== KCC PyMOL Identity Verification ===\\n')").ok();
+                    writeln!(
+                        f,
+                        "        _vf.write('=== KCC PyMOL Identity Verification ===\\n')"
+                    )
+                    .ok();
                     writeln!(f, "        _vf.write('method: topology global_residue_id stamped into B-factor\\n')").ok();
-                    writeln!(f, "        _vf.write('expected_global_ids: %s\\n' % str(_expected))").ok();
-                    writeln!(f, "        _vf.write('observed_global_ids: %s\\n' % str(_observed))").ok();
-                    writeln!(f, "        _vf.write('total_atoms_selected: %d\\n' % _n_atoms)").ok();
-                    writeln!(f, "        _vf.write('exact_match: %s\\n' % ('PASS' if _pass else 'FAIL'))").ok();
+                    writeln!(
+                        f,
+                        "        _vf.write('expected_global_ids: %s\\n' % str(_expected))"
+                    )
+                    .ok();
+                    writeln!(
+                        f,
+                        "        _vf.write('observed_global_ids: %s\\n' % str(_observed))"
+                    )
+                    .ok();
+                    writeln!(
+                        f,
+                        "        _vf.write('total_atoms_selected: %d\\n' % _n_atoms)"
+                    )
+                    .ok();
+                    writeln!(
+                        f,
+                        "        _vf.write('exact_match: %s\\n' % ('PASS' if _pass else 'FAIL'))"
+                    )
+                    .ok();
                     writeln!(f, "    print('KCC verify: expected=%s observed=%s atoms=%d -> %s' % (str(_expected), str(_observed), _n_atoms, 'PASS' if _pass else 'FAIL'))").ok();
                     writeln!(f, "except Exception as e:").ok();
                     writeln!(f, "    print('KCC verification error: %s' % str(e))").ok();
@@ -16010,22 +18327,33 @@ fn run_multi_stream_pipeline(
                     writeln!(f, "zoom {}, 10", top).ok();
                 }
 
-                log::info!("  KCC PyMOL: {} (regime={}, commands: show_site0..show_site{})",
-                    pp.display(), driver_regime, site_group_names.len().saturating_sub(1));
+                log::info!(
+                    "  KCC PyMOL: {} (regime={}, commands: show_site0..show_site{})",
+                    pp.display(),
+                    driver_regime,
+                    site_group_names.len().saturating_sub(1)
+                );
             }
         }
 
         // ── PRISM-Therm standalone report (multi-stream) ──
         if let Some(ref analysis) = prism_therm_result {
-            let site_centroids: Vec<([f32; 3], i32)> = clustered_sites.iter()
+            let site_centroids: Vec<([f32; 3], i32)> = clustered_sites
+                .iter()
                 .map(|s| (s.emission_compat_centroid(), s.cluster_id))
                 .collect();
-            let report = sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
+            let report =
+                sdst_report::build_report(analysis, &topology, &structure_name, &site_centroids);
             sdst_report::print_summary_table(&report);
             if let Err(e) = sdst_report::write_json(&report, &args.output, &structure_name) {
                 log::warn!("  PRISM-Therm JSON write failed: {}", e);
             }
-            if let Err(e) = sdst_report::write_druggability_pdb(&report, &topology, &args.output, &structure_name) {
+            if let Err(e) = sdst_report::write_druggability_pdb(
+                &report,
+                &topology,
+                &args.output,
+                &structure_name,
+            ) {
                 log::warn!("  PRISM-Therm druggability PDB failed: {}", e);
             }
         }
@@ -16056,7 +18384,16 @@ fn run_multi_stream_pipeline(
     // Gated by --emit-spike-json (off by default, saves ~55s per run)
     if args.emit_spike_json && !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
         let arom_type_name = |t: i32| -> &str {
-            match t { 0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "SS", 4 => "BNZ", 5 => "CATION", 6 => "ANION", _ => "UNK" }
+            match t {
+                0 => "TRP",
+                1 => "TYR",
+                2 => "PHE",
+                3 => "SS",
+                4 => "BNZ",
+                5 => "CATION",
+                6 => "ANION",
+                _ => "UNK",
+            }
         };
         // Closure to determine CCNS phase from timestep using protocol parameters
         let phase_label = |ts: i32| -> &str {
@@ -16064,15 +18401,23 @@ fn run_multi_stream_pipeline(
             let p2 = p1 + protocol.ramp_steps;
             let p3 = p2 + protocol.warm_hold_steps;
             let p4 = p3 + protocol.ramp_down_steps;
-            if ts < p1 { "cold_hold" }
-            else if ts < p2 { "heating" }
-            else if ts < p3 { "warm_hold" }
-            else if ts < p4 { "cooling" }
-            else { "cold_return" }
+            if ts < p1 {
+                "cold_hold"
+            } else if ts < p2 {
+                "heating"
+            } else if ts < p3 {
+                "warm_hold"
+            } else if ts < p4 {
+                "cooling"
+            } else {
+                "cold_return"
+            }
         };
         // Compute stream_id for each spike from stream_spike_offsets (binary search)
         let spike_stream_id = |flat_idx: usize| -> usize {
-            stream_spike_offsets.partition_point(|&off| off <= flat_idx).saturating_sub(1)
+            stream_spike_offsets
+                .partition_point(|&off| off <= flat_idx)
+                .saturating_sub(1)
         };
         let lining_cutoff = args.lining_cutoff;
         for site in &clustered_sites {
@@ -16081,20 +18426,27 @@ fn run_multi_stream_pipeline(
             let cy = site.geometric_voxel_mass_centroid()[1];
             let cz = site.geometric_voxel_mass_centroid()[2];
             // Collect raw spikes for this site (with flat index for stream_id lookup)
-            let raw_site_spikes: Vec<_> = all_stream_spikes.iter().enumerate()
+            let raw_site_spikes: Vec<_> = all_stream_spikes
+                .iter()
+                .enumerate()
                 .filter(|(_, s)| {
                     let dx = s.position[0] - cx;
                     let dy = s.position[1] - cy;
                     let dz = s.position[2] - cz;
-                    (dx*dx + dy*dy + dz*dz).sqrt() <= site_radius
+                    (dx * dx + dy * dy + dz * dz).sqrt() <= site_radius
                 })
                 .collect();
             // Compute open_frequency: fraction of simulation frames with spike activity
             // Use frame_index (timestep / 1000) from actual spike data
-            let unique_frames: std::collections::HashSet<i32> = raw_site_spikes.iter()
+            let unique_frames: std::collections::HashSet<i32> = raw_site_spikes
+                .iter()
                 .map(|(_, s)| s.timestep / 1000)
                 .collect();
-            let max_frame = raw_site_spikes.iter().map(|(_, s)| s.timestep / 1000).max().unwrap_or(0);
+            let max_frame = raw_site_spikes
+                .iter()
+                .map(|(_, s)| s.timestep / 1000)
+                .max()
+                .unwrap_or(0);
             let total_frames = (max_frame + 1).max(1) as f32;
             let open_frequency = unique_frames.len() as f32 / total_frames;
             let site_spikes: Vec<serde_json::Value> = raw_site_spikes.iter()
@@ -16150,13 +18502,18 @@ fn run_multi_stream_pipeline(
                 "open_frequency": open_frequency,
                 "spikes": site_spikes,
             });
-            let spike_path = output_base.with_extension(
-                format!("site{}.spike_events.json", site.cluster_id)
-            );
+            let spike_path =
+                output_base.with_extension(format!("site{}.spike_events.json", site.cluster_id));
             std::fs::write(&spike_path, serde_json::to_string_pretty(&spike_json)?)?;
-            log::info!("  Spike events: {} ({} spikes, f_open={:.3})", spike_path.display(), site_spikes.len(), open_frequency);
+            log::info!(
+                "  Spike events: {} ({} spikes, f_open={:.3})",
+                spike_path.display(),
+                site_spikes.len(),
+                open_frequency
+            );
         }
-    } else if !args.emit_spike_json && !all_stream_spikes.is_empty() && !clustered_sites.is_empty() {
+    } else if !args.emit_spike_json && !all_stream_spikes.is_empty() && !clustered_sites.is_empty()
+    {
         log::info!("  Spike event JSON skipped (use --emit-spike-json to enable)");
     }
 
@@ -16193,7 +18550,9 @@ fn run_multi_stream_pipeline(
         && spike_to_site_global.len() == all_stream_spikes.len()
     {
         use prism_nhs::spike_arrow_writer as saw;
-        let arrow_path = args.output.join(format!("{}.spike_events.arrow", structure_name));
+        let arrow_path = args
+            .output
+            .join(format!("{}.spike_events.arrow", structure_name));
 
         // Build a stream-id reverse lookup table from stream_spike_offsets.
         // stream_spike_offsets[i] is the index in all_stream_spikes where
@@ -16242,8 +18601,7 @@ fn run_multi_stream_pipeline(
             // Binary search for the insertion point of `intensity`. Use
             // `partition_point` to find the rightmost index where `<` holds.
             let rank = sorted.partition_point(|&v| v < intensity);
-            ((rank as f64 * 100.0 / sorted.len() as f64).round() as i32)
-                .clamp(0, 100) as u8
+            ((rank as f64 * 100.0 / sorted.len() as f64).round() as i32).clamp(0, 100) as u8
         };
 
         // ── Build classifications for every spike ──
@@ -16251,15 +18609,17 @@ fn run_multi_stream_pipeline(
         // (we need the percentile distribution before classifying).
         // Second pass: compute background percentiles and finalize the
         // background_class field for site_id == -1 spikes.
-        let chunk_size_const: i32 = 500;  // matches the autonomous chunk loop
+        let chunk_size_const: i32 = 500; // matches the autonomous chunk loop
         let max_chunks_const: i32 = (steps_per_stream / chunk_size_const).max(1) + 1;
         let n_streams_local = n_streams;
         let is_md = is_multi_diff;
-        let mut classifications: Vec<saw::SpikeClassification> = Vec::with_capacity(all_stream_spikes.len());
+        let mut classifications: Vec<saw::SpikeClassification> =
+            Vec::with_capacity(all_stream_spikes.len());
         for (spike_idx, spike) in all_stream_spikes.iter().enumerate() {
             let stream_id = stream_id_for(spike_idx);
             let group_id = saw::group_id_for_stream(stream_id as usize, n_streams_local, is_md);
-            let chunk_idx = saw::chunk_idx_for_timestep(spike.timestep, chunk_size_const, max_chunks_const);
+            let chunk_idx =
+                saw::chunk_idx_for_timestep(spike.timestep, chunk_size_const, max_chunks_const);
             let ccns_phase = saw::ccns_phase_for_step(
                 spike.timestep,
                 protocol.cold_hold_steps,
@@ -16315,8 +18675,7 @@ fn run_multi_stream_pipeline(
         // used as a binary feature (`< 1.0` = surface, `== 1.0` = internal)
         // because the n_residues distribution is heavily concentrated at
         // the ceiling on most proteins (see classify_background doc).
-        let (bg_dist_p10, bg_dist_p50) =
-            saw::compute_background_percentiles(&classifications);
+        let (bg_dist_p10, bg_dist_p50) = saw::compute_background_percentiles(&classifications);
         for cls in classifications.iter_mut() {
             cls.background_class = saw::classify_background(
                 cls.site_id,
@@ -16337,28 +18696,27 @@ fn run_multi_stream_pipeline(
         }
 
         // Build the RecordBatch and write the Arrow IPC file.
-        match saw::build_spike_record_batch(&all_stream_spikes, &classifications, args.replica_seed) {
-            Ok(batch) => {
-                match saw::write_spike_arrow_file(&arrow_path, &batch) {
-                    Ok(()) => {
-                        log::info!(
-                            "  Spike events Arrow: {} ({} rows × {} cols)",
-                            arrow_path.display(),
-                            batch.num_rows(),
-                            batch.num_columns(),
-                        );
-                        log::info!(
+        match saw::build_spike_record_batch(&all_stream_spikes, &classifications, args.replica_seed)
+        {
+            Ok(batch) => match saw::write_spike_arrow_file(&arrow_path, &batch) {
+                Ok(()) => {
+                    log::info!(
+                        "  Spike events Arrow: {} ({} rows × {} cols)",
+                        arrow_path.display(),
+                        batch.num_rows(),
+                        batch.num_columns(),
+                    );
+                    log::info!(
                             "  Background stratification: primary={} bulk_thermal={} surface_noise={} near_miss={} relabel_candidate={}",
                             bg_hist[0], bg_hist[1], bg_hist[2], bg_hist[3], bg_hist[4],
                         );
-                        log::info!(
+                    log::info!(
                             "  Background percentiles: dist_p10={:.2}A dist_p50={:.2}A (burial used as binary)",
                             bg_dist_p10, bg_dist_p50,
                         );
-                    }
-                    Err(e) => log::warn!("  Spike events Arrow write failed: {}", e),
                 }
-            }
+                Err(e) => log::warn!("  Spike events Arrow write failed: {}", e),
+            },
             Err(e) => log::warn!("  Spike events Arrow batch build failed: {}", e),
         }
     }
@@ -16366,7 +18724,9 @@ fn run_multi_stream_pipeline(
     // Write per-stream ensemble trajectories
     for (i, snapshots) in all_stream_snapshots.iter().enumerate() {
         if !snapshots.is_empty() {
-            let stem = structure_name.strip_suffix(".topology").unwrap_or(&structure_name);
+            let stem = structure_name
+                .strip_suffix(".topology")
+                .unwrap_or(&structure_name);
             let stream_base = args.output.join(format!("{}_stream{:02}", stem, i));
             write_ensemble_trajectory(snapshots, &topology, &stream_base)?;
             log::info!("  ✓ Trajectory stream {}: {} frames", i, snapshots.len());
@@ -16396,7 +18756,9 @@ fn run_multi_stream_pipeline(
                             if let Err(e) = tw.write_frame(&snap.positions) {
                                 log::warn!(
                                     "  frames.bin write_frame failed on stream {} frame {}: {}",
-                                    i, wrote_count, e
+                                    i,
+                                    wrote_count,
+                                    e
                                 );
                                 had_err = true;
                                 break;
@@ -16408,33 +18770,36 @@ fn run_multi_stream_pipeline(
                                 if !had_err {
                                     log::info!(
                                         "  ✓ frames.bin stream {}: {} frames -> {}",
-                                        i, n, frames_path.display()
+                                        i,
+                                        n,
+                                        frames_path.display()
                                     );
                                 }
                             }
-                            Err(e) => log::warn!(
-                                "  frames.bin finish() failed on stream {}: {}",
-                                i, e
-                            ),
+                            Err(e) => {
+                                log::warn!("  frames.bin finish() failed on stream {}: {}", i, e)
+                            }
                         }
                     }
-                    Err(e) => log::warn!(
-                        "  frames.bin create failed for stream {}: {}",
-                        i, e
-                    ),
+                    Err(e) => log::warn!("  frames.bin create failed for stream {}: {}", i, e),
                 }
             }
         }
     }
 
     let total_time = total_start.elapsed();
-    let druggable = clustered_sites.iter().filter(|s| s.druggability.is_druggable).count();
+    let druggable = clustered_sites
+        .iter()
+        .filter(|s| s.druggability.is_druggable)
+        .count();
 
     // ── ASC TELEMETRY EXPORT (Glass Box audit trail) ──
     if let Some(ref asc) = asc_shared {
         // Binary telemetry: bit-identical to VRAM structures
         // Event log as binary: (u32 chunk_idx, u16 event_len, [u8] event_str) per entry
-        let bin_path = args.output.join(format!("{}.asc_events.bin", structure_name));
+        let bin_path = args
+            .output
+            .join(format!("{}.asc_events.bin", structure_name));
         if let Ok(el) = asc.event_log.lock() {
             let mut buf: Vec<u8> = Vec::new();
             // Header: magic + count
@@ -16447,13 +18812,19 @@ fn run_multi_stream_pipeline(
                 buf.extend_from_slice(desc_bytes);
             }
             if std::fs::write(&bin_path, &buf).is_ok() {
-                log::info!("  ASC events binary: {} ({} events, {} bytes)",
-                    bin_path.display(), el.len(), buf.len());
+                log::info!(
+                    "  ASC events binary: {} ({} events, {} bytes)",
+                    bin_path.display(),
+                    el.len(),
+                    buf.len()
+                );
             }
         }
 
         // ACL contrast log as binary: (u32 chunk_idx, f32 ratio) per entry
-        let contrast_path = args.output.join(format!("{}.acl_contrast.bin", structure_name));
+        let contrast_path = args
+            .output
+            .join(format!("{}.acl_contrast.bin", structure_name));
         if let Ok(cl) = asc.acl_contrast_log.lock() {
             let mut buf: Vec<u8> = Vec::with_capacity(8 + cl.len() * 8);
             buf.extend_from_slice(b"ACL1");
@@ -16463,13 +18834,18 @@ fn run_multi_stream_pipeline(
                 buf.extend_from_slice(&ratio.to_le_bytes());
             }
             if std::fs::write(&contrast_path, &buf).is_ok() {
-                log::info!("  ACL contrast binary: {} ({} samples)",
-                    contrast_path.display(), cl.len());
+                log::info!(
+                    "  ACL contrast binary: {} ({} samples)",
+                    contrast_path.display(),
+                    cl.len()
+                );
             }
         }
 
         // Consensus residues as JSON (small enough, keeps human readability)
-        let consensus_path = args.output.join(format!("{}.asc_consensus.json", structure_name));
+        let consensus_path = args
+            .output
+            .join(format!("{}.asc_consensus.json", structure_name));
         if let Ok(cr) = asc.consensus_residues.lock() {
             let residues: Vec<serde_json::Value> = cr.iter().map(|(rid, ng, spc)| {
                 serde_json::json!({"residue_id": rid, "n_groups": ng, "s_pc": spc})
@@ -16496,7 +18872,9 @@ fn run_multi_stream_pipeline(
         // For Stage 1B-3 v1 we just write the JSON; the actual
         // device-buffer load happens in Stage 2 (gated on Phase 0
         // Bug C resolution).
-        let gcpid_path = args.output.join(format!("{}.gcpid_synergy.json", structure_name));
+        let gcpid_path = args
+            .output
+            .join(format!("{}.gcpid_synergy.json", structure_name));
         if let Ok(accs) = asc.pid_accumulators.lock() {
             let mut entries: Vec<serde_json::Value> = Vec::new();
             let mut n_with_pid = 0usize;
@@ -16519,8 +18897,14 @@ fn run_multi_stream_pipeline(
             }
             // Sort entries by synergy_fraction descending
             entries.sort_by(|a, b| {
-                let fa = a.get("synergy_fraction").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let fb = b.get("synergy_fraction").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let fa = a
+                    .get("synergy_fraction")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let fb = b
+                    .get("synergy_fraction")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
             });
             let doc = serde_json::json!({
@@ -16535,7 +18919,9 @@ fn run_multi_stream_pipeline(
                 let _ = std::fs::write(&gcpid_path, &s);
                 log::info!(
                     "  GC-PID synergy: {} ({}/{} residues with valid PID)",
-                    gcpid_path.display(), n_with_pid, asc.n_residues,
+                    gcpid_path.display(),
+                    n_with_pid,
+                    asc.n_residues,
                 );
             }
         }
@@ -16561,12 +18947,19 @@ fn run_multi_stream_pipeline(
                         let _ = file.write_all(&count.to_le_bytes());
                     }
                 }
-                log::info!("  Phasor binary: {} ({} groups × {} residues = {} bytes)",
-                    phasor_path.display(), 4, asc.n_residues, 12 + 4 * asc.n_residues * 20);
+                log::info!(
+                    "  Phasor binary: {} ({} groups × {} residues = {} bytes)",
+                    phasor_path.display(),
+                    4,
+                    asc.n_residues,
+                    12 + 4 * asc.n_residues * 20
+                );
             }
         }
         // Event log binary
-        let events_path = args.output.join(format!("{}.asc_events.bin", structure_name));
+        let events_path = args
+            .output
+            .join(format!("{}.asc_events.bin", structure_name));
         if let Ok(el) = asc.event_log.lock() {
             use std::io::Write;
             if let Ok(mut file) = std::fs::File::create(&events_path) {
@@ -16578,8 +18971,107 @@ fn run_multi_stream_pipeline(
                     let _ = file.write_all(&(db.len() as u16).to_le_bytes());
                     let _ = file.write_all(db);
                 }
-                log::info!("  ASC events binary: {} ({} events)", events_path.display(), el.len());
+                log::info!(
+                    "  ASC events binary: {} ({} events)",
+                    events_path.display(),
+                    el.len()
+                );
             }
+        }
+    }
+
+    // ── PATH-A red-1 — emit `<stem>_path_a_completion.json` ─────────────
+    // Always emitted (even when no --path-a-* flag was set) so downstream
+    // tooling can reliably probe for the file; honest reporting flags the
+    // run as `not_triggered` when Path-A was inactive.  Failure is
+    // warn-only — a JSON write error must never propagate out and crash
+    // the run.
+    {
+        let stem_for_emit: &str = structure_name
+            .strip_suffix(".topology")
+            .unwrap_or(&structure_name);
+        let emit_path = args.output.join(format!("{}_path_a_completion.json", stem_for_emit));
+
+        // Resolve mode label by precedence: bounded > evidence_exit > default.
+        let t7_mode_label: &str = if path_a_t7_max_chunks.is_some() {
+            "bounded"
+        } else if path_a_evidence_exit {
+            "evidence_exit"
+        } else {
+            "default"
+        };
+
+        let trigger_vec: Vec<i32> = path_a_v2_trigger_by_stream
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_else(|_| vec![-1; n_streams]);
+        let inst_vec: Vec<Option<String>> = path_a_instantiate_complete_by_stream
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_else(|_| vec![None; n_streams]);
+        let streams_completed: usize = inst_vec.iter().filter(|s| s.is_some()).count();
+        let chunks_completed: i32 = path_a_t7_chunks_completed
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        // Resolve exit reason: latched value if any stream broke; else
+        // synthesize from activation status.
+        let latched: String = path_a_exit_reason
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        let exit_reason: &str = if !latched.is_empty() {
+            latched.as_str()
+        } else if path_a_any_active {
+            "natural_completion"
+        } else {
+            "not_triggered"
+        };
+
+        // Surface optional fields that are not yet wired (deferrals).
+        // Currently empty — every field above is populated.
+        let missing_optional_fields: Vec<&str> = Vec::new();
+
+        let emit_json = serde_json::json!({
+            "schema_version": 1,
+            "run_id": phase3_run_id,
+            "target": stem_for_emit,
+            "stream_count": 8,
+            "streams_completed": streams_completed,
+            "v2_trigger_step_by_stream": trigger_vec,
+            "instantiate_complete_by_stream": inst_vec,
+            "t7_mode": t7_mode_label,
+            "t7_chunks_completed": chunks_completed,
+            "evidence_exit_reason": exit_reason,
+            "missing_optional_fields": missing_optional_fields,
+            "path_b_required": true,
+        });
+
+        match std::fs::File::create(&emit_path) {
+            Ok(f) => {
+                let mut writer = std::io::BufWriter::new(f);
+                if let Err(e) = serde_json::to_writer_pretty(&mut writer, &emit_json) {
+                    log::warn!(
+                        "  [PATH-A] path_a_completion.json: serialize failed at {}: {}",
+                        emit_path.display(),
+                        e
+                    );
+                } else {
+                    use std::io::Write as _;
+                    let _ = writer.flush();
+                    log::info!(
+                        "  [PATH-A] path_a_completion.json: emitted at {} (streams_completed={}, t7_mode={}, exit_reason={})",
+                        emit_path.display(),
+                        streams_completed,
+                        t7_mode_label,
+                        exit_reason,
+                    );
+                }
+            }
+            Err(e) => log::warn!(
+                "  [PATH-A] path_a_completion.json: create failed at {}: {}",
+                emit_path.display(),
+                e
+            ),
         }
     }
 
@@ -16609,7 +19101,9 @@ fn extract_aromatic_positions(topology: &PrismPrepTopology) -> Vec<(u32, u8, [f3
 
     for &res_idx in &aromatic_residues {
         // Find atoms belonging to this residue
-        let atoms: Vec<usize> = topology.residue_ids.iter()
+        let atoms: Vec<usize> = topology
+            .residue_ids
+            .iter()
             .enumerate()
             .filter(|(_, &r)| r == res_idx)
             .map(|(i, _)| i)
@@ -16663,17 +19157,22 @@ fn build_sites_from_clustering(
     spike_events: &[prism_nhs::fused_engine::GpuSpikeEvent],
     result: &prism_nhs::rt_clustering::RtClusteringResult,
 ) -> anyhow::Result<Vec<ClusteredBindingSite>> {
-    use std::collections::HashMap;
     use prism_nhs::{DruggabilityScore, SiteClassification};
+    use std::collections::HashMap;
 
-    let mut cluster_spikes: HashMap<i32, Vec<(usize, &prism_nhs::fused_engine::GpuSpikeEvent)>> = HashMap::new();
+    let mut cluster_spikes: HashMap<i32, Vec<(usize, &prism_nhs::fused_engine::GpuSpikeEvent)>> =
+        HashMap::new();
 
-    for (idx, (spike, &cluster_id)) in spike_events.iter()
+    for (idx, (spike, &cluster_id)) in spike_events
+        .iter()
         .zip(result.cluster_ids.iter())
         .enumerate()
     {
         if cluster_id >= 0 {
-            cluster_spikes.entry(cluster_id).or_default().push((idx, spike));
+            cluster_spikes
+                .entry(cluster_id)
+                .or_default()
+                .push((idx, spike));
         }
     }
 
@@ -16823,10 +19322,16 @@ fn build_sites_from_clustering(
                             let mut near_spike = false;
                             let mut min_spike_dist = f32::MAX;
                             for p in &pocket_points {
-                                let d2 = (gx - p[0]).powi(2) + (gy - p[1]).powi(2) + (gz - p[2]).powi(2);
+                                let d2 =
+                                    (gx - p[0]).powi(2) + (gy - p[1]).powi(2) + (gz - p[2]).powi(2);
                                 let d = d2.sqrt();
-                                if d < min_spike_dist { min_spike_dist = d; }
-                                if d < 3.0 { near_spike = true; break; }
+                                if d < min_spike_dist {
+                                    min_spike_dist = d;
+                                }
+                                if d < 3.0 {
+                                    near_spike = true;
+                                    break;
+                                }
                             }
                             // Point is within pocket envelope
                             if near_spike {
@@ -16851,13 +19356,16 @@ fn build_sites_from_clustering(
         let avg_intensity = sum_intensity / n;
         let spike_count = spikes.len();
 
-        let druggability = DruggabilityScore::from_site(estimated_volume, avg_intensity, &bounding_box);
-        let classification = SiteClassification::from_properties(spike_count, estimated_volume, avg_intensity);
+        let druggability =
+            DruggabilityScore::from_site(estimated_volume, avg_intensity, &bounding_box);
+        let classification =
+            SiteClassification::from_properties(spike_count, estimated_volume, avg_intensity);
 
         // Initial quality estimate (overwritten by enclosure-based reranking later)
         let spike_quality = (spike_count as f32 / 100.0).clamp(0.0, 1.0);
         let intensity_quality = (avg_intensity / 64.0).clamp(0.0, 1.0);
-        let quality_score = 0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
+        let quality_score =
+            0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
 
         // Canonical construction through the Phase 1 typed entry point.
         // legacy_emission_centroid is module-private; external call
@@ -16881,16 +19389,14 @@ fn build_sites_from_clustering(
     sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
 
     // Phase 2.1: audit-spine adjudication.
-    use prism_nhs::transform::AuditedTransform;
     use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+    use prism_nhs::transform::AuditedTransform;
     let n_in = sites.len();
     log::debug!("audit spine entry: build_sites_from_clustering N={}", n_in);
     let (accepted, quarantined) = ClusteringToClusteredSites::new()
         .adjudicate(sites)
         .into_result()
-        .map_err(|aborted| {
-            anyhow::anyhow!("build_sites_from_clustering: {aborted}")
-        })?;
+        .map_err(|aborted| anyhow::anyhow!("build_sites_from_clustering: {aborted}"))?;
     if !quarantined.is_empty() {
         log::warn!(
             "audit spine build_sites_from_clustering: {} quarantined site(s)",
@@ -16932,9 +19438,16 @@ fn merge_symmetric_sites(
     let mut chain_sequences: HashMap<&str, Vec<&str>> = HashMap::new();
     for (atom_idx, chain) in topology.chain_ids.iter().enumerate() {
         let res_name = &topology.residue_names[atom_idx];
-        let atom_name = topology.atom_names.get(atom_idx).map(|s| s.as_str()).unwrap_or("");
+        let atom_name = topology
+            .atom_names
+            .get(atom_idx)
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if atom_name == "CA" {
-            chain_sequences.entry(chain.as_str()).or_default().push(res_name.as_str());
+            chain_sequences
+                .entry(chain.as_str())
+                .or_default()
+                .push(res_name.as_str());
         }
     }
 
@@ -16951,14 +19464,22 @@ fn merge_symmetric_sites(
     }
 
     if !is_homodimer {
-        log::info!("  Multi-chain but not homodimer ({} chains, different sequences) — no merge needed",
-            unique_chains.len());
+        log::info!(
+            "  Multi-chain but not homodimer ({} chains, different sequences) — no merge needed",
+            unique_chains.len()
+        );
         return;
     }
 
-    log::info!("  Homodimer detected ({} chains, {} residues/chain) — checking for symmetric sites",
+    log::info!(
+        "  Homodimer detected ({} chains, {} residues/chain) — checking for symmetric sites",
         unique_chains.len(),
-        chain_sequences.values().next().map(|v| v.len()).unwrap_or(0));
+        chain_sequences
+            .values()
+            .next()
+            .map(|v| v.len())
+            .unwrap_or(0)
+    );
 
     // Build residue → chain mapping for fast lookup
     // First, build a residue_id → chain_id map from atom data
@@ -16974,7 +19495,9 @@ fn merge_symmetric_sites(
     for site in sites.iter() {
         let mut chain_counts: HashMap<String, usize> = HashMap::new();
         for &spike_idx in &site.spike_indices {
-            if spike_idx >= spike_events.len() { continue; }
+            if spike_idx >= spike_events.len() {
+                continue;
+            }
             let spike = &spike_events[spike_idx];
             let n_res = spike.n_residues.min(8) as usize;
             for r in 0..n_res {
@@ -16995,9 +19518,13 @@ fn merge_symmetric_sites(
     let mut merged: HashSet<usize> = HashSet::new();
 
     for i in 0..n {
-        if merged.contains(&i) { continue; }
+        if merged.contains(&i) {
+            continue;
+        }
         for j in (i + 1)..n {
-            if merged.contains(&j) { continue; }
+            if merged.contains(&j) {
+                continue;
+            }
 
             let ci = sites[i].geometric_voxel_mass_centroid();
             let cj = sites[j].geometric_voxel_mass_centroid();
@@ -17006,35 +19533,55 @@ fn merge_symmetric_sites(
             let dz = ci[2] - cj[2];
             let dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
-            if dist > merge_radius { continue; }
+            if dist > merge_radius {
+                continue;
+            }
 
             // Check if sites are on different chains (symmetric pair)
-            let chains_i: HashSet<&str> = site_chain_fractions[i].keys().map(|s| s.as_str()).collect();
-            let chains_j: HashSet<&str> = site_chain_fractions[j].keys().map(|s| s.as_str()).collect();
+            let chains_i: HashSet<&str> =
+                site_chain_fractions[i].keys().map(|s| s.as_str()).collect();
+            let chains_j: HashSet<&str> =
+                site_chain_fractions[j].keys().map(|s| s.as_str()).collect();
 
             // Dominant chain for each site
-            let dom_i = site_chain_fractions[i].iter().max_by_key(|&(_, v)| v).map(|(k, _)| k.as_str());
-            let dom_j = site_chain_fractions[j].iter().max_by_key(|&(_, v)| v).map(|(k, _)| k.as_str());
+            let dom_i = site_chain_fractions[i]
+                .iter()
+                .max_by_key(|&(_, v)| v)
+                .map(|(k, _)| k.as_str());
+            let dom_j = site_chain_fractions[j]
+                .iter()
+                .max_by_key(|&(_, v)| v)
+                .map(|(k, _)| k.as_str());
 
             // Merge if: (a) dominant chains differ, or (b) both span the interface
-            let should_merge = match (dom_i, dom_j) {
-                (Some(ci), Some(cj)) => ci != cj,
-                _ => false,
-            } || (chains_i.len() > 1 && chains_j.len() > 1 && dist < merge_radius * 0.5);
+            let should_merge =
+                match (dom_i, dom_j) {
+                    (Some(ci), Some(cj)) => ci != cj,
+                    _ => false,
+                } || (chains_i.len() > 1 && chains_j.len() > 1 && dist < merge_radius * 0.5);
 
             if should_merge {
-                log::info!("    Merging site {} (chain {:?}) + site {} (chain {:?}), dist={:.1}Å",
-                    sites[i].cluster_id, dom_i, sites[j].cluster_id, dom_j, dist);
+                log::info!(
+                    "    Merging site {} (chain {:?}) + site {} (chain {:?}), dist={:.1}Å",
+                    sites[i].cluster_id,
+                    dom_i,
+                    sites[j].cluster_id,
+                    dom_j,
+                    dist
+                );
                 merge_pairs.push((i, j));
                 merged.insert(i);
                 merged.insert(j);
-                break;  // Each site merges with at most one partner
+                break; // Each site merges with at most one partner
             }
         }
     }
 
     if merge_pairs.is_empty() {
-        log::info!("  No symmetric site pairs found within {:.1}Å", merge_radius);
+        log::info!(
+            "  No symmetric site pairs found within {:.1}Å",
+            merge_radius
+        );
         return;
     }
 
@@ -17080,7 +19627,11 @@ fn merge_symmetric_sites(
         sites.remove(idx);
     }
 
-    log::info!("  Merged {} symmetric pairs → {} sites remaining", merge_pairs.len(), sites.len());
+    log::info!(
+        "  Merged {} symmetric pairs → {} sites remaining",
+        merge_pairs.len(),
+        sites.len()
+    );
 }
 
 /// Build consensus sites from per-replica clustering results
@@ -17194,14 +19745,11 @@ fn build_consensus_sites(
             total_bbox[1] += site.bounding_box[1];
             total_bbox[2] += site.bounding_box[2];
         }
-        let bounding_box = [
-            total_bbox[0] / n,
-            total_bbox[1] / n,
-            total_bbox[2] / n,
-        ];
+        let bounding_box = [total_bbox[0] / n, total_bbox[1] / n, total_bbox[2] / n];
 
         let druggability = DruggabilityScore::from_site(avg_volume, avg_intensity, &bounding_box);
-        let classification = SiteClassification::from_properties(avg_spike_count, avg_volume, avg_intensity);
+        let classification =
+            SiteClassification::from_properties(avg_spike_count, avg_volume, avg_intensity);
 
         // Merge spike_indices from all contributing per-stream sites,
         // remapping local per-stream indices to global all_stream_spikes indices.
@@ -17239,8 +19787,8 @@ fn build_consensus_sites(
     consensus_sites.sort_by(|a, b| b.spike_count.cmp(&a.spike_count));
 
     // Phase 2.1: audit-spine adjudication.
-    use prism_nhs::transform::AuditedTransform;
     use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+    use prism_nhs::transform::AuditedTransform;
     let n_in = consensus_sites.len();
     log::debug!("audit spine entry: build_consensus_sites N={}", n_in);
     let (accepted, quarantined) = ClusteringToClusteredSites::new()
@@ -17289,7 +19837,7 @@ struct LocalPhysics {
     n_local_spikes: usize,
     log_spike_norm: f32,
     lining_score: f32,
-    frustrated_solvent_score: f32,  // ΔG_solvation proxy
+    frustrated_solvent_score: f32, // ΔG_solvation proxy
     asymmetry_offset: f32,         // |CoM_spikes - centroid| — "cup" metric
     ray_escape_ratio: f32,         // Dmax/Dmin from rays — "mouth" metric
     source_counts: [u32; 4],       // [unknown, UV, LIF, EFP] raw spike counts
@@ -17311,7 +19859,8 @@ fn compute_local_physics(
     let radius_sq = radius * radius;
 
     // Collect local spikes within radius
-    let local_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = all_spikes.iter()
+    let local_spikes: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = all_spikes
+        .iter()
         .filter(|s| {
             let dx = s.position[0] - centroid[0];
             let dy = s.position[1] - centroid[1];
@@ -17323,19 +19872,32 @@ fn compute_local_physics(
     let n = local_spikes.len();
     if n == 0 {
         return LocalPhysics {
-            burial_score: 0.0, mean_burial: 0.0, onset_score: 0.0,
-            source_diversity: 0.0, source_entropy: 0.0, sphericity: 0.0,
-            wd_coherence: 0.0, breathing_score: 0.0, uv_enrichment: 0.0,
-            per_spike_quality: 0.0, n_local_spikes: 0, log_spike_norm: 0.0,
-            lining_score: 0.0, frustrated_solvent_score: 0.0,
-            asymmetry_offset: 0.0, ray_escape_ratio: 0.0,
+            burial_score: 0.0,
+            mean_burial: 0.0,
+            onset_score: 0.0,
+            source_diversity: 0.0,
+            source_entropy: 0.0,
+            sphericity: 0.0,
+            wd_coherence: 0.0,
+            breathing_score: 0.0,
+            uv_enrichment: 0.0,
+            per_spike_quality: 0.0,
+            n_local_spikes: 0,
+            log_spike_norm: 0.0,
+            lining_score: 0.0,
+            frustrated_solvent_score: 0.0,
+            asymmetry_offset: 0.0,
+            ray_escape_ratio: 0.0,
             source_counts: [0; 4],
         };
     }
 
     // ── Burial score: sigmoid(mean(n_residues), center=3.0, slope=2.0) ──
-    let mean_burial: f32 = local_spikes.iter()
-        .map(|s| s.n_residues as f32).sum::<f32>() / n as f32;
+    let mean_burial: f32 = local_spikes
+        .iter()
+        .map(|s| s.n_residues as f32)
+        .sum::<f32>()
+        / n as f32;
     let burial_score = 1.0 / (1.0 + (-2.0 * (mean_burial - 3.0)).exp());
 
     // ── Onset score: 1.0 - (median_timestep / max_timestep) ──
@@ -17356,7 +19918,8 @@ fn compute_local_physics(
             local_source_counts[src] += 1;
         }
         let total = n as f32;
-        let entropy: f32 = local_source_counts.iter()
+        let entropy: f32 = local_source_counts
+            .iter()
             .filter(|&&c| c > 0)
             .map(|&c| {
                 let p = c as f32 / total;
@@ -17386,30 +19949,47 @@ fn compute_local_physics(
             let dx = s.position[0] - mx;
             let dy = s.position[1] - my;
             let dz = s.position[2] - mz;
-            cov[0] += dx * dx; cov[1] += dx * dy; cov[2] += dx * dz;
-            cov[3] += dy * dy; cov[4] += dy * dz; cov[5] += dz * dz;
+            cov[0] += dx * dx;
+            cov[1] += dx * dy;
+            cov[2] += dx * dz;
+            cov[3] += dy * dy;
+            cov[4] += dy * dz;
+            cov[5] += dz * dz;
         }
-        for c in cov.iter_mut() { *c /= nf; }
+        for c in cov.iter_mut() {
+            *c /= nf;
+        }
 
-        let a = cov[0]; let b = cov[3]; let c_val = cov[5];
-        let d = cov[1]; let e = cov[2]; let f = cov[4];
+        let a = cov[0];
+        let b = cov[3];
+        let c_val = cov[5];
+        let d = cov[1];
+        let e = cov[2];
+        let f = cov[4];
 
         let p1 = d * d + e * e + f * f;
         if p1 < 1e-10 {
             let mut eigs = [a, b, c_val];
             eigs.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
-            if eigs[2] > 1e-10 { eigs[0] / eigs[2] } else { 0.0 }
+            if eigs[2] > 1e-10 {
+                eigs[0] / eigs[2]
+            } else {
+                0.0
+            }
         } else {
             let q = (a + b + c_val) / 3.0;
             let p2 = (a - q).powi(2) + (b - q).powi(2) + (c_val - q).powi(2) + 2.0 * p1;
             let p = (p2 / 6.0).sqrt();
 
-            let b00 = (a - q) / p; let b11 = (b - q) / p; let b22 = (c_val - q) / p;
-            let b01 = d / p; let b02 = e / p; let b12 = f / p;
+            let b00 = (a - q) / p;
+            let b11 = (b - q) / p;
+            let b22 = (c_val - q) / p;
+            let b01 = d / p;
+            let b02 = e / p;
+            let b12 = f / p;
 
-            let det_b = b00 * (b11 * b22 - b12 * b12)
-                      - b01 * (b01 * b22 - b12 * b02)
-                      + b02 * (b01 * b12 - b11 * b02);
+            let det_b = b00 * (b11 * b22 - b12 * b12) - b01 * (b01 * b22 - b12 * b02)
+                + b02 * (b01 * b12 - b11 * b02);
 
             let half_det = (det_b / 2.0).clamp(-1.0, 1.0);
             let phi = half_det.acos() / 3.0;
@@ -17430,11 +20010,12 @@ fn compute_local_physics(
 
     // ── WD coherence: variance of wd_change values ──
     let wd_coherence = if n >= 10 {
-        let mean_wd: f32 = local_spikes.iter()
-            .map(|s| s.wd_change).sum::<f32>() / n as f32;
-        let var_wd: f32 = local_spikes.iter()
+        let mean_wd: f32 = local_spikes.iter().map(|s| s.wd_change).sum::<f32>() / n as f32;
+        let var_wd: f32 = local_spikes
+            .iter()
             .map(|s| (s.wd_change - mean_wd).powi(2))
-            .sum::<f32>() / n as f32;
+            .sum::<f32>()
+            / n as f32;
         var_wd
     } else {
         0.0
@@ -17443,12 +20024,17 @@ fn compute_local_physics(
     // ── Breathing score: CV of per-frame burial across 200-step windows ──
     let breathing_score = if n >= 20 {
         let breath_frame_window = 200i32;
-        let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> = std::collections::HashMap::new();
+        let mut frame_burials: std::collections::HashMap<i32, Vec<f32>> =
+            std::collections::HashMap::new();
         for s in &local_spikes {
             let frame = s.timestep / breath_frame_window;
-            frame_burials.entry(frame).or_default().push(s.n_residues as f32);
+            frame_burials
+                .entry(frame)
+                .or_default()
+                .push(s.n_residues as f32);
         }
-        let frame_means: Vec<f32> = frame_burials.values()
+        let frame_means: Vec<f32> = frame_burials
+            .values()
             .filter(|v| !v.is_empty())
             .map(|v| v.iter().sum::<f32>() / v.len() as f32)
             .collect();
@@ -17456,13 +20042,19 @@ fn compute_local_physics(
         if frame_means.len() >= 3 {
             let global_mean = frame_means.iter().sum::<f32>() / frame_means.len() as f32;
             if global_mean > 0.5 {
-                let variance = frame_means.iter()
+                let variance = frame_means
+                    .iter()
                     .map(|&m| (m - global_mean).powi(2))
-                    .sum::<f32>() / frame_means.len() as f32;
+                    .sum::<f32>()
+                    / frame_means.len() as f32;
                 let cv = variance.sqrt() / global_mean;
                 (cv / 0.5).clamp(0.0, 1.0)
-            } else { 0.0 }
-        } else { 0.0 }
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -17484,9 +20076,21 @@ fn compute_local_physics(
         }
         let on_fraction = uv_burst_duration as f32 / uv_burst_interval as f32;
         let off_fraction = 1.0 - on_fraction;
-        let uv_on_rate = if on_fraction > 0.0 { uv_on_count as f32 / on_fraction } else { 0.0 };
-        let uv_off_rate = if off_fraction > 0.0 { uv_off_count as f32 / off_fraction } else { 0.0 };
-        let enrichment = if uv_off_rate > 0.0 { uv_on_rate / uv_off_rate } else { 0.0 };
+        let uv_on_rate = if on_fraction > 0.0 {
+            uv_on_count as f32 / on_fraction
+        } else {
+            0.0
+        };
+        let uv_off_rate = if off_fraction > 0.0 {
+            uv_off_count as f32 / off_fraction
+        } else {
+            0.0
+        };
+        let enrichment = if uv_off_rate > 0.0 {
+            uv_on_rate / uv_off_rate
+        } else {
+            0.0
+        };
         (enrichment / 3.0).min(1.0)
     } else {
         0.0
@@ -17494,13 +20098,16 @@ fn compute_local_physics(
 
     // ── Per-spike quality: mean of (0.4*burial + 0.2*arom + 0.2*wd + 0.2*intensity) ──
     let per_spike_quality: f32 = {
-        let sum: f32 = local_spikes.iter().map(|s| {
-            let b = (s.n_residues as f32 / 6.0).min(1.0);
-            let a = (s.n_nearby_excited as f32 / 3.0).min(1.0);
-            let w = (s.wd_change * 20.0).min(1.0);
-            let i = (s.intensity / 30.0).min(1.0);
-            0.40 * b + 0.20 * a + 0.20 * w + 0.20 * i
-        }).sum();
+        let sum: f32 = local_spikes
+            .iter()
+            .map(|s| {
+                let b = (s.n_residues as f32 / 6.0).min(1.0);
+                let a = (s.n_nearby_excited as f32 / 3.0).min(1.0);
+                let w = (s.wd_change * 20.0).min(1.0);
+                let i = (s.intensity / 30.0).min(1.0);
+                0.40 * b + 0.20 * a + 0.20 * w + 0.20 * i
+            })
+            .sum();
         sum / n as f32
     };
 
@@ -17519,9 +20126,12 @@ fn compute_local_physics(
             let mut ts: Vec<i32> = local_spikes.iter().map(|s| s.timestep).collect();
             ts.sort();
             ts[ts.len() / 2]
-        } else { 0 };
+        } else {
+            0
+        };
 
-        let frustrated: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = local_spikes.iter()
+        let frustrated: Vec<&prism_nhs::fused_engine::GpuSpikeEvent> = local_spikes
+            .iter()
             .copied()
             .filter(|s| {
                 s.wd_change > 0.01           // significant water displacement
@@ -17534,12 +20144,16 @@ fn compute_local_physics(
             let frac = frustrated.len() as f32 / n as f32;
             let mean_wd: f32 = if !frustrated.is_empty() {
                 frustrated.iter().map(|s| s.wd_change).sum::<f32>() / frustrated.len() as f32
-            } else { 0.0 };
+            } else {
+                0.0
+            };
             // Score = fraction of frustrated spikes × mean displacement magnitude
             // Sigmoid normalize to [0, 1]
             let raw = frac * mean_wd * 100.0;
             1.0 / (1.0 + (-5.0 * (raw - 0.5)).exp())
-        } else { 0.0 }
+        } else {
+            0.0
+        }
     };
 
     // ── Vectorial Asymmetry: |CoM_spikes - centroid| ──
@@ -17550,9 +20164,10 @@ fn compute_local_physics(
         let com_x = local_spikes.iter().map(|s| s.position[0]).sum::<f32>() / nf;
         let com_y = local_spikes.iter().map(|s| s.position[1]).sum::<f32>() / nf;
         let com_z = local_spikes.iter().map(|s| s.position[2]).sum::<f32>() / nf;
-        ((com_x - centroid[0]).powi(2) +
-         (com_y - centroid[1]).powi(2) +
-         (com_z - centroid[2]).powi(2)).sqrt()
+        ((com_x - centroid[0]).powi(2)
+            + (com_y - centroid[1]).powi(2)
+            + (com_z - centroid[2]).powi(2))
+        .sqrt()
     };
 
     // ── Ray-Escape Ratio: Dmax/Dmin from 26-direction rays ──
@@ -17568,14 +20183,32 @@ fn compute_local_physics(
 
         // 26-direction unit vectors (face + edge + corner neighbors of a cube)
         let dirs: [[f32; 3]; 26] = [
-            [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0], [0.0, -1.0, 0.0],
-            [0.0, 0.0, 1.0], [0.0, 0.0, -1.0],
-            [1.0, 1.0, 0.0], [1.0, -1.0, 0.0], [-1.0, 1.0, 0.0], [-1.0, -1.0, 0.0],
-            [1.0, 0.0, 1.0], [1.0, 0.0, -1.0], [-1.0, 0.0, 1.0], [-1.0, 0.0, -1.0],
-            [0.0, 1.0, 1.0], [0.0, 1.0, -1.0], [0.0, -1.0, 1.0], [0.0, -1.0, -1.0],
-            [1.0, 1.0, 1.0], [1.0, 1.0, -1.0], [1.0, -1.0, 1.0], [1.0, -1.0, -1.0],
-            [-1.0, 1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, -1.0, -1.0],
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 1.0, 0.0],
+            [1.0, -1.0, 0.0],
+            [-1.0, 1.0, 0.0],
+            [-1.0, -1.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 0.0, -1.0],
+            [-1.0, 0.0, 1.0],
+            [-1.0, 0.0, -1.0],
+            [0.0, 1.0, 1.0],
+            [0.0, 1.0, -1.0],
+            [0.0, -1.0, 1.0],
+            [0.0, -1.0, -1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, -1.0],
+            [1.0, -1.0, 1.0],
+            [1.0, -1.0, -1.0],
+            [-1.0, 1.0, 1.0],
+            [-1.0, 1.0, -1.0],
+            [-1.0, -1.0, 1.0],
+            [-1.0, -1.0, -1.0],
         ];
 
         // For each direction, find how far spikes extend from centroid
@@ -17593,10 +20226,16 @@ fn compute_local_physics(
                 let dy = s.position[1] - centroid[1];
                 let dz = s.position[2] - centroid[2];
                 let proj = dx * ux + dy * uy + dz * uz;
-                if proj > max_proj { max_proj = proj; }
+                if proj > max_proj {
+                    max_proj = proj;
+                }
             }
-            if max_proj > d_max { d_max = max_proj; }
-            if max_proj < d_min && max_proj > 0.0 { d_min = max_proj; }
+            if max_proj > d_max {
+                d_max = max_proj;
+            }
+            if max_proj < d_min && max_proj > 0.0 {
+                d_min = max_proj;
+            }
         }
 
         if d_min > 0.0 && d_min < f32::MAX {
@@ -17660,10 +20299,16 @@ fn kmeans_split(positions: &[[f32; 3]], k: usize, iters: usize) -> Vec<[f32; 3]>
         let mut best_dist = 0.0f32;
         let mut best_pos = positions[0];
         for p in positions {
-            let min_d = centers.iter()
-                .map(|c| ((p[0]-c[0]).powi(2) + (p[1]-c[1]).powi(2) + (p[2]-c[2]).powi(2)).sqrt())
+            let min_d = centers
+                .iter()
+                .map(|c| {
+                    ((p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2) + (p[2] - c[2]).powi(2)).sqrt()
+                })
                 .fold(f32::MAX, f32::min);
-            if min_d > best_dist { best_dist = min_d; best_pos = *p; }
+            if min_d > best_dist {
+                best_dist = min_d;
+                best_pos = *p;
+            }
         }
         centers.push(best_pos);
     }
@@ -17672,13 +20317,16 @@ fn kmeans_split(positions: &[[f32; 3]], k: usize, iters: usize) -> Vec<[f32; 3]>
         let mut sums = vec![[0.0f64; 3]; k];
         let mut counts = vec![0usize; k];
         for p in positions {
-            let nearest = centers.iter().enumerate()
+            let nearest = centers
+                .iter()
+                .enumerate()
                 .min_by(|(_, a), (_, b)| {
-                    let da = (p[0]-a[0]).powi(2) + (p[1]-a[1]).powi(2) + (p[2]-a[2]).powi(2);
-                    let db = (p[0]-b[0]).powi(2) + (p[1]-b[1]).powi(2) + (p[2]-b[2]).powi(2);
+                    let da = (p[0] - a[0]).powi(2) + (p[1] - a[1]).powi(2) + (p[2] - a[2]).powi(2);
+                    let db = (p[0] - b[0]).powi(2) + (p[1] - b[1]).powi(2) + (p[2] - b[2]).powi(2);
                     da.partial_cmp(&db).unwrap()
                 })
-                .map(|(i, _)| i).unwrap();
+                .map(|(i, _)| i)
+                .unwrap();
             sums[nearest][0] += p[0] as f64;
             sums[nearest][1] += p[1] as f64;
             sums[nearest][2] += p[2] as f64;
@@ -17715,25 +20363,28 @@ fn recalculate_enclosure_volume(
 
     let n_atoms = atom_positions.len() / 3;
     let grid_step = 1.0f32;
-    let exclusion_radius = 3.0f32;  // Standard SES probe radius
-    let scan_margin = 10.0f32;      // margin for rays to escape past protein surface
-    let min_blocked = 4u32;         // Trench mode: grooves/trenches pass, convex surfaces fail
-    let min_pocket_voxels = 50u32;  // 50 Å³ minimum viable pocket
-    // Adaptive spike_intensity_min: 10th percentile of actual spike intensities.
-    // Hardcoded 5.0 killed 80% of spikes for low-intensity proteins (1w50 @ 3.6 mean).
-    // This is the same fix applied to per-stream filtering (critical fix 2026-03-12).
+    let exclusion_radius = 3.0f32; // Standard SES probe radius
+    let scan_margin = 10.0f32; // margin for rays to escape past protein surface
+    let min_blocked = 4u32; // Trench mode: grooves/trenches pass, convex surfaces fail
+    let min_pocket_voxels = 50u32; // 50 Å³ minimum viable pocket
+                                   // Adaptive spike_intensity_min: 10th percentile of actual spike intensities.
+                                   // Hardcoded 5.0 killed 80% of spikes for low-intensity proteins (1w50 @ 3.6 mean).
+                                   // This is the same fix applied to per-stream filtering (critical fix 2026-03-12).
     let spike_intensity_min = if !all_spikes.is_empty() {
         let mut intensities: Vec<f32> = all_spikes.iter().map(|s| s.intensity).collect();
         intensities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let p10_idx = intensities.len() / 10;
         let adaptive_min = intensities[p10_idx.min(intensities.len() - 1)];
-        log::info!("  LIGSITE spike_intensity_min: adaptive={:.2} (10th percentile of {} spikes)",
-            adaptive_min, all_spikes.len());
+        log::info!(
+            "  LIGSITE spike_intensity_min: adaptive={:.2} (10th percentile of {} spikes)",
+            adaptive_min,
+            all_spikes.len()
+        );
         adaptive_min
     } else {
-        5.0f32  // fallback for empty spike arrays
+        5.0f32 // fallback for empty spike arrays
     };
-    let spike_search_r = 3i32;     // Bridge SES gap for spike→pocket mapping
+    let spike_search_r = 3i32; // Bridge SES gap for spike→pocket mapping
 
     if n_atoms == 0 {
         sites.clear();
@@ -17745,38 +20396,48 @@ fn recalculate_enclosure_volume(
     let mut prot_max = [f32::MIN; 3];
     for i in 0..n_atoms {
         for d in 0..3 {
-            let v = atom_positions[i*3 + d];
+            let v = atom_positions[i * 3 + d];
             prot_min[d] = prot_min[d].min(v);
             prot_max[d] = prot_max[d].max(v);
         }
     }
-    let gmin = [prot_min[0] - scan_margin, prot_min[1] - scan_margin, prot_min[2] - scan_margin];
+    let gmin = [
+        prot_min[0] - scan_margin,
+        prot_min[1] - scan_margin,
+        prot_min[2] - scan_margin,
+    ];
     let nx = ((prot_max[0] - prot_min[0] + 2.0 * scan_margin) / grid_step).ceil() as usize + 1;
     let ny = ((prot_max[1] - prot_min[1] + 2.0 * scan_margin) / grid_step).ceil() as usize + 1;
     let nz = ((prot_max[2] - prot_min[2] + 2.0 * scan_margin) / grid_step).ceil() as usize + 1;
     let grid_size = nx * ny * nz;
 
-    log::info!("  LIGSITE grid: {}×{}×{} = {} voxels (margin={:.0}Å)",
-        nx, ny, nz, grid_size, scan_margin);
+    log::info!(
+        "  LIGSITE grid: {}×{}×{} = {} voxels (margin={:.0}Å)",
+        nx,
+        ny,
+        nz,
+        grid_size,
+        scan_margin
+    );
 
     let mut is_protein = vec![false; grid_size];
 
-    let to_idx = |ix: usize, iy: usize, iz: usize| -> usize {
-        ix * ny * nz + iy * nz + iz
-    };
+    let to_idx = |ix: usize, iy: usize, iz: usize| -> usize { ix * ny * nz + iy * nz + iz };
     let to_world = |ix: usize, iy: usize, iz: usize| -> [f32; 3] {
-        [gmin[0] + ix as f32 * grid_step,
-         gmin[1] + iy as f32 * grid_step,
-         gmin[2] + iz as f32 * grid_step]
+        [
+            gmin[0] + ix as f32 * grid_step,
+            gmin[1] + iy as f32 * grid_step,
+            gmin[2] + iz as f32 * grid_step,
+        ]
     };
 
     // ---- Stage 1: Mark protein (SES) voxels ----
     let excl_sq = exclusion_radius * exclusion_radius;
     let excl_cells = (exclusion_radius / grid_step).ceil() as i32 + 1;
     for i in 0..n_atoms {
-        let ax = atom_positions[i*3];
-        let ay = atom_positions[i*3 + 1];
-        let az = atom_positions[i*3 + 2];
+        let ax = atom_positions[i * 3];
+        let ay = atom_positions[i * 3 + 1];
+        let az = atom_positions[i * 3 + 2];
         let aix = ((ax - gmin[0]) / grid_step).round() as i32;
         let aiy = ((ay - gmin[1]) / grid_step).round() as i32;
         let aiz = ((az - gmin[2]) / grid_step).round() as i32;
@@ -17786,13 +20447,17 @@ fn recalculate_enclosure_volume(
                     let ix = aix + dx;
                     let iy = aiy + dy;
                     let iz = aiz + dz;
-                    if ix < 0 || iy < 0 || iz < 0 { continue; }
+                    if ix < 0 || iy < 0 || iz < 0 {
+                        continue;
+                    }
                     let ix = ix as usize;
                     let iy = iy as usize;
                     let iz = iz as usize;
-                    if ix >= nx || iy >= ny || iz >= nz { continue; }
+                    if ix >= nx || iy >= ny || iz >= nz {
+                        continue;
+                    }
                     let w = to_world(ix, iy, iz);
-                    let d2 = (w[0]-ax).powi(2) + (w[1]-ay).powi(2) + (w[2]-az).powi(2);
+                    let d2 = (w[0] - ax).powi(2) + (w[1] - ay).powi(2) + (w[2] - az).powi(2);
                     if d2 <= excl_sq {
                         is_protein[to_idx(ix, iy, iz)] = true;
                     }
@@ -17814,9 +20479,12 @@ fn recalculate_enclosure_volume(
         for ix in 0..nx {
             for iy in 0..ny {
                 for iz in 0..nz {
-                    let on_boundary = ix == 0 || ix == nx - 1
-                                   || iy == 0 || iy == ny - 1
-                                   || iz == 0 || iz == nz - 1;
+                    let on_boundary = ix == 0
+                        || ix == nx - 1
+                        || iy == 0
+                        || iy == ny - 1
+                        || iz == 0
+                        || iz == nz - 1;
                     if on_boundary {
                         let idx = to_idx(ix, iy, iz);
                         if !is_protein[idx] && !is_solvent[idx] {
@@ -17831,14 +20499,23 @@ fn recalculate_enclosure_volume(
         // BFS through non-protein voxels (6-connected)
         while let Some((cx, cy, cz)) = queue.pop_front() {
             for &(dx, dy, dz) in &[
-                (1i32,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)
+                (1i32, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
             ] {
                 let nix = cx as i32 + dx;
                 let niy = cy as i32 + dy;
                 let niz = cz as i32 + dz;
-                if nix < 0 || niy < 0 || niz < 0 { continue; }
+                if nix < 0 || niy < 0 || niz < 0 {
+                    continue;
+                }
                 let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
-                if nix >= nx || niy >= ny || niz >= nz { continue; }
+                if nix >= nx || niy >= ny || niz >= nz {
+                    continue;
+                }
                 let nidx = to_idx(nix, niy, niz);
                 if !is_protein[nidx] && !is_solvent[nidx] {
                     is_solvent[nidx] = true;
@@ -17848,9 +20525,14 @@ fn recalculate_enclosure_volume(
         }
 
         let solvent_count = is_solvent.iter().filter(|&&v| v).count();
-        let buried_count = (0..grid_size).filter(|&i| !is_protein[i] && !is_solvent[i]).count();
-        log::info!("  Solvent gate: {} exterior-reachable, {} buried void voxels",
-            solvent_count, buried_count);
+        let buried_count = (0..grid_size)
+            .filter(|&i| !is_protein[i] && !is_solvent[i])
+            .count();
+        log::info!(
+            "  Solvent gate: {} exterior-reachable, {} buried void voxels",
+            solvent_count,
+            buried_count
+        );
     }
 
     // ---- Stage 2.75: MOVED to Stage 3.5 (depends on is_enclosed) ----
@@ -17866,8 +20548,13 @@ fn recalculate_enclosure_volume(
         for iy in 0..ny {
             for iz in 0..nz {
                 let idx = to_idx(ix, iy, iz);
-                if is_protein[idx] { total_protein += 1; continue; }
-                if !is_solvent[idx] { continue; } // Must be reachable from exterior
+                if is_protein[idx] {
+                    total_protein += 1;
+                    continue;
+                }
+                if !is_solvent[idx] {
+                    continue;
+                } // Must be reachable from exterior
 
                 // Ray-cast in 6 axial directions with 10Å horizon
                 let mut blocked = 0u32;
@@ -17875,44 +20562,74 @@ fn recalculate_enclosure_volume(
                 // +X
                 let mut hit = false;
                 for step in 1..=usize::min(nx - 1 - ix, max_ray_steps) {
-                    if is_protein[to_idx(ix + step, iy, iz)] { hit = true; break; }
+                    if is_protein[to_idx(ix + step, iy, iz)] {
+                        hit = true;
+                        break;
+                    }
                 }
-                if hit { blocked += 1; }
+                if hit {
+                    blocked += 1;
+                }
 
                 // -X
                 hit = false;
                 for step in 1..=usize::min(ix, max_ray_steps) {
-                    if is_protein[to_idx(ix - step, iy, iz)] { hit = true; break; }
+                    if is_protein[to_idx(ix - step, iy, iz)] {
+                        hit = true;
+                        break;
+                    }
                 }
-                if hit { blocked += 1; }
+                if hit {
+                    blocked += 1;
+                }
 
                 // +Y
                 hit = false;
                 for step in 1..=usize::min(ny - 1 - iy, max_ray_steps) {
-                    if is_protein[to_idx(ix, iy + step, iz)] { hit = true; break; }
+                    if is_protein[to_idx(ix, iy + step, iz)] {
+                        hit = true;
+                        break;
+                    }
                 }
-                if hit { blocked += 1; }
+                if hit {
+                    blocked += 1;
+                }
 
                 // -Y
                 hit = false;
                 for step in 1..=usize::min(iy, max_ray_steps) {
-                    if is_protein[to_idx(ix, iy - step, iz)] { hit = true; break; }
+                    if is_protein[to_idx(ix, iy - step, iz)] {
+                        hit = true;
+                        break;
+                    }
                 }
-                if hit { blocked += 1; }
+                if hit {
+                    blocked += 1;
+                }
 
                 // +Z
                 hit = false;
                 for step in 1..=usize::min(nz - 1 - iz, max_ray_steps) {
-                    if is_protein[to_idx(ix, iy, iz + step)] { hit = true; break; }
+                    if is_protein[to_idx(ix, iy, iz + step)] {
+                        hit = true;
+                        break;
+                    }
                 }
-                if hit { blocked += 1; }
+                if hit {
+                    blocked += 1;
+                }
 
                 // -Z
                 hit = false;
                 for step in 1..=usize::min(iz, max_ray_steps) {
-                    if is_protein[to_idx(ix, iy, iz - step)] { hit = true; break; }
+                    if is_protein[to_idx(ix, iy, iz - step)] {
+                        hit = true;
+                        break;
+                    }
                 }
-                if hit { blocked += 1; }
+                if hit {
+                    blocked += 1;
+                }
 
                 if blocked >= min_blocked {
                     is_enclosed[idx] = true;
@@ -17922,8 +20639,12 @@ fn recalculate_enclosure_volume(
         }
     }
 
-    log::info!("  LIGSITE ray-cast: protein={}, enclosed(≥{}/6)={}",
-        total_protein, min_blocked, total_enclosed);
+    log::info!(
+        "  LIGSITE ray-cast: protein={}, enclosed(≥{}/6)={}",
+        total_protein,
+        min_blocked,
+        total_enclosed
+    );
 
     if total_enclosed == 0 {
         sites.clear();
@@ -17958,14 +20679,23 @@ fn recalculate_enclosure_volume(
             let curr_depth = depth[to_idx(cx, cy, cz)];
 
             for &(ddx, ddy, ddz) in &[
-                (1i32,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)
+                (1i32, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
             ] {
                 let nix = cx as i32 + ddx;
                 let niy = cy as i32 + ddy;
                 let niz = cz as i32 + ddz;
-                if nix < 0 || niy < 0 || niz < 0 { continue; }
+                if nix < 0 || niy < 0 || niz < 0 {
+                    continue;
+                }
                 let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
-                if nix >= nx || niy >= ny || niz >= nz { continue; }
+                if nix >= nx || niy >= ny || niz >= nz {
+                    continue;
+                }
                 let nidx = to_idx(nix, niy, niz);
 
                 // Only propagate into enclosed pocket voxels
@@ -17987,12 +20717,19 @@ fn recalculate_enclosure_volume(
         let max_pocket_depth = pocket_depths.iter().cloned().fold(0.0f32, f32::max);
         let avg_pocket_depth = if !pocket_depths.is_empty() {
             pocket_depths.iter().sum::<f32>() / pocket_depths.len() as f32
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let unreachable = (0..grid_size)
             .filter(|&i| is_enclosed[i] && depth[i] >= 99.0)
             .count();
-        log::info!("  DAH lid-depth: {} pocket voxels measured, {} unreachable, max={:.1}Å, avg={:.1}Å",
-            pocket_depths.len(), unreachable, max_pocket_depth, avg_pocket_depth);
+        log::info!(
+            "  DAH lid-depth: {} pocket voxels measured, {} unreachable, max={:.1}Å, avg={:.1}Å",
+            pocket_depths.len(),
+            unreachable,
+            max_pocket_depth,
+            avg_pocket_depth
+        );
 
         depth
     };
@@ -18012,7 +20749,9 @@ fn recalculate_enclosure_volume(
     let mut accums: Vec<PocketAccum> = Vec::new();
 
     for start_idx in 0..grid_size {
-        if !is_enclosed[start_idx] || component_id[start_idx] != -1 { continue; }
+        if !is_enclosed[start_idx] || component_id[start_idx] != -1 {
+            continue;
+        }
 
         let cid = num_components;
         num_components += 1;
@@ -18050,14 +20789,23 @@ fn recalculate_enclosure_volume(
 
             // 6-connected BFS
             for &(ddx, ddy, ddz) in &[
-                (1i32,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)
+                (1i32, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
             ] {
                 let nix = cix as i32 + ddx;
                 let niy = ciy as i32 + ddy;
                 let niz = ciz as i32 + ddz;
-                if nix < 0 || niy < 0 || niz < 0 { continue; }
+                if nix < 0 || niy < 0 || niz < 0 {
+                    continue;
+                }
                 let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
-                if nix >= nx || niy >= ny || niz >= nz { continue; }
+                if nix >= nx || niy >= ny || niz >= nz {
+                    continue;
+                }
                 let nidx = to_idx(nix, niy, niz);
                 if is_enclosed[nidx] && component_id[nidx] == -1 {
                     component_id[nidx] = cid;
@@ -18070,12 +20818,18 @@ fn recalculate_enclosure_volume(
     }
 
     // Filter by minimum pocket size
-    let surviving: Vec<(usize, &PocketAccum)> = accums.iter().enumerate()
+    let surviving: Vec<(usize, &PocketAccum)> = accums
+        .iter()
+        .enumerate()
         .filter(|(_, a)| a.voxel_count >= min_pocket_voxels)
         .collect();
 
-    log::info!("  Connected components: {} total, {} above {} voxel threshold",
-        num_components, surviving.len(), min_pocket_voxels);
+    log::info!(
+        "  Connected components: {} total, {} above {} voxel threshold",
+        num_components,
+        surviving.len(),
+        min_pocket_voxels
+    );
 
     if surviving.is_empty() {
         sites.clear();
@@ -18108,9 +20862,16 @@ fn recalculate_enclosure_volume(
         let volume = acc.voxel_count as f32 * grid_step.powi(3);
         let mean_depth = (acc.depth_sum / n) as f32;
 
-        log::info!("  Pocket {}: {} voxels, {:.0} Å³, centroid=({:.1},{:.1},{:.1}), depth={:.1}Å",
-            pocket_idx, acc.voxel_count, volume,
-            centroid[0], centroid[1], centroid[2], mean_depth);
+        log::info!(
+            "  Pocket {}: {} voxels, {:.0} Å³, centroid=({:.1},{:.1},{:.1}), depth={:.1}Å",
+            pocket_idx,
+            acc.voxel_count,
+            volume,
+            centroid[0],
+            centroid[1],
+            centroid[2],
+            mean_depth
+        );
 
         pockets.push(PocketInfo {
             centroid,
@@ -18131,7 +20892,9 @@ fn recalculate_enclosure_volume(
     let mut new_pockets: Vec<(usize, Vec<(i32, [f32; 3])>)> = Vec::new(); // (orig_pocket_idx, seeds)
 
     for (pocket_idx, pocket) in pockets.iter().enumerate() {
-        if pocket.voxel_count < watershed_threshold { continue; }
+        if pocket.voxel_count < watershed_threshold {
+            continue;
+        }
 
         // Find the original cid for this pocket
         let orig_cid = surviving[pocket_idx].0 as i32;
@@ -18148,18 +20911,28 @@ fn recalculate_enclosure_volume(
         let wdz = ((bmax[2] - bmin[2] + 2.0 * margin) / ws).ceil() as usize + 1;
         let worigin = [bmin[0] - margin, bmin[1] - margin, bmin[2] - margin];
         let wsize = wdx * wdy * wdz;
-        if wsize > 500_000 { continue; } // safety: skip absurdly large pockets
+        if wsize > 500_000 {
+            continue;
+        } // safety: skip absurdly large pockets
 
         let mut wgrid = vec![0.0f64; wsize];
         let w_idx = |x: usize, y: usize, z: usize| -> usize { x * wdy * wdz + y * wdz + z };
 
         let mut pocket_spike_count = 0u32;
         for spike in all_spikes.iter() {
-            if spike.intensity < spike_intensity_min { continue; }
+            if spike.intensity < spike_intensity_min {
+                continue;
+            }
             let sp = spike.position;
-            if sp[0] < bmin[0] - margin || sp[0] > bmax[0] + margin { continue; }
-            if sp[1] < bmin[1] - margin || sp[1] > bmax[1] + margin { continue; }
-            if sp[2] < bmin[2] - margin || sp[2] > bmax[2] + margin { continue; }
+            if sp[0] < bmin[0] - margin || sp[0] > bmax[0] + margin {
+                continue;
+            }
+            if sp[1] < bmin[1] - margin || sp[1] > bmax[1] + margin {
+                continue;
+            }
+            if sp[2] < bmin[2] - margin || sp[2] > bmax[2] + margin {
+                continue;
+            }
             let wx = ((sp[0] - worigin[0]) / ws) as usize;
             let wy = ((sp[1] - worigin[1]) / ws) as usize;
             let wz = ((sp[2] - worigin[2]) / ws) as usize;
@@ -18169,7 +20942,9 @@ fn recalculate_enclosure_volume(
                 pocket_spike_count += 1;
             }
         }
-        if pocket_spike_count < 20 { continue; }
+        if pocket_spike_count < 20 {
+            continue;
+        }
 
         // NMS: find local maxima in the coarse grid (3x3x3 neighborhood)
         let mut peaks: Vec<(i32, [f32; 3])> = Vec::new(); // (new_cid, position)
@@ -18177,12 +20952,16 @@ fn recalculate_enclosure_volume(
             for wy in 1..wdy.saturating_sub(1) {
                 for wz in 1..wdz.saturating_sub(1) {
                     let val = wgrid[w_idx(wx, wy, wz)];
-                    if val < 1.0 { continue; }
+                    if val < 1.0 {
+                        continue;
+                    }
                     let mut is_max = true;
                     'nms: for dx in -1i32..=1 {
                         for dy in -1i32..=1 {
                             for dz in -1i32..=1 {
-                                if dx == 0 && dy == 0 && dz == 0 { continue; }
+                                if dx == 0 && dy == 0 && dz == 0 {
+                                    continue;
+                                }
                                 let nx2 = (wx as i32 + dx) as usize;
                                 let ny2 = (wy as i32 + dy) as usize;
                                 let nz2 = (wz as i32 + dz) as usize;
@@ -18195,7 +20974,9 @@ fn recalculate_enclosure_volume(
                             }
                         }
                     }
-                    if !is_max { continue; }
+                    if !is_max {
+                        continue;
+                    }
 
                     // Convert coarse grid position back to Cartesian
                     let peak_pos = [
@@ -18222,8 +21003,13 @@ fn recalculate_enclosure_volume(
         }
 
         if peaks.len() >= 2 {
-            log::info!("  Watershed: Pocket {} ({} voxels, {:.0} Å³) has {} density peaks → splitting",
-                pocket_idx, pocket.voxel_count, pocket.volume, peaks.len());
+            log::info!(
+                "  Watershed: Pocket {} ({} voxels, {:.0} Å³) has {} density peaks → splitting",
+                pocket_idx,
+                pocket.voxel_count,
+                pocket.volume,
+                peaks.len()
+            );
             new_pockets.push((pocket_idx, peaks));
         }
     }
@@ -18243,7 +21029,9 @@ fn recalculate_enclosure_volume(
         // (reuse wgrid data mapped onto the 1Å grid)
         let mut voxel_density = vec![0.0f64; grid_size];
         for spike in all_spikes.iter() {
-            if spike.intensity < spike_intensity_min { continue; }
+            if spike.intensity < spike_intensity_min {
+                continue;
+            }
             let sp = spike.position;
             let gx = ((sp[0] - gmin[0]) / grid_step).round() as i32;
             let gy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
@@ -18289,12 +21077,36 @@ fn recalculate_enclosure_volume(
             let iy = (idx / nz) % ny;
             let ix = idx / (ny * nz);
             let neighbors = [
-                if ix > 0      { Some(to_idx(ix-1, iy, iz)) } else { None },
-                if ix < nx - 1 { Some(to_idx(ix+1, iy, iz)) } else { None },
-                if iy > 0      { Some(to_idx(ix, iy-1, iz)) } else { None },
-                if iy < ny - 1 { Some(to_idx(ix, iy+1, iz)) } else { None },
-                if iz > 0      { Some(to_idx(ix, iy, iz-1)) } else { None },
-                if iz < nz - 1 { Some(to_idx(ix, iy, iz+1)) } else { None },
+                if ix > 0 {
+                    Some(to_idx(ix - 1, iy, iz))
+                } else {
+                    None
+                },
+                if ix < nx - 1 {
+                    Some(to_idx(ix + 1, iy, iz))
+                } else {
+                    None
+                },
+                if iy > 0 {
+                    Some(to_idx(ix, iy - 1, iz))
+                } else {
+                    None
+                },
+                if iy < ny - 1 {
+                    Some(to_idx(ix, iy + 1, iz))
+                } else {
+                    None
+                },
+                if iz > 0 {
+                    Some(to_idx(ix, iy, iz - 1))
+                } else {
+                    None
+                },
+                if iz < nz - 1 {
+                    Some(to_idx(ix, iy, iz + 1))
+                } else {
+                    None
+                },
             ];
             for n in neighbors.iter().flatten() {
                 if component_id[*n] == orig_cid {
@@ -18310,22 +21122,35 @@ fn recalculate_enclosure_volume(
     // If any splits happened, rebuild pockets and cid_to_pocket
     if !new_pockets.is_empty() {
         let total_seeds: usize = new_pockets.iter().map(|(_, s)| s.len()).sum();
-        log::info!("  Watershed split {} mega-pockets into {} sub-pockets", new_pockets.len(), total_seeds);
+        log::info!(
+            "  Watershed split {} mega-pockets into {} sub-pockets",
+            new_pockets.len(),
+            total_seeds
+        );
 
         // Rebuild: recount all components (including new sub-pocket cids)
         pockets.clear();
         cid_to_pocket = vec![-1; next_cid as usize];
 
         // Re-accumulate from component_id grid
-        struct WsAccum { coord_sum: [f64; 3], voxel_count: u32, bbox_min: [f32; 3], bbox_max: [f32; 3], depth_sum: f64 }
-        let mut ws_accum: std::collections::HashMap<i32, WsAccum> = std::collections::HashMap::new();
+        struct WsAccum {
+            coord_sum: [f64; 3],
+            voxel_count: u32,
+            bbox_min: [f32; 3],
+            bbox_max: [f32; 3],
+            depth_sum: f64,
+        }
+        let mut ws_accum: std::collections::HashMap<i32, WsAccum> =
+            std::collections::HashMap::new();
 
         for ix in 0..nx {
             for iy in 0..ny {
                 for iz in 0..nz {
                     let idx = to_idx(ix, iy, iz);
                     let cid = component_id[idx];
-                    if cid < 0 { continue; }
+                    if cid < 0 {
+                        continue;
+                    }
                     let pos = [
                         gmin[0] + ix as f32 * grid_step,
                         gmin[1] + iy as f32 * grid_step,
@@ -18333,8 +21158,11 @@ fn recalculate_enclosure_volume(
                     ];
                     let d = depth_grid[idx] as f64;
                     let acc = ws_accum.entry(cid).or_insert(WsAccum {
-                        coord_sum: [0.0; 3], voxel_count: 0,
-                        bbox_min: [f32::MAX; 3], bbox_max: [f32::MIN; 3], depth_sum: 0.0,
+                        coord_sum: [0.0; 3],
+                        voxel_count: 0,
+                        bbox_min: [f32::MAX; 3],
+                        bbox_max: [f32::MIN; 3],
+                        depth_sum: 0.0,
                     });
                     acc.coord_sum[0] += pos[0] as f64;
                     acc.coord_sum[1] += pos[1] as f64;
@@ -18342,15 +21170,20 @@ fn recalculate_enclosure_volume(
                     acc.voxel_count += 1;
                     acc.depth_sum += d;
                     for d2 in 0..3 {
-                        if pos[d2] < acc.bbox_min[d2] { acc.bbox_min[d2] = pos[d2]; }
-                        if pos[d2] > acc.bbox_max[d2] { acc.bbox_max[d2] = pos[d2]; }
+                        if pos[d2] < acc.bbox_min[d2] {
+                            acc.bbox_min[d2] = pos[d2];
+                        }
+                        if pos[d2] > acc.bbox_max[d2] {
+                            acc.bbox_max[d2] = pos[d2];
+                        }
                     }
                 }
             }
         }
 
         // Rebuild pocket list from accumulator, filtering by min size
-        let mut sorted_cids: Vec<(i32, &WsAccum)> = ws_accum.iter()
+        let mut sorted_cids: Vec<(i32, &WsAccum)> = ws_accum
+            .iter()
             .filter(|(_, a)| a.voxel_count >= min_pocket_voxels)
             .map(|(&cid, a)| (cid, a))
             .collect();
@@ -18367,13 +21200,18 @@ fn recalculate_enclosure_volume(
             let volume = acc.voxel_count as f32 * grid_step.powi(3);
             let mean_depth = (acc.depth_sum / n) as f32;
             pockets.push(PocketInfo {
-                centroid, volume,
+                centroid,
+                volume,
                 bbox: [acc.bbox_min, acc.bbox_max],
                 mean_depth,
                 voxel_count: acc.voxel_count,
             });
         }
-        log::info!("  Post-watershed: {} pockets (was {})", pockets.len(), surviving.len());
+        log::info!(
+            "  Post-watershed: {} pockets (was {})",
+            pockets.len(),
+            surviving.len()
+        );
     }
 
     // ---- Stage 5b: Watershed sub-pocket decomposition ----
@@ -18386,7 +21224,9 @@ fn recalculate_enclosure_volume(
     let mut new_pockets: Vec<(usize, Vec<(i32, [f32; 3])>)> = Vec::new(); // (orig_pocket_idx, seeds)
 
     for (pocket_idx, pocket) in pockets.iter().enumerate() {
-        if pocket.voxel_count < watershed_threshold { continue; }
+        if pocket.voxel_count < watershed_threshold {
+            continue;
+        }
 
         // Find the original cid for this pocket
         let orig_cid = surviving[pocket_idx].0 as i32;
@@ -18403,18 +21243,28 @@ fn recalculate_enclosure_volume(
         let wdz = ((bmax[2] - bmin[2] + 2.0 * margin) / ws).ceil() as usize + 1;
         let worigin = [bmin[0] - margin, bmin[1] - margin, bmin[2] - margin];
         let wsize = wdx * wdy * wdz;
-        if wsize > 500_000 { continue; } // safety: skip absurdly large pockets
+        if wsize > 500_000 {
+            continue;
+        } // safety: skip absurdly large pockets
 
         let mut wgrid = vec![0.0f64; wsize];
         let w_idx = |x: usize, y: usize, z: usize| -> usize { x * wdy * wdz + y * wdz + z };
 
         let mut pocket_spike_count = 0u32;
         for spike in all_spikes.iter() {
-            if spike.intensity < spike_intensity_min { continue; }
+            if spike.intensity < spike_intensity_min {
+                continue;
+            }
             let sp = spike.position;
-            if sp[0] < bmin[0] - margin || sp[0] > bmax[0] + margin { continue; }
-            if sp[1] < bmin[1] - margin || sp[1] > bmax[1] + margin { continue; }
-            if sp[2] < bmin[2] - margin || sp[2] > bmax[2] + margin { continue; }
+            if sp[0] < bmin[0] - margin || sp[0] > bmax[0] + margin {
+                continue;
+            }
+            if sp[1] < bmin[1] - margin || sp[1] > bmax[1] + margin {
+                continue;
+            }
+            if sp[2] < bmin[2] - margin || sp[2] > bmax[2] + margin {
+                continue;
+            }
             let wx = ((sp[0] - worigin[0]) / ws) as usize;
             let wy = ((sp[1] - worigin[1]) / ws) as usize;
             let wz = ((sp[2] - worigin[2]) / ws) as usize;
@@ -18424,7 +21274,9 @@ fn recalculate_enclosure_volume(
                 pocket_spike_count += 1;
             }
         }
-        if pocket_spike_count < 20 { continue; }
+        if pocket_spike_count < 20 {
+            continue;
+        }
 
         // NMS: find local maxima in the coarse grid (3x3x3 neighborhood)
         let mut peaks: Vec<(i32, [f32; 3])> = Vec::new(); // (new_cid, position)
@@ -18432,12 +21284,16 @@ fn recalculate_enclosure_volume(
             for wy in 1..wdy.saturating_sub(1) {
                 for wz in 1..wdz.saturating_sub(1) {
                     let val = wgrid[w_idx(wx, wy, wz)];
-                    if val < 1.0 { continue; }
+                    if val < 1.0 {
+                        continue;
+                    }
                     let mut is_max = true;
                     'nms: for dx in -1i32..=1 {
                         for dy in -1i32..=1 {
                             for dz in -1i32..=1 {
-                                if dx == 0 && dy == 0 && dz == 0 { continue; }
+                                if dx == 0 && dy == 0 && dz == 0 {
+                                    continue;
+                                }
                                 let nx2 = (wx as i32 + dx) as usize;
                                 let ny2 = (wy as i32 + dy) as usize;
                                 let nz2 = (wz as i32 + dz) as usize;
@@ -18450,7 +21306,9 @@ fn recalculate_enclosure_volume(
                             }
                         }
                     }
-                    if !is_max { continue; }
+                    if !is_max {
+                        continue;
+                    }
 
                     // Convert coarse grid position back to Cartesian
                     let peak_pos = [
@@ -18477,8 +21335,13 @@ fn recalculate_enclosure_volume(
         }
 
         if peaks.len() >= 2 {
-            log::info!("  Watershed: Pocket {} ({} voxels, {:.0} Å³) has {} density peaks → splitting",
-                pocket_idx, pocket.voxel_count, pocket.volume, peaks.len());
+            log::info!(
+                "  Watershed: Pocket {} ({} voxels, {:.0} Å³) has {} density peaks → splitting",
+                pocket_idx,
+                pocket.voxel_count,
+                pocket.volume,
+                peaks.len()
+            );
             new_pockets.push((pocket_idx, peaks));
         }
     }
@@ -18498,7 +21361,9 @@ fn recalculate_enclosure_volume(
         // (reuse wgrid data mapped onto the 1Å grid)
         let mut voxel_density = vec![0.0f64; grid_size];
         for spike in all_spikes.iter() {
-            if spike.intensity < spike_intensity_min { continue; }
+            if spike.intensity < spike_intensity_min {
+                continue;
+            }
             let sp = spike.position;
             let gx = ((sp[0] - gmin[0]) / grid_step).round() as i32;
             let gy = ((sp[1] - gmin[1]) / grid_step).round() as i32;
@@ -18544,12 +21409,36 @@ fn recalculate_enclosure_volume(
             let iy = (idx / nz) % ny;
             let ix = idx / (ny * nz);
             let neighbors = [
-                if ix > 0      { Some(to_idx(ix-1, iy, iz)) } else { None },
-                if ix < nx - 1 { Some(to_idx(ix+1, iy, iz)) } else { None },
-                if iy > 0      { Some(to_idx(ix, iy-1, iz)) } else { None },
-                if iy < ny - 1 { Some(to_idx(ix, iy+1, iz)) } else { None },
-                if iz > 0      { Some(to_idx(ix, iy, iz-1)) } else { None },
-                if iz < nz - 1 { Some(to_idx(ix, iy, iz+1)) } else { None },
+                if ix > 0 {
+                    Some(to_idx(ix - 1, iy, iz))
+                } else {
+                    None
+                },
+                if ix < nx - 1 {
+                    Some(to_idx(ix + 1, iy, iz))
+                } else {
+                    None
+                },
+                if iy > 0 {
+                    Some(to_idx(ix, iy - 1, iz))
+                } else {
+                    None
+                },
+                if iy < ny - 1 {
+                    Some(to_idx(ix, iy + 1, iz))
+                } else {
+                    None
+                },
+                if iz > 0 {
+                    Some(to_idx(ix, iy, iz - 1))
+                } else {
+                    None
+                },
+                if iz < nz - 1 {
+                    Some(to_idx(ix, iy, iz + 1))
+                } else {
+                    None
+                },
             ];
             for n in neighbors.iter().flatten() {
                 if component_id[*n] == orig_cid {
@@ -18565,22 +21454,35 @@ fn recalculate_enclosure_volume(
     // If any splits happened, rebuild pockets and cid_to_pocket
     if !new_pockets.is_empty() {
         let total_seeds: usize = new_pockets.iter().map(|(_, s)| s.len()).sum();
-        log::info!("  Watershed split {} mega-pockets into {} sub-pockets", new_pockets.len(), total_seeds);
+        log::info!(
+            "  Watershed split {} mega-pockets into {} sub-pockets",
+            new_pockets.len(),
+            total_seeds
+        );
 
         // Rebuild: recount all components (including new sub-pocket cids)
         pockets.clear();
         cid_to_pocket = vec![-1; next_cid as usize];
 
         // Re-accumulate from component_id grid
-        struct WsAccum { coord_sum: [f64; 3], voxel_count: u32, bbox_min: [f32; 3], bbox_max: [f32; 3], depth_sum: f64 }
-        let mut ws_accum: std::collections::HashMap<i32, WsAccum> = std::collections::HashMap::new();
+        struct WsAccum {
+            coord_sum: [f64; 3],
+            voxel_count: u32,
+            bbox_min: [f32; 3],
+            bbox_max: [f32; 3],
+            depth_sum: f64,
+        }
+        let mut ws_accum: std::collections::HashMap<i32, WsAccum> =
+            std::collections::HashMap::new();
 
         for ix in 0..nx {
             for iy in 0..ny {
                 for iz in 0..nz {
                     let idx = to_idx(ix, iy, iz);
                     let cid = component_id[idx];
-                    if cid < 0 { continue; }
+                    if cid < 0 {
+                        continue;
+                    }
                     let pos = [
                         gmin[0] + ix as f32 * grid_step,
                         gmin[1] + iy as f32 * grid_step,
@@ -18588,8 +21490,11 @@ fn recalculate_enclosure_volume(
                     ];
                     let d = depth_grid[idx] as f64;
                     let acc = ws_accum.entry(cid).or_insert(WsAccum {
-                        coord_sum: [0.0; 3], voxel_count: 0,
-                        bbox_min: [f32::MAX; 3], bbox_max: [f32::MIN; 3], depth_sum: 0.0,
+                        coord_sum: [0.0; 3],
+                        voxel_count: 0,
+                        bbox_min: [f32::MAX; 3],
+                        bbox_max: [f32::MIN; 3],
+                        depth_sum: 0.0,
                     });
                     acc.coord_sum[0] += pos[0] as f64;
                     acc.coord_sum[1] += pos[1] as f64;
@@ -18597,15 +21502,20 @@ fn recalculate_enclosure_volume(
                     acc.voxel_count += 1;
                     acc.depth_sum += d;
                     for d2 in 0..3 {
-                        if pos[d2] < acc.bbox_min[d2] { acc.bbox_min[d2] = pos[d2]; }
-                        if pos[d2] > acc.bbox_max[d2] { acc.bbox_max[d2] = pos[d2]; }
+                        if pos[d2] < acc.bbox_min[d2] {
+                            acc.bbox_min[d2] = pos[d2];
+                        }
+                        if pos[d2] > acc.bbox_max[d2] {
+                            acc.bbox_max[d2] = pos[d2];
+                        }
                     }
                 }
             }
         }
 
         // Rebuild pocket list from accumulator, filtering by min size
-        let mut sorted_cids: Vec<(i32, &WsAccum)> = ws_accum.iter()
+        let mut sorted_cids: Vec<(i32, &WsAccum)> = ws_accum
+            .iter()
             .filter(|(_, a)| a.voxel_count >= min_pocket_voxels)
             .map(|(&cid, a)| (cid, a))
             .collect();
@@ -18622,13 +21532,18 @@ fn recalculate_enclosure_volume(
             let volume = acc.voxel_count as f32 * grid_step.powi(3);
             let mean_depth = (acc.depth_sum / n) as f32;
             pockets.push(PocketInfo {
-                centroid, volume,
+                centroid,
+                volume,
                 bbox: [acc.bbox_min, acc.bbox_max],
                 mean_depth,
                 voxel_count: acc.voxel_count,
             });
         }
-        log::info!("  Post-watershed: {} pockets (was {})", pockets.len(), surviving.len());
+        log::info!(
+            "  Post-watershed: {} pockets (was {})",
+            pockets.len(),
+            surviving.len()
+        );
     }
 
     // ---- Stage 6: O(N) spike overlay via component_id grid lookup ----
@@ -18646,7 +21561,14 @@ fn recalculate_enclosure_volume(
     }
     const PEAK_TOP_K: usize = 10;
     let mut stats: Vec<PocketStats> = (0..pockets.len())
-        .map(|_| PocketStats { spike_count: 0, intensity_sum: 0.0, spike_indices: Vec::new(), weighted_pos: [0.0; 3], weight_sum: 0.0, top_spikes: Vec::with_capacity(PEAK_TOP_K + 1) })
+        .map(|_| PocketStats {
+            spike_count: 0,
+            intensity_sum: 0.0,
+            spike_indices: Vec::new(),
+            weighted_pos: [0.0; 3],
+            weight_sum: 0.0,
+            top_spikes: Vec::with_capacity(PEAK_TOP_K + 1),
+        })
         .collect();
 
     let sr = spike_search_r;
@@ -18673,15 +21595,21 @@ fn recalculate_enclosure_volume(
         for ddx in -sr..=sr {
             for ddy in -sr..=sr {
                 for ddz in -sr..=sr {
-                    let d2 = ddx*ddx + ddy*ddy + ddz*ddz;
-                    if d2 > sr_sq { continue; }
+                    let d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+                    if d2 > sr_sq {
+                        continue;
+                    }
 
                     let nix = six + ddx;
                     let niy = siy + ddy;
                     let niz = siz + ddz;
-                    if nix < 0 || niy < 0 || niz < 0 { continue; }
+                    if nix < 0 || niy < 0 || niz < 0 {
+                        continue;
+                    }
                     let (nix, niy, niz) = (nix as usize, niy as usize, niz as usize);
-                    if nix >= nx || niy >= ny || niz >= nz { continue; }
+                    if nix >= nx || niy >= ny || niz >= nz {
+                        continue;
+                    }
 
                     let cid = component_id[to_idx(nix, niy, niz)];
                     if cid >= 0 {
@@ -18709,17 +21637,21 @@ fn recalculate_enclosure_volume(
             // Track top-K highest-intensity spikes for peak centroid
             s.top_spikes.push((spike.intensity, sp));
             if s.top_spikes.len() > PEAK_TOP_K {
-                s.top_spikes.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                s.top_spikes
+                    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 s.top_spikes.truncate(PEAK_TOP_K);
             }
             spikes_mapped += 1;
         }
     }
 
-    log::info!("  Spike overlay: {} mapped to pockets, {} filtered (intensity<{:.0}), {} unmapped",
-        spikes_mapped, spikes_filtered,
+    log::info!(
+        "  Spike overlay: {} mapped to pockets, {} filtered (intensity<{:.0}), {} unmapped",
+        spikes_mapped,
+        spikes_filtered,
         spike_intensity_min,
-        all_spikes.len() as u32 - spikes_mapped - spikes_filtered);
+        all_spikes.len() as u32 - spikes_mapped - spikes_filtered
+    );
 
     // ---- Stage 7: Score pockets and rebuild sites vector ----
     sites.clear();
@@ -18751,21 +21683,27 @@ fn recalculate_enclosure_volume(
             pocket.bbox[1][1] - pocket.bbox[0][1],
             pocket.bbox[1][2] - pocket.bbox[0][2],
         ];
-        let mut druggability = DruggabilityScore::from_site(
-            pocket.volume, avg_intensity, &bbox_extents);
+        let mut druggability =
+            DruggabilityScore::from_site(pocket.volume, avg_intensity, &bbox_extents);
         druggability.overall *= surface_factor;
-        druggability.is_druggable = druggability.overall >= 0.40
-            && pocket.volume >= 50.0
-            && pocket.volume <= 3000.0;
+        druggability.is_druggable =
+            druggability.overall >= 0.40 && pocket.volume >= 50.0 && pocket.volume <= 3000.0;
 
         let classification = SiteClassification::from_properties(
-            stat.spike_count as usize, pocket.volume, avg_intensity);
+            stat.spike_count as usize,
+            pocket.volume,
+            avg_intensity,
+        );
 
         let quality_score = {
             // Enclosure-based ranking (v2): matches multi-stream path
             let n_lining = 0.0_f32; // lining_residues computed later; use spike_frac + vol + drug here
             let total = all_spikes.len() as f32;
-            let spike_frac = if total > 0.0 { stat.spike_count as f32 / total } else { 0.0 };
+            let spike_frac = if total > 0.0 {
+                stat.spike_count as f32 / total
+            } else {
+                0.0
+            };
             // Volume quality: expanded range [50, 2000] for drug-like pockets.
             // Real binding sites range from 50Å³ (fragment) to 2000Å³ (kinase cleft).
             // Previous 800Å³ cap penalized most real drug targets.
@@ -18781,14 +21719,24 @@ fn recalculate_enclosure_volume(
                 + 0.20 * spike_density.clamp(0.0, 10.0) / 64.0  // spike density
                 + 0.15 * surface_factor                      // burial REWARD (was penalty!)
                 + 0.10 * druggability.overall                // druggability
-                + 0.10 * (stat.spike_count as f32).log2().clamp(0.0, 16.0) / 16.0 // log spike count
+                + 0.10 * (stat.spike_count as f32).log2().clamp(0.0, 16.0) / 16.0
+            // log spike count
         };
 
-        log::info!("  Site {}: vol={:.0}Å³ spikes={} density={:.2} intensity={:.1} depth={:.1}Å \
+        log::info!(
+            "  Site {}: vol={:.0}Å³ spikes={} density={:.2} intensity={:.1} depth={:.1}Å \
             surface_factor={:.3} drug={:.3} quality={:.3} class={:?}",
-            pi, pocket.volume, stat.spike_count, spike_density, avg_intensity,
-            pocket.mean_depth, surface_factor, druggability.overall, quality_score,
-            classification);
+            pi,
+            pocket.volume,
+            stat.spike_count,
+            spike_density,
+            avg_intensity,
+            pocket.mean_depth,
+            surface_factor,
+            druggability.overall,
+            quality_score,
+            classification
+        );
         // Centroid strategy: for mega-pockets (>500Å³), the spike-weighted
         // centroid drifts far from the actual binding site because uniform
         // high-intensity spikes pull it toward the center of the diffuse cloud.
@@ -18832,13 +21780,18 @@ fn recalculate_enclosure_volume(
                 ];
                 let dist = ((pc[0] - final_centroid[0]).powi(2)
                     + (pc[1] - final_centroid[1]).powi(2)
-                    + (pc[2] - final_centroid[2]).powi(2)).sqrt();
+                    + (pc[2] - final_centroid[2]).powi(2))
+                .sqrt();
                 log::info!("    Peak centroid: ({:.1},{:.1},{:.1}) -- {:.1}A from weighted centroid (top {} spikes, max_I={:.1})",
                     pc[0], pc[1], pc[2], dist, stat.top_spikes.len(),
                     stat.top_spikes[0].0);
                 Some(pc)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         // Peak centroid switching for large pockets:
         // For volumes > 300 Å³, the weighted centroid drifts toward the
         // center-of-mass of the diffuse spike cloud, which is often far
@@ -18850,11 +21803,15 @@ fn recalculate_enclosure_volume(
             if pocket.volume > 300.0 {
                 let dist = ((pc[0] - final_centroid[0]).powi(2)
                     + (pc[1] - final_centroid[1]).powi(2)
-                    + (pc[2] - final_centroid[2]).powi(2)).sqrt();
+                    + (pc[2] - final_centroid[2]).powi(2))
+                .sqrt();
                 if dist > 2.0 && dist < pocket.volume.cbrt() * 2.0 {
                     // Peak is meaningfully different but not pathologically far
-                    log::info!("    → Switching to peak centroid ({:.1}Å from weighted, vol={:.0}Å³)",
-                        dist, pocket.volume);
+                    log::info!(
+                        "    → Switching to peak centroid ({:.1}Å from weighted, vol={:.0}Å³)",
+                        dist,
+                        pocket.volume
+                    );
                     pc
                 } else {
                     final_centroid
@@ -18880,15 +21837,22 @@ fn recalculate_enclosure_volume(
     }
 
     // Sort by quality descending (NaN-safe)
-    sites.sort_by(|a, b| b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal));
+    sites.sort_by(|a, b| {
+        b.quality_score
+            .partial_cmp(&a.quality_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    log::info!("  Dynamic LIGSITE complete: {} geometric pockets", sites.len());
+    log::info!(
+        "  Dynamic LIGSITE complete: {} geometric pockets",
+        sites.len()
+    );
 
     // Phase 2.1: audit-spine adjudication on the rebuilt sites vec.
     // `sites` is a `&mut Vec<_>` out-parameter; take it out, run the
     // transform, and put the accepted output back. Abort propagates.
-    use prism_nhs::transform::AuditedTransform;
     use prism_nhs::transform::clustering_to_clustered_sites::ClusteringToClusteredSites;
+    use prism_nhs::transform::AuditedTransform;
     let produced = std::mem::take(sites);
     let n_in = produced.len();
     log::debug!("audit spine entry: recalculate_enclosure_volume N={}", n_in);
@@ -18933,8 +21897,13 @@ fn write_ensemble_trajectory(
     for (model_idx, snapshot) in snapshots.iter().enumerate() {
         // Verify snapshot has correct number of coordinates
         if snapshot.positions.len() != n_atoms * 3 {
-            log::warn!("  Snapshot {} has {} coords, expected {} ({}×3) — skipping",
-                model_idx, snapshot.positions.len(), n_atoms * 3, n_atoms);
+            log::warn!(
+                "  Snapshot {} has {} coords, expected {} ({}×3) — skipping",
+                model_idx,
+                snapshot.positions.len(),
+                n_atoms * 3,
+                n_atoms
+            );
             continue;
         }
 
@@ -18942,7 +21911,11 @@ fn write_ensemble_trajectory(
         writeln!(file, "REMARK   TIMESTEP {}", snapshot.timestep)?;
         writeln!(file, "REMARK   TEMPERATURE {:.1} K", snapshot.temperature)?;
         writeln!(file, "REMARK   TIME {:.3} ps", snapshot.time_ps)?;
-        writeln!(file, "REMARK   ALIGNMENT_QUALITY {:.3}", snapshot.alignment_quality)?;
+        writeln!(
+            file,
+            "REMARK   ALIGNMENT_QUALITY {:.3}",
+            snapshot.alignment_quality
+        )?;
         writeln!(file, "REMARK   TRIGGER {:?}", snapshot.trigger_reason)?;
 
         for atom_idx in 0..n_atoms {
@@ -18950,16 +21923,27 @@ fn write_ensemble_trajectory(
             let y = snapshot.positions[atom_idx * 3 + 1];
             let z = snapshot.positions[atom_idx * 3 + 2];
 
-            let atom_name = topology.atom_names.get(atom_idx)
-                .map(|s| s.as_str()).unwrap_or("UNK");
-            let res_name = topology.residue_names.get(atom_idx)
-                .map(|s| s.as_str()).unwrap_or("UNK");
-            let chain_id = topology.chain_ids.get(atom_idx)
-                .and_then(|s| s.chars().next()).unwrap_or('A');
-            let res_id = topology.residue_ids.get(atom_idx)
-                .copied().unwrap_or(1);
-            let element = topology.elements.get(atom_idx)
-                .map(|s| s.as_str()).unwrap_or("X");
+            let atom_name = topology
+                .atom_names
+                .get(atom_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("UNK");
+            let res_name = topology
+                .residue_names
+                .get(atom_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("UNK");
+            let chain_id = topology
+                .chain_ids
+                .get(atom_idx)
+                .and_then(|s| s.chars().next())
+                .unwrap_or('A');
+            let res_id = topology.residue_ids.get(atom_idx).copied().unwrap_or(1);
+            let element = topology
+                .elements
+                .get(atom_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("X");
 
             // PDB ATOM format (fixed-width columns)
             // Columns: 1-6 record, 7-11 serial, 13-16 name, 17 altloc,
@@ -18999,8 +21983,13 @@ fn write_ensemble_trajectory(
         format!("{:.1} KB", file_size as f64 / 1_000.0)
     };
 
-    log::info!("  ✓ Ensemble trajectory: {} ({} models, {} atoms each, {})",
-        traj_path.display(), written_models, n_atoms, size_str);
+    log::info!(
+        "  ✓ Ensemble trajectory: {} ({} models, {} atoms each, {})",
+        traj_path.display(),
+        written_models,
+        n_atoms,
+        size_str
+    );
 
     Ok(())
 }
