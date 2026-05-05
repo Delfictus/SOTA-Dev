@@ -114,6 +114,17 @@ training_features.csv
 
 # Shell history artifacts
 h\ history*
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
 # Large data — never commit
 benchmarks/prism4d_bench30/results/
 benchmarks/prism4d_bench30/topologies/
