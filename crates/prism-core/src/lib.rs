@@ -31,6 +31,7 @@
 //!
 //! Implements the PRISM GPU Plan (§2: Core Types & Traits).
 
+pub mod dag;
 pub mod dimacs;
 pub mod domain;
 pub mod errors;
@@ -42,6 +43,10 @@ pub mod types;
 pub mod telemetry;
 
 // Re-export commonly used items
+pub use dag::{
+    stable_dag_node_id, DagArtifactRef, DagEdge, DagEdgeKind, DagInvariant, DagNode, DagNodeKind,
+    DagRunManifest, DAG_SCHEMA_VERSION,
+};
 pub use errors::PrismError;
 pub use runtime_config::{KernelTelemetry, RuntimeConfig};
 pub use traits::{
