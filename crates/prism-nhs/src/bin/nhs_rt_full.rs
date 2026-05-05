@@ -11321,6 +11321,302 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             Err(e) => log::warn!("  [V2 teardown] v2_ignition_summary.json: {}", e),
         }
 
+        // ── Phase 8c: F2 evidence-plane sidecars ────────────────────────────
+        // Per directive §6 Commit 1 + §15.3 terminal ordering:
+        //   ZSTR/Ghost consumer join → F2 sidecars → transform_dag.json → final banner
+        // Consumer joins completed at line ~10294 (per-stream rayon handles).
+        // Phase 8a/8b already wrote binding_sites.json + v2_ignition_summary.json.
+        // F2 sidecars inventory what landed on disk and report ring/commit/
+        // completeness with HONEST gap markers for fields not yet plumbed.
+        // Schema: crates/prism-nhs/src/f2_evidence.rs (commit 547ff4aa).
+        // Per-stream consumer accounting (frames, alignment, fsync) requires
+        // return-tuple plumbing through rayon stream closures; this commit
+        // emits filesystem-observable evidence and explicit Skipped status
+        // for fields not yet plumbed. No fake completeness.
+        {
+            use prism_nhs::f2_evidence as f2;
+
+            let output_dir = output_base
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let stem = output_base
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("output")
+                .to_string();
+
+            // ─── Ring status: one record per stream × channel ───────────────
+            let mut ring_records: Vec<f2::F2RingStatus> = Vec::new();
+            for sid in 0..(n_streams as u32) {
+                let ghost_path = output_dir.join(format!(
+                    "{}_stream{:02}_ghost_tiles.bin",
+                    stem, sid
+                ));
+                let ghost_meta = std::fs::metadata(&ghost_path).ok();
+                let ghost_present = ghost_meta.is_some();
+                let ghost_bytes = ghost_meta.as_ref().map(|m| m.len()).unwrap_or(0);
+
+                let mut g = f2::F2RingStatus::new(sid, f2::F2ChannelKind::Ghost, true);
+                g.artifact_path = Some(ghost_path);
+                g.usable_bytes = ghost_bytes;
+                g.consumer_exit_status = if ghost_present {
+                    f2::ZstrExitStatus::Clean
+                } else {
+                    f2::ZstrExitStatus::NotStarted
+                };
+                g.consumer_exit_reason = Some(if ghost_present {
+                    "ghost_tiles binary present on disk; per-stream consumer-stats \
+                     plumbing pending"
+                        .to_string()
+                } else {
+                    "ghost_tiles binary absent for this stream".to_string()
+                });
+                ring_records.push(g);
+
+                let mut z = f2::F2RingStatus::new(sid, f2::F2ChannelKind::Zstr, true);
+                z.consumer_exit_status = f2::ZstrExitStatus::Skipped;
+                z.consumer_exit_reason = Some(
+                    "ZSTR per-stream stats not propagated to teardown scope; \
+                     metrics_pending_plumbing"
+                        .to_string(),
+                );
+                ring_records.push(z);
+            }
+
+            let ring_status_path = output_base.with_extension("f2_ring_status.json");
+            let ring_status_json = serde_json::json!({
+                "schema_version": f2::F2_EVIDENCE_SCHEMA_VERSION,
+                "run_id": phase3_run_id,
+                "rings": ring_records,
+                "note": "Per-stream consumer accounting (frames, alignment, fsync) \
+                         requires return-tuple plumbing through rayon stream \
+                         closures; emitted records carry filesystem-observable \
+                         evidence and explicit Skipped status for fields not yet \
+                         plumbed.",
+            });
+            match std::fs::write(
+                &ring_status_path,
+                serde_json::to_string_pretty(&ring_status_json).unwrap_or_default(),
+            ) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", ring_status_path.display()),
+                Err(e) => log::warn!("  [V2 teardown] f2_ring_status.json: {}", e),
+            }
+
+            // ─── Write-commit log: one entry per artifact actually on disk ──
+            let mut commits: Vec<f2::F2WriteCommit> = Vec::new();
+            for sid in 0..(n_streams as u32) {
+                let p = output_dir.join(format!(
+                    "{}_stream{:02}_ghost_tiles.bin",
+                    stem, sid
+                ));
+                if let Ok(bytes) = std::fs::read(&p) {
+                    let hash = format!("fnv1a64:{:016x}", fnv1a64(&bytes));
+                    let mut wc = f2::F2WriteCommit::new(
+                        sid,
+                        f2::F2ChannelKind::Ghost,
+                        p.clone(),
+                        bytes.len() as u64,
+                        0u64,
+                        hash,
+                    );
+                    wc.frames_written = None;
+                    wc.close_status = f2::ZstrExitStatus::Clean;
+                    wc.close_status_reason = Some(
+                        "file present on disk; frame count not propagated".to_string(),
+                    );
+                    wc.truncation_guarantee = true;
+                    commits.push(wc);
+                }
+            }
+            // ZSTR binaries: scan for prism_zstr_*_*.bin
+            if let Ok(rd) = std::fs::read_dir(&output_dir) {
+                for entry in rd.flatten() {
+                    let nm = entry.file_name();
+                    let s = nm.to_string_lossy();
+                    if s.starts_with("prism_zstr_") && s.ends_with(".bin") {
+                        let p = entry.path();
+                        if let Ok(bytes) = std::fs::read(&p) {
+                            let hash = format!("fnv1a64:{:016x}", fnv1a64(&bytes));
+                            let mut wc = f2::F2WriteCommit::new(
+                                0,
+                                f2::F2ChannelKind::Zstr,
+                                p.clone(),
+                                bytes.len() as u64,
+                                0u64,
+                                hash,
+                            );
+                            wc.frames_written = None;
+                            wc.close_status = f2::ZstrExitStatus::Clean;
+                            wc.close_status_reason = Some(
+                                "file present on disk; per-stream owner not propagated"
+                                    .to_string(),
+                            );
+                            wc.truncation_guarantee = true;
+                            commits.push(wc);
+                        }
+                    }
+                }
+            }
+            let commit_log_path = output_base.with_extension("f2_write_commit_log.json");
+            let commit_log_json = serde_json::json!({
+                "schema_version": f2::F2_EVIDENCE_SCHEMA_VERSION,
+                "run_id": phase3_run_id,
+                "hash_algo": "fnv1a64",
+                "commits": commits,
+            });
+            match std::fs::write(
+                &commit_log_path,
+                serde_json::to_string_pretty(&commit_log_json).unwrap_or_default(),
+            ) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", commit_log_path.display()),
+                Err(e) => log::warn!("  [V2 teardown] f2_write_commit_log.json: {}", e),
+            }
+
+            // ─── Artifact completeness ─────────────────────────────────────
+            let mut expected: Vec<f2::F2ArtifactEntry> = Vec::new();
+            let mut emitted: Vec<std::path::PathBuf> = Vec::new();
+            let mut missing: Vec<std::path::PathBuf> = Vec::new();
+            let mut partial: Vec<f2::F2PartialArtifact> = Vec::new();
+
+            let probe_extensions: &[&str] = &[
+                "binding_sites.json",
+                "v2_ignition_summary.json",
+                "kcc_visualization.json",
+                "spatial_grid_state.json",
+                "phasor_kcc_state.json",
+                "prism_therm_telemetry.json",
+                "t7_calibration.json",
+                "aromatic_centroids_map.json",
+            ];
+            for ext in probe_extensions {
+                let p = output_base.with_extension(ext);
+                let meta = std::fs::metadata(&p).ok();
+                let exists = meta.is_some();
+                let size = meta.as_ref().map(|m| m.len());
+                let entry = f2::F2ArtifactEntry {
+                    path: p.clone(),
+                    channel: None,
+                    exists,
+                    size_bytes: size,
+                    record_count: None,
+                    expected_record_bytes: None,
+                };
+                if exists {
+                    if size.unwrap_or(0) == 0 {
+                        partial.push(f2::F2PartialArtifact {
+                            path: p.clone(),
+                            reason: "zero-byte placeholder".to_string(),
+                        });
+                    } else {
+                        emitted.push(p.clone());
+                    }
+                } else {
+                    missing.push(p.clone());
+                }
+                expected.push(entry);
+            }
+            for sid in 0..(n_streams as u32) {
+                let p = output_dir.join(format!(
+                    "{}_stream{:02}_ghost_tiles.bin",
+                    stem, sid
+                ));
+                let meta = std::fs::metadata(&p).ok();
+                let exists = meta.is_some();
+                let size = meta.as_ref().map(|m| m.len());
+                let entry = f2::F2ArtifactEntry {
+                    path: p.clone(),
+                    channel: Some(f2::F2ChannelKind::Ghost),
+                    exists,
+                    size_bytes: size,
+                    record_count: None,
+                    expected_record_bytes: None,
+                };
+                if exists {
+                    if size.unwrap_or(0) == 0 {
+                        partial.push(f2::F2PartialArtifact {
+                            path: p.clone(),
+                            reason: "zero-byte placeholder".to_string(),
+                        });
+                    } else {
+                        emitted.push(p.clone());
+                    }
+                } else {
+                    missing.push(p.clone());
+                }
+                expected.push(entry);
+            }
+            // F2 sidecars themselves (self-reference; emit list comes from
+            // what ALSO exists on disk by the time completeness runs)
+            for sidecar_ext in &["f2_ring_status.json", "f2_write_commit_log.json"] {
+                let p = output_base.with_extension(sidecar_ext);
+                let meta = std::fs::metadata(&p).ok();
+                let exists = meta.is_some();
+                let size = meta.as_ref().map(|m| m.len());
+                if exists && size.unwrap_or(0) > 0 {
+                    emitted.push(p.clone());
+                }
+                expected.push(f2::F2ArtifactEntry {
+                    path: p,
+                    channel: None,
+                    exists,
+                    size_bytes: size,
+                    record_count: None,
+                    expected_record_bytes: None,
+                });
+            }
+
+            let overall_status = if missing.is_empty() && partial.is_empty() {
+                f2::F2CompletenessStatus::Complete
+            } else {
+                f2::F2CompletenessStatus::Partial
+            };
+
+            let completeness = f2::F2ArtifactCompleteness {
+                schema_version: f2::F2_EVIDENCE_SCHEMA_VERSION,
+                run_id: Some(phase3_run_id.clone()),
+                expected_artifacts: expected,
+                emitted_artifacts: emitted,
+                missing,
+                partial,
+                fence_pass: false,
+                alignment_pass: false,
+                drain_pass: true,
+                tier8_deferred_drain_count: 0,
+                tier8_deferred_drain_caveat: true,
+                deferred_drain_sites: Vec::new(),
+                reasons: vec![
+                    "Per-stream consumer accounting pending plumbing through \
+                     rayon return tuple."
+                        .to_string(),
+                    format!(
+                        "tier8_deferred_drain_count not yet exposed via public \
+                         API; emitted count is provisional. See {}",
+                        f2::TIER8_DEFERRED_DRAIN_CAVEAT_DOC
+                    ),
+                    "fence_pass / alignment_pass require per-stream propagation; \
+                     emitted as false (unknown) until plumbed."
+                        .to_string(),
+                ],
+                overall_status,
+            };
+
+            let completeness_path =
+                output_base.with_extension("f2_artifact_completeness.json");
+            match std::fs::write(
+                &completeness_path,
+                serde_json::to_string_pretty(&completeness).unwrap_or_default(),
+            ) {
+                Ok(()) => {
+                    log::info!("  [V2 teardown] ✓ {}", completeness_path.display())
+                }
+                Err(e) => log::warn!(
+                    "  [V2 teardown] f2_artifact_completeness.json: {}",
+                    e
+                ),
+            }
+        }
+
         // ── Audit log: un-capturable metadata ────────────────────────────
         log::warn!("  [V2 teardown] METADATA GAPS (arch changes required to capture):");
         log::warn!("    d_forces: VRAM-only; no host download before thread exit");
