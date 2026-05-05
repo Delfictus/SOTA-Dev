@@ -799,6 +799,19 @@ struct Args {
     /// boundary and breaks when it has been set. Default false.
     #[arg(long, default_value = "false")]
     path_a_evidence_exit: bool,
+
+    /// red-2 / Commit 4.5 — Force-Gear Orchestration Supervisor Shim
+    /// runtime gate. Effective only when the Cargo feature
+    /// `force_gear_override_supervisor_shim` is enabled at compile
+    /// time; the feature gates the host-write text out of default
+    /// builds entirely. With the feature compiled in, the shim only
+    /// fires when this flag is also set to `true`. Both gates must
+    /// be true for the shim to perform the host-side
+    /// cuMemcpyHtoD_v2 to (adj_dev + 100) and emit a
+    /// ControlPlaneRecord::GearOverride trace record. Default false
+    /// per directive §15.2 ("disabled by default") and Gate G2.
+    #[arg(long, default_value = "false")]
+    force_gear_override_supervisor_shim: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -5112,6 +5125,34 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 // mislabel by deriving the substrate name from the topology
                 // file at runtime.
                 let output_path_capture = args.output.clone();
+                // red-2 / Commit 4.5 — Force-Gear Orchestration Supervisor
+                // Shim runtime gate. Captured into the per-stream closure
+                // so the cfg-gated shim block at the per-chunk launch site
+                // can read the flag without reaching back into `args`.
+                // Compilation gate is `cfg(feature = "force_gear_override_supervisor_shim")`;
+                // runtime gate is this captured copy of the CLI bool.
+                // The capture itself is unconditional so default builds
+                // still type-check the args field; the variable is read
+                // only inside the cfg-gated shim block, hence the allow.
+                #[allow(unused_variables)]
+                let force_gear_override_supervisor_shim_runtime: bool =
+                    args.force_gear_override_supervisor_shim;
+                // red-2 / Commit 4.5 — replica seed and run timestamp captured
+                // for synthesizing a deterministic per-stream control-plane
+                // run_id when the supervisor shim emits a GearOverride record.
+                // The outer `phase3_run_id` is a function-scope local that does
+                // not cross the closure boundary; we re-derive an equivalent
+                // identifier here from the same inputs.
+                #[cfg(feature = "force_gear_override_supervisor_shim")]
+                let force_gear_override_run_id: String = format!(
+                    "{}_seed{}",
+                    topology_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.trim_end_matches(".topology").to_string())
+                        .unwrap_or_else(|| "unknown_target".to_string()),
+                    args.replica_seed,
+                );
                 // Multi-temperature ladder: spread end_temp across streams
                 // Stream 0 gets the base temperature; higher streams get progressively
                 // hotter to crack high-barrier pockets. The ramp_down phase then cools
@@ -7552,6 +7593,21 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                             };
                                         }
                                         // ── Force-Gear Orchestration Supervisor Shim ──
+                                        // (red-2 / Commit 4.5; cfg-gated; default OFF.
+                                        //  Compilation gate: `force_gear_override_supervisor_shim`
+                                        //  Cargo feature. Runtime gate: the
+                                        //  `--force-gear-override-supervisor-shim` CLI bool
+                                        //  captured into this closure as
+                                        //  `force_gear_override_supervisor_shim_runtime`.
+                                        //  Both must be true for the host-side
+                                        //  cuMemcpyHtoD_v2 to fire. When the shim fires it
+                                        //  emits exactly one
+                                        //  ControlPlaneRecord::GearOverride record per
+                                        //  threshold crossing, with `host_mutation = true`,
+                                        //  to a per-stream NDJSON sink. Default builds
+                                        //  erase the host-write text path entirely; no
+                                        //  emit, no log line, zero behavioral change vs
+                                        //  HEAD on the host-write path.
                                         //
                                         // Operator Zero-Trust §4: at step 800 force Gear 0
                                         // (0.5 fs); at step 1000 reset to Auto (gearbox SFA
@@ -7568,41 +7624,175 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                         //   crosses_1000 = steps_run < 1000 AND steps_run+chunk >= 1000
                                         //
                                         // cuMemcpyHtoDAsync writes 4 bytes to (adj_dev + 100).
-                                        let next_step = steps_run + this_chunk;
-                                        let crosses_800  = steps_run < 800  && next_step >= 800;
-                                        let crosses_1000 = steps_run < 1000 && next_step >= 1000;
-                                        if crosses_800 || crosses_1000 {
-                                            use cudarc::driver::sys::{
-                                                cuMemcpyHtoD_v2, CUdeviceptr, CUresult,
-                                            };
-                                            let adj_dev = pipeline.adj_dev_ptr();
-                                            const GEAR_OVERRIDE_OFFSET: usize = 100;
-                                            let target_addr = (adj_dev + GEAR_OVERRIDE_OFFSET)
-                                                as CUdeviceptr;
-                                            let value: u32 = if crosses_800 { 0x00 } else { 0xFF };
-                                            let rc = unsafe {
-                                                cuMemcpyHtoD_v2(
-                                                    target_addr,
-                                                    &value as *const u32 as *const std::ffi::c_void,
-                                                    4,
-                                                )
-                                            };
-                                            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                                                log::warn!(
-                                                    "[SUPERVISOR-SHIM] cuMemcpyHtoD \
-                                                     gear_override@100 failed (rc={}); \
-                                                     step={}, value=0x{:02X}",
-                                                    rc as i32, next_step, value
+                                        // See:
+                                        //   docs/PRISM4D_PARENT_CONTROL_SUPERGRAPH_IMPLEMENTATION_DIRECTIVE.md §15.2
+                                        //   docs/SELF_CLOCKING_CONTROL_PLANE_PLAN.md §4.1
+                                        //   .prism_orchestration/GEAR_OVERRIDE_MITIGATION_PLAN.md
+                                        #[cfg(feature = "force_gear_override_supervisor_shim")]
+                                        if force_gear_override_supervisor_shim_runtime {
+                                            let next_step = steps_run + this_chunk;
+                                            let crosses_800  = steps_run < 800  && next_step >= 800;
+                                            let crosses_1000 = steps_run < 1000 && next_step >= 1000;
+                                            if crosses_800 || crosses_1000 {
+                                                use cudarc::driver::sys::{
+                                                    cuMemcpyHtoD_v2, CUdeviceptr, CUresult,
+                                                };
+                                                let adj_dev = pipeline.adj_dev_ptr();
+                                                const GEAR_OVERRIDE_OFFSET: usize = 100;
+                                                let target_addr = (adj_dev + GEAR_OVERRIDE_OFFSET)
+                                                    as CUdeviceptr;
+                                                let value: u32 = if crosses_800 { 0x00 } else { 0xFF };
+                                                let rc = unsafe {
+                                                    cuMemcpyHtoD_v2(
+                                                        target_addr,
+                                                        &value as *const u32 as *const std::ffi::c_void,
+                                                        4,
+                                                    )
+                                                };
+                                                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                                                    log::warn!(
+                                                        "[SUPERVISOR-SHIM] cuMemcpyHtoD \
+                                                         gear_override@100 failed (rc={}); \
+                                                         step={}, value=0x{:02X}",
+                                                        rc as i32, next_step, value
+                                                    );
+                                                } else {
+                                                    log::info!(
+                                                        "[SUPERVISOR-SHIM] gear_override @ {} \
+                                                         ← 0x{:02X} ({})  [crossed step={}]",
+                                                        GEAR_OVERRIDE_OFFSET,
+                                                        value,
+                                                        if value == 0xFF { "AUTO" } else { "Gear 0 (0.5 fs)" },
+                                                        if crosses_800 { 800 } else { 1000 }
+                                                    );
+                                                }
+
+                                                // ── Layer 2 (Commit 4.5): emit
+                                                // ControlPlaneRecord::GearOverride
+                                                // with host_mutation=true. The emit
+                                                // fires on BOTH success AND failure of
+                                                // the cuMemcpyHtoD_v2 above — the record
+                                                // exists to publish the violation, not
+                                                // the success of the underlying copy.
+                                                // Failure of the emit is warn-only and
+                                                // MUST NOT crash the run.
+                                                use prism_nhs::control_trace::{
+                                                    ControlPlaneRecord, ControlTraceEnvelope,
+                                                    SourceEnergyState,
+                                                };
+                                                let frame_idx = next_step as u64;
+                                                let stream_id = i as u32;
+                                                let chunk_id = chunk_idx as u64;
+                                                let source_step_threshold: u64 =
+                                                    if crosses_800 { 800 } else { 1000 };
+                                                let requested_gear: u8 =
+                                                    if value == 0xFF { 0xFF } else { 0x00 };
+                                                let previous_gear: u8 = 0xFF;
+                                                let graph_launch_id = format!(
+                                                    "{}-stream{:02}-chunk{:06}",
+                                                    force_gear_override_run_id,
+                                                    stream_id, chunk_id,
                                                 );
-                                            } else {
-                                                log::info!(
-                                                    "[SUPERVISOR-SHIM] gear_override @ {} \
-                                                     ← 0x{:02X} ({})  [crossed step={}]",
-                                                    GEAR_OVERRIDE_OFFSET,
-                                                    value,
-                                                    if value == 0xFF { "AUTO" } else { "Gear 0 (0.5 fs)" },
-                                                    if crosses_800 { 800 } else { 1000 }
-                                                );
+                                                // Per directive §15.5 / §6.2: cite raw
+                                                // source energy scalars without adding
+                                                // a new DtoH on this path. The shim
+                                                // sits adjacent to the captured-graph
+                                                // launch boundary; the energy reducer
+                                                // results from the prior chunk are not
+                                                // accessible here without a new pull,
+                                                // so we publish a sentinel reducer
+                                                // label and the source-step threshold
+                                                // as the cited scalars. Downstream
+                                                // consumers join on (run_id,
+                                                // graph_launch_id, frame_idx) to align
+                                                // with the G26/F1 records that DO
+                                                // carry the live PE/Wext.
+                                                let source_energy_state = SourceEnergyState {
+                                                    potential_energy: f64::NAN,
+                                                    external_work: f64::NAN,
+                                                    source: format!(
+                                                        "force_gear_override_supervisor_shim:offset100:threshold{}",
+                                                        source_step_threshold
+                                                    ),
+                                                };
+                                                // FNV-1a 64-bit over the structurally
+                                                // identifying tuple. NaNs are masked
+                                                // out of the input bytes (replaced by
+                                                // their canonical bit pattern) so the
+                                                // hash is reproducible across
+                                                // platforms. Format prefix matches the
+                                                // existing CONTROLTRACE-001 convention.
+                                                let mut h: u64 = 0xcbf29ce484222325;
+                                                let pe_bits = source_energy_state
+                                                    .potential_energy.to_bits();
+                                                let wx_bits = source_energy_state
+                                                    .external_work.to_bits();
+                                                for b in pe_bits.to_le_bytes().iter()
+                                                    .chain(wx_bits.to_le_bytes().iter())
+                                                    .chain(source_energy_state.source.as_bytes())
+                                                {
+                                                    h ^= *b as u64;
+                                                    h = h.wrapping_mul(0x100000001b3);
+                                                }
+                                                let source_energy_state_hash =
+                                                    format!("fnv1a64:{:016x}", h);
+
+                                                // record_idx is the per-firing index
+                                                // within (stream, chunk). Each shim
+                                                // firing produces at most one record.
+                                                let record_idx: u64 = source_step_threshold;
+                                                let record = ControlPlaneRecord::GearOverride {
+                                                    envelope: ControlTraceEnvelope::current(
+                                                        force_gear_override_run_id.clone(),
+                                                        graph_launch_id,
+                                                        record_idx,
+                                                    ),
+                                                    frame_idx,
+                                                    stream_id,
+                                                    previous_gear,
+                                                    requested_gear,
+                                                    source: format!(
+                                                        "force_gear_override_supervisor_shim:nhs_rt_full.rs:{}",
+                                                        line!()
+                                                    ),
+                                                    reason: format!(
+                                                        "chunk-boundary crossing of step {} \
+                                                         (steps_run={}, this_chunk={}); \
+                                                         cuMemcpyHtoD_v2 rc={}",
+                                                        source_step_threshold,
+                                                        steps_run,
+                                                        this_chunk,
+                                                        rc as i32,
+                                                    ),
+                                                    host_mutation: true,
+                                                    source_energy_state,
+                                                    source_energy_state_hash,
+                                                };
+
+                                                let trace_path = output_path_capture
+                                                    .join(format!(
+                                                        "{}_stream{:02}_control_trace.ndjson",
+                                                        phase_a_topo_stem, i,
+                                                    ));
+                                                let emit_result = (|| -> std::io::Result<()> {
+                                                    use std::io::Write;
+                                                    let mut f = std::fs::OpenOptions::new()
+                                                        .create(true)
+                                                        .append(true)
+                                                        .open(&trace_path)?;
+                                                    serde_json::to_writer(&mut f, &record)
+                                                        .map_err(std::io::Error::other)?;
+                                                    f.write_all(b"\n")?;
+                                                    Ok(())
+                                                })();
+                                                if let Err(e) = emit_result {
+                                                    log::warn!(
+                                                        "[SUPERVISOR-SHIM] GearOverride trace emit \
+                                                         failed for stream={} chunk={} \
+                                                         path={:?}: {}",
+                                                        i, chunk_id, trace_path, e
+                                                    );
+                                                }
                                             }
                                         }
 

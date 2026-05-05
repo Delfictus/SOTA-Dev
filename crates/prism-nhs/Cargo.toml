@@ -33,6 +33,18 @@ diagnostic = []
 #   cargo build --release -p prism-nhs --features=v2_ignition
 # Implies `gpu` (the captured pipeline is CUDA-only).
 v2_ignition = ["gpu"]
+# Force-Gear Orchestration Supervisor Shim — host-side gear_override
+# write at chunk boundaries crossing steps 800/1000. Violates Self-
+# Clocking Control Plane Invariant #1 (device-derived control only).
+# Default OFF. Enable ONLY for the Hardware-Interlock proof. When the
+# feature fires it MUST emit a ControlPlaneRecord::GearOverride record
+# with host_mutation=true (see crates/prism-nhs/src/control_trace.rs).
+# See:
+#   docs/PRISM4D_PARENT_CONTROL_SUPERGRAPH_IMPLEMENTATION_DIRECTIVE.md
+#     §10, §15.2, Gate G2
+#   docs/SELF_CLOCKING_CONTROL_PLANE_PLAN.md §4.1
+#   .prism_orchestration/GEAR_OVERRIDE_MITIGATION_PLAN.md
+force_gear_override_supervisor_shim = []
 
 [dependencies]
 # PRISM-Therm: SDST thermodynamic analysis pipeline
