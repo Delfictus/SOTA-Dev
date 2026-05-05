@@ -364,6 +364,11 @@ pub mod gcpid;
 /// into a zero-spike regime. Decision-only (v1); emits telemetry for V2-only
 /// actions requiring engine kernel work.
 pub mod rescue_controller;
+/// Control-plane trace schema and NDJSON writer helper.
+///
+/// Pure Rust data-plane types for tagged control records; this module does
+/// not install runtime wiring or touch CUDA graph topology.
+pub mod control_trace;
 
 pub mod composition;
 pub mod batch_scheduler;
