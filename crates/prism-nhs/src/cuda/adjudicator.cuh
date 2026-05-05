@@ -469,6 +469,91 @@ int prism_gearbox_wire_with_handle_ffi(
     cudaGraph_t*     out_body_subgraphs    /* [4] */);
 
 // ════════════════════════════════════════════════════════════════════
+// F1-PARENT-SWITCH-001 — Parent-owned F1 SWITCH (size=3)
+// ════════════════════════════════════════════════════════════════════
+//
+// Sibling family of the G26 parent-owned helpers above. Reads
+// `adj->adjudication_code` (offset 52) instead of `cruise->current_gear`,
+// SWITCH `size = 3` (Prune / Construct / Violation; no fourth branch).
+//
+// **Splice-legality invariant (GRAPH-SPLICE-001)**: the predicate-
+// bridge kernel is launched from a kernel-node sitting in the PARENT
+// graph (post-cuStreamEndCapture for the child template), NEVER inside
+// the spliced child template. The legacy in-child variant
+// `prism_wire_f1_switch_ffi` (above) is preserved only for backward
+// compatibility with the existing test
+// `monolithic_pipeline_v2_ignition_smoke_with_hook`; production
+// monolithic-discovery flow goes through THIS family.
+//
+// Body topology (per F1_PARENT_SWITCH_EXECUTION_TICKET §3 row 3):
+//   case 0 → Prune     : empty (no kernel-node)
+//   case 1 → Construct : empty (no kernel-node; ASC reserved)
+//   case 2 → Violation : PTX trap kernel (halts the stream)
+//
+// Default launch value = 0 (PRISM_ADJ_PRUNE) so the SWITCH no-ops on
+// the first frame before the bridge has run.
+
+/// F1 conditional-handle creation. Mirrors
+/// `prism_gearbox_create_handle_ffi` shape; called during parent-graph
+/// build (post-cuStreamEndCapture for the child) so the bridge kernel-
+/// node can reference the handle. `default_value` should be 0
+/// (PRISM_ADJ_PRUNE) for the production no-op default.
+///
+/// Returns 0 on success; CUDA error code cast to int otherwise.
+/// Returns 801 (`cudaErrorNotSupported`) if the toolkit is pre-CUDA-12.6.
+int prism_f1_create_handle_ffi(
+    cudaGraph_t graph,
+    uint32_t    default_value,
+    uint64_t*   out_handle);
+
+/// F1 SWITCH wire-in (size=3). Adds a `cudaGraphCondTypeSwitch`
+/// conditional node downstream of `predicate_node`, referencing
+/// `handle_v` (created via `prism_f1_create_handle_ffi`). Returns the
+/// 3 phGraph_out body sub-graphs ready for `prism_f1_populate_switch_bodies_ffi`.
+///
+/// **R5 regression guard**: SWITCH `type` is hard-coded to
+/// `cudaGraphCondTypeSwitch` and `size` to 3. DO NOT parameterize to
+/// While — F1's case 2 (Violation) is a one-shot trap; While would
+/// convert it to an unbounded retry loop. WHILE work is owned by
+/// separate Commits 8/9 in `while_drain_bridge.cu`.
+int prism_f1_wire_with_handle_ffi(
+    cudaGraph_t      graph,
+    cudaGraphNode_t  predicate_node,
+    uint64_t         handle_v,
+    cudaGraphNode_t* out_conditional_node,
+    cudaGraph_t*     out_body_subgraphs    /* [3] */);
+
+/// F1 SWITCH body populator. Validates the 3 body handles are non-null
+/// (Smoking-Gun signal — same rationale as
+/// `prism_gearbox_populate_switch_bodies_ffi`) and adds the trap kernel
+/// to body[2] only. Bodies 0 (Prune) and 1 (Construct) are intentionally
+/// empty no-ops — the SWITCH simply returns to the parent graph's
+/// downstream flow on those cases.
+int prism_f1_populate_switch_bodies_ffi(
+    cudaGraph_t* body_subgraphs    /* [3] */);
+
+/// F1 predicate-bridge host launch shim. Single-thread launch
+/// (`<<<1, 1, 0, stream>>>`) of `prism_f1_predicate_bridge_kernel`,
+/// which reads `*d_adjudication_code & mask` and forwards into the
+/// SWITCH conditional handle via `cudaGraphSetConditional`.
+///
+/// Canonical production `mask = 0x3u` (2-bit defensive). The 3 valid
+/// codes (Prune=0, Construct=1, Violation=2) all fit in 2 bits.
+///
+/// **Capture context**: this shim is intended to be called inside the
+/// parent-graph build window — either via stream capture (the
+/// kernel-node is captured into the parent graph) or via direct
+/// `cudaGraphAddKernelNode` from the orchestrator. The kernel-node
+/// MUST live in the PARENT graph; calling this shim from inside a
+/// `cuStreamBeginCapture` window owned by the CHILD template is the
+/// GRAPH-SPLICE-001 anti-pattern.
+int prism_f1_launch_predicate_bridge(
+    const uint32_t* d_adjudication_code,
+    uint64_t        handle_v,
+    uint32_t        mask,
+    void*           stream);
+
+// ════════════════════════════════════════════════════════════════════
 // T7 — Noise-floor calibration writeback
 // ════════════════════════════════════════════════════════════════════
 

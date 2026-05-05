@@ -1202,6 +1202,353 @@ extern "C" int prism_gearbox_wire_with_handle_ffi(
 #endif  // CUDART_VERSION >= 12060
 
 // ════════════════════════════════════════════════════════════════════
+// F1-PARENT-SWITCH-001 — Parent-owned F1 SWITCH (size=3)
+// ════════════════════════════════════════════════════════════════════
+//
+// Sibling family of the G26 parent-owned SWITCH helpers above; reads
+// `adj->adjudication_code` (offset 52) instead of `cruise->current_gear`,
+// and SWITCH `size` is hard-coded to 3 (not 4 — F1 has Prune/Construct/
+// Violation, no fourth case). Layout mirrors the G26 B.3.2-FULL pattern
+// (handle creation + wire-with-handle + body populator + predicate-
+// bridge kernel + host shim) so the Rust orchestrator can reuse the
+// G26 wire-up shape verbatim, swapping symbol names only.
+//
+// **Splice-legality invariant (GRAPH-SPLICE-001):**
+//   The F1 predicate-bridge kernel is **parent-graph-resident** — it
+//   is launched from a kernel-node sitting in the PARENT graph, NOT
+//   inside the spliced child template. The legacy in-child variant
+//   `prism_wire_f1_switch_ffi` (above, ~line 865) is the
+//   GRAPH-SPLICE-001 anti-pattern preserved only for the existing test
+//   `monolithic_pipeline_v2_ignition_smoke_with_hook`; the production
+//   monolithic-discovery path goes through THIS family.
+//
+// **Body topology (per ticket §3 / scout §6):**
+//   case 0 → Prune     : empty (no-op; default flow continues)
+//   case 1 → Construct : empty (no-op; ASC parent-side reserved)
+//   case 2 → Violation : PTX `trap;` kernel — short-circuits before G26
+//
+// Default launch value = 0 (Prune) so the SWITCH routes to the no-op
+// body when the bridge kernel has not yet written via
+// `cudaGraphSetConditional` (e.g., first frame before adjudicator step).
+//
+// Requires CUDA 12.6+ for `cudaGraphCondTypeSwitch`. Production
+// toolchain is CUDA 13.x; pre-12.6 stubs return cudaErrorNotSupported.
+
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 12060
+
+// ─── F1 violation trap kernel (case 2 / Violation body) ─────────────────
+//
+// Single-thread PTX `trap;` — halts the GPU stream and surfaces
+// CUDA_ERROR_LAUNCH_FAILED on the next host sync. Mirrors
+// `prism_gearbox_trap_kernel` shape; F1-private symbol so the legacy
+// in-child wire path and the new parent-owned path do not collide.
+extern "C"
+__global__ void prism_f1_violation_trap_kernel() {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    asm volatile("trap;");
+}
+
+// ─── F1 predicate-bridge kernel (PARENT-GRAPH-RESIDENT) ────────────────
+//
+// Reads `adj->adjudication_code` (offset 52 inside the 128-aligned
+// `InterferometricAdjudicatorFfi`) and forwards `code & mask` into the
+// SWITCH conditional handle via `cudaGraphSetConditional`. Mirrors
+// `prism_gearbox_predicate_bridge_kernel` (gearbox.cu:437) but with no
+// gear_override consult — F1's predicate is the raw adjudication code
+// produced by the child adjudicator step, no host-side shadow path.
+//
+// **Mask = 0x3** (2-bit defensive). The 3 valid codes (Prune=0,
+// Construct=1, Violation=2) all fit in 2 bits; any code value 3 (which
+// is not produced by the kernel) would route to a non-existent body
+// and cause a CUDA error, so the mask is a hard guard, not optional.
+//
+// **Single-thread launch** — `<<<1, 1, 0, stream>>>`. Branchless on the
+// happy path; the early-return for non-(0,0) thread is a no-op since
+// the launch shape is single-thread by construction.
+//
+// **Capture window**: this kernel is launched from the PARENT graph,
+// **after** the child adjudicator graph node returns. Adding it inside
+// the child template is a GRAPH-SPLICE-001 violation (the legacy
+// `prism_wire_f1_switch_ffi` path).
+extern "C"
+__global__ void prism_f1_predicate_bridge_kernel(
+    const uint32_t*             __restrict__   d_adjudication_code,
+    cudaGraphConditionalHandle                  handle,
+    uint32_t                                    mask)
+{
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    if (d_adjudication_code == nullptr) {
+        // Defensive: route to the default (Prune) body if the
+        // adjudication-code device pointer was not wired. The default
+        // launch value of the handle is also 0, so this is a true no-op
+        // — but writing it explicitly makes the post-condition certain.
+        cudaGraphSetConditional(handle, 0u);
+        return;
+    }
+    const uint32_t code = (*d_adjudication_code) & mask;
+    cudaGraphSetConditional(handle, code);
+}
+
+// ─── F1 conditional-handle creation ────────────────────────────────────
+//
+// Mirrors `prism_gearbox_create_handle_ffi` (adjudicator.cu:1119).
+// Default launch value = 0 (PRISM_ADJ_PRUNE) — see ticket §3 row 1.
+//
+// Called DURING parent-graph build (post-cuStreamEndCapture for the
+// child template; before the SWITCH wire-in) so the bridge kernel-node
+// can capture the handle as a kernel-node arg.
+extern "C" int prism_f1_create_handle_ffi(
+    cudaGraph_t   graph,
+    uint32_t      default_value,
+    uint64_t*     out_handle)
+{
+    if (graph == nullptr || out_handle == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaGraphConditionalHandle handle = 0;
+    cudaError_t err = cudaGraphConditionalHandleCreate(
+        &handle, graph,
+        /*defaultLaunchValue=*/ default_value,
+        /*flags=*/              cudaGraphCondAssignDefault);
+    if (err != cudaSuccess) return static_cast<int>(err);
+    *out_handle = static_cast<uint64_t>(handle);
+    return static_cast<int>(cudaSuccess);
+}
+
+// ─── F1 SWITCH wire-in (size=3, parent-graph-resident) ─────────────────
+//
+// Mirrors `prism_gearbox_wire_with_handle_ffi` (adjudicator.cu:1137)
+// with two key differences:
+//   1. `nodeParams.conditional.size = 3u` (not 4) — F1 has 3 branches.
+//   2. `out_body_subgraphs` is a 3-element array.
+//
+// **Hard-coded `cudaGraphCondTypeSwitch`** — DO NOT parameterize this
+// to While. F1's case 2 (Violation) is a one-shot trap; making the
+// SWITCH a While-loop would convert the trap into an unbounded retry
+// (R5 in ticket §9). WHILE work is owned by separate Commits 8/9 in
+// `while_drain_bridge.cu`.
+//
+// `predicate_node` becomes the SWITCH's only dependency, ensuring the
+// SWITCH only fires AFTER the bridge kernel's `cudaGraphSetConditional`
+// has executed.
+extern "C" int prism_f1_wire_with_handle_ffi(
+    cudaGraph_t      graph,
+    cudaGraphNode_t  predicate_node,
+    uint64_t         handle_v,
+    cudaGraphNode_t* out_conditional_node,
+    cudaGraph_t*     out_body_subgraphs    /* [3] */)
+{
+    if (graph == nullptr ||
+        out_conditional_node == nullptr ||
+        out_body_subgraphs == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+
+    for (int i = 0; i < 3; ++i) out_body_subgraphs[i] = nullptr;
+
+    cudaGraphNodeParams nodeParams{};
+    nodeParams.type                 = cudaGraphNodeTypeConditional;
+    nodeParams.conditional.handle   = handle;
+    nodeParams.conditional.type     = cudaGraphCondTypeSwitch;
+    nodeParams.conditional.size     = 3u;  // R5 regression guard — never While, never 4
+    nodeParams.conditional.ctx      = nullptr;
+
+    // Downstream of predicate_node so the SWITCH only fires after the
+    // bridge kernel has called cudaGraphSetConditional.
+    cudaError_t err = cudaGraphAddNode(
+        out_conditional_node, graph,
+        /*pDependencies=*/   &predicate_node,
+        /*dependencyData=*/  nullptr,
+        /*numDependencies=*/ 1u,
+        &nodeParams);
+    if (err != cudaSuccess) return static_cast<int>(err);
+
+    // Driver-probe-confirmed (per G26 line 1173): phGraph_out is
+    // populated for SWITCH-type on CUDA 13.x. Copy handles for caller.
+    for (int i = 0; i < 3; ++i) {
+        out_body_subgraphs[i] = nodeParams.conditional.phGraph_out
+                                ? nodeParams.conditional.phGraph_out[i]
+                                : nullptr;
+    }
+    // Defensive: a null body handle here means the runtime did not
+    // populate phGraph_out for size=3 SWITCH — the populator below
+    // will then surface cudaErrorInvalidValue (the operator-mandated
+    // "Smoking Gun" signal, per the gearbox §B.3-narrow rationale).
+
+    return static_cast<int>(cudaSuccess);
+}
+
+// ─── F1 SWITCH body populator ──────────────────────────────────────────
+//
+// Populates the 3 body sub-graphs returned by
+// `prism_f1_wire_with_handle_ffi`:
+//
+//   body[0] = Prune     : EMPTY — no kernel, no memcpy. CUDA accepts
+//                         empty body sub-graphs for SWITCH; the SWITCH
+//                         reduces to "no-op" when this case is taken.
+//                         Production flow continues to G26 SWITCH
+//                         downstream of the F1 SWITCH.
+//
+//   body[1] = Construct : EMPTY — same rationale; the construct path
+//                         is the ordinary downstream flow. ASC parent-
+//                         side work (Directive Commits 10/11) will
+//                         later populate this body when ASC lands.
+//
+//   body[2] = Violation : PTX trap kernel — halts the stream so the
+//                         host sees `cudaErrorLaunchFailure` on the
+//                         next sync. Short-circuits BEFORE G26 selects
+//                         a gear (per ticket §2 justification 3).
+//
+// Empty bodies are intentional. The populator validates the handles
+// are non-null (Smoking-Gun signal for the runtime not populating
+// phGraph_out) and adds the trap kernel to body[2] only.
+//
+// Mirrors `prism_gearbox_populate_switch_bodies_ffi` (gearbox.cu:654)
+// shape but with size=3 + only the trap body populated.
+
+namespace {
+
+// Canonical kernel-node addition wrapper for the F1 populator. Mirrors
+// the anonymous-namespace helper in gearbox.cu (line 630). Kept private
+// to this TU to avoid ODR collision; nvcc gives this internal linkage
+// inside the anonymous namespace.
+__host__ cudaError_t prism_f1_add_kernel_node(
+    cudaGraphNode_t*       out_node,
+    cudaGraph_t            graph,
+    const cudaGraphNode_t* deps,
+    size_t                 num_deps,
+    void*                  func,
+    dim3                   grid,
+    dim3                   block,
+    void**                 args,
+    size_t                 shared_bytes)
+{
+    cudaKernelNodeParams params{};
+    params.func           = func;
+    params.gridDim        = grid;
+    params.blockDim       = block;
+    params.sharedMemBytes = static_cast<unsigned int>(shared_bytes);
+    params.kernelParams   = args;
+    params.extra          = nullptr;
+    return cudaGraphAddKernelNode(out_node, graph, deps, num_deps, &params);
+}
+
+}  // anonymous namespace
+
+extern "C" int prism_f1_populate_switch_bodies_ffi(
+    cudaGraph_t* body_subgraphs    /* [3] */)
+{
+    if (body_subgraphs == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+
+    // ── Smoking-Gun: assert all three sub-graph handles are valid. ──
+    // Same rationale as gearbox.cu:674 — a null handle here means
+    // CUDA 13.x's cudaGraphAddNode(CONDITIONAL) did NOT populate
+    // phGraph_out for size=3 SWITCH, and the caller must pivot to the
+    // kernel-conditional fallback path.
+    for (int i = 0; i < 3; ++i) {
+        if (body_subgraphs[i] == nullptr) {
+            return static_cast<int>(cudaErrorInvalidValue);
+        }
+    }
+
+    // ── body[0] = Prune : intentionally empty no-op. ──
+    // No kernel-node added. SWITCH case 0 returns immediately to the
+    // parent graph's downstream nodes (G26 SWITCH).
+    (void)body_subgraphs[0];
+
+    // ── body[1] = Construct : intentionally empty no-op. ──
+    // No kernel-node added. SWITCH case 1 returns immediately to the
+    // parent graph's downstream nodes (G26 SWITCH). ASC parent-side
+    // work (Directive Commits 10/11) is reserved to populate this body.
+    (void)body_subgraphs[1];
+
+    // ── body[2] = Violation : PTX trap kernel. ──
+    {
+        cudaGraph_t body = body_subgraphs[2];
+        cudaGraphNode_t trap_node = nullptr;
+        cudaError_t rc = prism_f1_add_kernel_node(
+            &trap_node, body,
+            /*deps=*/ nullptr, /*num_deps=*/ 0,
+            reinterpret_cast<void*>(prism_f1_violation_trap_kernel),
+            dim3(1, 1, 1), dim3(1, 1, 1),
+            /*args=*/ nullptr, /*shared=*/ 0);
+        if (rc != cudaSuccess) return static_cast<int>(rc);
+    }
+
+    return static_cast<int>(cudaSuccess);
+}
+
+// ─── F1 predicate-bridge host launch shim ──────────────────────────────
+//
+// Mirrors `prism_gearbox_launch_predicate_bridge` (gearbox.cu:465).
+// Single-thread launch on the supplied stream — used both during
+// capture (to emit the kernel-node into the parent graph as a captured
+// node) and during direct host launches (test paths).
+//
+// Argument order matches the kernel signature:
+//   (d_adjudication_code, handle_v, mask)
+//
+// `mask` is exposed to the caller so future variants (e.g., 1-bit
+// fast-path) can adjust without recompiling the kernel; canonical
+// production value is 0x3.
+extern "C" int prism_f1_launch_predicate_bridge(
+    const uint32_t* d_adjudication_code,
+    uint64_t        handle_v,
+    uint32_t        mask,
+    void*           stream)
+{
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+    cudaStream_t s = static_cast<cudaStream_t>(stream);
+    prism_f1_predicate_bridge_kernel<<<1, 1, 0, s>>>(
+        d_adjudication_code, handle, mask);
+    return static_cast<int>(cudaGetLastError());
+}
+
+#else  // CUDART_VERSION < 12060
+
+// Pre-CUDA-12.6 fallback stubs. Mirror the pattern at adjudicator.cu:967
+// (legacy F1) and adjudicator.cu:1186 (G26). Production toolchain is
+// always CUDA 13.x so these are dead code on real hardware.
+
+extern "C" int prism_f1_create_handle_ffi(
+    cudaGraph_t /*graph*/, uint32_t /*default_value*/, uint64_t* /*out_handle*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C" int prism_f1_wire_with_handle_ffi(
+    cudaGraph_t      /*graph*/,
+    cudaGraphNode_t  /*predicate_node*/,
+    uint64_t         /*handle_v*/,
+    cudaGraphNode_t* /*out_conditional_node*/,
+    cudaGraph_t*     /*out_body_subgraphs*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C" int prism_f1_populate_switch_bodies_ffi(
+    cudaGraph_t* /*body_subgraphs*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C" int prism_f1_launch_predicate_bridge(
+    const uint32_t* /*d_adjudication_code*/,
+    uint64_t        /*handle_v*/,
+    uint32_t        /*mask*/,
+    void*           /*stream*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+#endif  // CUDART_VERSION >= 12060
+
+// ════════════════════════════════════════════════════════════════════
 // T7 — Noise-floor calibration writeback
 // ════════════════════════════════════════════════════════════════════
 //
