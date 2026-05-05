@@ -11167,15 +11167,42 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             }
         }
 
-        // ── Phase 8a: binding_sites.json stub (Amendment 3.21.1 §2.2) ────
+        // ── Phase 8a: binding_sites.json honest evidence status ─────────────
+        // Replaces the prior empty success stub with schema_version=3 honest
+        // not-materialized status per directive §6 Commit 12 + §15.6.
+        // V2 emits MD/evidence; final site materialization is Path B.
         // Moved BEFORE v2_ignition_summary so the summary's
-        // lineage_integrity_hash field can fingerprint it.  Prevents
+        // lineage_integrity_hash field can fingerprint it. Prevents
         // prism_canonical.py from hard-failing on a missing file.
+        // NOTE: replacing the stub bytes intentionally changes
+        //       v2_ignition_summary.lineage_integrity_hash.binding_sites_json.
+        //       This is documented and expected per directive §15.6.
         let bs_stub = serde_json::json!({
-            "v2_ignition":  true,
+            "schema_version": 3,
+            "v2_ignition": true,
+            "status": "evidence_emitted_not_fully_materialized",
             "binding_sites": [],
-            "run_id":       phase3_run_id,
-            "note": "Sites adjudicated in-flight. See v2_ignition_summary.json.",
+            "available_evidence": [
+                "ghost_tiles",
+                "zstr",
+                "kcc_visualization",
+                "spatial_grid_state",
+                "prism_therm_telemetry",
+                "phasor_kcc_state",
+                "f2_evidence_schema",
+                "transform_dag_schema",
+                "control_trace_schema"
+            ],
+            "missing_fields": [
+                "site_candidates",
+                "materialized_sites",
+                "ranked_site_atlas",
+                "static_equivalent_bridge",
+                "validation_inputs"
+            ],
+            "path_b_required": true,
+            "note": "V2 evidence emitted; final site materialization is deferred to Path B.",
+            "run_id": phase3_run_id,
         });
         let bs_bytes = serde_json::to_string_pretty(&bs_stub).unwrap_or_default();
         let bs_path = output_base.with_extension("binding_sites.json");
