@@ -6645,6 +6645,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     d_dt:              d_protocol_dt_ptr as *mut f32,
                                                     d_velocities:      d_velocities_ptr as *mut f32,
                                                     g26_parent_cond_handle: 0,
+                                                    f1_parent_cond_handle: 0,
                                                     d_pe_components:   d_pe_components_ptr as *const f64,
                                                     n_atoms_for_pe,
                                                     d_external_work:   d_external_work_ptr as *mut f64,
@@ -6769,8 +6770,29 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                     }
                                                                 };
 
+                                                                // F1-PARENT-SWITCH-001 — create the parent-owned F1
+                                                                // conditional handle adjacent to G26's. Default value 0
+                                                                // (PRISM_ADJ_PRUNE) so the SWITCH no-ops on the first
+                                                                // frame before the bridge has run.
+                                                                let parent_f1_handle = match unsafe {
+                                                                    CapturedAdjudicationPipeline::create_parent_f1_cond_handle(
+                                                                        parent_graph,
+                                                                    )
+                                                                } {
+                                                                    Ok(h) => h,
+                                                                    Err(e) => {
+                                                                        log::warn!(
+                                                                            "    [MONO-FUSE stream {}] parent F1 \
+                                                                             handle creation failed: {} — monolithic path failed",
+                                                                            i, e
+                                                                        );
+                                                                        break 'mono_attempt;
+                                                                    }
+                                                                };
+
                                                                 let mut mono_cfg = cfg.clone();
                                                                 mono_cfg.g26_parent_cond_handle = parent_g26_handle;
+                                                                mono_cfg.f1_parent_cond_handle = parent_f1_handle;
                                                                 let mono_pipeline = match CapturedAdjudicationPipeline::build(
                                                                     engine.cuda_context(),
                                                                     engine.cuda_stream(),
@@ -6824,10 +6846,48 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                     .map(|asc| (asc.n_atoms.max(0) as u32)
                                                                                         .saturating_mul(3))
                                                                                     .unwrap_or(0);
+
+                                                                                // F1-PARENT-SWITCH-001 — install the F1
+                                                                                // SWITCH (size=3) on the parent graph
+                                                                                // BEFORE G26. F1's Violation branch must
+                                                                                // short-circuit before G26 mutates gear/dt
+                                                                                // state. Topology after this block:
+                                                                                //   ChildAdj -> F1_SWITCH -> G26_SWITCH -> multi_lif
+                                                                                let parent_f1_node = match unsafe {
+                                                                                    mono_pipeline.wire_parent_f1_switch(
+                                                                                        parent_graph,
+                                                                                        parent_f1_handle,
+                                                                                        child_node,
+                                                                                    )
+                                                                                } {
+                                                                                    Ok(n) => n,
+                                                                                    Err(e) => {
+                                                                                        log::warn!(
+                                                                                            "    [MONO-FUSE stream {}] parent F1 \
+                                                                                             SWITCH wire failed: {} — monolithic path failed",
+                                                                                            i, e
+                                                                                        );
+                                                                                        break 'mono_attempt;
+                                                                                    }
+                                                                                };
+                                                                                // TODO(R4-trace): emit ControlPlaneRecord::F1
+                                                                                // once the per-stream control_trace NDJSON
+                                                                                // writer is plumbed for F1 (currently no
+                                                                                // F1 emitter exists in nhs_rt_full.rs;
+                                                                                // only GearOverride emits at line ~7744).
+                                                                                // Required fields per directive §15.5:
+                                                                                // stream_id, chunk_id, phase,
+                                                                                // f1_predicate_value, f1_branch_taken,
+                                                                                // source_energy_state,
+                                                                                // source_energy_state_hash,
+                                                                                // host_mutation:false. Source the
+                                                                                // predicate from the pinned ring (see
+                                                                                // ticket §6 R2 — never DtoH).
+
                                                                                 let parent_g26_node = match unsafe {
                                                                                     mono_pipeline.wire_parent_g26_switch(
                                                                                         parent_graph,
-                                                                                        child_node,
+                                                                                        parent_f1_node,
                                                                                         mono_cfg.d_velocities,
                                                                                         mono_n_floats,
                                                                                     )
@@ -6951,7 +7011,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                 log::info!(
                                                                                     "    [MONO-FUSE stream {}] ✓ \
                                                                                      monolithic exec instantiated \
-                                                                                     (FusedStep → ChildAdj → ParentG26 → MultiLIF)",
+                                                                                     (FusedStep → ChildAdj → ParentF1 → ParentG26 → MultiLIF)",
                                                                                     i
                                                                                 );
                                                                                 v2_built_cfg = Some(mono_cfg);
@@ -7185,8 +7245,34 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                     }
                                                                 };
 
+                                                                // F1-PARENT-SWITCH-001 — create the parent-owned F1
+                                                                // conditional handle adjacent to G26's. Default value 0
+                                                                // (PRISM_ADJ_PRUNE) so the SWITCH no-ops on the first
+                                                                // frame before the bridge has run.
+                                                                let parent_f1_handle = match unsafe {
+                                                                    CapturedAdjudicationPipeline::create_parent_f1_cond_handle(
+                                                                        parent_graph,
+                                                                    )
+                                                                } {
+                                                                    Ok(h) => h,
+                                                                    Err(e) => {
+                                                                        log::warn!(
+                                                                            "    [MONO-FUSE stream {}] parent F1 \
+                                                                             handle creation failed: {} — monolithic path failed",
+                                                                            i, e
+                                                                        );
+                                                                        log::info!(
+                                                                            "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                                             monolithic splice attempt finished",
+                                                                            i
+                                                                        );
+                                                                        break 'mono_attempt;
+                                                                    }
+                                                                };
+
                                                                 let mut mono_cfg = cfg.clone();
                                                                 mono_cfg.g26_parent_cond_handle = parent_g26_handle;
+                                                                mono_cfg.f1_parent_cond_handle = parent_f1_handle;
                                                                 let mono_pipeline = match CapturedAdjudicationPipeline::build(
                                                                     engine.cuda_context(),
                                                                     engine.cuda_stream(),
@@ -7244,10 +7330,40 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                     .map(|asc| (asc.n_atoms.max(0) as u32)
                                                                                         .saturating_mul(3))
                                                                                     .unwrap_or(0);
+
+                                                                                // F1-PARENT-SWITCH-001 — install the F1
+                                                                                // SWITCH (size=3) on the parent graph
+                                                                                // BEFORE G26. F1's Violation branch must
+                                                                                // short-circuit before G26 mutates gear/dt
+                                                                                // state. Topology after this block:
+                                                                                //   ChildAdj -> F1_SWITCH -> G26_SWITCH -> multi_lif
+                                                                                let parent_f1_node = match unsafe {
+                                                                                    mono_pipeline.wire_parent_f1_switch(
+                                                                                        parent_graph,
+                                                                                        parent_f1_handle,
+                                                                                        child_node,
+                                                                                    )
+                                                                                } {
+                                                                                    Ok(n) => n,
+                                                                                    Err(e) => {
+                                                                                        log::warn!(
+                                                                                            "    [MONO-FUSE stream {}] parent F1 \
+                                                                                             SWITCH wire failed: {} — monolithic path failed",
+                                                                                            i, e
+                                                                                        );
+                                                                                        log::info!(
+                                                                                            "    [V2-INSTANTIATE-COMPLETE stream {}] \
+                                                                                             monolithic splice attempt finished",
+                                                                                            i
+                                                                                        );
+                                                                                        break 'mono_attempt;
+                                                                                    }
+                                                                                };
+
                                                                                 let parent_g26_node = match unsafe {
                                                                                     mono_pipeline.wire_parent_g26_switch(
                                                                                         parent_graph,
-                                                                                        child_node,
+                                                                                        parent_f1_node,
                                                                                         cfg.d_velocities,
                                                                                         mono_n_floats,
                                                                                     )
@@ -7303,7 +7419,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                             log::info!(
                                                                                                 "    [MONO-FUSE stream {}] ✓ \
                                                                                                  monolithic exec instantiated \
-                                                                                                 (FusedStep → ChildAdj → ParentG26 → MultiLIF)",
+                                                                                                 (FusedStep → ChildAdj → ParentF1 → ParentG26 → MultiLIF)",
                                                                                                 i
                                                                                             );
                                                                                             v2_pipeline = Some(mono_pipeline);

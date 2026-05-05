@@ -760,6 +760,34 @@ extern "C" {
         tau_ps:         f32,
     ) -> i32;
 
+    // F1-PARENT-SWITCH-001 — parent-owned F1 SWITCH (size=3) FFI family.
+    // Mirrors the G26 trio above. R3 landed the C++ side at commit
+    // 9fa4d356; these are the Rust externs.
+    fn prism_f1_create_handle_ffi(
+        graph:         CUgraph,
+        default_value: u32,
+        out_handle:    *mut u64,
+    ) -> i32;
+
+    fn prism_f1_wire_with_handle_ffi(
+        graph:                CUgraph,
+        predicate_node:       CUgraphNode,
+        handle_v:             u64,
+        out_conditional_node: *mut CUgraphNode,
+        out_body_subgraphs:   *mut CUgraph,             // [3]
+    ) -> i32;
+
+    fn prism_f1_populate_switch_bodies_ffi(
+        body_subgraphs: *mut CUgraph,                   // [3]
+    ) -> i32;
+
+    fn prism_f1_launch_predicate_bridge(
+        d_adjudication_code: *const u32,
+        handle_v:            u64,
+        mask:                u32,
+        stream:              *mut c_void,
+    ) -> i32;
+
     // M1.2.17 — Hamiltonian Auditor.
     fn prism_energy_monitor_temp_storage_bytes(
         n:              u32,
@@ -971,6 +999,18 @@ pub struct PipelineConfig {
     /// deliberately skips child-level SWITCH insertion so the template
     /// remains splice-legal.
     pub g26_parent_cond_handle: u64,
+
+    /// **F1-PARENT-SWITCH-001 — parent-owned F1 SWITCH conditional handle.**
+    /// Zero ⇒ F1 disabled at the CUDA-graph layer (legacy in-child
+    /// `prism_wire_f1_switch_ffi` path stays available for tests but is
+    /// NOT used by production). Nonzero ⇒ the handle was created on
+    /// the parent graph by `create_parent_f1_cond_handle`; the captured
+    /// child's predicate bridge writes `adj->adjudication_code & 0x3`
+    /// into that handle so the parent-graph F1 SWITCH (size=3, populated
+    /// post-capture by `wire_parent_f1_switch`) routes Prune / Construct
+    /// / Violation. Topology: ChildAdj -> F1_SWITCH -> G26_SWITCH so the
+    /// Violation branch short-circuits BEFORE G26 mutates gear/dt state.
+    pub f1_parent_cond_handle: u64,
 
     /// **M1.2.17 — Per-atom potential-energy components buffer pointer.**
     /// Device-resident `*const f64` aliased to
@@ -3912,6 +3952,42 @@ impl CapturedAdjudicationPipeline {
             });
         }
 
+        // F1-PARENT-SWITCH-001 — F1 predicate-bridge kernel launched
+        // alongside G26's. Reads `adj->adjudication_code & 0x3` and
+        // writes the result into the parent-owned F1 conditional handle.
+        // Mirrors the G26 launch shape (single-thread kernel-node into
+        // the captured graph). Only fires when a parent-owned F1 handle
+        // was supplied via `cfg.f1_parent_cond_handle`; otherwise F1 is
+        // disabled at the CUDA-graph layer and the launch is skipped so
+        // the captured child template stays splice-legal.
+        if cfg.f1_parent_cond_handle != 0 {
+            let adj_code_devptr = unsafe {
+                crate::interferometric_adjudicator::ffi::prism_get_adjudication_code_devptr(
+                    adj_dev as *const InterferometricAdjudicatorFfi,
+                )
+            };
+            if adj_code_devptr.is_null() {
+                return Err(BuildError::Cuda {
+                    stage: "F1-PARENT-SWITCH adjudication_code devptr null",
+                    rc: -1,
+                });
+            }
+            let rc = unsafe {
+                prism_f1_launch_predicate_bridge(
+                    adj_code_devptr,
+                    cfg.f1_parent_cond_handle,
+                    /*mask=*/ 0x3u32,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "F1-PARENT-SWITCH predicate bridge kernel",
+                    rc,
+                });
+            }
+        }
+
         // Step 5: snapshot bridge node handle (frontier == [bridge]).
         let mut g26_bridge_node: CUgraphNode = ptr::null_mut();
         unsafe {
@@ -4584,6 +4660,124 @@ impl CapturedAdjudicationPipeline {
         Ok(g26_cond_node)
     }
 
+    /// **F1-PARENT-SWITCH-001 — create the parent-owned F1 conditional
+    /// handle.** Mirrors `create_parent_g26_cond_handle`, swapping the
+    /// FFI to `prism_f1_create_handle_ffi` and using the F1 default
+    /// launch value of 0 (PRISM_ADJ_PRUNE) instead of G26's 1 (Gear 1).
+    /// The returned handle is passed back through
+    /// `PipelineConfig::f1_parent_cond_handle` so the captured child's
+    /// F1 predicate-bridge kernel can write into it before the parent-
+    /// graph F1 SWITCH fires.
+    ///
+    /// # Safety
+    /// `parent_graph` must be a valid, mutable, uninstantiated CUgraph.
+    pub unsafe fn create_parent_f1_cond_handle(
+        parent_graph: CUgraph,
+    ) -> Result<u64, BuildError> {
+        if parent_graph.is_null() {
+            return Err(BuildError::InvalidConfig {
+                reason: "parent graph is null for F1 handle creation",
+            });
+        }
+        let mut handle: u64 = 0;
+        let rc = prism_f1_create_handle_ffi(
+            parent_graph,
+            /*default_value=*/ 0u32,    // PRISM_ADJ_PRUNE — F1 case 0
+            &mut handle as *mut u64,
+        );
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "F1-PARENT-SWITCH prism_f1_create_handle_ffi(parent)",
+                rc,
+            });
+        }
+        if handle == 0 {
+            return Err(BuildError::Cuda {
+                stage: "F1-PARENT-SWITCH parent F1 handle came back zero",
+                rc: -1,
+            });
+        }
+        Ok(handle)
+    }
+
+    /// **F1-PARENT-SWITCH-001 — install the F1 SWITCH (size=3) on the
+    /// parent graph.** Adds a `cudaGraphCondTypeSwitch` conditional node
+    /// downstream of `dependency_node` (typically the spliced child-
+    /// adjudicator graph node) and populates the 3 body sub-graphs:
+    ///   case 0 (Prune)     — empty no-op
+    ///   case 1 (Construct) — empty no-op (ASC reserved)
+    ///   case 2 (Violation) — PTX trap kernel
+    ///
+    /// Returns the parent-owned F1 SWITCH conditional node. The caller
+    /// must wire the F1 SWITCH BEFORE the G26 SWITCH (so F1's Violation
+    /// branch short-circuits before G26 mutates gear/dt state).
+    ///
+    /// # Safety
+    /// `parent_graph` and `dependency_node` must belong to the same
+    /// live, mutable, uninstantiated CUgraph. `f1_cond_handle` must
+    /// have been created on the same parent graph via
+    /// `create_parent_f1_cond_handle`.
+    pub unsafe fn wire_parent_f1_switch(
+        &self,
+        parent_graph: CUgraph,
+        f1_cond_handle: u64,
+        dependency_node: CUgraphNode,
+    ) -> Result<CUgraphNode, BuildError> {
+        if parent_graph.is_null() || dependency_node.is_null() {
+            return Err(BuildError::InvalidConfig {
+                reason: "parent graph/dependency is null for F1 SWITCH",
+            });
+        }
+        if f1_cond_handle == 0 {
+            return Err(BuildError::InvalidConfig {
+                reason: "parent F1 SWITCH requested without a conditional handle",
+            });
+        }
+
+        let mut f1_cond_node: CUgraphNode = ptr::null_mut();
+        let mut f1_body_subgraphs: [CUgraph; 3] = [ptr::null_mut(); 3];
+        let rc = prism_f1_wire_with_handle_ffi(
+            parent_graph,
+            dependency_node,
+            f1_cond_handle,
+            &mut f1_cond_node as *mut _,
+            f1_body_subgraphs.as_mut_ptr(),
+        );
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "F1-PARENT-SWITCH prism_f1_wire_with_handle_ffi(parent)",
+                rc,
+            });
+        }
+        for i in 0..3 {
+            if f1_body_subgraphs[i].is_null() {
+                return Err(BuildError::Cuda {
+                    stage: "F1-PARENT-SWITCH parent F1 SWITCH body_subgraphs null",
+                    rc: -1,
+                });
+            }
+        }
+
+        let rc = prism_f1_populate_switch_bodies_ffi(
+            f1_body_subgraphs.as_mut_ptr(),
+        );
+        if rc != 0 {
+            return Err(BuildError::Cuda {
+                stage: "F1-PARENT-SWITCH prism_f1_populate_switch_bodies_ffi(parent)",
+                rc,
+            });
+        }
+
+        log::info!(
+            "[F1-PARENT-SWITCH] parent SWITCH wired: cond_node={:p} \
+             handle={:#x} size=3 (Prune/Construct/Violation), \
+             body[2]=trap kernel populated",
+            f1_cond_node, f1_cond_handle
+        );
+
+        Ok(f1_cond_node)
+    }
+
     /// **Operator Amendment 3.9 §2.2 — G19.5 Zero-Trust Pointer Alignment Audit.**
     ///
     /// Runs immediately before `cuGraphLaunch`.  Panics on any pointer
@@ -5126,6 +5320,7 @@ mod tests {
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
+            f1_parent_cond_handle: 0,
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
@@ -5273,6 +5468,7 @@ mod tests {
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
+            f1_parent_cond_handle: 0,
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
@@ -5368,6 +5564,7 @@ mod tests {
             n_spikes: 0,
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
+            f1_parent_cond_handle: 0,
             force_burst_step: None,
             d_forces_anchor: 0,
             d_masses: 0,
@@ -5473,6 +5670,7 @@ mod tests {
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
+            f1_parent_cond_handle: 0,
             d_pe_components: ptr::null(),
             n_atoms_for_pe: 0,
             d_kcc_lead: 0,
