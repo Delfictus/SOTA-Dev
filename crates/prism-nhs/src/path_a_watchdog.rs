@@ -50,6 +50,75 @@ pub const PHASE_TEARDOWN: i32 = 4;
 /// Stream complete, no further progress expected.
 pub const PHASE_DONE: i32 = 5;
 
+// POST_CHUNK_LOOP_TEARDOWN_STALL diagnostic — fine-grained chunk-body
+// and teardown phase markers. Inserted at the boundaries of suspected
+// blocking sites so the deadman path_a_completion.json names the EXACT
+// stage every stream is stuck at when the watchdog fires.
+//
+// Codes 10-19 = chunk body sub-stages (loop iteration interior).
+// Codes 20-29 = teardown sub-stages (post-loop per-stream finalization).
+
+/// Chunk body — entered after cancel/wall/T7/evidence-exit checks pass.
+pub const PHASE_CHUNK_BODY_ENTER: i32 = 10;
+/// Chunk body — T5 phase boundary build (V2 instantiate first time).
+pub const PHASE_CHUNK_BODY_V2_BUILD: i32 = 11;
+/// Chunk body — about to launch the captured V2 graph (graph.run_chunk).
+pub const PHASE_CHUNK_BODY_GRAPH_LAUNCH: i32 = 12;
+/// Chunk body — post-launch sync / per-chunk telemetry copies.
+pub const PHASE_CHUNK_BODY_POST_LAUNCH_SYNC: i32 = 13;
+
+/// Teardown — entered after chunk loop exit (break or natural end).
+pub const PHASE_TEARDOWN_ENTER: i32 = 20;
+/// Teardown — VRAM-Loss audit DtoH copies (forces, aromatic centroids, warp).
+pub const PHASE_TEARDOWN_VRAM_AUDIT: i32 = 21;
+/// Teardown — engine.cuda_stream().synchronize() drain.
+pub const PHASE_TEARDOWN_ENGINE_SYNC: i32 = 22;
+/// Teardown — drop(v2_snap_tx) + v2_writer_handle.join().
+pub const PHASE_TEARDOWN_V2_WRITER_JOIN: i32 = 23;
+/// Teardown — engine.download_signal_preservation().
+pub const PHASE_TEARDOWN_DOWNLOAD_SIG: i32 = 24;
+/// Teardown — engine.compute_and_download_kcc().
+pub const PHASE_TEARDOWN_DOWNLOAD_KCC: i32 = 25;
+/// Teardown — closure return (last code observed before rayon thread exits).
+pub const PHASE_TEARDOWN_CLOSURE_RETURN: i32 = 26;
+
+/// Stable lowercase label for a phase code. Returns "unknown:<code>"
+/// for unrecognized values so the deadman emit never panics on a
+/// future code that hasn't been added here.
+pub fn phase_label(code: i32) -> String {
+    match code {
+        PHASE_INIT => "init".to_string(),
+        PHASE_COLD_HOLD => "cold_hold".to_string(),
+        PHASE_T7_CAL => "t7_cal".to_string(),
+        PHASE_V2_LIVE => "v2_live".to_string(),
+        PHASE_TEARDOWN => "teardown".to_string(),
+        PHASE_DONE => "done".to_string(),
+        PHASE_CHUNK_BODY_ENTER => "chunk_body_enter".to_string(),
+        PHASE_CHUNK_BODY_V2_BUILD => "chunk_body_v2_build".to_string(),
+        PHASE_CHUNK_BODY_GRAPH_LAUNCH => "chunk_body_graph_launch".to_string(),
+        PHASE_CHUNK_BODY_POST_LAUNCH_SYNC => "chunk_body_post_launch_sync".to_string(),
+        PHASE_TEARDOWN_ENTER => "teardown_enter".to_string(),
+        PHASE_TEARDOWN_VRAM_AUDIT => "teardown_vram_audit".to_string(),
+        PHASE_TEARDOWN_ENGINE_SYNC => "teardown_engine_sync".to_string(),
+        PHASE_TEARDOWN_V2_WRITER_JOIN => "teardown_v2_writer_join".to_string(),
+        PHASE_TEARDOWN_DOWNLOAD_SIG => "teardown_download_sig".to_string(),
+        PHASE_TEARDOWN_DOWNLOAD_KCC => "teardown_download_kcc".to_string(),
+        PHASE_TEARDOWN_CLOSURE_RETURN => "teardown_closure_return".to_string(),
+        _ => format!("unknown:{}", code),
+    }
+}
+
+/// Returns Some(label) when `code` is a teardown sub-stage (>= 20),
+/// None otherwise. Used by the deadman emit to populate the dedicated
+/// `teardown_stage_by_stream` field per operator spec.
+pub fn teardown_stage_label(code: i32) -> Option<String> {
+    if code >= PHASE_TEARDOWN_ENTER && code <= PHASE_TEARDOWN_CLOSURE_RETURN {
+        Some(phase_label(code))
+    } else {
+        None
+    }
+}
+
 fn unix_now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -437,6 +506,21 @@ pub fn emit_minimal_completion_json(
     // emitted by the normal Phase-8 path; this is the deadman fallback.
     let inst_by_stream: Vec<bool> = snap.v2_live_by_stream.clone();
 
+    // POST_CHUNK_LOOP_TEARDOWN_STALL diagnostic — derive fine-grained
+    // phase labels and the dedicated teardown-stage field from the
+    // raw `current_phase_by_stream` codes. This is what tells us
+    // EXACTLY where each stream stalled when the watchdog fires.
+    let current_phase_label_by_stream: Vec<String> = snap
+        .current_phase_by_stream
+        .iter()
+        .map(|&code| phase_label(code))
+        .collect();
+    let teardown_stage_by_stream: Vec<Option<String>> = snap
+        .current_phase_by_stream
+        .iter()
+        .map(|&code| teardown_stage_label(code))
+        .collect();
+
     let json = serde_json::json!({
         "schema_version": 2,
         "run_id": run_id,
@@ -467,6 +551,8 @@ pub fn emit_minimal_completion_json(
         "last_progress_ts_unix_by_stream":
             snap.last_progress_ts_unix_by_stream,
         "current_phase_by_stream": snap.current_phase_by_stream,
+        "current_phase_label_by_stream": current_phase_label_by_stream,
+        "teardown_stage_by_stream": teardown_stage_by_stream,
         "v2_live_by_stream": snap.v2_live_by_stream,
         "evidence_ready_by_stream": snap.evidence_ready_by_stream,
         "snapshot_taken_at_unix": snap.taken_at_unix,
@@ -475,6 +561,9 @@ pub fn emit_minimal_completion_json(
         "note": "Crash-safe minimal evidence emit triggered by watchdog or SIGINT. \
                  Phase 8a-d artifacts (binding_sites, F2 sidecars, transform_dag) \
                  are likely missing because normal teardown was bypassed. \
+                 current_phase_label_by_stream names the EXACT stage every stream \
+                 was at when the watchdog fired; teardown_stage_by_stream is \
+                 non-null only when the stream had entered teardown. \
                  path_b_required is asserted true. Treat this run as unvalidated.",
     });
 
@@ -537,6 +626,51 @@ mod tests {
         s.request_cancel("second");
         assert_eq!(s.current_exit_reason(), "first");
         assert!(s.is_cancelled());
+    }
+
+    #[test]
+    fn phase_labels_cover_all_named_codes_and_teardown_filter_correct() {
+        // All named phase codes round-trip to a stable lowercase label.
+        let cases = [
+            (PHASE_INIT, "init", false),
+            (PHASE_COLD_HOLD, "cold_hold", false),
+            (PHASE_T7_CAL, "t7_cal", false),
+            (PHASE_V2_LIVE, "v2_live", false),
+            (PHASE_TEARDOWN, "teardown", false),
+            (PHASE_DONE, "done", false),
+            (PHASE_CHUNK_BODY_ENTER, "chunk_body_enter", false),
+            (PHASE_CHUNK_BODY_V2_BUILD, "chunk_body_v2_build", false),
+            (PHASE_CHUNK_BODY_GRAPH_LAUNCH, "chunk_body_graph_launch", false),
+            (PHASE_CHUNK_BODY_POST_LAUNCH_SYNC, "chunk_body_post_launch_sync", false),
+            (PHASE_TEARDOWN_ENTER, "teardown_enter", true),
+            (PHASE_TEARDOWN_VRAM_AUDIT, "teardown_vram_audit", true),
+            (PHASE_TEARDOWN_ENGINE_SYNC, "teardown_engine_sync", true),
+            (PHASE_TEARDOWN_V2_WRITER_JOIN, "teardown_v2_writer_join", true),
+            (PHASE_TEARDOWN_DOWNLOAD_SIG, "teardown_download_sig", true),
+            (PHASE_TEARDOWN_DOWNLOAD_KCC, "teardown_download_kcc", true),
+            (PHASE_TEARDOWN_CLOSURE_RETURN, "teardown_closure_return", true),
+        ];
+        for (code, expected_label, is_teardown) in cases {
+            assert_eq!(phase_label(code), expected_label, "label for code {}", code);
+            if is_teardown {
+                assert_eq!(
+                    teardown_stage_label(code),
+                    Some(expected_label.to_string()),
+                    "teardown filter should expose code {}",
+                    code
+                );
+            } else {
+                assert!(
+                    teardown_stage_label(code).is_none(),
+                    "teardown filter should not expose non-teardown code {}",
+                    code
+                );
+            }
+        }
+        // Unknown code falls through to a stable diagnostic label and is
+        // NEVER classified as a teardown stage.
+        assert_eq!(phase_label(99), "unknown:99");
+        assert!(teardown_stage_label(99).is_none());
     }
 
     #[test]

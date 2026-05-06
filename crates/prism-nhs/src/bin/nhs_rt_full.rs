@@ -6111,6 +6111,20 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             }
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
+                                // POST_CHUNK_LOOP_TEARDOWN_STALL diag —
+                                // chunk-body entered (cancel/wall/T7/evidence
+                                // checks all passed). If the deadman emit's
+                                // current_phase_label_by_stream shows
+                                // "chunk_body_enter" for stuck streams, the
+                                // bug is in the early body work below
+                                // (steps_run guard, chunk-counter update,
+                                // pre-V2-build conditions).
+                                path_a_heartbeats_local.mark(
+                                    i,
+                                    chunk_idx,
+                                    steps_run,
+                                    prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_ENTER,
+                                );
                                 // PATH-A red-1 — track the maximum chunk_idx
                                 // across all streams so the run-end JSON emit
                                 // reports honest integration depth.  Relaxed
@@ -6136,6 +6150,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 // builds its own pipeline (t7_active is now
                                 // unconditionally true) so all 8 streams emit
                                 // their own ZSTR / Ghost / ASC / T7 artifacts.
+                                // POST_CHUNK_LOOP_TEARDOWN_STALL diag — mark
+                                // entry into V2-build (only fires on the one
+                                // chunk where the conditional is true; otherwise
+                                // the next mark site is the graph-launch one
+                                // below). If the deadman emit shows streams
+                                // stuck at "chunk_body_v2_build", the V2 build
+                                // path itself blocks (e.g., MONOLITHIC_GRAPH_BUILD_LOCK
+                                // contention or deferred CUDA error during build).
                                 #[cfg(feature = "v2_ignition")]
                                 if args.m1_monolithic_discovery
                                     && t7_active && v2_pipeline.is_none()
@@ -6143,6 +6165,12 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     && steps_run >= v2_trigger_step
                                     && steps_run > 0
                                 {
+                                    path_a_heartbeats_local.mark(
+                                        i,
+                                        chunk_idx,
+                                        steps_run,
+                                        prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_V2_BUILD,
+                                    );
                                     use prism_nhs::rich_spike::RichSpike;
                                     use prism_nhs::captured_pipeline::{
                                         PipelineConfig, CapturedAdjudicationPipeline,
@@ -7760,6 +7788,20 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 #[cfg(not(feature = "v2_ignition"))]
                                 let monolithic_active = false;
 
+                                // POST_CHUNK_LOOP_TEARDOWN_STALL diag — about
+                                // to enter the per-step graph-launch loop. If
+                                // the deadman emit shows streams stuck at
+                                // "chunk_body_graph_launch", the suspect is
+                                // a `mono.launch_on_stream` (~line 7811) or
+                                // legacy `graph.run_chunk` (~line 7821) call
+                                // hanging mid-launch (e.g., F1 Violation trap
+                                // kernel firing inside a SWITCH body).
+                                path_a_heartbeats_local.mark(
+                                    i,
+                                    chunk_idx,
+                                    steps_run,
+                                    prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_GRAPH_LAUNCH,
+                                );
                                 if monolithic_active {
                                     #[cfg(feature = "v2_ignition")]
                                     if let Some(ref mono) = v2_monolithic {
@@ -7784,6 +7826,17 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                 .map_err(|e| anyhow::anyhow!(
                                                     "Monolithic launch: {:?}", e))?;
                                         }
+                                        // POST_CHUNK_LOOP_TEARDOWN_STALL diag —
+                                        // monolithic per-step launches queued; about
+                                        // to wait for completion. If the deadman emit
+                                        // shows "chunk_body_post_launch_sync", the
+                                        // synchronize() below is the blocker.
+                                        path_a_heartbeats_local.mark(
+                                            i,
+                                            chunk_idx,
+                                            steps_run,
+                                            prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_POST_LAUNCH_SYNC,
+                                        );
                                         engine.cuda_context().synchronize()
                                             .map_err(|e| anyhow::anyhow!(
                                                 "Mono sync: {:?}", e))?;
@@ -7791,6 +7844,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 } else if let Some(ref graph) = captured_graph {
                                     // Legacy path: MD physics overlay.
                                     graph.run_chunk(this_chunk as u32)?;
+                                    // POST_CHUNK_LOOP_TEARDOWN_STALL diag —
+                                    // same as monolithic path: legacy graph chunk
+                                    // launched; about to wait for completion.
+                                    path_a_heartbeats_local.mark(
+                                        i,
+                                        chunk_idx,
+                                        steps_run,
+                                        prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_POST_LAUNCH_SYNC,
+                                    );
                                     engine.cuda_context().synchronize()
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
                                 } else {
@@ -10030,6 +10092,16 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 }
                             };
                         }
+                        // POST_CHUNK_LOOP_TEARDOWN_STALL diag — chunk loop
+                        // has exited (break OR natural completion). Mark
+                        // teardown_enter so the deadman emit reflects that
+                        // this stream made it past the chunk-body region.
+                        path_a_heartbeats_local.mark(
+                            i,
+                            -1,
+                            0,
+                            prism_nhs::path_a_watchdog::PHASE_TEARDOWN_ENTER,
+                        );
                         phase_a_flush!(phase_a_bocpd_w, phase_a_bocpd_path, "bocpd");
                         phase_a_flush!(phase_a_adj_w,   phase_a_adj_path,   "adj_flags");
                         phase_a_flush!(phase_a_dt_w,    phase_a_dt_path,    "adaptive_dt");
@@ -10176,6 +10248,16 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         // All blocks are unconditional (run for every stream); we
                         // synchronize the engine stream once at the end so every
                         // DtoH is retired before the closure returns.
+                        // POST_CHUNK_LOOP_TEARDOWN_STALL diag — entering the
+                        // VRAM-audit DtoH block. If the deadman emit shows
+                        // streams stuck at "teardown_vram_audit", one of the
+                        // synchronous cuMemcpyDtoH_v2 calls below is the blocker.
+                        path_a_heartbeats_local.mark(
+                            i,
+                            -1,
+                            0,
+                            prism_nhs::path_a_watchdog::PHASE_TEARDOWN_VRAM_AUDIT,
+                        );
                         {
                             use cudarc::driver::sys::{
                                 cuMemcpyDtoH_v2, CUdeviceptr, CUresult,
@@ -10361,6 +10443,18 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             // Drain DtoHs through the engine's stream so every
                             // copy is retired before the closure returns and
                             // the engine drops on thread teardown.
+                            // POST_CHUNK_LOOP_TEARDOWN_STALL diag — the
+                            // engine.cuda_stream().synchronize() below is a
+                            // historically-suspected blocker (waits for any
+                            // queued V2 graph kernels to retire). If the
+                            // deadman emit shows "teardown_engine_sync",
+                            // this is the stage holding rayon join hostage.
+                            path_a_heartbeats_local.mark(
+                                i,
+                                -1,
+                                0,
+                                prism_nhs::path_a_watchdog::PHASE_TEARDOWN_ENGINE_SYNC,
+                            );
                             if let Err(e) = engine.cuda_stream().synchronize() {
                                 log::warn!(
                                     "[VRAM-Teardown stream {}] post-DtoH \
@@ -10374,8 +10468,19 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         // channel-EOF, drains any queued frames, patches the n_frames
                         // header, and exits.  Join here so the file is fully flushed
                         // before teardown moves it into the output directory.
+                        // POST_CHUNK_LOOP_TEARDOWN_STALL diag — V2 writer
+                        // join is the second historically-suspected blocker.
+                        // If the deadman emit shows "teardown_v2_writer_join",
+                        // the writer thread isn't seeing the channel close
+                        // (e.g., it's stuck inside a captured-graph DtoH).
                         #[cfg(feature = "v2_ignition")]
                         {
+                            path_a_heartbeats_local.mark(
+                                i,
+                                -1,
+                                0,
+                                prism_nhs::path_a_watchdog::PHASE_TEARDOWN_V2_WRITER_JOIN,
+                            );
                             drop(v2_snap_tx);
                             let v2_n_frames = v2_writer_handle.join().unwrap_or(0);
                             log::info!(
@@ -10421,13 +10526,37 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     // is on disk; return an empty vec so teardown uses the disk file.
                     let snapshots = engine.get_snapshots();
 
-                    // Download signal preservation grids from this stream's GPU buffers
+                    // Download signal preservation grids from this stream's GPU buffers.
+                    // POST_CHUNK_LOOP_TEARDOWN_STALL diag — DtoH for sig grids.
+                    path_a_heartbeats_local.mark(
+                        i,
+                        -1,
+                        0,
+                        prism_nhs::path_a_watchdog::PHASE_TEARDOWN_DOWNLOAD_SIG,
+                    );
                     let sig_data = engine.download_signal_preservation().ok();
-                    // Compute and download KCC v2-full descriptors
+                    // Compute and download KCC v2-full descriptors.
+                    // POST_CHUNK_LOOP_TEARDOWN_STALL diag — kernel + DtoH for KCC.
+                    path_a_heartbeats_local.mark(
+                        i,
+                        -1,
+                        0,
+                        prism_nhs::path_a_watchdog::PHASE_TEARDOWN_DOWNLOAD_KCC,
+                    );
                     let kcc_data = engine.compute_and_download_kcc().ok();
 
                     log::info!("    [stream {}] Complete: {} spikes, {} snapshots, T={:.1}K",
                         i, spikes.len(), snapshots.len(), summary.end_temperature);
+                    // POST_CHUNK_LOOP_TEARDOWN_STALL diag — closure exit.
+                    // If the deadman emit shows "teardown_closure_return",
+                    // the per-stream closure completed but rayon's outer
+                    // h.join() is the blocker (uncancellable in std Rust).
+                    path_a_heartbeats_local.mark(
+                        i,
+                        -1,
+                        0,
+                        prism_nhs::path_a_watchdog::PHASE_TEARDOWN_CLOSURE_RETURN,
+                    );
                     Ok((spikes, snapshots, sig_data, kcc_data))
                 })
             }).collect();
