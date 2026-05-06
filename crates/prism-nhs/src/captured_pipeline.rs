@@ -453,6 +453,88 @@ fn tier8_diag_post_gasp_sync_gate(
     Ok(())
 }
 
+/// STREAM5_SFA_KERNEL_FAILURE diagnostic — narrow probe inserted after
+/// each suspected captured op in the B.3.2 prelude (Node C, M1.2.19.B,
+/// Node D, M1.2.17). Polls `cuStreamGetCaptureInfo_v2` to detect whether
+/// CUDA has invalidated the in-progress capture immediately after
+/// `after_stage` queued its launch.
+///
+/// Success path: one query call (~µs); zero log emission; zero behavior change.
+/// Failure path: ONE error log line naming the EXACT stage that broke
+/// capture, then early `Err(BuildError::Cuda)`. The build still aborts
+/// (V2 falls into the no-V2 path as before), but the typed error stage
+/// label now identifies the actual root cause instead of the deferred-
+/// and-mislabelled "B.3.2 SFA kernel" surface.
+///
+/// See `.prism_orchestration/STREAM5_SFA_KERNEL_FAILURE_REPORT.md` for
+/// the operator-approved diagnostic scope and the four insertion points.
+#[cfg(feature = "gpu")]
+fn diag_capture_invalidation_after(
+    md_stream: &CudaStream,
+    after_stage: &'static str,
+    diagnostic_stream_id: Option<u32>,
+    protocol_group: &'static str,
+) -> Result<(), BuildError> {
+    let mut status: CUstreamCaptureStatus =
+        CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+    let mut id: cuuint64_t = 0;
+    let mut graph: CUgraph = ptr::null_mut();
+    let mut deps: *const CUgraphNode = ptr::null();
+    let mut n_deps: usize = 0;
+    let rc = unsafe {
+        cuStreamGetCaptureInfo_v2(
+            md_stream.cu_stream(),
+            &mut status as *mut _,
+            &mut id as *mut _,
+            &mut graph as *mut _,
+            &mut deps as *mut _,
+            &mut n_deps as *mut _,
+        )
+    };
+    if !matches!(rc, CUresult::CUDA_SUCCESS) {
+        let (cuda_name, cuda_string) = tier8_diag_driver_error_text(rc);
+        log::error!(
+            "[STREAM5_SFA_DIAG] cuStreamGetCaptureInfo_v2 after stage='{}' \
+             returned non-success: stream_id={:?} protocol_group={} rc={} \
+             cuda_name={} cuda_string={:?} raw_stream={:p}",
+            after_stage,
+            diagnostic_stream_id,
+            protocol_group,
+            rc as i32,
+            cuda_name,
+            cuda_string,
+            md_stream.cu_stream()
+        );
+        return Err(BuildError::Cuda {
+            stage: "STREAM5_SFA_DIAG cuStreamGetCaptureInfo_v2 probe",
+            rc: rc as i32,
+        });
+    }
+    if matches!(
+        status,
+        CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_INVALIDATED
+    ) {
+        log::error!(
+            "[STREAM5_SFA_DIAG] CAPTURE INVALIDATED immediately after stage='{}' \
+             stream_id={:?} protocol_group={} capture_id={} frontier_n_deps={} \
+             raw_stream={:p} graph={:p} — this stage is the root cause that \
+             surfaces later as 'B.3.2 SFA kernel' rc=901",
+            after_stage,
+            diagnostic_stream_id,
+            protocol_group,
+            id,
+            n_deps,
+            md_stream.cu_stream(),
+            graph
+        );
+        return Err(BuildError::Cuda {
+            stage: "STREAM5_SFA_DIAG capture invalidated post-launch",
+            rc: 901, // CUDA_ERROR_STREAM_CAPTURE_INVALIDATED
+        });
+    }
+    Ok(())
+}
+
 struct CaptureGuard {
     stream: CUstream,
     stream_id: Option<u32>,
@@ -3672,6 +3754,13 @@ impl CapturedAdjudicationPipeline {
         if rc != 0 {
             return Err(BuildError::Cuda { stage: "Node C (Adjudicator)", rc });
         }
+        // STREAM5_SFA_DIAG — probe capture state immediately after Node C.
+        diag_capture_invalidation_after(
+            &md_stream,
+            "Node C (Adjudicator)",
+            cfg.diagnostic_stream_id,
+            "parent_owned_g26_child",
+        )?;
 
         // ── 6.b-T7 Wave 3 / Path B: dynamic noise-floor calibration ────
         // Three captured kernels (capture → reduce → apply) run AFTER the
@@ -3741,6 +3830,13 @@ impl CapturedAdjudicationPipeline {
                     rc,
                 });
             }
+            // STREAM5_SFA_DIAG — probe capture state after ghost pipe stage.
+            diag_capture_invalidation_after(
+                &md_stream,
+                "M1.2.19.B prism_ghost_pipe_stage_launch",
+                cfg.diagnostic_stream_id,
+                "parent_owned_g26_child",
+            )?;
         }
 
         // ── 6.b' V2 IGNITION prep: snapshot the Adjudicator's captured
@@ -3805,6 +3901,13 @@ impl CapturedAdjudicationPipeline {
             if rc != 0 {
                 return Err(BuildError::Cuda { stage: "Node D (ASC force inject)", rc });
             }
+            // STREAM5_SFA_DIAG — probe capture state after Node D.
+            diag_capture_invalidation_after(
+                &md_stream,
+                "Node D (ASC force inject)",
+                cfg.diagnostic_stream_id,
+                "parent_owned_g26_child",
+            )?;
         }
 
         // ── 6.c'' B.3.2-FULL — G26 Chronometric Gearbox ────────────────────
@@ -3918,6 +4021,13 @@ impl CapturedAdjudicationPipeline {
                     rc,
                 });
             }
+            // STREAM5_SFA_DIAG — probe capture state after M1.2.17 energy reduce.
+            diag_capture_invalidation_after(
+                &md_stream,
+                "M1.2.17 prism_energy_monitor_launch_reduce",
+                cfg.diagnostic_stream_id,
+                "parent_owned_g26_child",
+            )?;
         }
 
         // Step 3: SFA kernel.
