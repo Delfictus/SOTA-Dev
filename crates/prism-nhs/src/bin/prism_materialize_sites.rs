@@ -86,9 +86,34 @@ struct Args {
     #[arg(long, default_value = "2.0")]
     voxel_size_a: f32,
 
-    /// Top-K density peaks to emit as site_candidates.
-    #[arg(long, default_value = "50")]
+    /// Stage A — number of raw density peaks pulled from the voxel grid
+    /// before consolidation. Default raised from 50 to 200 in v2 so that
+    /// non-N-terminal regions (e.g., catalytic pockets) survive into the
+    /// consolidation stage.
+    #[arg(long, default_value = "200")]
     top_k_candidates: usize,
+
+    /// Stage B — centroid distance threshold (Å) for consolidating raw
+    /// peaks into candidate regions.
+    #[arg(long, default_value = "4.0")]
+    consolidation_radius_a: f32,
+
+    /// Stage B — minimum Jaccard overlap of top-12 lining-residue sets
+    /// at which two peaks merge regardless of centroid distance.
+    #[arg(long, default_value = "0.5")]
+    consolidation_jaccard: f32,
+
+    /// Final number of materialized sites to retain after PRISM-native
+    /// scoring (top-N by `final_prism_score`). Smaller than
+    /// `top_k_candidates` because consolidation collapses duplicates.
+    #[arg(long, default_value = "20")]
+    materialized_top_n: usize,
+
+    /// Sub-chunk bin size (steps) for refined temporal-persistence scoring.
+    /// 100 steps gives 100 bins on a 10000-step run, restoring
+    /// discrimination that the engine's `chunk_set` (1000-step bins) loses.
+    #[arg(long, default_value = "100")]
+    persistence_bin_steps: i32,
 
     /// Skip the spike-density pass entirely (faster validation-only run).
     #[arg(long, default_value = "false")]
@@ -731,6 +756,8 @@ struct CandidateEvidence {
     n_arom: [u64; 5], // [TRP, TYR, PHE, SS, none]
     /// Residue support: residue_id → count.
     residue_support: std::collections::HashMap<i32, u32>,
+    /// Refined sub-chunk persistence — bin_id (= timestep / persistence_bin_steps) → spikes.
+    bin_counts: std::collections::HashMap<i32, u64>,
 }
 
 impl CandidateEvidence {
@@ -886,6 +913,212 @@ fn dist3(a: &[f32; 3], b: &[f32; 3]) -> f32 {
     let dy = a[1] - b[1];
     let dz = a[2] - b[2];
     (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+/// Gini coefficient for a vector of non-negative counts (low gini = balanced).
+fn gini_coefficient(counts: &[u64]) -> f64 {
+    if counts.is_empty() {
+        return 0.0;
+    }
+    let n = counts.len() as f64;
+    let total: f64 = counts.iter().map(|&c| c as f64).sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let mut sorted: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mut cumsum = 0.0;
+    let mut weighted_sum = 0.0;
+    for (i, c) in sorted.iter().enumerate() {
+        cumsum += *c;
+        weighted_sum += cumsum;
+    }
+    let gini = (n + 1.0 - 2.0 * weighted_sum / total) / n;
+    gini.clamp(0.0, 1.0)
+}
+
+/// Jaccard overlap between two integer sets.
+fn jaccard_overlap(a: &[i32], b: &[i32]) -> f32 {
+    if a.is_empty() && b.is_empty() {
+        return 0.0;
+    }
+    let sa: std::collections::HashSet<i32> = a.iter().copied().collect();
+    let sb: std::collections::HashSet<i32> = b.iter().copied().collect();
+    let inter = sa.intersection(&sb).count();
+    let union = sa.union(&sb).count();
+    if union == 0 {
+        return 0.0;
+    }
+    inter as f32 / union as f32
+}
+
+// ─── Stage-A raw peak (per top-K voxel, with full evidence accumulator) ────
+
+#[derive(Debug, Clone)]
+struct RawPeak {
+    raw_peak_id: u32,
+    voxel: [i32; 3],
+    seed_centroid_a: [f32; 3],
+    /// Detailed evidence accumulator from the spike re-pass.
+    evidence: CandidateEvidence,
+    /// Top-12 lining residues (cached for consolidation Jaccard checks).
+    top12_lining_residues: Vec<i32>,
+}
+
+// ─── Stage-B consolidated candidate region ─────────────────────────────────
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct CandidateRegion {
+    region_id: u32,
+    representative_raw_peak_id: u32,
+    merged_raw_peak_ids: Vec<u32>,
+    aggregate_centroid_a: [f32; 3],
+    region_radius_a: f32,
+    /// Aggregate evidence (sums of merged raw peaks).
+    n_spikes: u64,
+    intensity_sum: f64,
+    pos_sum_x: f64,
+    pos_sum_y: f64,
+    pos_sum_z: f64,
+    per_stream_spikes: std::collections::HashMap<u32, u64>,
+    per_stream_voxels: std::collections::HashMap<u32, std::collections::HashSet<(i32, i32, i32)>>,
+    timestep_min: i32,
+    timestep_max: i32,
+    chunk_set: std::collections::HashSet<i32>,
+    /// Refined sub-chunk persistence bin set (using args.persistence_bin_steps).
+    persistence_bin_set: std::collections::HashSet<i32>,
+    /// Per-bin spike counts (for burstiness scoring).
+    bin_counts: std::collections::HashMap<i32, u64>,
+    phase_hist: [u32; 10],
+    phase_cos_sum: f64,
+    phase_sin_sum: f64,
+    hot_pos_sum: [f64; 3],
+    n_hot: u64,
+    cold_pos_sum: [f64; 3],
+    n_cold: u64,
+    n_uv: u64,
+    n_lif: u64,
+    n_other_source: u64,
+    n_arom: [u64; 5],
+    residue_support: std::collections::HashMap<i32, u32>,
+    merge_reasons: Vec<String>,
+    /// First and last steps observed (for temporal status). When refined
+    /// timesteps are not available (e.g., headers_only), this is left
+    /// at its sentinel min/max.
+    centroid_spread_a: f32,
+    residue_shell_overlap_with_rep: f32,
+}
+
+// ─── PRISM-native score components (every factor is emitted) ───────────────
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct PrismScoreComponents {
+    density_score: f64,
+    stream_balance_factor: f64,
+    temporal_persistence_factor: f64,
+    residue_shell_plausibility_factor: f64,
+    centroid_manifold_consistency_factor: f64,
+    kcc_driver_factor: f64,
+    field_completeness_factor: f64,
+    duplicate_region_factor: f64,
+    tail_penalty_factor: f64,
+    final_prism_score: f64,
+    score_explanation: Vec<String>,
+}
+
+// ─── Residue-shell plausibility helpers ────────────────────────────────────
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct ResidueShellPlausibility {
+    residue_shell_size: u32,
+    residue_diversity_score: f64,
+    /// Mean pairwise distance between supporting residue CAs (Å); lower = more compact.
+    compactness_a: Option<f64>,
+    /// Heuristic enclosure proxy (function of compactness × residue count).
+    enclosure_proxy: Option<f64>,
+    tail_penalty: f64,
+    terminal_residue_fraction: f64,
+    backbone_exposure_proxy: Option<f64>,
+    aromatic_count: u32,
+    hydrophobic_count: u32,
+    polar_count: u32,
+    catalytic_like_pocket_support: f64,
+    residue_shell_reasoning: Vec<String>,
+}
+
+const HYDROPHOBIC: &[&str] = &[
+    "ALA", "VAL", "LEU", "ILE", "PRO", "MET", "TRP", "PHE", "GLY",
+];
+const POLAR: &[&str] = &[
+    "SER", "THR", "ASN", "GLN", "TYR", "CYS", "HIS", "ASP", "GLU", "LYS", "ARG",
+];
+const AROMATIC: &[&str] = &["PHE", "TYR", "TRP", "HIS"];
+
+// ─── Manifold consistency block ────────────────────────────────────────────
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct ManifoldConsistency {
+    d_whole_lining_a: Option<f32>,
+    d_whole_driver_a: Option<f32>,
+    d_hot_cold_a: Option<f32>,
+    manifold_dispersion_a: Option<f32>,
+    manifold_consistency_score: f64,
+    n_views_present: u32,
+}
+
+// ─── Refined temporal support ──────────────────────────────────────────────
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct RefinedTemporalSupport {
+    persistence_bin_size_steps: i32,
+    persistence_bins_observed: u32,
+    persistence_bins_total_possible: u32,
+    persistence_fraction: f64,
+    burstiness_score: f64,
+    temporal_entropy: f64,
+    /// `coarse_non_discriminative` when timesteps are unavailable or all
+    /// candidates saturate the same bins; otherwise `available`.
+    temporal_support_status: &'static str,
+}
+
+// ─── KCC driver block (active in scoring) ──────────────────────────────────
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct KccDriverBlock {
+    driver_residue_count: u32,
+    driver_residue_fraction_of_shell: f64,
+    driver_centroid_present: bool,
+    driver_centroid_distance_to_whole_site_a: Option<f32>,
+    active_causal_support_sum: u64,
+    kcc_field_completeness: &'static str,
+    kcc_driver_score: f64,
+    kcc_driver_reasoning: Vec<String>,
+}
+
+// ─── Stream balance block ──────────────────────────────────────────────────
+
+#[derive(Debug, Default, Serialize, Clone)]
+struct StreamBalance {
+    n_streams_supporting: u32,
+    per_stream_spike_counts: serde_json::Map<String, serde_json::Value>,
+    gini_coefficient: f64,
+    stream_balance_score: f64,
+    per_stream_support_balance_status: &'static str,
+}
+
+// ─── Duplicate-cluster report record ───────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct DuplicateClusterRecord {
+    duplicate_cluster_id: u32,
+    kept_region_id: u32,
+    kept_centroid_a: [f32; 3],
+    suppressed_raw_peak_ids: Vec<u32>,
+    n_suppressed: u32,
+    centroid_spread_a: f32,
+    residue_shell_overlap_with_rep: f32,
+    merge_reasons: Vec<String>,
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
@@ -1338,6 +1571,7 @@ fn main() -> Result<()> {
                 let sn = phase_angle.sin();
                 let phase_bin = ((phase_bits as usize) * 10 / 1024).min(9);
                 let chunk_id = timestep / 1000;
+                let persistence_bin_id = timestep / args.persistence_bin_steps.max(1);
                 for &ci in cand_ids.iter() {
                     let ev = &mut evidence[ci as usize];
                     ev.n_spikes += 1;
@@ -1350,6 +1584,7 @@ fn main() -> Result<()> {
                     if timestep < ev.timestep_min { ev.timestep_min = timestep; }
                     if timestep > ev.timestep_max { ev.timestep_max = timestep; }
                     ev.chunk_set.insert(chunk_id);
+                    *ev.bin_counts.entry(persistence_bin_id).or_insert(0) += 1;
                     ev.phase_hist[phase_bin] += 1;
                     ev.phase_cos_sum += cs;
                     ev.phase_sin_sum += sn;
@@ -1456,9 +1691,17 @@ fn main() -> Result<()> {
         };
     eprintln!("[materialize] ground_truth status: {}", gt_status);
 
-    // ─── Pass 6 — finalize per-candidate centroid manifold + promotion ─────
-    let mut materialized: Vec<MaterializedSite> = Vec::new();
-    let mut non_materialized: Vec<NonMaterializedCandidate> = Vec::new();
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRISM-NATIVE PIPELINE v2 (commit dc175006+1):
+    //   Stage A — raw peaks (per top-K voxel)
+    //   Stage B — consolidation by centroid distance + residue-shell Jaccard
+    //   Pass C — per-region: residue-shell plausibility, manifold consistency,
+    //            KCC driver, refined temporal, stream balance
+    //   Pass D — composite PRISM-native score
+    //   Pass E — promotion (no automatic promotion of all candidates)
+    //   Pass F — post-hoc accuracy (Chain C reference is NOT used in ranking)
+    // ═══════════════════════════════════════════════════════════════════════
+
     let min_spikes_per_stream: u64 = 50;
     let min_supporting_streams: u32 = 3;
 
@@ -1471,48 +1714,487 @@ fn main() -> Result<()> {
     spikes_files_consumed.sort();
 
     let n_total_kcc_streams = kcc_per_stream.len();
+    let signal_grid_present_any: bool = manifest
+        .artifacts
+        .iter()
+        .any(|a| a.present && a.kind == "signal_grid");
 
-    for (cand_idx, ev) in evidence.iter().enumerate() {
-        // Stream support — count streams with >= min_spikes_per_stream attributed.
-        let supporting_streams: Vec<u32> = ev
-            .per_stream_spikes
+    // ─── Stage A — convert per-peak evidence into RawPeak records ────────
+    let mut raw_peaks: Vec<RawPeak> = evidence
+        .into_iter()
+        .enumerate()
+        .map(|(idx, ev)| {
+            let mut lining_pairs: Vec<(i32, u32)> = ev
+                .residue_support
+                .iter()
+                .map(|(r, c)| (*r, *c))
+                .collect();
+            lining_pairs.sort_by(|a, b| b.1.cmp(&a.1));
+            let top12: Vec<i32> = lining_pairs.iter().take(12).map(|(r, _)| *r).collect();
+            RawPeak {
+                raw_peak_id: idx as u32,
+                voxel: ev.seed_voxel,
+                seed_centroid_a: ev.seed_centroid_a,
+                evidence: ev,
+                top12_lining_residues: top12,
+            }
+        })
+        .collect();
+    // Sort by raw n_spikes descending so the highest-density peak seeds each region.
+    raw_peaks.sort_by(|a, b| b.evidence.n_spikes.cmp(&a.evidence.n_spikes));
+    eprintln!("[v2] Stage A — {} raw peaks (sorted by n_spikes)", raw_peaks.len());
+
+    // ─── Stage B — greedy consolidation into candidate regions ───────────
+    fn aggregate_centroid_of_evidence(ev: &CandidateEvidence) -> [f32; 3] {
+        if ev.intensity_sum > 0.0 {
+            vec3_div([ev.pos_sum_x, ev.pos_sum_y, ev.pos_sum_z], ev.intensity_sum)
+        } else {
+            ev.seed_centroid_a
+        }
+    }
+    let mut regions: Vec<CandidateRegion> = Vec::new();
+    let mut duplicate_records: Vec<DuplicateClusterRecord> = Vec::new();
+
+    for raw in raw_peaks.iter() {
+        let raw_centroid = aggregate_centroid_of_evidence(&raw.evidence);
+        // Find first region this peak should merge into.
+        let mut merge_into: Option<usize> = None;
+        let mut merge_reasons: Vec<String> = Vec::new();
+        let mut residue_overlap_observed: f32 = 0.0;
+        for (ri, region) in regions.iter().enumerate() {
+            let d = dist3(&raw_centroid, &region.aggregate_centroid_a);
+            let mut rep_top12: Vec<i32> = region
+                .residue_support
+                .iter()
+                .map(|(r, c)| (*r, *c))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|(r, c)| (r, c))
+                .collect::<Vec<(i32, u32)>>()
+                .iter()
+                .take(12)
+                .map(|(r, _)| *r)
+                .collect();
+            // The above pattern is ugly; rebuild more cleanly:
+            let mut tmp: Vec<(i32, u32)> = region.residue_support.iter().map(|(r, c)| (*r, *c)).collect();
+            tmp.sort_by(|a, b| b.1.cmp(&a.1));
+            rep_top12 = tmp.into_iter().take(12).map(|(r, _)| r).collect();
+            let jacc = jaccard_overlap(&raw.top12_lining_residues, &rep_top12);
+            if d <= args.consolidation_radius_a {
+                merge_into = Some(ri);
+                merge_reasons.push(format!("centroid_distance_{:.2}A_le_{:.1}", d, args.consolidation_radius_a));
+                residue_overlap_observed = jacc;
+                break;
+            }
+            if jacc >= args.consolidation_jaccard {
+                merge_into = Some(ri);
+                merge_reasons.push(format!("residue_jaccard_{:.2}_ge_{:.2}_centroid_dist_{:.2}A", jacc, args.consolidation_jaccard, d));
+                residue_overlap_observed = jacc;
+                break;
+            }
+        }
+        if let Some(ri) = merge_into {
+            // Aggregate raw evidence into the existing region.
+            let region = &mut regions[ri];
+            region.merged_raw_peak_ids.push(raw.raw_peak_id);
+            region.merge_reasons.extend(merge_reasons);
+            region.n_spikes += raw.evidence.n_spikes;
+            region.intensity_sum += raw.evidence.intensity_sum;
+            region.pos_sum_x += raw.evidence.pos_sum_x;
+            region.pos_sum_y += raw.evidence.pos_sum_y;
+            region.pos_sum_z += raw.evidence.pos_sum_z;
+            for (sid, cnt) in raw.evidence.per_stream_spikes.iter() {
+                *region.per_stream_spikes.entry(*sid).or_insert(0) += cnt;
+            }
+            for (sid, vox) in raw.evidence.per_stream_voxels.iter() {
+                let entry = region.per_stream_voxels.entry(*sid).or_default();
+                for v in vox.iter() {
+                    entry.insert(*v);
+                }
+            }
+            if raw.evidence.timestep_min < region.timestep_min { region.timestep_min = raw.evidence.timestep_min; }
+            if raw.evidence.timestep_max > region.timestep_max { region.timestep_max = raw.evidence.timestep_max; }
+            for c in raw.evidence.chunk_set.iter() { region.chunk_set.insert(*c); }
+            for (b, c) in raw.evidence.bin_counts.iter() {
+                *region.bin_counts.entry(*b).or_insert(0) += c;
+                region.persistence_bin_set.insert(*b);
+            }
+            for k in 0..10 { region.phase_hist[k] += raw.evidence.phase_hist[k]; }
+            region.phase_cos_sum += raw.evidence.phase_cos_sum;
+            region.phase_sin_sum += raw.evidence.phase_sin_sum;
+            for k in 0..3 {
+                region.hot_pos_sum[k] += raw.evidence.hot_pos_sum[k];
+                region.cold_pos_sum[k] += raw.evidence.cold_pos_sum[k];
+            }
+            region.n_hot += raw.evidence.n_hot;
+            region.n_cold += raw.evidence.n_cold;
+            region.n_uv += raw.evidence.n_uv;
+            region.n_lif += raw.evidence.n_lif;
+            region.n_other_source += raw.evidence.n_other_source;
+            for k in 0..5 { region.n_arom[k] += raw.evidence.n_arom[k]; }
+            for (rid, cnt) in raw.evidence.residue_support.iter() {
+                *region.residue_support.entry(*rid).or_insert(0) += cnt;
+            }
+            // Recompute aggregate centroid from updated sums.
+            region.aggregate_centroid_a = if region.intensity_sum > 0.0 {
+                vec3_div([region.pos_sum_x, region.pos_sum_y, region.pos_sum_z], region.intensity_sum)
+            } else { region.aggregate_centroid_a };
+            region.region_radius_a = region.region_radius_a.max(dist3(&raw_centroid, &region.aggregate_centroid_a));
+            region.centroid_spread_a = region.region_radius_a;
+            region.residue_shell_overlap_with_rep =
+                region.residue_shell_overlap_with_rep.max(residue_overlap_observed);
+        } else {
+            // New region seeded from this raw peak.
+            let region_id = regions.len() as u32;
+            regions.push(CandidateRegion {
+                region_id,
+                representative_raw_peak_id: raw.raw_peak_id,
+                merged_raw_peak_ids: vec![raw.raw_peak_id],
+                aggregate_centroid_a: raw_centroid,
+                region_radius_a: 0.0,
+                n_spikes: raw.evidence.n_spikes,
+                intensity_sum: raw.evidence.intensity_sum,
+                pos_sum_x: raw.evidence.pos_sum_x,
+                pos_sum_y: raw.evidence.pos_sum_y,
+                pos_sum_z: raw.evidence.pos_sum_z,
+                per_stream_spikes: raw.evidence.per_stream_spikes.clone(),
+                per_stream_voxels: raw.evidence.per_stream_voxels.clone(),
+                timestep_min: raw.evidence.timestep_min,
+                timestep_max: raw.evidence.timestep_max,
+                chunk_set: raw.evidence.chunk_set.clone(),
+                persistence_bin_set: raw.evidence.bin_counts.keys().copied().collect(),
+                bin_counts: raw.evidence.bin_counts.clone(),
+                phase_hist: raw.evidence.phase_hist,
+                phase_cos_sum: raw.evidence.phase_cos_sum,
+                phase_sin_sum: raw.evidence.phase_sin_sum,
+                hot_pos_sum: raw.evidence.hot_pos_sum,
+                n_hot: raw.evidence.n_hot,
+                cold_pos_sum: raw.evidence.cold_pos_sum,
+                n_cold: raw.evidence.n_cold,
+                n_uv: raw.evidence.n_uv,
+                n_lif: raw.evidence.n_lif,
+                n_other_source: raw.evidence.n_other_source,
+                n_arom: raw.evidence.n_arom,
+                residue_support: raw.evidence.residue_support.clone(),
+                merge_reasons: vec!["region_seed".to_string()],
+                centroid_spread_a: 0.0,
+                residue_shell_overlap_with_rep: 1.0,
+            });
+        }
+    }
+    eprintln!(
+        "[v2] Stage B — {} raw peaks consolidated to {} regions (radius={} Å, jaccard>={})",
+        raw_peaks.len(), regions.len(), args.consolidation_radius_a, args.consolidation_jaccard
+    );
+
+    // Build duplicate-cluster records (only for regions that absorbed peaks).
+    for (ri, region) in regions.iter().enumerate() {
+        if region.merged_raw_peak_ids.len() <= 1 {
+            continue;
+        }
+        let suppressed: Vec<u32> = region.merged_raw_peak_ids
+            .iter()
+            .filter(|&&id| id != region.representative_raw_peak_id)
+            .copied()
+            .collect();
+        duplicate_records.push(DuplicateClusterRecord {
+            duplicate_cluster_id: ri as u32,
+            kept_region_id: region.region_id,
+            kept_centroid_a: region.aggregate_centroid_a,
+            n_suppressed: suppressed.len() as u32,
+            suppressed_raw_peak_ids: suppressed,
+            centroid_spread_a: region.centroid_spread_a,
+            residue_shell_overlap_with_rep: region.residue_shell_overlap_with_rep,
+            merge_reasons: region.merge_reasons.clone(),
+        });
+    }
+
+    // ─── Per-region computation: residue-shell plausibility, manifold,
+    // KCC driver, refined temporal, stream balance, composite PRISM score ──
+    let topology_residue_names: Vec<String> = topology
+        .as_ref()
+        .map(|t| t.residue_names.clone())
+        .unwrap_or_default();
+
+    let mut materialized_v2: Vec<serde_json::Value> = Vec::new();
+    let mut density_only_candidates: Vec<serde_json::Value> = Vec::new();
+    let mut spatiotemporal_partial_candidates: Vec<serde_json::Value> = Vec::new();
+    let max_n_spikes_for_density_normalize: f64 = regions
+        .iter()
+        .map(|r| r.n_spikes as f64)
+        .fold(0.0, f64::max)
+        .max(1.0);
+
+    // Pre-compute density-only ranking (for ablation report) — by raw n_spikes.
+    let mut density_only_rank_by_region: std::collections::HashMap<u32, u32> =
+        std::collections::HashMap::new();
+    {
+        let mut ord: Vec<(u32, u64)> = regions.iter().map(|r| (r.region_id, r.n_spikes)).collect();
+        ord.sort_by(|a, b| b.1.cmp(&a.1));
+        for (i, (rid, _)) in ord.iter().enumerate() {
+            density_only_rank_by_region.insert(*rid, i as u32);
+        }
+    }
+
+    struct ScoredRegion {
+        region_id: u32,
+        old_density_rank: u32,
+        score_components: PrismScoreComponents,
+        manifest_payload: serde_json::Value,
+        materialization_level: &'static str,
+        materialization_status: &'static str,
+        promoted: bool,
+    }
+    let mut scored: Vec<ScoredRegion> = Vec::new();
+
+    let n_residues_topo: usize = topology.as_ref().map(|t| t.n_residues).unwrap_or(306);
+    let terminal_threshold: i32 = 5; // residues 0..5 or last-5 are "terminal"
+
+    for region in regions.iter() {
+        let region_id = region.region_id;
+        // ── stream support / balance ────────────────────────────────────────
+        let supporting_streams: Vec<u32> = region.per_stream_spikes
             .iter()
             .filter_map(|(s, c)| if *c >= min_spikes_per_stream { Some(*s) } else { None })
             .collect();
-        let mut supporting_streams_sorted = supporting_streams.clone();
-        supporting_streams_sorted.sort_unstable();
-
-        // Per-stream JSON support.
-        let mut per_stream_spike_counts = serde_json::Map::new();
-        let mut per_stream_voxel_counts = serde_json::Map::new();
-        for (s, c) in ev.per_stream_spikes.iter() {
-            per_stream_spike_counts.insert(s.to_string(), serde_json::Value::from(*c));
+        let mut supporting_sorted = supporting_streams.clone();
+        supporting_sorted.sort_unstable();
+        let mut per_stream_counts_json = serde_json::Map::new();
+        for (s, c) in region.per_stream_spikes.iter() {
+            per_stream_counts_json.insert(s.to_string(), serde_json::Value::from(*c));
         }
-        for (s, vox) in ev.per_stream_voxels.iter() {
-            per_stream_voxel_counts.insert(s.to_string(), serde_json::Value::from(vox.len()));
-        }
+        let stream_counts_vec: Vec<u64> = region.per_stream_spikes.values().copied().collect();
+        let gini = gini_coefficient(&stream_counts_vec);
+        let stream_balance_score = (1.0 - gini).max(0.0);
+        let stream_balance = StreamBalance {
+            n_streams_supporting: supporting_sorted.len() as u32,
+            per_stream_spike_counts: per_stream_counts_json.clone(),
+            gini_coefficient: gini,
+            stream_balance_score,
+            per_stream_support_balance_status: if stream_counts_vec.is_empty() {
+                "no_streams"
+            } else if gini < 0.1 {
+                "balanced"
+            } else if gini < 0.3 {
+                "moderately_balanced"
+            } else {
+                "imbalanced"
+            },
+        };
 
-        // Whole-site centroid (intensity-weighted).
-        let whole_site = if ev.intensity_sum > 0.0 {
-            Some(vec3_div([ev.pos_sum_x, ev.pos_sum_y, ev.pos_sum_z], ev.intensity_sum))
-        } else { None };
+        // ── refined temporal support ────────────────────────────────────────
+        let counts: Vec<u64> = region.bin_counts.values().copied().collect();
+        let total_bins: i32 = if region.timestep_max > region.timestep_min {
+            ((region.timestep_max - region.timestep_min) / args.persistence_bin_steps.max(1)) + 1
+        } else { 1 };
+        let persistence_fraction = if total_bins > 0 {
+            region.persistence_bin_set.len() as f64 / total_bins as f64
+        } else { 0.0 };
+        let mean_count = if !counts.is_empty() {
+            counts.iter().sum::<u64>() as f64 / counts.len() as f64
+        } else { 0.0 };
+        let var = if counts.len() > 1 {
+            let m = mean_count;
+            counts.iter().map(|c| (*c as f64 - m).powi(2)).sum::<f64>() / counts.len() as f64
+        } else { 0.0 };
+        let burstiness_score = if mean_count > 0.0 {
+            (var.sqrt() / mean_count).min(2.0) / 2.0
+        } else { 0.0 };
+        let temporal_entropy = if !counts.is_empty() {
+            let total: f64 = counts.iter().map(|&c| c as f64).sum();
+            if total > 0.0 {
+                let mut ent = 0.0;
+                for c in counts.iter() {
+                    let p = (*c as f64) / total;
+                    if p > 0.0 { ent -= p * p.ln(); }
+                }
+                ent
+            } else { 0.0 }
+        } else { 0.0 };
+        let temporal_status: &'static str = if region.bin_counts.is_empty() {
+            "coarse_non_discriminative"
+        } else { "available" };
+        let refined_temporal = RefinedTemporalSupport {
+            persistence_bin_size_steps: args.persistence_bin_steps,
+            persistence_bins_observed: region.persistence_bin_set.len() as u32,
+            persistence_bins_total_possible: total_bins.max(0) as u32,
+            persistence_fraction,
+            burstiness_score,
+            temporal_entropy,
+            temporal_support_status: temporal_status,
+        };
+        let temporal_persistence_factor: f64 = if temporal_status == "available" {
+            // Reward high persistence, penalize bursty.
+            (persistence_fraction.powf(0.5)) * (1.0 - 0.5 * burstiness_score).max(0.0)
+        } else { 1.0 };
 
-        // Hot/cold phase centroids.
-        let hot_phase = if ev.n_hot >= 50 {
-            Some(vec3_div(ev.hot_pos_sum, ev.n_hot as f64))
-        } else { None };
-        let cold_phase = if ev.n_cold >= 50 {
-            Some(vec3_div(ev.cold_pos_sum, ev.n_cold as f64))
-        } else { None };
-
-        // Lining residues (top-12 by support count) + lining_mass centroid.
-        let mut lining_pairs: Vec<(i32, u32)> = ev.residue_support
+        // ── lining residues / driver residues / residue shell features ─────
+        let mut lining_pairs: Vec<(i32, u32)> = region.residue_support
             .iter()
             .map(|(r, c)| (*r, *c))
             .collect();
         lining_pairs.sort_by(|a, b| b.1.cmp(&a.1));
         let lining_residues: Vec<i32> = lining_pairs.iter().take(12).map(|x| x.0).collect();
+        let representative_residues: Vec<i32> = lining_residues.iter().take(5).cloned().collect();
 
+        // Tail penalty + terminal fraction.
+        let mut n_terminal: u32 = 0;
+        for r in lining_residues.iter() {
+            let r = *r;
+            if r >= 0 && (r < terminal_threshold || r >= (n_residues_topo as i32 - terminal_threshold)) {
+                n_terminal += 1;
+            }
+        }
+        let terminal_residue_fraction = if !lining_residues.is_empty() {
+            n_terminal as f64 / lining_residues.len() as f64
+        } else { 0.0 };
+        let tail_penalty = terminal_residue_fraction;
+        let tail_penalty_factor = (1.0 - tail_penalty).max(0.05);
+
+        // Residue diversity = unique residue NAMES / shell_size.
+        let mut residue_diversity_score = 1.0_f64;
+        let mut aromatic_count: u32 = 0;
+        let mut hydrophobic_count: u32 = 0;
+        let mut polar_count: u32 = 0;
+        if !topology_residue_names.is_empty() && !lining_residues.is_empty() {
+            let mut name_set: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for r in lining_residues.iter() {
+                if (*r as usize) < topology_residue_names.len() {
+                    let name = topology_residue_names[*r as usize].as_str();
+                    name_set.insert(name);
+                    if AROMATIC.contains(&name) { aromatic_count += 1; }
+                    if HYDROPHOBIC.contains(&name) { hydrophobic_count += 1; }
+                    if POLAR.contains(&name) { polar_count += 1; }
+                }
+            }
+            residue_diversity_score = (name_set.len() as f64 / lining_residues.len() as f64).clamp(0.0, 1.0);
+        }
+        // Compactness: mean pairwise CA distance among lining residues.
+        let mut compactness_a: Option<f64> = None;
+        let mut enclosure_proxy: Option<f64> = None;
+        if !residue_centers.is_empty() && lining_residues.len() >= 2 {
+            let mut sum_d = 0.0_f64;
+            let mut n = 0_u32;
+            for i in 0..lining_residues.len() {
+                for j in (i + 1)..lining_residues.len() {
+                    let ri = lining_residues[i] as usize;
+                    let rj = lining_residues[j] as usize;
+                    if ri < residue_centers.len() && rj < residue_centers.len() {
+                        if let (Some(a), Some(b)) = (residue_centers[ri], residue_centers[rj]) {
+                            sum_d += dist3(&a, &b) as f64;
+                            n += 1;
+                        }
+                    }
+                }
+            }
+            if n > 0 {
+                let mean_d = sum_d / n as f64;
+                compactness_a = Some(mean_d);
+                // Pocket-like = compact (mean d <~12 Å) AND multi-residue.
+                enclosure_proxy = Some((1.0 / (1.0 + (mean_d - 8.0).max(0.0) / 4.0))
+                    * (lining_residues.len() as f64 / 12.0).min(1.0));
+            }
+        }
+        // Catalytic-like proxy = aromatic+polar mix without ligand-truth use.
+        let catalytic_like = if !lining_residues.is_empty() {
+            let mix = (aromatic_count.min(polar_count)) as f64 / lining_residues.len() as f64;
+            (mix * (1.0 - tail_penalty)).min(1.0)
+        } else { 0.0 };
+        let mut shell_reasoning: Vec<String> = Vec::new();
+        if tail_penalty > 0.5 { shell_reasoning.push(format!("dominated_by_terminal_residues ({:.0}%)", tail_penalty * 100.0)); }
+        if residue_diversity_score < 0.5 { shell_reasoning.push("low_residue_name_diversity".to_string()); }
+        if let Some(c) = compactness_a {
+            if c > 14.0 { shell_reasoning.push(format!("residue_shell_loose_mean_d={:.1}A", c)); }
+        }
+        if catalytic_like > 0.15 { shell_reasoning.push("aromatic_polar_mix_present".to_string()); }
+        let residue_shell = ResidueShellPlausibility {
+            residue_shell_size: lining_residues.len() as u32,
+            residue_diversity_score,
+            compactness_a,
+            enclosure_proxy,
+            tail_penalty,
+            terminal_residue_fraction,
+            backbone_exposure_proxy: None,
+            aromatic_count,
+            hydrophobic_count,
+            polar_count,
+            catalytic_like_pocket_support: catalytic_like,
+            residue_shell_reasoning: shell_reasoning,
+        };
+        let residue_shell_plausibility_factor: f64 = {
+            let div = residue_diversity_score.max(0.1);
+            let comp = enclosure_proxy.unwrap_or(0.5);
+            (div * comp).clamp(0.05, 1.5)
+        };
+
+        // ── KCC driver block ────────────────────────────────────────────────
+        let mut driver_pairs: Vec<(i32, u64)> = lining_residues
+            .iter()
+            .filter_map(|r| {
+                driver_active_causal_sum.get(&(*r as usize)).map(|ac| (*r, *ac))
+            })
+            .collect();
+        driver_pairs.sort_by(|a, b| b.1.cmp(&a.1));
+        let driver_residues: Vec<i32> = driver_pairs.iter().take(8).map(|x| x.0).collect();
+        let driver_residue_count = driver_pairs.len() as u32;
+        let driver_residue_fraction_of_shell = if !lining_residues.is_empty() {
+            driver_residue_count as f64 / lining_residues.len() as f64
+        } else { 0.0 };
+        let active_causal_support_sum: u64 = driver_pairs.iter().map(|(_, ac)| *ac).sum();
+        let causal_driver_centroid: Option<[f32; 3]> = if !residue_centers.is_empty() && !driver_pairs.is_empty() {
+            let mut sum = [0.0f64; 3];
+            let mut wsum = 0.0f64;
+            for (rid, ac) in driver_pairs.iter() {
+                let r = *rid as usize;
+                if r < residue_centers.len() {
+                    if let Some(c) = residue_centers[r] {
+                        let w = *ac as f64;
+                        sum[0] += c[0] as f64 * w;
+                        sum[1] += c[1] as f64 * w;
+                        sum[2] += c[2] as f64 * w;
+                        wsum += w;
+                    }
+                }
+            }
+            if wsum > 0.0 { Some(vec3_div(sum, wsum)) } else { None }
+        } else { None };
+        let kcc_field_completeness: &'static str = if n_total_kcc_streams >= 4 {
+            "partial_strong"
+        } else if n_total_kcc_streams > 0 {
+            "partial_weak"
+        } else { "missing" };
+        let kcc_driver_factor: f64 = if n_total_kcc_streams == 0 {
+            1.0 // neutral
+        } else {
+            (1.0 + 0.5 * driver_residue_fraction_of_shell).clamp(0.7, 1.6)
+        };
+        let kcc_driver_score = if n_total_kcc_streams > 0 {
+            driver_residue_fraction_of_shell * (active_causal_support_sum as f64).ln().max(0.0)
+        } else { 0.0 };
+        let mut kcc_reasoning: Vec<String> = Vec::new();
+        if n_total_kcc_streams == 0 { kcc_reasoning.push("kcc_unavailable_neutral_factor".to_string()); }
+        if driver_residue_fraction_of_shell > 0.5 { kcc_reasoning.push(format!("driver_dominant_shell_fraction={:.2}", driver_residue_fraction_of_shell)); }
+        let kcc_driver_block = KccDriverBlock {
+            driver_residue_count,
+            driver_residue_fraction_of_shell,
+            driver_centroid_present: causal_driver_centroid.is_some(),
+            driver_centroid_distance_to_whole_site_a: None, // computed below
+            active_causal_support_sum,
+            kcc_field_completeness,
+            kcc_driver_score,
+            kcc_driver_reasoning: kcc_reasoning,
+        };
+
+        // ── Centroid manifold ───────────────────────────────────────────────
+        let whole_site = if region.intensity_sum > 0.0 {
+            Some(vec3_div([region.pos_sum_x, region.pos_sum_y, region.pos_sum_z], region.intensity_sum))
+        } else { None };
+        let hot_phase = if region.n_hot >= 50 {
+            Some(vec3_div(region.hot_pos_sum, region.n_hot as f64))
+        } else { None };
+        let cold_phase = if region.n_cold >= 50 {
+            Some(vec3_div(region.cold_pos_sum, region.n_cold as f64))
+        } else { None };
         let lining_mass: Option<[f32; 3]> = if !residue_centers.is_empty() {
             let mut sum = [0.0f64; 3];
             let mut wsum = 0.0f64;
@@ -1530,296 +2212,363 @@ fn main() -> Result<()> {
             }
             if wsum > 0.0 { Some(vec3_div(sum, wsum)) } else { None }
         } else { None };
-
-        // Driver residues = top-K driver_active_causal_sum that are ALSO in this candidate's residue support.
-        let mut driver_pairs: Vec<(i32, u64)> = lining_pairs
-            .iter()
-            .filter_map(|(rid, _c)| {
-                driver_active_causal_sum
-                    .get(&(*rid as usize))
-                    .map(|ac| (*rid, *ac))
-            })
-            .collect();
-        driver_pairs.sort_by(|a, b| b.1.cmp(&a.1));
-        let driver_residues: Vec<i32> = driver_pairs.iter().take(8).map(|x| x.0).collect();
-
-        let causal_driver: Option<[f32; 3]> = if !residue_centers.is_empty() && !driver_pairs.is_empty() {
-            let mut sum = [0.0f64; 3];
-            let mut wsum = 0.0f64;
-            for (rid, ac) in driver_pairs.iter() {
-                let r = *rid as usize;
-                if r < residue_centers.len() {
-                    if let Some(c) = residue_centers[r] {
-                        let w = *ac as f64;
-                        sum[0] += c[0] as f64 * w;
-                        sum[1] += c[1] as f64 * w;
-                        sum[2] += c[2] as f64 * w;
-                        wsum += w;
-                    }
-                }
-            }
-            if wsum > 0.0 { Some(vec3_div(sum, wsum)) } else { None }
-        } else { None };
-
-        // Ligand-adjacent: only if ground_truth has a valid ligand_centroid.
+        let causal_driver = causal_driver_centroid;
         let ligand_adjacent: Option<[f32; 3]> = ground_truth
             .as_ref()
             .and_then(|gt| if gt.valid_for_dcc_validation { gt.ligand_centroid } else { None });
-
-        let centroid_manifold = CentroidManifold {
-            whole_site,
-            lining_mass,
-            causal_driver,
-            hot_phase,
-            cold_phase,
-            return_phase: None,
-            ligand_adjacent,
+        let manifold = CentroidManifold {
+            whole_site, lining_mass, causal_driver, hot_phase, cold_phase,
+            return_phase: None, ligand_adjacent,
         };
 
-        // Phase coherence — Rayleigh r-stat.
-        let n = ev.n_spikes as f64;
+        // Manifold consistency.
+        let d_whole_lining = whole_site.zip(lining_mass).map(|(a, b)| dist3(&a, &b));
+        let d_whole_driver = whole_site.zip(causal_driver).map(|(a, b)| dist3(&a, &b));
+        let d_hot_cold = hot_phase.zip(cold_phase).map(|(a, b)| dist3(&a, &b));
+        let mut manifold_dispersion: Option<f32> = None;
+        let n_views_present = [whole_site, lining_mass, causal_driver, hot_phase, cold_phase]
+            .iter().filter(|v| v.is_some()).count() as u32;
+        let views_vec: Vec<[f32; 3]> = [whole_site, lining_mass, causal_driver, hot_phase, cold_phase]
+            .iter().flatten().copied().collect();
+        if views_vec.len() >= 2 {
+            let mut max_d: f32 = 0.0;
+            for i in 0..views_vec.len() {
+                for j in (i + 1)..views_vec.len() {
+                    let d = dist3(&views_vec[i], &views_vec[j]);
+                    if d > max_d { max_d = d; }
+                }
+            }
+            manifold_dispersion = Some(max_d);
+        }
+        // Manifold consistency: exp(-dispersion / 4Å).
+        let manifold_consistency_score: f64 = if let Some(d) = manifold_dispersion {
+            ((-(d as f64) / 4.0).exp()).clamp(0.0, 1.0)
+        } else { 0.5 };
+        let centroid_manifold_consistency_factor: f64 = manifold_consistency_score
+            * (n_views_present as f64 / 5.0).min(1.0).max(0.2);
+        let manifold_block = ManifoldConsistency {
+            d_whole_lining_a: d_whole_lining,
+            d_whole_driver_a: d_whole_driver,
+            d_hot_cold_a: d_hot_cold,
+            manifold_dispersion_a: manifold_dispersion,
+            manifold_consistency_score,
+            n_views_present,
+        };
+        // Patch driver-distance into KccDriverBlock (we already constructed it above).
+        let kcc_driver_block_with_dist = KccDriverBlock {
+            driver_centroid_distance_to_whole_site_a: d_whole_driver,
+            ..kcc_driver_block
+        };
+
+        // ── Stream support struct (legacy shape kept for back-compat) ───────
+        let stream_support = StreamSupport {
+            n_streams_supporting: supporting_sorted.len() as u32,
+            supporting_streams: supporting_sorted.clone(),
+            per_stream_spike_counts: per_stream_counts_json.clone(),
+            per_stream_voxel_counts: {
+                let mut m = serde_json::Map::new();
+                for (s, vox) in region.per_stream_voxels.iter() {
+                    m.insert(s.to_string(), serde_json::Value::from(vox.len()));
+                }
+                m
+            },
+        };
+
+        // ── Phase support / Rayleigh r ──────────────────────────────────────
+        let n = region.n_spikes as f64;
         let r_stat = if n > 0.0 {
-            (ev.phase_cos_sum.powi(2) + ev.phase_sin_sum.powi(2)).sqrt() / n
+            (region.phase_cos_sum.powi(2) + region.phase_sin_sum.powi(2)).sqrt() / n
         } else { 0.0 };
         let mean_phase = if r_stat > 1e-3 {
-            Some(ev.phase_sin_sum.atan2(ev.phase_cos_sum))
+            Some(region.phase_sin_sum.atan2(region.phase_cos_sum))
         } else { None };
-
-        let n_phase_bins_nonzero = ev.phase_hist.iter().filter(|&&c| c > 0).count() as u32;
-        let mut chunk_support: Vec<i32> = ev.chunk_set.iter().copied().collect();
-        chunk_support.sort_unstable();
-
-        let stream_support = StreamSupport {
-            n_streams_supporting: supporting_streams_sorted.len() as u32,
-            supporting_streams: supporting_streams_sorted.clone(),
-            per_stream_spike_counts,
-            per_stream_voxel_counts,
-        };
-        let temporal_support = TemporalSupport {
-            first_observed_step: if ev.timestep_min == i32::MAX { None } else { Some(ev.timestep_min) },
-            last_observed_step: if ev.timestep_max == i32::MIN { None } else { Some(ev.timestep_max) },
-            recurrence_count: ev.chunk_set.len() as u32,
-            chunk_support,
-            n_phase_bins_nonzero,
-        };
         let phase_support = PhaseSupport {
-            phase_bits_histogram: ev.phase_hist,
+            phase_bits_histogram: region.phase_hist,
             rayleigh_r_stat: r_stat,
             mean_phase_radians: mean_phase,
-            n_hot: ev.n_hot,
-            n_cold: ev.n_cold,
+            n_hot: region.n_hot,
+            n_cold: region.n_cold,
         };
-        let so3_support = So3Support {
-            phase_coherence_rayleigh_r: r_stat,
-            orientation_coherence_score: Some(r_stat),
-            local_frame_stability: None,
-            rotation_dispersion: None,
-            warp_matrix_support: "deferred_format_not_parsed",
-            asc_vector_support: "deferred_format_not_parsed",
-            force_direction_support: "deferred_format_not_parsed",
-            evidence_files: spikes_files_consumed.clone(),
-        };
+
+        // ── Field completeness factor ───────────────────────────────────────
+        let mut sources_present: f64 = 0.0;
+        let mut sources_total: f64 = 0.0;
+        for (status, weight) in [
+            ("present", 1.0),                               // spikes
+            ("present", 1.0),                               // phase_bits
+            (if signal_grid_present_any { "partial" } else { "missing" }, 1.0),
+            (if n_total_kcc_streams > 0 { "partial" } else { "missing" }, 1.0),
+        ] {
+            sources_total += weight;
+            sources_present += match status {
+                "present" => 1.0 * weight,
+                "partial" => 0.5 * weight,
+                _ => 0.0,
+            };
+        }
+        let field_completeness_factor: f64 = (sources_present / sources_total).clamp(0.5, 1.0);
         let field_completeness = FieldCompleteness {
             spikes: "present",
             phase_bits: "present",
             warp_matrix: "deferred_format_not_parsed",
             asc_vectors: "deferred_format_not_parsed",
             forces: "deferred_format_not_parsed",
-            signal_grid: if manifest.artifacts.iter().any(|a| a.present && a.kind == "signal_grid") { "partial" } else { "missing" },
+            signal_grid: if signal_grid_present_any { "partial" } else { "missing" },
             kcc: if n_total_kcc_streams > 0 { "partial" } else { "missing" },
         };
 
-        // Promotion.
-        let n_streams_supporting = supporting_streams_sorted.len() as u32;
-        let has_min_centroid_views: bool = whole_site.is_some()
-            && (lining_mass.is_some() || hot_phase.is_some() || cold_phase.is_some());
-        let manifold_count: usize = [whole_site, lining_mass, causal_driver, hot_phase, cold_phase]
-            .iter()
-            .filter(|x| x.is_some())
-            .count();
+        // ── Density score (log-normalized) ──────────────────────────────────
+        let density_score = (region.n_spikes as f64 + 1.0).ln()
+            / (max_n_spikes_for_density_normalize + 1.0).ln();
+        // ── Duplicate region factor: representative regions have factor 1.0.
+        let duplicate_region_factor: f64 = 1.0;
 
-        let so3_block = SpatiotemporalSo3Evidence {
-            status: if manifold_count >= 3 && r_stat > 0.05 {
-                "available"
-            } else if manifold_count >= 2 {
-                "partial"
-            } else {
-                "missing"
-            },
-            stream_support: StreamSupport {
-                n_streams_supporting: stream_support.n_streams_supporting,
-                supporting_streams: stream_support.supporting_streams.clone(),
-                per_stream_spike_counts: stream_support.per_stream_spike_counts.clone(),
-                per_stream_voxel_counts: stream_support.per_stream_voxel_counts.clone(),
-            },
-            temporal_support: TemporalSupport {
-                first_observed_step: temporal_support.first_observed_step,
-                last_observed_step: temporal_support.last_observed_step,
-                recurrence_count: temporal_support.recurrence_count,
-                chunk_support: temporal_support.chunk_support.clone(),
-                n_phase_bins_nonzero: temporal_support.n_phase_bins_nonzero,
-            },
-            phase_support: PhaseSupport {
-                phase_bits_histogram: phase_support.phase_bits_histogram,
-                rayleigh_r_stat: phase_support.rayleigh_r_stat,
-                mean_phase_radians: phase_support.mean_phase_radians,
-                n_hot: phase_support.n_hot,
-                n_cold: phase_support.n_cold,
-            },
-            so3_support,
-            centroid_manifold: CentroidManifold {
-                whole_site, lining_mass, causal_driver,
-                hot_phase, cold_phase, return_phase: None, ligand_adjacent,
-            },
-            field_completeness: FieldCompleteness {
-                spikes: field_completeness.spikes,
-                phase_bits: field_completeness.phase_bits,
-                warp_matrix: field_completeness.warp_matrix,
-                asc_vectors: field_completeness.asc_vectors,
-                forces: field_completeness.forces,
-                signal_grid: field_completeness.signal_grid,
-                kcc: field_completeness.kcc,
-            },
+        // ── Composite PRISM score ───────────────────────────────────────────
+        let final_prism_score = density_score
+            * stream_balance_score.clamp(0.05, 1.0)
+            * temporal_persistence_factor.clamp(0.05, 1.0)
+            * residue_shell_plausibility_factor
+            * centroid_manifold_consistency_factor.clamp(0.05, 1.0)
+            * kcc_driver_factor
+            * field_completeness_factor
+            * duplicate_region_factor
+            * tail_penalty_factor;
+
+        let mut score_explanation: Vec<String> = Vec::new();
+        score_explanation.push(format!("density_score={:.3}", density_score));
+        score_explanation.push(format!("stream_balance={:.3} (gini={:.2})", stream_balance_score, gini));
+        score_explanation.push(format!("temporal_persistence={:.3} ({})", temporal_persistence_factor, temporal_status));
+        score_explanation.push(format!("residue_shell={:.3} (div={:.2}, encl={:?})", residue_shell_plausibility_factor, residue_diversity_score, enclosure_proxy));
+        score_explanation.push(format!("manifold={:.3} ({} views)", centroid_manifold_consistency_factor, n_views_present));
+        score_explanation.push(format!("kcc_driver={:.3} (drv_frac={:.2})", kcc_driver_factor, driver_residue_fraction_of_shell));
+        score_explanation.push(format!("field_completeness={:.3}", field_completeness_factor));
+        score_explanation.push(format!("tail_penalty_factor={:.3} (term_frac={:.2})", tail_penalty_factor, terminal_residue_fraction));
+        score_explanation.push(format!("FINAL={:.6}", final_prism_score));
+
+        let score_components = PrismScoreComponents {
+            density_score,
+            stream_balance_factor: stream_balance_score.clamp(0.05, 1.0),
+            temporal_persistence_factor: temporal_persistence_factor.clamp(0.05, 1.0),
+            residue_shell_plausibility_factor,
+            centroid_manifold_consistency_factor: centroid_manifold_consistency_factor.clamp(0.05, 1.0),
+            kcc_driver_factor,
+            field_completeness_factor,
+            duplicate_region_factor,
+            tail_penalty_factor,
+            final_prism_score,
+            score_explanation,
         };
 
-        // Materialization criteria.
+        // ── Promotion criteria (tightened per directive Part 8) ─────────────
         let mut blocking: Vec<&'static str> = Vec::new();
         if whole_site.is_none() { blocking.push("missing_whole_site_centroid"); }
-        if n_streams_supporting < min_supporting_streams { blocking.push("insufficient_stream_support"); }
-        if ev.n_spikes < 1000 { blocking.push("insufficient_spike_support"); }
-        if ev.chunk_set.is_empty() { blocking.push("no_temporal_support"); }
-        if !has_min_centroid_views { blocking.push("manifold_centroids_below_minimum"); }
+        if (supporting_sorted.len() as u32) < min_supporting_streams { blocking.push("insufficient_stream_support"); }
+        if region.n_spikes < 1000 { blocking.push("insufficient_spike_support"); }
+        if region.chunk_set.is_empty() { blocking.push("no_temporal_support"); }
+        // At least one non-density PRISM evidence dimension active:
+        let kcc_active = n_total_kcc_streams > 0 && driver_residue_count > 0;
+        let manifold_active = n_views_present >= 2 && manifold_consistency_score > 0.4;
+        let temporal_active = temporal_status == "available" && persistence_fraction > 0.3;
+        let shell_active = !lining_residues.is_empty() && tail_penalty < 0.8 && residue_diversity_score > 0.4;
+        let signal_grid_active = signal_grid_present_any;
+        let n_active_dims = [kcc_active, manifold_active, temporal_active, shell_active, signal_grid_active]
+            .iter().filter(|x| **x).count();
+        if n_active_dims == 0 { blocking.push("no_non_density_evidence_dimension_active"); }
 
-        let level: &'static str = if blocking.is_empty() {
-            if gt_status == "available" {
-                "materialized_dynamic_site_with_validation"
-            } else {
-                "materialized_dynamic_site"
-            }
+        let materialization_level: &'static str = if blocking.is_empty() {
+            if gt_status == "available" { "materialized_dynamic_site_with_validation" }
+            else { "materialized_dynamic_site" }
         } else if !blocking.contains(&"missing_whole_site_centroid")
                   && !blocking.contains(&"no_temporal_support") {
             "candidate_spatiotemporal_partial"
         } else {
             "candidate_density_only"
         };
+        let materialization_status: &'static str = if blocking.is_empty() { "materialized" } else { "non_materialized_candidate" };
+        let promoted = blocking.is_empty();
 
-        if level.starts_with("materialized_dynamic_site") {
-            let centroid = whole_site.unwrap();
-            let representative_residues: Vec<i32> = lining_residues.iter().take(5).cloned().collect();
-            // Accuracy block: only populate DCC if ground truth is valid.
-            let accuracy: serde_json::Value = if let Some(lig) = ligand_adjacent {
-                let dcc_whole = whole_site.map(|c| dist3(&c, &lig));
-                let dcc_lining = lining_mass.map(|c| dist3(&c, &lig));
-                let dcc_driver = causal_driver.map(|c| dist3(&c, &lig));
-                let dcc_hot = hot_phase.map(|c| dist3(&c, &lig));
-                let dcc_cold = cold_phase.map(|c| dist3(&c, &lig));
-                let best = [dcc_whole, dcc_lining, dcc_driver, dcc_hot, dcc_cold]
-                    .into_iter()
-                    .flatten()
-                    .fold(f32::INFINITY, f32::min);
-                let grade = if best <= 2.0 { "EXCELLENT" }
-                            else if best <= 3.0 { "ACCEPTABLE" }
-                            else if best <= 5.0 { "USEFUL" }
-                            else if best <= 8.0 { "LENIENT" }
-                            else { "MISS" };
-                serde_json::json!({
-                    "validation_status": "computed",
-                    "ligand_centroid": lig,
-                    "dcc_whole_site_a": dcc_whole,
-                    "dcc_lining_mass_a": dcc_lining,
-                    "dcc_causal_driver_a": dcc_driver,
-                    "dcc_hot_phase_a": dcc_hot,
-                    "dcc_cold_phase_a": dcc_cold,
-                    "best_dcc_a": best,
-                    "grade": grade,
-                })
-            } else {
-                serde_json::json!({
-                    "validation_status": gt_status,
-                    "skip_reason": gt_skip_reason,
-                })
-            };
-
-            let limitations: Vec<&'static str> = vec![
-                "warp_matrix_support_deferred",
-                "asc_vector_support_deferred",
-                "force_direction_support_deferred",
-                if causal_driver.is_some() { "causal_driver_partial_kcc_only_active_causal" } else { "causal_driver_unavailable" },
-            ];
-
-            let provenance = Provenance {
-                source_manifest: args.manifest.display().to_string(),
-                run_id: manifest.run_id.clone(),
-                target: manifest.target.clone(),
-                seed_voxel_index: ev.seed_voxel,
-                seed_density_peak_rank: cand_idx as u32,
-                spikes_files_consumed: spikes_files_consumed.clone(),
-                kcc_files_consumed: kcc_files_consumed.clone(),
-                topology_input: manifest.topology_input.clone(),
-            };
-
-            materialized.push(MaterializedSite {
-                site_id: format!("site_{:03}", cand_idx),
-                rank: cand_idx as u32,
-                materialization_status: "materialized",
-                materialization_level: level,
-                centroid_xyz: centroid,
-                centroid_manifold: CentroidManifold {
-                    whole_site, lining_mass, causal_driver,
-                    hot_phase, cold_phase, return_phase: None, ligand_adjacent,
-                },
-                representative_residues,
-                lining_residues,
-                driver_residues,
-                n_spikes: ev.n_spikes,
-                intensity_sum: ev.intensity_sum,
-                spike_support: serde_json::json!({
-                    "n_uv": ev.n_uv,
-                    "n_lif": ev.n_lif,
-                    "n_other_source": ev.n_other_source,
-                    "n_aromatic": {
-                        "TRP": ev.n_arom[0],
-                        "TYR": ev.n_arom[1],
-                        "PHE": ev.n_arom[2],
-                        "SS":  ev.n_arom[3],
-                        "none": ev.n_arom[4],
-                    },
-                }),
-                stream_support,
-                phase_support,
-                spatiotemporal_so3_evidence: so3_block,
-                field_completeness,
-                provenance,
-                limitations,
-                accuracy,
-            });
+        // ── Build manifest payload (one JSON value per region) ──────────────
+        let so3_block = serde_json::json!({
+            "status": if n_views_present >= 3 && r_stat > 0.05 { "available" }
+                      else if n_views_present >= 2 { "partial" }
+                      else { "missing" },
+            "stream_support": stream_support,
+            "temporal_support": {
+                "first_observed_step": if region.timestep_min == i32::MAX { None } else { Some(region.timestep_min) },
+                "last_observed_step":  if region.timestep_max == i32::MIN { None } else { Some(region.timestep_max) },
+                "recurrence_count": region.chunk_set.len() as u32,
+                "chunk_support": region.chunk_set.iter().copied().collect::<Vec<i32>>(),
+                "n_phase_bins_nonzero": region.phase_hist.iter().filter(|c| **c > 0).count() as u32,
+            },
+            "phase_support": phase_support,
+            "so3_support": {
+                "phase_coherence_rayleigh_r": r_stat,
+                "orientation_coherence_score": r_stat,
+                "local_frame_stability": null,
+                "rotation_dispersion": null,
+                "warp_matrix_support": "deferred_format_not_parsed",
+                "asc_vector_support": "deferred_format_not_parsed",
+                "force_direction_support": "deferred_format_not_parsed",
+                "evidence_files": spikes_files_consumed,
+                "so3_score_status": "deferred_format_not_parsed",
+                "missing_so3_fields": ["warp_matrix", "asc_vectors", "forces_final"],
+            },
+            "centroid_manifold": manifold,
+            "field_completeness": field_completeness,
+        });
+        let accuracy: serde_json::Value = if let Some(lig) = ligand_adjacent {
+            // Ligand-adjacent comes from valid ground_truth only — used purely
+            // as POST-HOC validation, never in score (per directive Part 9).
+            let dcc_whole = whole_site.map(|c| dist3(&c, &lig));
+            let dcc_lining = lining_mass.map(|c| dist3(&c, &lig));
+            let dcc_driver = causal_driver.map(|c| dist3(&c, &lig));
+            let dcc_hot = hot_phase.map(|c| dist3(&c, &lig));
+            let dcc_cold = cold_phase.map(|c| dist3(&c, &lig));
+            let best = [dcc_whole, dcc_lining, dcc_driver, dcc_hot, dcc_cold]
+                .into_iter().flatten().fold(f32::INFINITY, f32::min);
+            let grade = if best <= 2.0 { "EXCELLENT" }
+                        else if best <= 3.0 { "ACCEPTABLE" }
+                        else if best <= 5.0 { "USEFUL" }
+                        else if best <= 8.0 { "LENIENT" }
+                        else { "MISS" };
+            serde_json::json!({
+                "validation_status": "computed",
+                "ligand_centroid": lig,
+                "dcc_whole_site_a": dcc_whole,
+                "dcc_lining_mass_a": dcc_lining,
+                "dcc_causal_driver_a": dcc_driver,
+                "dcc_hot_phase_a": dcc_hot,
+                "dcc_cold_phase_a": dcc_cold,
+                "best_dcc_a": best,
+                "grade": grade,
+            })
         } else {
-            non_materialized.push(NonMaterializedCandidate {
-                seed_peak_id: ev.seed_peak_id,
-                seed_voxel: ev.seed_voxel,
-                seed_centroid_a: ev.seed_centroid_a,
-                n_spikes: ev.n_spikes,
-                n_streams_supporting,
-                materialization_level: level,
-                blocking_reasons: blocking,
-            });
-        }
+            serde_json::json!({
+                "validation_status": gt_status,
+                "skip_reason": gt_skip_reason,
+            })
+        };
+        let limitations: Vec<&'static str> = vec![
+            "warp_matrix_so3_support_deferred",
+            "asc_vector_support_deferred",
+            "force_direction_support_deferred",
+        ];
+        let provenance = serde_json::json!({
+            "source_manifest": args.manifest.display().to_string(),
+            "run_id": manifest.run_id,
+            "target": manifest.target,
+            "region_id": region_id,
+            "representative_raw_peak_id": region.representative_raw_peak_id,
+            "merged_raw_peak_ids": region.merged_raw_peak_ids,
+            "n_raw_peaks_merged": region.merged_raw_peak_ids.len() as u32,
+            "spikes_files_consumed": spikes_files_consumed,
+            "kcc_files_consumed": kcc_files_consumed,
+            "topology_input": manifest.topology_input,
+        });
+
+        let payload = serde_json::json!({
+            "site_id": format!("region_{:03}", region_id),
+            "rank": null,
+            "old_density_rank": density_only_rank_by_region.get(&region_id).copied().unwrap_or(0),
+            "materialization_status": materialization_status,
+            "materialization_level": materialization_level,
+            "centroid_xyz": whole_site.unwrap_or(region.aggregate_centroid_a),
+            "centroid_manifold": manifold,
+            "representative_residues": representative_residues,
+            "lining_residues": lining_residues,
+            "driver_residues": driver_residues,
+            "n_spikes": region.n_spikes,
+            "intensity_sum": region.intensity_sum,
+            "n_raw_peaks_merged": region.merged_raw_peak_ids.len() as u32,
+            "region_radius_a": region.region_radius_a,
+            "centroid_spread_a": region.centroid_spread_a,
+            "spike_support": {
+                "n_uv": region.n_uv,
+                "n_lif": region.n_lif,
+                "n_other_source": region.n_other_source,
+                "n_aromatic": {
+                    "TRP": region.n_arom[0],
+                    "TYR": region.n_arom[1],
+                    "PHE": region.n_arom[2],
+                    "SS":  region.n_arom[3],
+                    "none": region.n_arom[4],
+                },
+            },
+            "stream_support": stream_support,
+            "stream_balance": stream_balance,
+            "phase_support": phase_support,
+            "refined_temporal_support": refined_temporal,
+            "residue_shell_plausibility": residue_shell,
+            "manifold_consistency": manifold_block,
+            "kcc_driver": kcc_driver_block_with_dist,
+            "spatiotemporal_so3_evidence": so3_block,
+            "field_completeness": field_completeness,
+            "score_components": score_components,
+            "blocking_reasons": blocking,
+            "n_active_non_density_dimensions": n_active_dims as u32,
+            "promoted": promoted,
+            "provenance": provenance,
+            "limitations": limitations,
+            "accuracy": accuracy,
+        });
+
+        scored.push(ScoredRegion {
+            region_id,
+            old_density_rank: density_only_rank_by_region.get(&region_id).copied().unwrap_or(0),
+            score_components,
+            manifest_payload: payload,
+            materialization_level,
+            materialization_status,
+            promoted,
+        });
     }
 
-    // Re-rank materialized sites by spike support × stream support.
-    materialized.sort_by(|a, b| {
-        let ascore = a.n_spikes as f64 * a.stream_support.n_streams_supporting as f64;
-        let bscore = b.n_spikes as f64 * b.stream_support.n_streams_supporting as f64;
-        bscore.partial_cmp(&ascore).unwrap_or(std::cmp::Ordering::Equal)
+    // ── Re-rank by final_prism_score ─────────────────────────────────────────
+    scored.sort_by(|a, b| {
+        b.score_components.final_prism_score
+            .partial_cmp(&a.score_components.final_prism_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
-    for (i, s) in materialized.iter_mut().enumerate() {
-        s.rank = i as u32;
-        s.site_id = format!("site_{:03}", i);
+    for (i, sr) in scored.iter_mut().enumerate() {
+        sr.manifest_payload["rank"] = serde_json::Value::from(i as u32);
+        sr.manifest_payload["new_prism_rank"] = serde_json::Value::from(i as u32);
+        sr.manifest_payload["site_id"] = serde_json::Value::from(format!("site_{:03}", i));
     }
+    // Promotion: top materialized_top_n among those with `promoted=true`.
+    for (i, sr) in scored.iter_mut().enumerate() {
+        if !sr.promoted {
+            // Bucket non-promoted into spatiotemporal_partial vs density_only.
+            match sr.materialization_level {
+                "candidate_spatiotemporal_partial" => spatiotemporal_partial_candidates.push(sr.manifest_payload.clone()),
+                _ => density_only_candidates.push(sr.manifest_payload.clone()),
+            }
+            continue;
+        }
+        if materialized_v2.len() < args.materialized_top_n {
+            materialized_v2.push(sr.manifest_payload.clone());
+        } else {
+            // Beyond top-N, retain as spatiotemporal_partial for reporting.
+            spatiotemporal_partial_candidates.push(sr.manifest_payload.clone());
+        }
+        let _ = i;
+    }
+    eprintln!(
+        "[v2] scored {} regions; {} promoted (top-{} materialized); {} spatiotemporal_partial; {} density_only",
+        scored.len(), materialized_v2.len(), args.materialized_top_n,
+        spatiotemporal_partial_candidates.len(), density_only_candidates.len()
+    );
 
-    // ─── Emit binding_sites.materialized.json ──────────────────────────────
+    // Backward-compat shims used by later code paths and emit blocks.
+    let materialized: Vec<serde_json::Value> = materialized_v2.clone();
+    let non_materialized: Vec<serde_json::Value> = density_only_candidates.clone();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // EMIT v2 OUTPUTS
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // ─── Emit binding_sites.materialized.json (v2 schema) ───────────────────
     let materialized_path = output_dir.join("binding_sites.materialized.json");
-    let materialized_status: &str = if materialized.is_empty() {
+    let materialized_status: &str = if materialized_v2.is_empty() {
         "no_sites_met_criteria"
     } else if gt_status == "available" {
         "materialized_from_md_evidence_with_validation"
@@ -1827,15 +2576,21 @@ fn main() -> Result<()> {
         "materialized_from_md_evidence"
     };
     let materialized_json = serde_json::json!({
-        "schema_version":   1,
+        "schema_version":   2,
         "schema_kind":      "pathb_binding_sites_materialized",
+        "ranking_methodology": "prism_native_composite_v2",
         "status":           materialized_status,
         "target":           manifest.target,
         "run_id":           manifest.run_id,
         "source_manifest":  args.manifest.display().to_string(),
-        "site_count":       materialized.len(),
-        "binding_sites":    materialized,
-        "non_materialized_candidates": non_materialized,
+        "site_count":       materialized_v2.len(),
+        "n_raw_peaks":      raw_peaks.len(),
+        "n_consolidated_regions": regions.len(),
+        "consolidation_radius_a": args.consolidation_radius_a,
+        "consolidation_jaccard":  args.consolidation_jaccard,
+        "binding_sites":    materialized_v2,
+        "spatiotemporal_partial_candidates": spatiotemporal_partial_candidates,
+        "density_only_candidates": density_only_candidates,
         "missing_fields":   {
             "warp_matrix_so3":         "format_not_parsed_in_this_commit",
             "asc_vector_orientation":  "format_not_parsed_in_this_commit",
@@ -1853,50 +2608,68 @@ fn main() -> Result<()> {
         use std::io::Write as _;
         bw.flush()?;
     }
-    eprintln!("✓ wrote {} (sites={}, non_materialized={})",
+    eprintln!("✓ wrote {} (sites={}, st_partial={}, density_only={})",
               materialized_path.display(),
-              materialized_json["site_count"], non_materialized.len());
+              materialized_v2.len(),
+              spatiotemporal_partial_candidates.len(),
+              density_only_candidates.len());
 
-    // ─── Emit site_accuracy_report.json ────────────────────────────────────
+    // ─── Emit site_accuracy_report.json (post-hoc validation only) ─────────
     let accuracy_path = output_dir.join("site_accuracy_report.json");
+    // Aggregate grade summary if validation was computed.
+    let (mut n_excellent, mut n_acceptable, mut n_useful, mut n_lenient, mut n_miss) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    let mut best_dcc_overall: Option<f32> = None;
+    let mut best_grade_overall: Option<String> = None;
+    let mut rank_first_lenient: Option<u32> = None;
+    if gt_status == "available" {
+        for s in materialized_v2.iter() {
+            let acc = &s["accuracy"];
+            if let Some(best) = acc["best_dcc_a"].as_f64() {
+                let best_f = best as f32;
+                if best <= 2.0 { n_excellent += 1; }
+                else if best <= 3.0 { n_acceptable += 1; }
+                else if best <= 5.0 { n_useful += 1; }
+                else if best <= 8.0 { n_lenient += 1; }
+                else { n_miss += 1; }
+                if best_dcc_overall.is_none() || best_f < best_dcc_overall.unwrap() {
+                    best_dcc_overall = Some(best_f);
+                    best_grade_overall = acc["grade"].as_str().map(|x| x.to_string());
+                }
+                if best_f <= 8.0 && rank_first_lenient.is_none() {
+                    rank_first_lenient = s["rank"].as_u64().map(|x| x as u32);
+                }
+            }
+        }
+    }
     let accuracy_json = serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "schema_kind":    "pathb_site_accuracy_report",
         "target":         manifest.target,
         "run_id":         manifest.run_id,
         "ground_truth_status":     gt_status,
         "ground_truth_skip_reason": gt_skip_reason,
         "ligand_centroid_used":    ground_truth.as_ref().and_then(|gt| gt.ligand_centroid),
-        "n_materialized_sites":    materialized_json["site_count"],
+        "n_materialized_sites":    materialized_v2.len(),
         "validation_computable":   gt_status == "available",
+        "validation_independent_of_ranking": true,
         "per_site_accuracy":       if gt_status == "available" {
-            serde_json::Value::Array(materialized_json["binding_sites"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|s| serde_json::json!({
-                    "site_id":  s["site_id"],
-                    "rank":     s["rank"],
-                    "centroid_xyz": s["centroid_xyz"],
-                    "accuracy": s["accuracy"],
-                }))
-                .collect())
-        } else {
-            serde_json::Value::Null
-        },
+            serde_json::Value::Array(materialized_v2.iter().map(|s| serde_json::json!({
+                "site_id":      s["site_id"],
+                "rank":         s["rank"],
+                "centroid_xyz": s["centroid_xyz"],
+                "accuracy":     s["accuracy"],
+            })).collect())
+        } else { serde_json::Value::Null },
         "summary": {
-            "n_excellent_le2A":    serde_json::Value::Null,
-            "n_acceptable_le3A":   serde_json::Value::Null,
-            "n_useful_le5A":       serde_json::Value::Null,
-            "n_lenient_le8A":      serde_json::Value::Null,
-            "n_miss_gt8A":         serde_json::Value::Null,
-            "best_grade_overall":  serde_json::Value::Null,
-            "grade_note":          if gt_status == "available" {
-                "summary aggregation deferred to follow-up commit; per-site grades present in per_site_accuracy"
-            } else {
-                "validation not computable: reference unavailable per ground_truth.json"
-            },
+            "n_excellent_le2A":   if gt_status == "available" { serde_json::Value::from(n_excellent) } else { serde_json::Value::Null },
+            "n_acceptable_le3A":  if gt_status == "available" { serde_json::Value::from(n_acceptable) } else { serde_json::Value::Null },
+            "n_useful_le5A":      if gt_status == "available" { serde_json::Value::from(n_useful) } else { serde_json::Value::Null },
+            "n_lenient_le8A":     if gt_status == "available" { serde_json::Value::from(n_lenient) } else { serde_json::Value::Null },
+            "n_miss_gt8A":        if gt_status == "available" { serde_json::Value::from(n_miss) } else { serde_json::Value::Null },
+            "best_dcc_a_overall": best_dcc_overall,
+            "best_grade_overall": best_grade_overall,
+            "rank_first_le8A":    rank_first_lenient,
+            "grade_note":         if gt_status == "available" { "validation aggregated post-hoc; ranking did NOT use ligand reference"} else { "validation not computable: reference unavailable per ground_truth.json" },
         },
         "limitations": [
             "warp_matrix_so3_support_not_parsed",
@@ -1917,12 +2690,12 @@ fn main() -> Result<()> {
     // ─── Emit materialization_field_completeness.json ──────────────────────
     let mfc_path = output_dir.join("materialization_field_completeness.json");
     let mfc_json = serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "schema_kind":    "pathb_materialization_field_completeness",
         "evidence_sources": {
             "spikes":         { "status": "available", "format": "PRSPK001", "streams_present": spikes_files_consumed.len() },
             "kcc_v2full":     { "status": if !kcc_per_stream.is_empty() { "partial" } else { "missing" }, "format": "PRKCC001", "streams_present": kcc_per_stream.len() },
-            "signal_grid":    { "status": if manifest.artifacts.iter().any(|a| a.present && a.kind == "signal_grid") { "partial" } else { "missing" }, "format": "PRSGD001" },
+            "signal_grid":    { "status": if signal_grid_present_any { "partial" } else { "missing" }, "format": "PRSGD001" },
             "warp_matrix":    { "status": "deferred", "reason": "raw blob format not parsed in this commit" },
             "forces_final":   { "status": "deferred", "reason": "raw blob format not parsed in this commit" },
             "asc_vectors":    { "status": "deferred", "reason": "raw blob format not parsed in this commit" },
@@ -1932,20 +2705,19 @@ fn main() -> Result<()> {
             "topology":       { "status": if topology.is_some() { "available" } else { "missing" }, "format": "json", "path": manifest.topology_input },
             "ground_truth":   { "status": gt_status, "skip_reason": gt_skip_reason },
         },
-        "n_candidates_seeded":           candidates.len(),
-        "n_candidates_materialized":     materialized.len(),
-        "n_candidates_non_materialized": non_materialized.len(),
+        "n_raw_peaks":                     raw_peaks.len(),
+        "n_consolidated_regions":          regions.len(),
+        "n_promoted_materialized":         materialized_v2.len(),
+        "n_spatiotemporal_partial":        spatiotemporal_partial_candidates.len(),
+        "n_density_only":                  density_only_candidates.len(),
         "promotion_summary": {
-            "materialized_dynamic_site_with_validation": materialized.iter()
-                .filter(|s| s.materialization_level == "materialized_dynamic_site_with_validation").count(),
-            "materialized_dynamic_site": materialized.iter()
-                .filter(|s| s.materialization_level == "materialized_dynamic_site").count(),
-            "candidate_spatiotemporal_partial": non_materialized.iter()
-                .filter(|c| c.materialization_level == "candidate_spatiotemporal_partial").count(),
-            "candidate_density_only": non_materialized.iter()
-                .filter(|c| c.materialization_level == "candidate_density_only").count(),
+            "materialized_dynamic_site_with_validation":  materialized_v2.iter().filter(|s| s["materialization_level"].as_str() == Some("materialized_dynamic_site_with_validation")).count(),
+            "materialized_dynamic_site":                  materialized_v2.iter().filter(|s| s["materialization_level"].as_str() == Some("materialized_dynamic_site")).count(),
+            "candidate_spatiotemporal_partial":           spatiotemporal_partial_candidates.len(),
+            "candidate_density_only":                     density_only_candidates.len(),
         },
-        "ligsite_role": "intentionally_excluded_per_directive",
+        "ranking_methodology":             "prism_native_composite_v2",
+        "ligsite_role":                    "intentionally_excluded_per_directive",
     });
     {
         let f = File::create(&mfc_path)?;
@@ -1955,6 +2727,131 @@ fn main() -> Result<()> {
         bw.flush()?;
     }
     eprintln!("✓ wrote {}", mfc_path.display());
+
+    // ─── Emit duplicate_cluster_report.json ─────────────────────────────────
+    let dup_path = output_dir.join("duplicate_cluster_report.json");
+    let dup_json = serde_json::json!({
+        "schema_version": 1,
+        "schema_kind":    "pathb_duplicate_cluster_report",
+        "consolidation_radius_a":  args.consolidation_radius_a,
+        "consolidation_jaccard":   args.consolidation_jaccard,
+        "n_raw_peaks":             raw_peaks.len(),
+        "n_regions":               regions.len(),
+        "n_clusters_with_suppression": duplicate_records.len(),
+        "duplicate_clusters":      duplicate_records,
+    });
+    {
+        let f = File::create(&dup_path)?;
+        let mut bw = std::io::BufWriter::new(f);
+        serde_json::to_writer_pretty(&mut bw, &dup_json)?;
+        use std::io::Write as _;
+        bw.flush()?;
+    }
+    eprintln!("✓ wrote {}", dup_path.display());
+
+    // ─── Emit ranking_ablation_report.json ──────────────────────────────────
+    // Re-rank the SAME consolidated regions under different scoring schemes to
+    // show which component moved a region. Each scheme returns the top-10
+    // region_ids in rank order.
+    fn top_k_by<F: FnMut(&ScoredRegion) -> f64>(
+        scored: &[ScoredRegion], k: usize, mut score_fn: F,
+    ) -> Vec<serde_json::Value> {
+        let mut s: Vec<(u32, f64, [f32; 3], Vec<i32>)> = scored.iter().map(|r| {
+            (r.region_id,
+             score_fn(r),
+             {
+                 let v = &r.manifest_payload["centroid_xyz"];
+                 [v[0].as_f64().unwrap_or(0.0) as f32,
+                  v[1].as_f64().unwrap_or(0.0) as f32,
+                  v[2].as_f64().unwrap_or(0.0) as f32]
+             },
+             r.manifest_payload["lining_residues"].as_array()
+                 .map(|a| a.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).take(5).collect())
+                 .unwrap_or_default(),
+            )
+        }).collect();
+        s.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        s.into_iter().take(k).enumerate().map(|(i, (rid, score, c, lining))| serde_json::json!({
+            "rank": i,
+            "region_id": rid,
+            "score": score,
+            "centroid_xyz": c,
+            "lining_residues_top5": lining,
+        })).collect()
+    }
+    let abl_path = output_dir.join("ranking_ablation_report.json");
+    let abl_json = serde_json::json!({
+        "schema_version": 1,
+        "schema_kind":    "pathb_ranking_ablation_report",
+        "n_regions": scored.len(),
+        "schemes": {
+            "density_only":         top_k_by(&scored, 10, |r| r.score_components.density_score),
+            "density_plus_nms":     top_k_by(&scored, 10, |r| r.score_components.density_score * r.score_components.duplicate_region_factor),
+            "nms_plus_residue_shell": top_k_by(&scored, 10, |r| r.score_components.density_score * r.score_components.residue_shell_plausibility_factor * r.score_components.tail_penalty_factor),
+            "nms_plus_manifold":    top_k_by(&scored, 10, |r| r.score_components.density_score * r.score_components.centroid_manifold_consistency_factor),
+            "nms_plus_kcc":         top_k_by(&scored, 10, |r| r.score_components.density_score * r.score_components.kcc_driver_factor),
+            "final_prism_score":    top_k_by(&scored, 10, |r| r.score_components.final_prism_score),
+        },
+    });
+    {
+        let f = File::create(&abl_path)?;
+        let mut bw = std::io::BufWriter::new(f);
+        serde_json::to_writer_pretty(&mut bw, &abl_json)?;
+        use std::io::Write as _;
+        bw.flush()?;
+    }
+    eprintln!("✓ wrote {}", abl_path.display());
+
+    // ─── Emit site_family_report.json ───────────────────────────────────────
+    // Group materialized sites whose top-12 lining-residue sets share Jaccard
+    // >= 0.4. Reports families useful for cross-site dedup interpretation.
+    let family_path = output_dir.join("site_family_report.json");
+    let mut families: Vec<Vec<u32>> = Vec::new();
+    let mut family_lining: Vec<Vec<i32>> = Vec::new();
+    for s in materialized_v2.iter() {
+        let region_id = s["provenance"]["region_id"].as_u64().map(|x| x as u32).unwrap_or(0);
+        let lining: Vec<i32> = s["lining_residues"].as_array()
+            .map(|a| a.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).collect())
+            .unwrap_or_default();
+        let mut placed = false;
+        for (fi, prev) in family_lining.iter_mut().enumerate() {
+            if jaccard_overlap(&lining, prev) >= 0.4 {
+                families[fi].push(region_id);
+                // Update family lining to the union (capped at 12).
+                let mut union: std::collections::HashSet<i32> = prev.iter().copied().collect();
+                for r in &lining { union.insert(*r); }
+                let mut u: Vec<i32> = union.into_iter().collect();
+                u.sort();
+                u.truncate(12);
+                *prev = u;
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            families.push(vec![region_id]);
+            family_lining.push(lining);
+        }
+    }
+    let family_json = serde_json::json!({
+        "schema_version": 1,
+        "schema_kind":    "pathb_site_family_report",
+        "n_families":     families.len(),
+        "families":       families.iter().enumerate().zip(family_lining.iter()).map(|((i, members), lining)| serde_json::json!({
+            "family_id":       i as u32,
+            "n_members":       members.len(),
+            "member_region_ids": members,
+            "shared_lining":   lining,
+        })).collect::<Vec<_>>(),
+    });
+    {
+        let f = File::create(&family_path)?;
+        let mut bw = std::io::BufWriter::new(f);
+        serde_json::to_writer_pretty(&mut bw, &family_json)?;
+        use std::io::Write as _;
+        bw.flush()?;
+    }
+    eprintln!("✓ wrote {}", family_path.display());
 
     // ─── Honest summary ────────────────────────────────────────────────────
     let n_valid: usize = validations.iter().filter(|v| v.valid).count();
