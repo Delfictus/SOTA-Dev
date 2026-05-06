@@ -813,6 +813,20 @@ struct Args {
     #[arg(long)]
     path_a_max_wall_seconds: Option<u64>,
 
+    /// PATHA-CHUNK-SIZE-001 — captured-graph throughput diagnosis knob.
+    /// When set to N, overrides the hardcoded chunk_size=500 in the
+    /// multi-differential chunk loop. Test values N=100/50/10 quantify
+    /// the per-instance retire cost under 8-stream concurrent load.
+    /// Smaller chunks reduce queue depth pressure and let Phase 8
+    /// emit if the throughput regime is launch-count-bound rather than
+    /// graph-correctness-bound. Default `None` preserves the sealed
+    /// chunk_size=500 baseline. Effective ONLY in the multi-differential
+    /// path; legacy non-multidiff paths are untouched.
+    /// Bounded mode: artifact emit must record this value in
+    /// `path_a_chunk_size` and set `path_b_required=true`.
+    #[arg(long)]
+    path_a_chunk_size: Option<u32>,
+
     /// red-2 / Commit 4.5 — Force-Gear Orchestration Supervisor Shim
     /// runtime gate. Effective only when the Cargo feature
     /// `force_gear_override_supervisor_shim` is enabled at compile
@@ -4567,10 +4581,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // boundary AND only when `path_a_evidence_exit` is also active
     // (which absorbs `--path-a-production-profile` via the line above).
     let path_a_max_wall_seconds: Option<u64> = args.path_a_max_wall_seconds;
+    // PATHA-CHUNK-SIZE-001 — captured-graph throughput diagnosis knob.
+    // None ⇒ sealed chunk_size=500 baseline; Some(N) ⇒ per-stream chunk
+    // loop uses N launches per chunk (multi-differential path only).
+    let path_a_chunk_size: Option<u32> = args.path_a_chunk_size;
     let path_a_any_active: bool = path_a_v2_trigger_steps.is_some()
         || path_a_t7_max_chunks.is_some()
         || path_a_evidence_exit
-        || path_a_max_wall_seconds.is_some();
+        || path_a_max_wall_seconds.is_some()
+        || path_a_chunk_size.is_some();
     if path_a_any_active {
         log::info!(
             "  [PATH-A] active profile: v2_trigger_steps={:?} t7_max_chunks={:?} evidence_exit={}",
@@ -5391,6 +5410,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 // the shared run-start Instant without re-deriving from args.
                 let path_a_max_wall_seconds_local: Option<u64> = path_a_max_wall_seconds;
                 let path_a_wall_start_local: std::time::Instant = sim_start;
+                // PATHA-CHUNK-SIZE-001 — per-stream chunk-size override.
+                let path_a_chunk_size_local: Option<u32> = path_a_chunk_size;
                 // MID_CHUNK_STALL — heartbeat + watchdog cancel state.
                 let path_a_heartbeats_local =
                     std::sync::Arc::clone(&path_a_heartbeats);
@@ -5749,7 +5770,20 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     // After each chunk, download spike centroids, identify spatial consensus,
                     // and write steering decisions back to ProtocolState.
                     let summary = if is_multi_diff {
-                        let chunk_size = 500i32;
+                        // PATHA-CHUNK-SIZE-001 — sealed default 500; override
+                        // via --path-a-chunk-size N. Clamped to [1, 500] so
+                        // the diagnostic knob cannot accidentally inflate the
+                        // launch count above the sealed baseline.
+                        let chunk_size: i32 = match path_a_chunk_size_local {
+                            Some(n) => (n as i32).max(1).min(500),
+                            None => 500i32,
+                        };
+                        if path_a_chunk_size_local.is_some() {
+                            log::info!(
+                                "  [PATH-A CHUNK-SIZE stream={}] override active: chunk_size={} (default 500)",
+                                i, chunk_size
+                            );
+                        }
                         let max_steps_any_group = 40000i32;
                         let n_chunks = (max_steps_any_group + chunk_size - 1) / chunk_size;
                         let mut last_summary = None;
@@ -7887,7 +7921,20 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     steps_run,
                                     prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_GRAPH_LAUNCH,
                                 );
+                                // CAPTURED_GRAPH_THROUGHPUT_BOTTLENECK timing —
+                                // wall-clock around the launch loop body. One
+                                // Instant + one summary log per chunk; no
+                                // per-launch logging. Captures: launches
+                                // attempted, loop wall-time, first-launch
+                                // latency, and post-sync wall-time. Sync time
+                                // separates queue-fill blocking (loop time)
+                                // from post-launch GPU drain (sync time).
+                                let chunk_loop_start = std::time::Instant::now();
+                                let mut launch_attempted: u32 = 0;
+                                let mut first_launch_elapsed_us: u64 = 0;
+                                let mut launch_path_label: &'static str = "engine.run";
                                 if monolithic_active {
+                                    launch_path_label = "mono.launch_on_stream";
                                     #[cfg(feature = "v2_ignition")]
                                     if let Some(ref mono) = v2_monolithic {
                                         let s = engine.cuda_stream();
@@ -7910,6 +7957,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                             mono.launch_on_stream(s.cu_stream())
                                                 .map_err(|e| anyhow::anyhow!(
                                                     "Monolithic launch: {:?}", e))?;
+                                            launch_attempted += 1;
+                                            if launch_attempted == 1 {
+                                                first_launch_elapsed_us =
+                                                    chunk_loop_start.elapsed().as_micros() as u64;
+                                            }
                                         }
                                         // POST_CHUNK_LOOP_TEARDOWN_STALL diag —
                                         // monolithic per-step launches queued; about
@@ -7922,6 +7974,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                             steps_run,
                                             prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_POST_LAUNCH_SYNC,
                                         );
+                                        let loop_elapsed_us = chunk_loop_start
+                                            .elapsed().as_micros() as u64;
                                         // POST_CHUNK_LOOP_TEARDOWN_STALL fix
                                         // (commit ffd76e91 phase markers proved
                                         // ~7-of-8 streams stalled here under a
@@ -7933,13 +7987,32 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                         // single degraded stream no longer
                                         // takes the other seven hostage. See
                                         // .prism_orchestration/POST_CHUNK_LOOP_TEARDOWN_STALL_REPORT.md.
+                                        let sync_start = std::time::Instant::now();
                                         engine.cuda_stream().synchronize()
                                             .map_err(|e| anyhow::anyhow!(
                                                 "Mono sync: {:?}", e))?;
+                                        let sync_elapsed_us = sync_start
+                                            .elapsed().as_micros() as u64;
+                                        let total_us = loop_elapsed_us + sync_elapsed_us;
+                                        let rate_hz = if total_us > 0 {
+                                            (launch_attempted as f64) * 1.0e6
+                                                / (total_us as f64)
+                                        } else { 0.0 };
+                                        log::info!(
+                                            "  [CHUNK_TIMING stream={} chunk={} path={}] launch_attempted={} loop_us={} first_launch_us={} sync_us={} total_us={} rate_hz={:.2}",
+                                            i, chunk_idx, launch_path_label,
+                                            launch_attempted, loop_elapsed_us,
+                                            first_launch_elapsed_us, sync_elapsed_us,
+                                            total_us, rate_hz
+                                        );
                                     }
                                 } else if let Some(ref graph) = captured_graph {
+                                    launch_path_label = "graph.run_chunk";
                                     // Legacy path: MD physics overlay.
                                     graph.run_chunk(this_chunk as u32)?;
+                                    launch_attempted = this_chunk as u32;
+                                    let loop_elapsed_us = chunk_loop_start
+                                        .elapsed().as_micros() as u64;
                                     // POST_CHUNK_LOOP_TEARDOWN_STALL diag —
                                     // same as monolithic path: legacy graph chunk
                                     // launched; about to wait for completion.
@@ -7952,10 +8025,31 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     // POST_CHUNK_LOOP_TEARDOWN_STALL fix —
                                     // same rationale as the monolithic site
                                     // above; stream-scoped sync.
+                                    let sync_start = std::time::Instant::now();
                                     engine.cuda_stream().synchronize()
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
+                                    let sync_elapsed_us = sync_start
+                                        .elapsed().as_micros() as u64;
+                                    let total_us = loop_elapsed_us + sync_elapsed_us;
+                                    let rate_hz = if total_us > 0 {
+                                        (launch_attempted as f64) * 1.0e6
+                                            / (total_us as f64)
+                                    } else { 0.0 };
+                                    log::info!(
+                                        "  [CHUNK_TIMING stream={} chunk={} path={}] launch_attempted={} loop_us={} sync_us={} total_us={} rate_hz={:.2}",
+                                        i, chunk_idx, launch_path_label,
+                                        launch_attempted, loop_elapsed_us,
+                                        sync_elapsed_us, total_us, rate_hz
+                                    );
                                 } else {
                                     engine.run(this_chunk)?;
+                                    let total_us = chunk_loop_start
+                                        .elapsed().as_micros() as u64;
+                                    log::info!(
+                                        "  [CHUNK_TIMING stream={} chunk={} path={}] launch_attempted={} total_us={}",
+                                        i, chunk_idx, launch_path_label,
+                                        this_chunk, total_us
+                                    );
                                 }
 
                                 // Amendment 3.14 / G40 — track completed V2 chunks
@@ -20469,6 +20563,16 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         // Currently empty — every field above is populated.
         let missing_optional_fields: Vec<&str> = Vec::new();
 
+        // PATHA-CHUNK-SIZE-001 — capture the effective chunk_size in
+        // the bounded-mode artifact. None ⇒ default 500; Some(N) ⇒
+        // diagnostic override. Bounded-mode runs MUST surface this so
+        // downstream tooling can label MVP claims correctly.
+        let path_a_chunk_size_emit: i64 = match path_a_chunk_size {
+            Some(n) => n.min(500).max(1) as i64,
+            None => 500,
+        };
+        let path_a_chunk_size_overridden: bool = path_a_chunk_size.is_some();
+
         let emit_json = serde_json::json!({
             "schema_version": 2,
             "run_id": phase3_run_id,
@@ -20482,6 +20586,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "evidence_exit_reason": exit_reason,
             "completion_status": completion_status,
             "max_wall_seconds": path_a_max_wall_seconds,
+            "path_a_chunk_size": path_a_chunk_size_emit,
+            "path_a_chunk_size_overridden": path_a_chunk_size_overridden,
             "elapsed_wall_seconds": elapsed_wall_seconds,
             "missing_optional_fields": missing_optional_fields,
             "path_b_required": true,
