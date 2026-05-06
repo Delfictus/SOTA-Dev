@@ -554,6 +554,50 @@ int prism_f1_launch_predicate_bridge(
     void*           stream);
 
 // ════════════════════════════════════════════════════════════════════
+// CHUNK13_CAPTURED_GRAPH_LAUNCH_HANG diagnostic — branch trace block
+// ════════════════════════════════════════════════════════════════════
+//
+// Pinned-mapped device-visible 64-byte struct written atomically by the
+// F1 and G26 predicate-bridge kernels on every replay. Host can read
+// directly through the matching pinned host pointer (no API, no sync).
+//
+// Total layout (sizeof = 64 B; cache-line aligned):
+//   0     u32  f1_predicate_last      — last (adj->adjudication_code & 0x3)
+//   4..20 u32  f1_branch_count[4]     — atomic increment per branch (0..3)
+//   20    u32  f1_bridge_invocations  — total F1 bridge invocations
+//   24    u32  g26_predicate_last     — last G26 final_gear & 0x3
+//   28..44 u32 g26_branch_count[4]    — Burst/Cruise/Sprint/Abort counts
+//   44    u32  g26_bridge_invocations
+//   48    u32  first_launch_seen      — atomicCAS from 0→1 on first F1 invocation
+//   52..64 u32 reserved[3]
+//
+// Allocate via cuMemHostAlloc(PORTABLE | DEVICEMAP) and pass the device
+// pointer as the new `branch_trace_dev` argument to the launch shims
+// below. Pass 0 to disable trace writes (legacy behavior).
+struct PrismBranchTrace {
+    unsigned int f1_predicate_last;
+    unsigned int f1_branch_count[4];
+    unsigned int f1_bridge_invocations;
+    unsigned int g26_predicate_last;
+    unsigned int g26_branch_count[4];
+    unsigned int g26_bridge_invocations;
+    unsigned int first_launch_seen;
+    unsigned int reserved[3];
+};
+
+/// F1 predicate-bridge launch shim — TRACED variant.
+/// Equivalent to `prism_f1_launch_predicate_bridge` plus an additional
+/// `branch_trace_dev` device pointer. Pass 0 to disable trace writes.
+/// Writes are atomic; null-trace path adds zero overhead vs the legacy
+/// shim.
+int prism_f1_launch_predicate_bridge_traced(
+    const uint32_t* d_adjudication_code,
+    uint64_t        handle_v,
+    uint32_t        mask,
+    void*           stream,
+    uint64_t        branch_trace_dev);
+
+// ════════════════════════════════════════════════════════════════════
 // T7 — Noise-floor calibration writeback
 // ════════════════════════════════════════════════════════════════════
 

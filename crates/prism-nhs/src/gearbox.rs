@@ -84,7 +84,7 @@ impl ChronometricStateTensor {
 
 const _: () = {
     use std::mem::{align_of, size_of};
-    assert!(size_of::<ChronometricStateTensor>()  == 32);
+    assert!(size_of::<ChronometricStateTensor>() == 32);
     assert!(align_of::<ChronometricStateTensor>() == 16);
 };
 
@@ -115,10 +115,8 @@ pub fn default_gearbox_table() -> [f32; PRISM_GEARBOX_TABLE_LEN] {
         // Gear 0 — 0.5 fs (high-resolution capture).
         0.0005, 0.0, 0.0, 0.0,
         // Gear 1 — 2.0 fs (default monitoring / cruise safety).
-        0.0020, 0.0, 0.0, 0.0,
-        // Gear 2 — 4.0 fs (HMR-stabilised campaign sprint).
-        0.0040, 0.0, 0.0, 0.0,
-        // Gear 3 — abort sentinel.
+        0.0020, 0.0, 0.0, 0.0, // Gear 2 — 4.0 fs (HMR-stabilised campaign sprint).
+        0.0040, 0.0, 0.0, 0.0, // Gear 3 — abort sentinel.
         nan, nan, nan, nan,
     ]
 }
@@ -138,8 +136,8 @@ pub mod ffi {
         /// ONCE per pipeline build, BEFORE the captured-graph window
         /// opens.
         pub fn prism_gearbox_init_table_async(
-            host_table: *const f32,   // 16 floats
-            stream:     *mut c_void,
+            host_table: *const f32, // 16 floats
+            stream: *mut c_void,
         ) -> i32;
 
         /// Records the PointerSwap kernel onto `stream` as one graph
@@ -147,10 +145,10 @@ pub mod ffi {
         /// + adj->d_dt, mutates the cruise tensor, writes the active
         /// gear's dt through *(adj->d_dt).
         pub fn prism_gearbox_launch_pointer_swap(
-            adj:           *const InterferometricAdjudicatorFfi,
-            cruise:        *mut   ChronometricStateTensor,
+            adj: *const InterferometricAdjudicatorFfi,
+            cruise: *mut ChronometricStateTensor,
             current_frame: u32,
-            stream:        *mut   c_void,
+            stream: *mut c_void,
         ) -> i32;
 
         // ── Wave B.2 — Velocity Rescale + Berendsen + Predicate Bridge ──
@@ -162,9 +160,9 @@ pub mod ffi {
         /// STG.E.128 (operator-mandated vectorised path).
         pub fn prism_gearbox_launch_velocity_rescale(
             d_velocities: *mut f32,
-            n_floats:     u32,
-            ratio:        f32,
-            stream:       *mut c_void,
+            n_floats: u32,
+            ratio: f32,
+            stream: *mut c_void,
         ) -> i32;
 
         /// T12.3 — Berendsen weak-coupling guard.  Reads
@@ -174,13 +172,13 @@ pub mod ffi {
         /// v_i ← v_i · λ across the whole velocity buffer.  Single
         /// captured node; no scratch buffer.
         pub fn prism_gearbox_launch_berendsen_guard(
-            d_velocities:   *mut   f32,
-            n_floats:       u32,
+            d_velocities: *mut f32,
+            n_floats: u32,
             d_current_temp: *const f32,
-            d_dt:           *const f32,
-            target_temp_K:  f32,
-            tau_ps:         f32,
-            stream:         *mut   c_void,
+            d_dt: *const f32,
+            target_temp_K: f32,
+            tau_ps: f32,
+            stream: *mut c_void,
         ) -> i32;
 
         /// T12.4 — 4-way Predicate Bridge.  Single-thread kernel reads
@@ -194,9 +192,21 @@ pub mod ffi {
         /// to skip override consult.
         pub fn prism_gearbox_launch_predicate_bridge(
             handle_v: u64,
-            adj:      *const InterferometricAdjudicatorFfi,
-            cruise:   *const ChronometricStateTensor,
-            stream:   *mut   c_void,
+            adj: *const InterferometricAdjudicatorFfi,
+            cruise: *const ChronometricStateTensor,
+            stream: *mut c_void,
+        ) -> i32;
+
+        /// CHUNK13_DIAG — TRACED variant. Equivalent to
+        /// `prism_gearbox_launch_predicate_bridge` plus an additional
+        /// `branch_trace_dev` device pointer (pinned-mapped
+        /// `PrismBranchTrace`). Pass 0 to disable trace writes.
+        pub fn prism_gearbox_launch_predicate_bridge_traced(
+            handle_v: u64,
+            adj: *const InterferometricAdjudicatorFfi,
+            cruise: *const ChronometricStateTensor,
+            stream: *mut c_void,
+            branch_trace_dev: u64,
         ) -> i32;
 
         /// B.3.2 — SFA-only kernel (Logic/Action Bifurcation).
@@ -207,10 +217,10 @@ pub mod ffi {
         /// Blackwell scheduler hide the SFA's logic-only cycles
         /// behind the integrator's global-memory writes.
         pub fn prism_gearbox_launch_sfa(
-            adj:           *const InterferometricAdjudicatorFfi,
-            cruise:        *mut   ChronometricStateTensor,
+            adj: *const InterferometricAdjudicatorFfi,
+            cruise: *mut ChronometricStateTensor,
             current_frame: u32,
-            stream:        *mut   c_void,
+            stream: *mut c_void,
         ) -> i32;
 
         // ── B.3-narrow — SWITCH body kernels + populator ──
@@ -219,9 +229,7 @@ pub mod ffi {
         /// 3×3 ratio matrix is statically initialised in __constant__
         /// memory.  Exists for ABI symmetry with future runtime
         /// re-tuning.  Returns cudaSuccess.
-        pub fn prism_gearbox_init_rescale_ratios_async(
-            stream: *mut c_void,
-        ) -> i32;
+        pub fn prism_gearbox_init_rescale_ratios_async(stream: *mut c_void) -> i32;
 
         /// B.3 — Symplectic velocity rescale (ratio-matrix variant).
         /// Reads cruise->previous_gear, indexes the constant ratio
@@ -230,19 +238,19 @@ pub mod ffi {
         /// per thread; block 256 ⇒ LDG.E.128 / STG.E.128 warp-coalesced.
         pub fn prism_gearbox_launch_rescale(
             d_velocities: *mut f32,
-            n_floats:     u32,
-            cruise:       *const ChronometricStateTensor,
-            target_gear:  u32,
-            stream:       *mut c_void,
+            n_floats: u32,
+            cruise: *const ChronometricStateTensor,
+            target_gear: u32,
+            stream: *mut c_void,
         ) -> i32;
 
         /// B.3 — Apply-fixed-dt kernel.  Single-thread <<<1,1>>> writes
         /// d_gearbox_table[target_gear*4] into *(adj->d_dt).  Used
         /// inside SWITCH body sub-graphs (Gears 0/1/2).
         pub fn prism_gearbox_launch_apply_fixed_dt(
-            adj:         *const InterferometricAdjudicatorFfi,
+            adj: *const InterferometricAdjudicatorFfi,
             target_gear: u32,
-            stream:      *mut c_void,
+            stream: *mut c_void,
         ) -> i32;
 
         /// B.3 — Hardware trap kernel.  Single-thread asm("trap;").
@@ -260,15 +268,15 @@ pub mod ffi {
         /// the Berendsen guard in body 0 (e.g., for tests without a
         /// ProtocolState fixture).
         pub fn prism_gearbox_populate_switch_bodies_ffi(
-            body_subgraphs: *mut *mut std::ffi::c_void,    // [4]
-            adj:            *const InterferometricAdjudicatorFfi,
-            d_velocities:   *mut f32,
-            n_floats:       u32,
-            cruise:         *const ChronometricStateTensor,
+            body_subgraphs: *mut *mut std::ffi::c_void, // [4]
+            adj: *const InterferometricAdjudicatorFfi,
+            d_velocities: *mut f32,
+            n_floats: u32,
+            cruise: *const ChronometricStateTensor,
             d_current_temp: *const f32,
-            d_dt:           *const f32,
-            target_temp_K:  f32,
-            tau_ps:         f32,
+            d_dt: *const f32,
+            target_temp_K: f32,
+            tau_ps: f32,
         ) -> i32;
     }
 }

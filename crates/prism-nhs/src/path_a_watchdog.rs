@@ -32,7 +32,7 @@
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -126,6 +126,43 @@ fn unix_now_secs() -> i64 {
         .unwrap_or(0)
 }
 
+/// CHUNK13_DIAG — Rust mirror of the C++ `PrismBranchTrace` struct
+/// defined in `crates/prism-nhs/src/cuda/adjudicator.cuh`. Layout MUST
+/// match field-for-field; serde-Deserialize/Serialize on the Rust side
+/// only — the device side writes via atomic ops on the same memory.
+///
+/// 64 bytes total (16 × u32). Read via direct pointer dereference of
+/// the pinned-mapped host alias of the buffer; no API call needed.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PrismBranchTrace {
+    pub f1_predicate_last: u32,
+    pub f1_branch_count: [u32; 4],
+    pub f1_bridge_invocations: u32,
+    pub g26_predicate_last: u32,
+    pub g26_branch_count: [u32; 4],
+    pub g26_bridge_invocations: u32,
+    pub first_launch_seen: u32,
+    pub reserved: [u32; 3],
+}
+
+impl PrismBranchTrace {
+    pub const SIZE_BYTES: usize = 64;
+
+    pub fn zero() -> Self {
+        Self {
+            f1_predicate_last: 0,
+            f1_branch_count: [0; 4],
+            f1_bridge_invocations: 0,
+            g26_predicate_last: 0,
+            g26_branch_count: [0; 4],
+            g26_bridge_invocations: 0,
+            first_launch_seen: 0,
+            reserved: [0; 3],
+        }
+    }
+}
+
 /// Per-stream progress state. Writers are per-stream rayon closures;
 /// readers are the watchdog thread and the deadman emit path.
 ///
@@ -141,6 +178,11 @@ pub struct PathAHeartbeat {
     pub current_phase: Vec<AtomicI32>,
     pub v2_live: Vec<AtomicBool>,
     pub evidence_ready: Vec<AtomicBool>,
+    /// CHUNK13_DIAG — per-stream pinned-mapped HOST pointer to the
+    /// stream's PrismBranchTrace block. 0 if not registered (legacy
+    /// path, no traced bridges). Read by the watchdog deadman to dump
+    /// branch counts into the minimal completion JSON.
+    pub branch_trace_host_ptr: Vec<AtomicU64>,
 }
 
 impl PathAHeartbeat {
@@ -157,7 +199,40 @@ impl PathAHeartbeat {
             current_phase: (0..n_streams).map(|_| AtomicI32::new(PHASE_INIT)).collect(),
             v2_live: (0..n_streams).map(|_| AtomicBool::new(false)).collect(),
             evidence_ready: (0..n_streams).map(|_| AtomicBool::new(false)).collect(),
+            branch_trace_host_ptr: (0..n_streams).map(|_| AtomicU64::new(0)).collect(),
         })
+    }
+
+    /// CHUNK13_DIAG — register the pinned-mapped host pointer for a
+    /// stream's PrismBranchTrace block. Called once per stream right
+    /// after `cuMemHostAlloc(PORTABLE | DEVICEMAP)` succeeds. The
+    /// watchdog deadman reads through this pointer (no CUDA API call
+    /// required — pinned-mapped memory is host-coherent on x86).
+    pub fn register_branch_trace(&self, sid: usize, host_ptr: u64) {
+        if sid >= self.n_streams {
+            return;
+        }
+        self.branch_trace_host_ptr[sid].store(host_ptr, Ordering::Release);
+    }
+
+    /// Read the per-stream branch trace via the registered pinned-mapped
+    /// host pointer, returning a zeroed snapshot if no pointer is
+    /// registered. Callers must guarantee the pointer is valid for the
+    /// lifetime of the read (registered allocations live until the
+    /// per-stream rayon closure exits).
+    pub fn read_branch_trace(&self, sid: usize) -> Option<PrismBranchTrace> {
+        if sid >= self.n_streams {
+            return None;
+        }
+        let p = self.branch_trace_host_ptr[sid].load(Ordering::Acquire);
+        if p == 0 {
+            return None;
+        }
+        // SAFETY: caller guarantees the pinned-mapped buffer at `p`
+        // remains live while we read; PrismBranchTrace is repr(C) +
+        // 16 × u32 fields whose unaligned-but-correctly-padded layout
+        // matches the C++ struct in adjudicator.cuh.
+        unsafe { Some(*(p as *const PrismBranchTrace)) }
     }
 
     /// Record a heartbeat from a stream. Cheap: 4 relaxed atomic stores.
@@ -384,6 +459,15 @@ pub fn spawn_watchdog(
                         let snap = heartbeats.snapshot();
                         let stalled_id =
                             state.stalled_stream_id.load(Ordering::Acquire);
+                        // CHUNK13_DIAG — read per-stream branch traces from
+                        // pinned-mapped host pointers (registered earlier
+                        // via heartbeats.register_branch_trace). None
+                        // entries are streams that never registered a
+                        // trace block (legacy path).
+                        let branch_traces: Vec<Option<PrismBranchTrace>> =
+                            (0..n_streams)
+                                .map(|sid| heartbeats.read_branch_trace(sid))
+                                .collect();
                         emit_minimal_completion_json(
                             &completion_path,
                             &run_id,
@@ -394,6 +478,7 @@ pub fn spawn_watchdog(
                             &snap,
                             max_wall_seconds,
                             run_start.elapsed().as_secs_f64(),
+                            Some(&branch_traces),
                         );
                         std::process::exit(2);
                     }
@@ -473,6 +558,7 @@ pub fn emit_minimal_completion_json(
     snap: &HeartbeatSnapshot,
     max_wall_seconds: Option<u64>,
     elapsed_wall_seconds: f64,
+    branch_traces: Option<&[Option<PrismBranchTrace>]>,
 ) {
     let now_iso = chrono::Utc::now()
         .format("%Y-%m-%dT%H:%M:%SZ")
@@ -521,6 +607,22 @@ pub fn emit_minimal_completion_json(
         .map(|&code| teardown_stage_label(code))
         .collect();
 
+    // CHUNK13_DIAG — per-stream branch trace snapshot. Each element is
+    // either a PrismBranchTrace (when a pinned-mapped trace block was
+    // registered for that stream) or null (legacy / disabled).
+    let branch_trace_by_stream: Vec<serde_json::Value> = match branch_traces {
+        Some(t) => t
+            .iter()
+            .map(|maybe| {
+                maybe
+                    .as_ref()
+                    .map(|tr| serde_json::to_value(tr).unwrap_or(serde_json::Value::Null))
+                    .unwrap_or(serde_json::Value::Null)
+            })
+            .collect(),
+        None => (0..n_streams).map(|_| serde_json::Value::Null).collect(),
+    };
+
     let json = serde_json::json!({
         "schema_version": 2,
         "run_id": run_id,
@@ -555,6 +657,7 @@ pub fn emit_minimal_completion_json(
         "teardown_stage_by_stream": teardown_stage_by_stream,
         "v2_live_by_stream": snap.v2_live_by_stream,
         "evidence_ready_by_stream": snap.evidence_ready_by_stream,
+        "branch_trace_by_stream": branch_trace_by_stream,
         "snapshot_taken_at_unix": snap.taken_at_unix,
         "snapshot_taken_at_iso": now_iso,
         "emit_source": "path_a_watchdog::emit_minimal_completion_json",

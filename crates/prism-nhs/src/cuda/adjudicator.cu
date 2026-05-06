@@ -1495,6 +1495,58 @@ extern "C" int prism_f1_populate_switch_bodies_ffi(
 // `mask` is exposed to the caller so future variants (e.g., 1-bit
 // fast-path) can adjust without recompiling the kernel; canonical
 // production value is 0x3.
+// ─── F1 predicate-bridge kernel (TRACED variant) ──────────────────────
+//
+// Mirrors `prism_f1_predicate_bridge_kernel` but additionally writes
+// the predicate value, branch count, invocation count, and first-launch
+// sentinel into a pinned-mapped `PrismBranchTrace` struct visible to
+// the host. Pass `d_trace == nullptr` to disable trace writes — the
+// kernel is then byte-equivalent to the legacy bridge.
+//
+// CHUNK13_CAPTURED_GRAPH_LAUNCH_HANG diagnostic per
+// .prism_orchestration/POST_CHUNK_LOOP_TEARDOWN_STALL_REPORT.md and the
+// follow-up operator directive (2026-05-06).
+extern "C"
+__global__ void prism_f1_predicate_bridge_kernel_traced(
+    const uint32_t*             __restrict__   d_adjudication_code,
+    cudaGraphConditionalHandle                  handle,
+    uint32_t                                    mask,
+    PrismBranchTrace*           __restrict__   d_trace)
+{
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    uint32_t code;
+    if (d_adjudication_code == nullptr) {
+        cudaGraphSetConditional(handle, 0u);
+        code = 0u;
+    } else {
+        code = (*d_adjudication_code) & mask;
+        cudaGraphSetConditional(handle, code);
+    }
+    if (d_trace != nullptr) {
+        atomicExch(&d_trace->f1_predicate_last, code);
+        atomicAdd(&d_trace->f1_branch_count[code & 0x3u], 1u);
+        atomicAdd(&d_trace->f1_bridge_invocations, 1u);
+        atomicCAS(&d_trace->first_launch_seen, 0u, 1u);
+    }
+}
+
+extern "C" int prism_f1_launch_predicate_bridge_traced(
+    const uint32_t* d_adjudication_code,
+    uint64_t        handle_v,
+    uint32_t        mask,
+    void*           stream,
+    uint64_t        branch_trace_dev)
+{
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+    cudaStream_t s = static_cast<cudaStream_t>(stream);
+    PrismBranchTrace* d_trace =
+        reinterpret_cast<PrismBranchTrace*>(branch_trace_dev);
+    prism_f1_predicate_bridge_kernel_traced<<<1, 1, 0, s>>>(
+        d_adjudication_code, handle, mask, d_trace);
+    return static_cast<int>(cudaGetLastError());
+}
+
 extern "C" int prism_f1_launch_predicate_bridge(
     const uint32_t* d_adjudication_code,
     uint64_t        handle_v,
@@ -1542,6 +1594,16 @@ extern "C" int prism_f1_launch_predicate_bridge(
     uint64_t        /*handle_v*/,
     uint32_t        /*mask*/,
     void*           /*stream*/
+) {
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C" int prism_f1_launch_predicate_bridge_traced(
+    const uint32_t* /*d_adjudication_code*/,
+    uint64_t        /*handle_v*/,
+    uint32_t        /*mask*/,
+    void*           /*stream*/,
+    uint64_t        /*branch_trace_dev*/
 ) {
     return static_cast<int>(cudaErrorNotSupported);
 }

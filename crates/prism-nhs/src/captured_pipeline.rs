@@ -870,6 +870,20 @@ extern "C" {
         stream:              *mut c_void,
     ) -> i32;
 
+    // CHUNK13_DIAG — TRACED variants of the F1 + G26 predicate-bridge
+    // launch shims. Pass `branch_trace_dev = 0` to disable trace writes
+    // (kernel becomes byte-equivalent to the legacy bridge). Otherwise
+    // pass the device pointer of a pinned-mapped `PrismBranchTrace`
+    // (defined in adjudicator.cuh; mirrored as `PrismBranchTrace` in
+    // this crate at the bottom of this extern block).
+    fn prism_f1_launch_predicate_bridge_traced(
+        d_adjudication_code: *const u32,
+        handle_v:            u64,
+        mask:                u32,
+        stream:              *mut c_void,
+        branch_trace_dev:    u64,
+    ) -> i32;
+
     // M1.2.17 — Hamiltonian Auditor.
     fn prism_energy_monitor_temp_storage_bytes(
         n:              u32,
@@ -1200,6 +1214,17 @@ pub struct PipelineConfig {
     /// from the F2 pool, sized once at pipeline build and reused across
     /// every captured-graph replay.
     pub n_spikes: u32,
+
+    /// **CHUNK13_DIAG — branch-trace pinned-mapped device pointer.**
+    /// Optional 64-byte `PrismBranchTrace` allocated via
+    /// `cuMemHostAlloc(PORTABLE | DEVICEMAP)` and consumed by the
+    /// TRACED variants of the F1 / G26 predicate-bridge launch shims.
+    /// 0 = disabled (legacy bridge kernels are used; zero overhead).
+    /// Non-zero = TRACED variants are used; predicate value, branch
+    /// count, invocation count, and first-launch sentinel are written
+    /// atomically on every replay so the host (or watchdog) can read
+    /// directly via the matching pinned host pointer with no API call.
+    pub branch_trace_dev: u64,
 }
 
 /// LEGO-brick orchestrator. Owns every F2-pool buffer + the pinned
@@ -4047,13 +4072,30 @@ impl CapturedAdjudicationPipeline {
         }
 
         // Step 4: predicate bridge kernel — sets conditional for SWITCH.
-        let rc = unsafe {
-            crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge(
-                g26_cond_handle,
-                adj_dev as *const InterferometricAdjudicatorFfi,
-                cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
-                md_stream.cu_stream() as *mut c_void,
-            )
+        // CHUNK13_DIAG — when cfg.branch_trace_dev is non-zero, route
+        // through the TRACED variant so the bridge kernel writes the
+        // last predicate value, branch counts, and invocation count
+        // into the pinned-mapped trace block. Zero overhead when
+        // cfg.branch_trace_dev == 0 (kernel becomes the legacy bridge).
+        let rc = if cfg.branch_trace_dev != 0 {
+            unsafe {
+                crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge_traced(
+                    g26_cond_handle,
+                    adj_dev as *const InterferometricAdjudicatorFfi,
+                    cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
+                    md_stream.cu_stream() as *mut c_void,
+                    cfg.branch_trace_dev,
+                )
+            }
+        } else {
+            unsafe {
+                crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge(
+                    g26_cond_handle,
+                    adj_dev as *const InterferometricAdjudicatorFfi,
+                    cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            }
         };
         if rc != 0 {
             return Err(BuildError::Cuda {
@@ -4082,13 +4124,26 @@ impl CapturedAdjudicationPipeline {
                     rc: -1,
                 });
             }
-            let rc = unsafe {
-                prism_f1_launch_predicate_bridge(
-                    adj_code_devptr,
-                    cfg.f1_parent_cond_handle,
-                    /*mask=*/ 0x3u32,
-                    md_stream.cu_stream() as *mut c_void,
-                )
+            // CHUNK13_DIAG — same TRACED-variant routing as G26 above.
+            let rc = if cfg.branch_trace_dev != 0 {
+                unsafe {
+                    prism_f1_launch_predicate_bridge_traced(
+                        adj_code_devptr,
+                        cfg.f1_parent_cond_handle,
+                        /*mask=*/ 0x3u32,
+                        md_stream.cu_stream() as *mut c_void,
+                        cfg.branch_trace_dev,
+                    )
+                }
+            } else {
+                unsafe {
+                    prism_f1_launch_predicate_bridge(
+                        adj_code_devptr,
+                        cfg.f1_parent_cond_handle,
+                        /*mask=*/ 0x3u32,
+                        md_stream.cu_stream() as *mut c_void,
+                    )
+                }
             };
             if rc != 0 {
                 return Err(BuildError::Cuda {
@@ -5441,7 +5496,7 @@ mod tests {
             d_forces_anchor: 0,
             d_masses: 0,
             force_burst_step: None,
-            n_spikes: 0,
+            n_spikes: 0, branch_trace_dev: 0,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -5583,7 +5638,7 @@ mod tests {
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
             d_forces_anchor: 0,
-            n_spikes: 0,
+            n_spikes: 0, branch_trace_dev: 0,
             force_burst_step: None,
             d_masses: 0,
             ghost_tile_ring_dev: 0,
@@ -5671,7 +5726,7 @@ mod tests {
             sisr: None,
             noise_floor_override: None,
             d_dt: ptr::null_mut(),
-            n_spikes: 0,
+            n_spikes: 0, branch_trace_dev: 0,
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
             f1_parent_cond_handle: 0,
@@ -5769,7 +5824,7 @@ mod tests {
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
             diagnostic_stream_id: None,
-            n_spikes: 0,
+            n_spikes: 0, branch_trace_dev: 0,
             asc:  None,
             zstr: None,
             force_burst_step: None,

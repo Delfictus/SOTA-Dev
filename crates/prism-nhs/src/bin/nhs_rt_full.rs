@@ -6792,7 +6792,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                 // M1.2.20.C-B — total spike count for d_spikes_perturbed
                                                 // sizing in the captured-pipeline F2-pool allocator.
                                                 let v2_n_spikes: u32 = n_rs;
-                                                let cfg = PipelineConfig {
+                                                let mut cfg = PipelineConfig {
                                                     d_spikes:          d_sp as *const RichSpike,
                                                     d_cluster_offsets: d_off as *const u32,
                                                     // Path Ω Phase 1 — dynamic cluster count from
@@ -6850,7 +6850,92 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     // count behind cfg.d_spikes; passed in by
                                                     // the per-stream V2 build site.
                                                     n_spikes: v2_n_spikes,
+                                                    // CHUNK13_DIAG — disabled by default; the
+                                                    // per-stream alloc + register block (just
+                                                    // below this cfg literal) populates this
+                                                    // field via cfg.branch_trace_dev = ... before
+                                                    // the cfg is moved into ::build().
+                                                    branch_trace_dev: 0,
                                                 };
+                                                // CHUNK13_CAPTURED_GRAPH_LAUNCH_HANG diagnostic —
+                                                // per-stream pinned-mapped 64-byte PrismBranchTrace
+                                                // block. Predicate-bridge kernels write predicate
+                                                // value / branch counts / invocation counts /
+                                                // first-launch sentinel atomically through the
+                                                // device alias; the watchdog deadman reads through
+                                                // the host alias on failure (no API call). 0-init
+                                                // by cuMemHostAlloc; kernels accumulate across all
+                                                // graph replays.
+                                                {
+                                                    use cudarc::driver::sys::{
+                                                        cuMemHostAlloc,
+                                                        cuMemHostGetDevicePointer_v2,
+                                                        CUresult,
+                                                    };
+                                                    const FLAGS: u32 = 0x01 /* PORTABLE */
+                                                        | 0x02 /* DEVICEMAP */;
+                                                    let mut host_ptr: *mut std::ffi::c_void =
+                                                        std::ptr::null_mut();
+                                                    let rc = unsafe {
+                                                        cuMemHostAlloc(
+                                                            &mut host_ptr,
+                                                            prism_nhs::path_a_watchdog::PrismBranchTrace::SIZE_BYTES,
+                                                            FLAGS,
+                                                        )
+                                                    };
+                                                    if matches!(rc, CUresult::CUDA_SUCCESS)
+                                                        && !host_ptr.is_null()
+                                                    {
+                                                        unsafe {
+                                                            std::ptr::write_bytes(
+                                                                host_ptr as *mut u8,
+                                                                0,
+                                                                prism_nhs::path_a_watchdog::PrismBranchTrace::SIZE_BYTES,
+                                                            );
+                                                        }
+                                                        let mut dev_ptr: u64 = 0;
+                                                        let rc2 = unsafe {
+                                                            cuMemHostGetDevicePointer_v2(
+                                                                &mut dev_ptr,
+                                                                host_ptr,
+                                                                0,
+                                                            )
+                                                        };
+                                                        if matches!(rc2, CUresult::CUDA_SUCCESS)
+                                                            && dev_ptr != 0
+                                                        {
+                                                            cfg.branch_trace_dev = dev_ptr;
+                                                            path_a_heartbeats_local
+                                                                .register_branch_trace(
+                                                                    i,
+                                                                    host_ptr as u64,
+                                                                );
+                                                            log::info!(
+                                                                "    [CHUNK13_DIAG stream {}] \
+                                                                 branch trace allocated host=0x{:x} \
+                                                                 dev=0x{:x} ({} B)",
+                                                                i,
+                                                                host_ptr as u64,
+                                                                dev_ptr,
+                                                                prism_nhs::path_a_watchdog::PrismBranchTrace::SIZE_BYTES,
+                                                            );
+                                                        } else {
+                                                            log::warn!(
+                                                                "    [CHUNK13_DIAG stream {}] \
+                                                                 cuMemHostGetDevicePointer_v2 \
+                                                                 failed rc={:?}; trace disabled",
+                                                                i, rc2
+                                                            );
+                                                        }
+                                                    } else {
+                                                        log::warn!(
+                                                            "    [CHUNK13_DIAG stream {}] \
+                                                             cuMemHostAlloc failed rc={:?}; \
+                                                             trace disabled",
+                                                            i, rc
+                                                        );
+                                                    }
+                                                }
                                                 // Amendment 3.14 / G40 — snapshot cfg before move
                                                 // into ::build().  The Step-101 Heuristic Reset
                                                 // (rebuild gate further down the chunk loop) re-

@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include "gearbox.cuh"
+#include "adjudicator.cuh"  // CHUNK13_DIAG: PrismBranchTrace full definition
+                            // for the traced predicate bridge variant below.
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <cstdio>  // Amendment 3.10 — kernel-level printf triage
@@ -476,6 +478,57 @@ int prism_gearbox_launch_predicate_bridge(
     return static_cast<int>(cudaGetLastError());
 }
 
+// ─── G26 predicate-bridge kernel (TRACED variant) ─────────────────────
+// CHUNK13_CAPTURED_GRAPH_LAUNCH_HANG diagnostic — mirrors the legacy
+// kernel above plus atomic writes into a pinned-mapped `PrismBranchTrace`
+// struct (definition in adjudicator.cuh). Pass `d_trace == nullptr` to
+// disable trace writes — kernel is then byte-equivalent to the legacy
+// bridge.
+extern "C"
+__global__ void prism_gearbox_predicate_bridge_kernel_traced(
+    cudaGraphConditionalHandle                          handle,
+    const InterferometricAdjudicatorFfi* __restrict__   adj,
+    const ChronometricStateTensor*       __restrict__   cruise,
+    PrismBranchTrace*                    __restrict__   d_trace)
+{
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    if (cruise == nullptr) return;
+    uint32_t final_gear = cruise->current_gear;
+    if (adj != nullptr) {
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(adj);
+        const uint32_t override_val = *reinterpret_cast<const uint32_t*>(base + 100);
+        if (override_val != 0xFFu) {
+            final_gear = override_val & 0x03u;
+        }
+    }
+    const uint32_t masked = final_gear & 0x3u;
+    cudaGraphSetConditional(handle, masked);
+    if (d_trace != nullptr) {
+        atomicExch(&d_trace->g26_predicate_last, masked);
+        atomicAdd(&d_trace->g26_branch_count[masked], 1u);
+        atomicAdd(&d_trace->g26_bridge_invocations, 1u);
+    }
+}
+
+extern "C"
+int prism_gearbox_launch_predicate_bridge_traced(
+    uint64_t                                handle_v,
+    const InterferometricAdjudicatorFfi*    adj,
+    const ChronometricStateTensor*          cruise,
+    void*                                   stream,
+    uint64_t                                branch_trace_dev)
+{
+    if (cruise == nullptr) return static_cast<int>(cudaErrorInvalidValue);
+    cudaGraphConditionalHandle handle =
+        static_cast<cudaGraphConditionalHandle>(handle_v);
+    cudaStream_t s = static_cast<cudaStream_t>(stream);
+    PrismBranchTrace* d_trace =
+        reinterpret_cast<PrismBranchTrace*>(branch_trace_dev);
+    prism_gearbox_predicate_bridge_kernel_traced<<<1, 1, 0, s>>>(
+        handle, adj, cruise, d_trace);
+    return static_cast<int>(cudaGetLastError());
+}
+
 #else  // CUDART_VERSION < 12040
 
 extern "C"
@@ -484,6 +537,17 @@ int prism_gearbox_launch_predicate_bridge(
     const InterferometricAdjudicatorFfi*    /*adj*/,
     const ChronometricStateTensor*          /*cruise*/,
     void*                                   /*stream*/)
+{
+    return static_cast<int>(cudaErrorNotSupported);
+}
+
+extern "C"
+int prism_gearbox_launch_predicate_bridge_traced(
+    uint64_t                                /*handle_v*/,
+    const InterferometricAdjudicatorFfi*    /*adj*/,
+    const ChronometricStateTensor*          /*cruise*/,
+    void*                                   /*stream*/,
+    uint64_t                                /*branch_trace_dev*/)
 {
     return static_cast<int>(cudaErrorNotSupported);
 }

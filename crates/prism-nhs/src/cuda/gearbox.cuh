@@ -220,6 +220,24 @@ int prism_gearbox_launch_predicate_bridge(
     const ChronometricStateTensor*          cruise,
     void*                                   stream);
 
+/// Forward-declaration of the diagnostic trace block defined in
+/// adjudicator.cuh; gearbox.cu only takes the device pointer as opaque
+/// `uint64_t branch_trace_dev` and does not need the field layout in
+/// this header (the kernel reinterprets the pointer).
+struct PrismBranchTrace;
+
+/// G26 predicate-bridge launch shim — TRACED variant.
+/// Equivalent to `prism_gearbox_launch_predicate_bridge` plus an
+/// additional `branch_trace_dev` device pointer aliasing a
+/// PrismBranchTrace struct (declared in adjudicator.cuh). Pass 0 to
+/// disable trace writes — null-trace path adds zero overhead.
+int prism_gearbox_launch_predicate_bridge_traced(
+    uint64_t                                handle_v,
+    const InterferometricAdjudicatorFfi*    adj,
+    const ChronometricStateTensor*          cruise,
+    void*                                   stream,
+    uint64_t                                branch_trace_dev);
+
 // ─── B.3-narrow — SWITCH body kernels + ratio matrix ───────────────────────
 
 /// B.3 — Constant-memory transition-ratio matrix init.
