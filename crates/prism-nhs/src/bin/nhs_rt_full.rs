@@ -7837,7 +7837,18 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                             steps_run,
                                             prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_POST_LAUNCH_SYNC,
                                         );
-                                        engine.cuda_context().synchronize()
+                                        // POST_CHUNK_LOOP_TEARDOWN_STALL fix
+                                        // (commit ffd76e91 phase markers proved
+                                        // ~7-of-8 streams stalled here under a
+                                        // SHARED `engine.cuda_context()` sync —
+                                        // the context-level wait blocked all
+                                        // streams when one stream's queue had
+                                        // hung work. Stream-scoped sync waits
+                                        // only for THIS engine's queue, so a
+                                        // single degraded stream no longer
+                                        // takes the other seven hostage. See
+                                        // .prism_orchestration/POST_CHUNK_LOOP_TEARDOWN_STALL_REPORT.md.
+                                        engine.cuda_stream().synchronize()
                                             .map_err(|e| anyhow::anyhow!(
                                                 "Mono sync: {:?}", e))?;
                                     }
@@ -7853,7 +7864,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                         steps_run,
                                         prism_nhs::path_a_watchdog::PHASE_CHUNK_BODY_POST_LAUNCH_SYNC,
                                     );
-                                    engine.cuda_context().synchronize()
+                                    // POST_CHUNK_LOOP_TEARDOWN_STALL fix —
+                                    // same rationale as the monolithic site
+                                    // above; stream-scoped sync.
+                                    engine.cuda_stream().synchronize()
                                         .map_err(|e| anyhow::anyhow!("Graph sync: {:?}", e))?;
                                 } else {
                                     engine.run(this_chunk)?;
