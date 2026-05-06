@@ -195,6 +195,14 @@ name = "stress-rt-clustering"
 path = "src/bin/stress_rt_clustering.rs"
 required-features = ["gpu"]
 
+# Path B materializer — offline consumer of the MD-only evidence handoff
+# bundle (md_evidence_manifest.json + per-stream PRSPK001/PRSGD001/PRKCC001
+# binaries). Pure CPU; does not require the gpu feature. See
+# .prism_orchestration/PATHB_MATERIALIZER_SKELETON_REPORT.md.
+[[bin]]
+name = "prism-materialize-sites"
+path = "src/bin/prism_materialize_sites.rs"
+
 [[bin]]
 name = "nhs_rt_full"
 path = "src/bin/nhs_rt_full.rs"
