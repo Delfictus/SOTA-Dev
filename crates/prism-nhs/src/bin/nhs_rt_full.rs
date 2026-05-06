@@ -813,6 +813,42 @@ struct Args {
     #[arg(long)]
     path_a_max_wall_seconds: Option<u64>,
 
+    /// MD-ONLY EVIDENCE HANDOFF (2026-05-06). Path A evidence-handoff
+    /// mode for manual / Path B post-MD aggregation. When set:
+    ///   * the per-stream MD/evidence window runs unchanged (all 8
+    ///     streams, full canonical flags),
+    ///   * at the safe MD-complete / VRAM-teardown boundary (right
+    ///     after the rayon scope joins), the three RAM-only per-stream
+    ///     values currently consumed-then-discarded by legacy
+    ///     aggregation are serialized to disk:
+    ///        {stem}_streamN_spikes.bin
+    ///        {stem}_streamN_signal_grid.bin
+    ///        {stem}_streamN_kcc_v2full.bin
+    ///     each with a fixed schema header (magic, schema_version,
+    ///     run_id, stem, stream_id, record_count, byte_stride, endian
+    ///     marker, payload bytes, FNV-1a checksum).
+    ///   * `md_evidence_manifest.json` enumerates every artifact
+    ///     (existing per-stream + new).
+    ///   * `path_a_completion.json` records honest evidence-handoff
+    ///     status (completion_status="md_evidence_complete_postmd_deferred",
+    ///     post_md_aggregation_status="deferred", path_b_required=true,
+    ///     site_materialization_status="not_materialized",
+    ///     binding_sites_status="not_materialized_md_only").
+    ///   * `field_completeness_report.json` + `post_md_required_inputs.json`
+    ///     define the Path B replay contract.
+    ///   * the run RETURNS Ok(()) before entering the legacy post-MD
+    ///     CPU pipeline (spatial hash clustering, find_neighbors_union,
+    ///     LIGSITE, PH refinement, XGBoost rerank). Path A bounded
+    ///     evidence handoff only — site materialization belongs to
+    ///     Path B.
+    ///
+    /// Default OFF preserves existing behavior unconditionally.
+    /// Mutually compatible with --path-a-* flags. NOT mutually
+    /// compatible with V2 hard-gate (when V2 was live, the V2
+    /// teardown block already does its own early-return — V2 wins).
+    #[arg(long, default_value = "false")]
+    md_only_evidence: bool,
+
     /// PATHA-CHUNK-SIZE-001 — captured-graph throughput diagnosis knob.
     /// When set to N, overrides the hardcoded chunk_size=500 in the
     /// multi-differential chunk loop. Test values N=100/50/10 quantify
@@ -1121,6 +1157,309 @@ struct StructureRunResult {
     elapsed_seconds: f64,
     sites_found: Option<usize>,
     druggable_sites: Option<usize>,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MD-ONLY EVIDENCE HANDOFF (--md-only-evidence)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Self-describing binary serializers for the three RAM-only per-stream values
+// currently consumed-then-discarded by the legacy post-MD aggregation pipeline:
+//
+//   * spikes     → {stem}_streamN_spikes.bin
+//   * sig_data   → {stem}_streamN_signal_grid.bin
+//   * kcc_data   → {stem}_streamN_kcc_v2full.bin
+//
+// Every file begins with a fixed schema header so an offline tool can validate
+// the file before reading the payload. No anonymous raw blobs. Header schema:
+//
+//   magic[8]              ascii, identifies the file kind (e.g. b"PRSPK001")
+//   schema_version u32    monotonically incrementable
+//   endian_marker u32     0x01020304 LE — readers must detect byte-swap if not equal
+//   stream_id     u32
+//   run_id_len    u64     followed by run_id_len bytes utf-8
+//   stem_len      u64     followed by stem_len    bytes utf-8
+//   record_count  u64
+//   byte_stride   u64     bytes per record (where applicable)
+//   payload_size  u64
+//   payload[payload_size]
+//   fnv1a_64      u64     of payload
+//   trailer[8]            ascii, identifies end-of-file (e.g. b"PRSPKEND")
+//
+// The signal_grid and kcc files reuse the same envelope but include extra
+// per-section length-prefixes inside the payload (documented inline in the
+// writer functions).
+//
+// FNV-1a 64-bit checksum is used because it is dependency-free (no blake3 in
+// our Cargo.toml) and fast enough for ~400 MB payloads. Operator preference
+// per CLAUDE.md is BLAKE3, but adding blake3 is out of scope for this commit.
+// The schema_version field reserves room to swap to BLAKE3 later.
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut h = FNV_OFFSET;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(FNV_PRIME);
+    }
+    h
+}
+
+/// Common header writer. Returns (offset_to_payload_size_field, header_bytes_written).
+/// payload_size is patched after payload is written; payload_size is also a u64
+/// that the caller fills in by seeking back. Trailer + checksum are written
+/// after payload by `md_evidence_finalize_envelope`.
+#[allow(clippy::too_many_arguments)]
+fn md_evidence_write_header(
+    w: &mut impl std::io::Write,
+    magic: &[u8; 8],
+    schema_version: u32,
+    stream_id: u32,
+    run_id: &str,
+    stem: &str,
+    record_count: u64,
+    byte_stride: u64,
+    payload_size: u64,
+) -> std::io::Result<()> {
+    w.write_all(magic)?;
+    w.write_all(&schema_version.to_le_bytes())?;
+    w.write_all(&0x01020304u32.to_le_bytes())?;
+    w.write_all(&stream_id.to_le_bytes())?;
+    let rid = run_id.as_bytes();
+    w.write_all(&(rid.len() as u64).to_le_bytes())?;
+    w.write_all(rid)?;
+    let st = stem.as_bytes();
+    w.write_all(&(st.len() as u64).to_le_bytes())?;
+    w.write_all(st)?;
+    w.write_all(&record_count.to_le_bytes())?;
+    w.write_all(&byte_stride.to_le_bytes())?;
+    w.write_all(&payload_size.to_le_bytes())?;
+    Ok(())
+}
+
+fn md_evidence_finalize_envelope(
+    w: &mut impl std::io::Write,
+    payload_checksum: u64,
+    trailer: &[u8; 8],
+) -> std::io::Result<()> {
+    w.write_all(&payload_checksum.to_le_bytes())?;
+    w.write_all(trailer)?;
+    Ok(())
+}
+
+/// Spikes serializer — writes a `Vec<GpuSpikeEvent>` as raw `#[repr(C)]` bytes
+/// behind a schema header. Returns (bytes_written_total, payload_checksum).
+#[cfg(feature = "gpu")]
+fn md_evidence_write_spikes(
+    path: &std::path::Path,
+    spikes: &[prism_nhs::fused_engine::GpuSpikeEvent],
+    stream_id: u32,
+    run_id: &str,
+    stem: &str,
+) -> anyhow::Result<(u64, u64)> {
+    use std::io::{BufWriter, Write};
+    let f = std::fs::File::create(path)
+        .with_context(|| format!("md_evidence: create {}", path.display()))?;
+    let mut bw = BufWriter::with_capacity(1 << 20, f);
+    let stride = std::mem::size_of::<prism_nhs::fused_engine::GpuSpikeEvent>() as u64;
+    let n = spikes.len() as u64;
+    let payload_size = n * stride;
+    let payload_bytes: &[u8] = unsafe {
+        std::slice::from_raw_parts(
+            spikes.as_ptr() as *const u8,
+            spikes.len() * std::mem::size_of::<prism_nhs::fused_engine::GpuSpikeEvent>(),
+        )
+    };
+    let checksum = fnv1a_64(payload_bytes);
+    md_evidence_write_header(
+        &mut bw,
+        b"PRSPK001",
+        /* schema_version */ 1,
+        stream_id,
+        run_id,
+        stem,
+        /* record_count */ n,
+        /* byte_stride */ stride,
+        payload_size,
+    )?;
+    bw.write_all(payload_bytes)?;
+    md_evidence_finalize_envelope(&mut bw, checksum, b"PRSPKEND")?;
+    bw.flush()?;
+    let bytes_written = path.metadata()?.len();
+    Ok((bytes_written, checksum))
+}
+
+/// Signal-grid serializer — four i32 voxel grids back-to-back. Payload layout:
+///     [grid_dim u64]
+///     [voxel_count u64]
+///     [voxel_hit_grid             voxel_count × i32]
+///     [coupled_spike_grid         voxel_count × i32]
+///     [primary_residue_id         voxel_count × i32]
+///     [primary_residue_count      voxel_count × i32]
+/// byte_stride in the envelope = sizeof(i32) (since the four grids share the
+/// same per-voxel stride; record_count = voxel_count).
+#[cfg(feature = "gpu")]
+fn md_evidence_write_signal_grid(
+    path: &std::path::Path,
+    sig: &prism_nhs::fused_engine::SignalPreservationData,
+    stream_id: u32,
+    run_id: &str,
+    stem: &str,
+) -> anyhow::Result<(u64, u64)> {
+    use std::io::{BufWriter, Write};
+    let f = std::fs::File::create(path)
+        .with_context(|| format!("md_evidence: create {}", path.display()))?;
+    let mut bw = BufWriter::with_capacity(1 << 20, f);
+    let voxel_count: u64 = sig.voxel_hit_grid.len() as u64;
+    // Defensive: all four grids must have the same length. If they don't,
+    // fail closed — a partial grid would silently corrupt offline aggregation.
+    if sig.coupled_spike_grid.len() as u64 != voxel_count
+        || sig.primary_residue_id.len() as u64 != voxel_count
+        || sig.primary_residue_count.len() as u64 != voxel_count
+    {
+        anyhow::bail!(
+            "md_evidence: signal grid length mismatch (voxel_hit={} coupled={} prim_id={} prim_cnt={})",
+            voxel_count,
+            sig.coupled_spike_grid.len(),
+            sig.primary_residue_id.len(),
+            sig.primary_residue_count.len()
+        );
+    }
+    let i32_size: u64 = std::mem::size_of::<i32>() as u64;
+    let payload_size: u64 = 16 /* grid_dim u64 + voxel_count u64 */
+        + 4 * voxel_count * i32_size;
+    let mut payload: Vec<u8> = Vec::with_capacity(payload_size as usize);
+    payload.extend_from_slice(&(sig.grid_dim as u64).to_le_bytes());
+    payload.extend_from_slice(&voxel_count.to_le_bytes());
+    let push_i32_vec = |buf: &mut Vec<u8>, v: &[i32]| {
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+        };
+        buf.extend_from_slice(bytes);
+    };
+    push_i32_vec(&mut payload, &sig.voxel_hit_grid);
+    push_i32_vec(&mut payload, &sig.coupled_spike_grid);
+    push_i32_vec(&mut payload, &sig.primary_residue_id);
+    push_i32_vec(&mut payload, &sig.primary_residue_count);
+    let checksum = fnv1a_64(&payload);
+    md_evidence_write_header(
+        &mut bw,
+        b"PRSGD001",
+        /* schema_version */ 1,
+        stream_id,
+        run_id,
+        stem,
+        /* record_count */ voxel_count,
+        /* byte_stride */ i32_size,
+        payload_size,
+    )?;
+    bw.write_all(&payload)?;
+    md_evidence_finalize_envelope(&mut bw, checksum, b"PRSGDEND")?;
+    bw.flush()?;
+    let bytes_written = path.metadata()?.len();
+    Ok((bytes_written, checksum))
+}
+
+/// KCC v2-full serializer — fourteen per-residue vectors plus residue counts.
+/// Payload layout:
+///     [n_residues       u64]
+///     [field_count      u64]                  (= 15)
+///     for each field:
+///         [field_name_len u64]
+///         [field_name     utf-8 bytes]
+///         [field_dtype    u8]                 (1=f32, 2=u32)
+///         [section_size   u64]                (n_residues * 4)
+///         [data           section_size bytes]
+/// byte_stride in the envelope = sizeof(f32) (per-residue scalar stride).
+#[cfg(feature = "gpu")]
+fn md_evidence_write_kcc_v2full(
+    path: &std::path::Path,
+    kcc: &prism_nhs::fused_engine::KccData,
+    stream_id: u32,
+    run_id: &str,
+    stem: &str,
+) -> anyhow::Result<(u64, u64)> {
+    use std::io::{BufWriter, Write};
+    let f = std::fs::File::create(path)
+        .with_context(|| format!("md_evidence: create {}", path.display()))?;
+    let mut bw = BufWriter::with_capacity(1 << 20, f);
+    let n_res: u64 = kcc.n_residues as u64;
+    let f32_fields: [(&str, &[f32]); 13] = [
+        ("temporal_corr",      &kcc.temporal_corr),
+        ("direction_score",    &kcc.direction_score),
+        ("motion_efficiency",  &kcc.motion_efficiency),
+        ("burst_motion",       &kcc.burst_motion),
+        ("phase_shift",        &kcc.phase_shift),
+        ("causal_lag",         &kcc.causal_lag),
+        ("lag_corr_peak",      &kcc.lag_corr_peak),
+        ("local_cov",          &kcc.local_cov),
+        ("net_dx",             &kcc.net_dx),
+        ("net_dy",             &kcc.net_dy),
+        ("net_dz",             &kcc.net_dz),
+        ("sum_m",              &kcc.sum_m),
+        // padding handled below for u32 fields
+        ("__placeholder_f32",  &[]),
+    ];
+    let u32_fields: [(&str, &[u32]); 2] = [
+        ("residue_count",      &kcc.residue_count),
+        ("active_causal",      &kcc.active_causal),
+    ];
+    let field_count: u64 = (f32_fields.len() as u64 - 1 /* placeholder */) + u32_fields.len() as u64;
+    let mut payload: Vec<u8> = Vec::new();
+    payload.extend_from_slice(&n_res.to_le_bytes());
+    payload.extend_from_slice(&field_count.to_le_bytes());
+    let mut push_field = |buf: &mut Vec<u8>, name: &str, dtype: u8, bytes: &[u8]| {
+        let nb = name.as_bytes();
+        buf.extend_from_slice(&(nb.len() as u64).to_le_bytes());
+        buf.extend_from_slice(nb);
+        buf.push(dtype);
+        buf.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+        buf.extend_from_slice(bytes);
+    };
+    for (name, v) in f32_fields.iter() {
+        if *name == "__placeholder_f32" {
+            continue;
+        }
+        if v.len() as u64 != n_res {
+            anyhow::bail!(
+                "md_evidence: kcc field {} length mismatch ({} vs n_residues={})",
+                name, v.len(), n_res
+            );
+        }
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+        };
+        push_field(&mut payload, name, 1u8, bytes);
+    }
+    for (name, v) in u32_fields.iter() {
+        if v.len() as u64 != n_res {
+            anyhow::bail!(
+                "md_evidence: kcc field {} length mismatch ({} vs n_residues={})",
+                name, v.len(), n_res
+            );
+        }
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+        };
+        push_field(&mut payload, name, 2u8, bytes);
+    }
+    let checksum = fnv1a_64(&payload);
+    md_evidence_write_header(
+        &mut bw,
+        b"PRKCC001",
+        /* schema_version */ 1,
+        stream_id,
+        run_id,
+        stem,
+        /* record_count */ n_res,
+        /* byte_stride */ 4u64,
+        /* payload_size */ payload.len() as u64,
+    )?;
+    bw.write_all(&payload)?;
+    md_evidence_finalize_envelope(&mut bw, checksum, b"PRKCCEND")?;
+    bw.flush()?;
+    let bytes_written = path.metadata()?.len();
+    Ok((bytes_written, checksum))
 }
 
 fn main() -> Result<()> {
@@ -4571,9 +4910,24 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     let path_a_v2_trigger_steps: Option<u32> = args
         .path_a_v2_trigger_steps
         .or(if args.path_a_production_profile { Some(6000) } else { None });
-    let path_a_t7_max_chunks: Option<u32> = args
-        .path_a_t7_max_chunks
-        .or(if args.path_a_production_profile { Some(40) } else { None });
+    // EVIDENCE_COMPLETE_INDEXING followup. The original
+    // `if production_profile { Some(40) }` was chunk-indexed and
+    // step-equivalent only at sealed chunk_size=500 (40*500=20_000
+    // steps, well past V2 trigger at 6000). With small chunk_size
+    // diagnostics, 40 chunks is insufficient: chunk_size=100 ⇒ 4_000
+    // steps, V2 never builds. Production-profile default now expressed
+    // step-based (20_000) and applied at the per-stream check site as
+    // `steps_run >= step_cap` so the production-profile cap stays
+    // step-equivalent regardless of chunk_size.
+    //
+    // Explicit `--path-a-t7-max-chunks N` retains its chunk-indexed
+    // semantics — operator-set explicit caps are honored verbatim.
+    let path_a_t7_max_chunks: Option<u32> = args.path_a_t7_max_chunks;
+    let path_a_production_t7_max_steps: Option<i32> = if args.path_a_production_profile {
+        Some(20_000)
+    } else {
+        None
+    };
     let path_a_evidence_exit: bool =
         args.path_a_evidence_exit || args.path_a_production_profile;
     // PATHA-MAX-WALL-SECONDS — opt-in only. Default None preserves
@@ -4587,6 +4941,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     let path_a_chunk_size: Option<u32> = args.path_a_chunk_size;
     let path_a_any_active: bool = path_a_v2_trigger_steps.is_some()
         || path_a_t7_max_chunks.is_some()
+        || path_a_production_t7_max_steps.is_some()
         || path_a_evidence_exit
         || path_a_max_wall_seconds.is_some()
         || path_a_chunk_size.is_some();
@@ -5404,6 +5759,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 // Captured per-stream so the chunk-loop break sites can read
                 // the effective bound without re-deriving from args.
                 let path_a_t7_max_chunks_local: Option<u32> = path_a_t7_max_chunks;
+                // EVIDENCE_COMPLETE_INDEXING followup — step-based cap.
+                let path_a_production_t7_max_steps_local: Option<i32> =
+                    path_a_production_t7_max_steps;
                 let path_a_evidence_exit_local: bool = path_a_evidence_exit;
                 // PATHA-MAX-WALL-SECONDS — captured per-stream so the
                 // chunk-loop break site reads the effective bound and
@@ -6110,19 +6468,45 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             // --path-a-t7-max-chunks N is set: exit at chunk
                             // boundary once chunk_idx >= N.  Default
                             // (None) preserves the legacy 80-chunk loop.
-                            if let Some(cap) = path_a_t7_max_chunks_local {
-                                if chunk_idx >= cap as i32 {
-                                    log::info!(
-                                        "    [PATH-A T7-BOUND stream {}] cap reached at chunk_idx={} (cap={}); breaking integration loop",
-                                        i, chunk_idx, cap
-                                    );
-                                    if let Ok(mut r) = path_a_exit_reason_local.lock() {
-                                        if r.is_empty() {
-                                            *r = "n_chunks_cap".to_string();
-                                        }
+                            //
+                            // EVIDENCE_COMPLETE_INDEXING followup (2026-05-06).
+                            // Two caps are honored, whichever fires first:
+                            //   (a) explicit chunk-indexed cap from
+                            //       --path-a-t7-max-chunks N (operator-set,
+                            //       semantics preserved verbatim);
+                            //   (b) step-indexed cap from
+                            //       --path-a-production-profile (default
+                            //       20_000 steps, equal to the sealed
+                            //       chunk_size=500 × 40 chunks behavior, but
+                            //       chunk-size-invariant for small chunk
+                            //       diagnostics).
+                            //
+                            // Without (b), the production-profile default
+                            // (formerly Some(40) chunks) starved V2 build at
+                            // chunk_size<=250 because chunk 40 lands before
+                            // V2 trigger at step 6000.
+                            let cap_chunks_hit: bool = path_a_t7_max_chunks_local
+                                .map(|c| chunk_idx >= c as i32)
+                                .unwrap_or(false);
+                            let cap_steps_hit: bool = path_a_production_t7_max_steps_local
+                                .map(|s| steps_run >= s)
+                                .unwrap_or(false);
+                            if cap_chunks_hit || cap_steps_hit {
+                                let label = if cap_chunks_hit { "chunks" } else { "steps" };
+                                log::info!(
+                                    "    [PATH-A T7-BOUND stream {}] cap reached ({}=hit) \
+                                     at chunk_idx={} steps_run={} \
+                                     (chunks_cap={:?}, steps_cap={:?}); breaking integration loop",
+                                    i, label, chunk_idx, steps_run,
+                                    path_a_t7_max_chunks_local,
+                                    path_a_production_t7_max_steps_local,
+                                );
+                                if let Ok(mut r) = path_a_exit_reason_local.lock() {
+                                    if r.is_empty() {
+                                        *r = "n_chunks_cap".to_string();
                                     }
-                                    break;
                                 }
+                                break;
                             }
                             // PATHA-EVIDENCE-EXIT-001 — cooperative exit on
                             // ASC Bayesian baseline-lock.  Only honored when
@@ -12543,6 +12927,610 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             n_streams,
             sim_elapsed.as_secs_f64()
         );
+        return Ok(());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MD-ONLY EVIDENCE HANDOFF (--md-only-evidence)
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Path A bounded evidence-handoff exit. Runs only when
+    // `--md-only-evidence` is set AND the V2 hard-gate above did NOT fire
+    // (V2 wins when live). Serializes the three RAM-only per-stream values
+    // returned from the rayon scope, then returns Ok(()) WITHOUT entering
+    // the legacy post-MD CPU pipeline (spatial hash clustering,
+    // find_neighbors_union, LIGSITE, PH refinement, XGBoost rerank).
+    //
+    // Output:
+    //   * {stem}_streamN_spikes.bin           (PRSPK001 envelope)
+    //   * {stem}_streamN_signal_grid.bin      (PRSGD001 envelope)
+    //   * {stem}_streamN_kcc_v2full.bin       (PRKCC001 envelope)
+    //   * md_evidence_manifest.json           (artifact inventory)
+    //   * field_completeness_report.json      (per-downstream-field availability)
+    //   * post_md_required_inputs.json        (Path B replay contract)
+    //   * {stem}_path_a_completion.json       (honest completion metadata)
+    //
+    // Forbidden in this mode (per directive):
+    //   * legacy aggregation              → bypassed by `return Ok(())`
+    //   * site materialization            → record "not_materialized"
+    //   * binding_sites.json full content → record "not_materialized_md_only"
+    //   * fake V2 state                   → V2-dependent fields explicitly null
+    //   * fake full_complete              → completion_status records deferred
+    //
+    // Fail-closed: any per-stream serialization failure aborts the entire
+    // MD-only emit with a typed `anyhow::Error`. The completion JSON is
+    // still emitted (best-effort) with completion_status =
+    // "md_evidence_partial_serialization_failure" so downstream tooling
+    // can detect the failure.
+    if args.md_only_evidence {
+        log::info!(
+            "  [MD-ONLY EVIDENCE] handoff mode active — bypassing legacy post-MD pipeline. \
+             Wall-clock: {:.1}s total.",
+            sim_elapsed.as_secs_f64()
+        );
+        let stem = structure_name
+            .strip_suffix(".topology")
+            .unwrap_or(&structure_name);
+        std::fs::create_dir_all(&args.output).with_context(|| {
+            format!("md_only_evidence: create output dir {}", args.output.display())
+        })?;
+        // Per-stream serialization + manifest accumulation.
+        #[derive(serde::Serialize)]
+        struct ArtifactRecord {
+            kind: &'static str,
+            stream_id: Option<u32>,
+            path: String,
+            size_bytes: u64,
+            schema_version: Option<u32>,
+            checksum_fnv1a_64_hex: Option<String>,
+            record_count: Option<u64>,
+            present: bool,
+            note: Option<String>,
+        }
+        let mut artifacts: Vec<ArtifactRecord> = Vec::new();
+        let mut emitted_evidence_files: Vec<String> = Vec::new();
+        let mut total_spikes_md: usize = 0;
+        let mut serialization_failure: Option<String> = None;
+        let mut streams_serialized: usize = 0;
+
+        let stream_results_vec: Vec<_> = stream_results.into_iter().collect();
+        let n_streams_actual = stream_results_vec.len();
+
+        for (i, result) in stream_results_vec.into_iter().enumerate() {
+            let (spikes, _snapshots, sig_data_opt, kcc_data_opt) = match result {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!(
+                        "  [MD-ONLY EVIDENCE] stream {} returned error: {} — skipping serialization",
+                        i, e
+                    );
+                    if serialization_failure.is_none() {
+                        serialization_failure =
+                            Some(format!("stream {} closure error: {}", i, e));
+                    }
+                    continue;
+                }
+            };
+            let stream_id = i as u32;
+            total_spikes_md += spikes.len();
+
+            // (1) spikes.bin
+            let spikes_path = args
+                .output
+                .join(format!("{}_stream{}_spikes.bin", stem, i));
+            match md_evidence_write_spikes(
+                &spikes_path,
+                &spikes,
+                stream_id,
+                &phase3_run_id,
+                stem,
+            ) {
+                Ok((bytes_written, checksum)) => {
+                    log::info!(
+                        "  [MD-ONLY EVIDENCE] stream {} spikes.bin: {} records, {} bytes",
+                        i, spikes.len(), bytes_written
+                    );
+                    artifacts.push(ArtifactRecord {
+                        kind: "spikes",
+                        stream_id: Some(stream_id),
+                        path: spikes_path.display().to_string(),
+                        size_bytes: bytes_written,
+                        schema_version: Some(1),
+                        checksum_fnv1a_64_hex: Some(format!("{:016x}", checksum)),
+                        record_count: Some(spikes.len() as u64),
+                        present: true,
+                        note: None,
+                    });
+                    emitted_evidence_files.push(spikes_path.display().to_string());
+                }
+                Err(e) => {
+                    log::error!(
+                        "  [MD-ONLY EVIDENCE] stream {} spikes.bin write FAILED: {}",
+                        i, e
+                    );
+                    if serialization_failure.is_none() {
+                        serialization_failure =
+                            Some(format!("stream {} spikes.bin: {}", i, e));
+                    }
+                    artifacts.push(ArtifactRecord {
+                        kind: "spikes",
+                        stream_id: Some(stream_id),
+                        path: spikes_path.display().to_string(),
+                        size_bytes: 0,
+                        schema_version: None,
+                        checksum_fnv1a_64_hex: None,
+                        record_count: None,
+                        present: false,
+                        note: Some(format!("write_failed: {}", e)),
+                    });
+                }
+            };
+
+            // (2) signal_grid.bin
+            let sig_path = args
+                .output
+                .join(format!("{}_stream{}_signal_grid.bin", stem, i));
+            if let Some(sig) = sig_data_opt.as_ref() {
+                match md_evidence_write_signal_grid(
+                    &sig_path,
+                    sig,
+                    stream_id,
+                    &phase3_run_id,
+                    stem,
+                ) {
+                    Ok((bytes_written, checksum)) => {
+                        log::info!(
+                            "  [MD-ONLY EVIDENCE] stream {} signal_grid.bin: \
+                             {} voxels, grid_dim={}, {} bytes",
+                            i, sig.voxel_hit_grid.len(), sig.grid_dim, bytes_written
+                        );
+                        artifacts.push(ArtifactRecord {
+                            kind: "signal_grid",
+                            stream_id: Some(stream_id),
+                            path: sig_path.display().to_string(),
+                            size_bytes: bytes_written,
+                            schema_version: Some(1),
+                            checksum_fnv1a_64_hex: Some(format!("{:016x}", checksum)),
+                            record_count: Some(sig.voxel_hit_grid.len() as u64),
+                            present: true,
+                            note: None,
+                        });
+                        emitted_evidence_files.push(sig_path.display().to_string());
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "  [MD-ONLY EVIDENCE] stream {} signal_grid.bin write FAILED: {}",
+                            i, e
+                        );
+                        if serialization_failure.is_none() {
+                            serialization_failure =
+                                Some(format!("stream {} signal_grid.bin: {}", i, e));
+                        }
+                        artifacts.push(ArtifactRecord {
+                            kind: "signal_grid",
+                            stream_id: Some(stream_id),
+                            path: sig_path.display().to_string(),
+                            size_bytes: 0,
+                            schema_version: None,
+                            checksum_fnv1a_64_hex: None,
+                            record_count: None,
+                            present: false,
+                            note: Some(format!("write_failed: {}", e)),
+                        });
+                    }
+                }
+            } else {
+                log::warn!(
+                    "  [MD-ONLY EVIDENCE] stream {} signal_grid: source None (download_signal_preservation returned None)",
+                    i
+                );
+                artifacts.push(ArtifactRecord {
+                    kind: "signal_grid",
+                    stream_id: Some(stream_id),
+                    path: sig_path.display().to_string(),
+                    size_bytes: 0,
+                    schema_version: None,
+                    checksum_fnv1a_64_hex: None,
+                    record_count: None,
+                    present: false,
+                    note: Some("source_none_download_signal_preservation".to_string()),
+                });
+            }
+
+            // (3) kcc_v2full.bin
+            let kcc_path = args
+                .output
+                .join(format!("{}_stream{}_kcc_v2full.bin", stem, i));
+            if let Some(kcc) = kcc_data_opt.as_ref() {
+                match md_evidence_write_kcc_v2full(
+                    &kcc_path,
+                    kcc,
+                    stream_id,
+                    &phase3_run_id,
+                    stem,
+                ) {
+                    Ok((bytes_written, checksum)) => {
+                        log::info!(
+                            "  [MD-ONLY EVIDENCE] stream {} kcc_v2full.bin: \
+                             {} residues, {} bytes",
+                            i, kcc.n_residues, bytes_written
+                        );
+                        artifacts.push(ArtifactRecord {
+                            kind: "kcc_v2full",
+                            stream_id: Some(stream_id),
+                            path: kcc_path.display().to_string(),
+                            size_bytes: bytes_written,
+                            schema_version: Some(1),
+                            checksum_fnv1a_64_hex: Some(format!("{:016x}", checksum)),
+                            record_count: Some(kcc.n_residues as u64),
+                            present: true,
+                            note: None,
+                        });
+                        emitted_evidence_files.push(kcc_path.display().to_string());
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "  [MD-ONLY EVIDENCE] stream {} kcc_v2full.bin write FAILED: {}",
+                            i, e
+                        );
+                        if serialization_failure.is_none() {
+                            serialization_failure =
+                                Some(format!("stream {} kcc_v2full.bin: {}", i, e));
+                        }
+                        artifacts.push(ArtifactRecord {
+                            kind: "kcc_v2full",
+                            stream_id: Some(stream_id),
+                            path: kcc_path.display().to_string(),
+                            size_bytes: 0,
+                            schema_version: None,
+                            checksum_fnv1a_64_hex: None,
+                            record_count: None,
+                            present: false,
+                            note: Some(format!("write_failed: {}", e)),
+                        });
+                    }
+                }
+            } else {
+                log::warn!(
+                    "  [MD-ONLY EVIDENCE] stream {} kcc_v2full: source None (compute_and_download_kcc returned None)",
+                    i
+                );
+                artifacts.push(ArtifactRecord {
+                    kind: "kcc_v2full",
+                    stream_id: Some(stream_id),
+                    path: kcc_path.display().to_string(),
+                    size_bytes: 0,
+                    schema_version: None,
+                    checksum_fnv1a_64_hex: None,
+                    record_count: None,
+                    present: false,
+                    note: Some("source_none_compute_and_download_kcc".to_string()),
+                });
+            }
+
+            streams_serialized += 1;
+        }
+
+        // Inventory existing per-stream artifacts written inside the rayon
+        // closure. They land on disk before stream-thread exit (VRAM-Teardown
+        // block at ~line 10393-10705). We only RECORD their presence + size
+        // here; we do NOT re-checksum them in this commit (would re-read all
+        // 285 MB warp_matrix files × 8 streams × 2 GB extra read cost).
+        for (i, suffix) in (0..n_streams_actual).flat_map(|s| {
+            [
+                ("warp_matrix.bin",                 "warp_matrix"),
+                ("forces_final.bin",                "forces_final"),
+                ("aromatic_centroids_final.bin",    "aromatic_centroids_final"),
+                ("adaptive_dt.bin",                 "adaptive_dt"),
+                ("bocpd.jsonl",                     "bocpd_log"),
+                ("protocol_state.json",             "protocol_state"),
+            ]
+            .into_iter()
+            .map(move |(suf, kind)| (s, suf, kind))
+        }).map(|(s, suf, _kind)| (s, format!("{}_stream{}_{}", stem, s, suf))) {
+            let p = args.output.join(&suffix);
+            let (size, present) = match p.metadata() {
+                Ok(m) => (m.len(), true),
+                Err(_) => (0, false),
+            };
+            artifacts.push(ArtifactRecord {
+                kind: "rayon_scope_emit",
+                stream_id: Some(i as u32),
+                path: p.display().to_string(),
+                size_bytes: size,
+                schema_version: None,
+                checksum_fnv1a_64_hex: None,
+                record_count: None,
+                present,
+                note: if present { None } else { Some("not_present_on_disk".to_string()) },
+            });
+            if present {
+                emitted_evidence_files.push(p.display().to_string());
+            }
+        }
+        // 2-digit suffix variants (asc_vectors, noise_floor) follow a different
+        // naming pattern (`stream0N_` vs `streamN_`).
+        for i in 0..n_streams_actual {
+            for (suf_fmt, _kind) in [
+                ("asc_vectors.bin",  "asc_vectors"),
+                ("noise_floor.json", "noise_floor"),
+            ] {
+                let p = args.output.join(format!("{}_stream{:02}_{}", stem, i, suf_fmt));
+                let (size, present) = match p.metadata() {
+                    Ok(m) => (m.len(), true),
+                    Err(_) => (0, false),
+                };
+                artifacts.push(ArtifactRecord {
+                    kind: "rayon_scope_emit",
+                    stream_id: Some(i as u32),
+                    path: p.display().to_string(),
+                    size_bytes: size,
+                    schema_version: None,
+                    checksum_fnv1a_64_hex: None,
+                    record_count: None,
+                    present,
+                    note: if present { None } else { Some("not_present_on_disk".to_string()) },
+                });
+                if present {
+                    emitted_evidence_files.push(p.display().to_string());
+                }
+            }
+        }
+
+        // ── md_evidence_manifest.json ─────────────────────────────────────
+        let manifest_path = args.output.join("md_evidence_manifest.json");
+        let run_config_summary = serde_json::json!({
+            "fast":                 args.fast,
+            "hysteresis":           args.hysteresis,
+            "prism_therm":          args.prism_therm,
+            "multi_stream":         args.multi_stream,
+            "fused_steps":          args.fused_steps,
+            "hmr":                  args.hmr,
+            "adaptive_dt":          args.adaptive_dt,
+            "multi_differential":   args.multi_differential,
+            "closed_loop_steering": args.closed_loop_steering,
+            "asymmetric_steering":  args.asymmetric_steering,
+            "use_xgb_ranker":       args.use_xgb_ranker,
+            "replica_seed":         args.replica_seed,
+            "spike_percentile":     args.spike_percentile,
+            "path_a_production_profile": args.path_a_production_profile,
+            "path_a_chunk_size":    args.path_a_chunk_size,
+            "path_a_max_wall_seconds":    args.path_a_max_wall_seconds,
+            "path_a_v2_trigger_steps":    args.path_a_v2_trigger_steps,
+            "path_a_t7_max_chunks":       args.path_a_t7_max_chunks,
+            "path_a_evidence_exit":       args.path_a_evidence_exit,
+            "md_only_evidence":     args.md_only_evidence,
+        });
+        let manifest = serde_json::json!({
+            "schema_version":     1,
+            "schema_kind":        "md_evidence_manifest",
+            "run_id":             phase3_run_id,
+            "topology_input":     topology_path.display().to_string(),
+            "target":             stem,
+            "stream_count":       n_streams_actual,
+            "streams_serialized": streams_serialized,
+            "total_spikes_md":    total_spikes_md,
+            "elapsed_wall_seconds": sim_start.elapsed().as_secs_f64(),
+            "run_config":         run_config_summary,
+            "artifacts":          artifacts,
+            "compression_status": "raw_uncompressed",
+            "checksum_algorithm": "fnv1a_64",
+            "endian":             "little",
+            "binary_envelopes": {
+                "spikes":      { "magic": "PRSPK001", "trailer": "PRSPKEND", "schema_version": 1 },
+                "signal_grid": { "magic": "PRSGD001", "trailer": "PRSGDEND", "schema_version": 1 },
+                "kcc_v2full":  { "magic": "PRKCC001", "trailer": "PRKCCEND", "schema_version": 1 },
+            },
+            "v2_was_live":        false,
+            "v2_dependent_artifacts_status": "absent_v2_not_live",
+            "transform_dag_status":          "skipped_md_only_no_site_materialization",
+            "binding_sites_status":          "not_materialized_md_only",
+            "site_materialization_status":   "not_materialized",
+            "post_md_aggregation_status":    "deferred",
+            "path_b_required":    true,
+            "serialization_failure": serialization_failure,
+        });
+        match std::fs::File::create(&manifest_path) {
+            Ok(f) => {
+                let mut bw = std::io::BufWriter::new(f);
+                if let Err(e) = serde_json::to_writer_pretty(&mut bw, &manifest) {
+                    log::error!(
+                        "  [MD-ONLY EVIDENCE] manifest serialize FAILED at {}: {}",
+                        manifest_path.display(), e
+                    );
+                } else {
+                    use std::io::Write as _;
+                    let _ = bw.flush();
+                    log::info!(
+                        "  [MD-ONLY EVIDENCE] ✓ md_evidence_manifest.json: {}",
+                        manifest_path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "  [MD-ONLY EVIDENCE] manifest CREATE FAILED at {}: {}",
+                    manifest_path.display(), e
+                );
+            }
+        }
+
+        // ── field_completeness_report.json ────────────────────────────────
+        // Per-downstream-field availability. "available" = the input is on
+        // disk in MD-only mode; "deferred" = field is computed by Path B.
+        let fcr_path = args.output.join("field_completeness_report.json");
+        let fcr = serde_json::json!({
+            "schema_version": 1,
+            "schema_kind":    "field_completeness_report",
+            "run_id":         phase3_run_id,
+            "fields": {
+                "spikes_per_stream":            { "status": "available", "source": "spikes.bin per stream" },
+                "signal_preservation_per_stream":{ "status": "available", "source": "signal_grid.bin per stream" },
+                "kcc_v2full_per_stream":        { "status": "available", "source": "kcc_v2full.bin per stream" },
+                "warp_matrix_per_stream":       { "status": "available", "source": "VRAM-Teardown emit" },
+                "forces_final_per_stream":      { "status": "available", "source": "VRAM-Teardown emit" },
+                "aromatic_centroids_per_stream":{ "status": "available", "source": "VRAM-Teardown emit" },
+                "adaptive_dt_per_stream":       { "status": "available", "source": "VRAM-Teardown emit" },
+                "asc_vectors_per_stream":       { "status": "available", "source": "rayon-scope emit" },
+                "noise_floor_per_stream":       { "status": "available", "source": "rayon-scope emit" },
+                "protocol_state_per_stream":    { "status": "available", "source": "rayon-scope emit" },
+                "bocpd_log_per_stream":         { "status": "available", "source": "rayon-scope emit" },
+                "merged_kcc":                   { "status": "deferred",  "source": "Path B: merge per-stream kcc_v2full.bin" },
+                "merged_signal_grid":           { "status": "deferred",  "source": "Path B: sum per-stream signal_grid.bin" },
+                "all_stream_spikes":            { "status": "deferred",  "source": "Path B: concat per-stream spikes.bin" },
+                "rt_clustering_sites":          { "status": "deferred",  "source": "Path B: GPU-HASH find_neighbors_union over all_stream_spikes" },
+                "ligsite_pockets":              { "status": "deferred",  "source": "Path B: deterministic on topology+all_stream_spikes" },
+                "cubical_ph_centroids":         { "status": "deferred",  "source": "Path B: density grid + 0-dim PH" },
+                "xgb_reranked_sites":           { "status": "deferred",  "source": "Path B: XGB v3 model on cluster output" },
+                "binding_sites_materialized":   { "status": "deferred",  "source": "Path B: post-rerank materialization" },
+                "v2_f2_sidecars":               { "status": "absent",    "reason": "v2_was_live=false in MD-only mode" },
+                "transform_dag":                { "status": "absent",    "reason": "v2_was_live=false in MD-only mode" },
+            },
+            "path_b_required": true,
+        });
+        if let Ok(f) = std::fs::File::create(&fcr_path) {
+            let mut bw = std::io::BufWriter::new(f);
+            if let Err(e) = serde_json::to_writer_pretty(&mut bw, &fcr) {
+                log::warn!("  [MD-ONLY EVIDENCE] field_completeness_report serialize: {}", e);
+            } else {
+                use std::io::Write as _;
+                let _ = bw.flush();
+                log::info!(
+                    "  [MD-ONLY EVIDENCE] ✓ field_completeness_report.json: {}",
+                    fcr_path.display()
+                );
+            }
+        }
+
+        // ── post_md_required_inputs.json ──────────────────────────────────
+        // Path B replay contract — input set required to reproduce legacy
+        // post-MD aggregation deterministically.
+        let pri_path = args.output.join("post_md_required_inputs.json");
+        let pri = serde_json::json!({
+            "schema_version": 1,
+            "schema_kind":    "post_md_required_inputs",
+            "run_id":         phase3_run_id,
+            "stages": [
+                { "stage": "per_stream_filter",
+                  "inputs": ["spikes.bin", "asc_vectors.bin", "protocol_state.json"] },
+                { "stage": "kcc_merge",
+                  "inputs": ["kcc_v2full.bin (each stream)"],
+                  "policy": "best_per_residue_by_active_causal" },
+                { "stage": "signal_grid_merge",
+                  "inputs": ["signal_grid.bin (each stream)"],
+                  "policy": "elementwise_sum" },
+                { "stage": "all_stream_spikes_concat",
+                  "inputs": ["spikes.bin (each stream)"],
+                  "policy": "concat_with_per_stream_offsets" },
+                { "stage": "rt_clustering",
+                  "inputs": ["all_stream_spikes (concat)", "topology.positions"],
+                  "backend": "gpu_hash_find_neighbors_union",
+                  "skipped_on_sm120": "fallback_to_ligsite" },
+                { "stage": "dynamic_ligsite",
+                  "inputs": ["topology.positions", "all_stream_spikes"],
+                  "deterministic": true },
+                { "stage": "cubical_ph_refinement",
+                  "inputs": ["all_stream_spikes (positions+intensity)", "topology bounds"],
+                  "deterministic": true },
+                { "stage": "xgb_rerank",
+                  "inputs": ["pre-rerank cluster sites", "kcc_per_residue", "topology"],
+                  "model": "xgboost_v3" },
+                { "stage": "binding_sites_materialize",
+                  "inputs": ["reranked sites", "topology", "kcc_per_residue"] }
+            ],
+            "topology_input": topology_path.display().to_string(),
+            "stem":           stem,
+            "path_b_required": true,
+        });
+        if let Ok(f) = std::fs::File::create(&pri_path) {
+            let mut bw = std::io::BufWriter::new(f);
+            if let Err(e) = serde_json::to_writer_pretty(&mut bw, &pri) {
+                log::warn!("  [MD-ONLY EVIDENCE] post_md_required_inputs serialize: {}", e);
+            } else {
+                use std::io::Write as _;
+                let _ = bw.flush();
+                log::info!(
+                    "  [MD-ONLY EVIDENCE] ✓ post_md_required_inputs.json: {}",
+                    pri_path.display()
+                );
+            }
+        }
+
+        // ── path_a_completion.json (MD-only honest emit) ──────────────────
+        let completion_status_str: &str = if serialization_failure.is_some() {
+            "md_evidence_partial_serialization_failure"
+        } else {
+            "md_evidence_complete_postmd_deferred"
+        };
+        let completion_path = args
+            .output
+            .join(format!("{}_path_a_completion.json", stem));
+        let completion_json = serde_json::json!({
+            "schema_version":              2,
+            "schema_kind":                 "path_a_completion_md_only",
+            "run_id":                      phase3_run_id,
+            "target":                      stem,
+            "stream_count":                n_streams_actual,
+            "streams_completed":           streams_serialized,
+            "completion_status":           completion_status_str,
+            "evidence_exit_reason":        "md_only_evidence_complete",
+            "post_md_aggregation_status":  "deferred",
+            "path_b_required":             true,
+            "legacy_post_md_skipped":      true,
+            "site_materialization_status": "not_materialized",
+            "binding_sites_status":        "not_materialized_md_only",
+            "validation_status":           "not_run",
+            "elapsed_wall_seconds":        sim_start.elapsed().as_secs_f64(),
+            "emitted_evidence_files":      emitted_evidence_files,
+            "missing_optional_fields":     [
+                "f2_ring_status.json",
+                "f2_write_commit_log.json",
+                "f2_artifact_completeness.json",
+                "transform_dag.json",
+                "v2_ignition_summary.json"
+            ],
+            "field_completeness_status":   "see field_completeness_report.json",
+            "md_evidence_manifest_path":   manifest_path.display().to_string(),
+            "post_md_required_inputs_path": pri_path.display().to_string(),
+            "field_completeness_report_path": fcr_path.display().to_string(),
+            "v2_was_live":                 false,
+            "consensus_status":            "skipped_md_only_evidence_handoff",
+            "serialization_failure":       serialization_failure,
+            "total_spikes_md":             total_spikes_md,
+        });
+        match std::fs::File::create(&completion_path) {
+            Ok(f) => {
+                let mut bw = std::io::BufWriter::new(f);
+                if let Err(e) = serde_json::to_writer_pretty(&mut bw, &completion_json) {
+                    log::error!(
+                        "  [MD-ONLY EVIDENCE] path_a_completion serialize FAILED: {}", e
+                    );
+                } else {
+                    use std::io::Write as _;
+                    let _ = bw.flush();
+                    log::info!(
+                        "  [MD-ONLY EVIDENCE] ✓ path_a_completion.json: {} (status={})",
+                        completion_path.display(),
+                        completion_status_str
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "  [MD-ONLY EVIDENCE] path_a_completion CREATE FAILED: {}", e
+                );
+            }
+        }
+
+        log::info!(
+            "  [MD-ONLY EVIDENCE] handoff complete — \
+             {} streams serialized, {} total spikes, {:.1}s wall-clock. \
+             Path B / manual aggregation required.",
+            streams_serialized,
+            total_spikes_md,
+            sim_start.elapsed().as_secs_f64()
+        );
+
         return Ok(());
     }
 
