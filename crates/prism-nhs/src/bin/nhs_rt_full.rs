@@ -11617,6 +11617,419 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             }
         }
 
+        // ── Phase 8d: transform_dag.json runtime emission ──────────────────
+        // Per directive §6 Commit 3 + §15.3 terminal ordering:
+        //   ZSTR/Ghost consumer join → F2 sidecars → transform_dag.json → final banner
+        // DAG schema source-of-truth:
+        //   crates/prism-core/src/dag.rs (commit 9e74bbbd, schema_version=1)
+        // NOTE: prism-core is not yet a direct cargo dep of prism-nhs (the
+        //   baseline seal did not land that path-dep). To stay within this
+        //   commit's allowed-files scope (nhs_rt_full.rs only), the manifest
+        //   is built as raw serde_json::Value matching the prism-core schema
+        //   field names by exact contract. Variant names match Rust enum
+        //   default serde repr ("Run", "InputTopology", "Contains", etc.).
+        //   Future refactor: add prism-core path dep + use the typed structs.
+        // RULE: only artifacts that exist on disk at this point are referenced
+        //   (per directive §15.3). No fake artifact refs. No site nodes (no
+        //   site materialization yet). No F1/WHILE/ASC nodes (no per-decision
+        //   trace artifacts emitted yet — those come with the control_trace
+        //   NDJSON wire-up in a separate later commit).
+        {
+            let dag_now_iso = chrono::Utc::now()
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string();
+            let output_dir_dag = output_base
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let stem_dag = output_base
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("output")
+                .to_string();
+            let target_dag = topology_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&stem_dag)
+                .to_string();
+
+            // Mirror of dag::normalize_node_id_component: lowercase
+            // alphanumeric + '-_.', replace other chars with '-', trim '-'.
+            fn dag_normalize(component: &str) -> String {
+                let mut normalized = String::new();
+                let mut last_sep = false;
+                for ch in component.trim().chars() {
+                    if ch.is_ascii_alphanumeric() {
+                        normalized.push(ch.to_ascii_lowercase());
+                        last_sep = false;
+                    } else if matches!(ch, '-' | '_' | '.') {
+                        normalized.push(ch);
+                        last_sep = false;
+                    } else if !last_sep {
+                        normalized.push('-');
+                        last_sep = true;
+                    }
+                }
+                let trimmed = normalized.trim_matches('-').to_string();
+                if trimmed.is_empty() {
+                    "_".to_string()
+                } else {
+                    trimmed
+                }
+            }
+            fn dag_id(prefix: &str, components: &[&str]) -> String {
+                let mut id = String::from(prefix);
+                for c in components {
+                    id.push_str("::");
+                    id.push_str(&dag_normalize(c));
+                }
+                id
+            }
+
+            let run_node_id = dag_id("run", &[phase3_run_id.as_str()]);
+            let topo_node_id = dag_id(
+                "input-topology",
+                &[topology_path.to_string_lossy().as_ref()],
+            );
+            let cfg_node_id = dag_id("run-config", &[phase3_run_id.as_str()]);
+
+            // Nodes (start with run/topology/config, plus per-stream)
+            let mut nodes: Vec<serde_json::Value> = Vec::new();
+            nodes.push(serde_json::json!({
+                "id": run_node_id,
+                "kind": "Run",
+                "label": format!("Run {}", phase3_run_id),
+                "metadata": {
+                    "wall_clock_s": sim_elapsed.as_secs_f64(),
+                    "n_streams": n_streams,
+                    "total_spikes": total_spikes,
+                },
+            }));
+            nodes.push(serde_json::json!({
+                "id": topo_node_id,
+                "kind": "InputTopology",
+                "label": target_dag,
+                "metadata": {
+                    "path": topology_path.to_string_lossy(),
+                },
+            }));
+            nodes.push(serde_json::json!({
+                "id": cfg_node_id,
+                "kind": "RunConfig",
+                "label": "Run configuration",
+                "metadata": {
+                    "multi_stream": args.multi_stream,
+                    "spike_percentile": args.spike_percentile,
+                    "fused_steps": args.fused_steps,
+                    "hmr": args.hmr,
+                    "adaptive_dt": args.adaptive_dt,
+                    "multi_differential": args.multi_differential,
+                    "closed_loop_steering": args.closed_loop_steering,
+                    "asymmetric_steering": args.asymmetric_steering,
+                    "replica_seed": args.replica_seed,
+                    "path_a_v2_trigger_steps": args.path_a_v2_trigger_steps,
+                    "path_a_t7_max_chunks": args.path_a_t7_max_chunks,
+                    "path_a_evidence_exit": args.path_a_evidence_exit,
+                },
+            }));
+
+            // Edges: Run -> InputTopology, Run -> RunConfig
+            let mut edges: Vec<serde_json::Value> = Vec::new();
+            edges.push(serde_json::json!({
+                "from": run_node_id,
+                "to":   topo_node_id,
+                "kind": "Contains",
+                "metadata": {},
+            }));
+            edges.push(serde_json::json!({
+                "from": run_node_id,
+                "to":   cfg_node_id,
+                "kind": "Contains",
+                "metadata": {},
+            }));
+
+            // Per-stream Stream nodes + edges
+            for sid in 0..(n_streams as u32) {
+                let sid_str = format!("stream{:02}", sid);
+                let stream_node_id =
+                    dag_id("stream", &[phase3_run_id.as_str(), sid_str.as_str()]);
+                nodes.push(serde_json::json!({
+                    "id": stream_node_id,
+                    "kind": "Stream",
+                    "label": format!("Stream {}", sid),
+                    "stream_id": sid,
+                    "metadata": {},
+                }));
+                edges.push(serde_json::json!({
+                    "from": run_node_id,
+                    "to":   stream_node_id,
+                    "kind": "Contains",
+                    "metadata": {},
+                }));
+            }
+
+            // Artifact references — ONLY for artifacts that exist on disk.
+            let mut artifacts: Vec<serde_json::Value> = Vec::new();
+            // (path, kind_label, dag_kind, schema_version_opt, dag_artifact_kind_class)
+            //   dag_kind selects DagNodeKind variant: "JsonArtifact" or "BinaryArtifact"
+            let json_artifacts: &[(&str, Option<u32>)] = &[
+                ("binding_sites.json", Some(3)),
+                ("v2_ignition_summary.json", None),
+                ("kcc_visualization.json", None),
+                ("spatial_grid_state.json", None),
+                ("phasor_kcc_state.json", None),
+                ("prism_therm_telemetry.json", None),
+                ("t7_calibration.json", None),
+                ("aromatic_centroids_map.json", None),
+                ("f2_ring_status.json", Some(1)),
+                ("f2_write_commit_log.json", Some(1)),
+                ("f2_artifact_completeness.json", Some(1)),
+            ];
+            for (ext, schema_v) in json_artifacts {
+                let p = output_base.with_extension(ext);
+                let meta = std::fs::metadata(&p).ok();
+                let exists = meta.is_some();
+                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                if !exists || size == 0 {
+                    continue;
+                }
+                let bytes = match std::fs::read(&p) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                let hash = format!("fnv1a64:{:016x}", fnv1a64(&bytes));
+                let artifact_ref_id =
+                    dag_id("artifact-ref", &[ext, phase3_run_id.as_str()]);
+                let artifact_node_id = dag_id(
+                    "json-artifact",
+                    &[ext, phase3_run_id.as_str()],
+                );
+                let mut node = serde_json::json!({
+                    "id": artifact_node_id,
+                    "kind": "JsonArtifact",
+                    "label": ext,
+                    "artifact_ref": artifact_ref_id,
+                    "hash": hash,
+                    "metadata": { "size_bytes": size },
+                });
+                if let Some(sv) = schema_v {
+                    node["metadata"]["schema_version"] =
+                        serde_json::json!(*sv);
+                }
+                nodes.push(node);
+                edges.push(serde_json::json!({
+                    "from": run_node_id,
+                    "to":   artifact_node_id,
+                    "kind": "Produces",
+                    "metadata": {},
+                }));
+                let mut artifact_ref = serde_json::json!({
+                    "id":   artifact_ref_id,
+                    "path": p.to_string_lossy(),
+                    "kind": ext,
+                    "size_bytes": size,
+                    "hash": hash,
+                });
+                if let Some(sv) = schema_v {
+                    artifact_ref["schema_version"] = serde_json::json!(*sv);
+                }
+                artifacts.push(artifact_ref);
+            }
+
+            // Per-stream binary artifacts (ghost_tiles.bin)
+            for sid in 0..(n_streams as u32) {
+                let p = output_dir_dag.join(format!(
+                    "{}_stream{:02}_ghost_tiles.bin",
+                    stem_dag, sid
+                ));
+                let meta = std::fs::metadata(&p).ok();
+                let exists = meta.is_some();
+                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                if !exists || size == 0 {
+                    continue;
+                }
+                let kind_label = format!("stream{:02}_ghost_tiles.bin", sid);
+                let artifact_ref_id = dag_id(
+                    "artifact-ref",
+                    &[kind_label.as_str(), phase3_run_id.as_str()],
+                );
+                let artifact_node_id = dag_id(
+                    "binary-artifact",
+                    &[kind_label.as_str(), phase3_run_id.as_str()],
+                );
+                let stream_node_id = dag_id(
+                    "stream",
+                    &[phase3_run_id.as_str(), format!("stream{:02}", sid).as_str()],
+                );
+                // Hash via head4k+tail4k+size fingerprint to bound cost on
+                // large per-stream binaries. Mirror of v2_ignition_summary
+                // ghost_descriptor strategy — see comment near fnv1a64 helper.
+                let bytes_for_hash: Vec<u8> = match std::fs::read(&p) {
+                    Ok(b) => {
+                        let n = b.len();
+                        if n <= 8192 {
+                            b
+                        } else {
+                            let mut hb = Vec::with_capacity(8192 + 16);
+                            hb.extend_from_slice(&b[..4096]);
+                            hb.extend_from_slice(&b[n - 4096..]);
+                            hb.extend_from_slice(&(n as u64).to_le_bytes());
+                            hb
+                        }
+                    }
+                    Err(_) => continue,
+                };
+                let hash = format!("fnv1a64-head4k-tail4k:{:016x}", fnv1a64(&bytes_for_hash));
+                nodes.push(serde_json::json!({
+                    "id": artifact_node_id,
+                    "kind": "BinaryArtifact",
+                    "label": kind_label,
+                    "stream_id": sid,
+                    "artifact_ref": artifact_ref_id,
+                    "hash": hash,
+                    "metadata": { "size_bytes": size },
+                }));
+                edges.push(serde_json::json!({
+                    "from": run_node_id,
+                    "to":   artifact_node_id,
+                    "kind": "Produces",
+                    "metadata": {},
+                }));
+                edges.push(serde_json::json!({
+                    "from": stream_node_id,
+                    "to":   artifact_node_id,
+                    "kind": "Produces",
+                    "metadata": {},
+                }));
+                artifacts.push(serde_json::json!({
+                    "id":   artifact_ref_id,
+                    "path": p.to_string_lossy(),
+                    "kind": kind_label,
+                    "size_bytes": size,
+                    "hash": hash,
+                }));
+            }
+
+            // ZSTR binaries — scan output_dir for prism_zstr_*.bin
+            if let Ok(rd) = std::fs::read_dir(&output_dir_dag) {
+                for entry in rd.flatten() {
+                    let nm = entry.file_name();
+                    let s = nm.to_string_lossy();
+                    if !s.starts_with("prism_zstr_") || !s.ends_with(".bin") {
+                        continue;
+                    }
+                    let p = entry.path();
+                    let meta = std::fs::metadata(&p).ok();
+                    let exists = meta.is_some();
+                    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                    if !exists || size == 0 {
+                        continue;
+                    }
+                    let bytes_for_hash: Vec<u8> = match std::fs::read(&p) {
+                        Ok(b) => {
+                            let n = b.len();
+                            if n <= 8192 {
+                                b
+                            } else {
+                                let mut hb = Vec::with_capacity(8192 + 16);
+                                hb.extend_from_slice(&b[..4096]);
+                                hb.extend_from_slice(&b[n - 4096..]);
+                                hb.extend_from_slice(&(n as u64).to_le_bytes());
+                                hb
+                            }
+                        }
+                        Err(_) => continue,
+                    };
+                    let hash = format!("fnv1a64-head4k-tail4k:{:016x}", fnv1a64(&bytes_for_hash));
+                    let kind_label = s.into_owned();
+                    let artifact_ref_id = dag_id(
+                        "artifact-ref",
+                        &[kind_label.as_str(), phase3_run_id.as_str()],
+                    );
+                    let artifact_node_id = dag_id(
+                        "binary-artifact",
+                        &[kind_label.as_str(), phase3_run_id.as_str()],
+                    );
+                    nodes.push(serde_json::json!({
+                        "id": artifact_node_id,
+                        "kind": "BinaryArtifact",
+                        "label": kind_label,
+                        "artifact_ref": artifact_ref_id,
+                        "hash": hash,
+                        "metadata": { "size_bytes": size },
+                    }));
+                    edges.push(serde_json::json!({
+                        "from": run_node_id,
+                        "to":   artifact_node_id,
+                        "kind": "Produces",
+                        "metadata": {},
+                    }));
+                    artifacts.push(serde_json::json!({
+                        "id":   artifact_ref_id,
+                        "path": p.to_string_lossy(),
+                        "kind": kind_label,
+                        "size_bytes": size,
+                        "hash": hash,
+                    }));
+                }
+            }
+
+            // Invariants — asserted by construction at emit time.
+            let invariants = serde_json::json!([
+                {
+                    "id": "inv::no-orphan-edges",
+                    "description": "Every edge endpoint references a manifest node",
+                    "status": "asserted",
+                    "evidence_node_ids": [run_node_id],
+                },
+                {
+                    "id": "inv::no-fake-artifact-refs",
+                    "description": "Every artifact node references a file present on disk at emit time",
+                    "status": "asserted",
+                    "evidence_node_ids": [run_node_id],
+                },
+                {
+                    "id": "inv::no-site-materialization",
+                    "description": "No SiteCandidate / RankedSite / StaticEquivalentPocket / DossierArtifact nodes; site materialization is Path B",
+                    "status": "asserted",
+                    "evidence_node_ids": [run_node_id],
+                },
+                {
+                    "id": "inv::no-f1-while-asc-decision-nodes",
+                    "description": "No F1Decision / WhileIteration / ASCSnapshot nodes until per-decision trace artifacts emit at runtime",
+                    "status": "asserted",
+                    "evidence_node_ids": [run_node_id],
+                }
+            ]);
+
+            // Final manifest
+            let manifest = serde_json::json!({
+                "schema_version": 1u32,
+                "run_id":      phase3_run_id,
+                "target":      target_dag,
+                "created_utc": dag_now_iso,
+                "nodes":       nodes,
+                "edges":       edges,
+                "artifacts":   artifacts,
+                "invariants":  invariants,
+                "metadata": {
+                    "schema_source": "crates/prism-core/src/dag.rs (commit 9e74bbbd, DAG_SCHEMA_VERSION=1)",
+                    "build_strategy": "raw_serde_json_value_mirroring_prism_core_schema",
+                    "n_streams": n_streams,
+                    "wall_clock_s": sim_elapsed.as_secs_f64(),
+                },
+            });
+
+            let dag_path = output_base.with_extension("transform_dag.json");
+            match std::fs::write(
+                &dag_path,
+                serde_json::to_string_pretty(&manifest).unwrap_or_default(),
+            ) {
+                Ok(()) => log::info!("  [V2 teardown] ✓ {}", dag_path.display()),
+                Err(e) => log::warn!("  [V2 teardown] transform_dag.json: {}", e),
+            }
+        }
+
         // ── Audit log: un-capturable metadata ────────────────────────────
         log::warn!("  [V2 teardown] METADATA GAPS (arch changes required to capture):");
         log::warn!("    d_forces: VRAM-only; no host download before thread exit");
