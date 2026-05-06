@@ -800,6 +800,19 @@ struct Args {
     #[arg(long, default_value = "false")]
     path_a_evidence_exit: bool,
 
+    /// PATHA-MAX-WALL-SECONDS — bounded wall-time evidence exit. When
+    /// set AND `--path-a-evidence-exit` (or `--path-a-production-profile`,
+    /// which implies it) is active, the chunk loop breaks at the next
+    /// safe chunk boundary once `sim_start.elapsed().as_secs() >= N`.
+    /// This forces a run into V2 teardown / artifact emission instead
+    /// of being killed by an external `timeout`. Required for runtime
+    /// validation of F2 / DAG / honest binding_sites emission on Mpro
+    /// where T7-CAL otherwise consumes minutes per chunk and the
+    /// integration loop never reaches teardown. Default `None`
+    /// preserves existing behavior unconditionally.
+    #[arg(long)]
+    path_a_max_wall_seconds: Option<u64>,
+
     /// red-2 / Commit 4.5 — Force-Gear Orchestration Supervisor Shim
     /// runtime gate. Effective only when the Cargo feature
     /// `force_gear_override_supervisor_shim` is enabled at compile
@@ -4549,9 +4562,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         .or(if args.path_a_production_profile { Some(40) } else { None });
     let path_a_evidence_exit: bool =
         args.path_a_evidence_exit || args.path_a_production_profile;
+    // PATHA-MAX-WALL-SECONDS — opt-in only. Default None preserves
+    // existing behavior unconditionally. Effective only at chunk
+    // boundary AND only when `path_a_evidence_exit` is also active
+    // (which absorbs `--path-a-production-profile` via the line above).
+    let path_a_max_wall_seconds: Option<u64> = args.path_a_max_wall_seconds;
     let path_a_any_active: bool = path_a_v2_trigger_steps.is_some()
         || path_a_t7_max_chunks.is_some()
-        || path_a_evidence_exit;
+        || path_a_evidence_exit
+        || path_a_max_wall_seconds.is_some();
     if path_a_any_active {
         log::info!(
             "  [PATH-A] active profile: v2_trigger_steps={:?} t7_max_chunks={:?} evidence_exit={}",
@@ -5322,6 +5341,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 // the effective bound without re-deriving from args.
                 let path_a_t7_max_chunks_local: Option<u32> = path_a_t7_max_chunks;
                 let path_a_evidence_exit_local: bool = path_a_evidence_exit;
+                // PATHA-MAX-WALL-SECONDS — captured per-stream so the
+                // chunk-loop break site reads the effective bound and
+                // the shared run-start Instant without re-deriving from args.
+                let path_a_max_wall_seconds_local: Option<u64> = path_a_max_wall_seconds;
+                let path_a_wall_start_local: std::time::Instant = sim_start;
                 let is_multi_diff = is_multi_diff;
                 let ring_bufs = ring_buffers.clone();
                 let hmr_enabled = args.hmr;
@@ -5937,6 +5961,34 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         let phase_a_asc_n_atoms: usize = engine.n_atoms_loaded();
 
                         for chunk_idx in 0..n_chunks {
+                            // PATHA-MAX-WALL-SECONDS — bounded wall-time exit.
+                            // Fires at chunk boundary when the cap is set AND
+                            // path_a_evidence_exit is active (absorbs
+                            // --path-a-production-profile). Forces V2 teardown
+                            // / artifact emission to fire instead of running
+                            // until an external `timeout` SIGINT kills the
+                            // process. Safe boundary: chunk-start (no in-flight
+                            // GPU work; V2 captured graph executions complete
+                            // synchronously per chunk via cuStreamSynchronize).
+                            if let Some(wall_cap) = path_a_max_wall_seconds_local {
+                                if path_a_evidence_exit_local
+                                    && path_a_wall_start_local.elapsed().as_secs() >= wall_cap
+                                {
+                                    log::info!(
+                                        "    [PATH-A WALL-CAP stream {}] wall_cap reached at chunk_idx={} (wall={}s, cap={}s); breaking integration loop",
+                                        i,
+                                        chunk_idx,
+                                        path_a_wall_start_local.elapsed().as_secs(),
+                                        wall_cap
+                                    );
+                                    if let Ok(mut r) = path_a_exit_reason_local.lock() {
+                                        if r.is_empty() {
+                                            *r = "path_a_max_wall_seconds".to_string();
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
                             // PATHA-T7-BOUND-001 — bounded integration when
                             // --path-a-t7-max-chunks N is set: exit at chunk
                             // boundary once chunk_idx >= N.  Default
@@ -20034,8 +20086,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             .unwrap_or(&structure_name);
         let emit_path = args.output.join(format!("{}_path_a_completion.json", stem_for_emit));
 
-        // Resolve mode label by precedence: bounded > evidence_exit > default.
-        let t7_mode_label: &str = if path_a_t7_max_chunks.is_some() {
+        // Resolve mode label by precedence:
+        //   wall_bounded > bounded > evidence_exit > default.
+        let t7_mode_label: &str = if path_a_max_wall_seconds.is_some() {
+            "wall_bounded"
+        } else if path_a_t7_max_chunks.is_some() {
             "bounded"
         } else if path_a_evidence_exit {
             "evidence_exit"
@@ -20069,12 +20124,34 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "not_triggered"
         };
 
+        // PATHA-MAX-WALL-SECONDS — derive completion_status. Per directive
+        // §6 Commit 12 + operator's hard MVP discipline: V2 cannot today
+        // produce site-materialized "full_complete" runs (binding_sites
+        // remains honest evidence_emitted_not_fully_materialized per
+        // commit 6af4979f). Every status below labels the run honestly:
+        //   path_a_max_wall_seconds → evidence_emitted_partial_bounded
+        //   n_chunks_cap            → evidence_emitted_partial_bounded
+        //   evidence_complete       → bounded_path_a_evidence_exit
+        //   natural_completion      → evidence_emitted_natural
+        //                             (still NOT site-materialized)
+        //   not_triggered           → not_triggered
+        let completion_status: &str = match exit_reason {
+            "path_a_max_wall_seconds" => "evidence_emitted_partial_bounded",
+            "n_chunks_cap" => "evidence_emitted_partial_bounded",
+            "evidence_complete" => "bounded_path_a_evidence_exit",
+            "natural_completion" => "evidence_emitted_natural",
+            "not_triggered" => "not_triggered",
+            _ => "evidence_emitted_unknown",
+        };
+
+        let elapsed_wall_seconds: f64 = sim_start.elapsed().as_secs_f64();
+
         // Surface optional fields that are not yet wired (deferrals).
         // Currently empty — every field above is populated.
         let missing_optional_fields: Vec<&str> = Vec::new();
 
         let emit_json = serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": phase3_run_id,
             "target": stem_for_emit,
             "stream_count": 8,
@@ -20084,6 +20161,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "t7_mode": t7_mode_label,
             "t7_chunks_completed": chunks_completed,
             "evidence_exit_reason": exit_reason,
+            "completion_status": completion_status,
+            "max_wall_seconds": path_a_max_wall_seconds,
+            "elapsed_wall_seconds": elapsed_wall_seconds,
             "missing_optional_fields": missing_optional_fields,
             "path_b_required": true,
         });
