@@ -374,6 +374,12 @@ pub mod control_trace;
 /// Pure Rust data-plane types for ring status, write commits, and artifact
 /// completeness; runtime emission remains separately gated.
 pub mod f2_evidence;
+/// PATH-A mid-chunk stall watchdog and crash-safe evidence-exit fallback.
+///
+/// Per-stream heartbeats, polling watchdog, async-signal-safe SIGINT
+/// handler, and a deadman path that emits minimal path_a_completion.json
+/// then process::exit(2)s when normal teardown cannot return.
+pub mod path_a_watchdog;
 
 pub mod composition;
 pub mod batch_scheduler;

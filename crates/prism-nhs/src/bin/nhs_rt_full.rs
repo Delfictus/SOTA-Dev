@@ -4615,6 +4615,18 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     let path_a_exit_reason: std::sync::Arc<std::sync::Mutex<String>> =
         std::sync::Arc::new(std::sync::Mutex::new(String::new()));
 
+    // ── MID_CHUNK_STALL watchdog (post-2026-05-06 P5-validation) ─────
+    // Per-stream heartbeat atomics + WatchdogState + SIGINT escape +
+    // crash-safe deadman emit when rayon join cannot return because a
+    // stream is futex-blocked. See crates/prism-nhs/src/path_a_watchdog.rs.
+    // Construction here is unconditional (cheap); the watchdog thread
+    // is only spawned when path_a_any_active so default behavior is
+    // unchanged when no Path-A flag is passed.
+    let path_a_heartbeats =
+        prism_nhs::path_a_watchdog::PathAHeartbeat::new(n_streams);
+    let path_a_watchdog_state =
+        prism_nhs::path_a_watchdog::WatchdogState::new();
+
     // Apply HMR if requested
     if args.hmr {
         log::info!("  HMR: Applying 3x hydrogen mass repartitioning (dt=4fs)");
@@ -5102,6 +5114,39 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     log::info!("\n  🚀 Launching {} independent trajectories...", n_streams);
     let sim_start = Instant::now();
 
+    // ── MID_CHUNK_STALL watchdog spawn ──────────────────────────────
+    // Only spawn when at least one Path-A flag is active so default
+    // runs incur zero overhead. Detached: the thread either exits
+    // when cancel is set (after deadman fires or graceful break) or
+    // is left running until process termination — its heartbeat polls
+    // are cheap (Relaxed loads) and pose no synchronization risk.
+    if path_a_any_active {
+        prism_nhs::path_a_watchdog::install_sigint_handler();
+        let stem_for_wd: String = topology_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.strip_suffix(".topology").unwrap_or(s).to_string())
+            .unwrap_or_else(|| "output".to_string());
+        let completion_path_for_wd = args
+            .output
+            .join(format!("{}_path_a_completion.json", stem_for_wd));
+        let _watchdog_handle = prism_nhs::path_a_watchdog::spawn_watchdog(
+            std::sync::Arc::clone(&path_a_heartbeats),
+            std::sync::Arc::clone(&path_a_watchdog_state),
+            5,    // poll_interval_secs
+            60,   // stall_threshold_secs (one stream lagging > 60s while others advanced)
+            30,   // deadman_grace_secs (after cancel, give healthy streams 30s to break)
+            completion_path_for_wd,
+            phase3_run_id.clone(),
+            stem_for_wd,
+            path_a_max_wall_seconds,
+            sim_start,
+        );
+        // Watchdog handle is intentionally dropped (detached). The thread
+        // is short-lived (terminates on cancel or process::exit).
+        let _ = _watchdog_handle;
+    }
+
     // V2 early-exit sentinel: set to true by any stream thread that
     // successfully builds a CapturedAdjudicationPipeline.  Checked
     // immediately after the scope joins — if set, the entire legacy
@@ -5346,6 +5391,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 // the shared run-start Instant without re-deriving from args.
                 let path_a_max_wall_seconds_local: Option<u64> = path_a_max_wall_seconds;
                 let path_a_wall_start_local: std::time::Instant = sim_start;
+                // MID_CHUNK_STALL — heartbeat + watchdog cancel state.
+                let path_a_heartbeats_local =
+                    std::sync::Arc::clone(&path_a_heartbeats);
+                let path_a_watchdog_state_local =
+                    std::sync::Arc::clone(&path_a_watchdog_state);
                 let is_multi_diff = is_multi_diff;
                 let ring_bufs = ring_buffers.clone();
                 let hmr_enabled = args.hmr;
@@ -5961,6 +6011,39 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         let phase_a_asc_n_atoms: usize = engine.n_atoms_loaded();
 
                         for chunk_idx in 0..n_chunks {
+                            // MID_CHUNK_STALL — heartbeat at chunk-loop entry.
+                            // Cheap: 4 relaxed atomic stores. Lets the
+                            // watchdog detect stalls in real time and lets
+                            // the deadman emit a host-side completion JSON
+                            // if rayon join cannot return.
+                            path_a_heartbeats_local.mark(
+                                i,
+                                chunk_idx,
+                                steps_run,
+                                prism_nhs::path_a_watchdog::PHASE_T7_CAL,
+                            );
+
+                            // MID_CHUNK_STALL — observe cancel from watchdog
+                            // (mid-chunk-stall watchdog OR SIGINT OR
+                            // watchdog-level wall cap). Latch reason and
+                            // break BEFORE the per-stream wall/T7 checks so
+                            // the watchdog's typed exit reason wins when
+                            // multiple causes fire near-simultaneously.
+                            if path_a_watchdog_state_local.is_cancelled() {
+                                let reason = path_a_watchdog_state_local
+                                    .current_exit_reason();
+                                log::info!(
+                                    "    [PATH-A CANCEL stream {}] watchdog cancel observed (reason={}) at chunk_idx={}; breaking integration loop",
+                                    i, reason, chunk_idx
+                                );
+                                if let Ok(mut r) = path_a_exit_reason_local.lock() {
+                                    if r.is_empty() {
+                                        *r = reason;
+                                    }
+                                }
+                                break;
+                            }
+
                             // PATHA-MAX-WALL-SECONDS — bounded wall-time exit.
                             // Fires at chunk boundary when the cap is set AND
                             // path_a_evidence_exit is active (absorbs
@@ -7086,6 +7169,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                         }
                                                                                     }
                                                                                 }
+                                                                                // MID_CHUNK_STALL — mark v2_live so the
+                                                                                // watchdog deadman emit reports an honest
+                                                                                // streams_completed count from heartbeats
+                                                                                // even if rayon join cannot return.
+                                                                                path_a_heartbeats_local.set_v2_live(i);
                                                                             }
                                                                             Err(e) => log::warn!(
                                                                                 "    [MONO-FUSE stream {}] add_child_graph_node \
@@ -7493,6 +7581,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                                     }
                                                                                                 }
                                                                                             }
+                                                                                            // MID_CHUNK_STALL — mark v2_live
+                                                                                            // on the alt success path too.
+                                                                                            path_a_heartbeats_local.set_v2_live(i);
                                                                                         }
                                                                                         Err(e) => log::warn!(
                                                                                             "    [MONO-FUSE stream {}] instantiate \
