@@ -12551,14 +12551,119 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // ── Aggregate: per-stream filtering + clustering → consensus ──
     log::info!("\n  Aggregating results across {} streams...", n_streams);
 
-    let cluster_stream = context.new_stream().context("CUDA stream for consensus")?;
-    let mut cluster_engine = PersistentNhsEngine::new_on_stream(
-        &config,
-        context.clone(),
-        module.clone(),
-        cluster_stream,
-    )?;
-    cluster_engine.load_topology(&topology)?;
+    // POST_MD_CONSENSUS_STREAM_ERROR root-cause drain.
+    //
+    // cudarc's `CudaStream::drop` (vendor/cudarc/src/driver/safe/core.rs:480)
+    // calls `record_err(ctx.bind_to_thread())` and `record_err(stream::destroy(...))`
+    // on the SHARED `Arc<CudaContext>.error_state`. Worker threads in the
+    // per-stream rayon-style `std::thread::scope` (~line 5185) drop streams
+    // when they exit; if any of those drops record an error, it pollutes the
+    // shared error state.
+    //
+    // Then `CudaContext::new_stream` (vendor/cudarc:514) calls
+    // `bind_to_thread()` which calls `check_err()` (vendor/cudarc:178) —
+    // and `check_err` swaps-and-returns the recorded error. So a stale
+    // worker-drop error surfaces as the failure of the FIRST main-thread
+    // CUDA call after scope-join, even though it has nothing to do with
+    // the new operation.
+    //
+    // On Mpro 8-stream Path A bounded runs (commit 18da321b chunk-size
+    // diagnostic, 2026-05-06), this manifested as
+    // `CUDA_ERROR_INVALID_VALUE` from `context.new_stream()` below,
+    // blocking Phase 8 emission of every artifact (path_a_completion.json,
+    // binding_sites.json, F2 sidecars, transform_dag.json).
+    //
+    // Fix: drain the recorded error explicitly with `check_err()` so the
+    // post-scope CUDA call sees clean context state. Log honestly if a
+    // stale error was present so future debugging can name what worker
+    // drops produced the pollution.
+    match context.check_err() {
+        Ok(()) => {
+            log::info!(
+                "  [POST-MD CTX-DRAIN] context error state clean before consensus stream create"
+            );
+        }
+        Err(e) => {
+            log::warn!(
+                "  [POST-MD CTX-DRAIN] drained stale error from rayon-scope worker drops: \
+                 {:?} — proceeding (error was recorded on objects already dropped)",
+                e
+            );
+        }
+    }
+
+    // POST_MD_CONSENSUS_STREAM_ERROR honest fallback.
+    //
+    // After draining, attempt the consensus stream creation. If it STILL
+    // fails (would indicate a non-stale CUDA fault, e.g. context corruption
+    // beyond what check_err captured), do NOT propagate — that would block
+    // Phase 8 emit on every Path A run. Instead:
+    //   * record the failure for the path_a_completion.json artifact,
+    //   * skip the rt_clustering-dependent code paths below (cluster_engine
+    //     is only USED inside `if args.rt_clustering` guards at ~line
+    //     12780/13123, and rt_clustering is deprecated on SM120+ per
+    //     CLAUDE.md — fallback is LIGSITE + spike density, no cluster_engine
+    //     required),
+    //   * let Phase 8 emit honest artifacts with consensus_status =
+    //     "skipped_post_md_consensus_stream_unavailable" and
+    //     path_b_required = true.
+    //
+    // PRISM MVP/product invariant: 8 streams retained. Honest emission
+    // retained. No fake completion. No fake consensus.
+    let (cluster_engine_opt, post_md_consensus_status): (
+        Option<PersistentNhsEngine>,
+        &'static str,
+    ) = match context.new_stream() {
+        Ok(cluster_stream) => {
+            match PersistentNhsEngine::new_on_stream(
+                &config,
+                context.clone(),
+                module.clone(),
+                cluster_stream,
+            ) {
+                Ok(mut engine) => match engine.load_topology(&topology) {
+                    Ok(()) => (Some(engine), "ok"),
+                    Err(e) => {
+                        log::warn!(
+                            "  [POST-MD CONSENSUS] cluster_engine.load_topology failed: {:?} \
+                             — skipping consensus engine; rt_clustering disabled for this run",
+                            e
+                        );
+                        (None, "skipped_cluster_engine_load_topology_failed")
+                    }
+                },
+                Err(e) => {
+                    log::warn!(
+                        "  [POST-MD CONSENSUS] PersistentNhsEngine::new_on_stream failed: \
+                         {:?} — skipping consensus engine; rt_clustering disabled for this run",
+                        e
+                    );
+                    (None, "skipped_cluster_engine_init_failed")
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                "  [POST-MD CONSENSUS] context.new_stream() failed AFTER ctx-drain: {:?} \
+                 — skipping consensus engine; rt_clustering disabled for this run; \
+                 Phase 8 emit will record consensus_status=\
+                 skipped_post_md_consensus_stream_unavailable",
+                e
+            );
+            (None, "skipped_post_md_consensus_stream_unavailable")
+        }
+    };
+    // Stale unconditional binding kept so existing call sites at ~12795 /
+    // 12811 (rt_clustering-gated) compile unchanged.  When cluster_engine
+    // is None those call sites must SKIP — handled below.
+    let mut cluster_engine = cluster_engine_opt;
+    if cluster_engine.is_none() {
+        log::warn!(
+            "  [POST-MD CONSENSUS] cluster_engine unavailable; rt_clustering call sites \
+             will be skipped this run (consensus_status={})",
+            post_md_consensus_status
+        );
+    }
 
     let mut per_stream_sites: Vec<Vec<ClusteredBindingSite>> = Vec::new();
     let mut per_stream_stats: Vec<serde_json::Value> = Vec::new();
@@ -12777,7 +12882,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         // Track offset so per-stream spike_indices can be remapped to all_stream_spikes
         stream_spike_offsets.push(all_stream_spikes.len());
         all_stream_spikes.extend(filtered.iter().cloned());
-        let sites = if !filtered.is_empty() && args.rt_clustering {
+        // POST_MD_CONSENSUS_STREAM_ERROR: also gate rt_clustering work on
+        // cluster_engine availability. If the consensus stream creation
+        // failed above, cluster_engine is None and we skip — LIGSITE in
+        // the geometric path covers the empty-sites fallback.
+        let sites = if !filtered.is_empty()
+            && args.rt_clustering
+            && cluster_engine.is_some()
+        {
             let positions: Vec<f32> = filtered
                 .iter()
                 .flat_map(|s| {
@@ -12785,6 +12897,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     [p[0], p[1], p[2]].into_iter()
                 })
                 .collect();
+
+            // Safe unwrap: guarded by cluster_engine.is_some() above.
+            let cluster_engine = cluster_engine.as_mut().expect("guarded by is_some()");
 
             if args.multi_scale {
                 let eps = if args.adaptive_epsilon {
@@ -20573,6 +20688,20 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         };
         let path_a_chunk_size_overridden: bool = path_a_chunk_size.is_some();
 
+        // POST_MD_CONSENSUS_STREAM_ERROR honest emission. When the
+        // post-MD consensus stream creation succeeded, this is "ok".
+        // When it was skipped due to root-cause cuStreamCreate failure
+        // (or any of the cluster_engine init steps below it), this
+        // records the reason verbatim so MVP claims can label the
+        // run honestly. path_b_required already true unconditionally.
+        let consensus_status_for_emit: &str = post_md_consensus_status;
+        if consensus_status_for_emit != "ok" {
+            log::info!(
+                "  [PATH-A] consensus_status for emission: {}",
+                consensus_status_for_emit
+            );
+        }
+
         let emit_json = serde_json::json!({
             "schema_version": 2,
             "run_id": phase3_run_id,
@@ -20588,6 +20717,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "max_wall_seconds": path_a_max_wall_seconds,
             "path_a_chunk_size": path_a_chunk_size_emit,
             "path_a_chunk_size_overridden": path_a_chunk_size_overridden,
+            "consensus_status": consensus_status_for_emit,
             "elapsed_wall_seconds": elapsed_wall_seconds,
             "missing_optional_fields": missing_optional_fields,
             "path_b_required": true,
