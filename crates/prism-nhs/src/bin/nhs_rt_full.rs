@@ -9120,10 +9120,39 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                         }
                                         hotspots.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-                                        // ── Bayesian Surprise: build baseline for first 20 chunks, then compare ──
-                                        let baseline_window = 20u32;
-                                        if chunk_idx as u32 == baseline_window {
-                                            // Lock in the baseline from accumulated residue counts
+                                        // ── Bayesian Surprise: build baseline at the step-equivalent
+                                        // of "first 20 chunks at sealed chunk_size=500" ──
+                                        //
+                                        // EVIDENCE_COMPLETE_INDEXING fix (2026-05-06).
+                                        //
+                                        // The original logic locked the baseline at exactly
+                                        // `chunk_idx == 20`, which is step-equivalent only when
+                                        // chunk_size == 500 (the sealed default → step 10000).
+                                        // With small chunk_size diagnostics (e.g. --path-a-chunk-size
+                                        // 100/50/10), chunk 20 lands at step 2000/1000/200 — well
+                                        // before the V2 trigger (default cold_hold 6000). The chunk
+                                        // loop exited via evidence_complete BEFORE V2 had any chance
+                                        // to build, starving the F2 / transform_dag / V2-monolithic
+                                        // emit paths.
+                                        //
+                                        // Fix: hold the same "10000 steps of integration" wall as the
+                                        // sealed baseline, derived from the effective chunk_size:
+                                        //
+                                        //   baseline_window_chunks = ceil(BASELINE_WINDOW_STEPS / chunk_size)
+                                        //
+                                        // This preserves byte-identical behavior for the sealed
+                                        // chunk_size=500 path (20 chunks) and pushes the lock window
+                                        // outward proportionally for smaller chunks so V2 trigger
+                                        // (steps_run >= v2_trigger_step) always fires first when
+                                        // v2_trigger_step <= BASELINE_WINDOW_STEPS.
+                                        const BASELINE_WINDOW_STEPS: i32 = 10_000;
+                                        let baseline_window: i32 =
+                                            (BASELINE_WINDOW_STEPS + chunk_size - 1) / chunk_size;
+                                        if chunk_idx == baseline_window {
+                                            // Lock in the baseline from accumulated residue counts.
+                                            // Normalizer is the chunk count up to lock so the
+                                            // observed-rate denominator stays consistent with the
+                                            // KL-divergence path below (which uses chunk_idx).
                                             if let Ok(mut prior) = asc_state.prior_residue_density.lock() {
                                                 let chunk_f = baseline_window as f64;
                                                 for rid in 0..asc_state.n_residues {
@@ -9132,7 +9161,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                 }
                                             }
                                             asc_state.baseline_ready.store(true, std::sync::atomic::Ordering::Relaxed);
-                                            log::info!("    [ASC] Bayesian baseline locked at chunk {}", chunk_idx);
+                                            log::info!(
+                                                "    [ASC] Bayesian baseline locked at chunk {} (step-equivalent={}, chunk_size={})",
+                                                chunk_idx, BASELINE_WINDOW_STEPS, chunk_size
+                                            );
                                             // PATHA-EVIDENCE-EXIT-001 — flag
                                             // the cooperative-exit signal.
                                             // First-writer-wins; subsequent
@@ -9142,8 +9174,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                             path_a_evidence_complete_local
                                                 .store(true, std::sync::atomic::Ordering::Release);
                                             log::info!(
-                                                "    [PATH-A EVIDENCE-EXIT] flag set by stream {} at chunk {}",
-                                                i, chunk_idx
+                                                "    [PATH-A EVIDENCE-EXIT] flag set by stream {} at chunk {} (steps_run~{})",
+                                                i, chunk_idx, baseline_window * chunk_size
                                             );
                                         }
 
