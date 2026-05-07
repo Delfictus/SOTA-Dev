@@ -203,6 +203,15 @@ required-features = ["gpu"]
 name = "prism-materialize-sites"
 path = "src/bin/prism_materialize_sites.rs"
 
+# Path B Ghost/ZSTR evidence scanner — offline reader/scorer/provenance
+# emitter for Channel-B ghost_tiles.bin + prism_zstr_*.bin. NOT a binding
+# site materializer; emits feature artifacts for downstream
+# prism-materialize-sites consumption. See
+# .prism_orchestration/PATHB_GHOST_EVIDENCE_SCANNER_REPORT.md.
+[[bin]]
+name = "prism-ghost-evidence-scan"
+path = "src/bin/prism_ghost_evidence_scan.rs"
+
 [[bin]]
 name = "nhs_rt_full"
 path = "src/bin/nhs_rt_full.rs"
