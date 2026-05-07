@@ -72,6 +72,60 @@ static_assert(offsetof(GhostTileFrame, _slack)               == 256, "_slack off
 constexpr size_t PRISM_GHOST_RECORD_BYTES   = 4096;
 constexpr size_t PRISM_GHOST_COUNTER_SECTOR = 4096;
 
+// ─── M1.2.23 §5 — GhostTileFrame v2 MAR payload schema overlay ──────────────
+//
+// The 128-byte _reserved_payload[32] region at offset 128 is partitioned into
+// structured Transparent-MAR fields. Backward compatibility is preserved:
+// v1 producers zero the whole region (legacy kernel behavior at line 215),
+// so the schema_version read at offset 128 returns 0 → v1. v2 producers
+// (Commit 4 wires this) write GHOST_FRAME_SCHEMA_V2 = 2 and populate the
+// structured fields below.
+//
+// MIRROR REQUIREMENT: these constants MUST match
+// crates/prism-nhs/src/ghost_tile.rs (search "M1.2.23 §5"). Drift is detected
+// at compile time by static_asserts immediately after this block.
+
+constexpr uint32_t GHOST_FRAME_SCHEMA_V1_LEGACY = 0u;
+constexpr uint32_t GHOST_FRAME_SCHEMA_V2        = 2u;
+
+// Field offsets within a 4096-byte GhostTileFrame record:
+constexpr size_t GHOST_V2_OFFSET_SCHEMA_VERSION       = 128;  // u32
+constexpr size_t GHOST_V2_OFFSET_OBSERVATION_PASS     = 132;  // u8
+constexpr size_t GHOST_V2_OFFSET_DISCOVERY_PASS       = 133;  // u8
+constexpr size_t GHOST_V2_OFFSET_PERTURBATION_CHAN    = 134;  // u8 (UV bitcode 0..3 or 0xFF)
+constexpr size_t GHOST_V2_OFFSET_UV_WAVELENGTH_NM     = 136;  // u16
+constexpr size_t GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS = 138;  // u16
+constexpr size_t GHOST_V2_OFFSET_GEAR_ID              = 140;  // u32
+constexpr size_t GHOST_V2_OFFSET_DT_FS                = 144;  // f32
+constexpr size_t GHOST_V2_OFFSET_STEP_IDX             = 148;  // u64
+constexpr size_t GHOST_V2_OFFSET_AABB_MIN             = 160;  // f32 × 3
+constexpr size_t GHOST_V2_OFFSET_AABB_MAX             = 172;  // f32 × 3
+constexpr size_t GHOST_V2_OFFSET_CENTROID             = 184;  // f32 × 3
+constexpr size_t GHOST_V2_OFFSET_V2_RESERVED          = 196;  // u32 × 15
+
+constexpr uint8_t GHOST_PERTURBATION_CHANNEL_UNKNOWN  = 0xFFu;
+
+// Compile-time bounds: every v2 field must land inside _reserved_payload
+// (128..256). _slack is at offset 256.
+static_assert(GHOST_V2_OFFSET_SCHEMA_VERSION       == 128, "v2 schema_version offset drift");
+static_assert(GHOST_V2_OFFSET_OBSERVATION_PASS     == 132, "v2 observation_pass offset drift");
+static_assert(GHOST_V2_OFFSET_DISCOVERY_PASS       == 133, "v2 discovery_pass offset drift");
+static_assert(GHOST_V2_OFFSET_PERTURBATION_CHAN    == 134, "v2 perturbation_channel offset drift");
+static_assert(GHOST_V2_OFFSET_UV_WAVELENGTH_NM     == 136, "v2 uv_wavelength_nm offset drift");
+static_assert(GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS == 138, "v2 field_completeness_flags offset drift");
+static_assert(GHOST_V2_OFFSET_GEAR_ID              == 140, "v2 gear_id offset drift");
+static_assert(GHOST_V2_OFFSET_DT_FS                == 144, "v2 dt_fs offset drift");
+static_assert(GHOST_V2_OFFSET_STEP_IDX             == 148, "v2 step_idx offset drift");
+static_assert(GHOST_V2_OFFSET_AABB_MIN             == 160, "v2 aabb_min offset drift");
+static_assert(GHOST_V2_OFFSET_AABB_MAX             == 172, "v2 aabb_max offset drift");
+static_assert(GHOST_V2_OFFSET_CENTROID             == 184, "v2 centroid offset drift");
+static_assert(GHOST_V2_OFFSET_V2_RESERVED          == 196, "v2_reserved offset drift");
+// The v2 fields must end at or before the _slack region (offset 256).
+static_assert(GHOST_V2_OFFSET_V2_RESERVED + 60     == 256, "v2 region must end at _slack offset 256");
+// All v2 offsets must lie within the legacy _reserved_payload[32] span (128..256).
+static_assert(GHOST_V2_OFFSET_SCHEMA_VERSION       >= 128, "v2 schema must be inside _reserved_payload");
+static_assert(GHOST_V2_OFFSET_V2_RESERVED + 60     <= 256, "v2 region must fit inside _reserved_payload");
+
 #ifdef __cplusplus
 extern "C" {
 #endif

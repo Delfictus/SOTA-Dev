@@ -216,6 +216,109 @@ const _: () = {
 /// retired from on-disk format in v9D' / Amendment 3.14).
 pub const GHOST_RECORD_BYTES: usize = 4096;
 
+// ─── M1.2.23 §5 — GhostTileFrame v2 MAR payload schema overlay ──────────────
+//
+// The 128-byte `_reserved_payload [u32; 32]` region at offset 128 is partitioned
+// into structured Transparent-MAR fields. Backward compatibility is preserved:
+//
+//   * v1 producer zeros the whole 128-byte region (existing kernel behavior)
+//     → schema_version reads as 0 → consumers treat as legacy v1.
+//
+//   * v2 producer (Commit 4 wires this) writes schema_version=2 and populates
+//     the structured fields.
+//
+// On-disk layout is BYTE-IDENTICAL between v1 and v2; the only producer-side
+// change is what bytes get written into the reserved region. No struct-field
+// rename. No size change. No alignment change. CUDA mirror remains a 4096-byte
+// align(4096) struct with the same field list — the v2 fields are accessed
+// via byte offsets / typed views below.
+//
+// Schema versioning policy:
+//   * GHOST_FRAME_SCHEMA_V1_LEGACY = 0 (zeros — no v2 fields populated)
+//   * GHOST_FRAME_SCHEMA_V2        = 2 (v2 fields populated by producer)
+// schema_version=1 is RESERVED (never used) so a "1" reading is unambiguous
+// drift / corruption and the scanner can flag it.
+//
+// Field layout within the 128-byte reserved region (offsets relative to
+// the START of the GhostTileFrame, not relative to the reserved region):
+//
+//   offset 128  schema_version          u32   (0=v1 legacy, 2=v2 explicit)
+//   offset 132  observation_pass        u8    (0/1 — bool)
+//   offset 133  discovery_pass          u8    (0/1 — bool)
+//   offset 134  perturbation_channel    u8    (UV bit code 0..3, or 0xFF unknown)
+//   offset 135  _pad8                   u8
+//   offset 136  uv_wavelength_nm        u16   (260, 280, 305, 320, or 0)
+//   offset 138  field_completeness_flags u16
+//   offset 140  gear_id                 u32   (Wave A default 0)
+//   offset 144  dt_fs                   f32
+//   offset 148  step_idx                u64
+//   offset 156  _pad32                  u32
+//   offset 160  aabb_min                [f32; 3]   (160, 164, 168)
+//   offset 172  aabb_max                [f32; 3]   (172, 176, 180)
+//   offset 184  centroid_xyz            [f32; 3]   (184, 188, 192)
+//   offset 196  _v2_reserved            [u32; 15]  (196..256, 60 B for future)
+//
+//   offset 256  _slack [u8; 3840]       (unchanged; ends at 4096)
+//
+// Total payload usage: 128 B (offsets 128..256). _slack and all v1 offsets
+// are byte-identical to v1. CUDA mirror's _reserved_payload[32] still spans
+// the same 128 bytes; the v2 typed view simply reinterprets that span.
+
+pub const GHOST_FRAME_SCHEMA_V1_LEGACY: u32 = 0;
+pub const GHOST_FRAME_SCHEMA_V2: u32 = 2;
+
+pub const GHOST_V2_OFFSET_SCHEMA_VERSION:    usize = 128;
+pub const GHOST_V2_OFFSET_OBSERVATION_PASS:  usize = 132;
+pub const GHOST_V2_OFFSET_DISCOVERY_PASS:    usize = 133;
+pub const GHOST_V2_OFFSET_PERTURBATION_CHAN: usize = 134;
+pub const GHOST_V2_OFFSET_UV_WAVELENGTH_NM:  usize = 136;
+pub const GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS: usize = 138;
+pub const GHOST_V2_OFFSET_GEAR_ID:           usize = 140;
+pub const GHOST_V2_OFFSET_DT_FS:             usize = 144;
+pub const GHOST_V2_OFFSET_STEP_IDX:          usize = 148;
+pub const GHOST_V2_OFFSET_AABB_MIN:          usize = 160;
+pub const GHOST_V2_OFFSET_AABB_MAX:          usize = 172;
+pub const GHOST_V2_OFFSET_CENTROID:          usize = 184;
+pub const GHOST_V2_OFFSET_V2_RESERVED:       usize = 196;
+
+// The v2 region MUST end at or before _slack (offset 256).
+const _: () = {
+    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION    >= 128);
+    assert!(GHOST_V2_OFFSET_OBSERVATION_PASS  == 132);
+    assert!(GHOST_V2_OFFSET_DISCOVERY_PASS    == 133);
+    assert!(GHOST_V2_OFFSET_PERTURBATION_CHAN == 134);
+    assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM  == 136);
+    assert!(GHOST_V2_OFFSET_GEAR_ID           == 140);
+    assert!(GHOST_V2_OFFSET_DT_FS             == 144);
+    assert!(GHOST_V2_OFFSET_STEP_IDX          == 148);
+    assert!(GHOST_V2_OFFSET_AABB_MIN          == 160);
+    assert!(GHOST_V2_OFFSET_AABB_MAX          == 172);
+    assert!(GHOST_V2_OFFSET_CENTROID          == 184);
+    assert!(GHOST_V2_OFFSET_V2_RESERVED       == 196);
+    // v2 fields end at: 196 + 60 = 256 — must equal _slack offset.
+    assert!(GHOST_V2_OFFSET_V2_RESERVED + 60   == 256);
+    // Reserved-payload region begins at 128 and ends just before _slack at 256.
+    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION + 128 == 256);
+};
+
+/// UV wavelength bit-code → wavelength_nm. Cited mapping authoritative source:
+/// `crates/prism-nhs/src/interferometric_adjudicator.rs:712-735`
+/// (`QI_SHIFT = 30` + `MU_01_SQ_LUT` index → wavelength).
+pub const GHOST_UV_WAVELENGTH_NM_BY_BITCODE: [u16; 4] = [260, 280, 305, 320];
+
+/// Sentinel for "perturbation channel unknown / not applicable to this record".
+pub const GHOST_PERTURBATION_CHANNEL_UNKNOWN: u8 = 0xFF;
+
+/// Read schema_version from a 4096-byte record. Returns the raw u32 — caller
+/// matches against `GHOST_FRAME_SCHEMA_V1_LEGACY` / `GHOST_FRAME_SCHEMA_V2`.
+#[inline]
+pub fn ghost_v2_read_schema_version(record_bytes: &[u8; GHOST_RECORD_BYTES]) -> u32 {
+    let off = GHOST_V2_OFFSET_SCHEMA_VERSION;
+    let mut b = [0u8; 4];
+    b.copy_from_slice(&record_bytes[off..off + 4]);
+    u32::from_le_bytes(b)
+}
+
 // ─── GhostTileRing — pinned-host, device-mapped ring buffer ─────────────────
 
 /// Pinned-host buffer with a device-mapped alias.  The captured kernel
@@ -263,8 +366,7 @@ impl GhostTileRing {
     /// `max_records` records of 4096 bytes each.  All bytes zero on
     /// alloc (CUDA pinned-alloc behavior).
     pub fn allocate(max_records: u32) -> Result<Self, String> {
-        let total_bytes = Self::COUNTER_SECTOR_BYTES
-            + (max_records as usize) * GHOST_RECORD_BYTES;
+        let total_bytes = Self::COUNTER_SECTOR_BYTES + (max_records as usize) * GHOST_RECORD_BYTES;
 
         let mut host_ptr: *mut c_void = std::ptr::null_mut();
         let flags = CU_MEMHOSTALLOC_PORTABLE | CU_MEMHOSTALLOC_DEVICEMAP;
@@ -283,22 +385,18 @@ impl GhostTileRing {
         // this is the same VA window as the host pointer, so memcpy is
         // not required — kernel STG.E.* lands directly on host RAM.
         let mut dev_ptr: u64 = 0;
-        let rc = unsafe {
-            cuMemHostGetDevicePointer_v2(&mut dev_ptr, host_ptr, 0)
-        };
+        let rc = unsafe { cuMemHostGetDevicePointer_v2(&mut dev_ptr, host_ptr, 0) };
         if !matches!(rc, CUresult::CUDA_SUCCESS) {
-            unsafe { let _ = cuMemFreeHost(host_ptr); }
-            return Err(format!(
-                "cuMemHostGetDevicePointer_v2 failed: rc={:?}", rc
-            ));
+            unsafe {
+                let _ = cuMemFreeHost(host_ptr);
+            }
+            return Err(format!("cuMemHostGetDevicePointer_v2 failed: rc={:?}", rc));
         }
 
         // Zero the leading counter sector (cuMemHostAlloc may not
         // zero-init — be defensive).
         unsafe {
-            std::ptr::write_bytes(host_ptr as *mut u8,
-                                  0u8,
-                                  Self::COUNTER_SECTOR_BYTES);
+            std::ptr::write_bytes(host_ptr as *mut u8, 0u8, Self::COUNTER_SECTOR_BYTES);
         }
 
         Ok(Self {
@@ -314,9 +412,7 @@ impl GhostTileRing {
     /// the count of (header + tile) records currently resident in the
     /// buffer.
     pub fn n_frames_written(&self) -> u32 {
-        unsafe {
-            std::ptr::read_volatile(self.host_base as *const u32)
-        }
+        unsafe { std::ptr::read_volatile(self.host_base as *const u32) }
     }
 
     /// Byte slice of the live record payload (excluding the leading
@@ -326,10 +422,7 @@ impl GhostTileRing {
         let n = self.n_frames_written().min(self.max_records);
         let nbytes = (n as usize) * GHOST_RECORD_BYTES;
         unsafe {
-            std::slice::from_raw_parts(
-                self.host_base.add(Self::COUNTER_SECTOR_BYTES),
-                nbytes,
-            )
+            std::slice::from_raw_parts(self.host_base.add(Self::COUNTER_SECTOR_BYTES), nbytes)
         }
     }
 }
@@ -337,7 +430,9 @@ impl GhostTileRing {
 impl Drop for GhostTileRing {
     fn drop(&mut self) {
         if !self.host_base.is_null() {
-            unsafe { let _ = cuMemFreeHost(self.host_base as *mut c_void); }
+            unsafe {
+                let _ = cuMemFreeHost(self.host_base as *mut c_void);
+            }
             self.host_base = std::ptr::null_mut();
         }
     }
@@ -360,7 +455,7 @@ extern "C" {
         ring_base_dev: u64,
         tiles: *const std::ffi::c_void,
         adj: *const std::ffi::c_void,
-        d_kcc_lead: *const std::ffi::c_void,   // Wave 1 / Q2 — nullable
+        d_kcc_lead: *const std::ffi::c_void, // Wave 1 / Q2 — nullable
         frame_idx: u64,
         n_clusters: u32,
         max_records: u32,
@@ -371,8 +466,8 @@ extern "C" {
     /// table.  Stream-ordered cudaMemcpyToSymbolAsync.  `n` clamped to 64.
     pub fn prism_ghost_set_cluster_repr_residue(
         repr_residues_host: *const u32,
-        n:                  u32,
-        stream:             *mut std::ffi::c_void,
+        n: u32,
+        stream: *mut std::ffi::c_void,
     ) -> i32;
 
     /// **M1.2.20.C-C / T20 + Amendment 3.20** — Topology-Driven Chain
@@ -383,8 +478,8 @@ extern "C" {
     /// Target-agnostic — replaces all prior hardcoded chain numbers.
     pub fn prism_ghost_set_chain_offsets(
         offsets_host: *const u32,
-        n:            u32,
-        stream:       *mut std::ffi::c_void,
+        n: u32,
+        stream: *mut std::ffi::c_void,
     ) -> i32;
 
     /// **Path Ω Phase 2** — geometry-emergent chain_id LUT populator.
@@ -394,8 +489,8 @@ extern "C" {
     /// slot (kernel falls back to residue-id boundary scan).
     pub fn prism_ghost_set_cluster_chain_id(
         chain_ids_host: *const u8,
-        n:              u32,
-        stream:         *mut std::ffi::c_void,
+        n: u32,
+        stream: *mut std::ffi::c_void,
     ) -> i32;
 }
 
@@ -407,8 +502,8 @@ extern "C" {
 /// `stream` must be a valid CUstream owned by the active context.
 pub unsafe fn set_cluster_chain_id(
     chain_ids_host: *const u8,
-    n:              u32,
-    stream:         *mut std::ffi::c_void,
+    n: u32,
+    stream: *mut std::ffi::c_void,
 ) -> i32 {
     prism_ghost_set_cluster_chain_id(chain_ids_host, n, stream)
 }
@@ -424,8 +519,8 @@ pub unsafe fn set_cluster_chain_id(
 /// `stream` must be a valid CUstream owned by the active context.
 pub unsafe fn set_chain_offsets(
     offsets_host: *const u32,
-    n:            u32,
-    stream:       *mut std::ffi::c_void,
+    n: u32,
+    stream: *mut std::ffi::c_void,
 ) -> i32 {
     prism_ghost_set_chain_offsets(offsets_host, n, stream)
 }
@@ -446,8 +541,8 @@ pub unsafe fn set_chain_offsets(
 /// context.
 pub unsafe fn set_cluster_repr_residue(
     repr_residues_host: *const u32,
-    n:                  u32,
-    stream:             *mut std::ffi::c_void,
+    n: u32,
+    stream: *mut std::ffi::c_void,
 ) -> i32 {
     prism_ghost_set_cluster_repr_residue(repr_residues_host, n, stream)
 }
