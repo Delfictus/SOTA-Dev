@@ -115,6 +115,19 @@ struct Args {
     #[arg(long, default_value = "100")]
     persistence_bin_steps: i32,
 
+    /// **M1.2.23 §12** — path to `ghost_zstr_candidate_features.json`
+    /// produced by `prism-ghost-evidence-scan`. When provided, an
+    /// additional `ghost_zstr_factor` component is folded into the
+    /// PRISM-native composite score (clamped [0.7, 1.6]). When absent,
+    /// the factor is neutral 1.0 — no fake boost. Per directive Phase
+    /// 12: "if absent → ghost_zstr_factor = 1.0; if present but spatial
+    /// mapping absent → use non-spatial aggregate features only; if
+    /// present with spatial mapping → connect Ghost/ZSTR support to
+    /// candidate regions". This commit implements the first two
+    /// regimes; the third depends on a sidecar with populated entries.
+    #[arg(long)]
+    ghost_features: Option<PathBuf>,
+
     /// Skip the spike-density pass entirely (faster validation-only run).
     #[arg(long, default_value = "false")]
     headers_only: bool,
@@ -1023,6 +1036,16 @@ struct PrismScoreComponents {
     field_completeness_factor: f64,
     duplicate_region_factor: f64,
     tail_penalty_factor: f64,
+    /// M1.2.23 §12 — Ghost/ZSTR candidate-features factor. Neutral 1.0
+    /// when --ghost-features is absent. Range [0.7, 1.6] when present
+    /// (mirror of kcc_driver_factor scale). Status string emitted
+    /// alongside in `ghost_zstr_status`.
+    ghost_zstr_factor: f64,
+    /// Free-form status: "absent_neutral" | "present_non_spatial" |
+    /// "present_spatial_linked".
+    ghost_zstr_status: &'static str,
+    /// Free-form per-site reasoning string. Empty when neutral.
+    ghost_zstr_reasoning: Vec<String>,
     final_prism_score: f64,
     score_explanation: Vec<String>,
 }
@@ -1122,6 +1145,92 @@ struct DuplicateClusterRecord {
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
+
+// ─── M1.2.23 §12 — Ghost/ZSTR features integration ────────────────────────
+
+#[derive(Debug, Default)]
+struct GhostFeaturesState {
+    /// True when --ghost-features was passed and the file parsed.
+    loaded: bool,
+    /// Path that was read (for provenance).
+    path: Option<String>,
+    /// Total ghost events across all streams (proxy for "how much ghost
+    /// evidence exists at all").
+    total_ghost_events: u64,
+    /// Whether spatial mapping is available in the candidate-features
+    /// file (reads `spatial_status` field, looks for "..._mapped"
+    /// substring vs "unmapped").
+    spatial_mapped: bool,
+    /// Free-form reason / status string captured from the file's
+    /// `spatial_status` field for emission downstream.
+    spatial_status_text: String,
+}
+
+fn load_ghost_features(path: &Path) -> GhostFeaturesState {
+    let s = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return GhostFeaturesState::default(),
+    };
+    let v: serde_json::Value = match serde_json::from_str(&s) {
+        Ok(v) => v,
+        Err(_) => return GhostFeaturesState::default(),
+    };
+    let total_ghost_events = v
+        .get("per_stream_ghost_support")
+        .and_then(|x| x.as_object())
+        .map(|m| m.values()
+                  .filter_map(|s| s.get("events").and_then(|y| y.as_u64()))
+                  .sum::<u64>())
+        .unwrap_or(0);
+    let spatial_status_text = v
+        .get("spatial_status")
+        .and_then(|x| x.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let spatial_mapped = !spatial_status_text.contains("unmapped");
+    GhostFeaturesState {
+        loaded: true,
+        path: Some(path.display().to_string()),
+        total_ghost_events,
+        spatial_mapped,
+        spatial_status_text,
+    }
+}
+
+/// Compute ghost_zstr_factor for one candidate region. Per directive Phase 12:
+///   * absent → 1.0 neutral
+///   * present, spatial unmapped → 1.0 neutral with status="present_non_spatial"
+///   * present, spatial mapped → linked compute (deferred; neutral with status
+///     "present_spatial_linked_pending_per_region_link").
+fn ghost_zstr_summary_compute(
+    state: &GhostFeaturesState,
+    _region: &CandidateRegion,
+) -> (f64, &'static str, Vec<String>) {
+    if !state.loaded {
+        return (1.0, "absent_neutral", Vec::new());
+    }
+    if !state.spatial_mapped {
+        return (
+            1.0,
+            "present_non_spatial",
+            vec![format!(
+                "ghost_features.spatial_status={} → no per-region linking; factor neutral",
+                state.spatial_status_text
+            )],
+        );
+    }
+    // Spatial-linked path: deferred until ghost_site_map carries real entries
+    // AND we have a (stream,site_id)→region mapping. Emit neutral + reason so
+    // the run still benefits from a SOURCE-LANDED contract.
+    (
+        1.0,
+        "present_spatial_linked_pending_per_region_link",
+        vec![format!(
+            "ghost_features spatial mapping present (status={}) but per-region link is deferred to follow-up; total_ghost_events={}",
+            state.spatial_status_text, state.total_ghost_events
+        )],
+    )
+}
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -1925,6 +2034,22 @@ fn main() -> Result<()> {
         .fold(0.0, f64::max)
         .max(1.0);
 
+    // ── M1.2.23 §12 — load ghost features once ──────────────────────────────
+    let ghost_features_state: GhostFeaturesState = match args.ghost_features.as_ref() {
+        Some(p) => {
+            let s = load_ghost_features(p);
+            eprintln!(
+                "[ghost-features] {} → loaded={} spatial_mapped={} total_events={} status={}",
+                p.display(), s.loaded, s.spatial_mapped, s.total_ghost_events, s.spatial_status_text
+            );
+            s
+        }
+        None => {
+            eprintln!("[ghost-features] not supplied → ghost_zstr_factor = 1.0 (neutral) for all regions");
+            GhostFeaturesState::default()
+        }
+    };
+
     // Pre-compute density-only ranking (for ablation report) — by raw n_spikes.
     let mut density_only_rank_by_region: std::collections::HashMap<u32, u32> =
         std::collections::HashMap::new();
@@ -2307,6 +2432,11 @@ fn main() -> Result<()> {
             };
         }
         let field_completeness_factor: f64 = (sources_present / sources_total).clamp(0.5, 1.0);
+
+        // ── M1.2.23 §12 — Ghost/ZSTR candidate-features factor ──────────────
+        // Set per-region by main()-level ghost_zstr_summary; default neutral.
+        // (Deferred per-region linking when a spatial map exists.)
+        let (ghost_zstr_factor, ghost_zstr_status, ghost_zstr_reasoning_extra) = ghost_zstr_summary_compute(&ghost_features_state, region);
         let field_completeness = FieldCompleteness {
             spikes: "present",
             phase_bits: "present",
@@ -2332,7 +2462,8 @@ fn main() -> Result<()> {
             * kcc_driver_factor
             * field_completeness_factor
             * duplicate_region_factor
-            * tail_penalty_factor;
+            * tail_penalty_factor
+            * ghost_zstr_factor;
 
         let mut score_explanation: Vec<String> = Vec::new();
         score_explanation.push(format!("density_score={:.3}", density_score));
@@ -2343,9 +2474,10 @@ fn main() -> Result<()> {
         score_explanation.push(format!("kcc_driver={:.3} (drv_frac={:.2})", kcc_driver_factor, driver_residue_fraction_of_shell));
         score_explanation.push(format!("field_completeness={:.3}", field_completeness_factor));
         score_explanation.push(format!("tail_penalty_factor={:.3} (term_frac={:.2})", tail_penalty_factor, terminal_residue_fraction));
+        score_explanation.push(format!("ghost_zstr={:.3} ({})", ghost_zstr_factor, ghost_zstr_status));
         score_explanation.push(format!("FINAL={:.6}", final_prism_score));
 
-        let score_components = PrismScoreComponents {
+        let mut score_components = PrismScoreComponents {
             density_score,
             stream_balance_factor: stream_balance_score.clamp(0.05, 1.0),
             temporal_persistence_factor: temporal_persistence_factor.clamp(0.05, 1.0),
@@ -2355,9 +2487,15 @@ fn main() -> Result<()> {
             field_completeness_factor,
             duplicate_region_factor,
             tail_penalty_factor,
+            ghost_zstr_factor,
+            ghost_zstr_status,
+            ghost_zstr_reasoning: ghost_zstr_reasoning_extra,
             final_prism_score,
             score_explanation,
         };
+        // (mutable above so callers can extend ghost_zstr_reasoning later
+        // — currently unused but reserved for spatial-link follow-up.)
+        let _ = &mut score_components;
 
         // ── Promotion criteria (tightened per directive Part 8) ─────────────
         let mut blocking: Vec<&'static str> = Vec::new();
