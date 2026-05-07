@@ -13001,6 +13001,23 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         let mut total_spikes_md: usize = 0;
         let mut serialization_failure: Option<String> = None;
         let mut streams_serialized: usize = 0;
+        // M1.2.23 §6+§7 — Transparent MAR sidecar accumulators. Filled inside
+        // the per-stream loop below; emitted after as ghost_site_map.json +
+        // ghost_time_map.json. Independent of V2 firing: temporal-map data
+        // is always emit-able from spike timesteps; site-map is emitted with
+        // empty entries + explicit reason when V2 was not live (per directive
+        // §6 — sidecar file always exists for auditability).
+        #[derive(Clone, Debug)]
+        struct PerStreamTimingRow {
+            stream_id: u32,
+            n_spikes: usize,
+            timestep_min: i32,
+            timestep_max: i32,
+            // gear_id Wave A producer leaves at 0 per zstr.rs:88; honest
+            // value with explicit status downstream.
+            gear_id: u32,
+        }
+        let mut per_stream_timing_rows: Vec<PerStreamTimingRow> = Vec::new();
 
         let stream_results_vec: Vec<_> = stream_results.into_iter().collect();
         let n_streams_actual = stream_results_vec.len();
@@ -13022,6 +13039,28 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             };
             let stream_id = i as u32;
             total_spikes_md += spikes.len();
+
+            // M1.2.23 §7 — temporal-map row. Min/max timestep are scanned
+            // from the in-memory spike vector before serialization. Cheap
+            // O(N) scan (same N we already iterate over in write_spikes).
+            let (ts_min, ts_max) = if spikes.is_empty() {
+                (-1, -1)
+            } else {
+                let mut lo = i32::MAX;
+                let mut hi = i32::MIN;
+                for s in spikes.iter() {
+                    if s.timestep < lo { lo = s.timestep; }
+                    if s.timestep > hi { hi = s.timestep; }
+                }
+                (lo, hi)
+            };
+            per_stream_timing_rows.push(PerStreamTimingRow {
+                stream_id,
+                n_spikes: spikes.len(),
+                timestep_min: ts_min,
+                timestep_max: ts_max,
+                gear_id: 0, // Wave A default per zstr.rs:88 comment.
+            });
 
             // (1) spikes.bin
             let spikes_path = args
@@ -13362,6 +13401,113 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     manifest_path.display(), e
                 );
             }
+        }
+
+        // ═════════════════════════════════════════════════════════════════
+        // M1.2.23 §7 — ghost_time_map.json (always emitted)
+        // ═════════════════════════════════════════════════════════════════
+        // Per-stream gear-aware temporal context for the scanner. dt_fs
+        // resolved from --hmr (4.0 fs) or default (2.0 fs) per the engine's
+        // own writer convention (nhs_rt_full.rs:5927 v2 trajectory writer).
+        // gear_id=0 is the Wave A default per zstr.rs:88; carried explicitly
+        // so downstream consumers know NOT to reduce gear_id=0 to "missing".
+        let dt_fs_resolved: f32 = if args.hmr { 4.0 } else { 2.0 };
+        let gtm_path = args.output.join("ghost_time_map.json");
+        let gtm_streams: Vec<serde_json::Value> = per_stream_timing_rows
+            .iter()
+            .map(|row| serde_json::json!({
+                "stream_id":              row.stream_id,
+                "n_spikes":               row.n_spikes,
+                "timestep_min":           row.timestep_min,
+                "timestep_max":           row.timestep_max,
+                "frame_idx_at_teardown":  row.timestep_max,
+                "gear_id":                row.gear_id,
+                "gear_id_status":         "wave_a_default_zero_per_zstr_rs_88",
+                "dt_fs":                  dt_fs_resolved,
+                "dt_source":              if args.hmr { "args.hmr_4_0_fs" } else { "default_2_0_fs" },
+                "physical_time_fs":       (row.timestep_max as f64) * (dt_fs_resolved as f64),
+                "physical_time_at_min_fs": (row.timestep_min as f64) * (dt_fs_resolved as f64),
+                "source":                 "md_only_teardown_emit_no_runtime_gearbox_state_capture",
+            }))
+            .collect();
+        let gtm_json = serde_json::json!({
+            "schema_version": 1,
+            "schema_kind":    "pathb_ghost_time_map",
+            "run_id":         phase3_run_id,
+            "target":         stem,
+            "streams":        gtm_streams,
+            "notes": [
+                "dt_fs derived from args.hmr (4.0 fs) or default 2.0 fs; matches engine writer convention.",
+                "gear_id is Wave A default 0 per zstr.rs:88 — gear logic is Wave B (deferred).",
+                "physical_time_fs = timestep × dt_fs; treat as nominal until live gearbox capture lands.",
+                "Source: MD-only teardown path; no DtoH for gearbox state in this commit.",
+            ],
+        });
+        match std::fs::File::create(&gtm_path) {
+            Ok(f) => {
+                let mut bw = std::io::BufWriter::new(f);
+                if let Err(e) = serde_json::to_writer_pretty(&mut bw, &gtm_json) {
+                    log::error!("  [MD-ONLY EVIDENCE] ghost_time_map serialize FAILED: {}", e);
+                } else {
+                    use std::io::Write as _;
+                    let _ = bw.flush();
+                    log::info!("  [MD-ONLY EVIDENCE] ✓ ghost_time_map.json: {}", gtm_path.display());
+                }
+            }
+            Err(e) => log::error!("  [MD-ONLY EVIDENCE] ghost_time_map CREATE FAILED: {}", e),
+        }
+
+        // ═════════════════════════════════════════════════════════════════
+        // M1.2.23 §6 — ghost_site_map.json (always emitted)
+        // ═════════════════════════════════════════════════════════════════
+        // Maps (stream_id, site_id) → spatial support. Populated only when
+        // V2 monolithic was live (cluster centroids exist on the device-mapped
+        // ring). When V2 was NOT live (current MD-only chunk_size=100 path),
+        // emit an empty entries list with status="v2_was_not_live..." so the
+        // scanner can detect the gap explicitly. Per directive §6: "even
+        // with GhostTileFrame enrichment, also emit JSON sidecar for
+        // auditability."
+        let gsm_path = args.output.join("ghost_site_map.json");
+        // V2 cluster centroids are carried in V2-live device buffers; in
+        // MD-only mode without V2 those buffers are not allocated. Emit
+        // empty entries; populate is deferred to the V2-live emit path.
+        let gsm_status: &str = "v2_was_not_live_no_per_site_centroid_metadata_emitted_this_run";
+        let gsm_json = serde_json::json!({
+            "schema_version":   1,
+            "schema_kind":      "pathb_ghost_site_map",
+            "run_id":           phase3_run_id,
+            "target":           stem,
+            "coordinate_frame": "prism_topology_native_no_recentering",
+            "status":           gsm_status,
+            "entries":          serde_json::Value::Array(vec![]),
+            "missing_entries": [{
+                "reason": "v2_monolithic_not_live_per_chunk_size_path_evidence_complete_fired_before_cold_hold",
+                "follow_up": "rerun with --m1-monolithic-discovery and bounded V2-live smoke to populate per-site centroids",
+            }],
+            "field_completeness": {
+                "stream_id":       "implicit_from_per_stream_artifacts_map_keys_in_md_evidence_manifest",
+                "site_id":         "absent_v2_was_not_live",
+                "aabb":            "absent_v2_was_not_live",
+                "centroid_xyz":    "absent_v2_was_not_live",
+                "voxel_xyz":       "absent_v2_was_not_live",
+                "residue_support": "available_via_path_b_materializer_per_region_lining_residues",
+            },
+        });
+        match std::fs::File::create(&gsm_path) {
+            Ok(f) => {
+                let mut bw = std::io::BufWriter::new(f);
+                if let Err(e) = serde_json::to_writer_pretty(&mut bw, &gsm_json) {
+                    log::error!("  [MD-ONLY EVIDENCE] ghost_site_map serialize FAILED: {}", e);
+                } else {
+                    use std::io::Write as _;
+                    let _ = bw.flush();
+                    log::info!(
+                        "  [MD-ONLY EVIDENCE] ✓ ghost_site_map.json: {} (status={})",
+                        gsm_path.display(), gsm_status
+                    );
+                }
+            }
+            Err(e) => log::error!("  [MD-ONLY EVIDENCE] ghost_site_map CREATE FAILED: {}", e),
         }
 
         // ── field_completeness_report.json ────────────────────────────────
