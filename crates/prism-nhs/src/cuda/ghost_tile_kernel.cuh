@@ -158,6 +158,39 @@ int prism_ghost_pipe_stage_launch(
     void*          stream,
     uint32_t       firehose_enable); /* 0 = adj-gated; nonzero = unconditional emission */
 
+/// **M1.2.23 §4 + §5** — Transparent MAR v2 emission.
+///
+/// Same v1 fields as `prism_ghost_pipe_stage_launch`, plus structured v2
+/// payload at offsets 128..256 per the v2 schema overlay above.
+///
+/// Emission gate is widened to include observation_pass: a record is emitted
+/// when `adj_code >= 1` OR `firehose_enable != 0` OR `kl_divergence >=
+/// observation_threshold_kl`. The 3σ observation gate writes telemetry only;
+/// the F1 SWITCH path in the adjudicator is NOT touched by this kernel.
+///
+/// Hard invariant (per directive §4): observation_pass=true and
+/// discovery_pass=false MUST never trigger steering. The kernel respects
+/// this trivially because it does not control F1 — it only writes telemetry.
+///
+/// Thresholds are passed as RAW KL values (host pre-multiplies σ by the
+/// per-stream noise floor): `observation_threshold_kl = mu + 3.0 * sigma`,
+/// `discovery_threshold_kl = mu + 12.0 * sigma`.
+int prism_ghost_pipe_stage_launch_v2(
+    uint64_t       ring_base_dev,
+    const void*    tiles,
+    const void*    adj,
+    const void*    d_kcc_lead,
+    uint64_t       frame_idx,
+    uint32_t       n_clusters,
+    uint32_t       max_records,
+    void*          stream,
+    uint32_t       firehose_enable,
+    float          observation_threshold_kl,   /* mu + 3σ */
+    float          discovery_threshold_kl,     /* mu + 12σ */
+    uint32_t       gear_id,                    /* Wave A default 0 */
+    float          dt_fs,                      /* picoseconds × 1000 */
+    uint64_t       step_idx);                  /* monotonic step counter */
+
 /// Wave 1 / Q1 — host-side populator for the __constant__ cluster→repr
 /// residue table.  Call once per campaign after Pillar 1 clustering
 /// converges; stream-ordered cudaMemcpyToSymbolAsync.

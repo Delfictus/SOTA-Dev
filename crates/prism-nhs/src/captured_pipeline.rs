@@ -740,6 +740,38 @@ extern "C" {
         n:                  u32,
         stream:             *mut c_void,
     ) -> i32;
+
+    /// **M1.2.23 §4 + §5** — Transparent MAR v2 emission launcher.
+    ///
+    /// Same v1 fields plus structured v2 payload (schema_version=2,
+    /// observation_pass, discovery_pass, gear_id, dt_fs, step_idx).
+    /// Emission is widened to include `kl_divergence >=
+    /// observation_threshold_kl`. The 3σ gate writes telemetry only — F1
+    /// SWITCH semantics are unchanged. Caller passes raw KL thresholds:
+    ///   observation_threshold_kl = mu + 3.0 * sigma
+    ///   discovery_threshold_kl   = mu + 12.0 * sigma
+    ///
+    /// Source-landed in CUDA at ghost_tile_kernel.cu (Commit 4). NOT yet
+    /// wired into a captured-graph call site — the existing build path
+    /// continues to call the v1 launcher. v2 wire-in is the bounded
+    /// V2-live telemetry smoke step's responsibility.
+    #[allow(dead_code)]
+    fn prism_ghost_pipe_stage_launch_v2(
+        ring_base_dev:            u64,
+        tiles:                    *const c_void,
+        adj:                      *const c_void,
+        d_kcc_lead:               *const c_void,
+        frame_idx:                u64,
+        n_clusters:               u32,
+        max_records:              u32,
+        stream:                   *mut c_void,
+        firehose_enable:          u32,
+        observation_threshold_kl: f32,
+        discovery_threshold_kl:   f32,
+        gear_id:                  u32,
+        dt_fs:                    f32,
+        step_idx:                 u64,
+    ) -> i32;
 }
 
 // ============================================================================
@@ -980,6 +1012,63 @@ pub struct ZstrCaptureParams {
 // not dereferenced on the host outside the CUDA capture sequence.
 unsafe impl Send for ZstrCaptureParams {}
 
+/// **M1.2.23 §4 — Transparent MAR v2 telemetry configuration.**
+///
+/// When `Some` on `PipelineConfig.mar_v2`, the captured-graph build wires
+/// the v2 ghost-tile launcher with these fields. v1 launcher (the current
+/// default) is used when this is `None` — bit-identical legacy behavior.
+///
+/// `T_observation = 3.0` and `T_discovery = 12.0` are the directive-spec
+/// sigma multipliers (M1.2.23 §4). The kernel converts them to raw KL
+/// thresholds via `host-side mu + multiplier * sigma`. mu/sigma come from
+/// the per-stream noise_floor.json computed during cold_hold.
+///
+/// Hard invariant (per directive §4): observation_pass=true and
+/// discovery_pass=false MUST never trigger steering. The v2 kernel
+/// respects this trivially because it is a TELEMETRY-ONLY emitter; it
+/// does NOT control F1/G26 SWITCH selection.
+#[derive(Debug, Clone, Copy)]
+pub struct MarV2Config {
+    /// Observation gate sigma multiplier. Default 3.0 per directive §4.
+    pub threshold_sigma_observation: f32,
+    /// Discovery gate sigma multiplier. Default 12.0 per directive §4.
+    pub threshold_sigma_discovery: f32,
+    /// Resolved noise-floor μ for the active stream. Used by host to
+    /// pre-multiply `mu + sigma_mult * sigma` into the raw KL threshold
+    /// passed to the kernel.
+    pub noise_floor_mu: f32,
+    /// Resolved noise-floor σ for the active stream.
+    pub noise_floor_sigma: f32,
+    /// Gear id (Wave A default 0). Stamped into v2 records.
+    pub gear_id: u32,
+    /// Integration timestep in femtoseconds. Stamped into v2 records.
+    pub dt_fs: f32,
+}
+
+impl Default for MarV2Config {
+    fn default() -> Self {
+        Self {
+            threshold_sigma_observation: 3.0,
+            threshold_sigma_discovery: 12.0,
+            noise_floor_mu: 0.0,
+            noise_floor_sigma: 1.0,
+            gear_id: 0,
+            dt_fs: 2.0,
+        }
+    }
+}
+
+impl MarV2Config {
+    /// Compute the raw KL threshold the kernel checks: `mu + sigma_mult * sigma`.
+    pub fn observation_threshold_kl(&self) -> f32 {
+        self.noise_floor_mu + self.threshold_sigma_observation * self.noise_floor_sigma
+    }
+    /// Compute the discovery raw KL threshold: `mu + 12σ`.
+    pub fn discovery_threshold_kl(&self) -> f32 {
+        self.noise_floor_mu + self.threshold_sigma_discovery * self.noise_floor_sigma
+    }
+}
+
 /// G28 SISR symmetry consensus configuration.  When `Some`, the pipeline
 /// records a SISR kernel node into the captured graph between Node B
 /// (SO(3)) and Node C (Adjudicator).  The kernel writes a u64 prune mask
@@ -1061,6 +1150,20 @@ pub struct PipelineConfig {
     /// the u64 prune-mask buffer into the F2 pool.  The Adjudicator FFI's
     /// `force_prune_mask` is wired to that buffer pre-capture.
     pub sisr: Option<SisrConfig>,
+
+    /// **M1.2.23 §4 — Transparent MAR v2 emission opt-in.**
+    ///
+    /// `None` (default) → existing v1 ghost-tile launcher is used; on-disk
+    /// records have schema_version=0 (v1 legacy zero) in the v2 region.
+    /// `Some(MarV2Config { ... })` → v2 launcher path is enabled. v2 fields
+    /// (schema_version=2, observation_pass, discovery_pass, gear_id, dt_fs,
+    /// step_idx) are populated by the kernel.
+    ///
+    /// Source-landed in this commit; NOT yet wired into the captured-graph
+    /// build path. The wire-in lives in the bounded V2-live telemetry smoke
+    /// (Task #28) which routes ghost emissions through the v2 launcher
+    /// instead of v1 when this field is `Some`.
+    pub mar_v2: Option<MarV2Config>,
     /// Substrate-aware noise-floor override (Amendment 3.4.6).  When set,
     /// applied AFTER `apply_t7_calibration` overwrites the 4LPK-derived
     /// μ/σ constants with substrate-specific values.  Pair = (μ, σ),

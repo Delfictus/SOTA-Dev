@@ -357,3 +357,180 @@ int prism_ghost_set_cluster_chain_id(
     );
     return static_cast<int>(rc);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M1.2.23 §5 + §4 — Transparent MAR v2 emission kernel
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Source-landed v2 producer. Writes the same v1 fields as the legacy kernel
+// (frame_idx, site_id, chain_id, adj_code, kl_divergence, power_spectrum,
+// thermo_flux, causal_lead_residue) bit-identically, plus structured v2
+// fields into the 128-byte _reserved_payload region per the layout in
+// ghost_tile_kernel.cuh / ghost_tile.rs.
+//
+// Hard invariant (per directive §4): observation_pass=true and
+// discovery_pass=false MUST never trigger steering. This kernel does NOT
+// control F1 SWITCH — that lives in adjudicator.cu's predicate bridge.
+// The 3σ observation gate here only widens TELEMETRY emission. F1
+// behavior is unchanged. Discovery semantics in the F1 path are left to
+// the existing adjudicator threshold (which must equal the discovery
+// threshold passed here for downstream consumers to interpret the field
+// consistently — that wire-up is host-side at launch time).
+//
+// Emission gate (per-thread):
+//   emit if adj_code >= 1                                   (legacy)
+//   OR    if firehose_enable != 0                           (legacy)
+//   OR    if kl_divergence >= observation_threshold_kl      (NEW v2)
+//
+// Per-record observation_pass / discovery_pass are written verbatim from
+// the kernel-computed booleans, regardless of whether emission was gated
+// by adj_code or by observation_pass. Downstream consumers can filter.
+
+extern "C" __global__
+void prism_ghost_pipe_stage_kernel_v2(
+    uint8_t* __restrict__       ring_base,
+    const ContactShellTile* __restrict__ tiles,
+    const uint8_t* __restrict__ adj,
+    const uint32_t* __restrict__ d_kcc_lead,
+    uint64_t                    frame_idx,
+    uint32_t                    n_clusters,
+    uint32_t                    max_records,
+    uint32_t                    firehose_enable,
+    // M1.2.23 §4 — Transparent MAR v2 host-passed thresholds + context.
+    float                       observation_threshold_kl,
+    float                       discovery_threshold_kl,
+    uint32_t                    gear_id,
+    float                       dt_fs,
+    uint64_t                    step_idx)
+{
+    const uint32_t i = static_cast<uint32_t>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (i >= n_clusters) return;
+
+    const uint8_t adj_code = adj[PRISM_ADJ_ADJUDICATION_CODE_OFF];
+    const float kl = *reinterpret_cast<const float*>(adj + PRISM_ADJ_CURRENT_DIVERGENCE_OFF);
+    const bool obs_pass = isfinite(kl) && (kl >= observation_threshold_kl);
+    const bool disc_pass = isfinite(kl) && (kl >= discovery_threshold_kl);
+
+    // Widened emission gate (v2): legacy adj_code gate OR observation pass.
+    if (firehose_enable == 0u && adj_code < 1u && !obs_pass) return;
+
+    // Atomic counter at offset 0.
+    uint32_t* counter = reinterpret_cast<uint32_t*>(ring_base);
+    const uint32_t slot = atomicAdd(counter, 1u);
+    if (slot >= max_records) {
+        atomicSub(counter, 1u);
+        return;
+    }
+
+    const size_t record_off = PRISM_GHOST_COUNTER_SECTOR
+                            + static_cast<size_t>(slot) * PRISM_GHOST_RECORD_BYTES;
+    uint8_t* record_base = ring_base + record_off;
+    GhostTileFrame* hdr = reinterpret_cast<GhostTileFrame*>(record_base);
+
+    // ─── v1 fields (bit-identical with legacy kernel) ─────────────────────
+    hdr->frame_idx = frame_idx;
+    hdr->site_id   = i;
+    uint8_t chain_id = d_cluster_to_chain_id[i];
+    if (chain_id == 0xFFu) {
+        chain_id = 0u;
+        const uint32_t repr_res = d_cluster_to_repr_residue[i];
+        if (repr_res != 0xFFFFFFFFu) {
+            #pragma unroll
+            for (int k = 0; k < 8; ++k) {
+                const uint32_t boundary = d_chain_offsets[k];
+                if (boundary != 0xFFFFFFFFu && boundary <= repr_res) {
+                    chain_id = static_cast<uint8_t>(k);
+                }
+            }
+        }
+    }
+    hdr->chain_id          = chain_id;
+    hdr->adjudication_code = adj_code;
+    hdr->kl_divergence     = kl;
+
+    const ContactShellTile& tile_i = tiles[i];
+    #pragma unroll
+    for (int l = 0; l < 6; ++l)  hdr->power_spectrum[l]      = tile_i.geo_power_spectrum[l];
+    #pragma unroll
+    for (int l = 6; l < 24; ++l) hdr->power_spectrum[l]      = 0.0f;
+
+    const float therm_l0 = tile_i.therm_power_spectrum[0];
+    const float caus_l0  = tile_i.caus_power_spectrum[0];
+    const bool  tainted  = !isfinite(therm_l0) || !isfinite(caus_l0);
+    hdr->thermo_flux[0]    = isfinite(therm_l0) ? therm_l0 : 0.0f;
+    hdr->thermo_flux[1]    = isfinite(caus_l0)  ? caus_l0  : 0.0f;
+    hdr->telemetry_flags   = tainted ? GHOST_TELEMETRY_CLASS_TAINTED : uint16_t{0};
+    hdr->causal_lead_residue = (d_kcc_lead != nullptr) ? d_kcc_lead[i] : 0xFFFFFFFFu;
+
+    // ─── v2 fields (writes into the same 128 B span the v1 kernel zeros) ──
+    // Zero-init the whole reserved span first so any v2 fields we don't set
+    // here are deterministic zero (matches v1 behavior for unset bytes).
+    #pragma unroll
+    for (int k = 0; k < 32; ++k) hdr->_reserved_payload[k] = 0u;
+
+    // Schema version + threshold pass flags.
+    *reinterpret_cast<uint32_t*>(record_base + GHOST_V2_OFFSET_SCHEMA_VERSION) = GHOST_FRAME_SCHEMA_V2;
+    record_base[GHOST_V2_OFFSET_OBSERVATION_PASS]  = obs_pass  ? uint8_t{1} : uint8_t{0};
+    record_base[GHOST_V2_OFFSET_DISCOVERY_PASS]    = disc_pass ? uint8_t{1} : uint8_t{0};
+    record_base[GHOST_V2_OFFSET_PERTURBATION_CHAN] = GHOST_PERTURBATION_CHANNEL_UNKNOWN;
+    *reinterpret_cast<uint16_t*>(record_base + GHOST_V2_OFFSET_UV_WAVELENGTH_NM) = uint16_t{0};
+    *reinterpret_cast<uint16_t*>(record_base + GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS) =
+        // Bit 0: kl finite, Bit 1: gear_id provided non-zero, Bit 2: dt_fs > 0,
+        // Bit 3: thermo_flux not class-tainted.
+        (isfinite(kl) ? 0x0001u : 0u)
+      | (gear_id != 0u ? 0x0002u : 0u)
+      | (dt_fs > 0.0f ? 0x0004u : 0u)
+      | (!tainted ? 0x0008u : 0u);
+    *reinterpret_cast<uint32_t*>(record_base + GHOST_V2_OFFSET_GEAR_ID) = gear_id;
+    *reinterpret_cast<float*>(record_base + GHOST_V2_OFFSET_DT_FS) = dt_fs;
+    *reinterpret_cast<uint64_t*>(record_base + GHOST_V2_OFFSET_STEP_IDX) = step_idx;
+    // AABB / centroid: kernel does not compute spatial extent here. Honest
+    // sentinel: leave zeros (the deterministic _reserved_payload zero-init
+    // above) and let the host-side ghost_site_map.json sidecar carry the
+    // spatial mapping. Per directive §6 this is the auditability path.
+    // _v2_reserved [u32; 15] @ 196: zero from the loop above.
+}
+
+extern "C"
+int prism_ghost_pipe_stage_launch_v2(
+    uint64_t      ring_base_dev,
+    const void*   tiles,
+    const void*   adj,
+    const void*   d_kcc_lead,
+    uint64_t      frame_idx,
+    uint32_t      n_clusters,
+    uint32_t      max_records,
+    void*         stream,
+    uint32_t      firehose_enable,
+    float         observation_threshold_kl,
+    float         discovery_threshold_kl,
+    uint32_t      gear_id,
+    float         dt_fs,
+    uint64_t      step_idx)
+{
+    if (ring_base_dev == 0ull || tiles == nullptr || adj == nullptr) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    if (n_clusters == 0u || max_records == 0u) {
+        return static_cast<int>(cudaSuccess);
+    }
+    constexpr uint32_t MAX_THREADS = 64u;
+    const uint32_t threads = (n_clusters < MAX_THREADS) ? n_clusters : MAX_THREADS;
+    prism_ghost_pipe_stage_kernel_v2<<<1, threads, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        reinterpret_cast<uint8_t*>(ring_base_dev),
+        static_cast<const ContactShellTile*>(tiles),
+        static_cast<const uint8_t*>(adj),
+        static_cast<const uint32_t*>(d_kcc_lead),
+        frame_idx,
+        n_clusters,
+        max_records,
+        firehose_enable,
+        observation_threshold_kl,
+        discovery_threshold_kl,
+        gear_id,
+        dt_fs,
+        step_idx
+    );
+    return static_cast<int>(cudaGetLastError());
+}

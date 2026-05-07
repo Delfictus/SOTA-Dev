@@ -7283,6 +7283,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     // field via cfg.branch_trace_dev = ... before
                                                     // the cfg is moved into ::build().
                                                     branch_trace_dev: 0,
+                                                    // M1.2.23 §4 — Transparent MAR v2 telemetry
+                                                    // opt-in. Default None preserves v1 launcher
+                                                    // behavior bit-identically. Wire-in to v2
+                                                    // launcher is the bounded V2-live smoke step.
+                                                    mar_v2: None,
                                                 };
                                                 // CHUNK13_CAPTURED_GRAPH_LAUNCH_HANG diagnostic —
                                                 // per-stream pinned-mapped 64-byte PrismBranchTrace
