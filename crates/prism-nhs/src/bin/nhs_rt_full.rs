@@ -7116,6 +7116,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                          (Pass --dimer-mode to opt back into the legacy \
                                                          SISR-gated path.)", i
                                                     );
+                                                    // M1.2.23 §2 — Transparent MAR Exfiltration directive:
+                                                    // explicit monomer-passthrough log + bilateral status
+                                                    // record so completion-time emit can carry the honest
+                                                    // bilateral_veto=false signal downstream.
+                                                    log::info!(
+                                                        "    [G28-SISR stream {}] monomer passthrough active: \
+                                                         no dyad metadata; bilateral veto disabled",
+                                                        i
+                                                    );
                                                     None
                                                 };
                                                 // Amendment 3.4.6: pair both flags or skip.
@@ -13497,6 +13506,25 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "consensus_status":            "skipped_md_only_evidence_handoff",
             "serialization_failure":       serialization_failure,
             "total_spikes_md":             total_spikes_md,
+            // M1.2.23 §2 — Transparent MAR Exfiltration: explicit
+            // monomer-passthrough / bilateral-status block.
+            "monomer_mode_active":         !args.dimer_mode,
+            "dimer_mode_flag":             args.dimer_mode,
+            "dyad_metadata_present":       topology.dimer_dyad.is_some(),
+            "monomer_passthrough":         !args.dimer_mode || topology.dimer_dyad.is_none(),
+            "bilateral_status":            if !args.dimer_mode || topology.dimer_dyad.is_none() {
+                "not_applicable_monomer"
+            } else {
+                "active_dimer_dyad_engaged"
+            },
+            "bilateral_veto_applied":      false,
+            "bilateral_veto_disabled_reason": if !args.dimer_mode {
+                "dimer_mode_flag_not_set_g28_sisr_gated_off_at_pipeline_build"
+            } else if topology.dimer_dyad.is_none() {
+                "topology_dimer_dyad_metadata_absent_g28_sisr_skipped"
+            } else {
+                "n_a_dimer_dyad_engaged"
+            },
         });
         match std::fs::File::create(&completion_path) {
             Ok(f) => {
