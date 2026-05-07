@@ -511,6 +511,14 @@ struct GhostTileEvent {
     adj_code: u8,
     telemetry_flags: u16,
     class_tainted: bool,
+    /// M1.2.23 §5 — v1/v2 schema overlay detection.
+    schema_version: u32,
+    is_v2: bool,
+    /// M1.2.23 §4 — Transparent MAR observation/discovery gates,
+    /// populated only when is_v2.
+    v2_observation_pass: bool,
+    v2_discovery_pass: bool,
+    v2_field_completeness_flags: u16,
     kl_divergence: f32,
     /// 4 planes × 6 bands. Plane 0 = geometry; planes 1-3 may be 0.0
     /// per producer note (ghost_tile.rs:128-132 — kernel doesn't yet
@@ -621,6 +629,28 @@ fn parse_ghost_tiles_file(
         ];
         let causal_lead_residue = u32::from_le_bytes(buf[124..128].try_into().unwrap());
 
+        // ─── M1.2.23 §5 — v1/v2 schema detection ─────────────────────────
+        // Read schema_version u32 at offset 128. 0=v1 (legacy zero), 2=v2.
+        let schema_version_v2: u32 = u32::from_le_bytes(buf[128..132].try_into().unwrap());
+        let is_v2 = schema_version_v2 == 2u32;
+        let (
+            v2_obs_pass, v2_disc_pass, v2_perturb_chan, v2_uv_nm,
+            v2_field_complete_flags, v2_gear_id, v2_dt_fs, v2_step_idx,
+        ) = if is_v2 {
+            (
+                buf[132] != 0,
+                buf[133] != 0,
+                buf[134],
+                u16::from_le_bytes(buf[136..138].try_into().unwrap()),
+                u16::from_le_bytes(buf[138..140].try_into().unwrap()),
+                u32::from_le_bytes(buf[140..144].try_into().unwrap()),
+                f32::from_le_bytes(buf[144..148].try_into().unwrap()),
+                u64::from_le_bytes(buf[148..156].try_into().unwrap()),
+            )
+        } else {
+            (false, false, 0xFFu8, 0u16, 0u16, 0u32, 0.0f32, 0u64)
+        };
+
         let chain_id = match chain_id_byte {
             0x41 => Some('A'),
             0x42 => Some('B'),
@@ -664,23 +694,70 @@ fn parse_ghost_tiles_file(
             adj_code,
             telemetry_flags,
             class_tainted,
+            schema_version: schema_version_v2,
+            is_v2,
+            v2_observation_pass: v2_obs_pass,
+            v2_discovery_pass: v2_disc_pass,
+            v2_field_completeness_flags: v2_field_complete_flags,
             kl_divergence,
             power_spectrum,
             thermo_flux,
             causal_lead_residue,
-            perturbation_channel_evidence: PerturbationChannelEvidence {
-                qi_bits: None,
-                uv_wavelength_nm: None,
-                uv_label: None,
-                intensity_packed_raw: None,
-                status: "not_in_ghost_tile_schema_see_richspike_intensity_packed",
+            perturbation_channel_evidence: if is_v2 && v2_perturb_chan != 0xFF {
+                PerturbationChannelEvidence {
+                    qi_bits: Some(v2_perturb_chan as u32),
+                    uv_wavelength_nm: if v2_uv_nm > 0 { Some(v2_uv_nm as u32) } else { None },
+                    uv_label: match v2_perturb_chan {
+                        0 => Some("260nm_PHE_dominant"),
+                        1 => Some("280nm_TRP_primary"),
+                        2 => Some("305nm_TRP_gaussian_tail"),
+                        3 => Some("320nm_TRP_control"),
+                        _ => None,
+                    },
+                    intensity_packed_raw: None,
+                    status: "v2_schema_perturbation_channel_resolved",
+                }
+            } else if is_v2 {
+                PerturbationChannelEvidence {
+                    qi_bits: None,
+                    uv_wavelength_nm: None,
+                    uv_label: None,
+                    intensity_packed_raw: None,
+                    status: "v2_schema_perturbation_channel_unknown_kernel_left_sentinel",
+                }
+            } else {
+                PerturbationChannelEvidence {
+                    qi_bits: None,
+                    uv_wavelength_nm: None,
+                    uv_label: None,
+                    intensity_packed_raw: None,
+                    status: "v1_schema_no_perturbation_channel_in_record",
+                }
             },
-            gear_normalized_timing: GearTimingEvidence {
-                gear_id: None,
-                dt_fs: None,
-                physical_time_fs: None,
-                physical_delta_fs: None,
-                status: "ghost_tile_has_no_gear_id_field_reserved_payload_unwired",
+            gear_normalized_timing: if is_v2 {
+                let dt_ok = v2_dt_fs > 0.0 && v2_dt_fs.is_finite();
+                let phys = if dt_ok {
+                    Some((v2_step_idx as f64) * (v2_dt_fs as f64))
+                } else { None };
+                GearTimingEvidence {
+                    gear_id: Some(v2_gear_id),
+                    dt_fs: if dt_ok { Some(v2_dt_fs) } else { None },
+                    physical_time_fs: phys,
+                    physical_delta_fs: None,
+                    status: if v2_gear_id == 0 {
+                        "v2_schema_gear_wave_a_default_zero_dt_resolved"
+                    } else {
+                        "v2_schema_gear_wave_b_active"
+                    },
+                }
+            } else {
+                GearTimingEvidence {
+                    gear_id: None,
+                    dt_fs: None,
+                    physical_time_fs: None,
+                    physical_delta_fs: None,
+                    status: "v1_schema_no_gear_id_in_record",
+                }
             },
             asc_work_evidence: AscWorkEvidence {
                 gamma_w: None,
@@ -892,6 +969,89 @@ fn score_ghost_tile_event(ev: &GhostTileEvent) -> (f64, serde_json::Value) {
     (tile_score, components)
 }
 
+// ─── M1.2.23 §6 + §7 sidecar readers ───────────────────────────────────────
+
+#[derive(Debug, Deserialize, Default, Clone)]
+struct GhostTimeMapStream {
+    #[allow(dead_code)] stream_id: u32,
+    #[serde(default)] gear_id: u32,
+    #[serde(default)] dt_fs: f32,
+    #[serde(default)] physical_time_fs: f64,
+    #[serde(default)] dt_source: Option<String>,
+    #[serde(default)] gear_id_status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct GhostTimeMap {
+    #[serde(default)] schema_version: u32,
+    #[serde(default)] streams: Vec<GhostTimeMapStream>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
+struct GhostSiteMapEntry {
+    stream_id: Option<u32>,
+    site_id: Option<u32>,
+    aabb: Option<[f32; 6]>,
+    centroid_xyz: Option<[f32; 3]>,
+    voxel_xyz: Option<[i32; 3]>,
+    residue_support: Option<Vec<i32>>,
+    source: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct GhostSiteMap {
+    #[serde(default)] schema_version: u32,
+    #[serde(default)] status: Option<String>,
+    #[serde(default)] coordinate_frame: Option<String>,
+    #[serde(default)] entries: Vec<GhostSiteMapEntry>,
+}
+
+/// Read path_a_completion.json from the run dir; extract branch-trace fields
+/// per the follow-up invariant. Best-effort; missing fields → zeros + status.
+fn read_branch_trace(run_dir: &Path, target: &str) -> serde_json::Value {
+    let p = run_dir.join(format!("{}_path_a_completion.json", target));
+    let s = match std::fs::read_to_string(&p) {
+        Ok(s) => s,
+        Err(_) => return serde_json::json!({
+            "status": "path_a_completion_json_absent",
+            "branch_decision_status": "no_completion_json_to_read",
+        }),
+    };
+    let v: serde_json::Value = match serde_json::from_str(&s) {
+        Ok(v) => v,
+        Err(e) => return serde_json::json!({
+            "status": "parse_error",
+            "branch_decision_status": "completion_json_parse_failed",
+            "error": e.to_string(),
+        }),
+    };
+    // The watchdog's emit_minimal_completion_json carries branch_trace_by_stream
+    // when CHUNK13 trace was registered. For graceful runs the field may be
+    // absent — emit explicit "default_branch_only" only if the predicate
+    // counts say so; otherwise honestly mark absent.
+    let trace = v.get("branch_trace_by_stream")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let monomer_passthrough = v.get("monomer_passthrough").and_then(|x| x.as_bool());
+    let bilateral_status = v.get("bilateral_status").and_then(|x| x.as_str()).map(|x| x.to_string());
+    serde_json::json!({
+        "status":                  if trace.is_null() { "branch_trace_absent_in_completion_json" } else { "available" },
+        "branch_trace_by_stream":  trace,
+        "monomer_passthrough":     monomer_passthrough,
+        "bilateral_status":        bilateral_status,
+        "branch_decision_status":  if trace.is_null() {
+            "default_branch_only_or_unrecorded"
+        } else {
+            "see_branch_trace_by_stream"
+        },
+        "predicate_liveness_status": "infer_from_branch_trace_field_diversity_when_available",
+        "threshold_sigma_observation": 3.0,
+        "threshold_sigma_discovery":   12.0,
+        "threshold_source":            "directive_M1_2_23_section_4_default",
+    })
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -964,6 +1124,30 @@ fn main() -> Result<()> {
     eprintln!(
         "discovered files: ghost_tiles={} zstr={} prism_v2_trajectory={} (run_dir scan)",
         n_ghost, n_zstr, n_v2
+    );
+
+    // ─── M1.2.23 §6 + §7 — sidecar ingestion ───────────────────────────────
+    let gtm: Option<GhostTimeMap> = std::fs::read_to_string(run_dir.join("ghost_time_map.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<GhostTimeMap>(&s).ok());
+    let gsm: Option<GhostSiteMap> = std::fs::read_to_string(run_dir.join("ghost_site_map.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<GhostSiteMap>(&s).ok());
+    let branch_trace = read_branch_trace(&run_dir, &stem);
+    let gtm_status: &'static str = match gtm.as_ref() {
+        Some(g) if !g.streams.is_empty() => "available",
+        Some(_) => "present_but_empty_streams",
+        None => "missing",
+    };
+    let gsm_status: &'static str = match gsm.as_ref() {
+        Some(g) if !g.entries.is_empty() => "available_with_entries",
+        Some(_) => "present_but_empty_entries",
+        None => "missing",
+    };
+    eprintln!(
+        "sidecars: ghost_time_map={} ghost_site_map={} branch_trace={}",
+        gtm_status, gsm_status,
+        branch_trace.get("status").and_then(|x| x.as_str()).unwrap_or("?")
     );
 
     if n_ghost == 0 && n_zstr == 0 {
@@ -1143,6 +1327,17 @@ fn main() -> Result<()> {
         "n_noise_floor_streams":             noise_floor_records.len(),
         "bilateral_status":                  bilateral_status,
         "topology_chains":                   chain_set.iter().collect::<Vec<_>>(),
+        // M1.2.23 §5/§6/§7 + branch-trace follow-up — sidecar + trace status.
+        "ghost_time_map_status":             gtm_status,
+        "ghost_site_map_status":             gsm_status,
+        "ghost_site_map_status_field":       gsm.as_ref().and_then(|g| g.status.clone()),
+        "ghost_site_map_coordinate_frame":   gsm.as_ref().and_then(|g| g.coordinate_frame.clone()),
+        "branch_trace_status":               branch_trace.get("status").cloned().unwrap_or(serde_json::Value::Null),
+        "branch_decision_status":            branch_trace.get("branch_decision_status").cloned().unwrap_or(serde_json::Value::Null),
+        "threshold_sigma_observation":       3.0,
+        "threshold_sigma_discovery":         12.0,
+        "v1_v2_schema_overlay_supported":    true,
+        "v2_schema_constants_source":        "ghost_tile.rs:GHOST_FRAME_SCHEMA_V2_constant_offsets_at_GHOST_V2_OFFSET_*",
     });
     let tfc_path = out_dir.join("tile_field_completeness.json");
     write_json(&tfc_path, &tile_field_completeness)?;
@@ -1337,6 +1532,12 @@ fn main() -> Result<()> {
         } else {
             "no_ghost_or_zstr_files_present_in_run_dir_v2_was_not_live"
         },
+        // M1.2.23 §6/§7 + branch-trace follow-up consumption summary.
+        "sidecars": {
+            "ghost_time_map_status": gtm_status,
+            "ghost_site_map_status": gsm_status,
+        },
+        "branch_trace": branch_trace,
     });
     let rep_path = out_dir.join("ghost_zstr_scan_report.json");
     write_json(&rep_path, &report)?;
