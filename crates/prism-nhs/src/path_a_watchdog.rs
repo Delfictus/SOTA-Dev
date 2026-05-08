@@ -480,6 +480,18 @@ pub fn spawn_watchdog(
                             run_start.elapsed().as_secs_f64(),
                             Some(&branch_traces),
                         );
+                        // M1.2.23 §6 + §7 — emit ghost_site_map.json +
+                        // ghost_time_map.json with explicit "partial"
+                        // status so scanner can detect that the deadman
+                        // bypassed the normal MD-only sidecar emit but
+                        // the files still exist for auditability.
+                        emit_deadman_ghost_sidecars(
+                            &completion_path,
+                            &run_id,
+                            &target,
+                            &snap,
+                            n_streams,
+                        );
                         std::process::exit(2);
                     }
                     continue;
@@ -548,6 +560,111 @@ pub fn spawn_watchdog(
 /// Failure to write is logged at error level. The caller (watchdog) calls
 /// `process::exit` after this returns, so VRAM is reclaimed by the OS even
 /// if the file write itself fails.
+/// **M1.2.23 §6 + §7** — Watchdog/deadman path sidecar emission.
+///
+/// `output_dir` is derived from the completion-json path's parent. The
+/// helper emits two sidecars even when the normal MD-only teardown was
+/// bypassed by the deadman:
+///
+///   * `ghost_time_map.json` — per-stream gear/dt context with explicit
+///     "deadman_path_partial" status (no live gearbox capture is
+///     available at deadman time).
+///   * `ghost_site_map.json` — empty entries list with status string
+///     "partial_watchdog_deadman_path_no_per_site_centroid_metadata".
+///
+/// Both are best-effort and never silently skip per directive Phase 16.
+pub fn emit_deadman_ghost_sidecars(
+    completion_path: &Path,
+    run_id: &str,
+    target: &str,
+    snap: &HeartbeatSnapshot,
+    n_streams: usize,
+) {
+    let out_dir = completion_path.parent().unwrap_or_else(|| Path::new("."));
+
+    // ── ghost_time_map.json ─────────────────────────────────────────────
+    let streams: Vec<serde_json::Value> = (0..n_streams)
+        .map(|i| {
+            let last_step = snap.last_step_by_stream.get(i).copied().unwrap_or(0);
+            let last_chunk = snap.last_chunk_by_stream.get(i).copied().unwrap_or(-1);
+            let v2_live = snap.v2_live_by_stream.get(i).copied().unwrap_or(false);
+            serde_json::json!({
+                "stream_id":           i as u32,
+                "n_spikes":             0i64,            // unavailable in deadman path
+                "timestep_min":        -1i32,
+                "timestep_max":         last_step,
+                "frame_idx_at_teardown": last_step,
+                "last_chunk":           last_chunk,
+                "v2_live_at_deadman":   v2_live,
+                "gear_id":              0u32,           // Wave A default
+                "gear_id_status":       "wave_a_default_zero_per_zstr_rs_88",
+                "dt_fs":                serde_json::Value::Null,
+                "dt_source":            "deadman_path_no_runtime_dt_capture",
+                "physical_time_fs":     serde_json::Value::Null,
+                "source":               "watchdog_deadman_partial",
+            })
+        })
+        .collect();
+    let gtm = serde_json::json!({
+        "schema_version": 1,
+        "schema_kind":    "pathb_ghost_time_map",
+        "run_id":         run_id,
+        "target":         target,
+        "streams":        streams,
+        "status":         "partial_deadman_path",
+        "notes": [
+            "Emitted by path_a_watchdog::emit_deadman_ghost_sidecars after wall-cap or stall.",
+            "dt_fs unresolvable from the deadman path — caller did not pass it through;",
+            "scanner consumers should treat physical_time_fs as null and dt_fs_source as deadman_path.",
+        ],
+    });
+    let gtm_path = out_dir.join("ghost_time_map.json");
+    if let Ok(f) = std::fs::File::create(&gtm_path) {
+        let mut bw = std::io::BufWriter::new(f);
+        let _ = serde_json::to_writer_pretty(&mut bw, &gtm);
+        use std::io::Write as _;
+        let _ = bw.flush();
+        log::error!(
+            "[PATH-A WATCHDOG] ghost_time_map.json (partial) emitted at {}",
+            gtm_path.display()
+        );
+    }
+
+    // ── ghost_site_map.json ─────────────────────────────────────────────
+    let gsm = serde_json::json!({
+        "schema_version":   1,
+        "schema_kind":      "pathb_ghost_site_map",
+        "run_id":           run_id,
+        "target":           target,
+        "coordinate_frame": "prism_topology_native_no_recentering",
+        "status":           "partial_watchdog_deadman_path_no_per_site_centroid_metadata",
+        "entries":          serde_json::Value::Array(vec![]),
+        "missing_entries": [{
+            "reason": "deadman_path_does_not_have_access_to_v2_cluster_centroids",
+            "follow_up": "engine MD-only teardown path emits populated ghost_site_map; this deadman fallback emits empty entries for auditability",
+        }],
+        "field_completeness": {
+            "stream_id":       "implicit_from_completion_json_v2_live_by_stream",
+            "site_id":         "absent_deadman_path",
+            "aabb":            "absent_deadman_path",
+            "centroid_xyz":    "absent_deadman_path",
+            "voxel_xyz":       "absent_deadman_path",
+            "residue_support": "absent_deadman_path",
+        },
+    });
+    let gsm_path = out_dir.join("ghost_site_map.json");
+    if let Ok(f) = std::fs::File::create(&gsm_path) {
+        let mut bw = std::io::BufWriter::new(f);
+        let _ = serde_json::to_writer_pretty(&mut bw, &gsm);
+        use std::io::Write as _;
+        let _ = bw.flush();
+        log::error!(
+            "[PATH-A WATCHDOG] ghost_site_map.json (partial) emitted at {}",
+            gsm_path.display()
+        );
+    }
+}
+
 pub fn emit_minimal_completion_json(
     path: &Path,
     run_id: &str,
