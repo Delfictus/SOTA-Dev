@@ -36,10 +36,14 @@ fn main() {
 fn find_nvcc() -> Option<String> {
     if let Ok(cuda_home) = env::var("CUDA_HOME") {
         let p = PathBuf::from(cuda_home).join("bin").join("nvcc");
-        if p.exists() { return Some(p.to_string_lossy().to_string()); }
+        if p.exists() {
+            return Some(p.to_string_lossy().to_string());
+        }
     }
     for path in &["/usr/local/cuda/bin/nvcc", "/usr/local/cuda-13.1/bin/nvcc"] {
-        if PathBuf::from(path).exists() { return Some(path.to_string()); }
+        if PathBuf::from(path).exists() {
+            return Some(path.to_string());
+        }
     }
     if Command::new("nvcc").arg("--version").output().is_ok() {
         return Some("nvcc".to_string());
@@ -52,7 +56,8 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
 
     let status = Command::new(nvcc)
         .arg("--ptx")
-        .arg("-o").arg(output)
+        .arg("-o")
+        .arg(output)
         .arg(source)
         .arg("-arch=sm_120")
         .arg("-O3")

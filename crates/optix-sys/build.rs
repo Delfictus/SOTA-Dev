@@ -27,30 +27,32 @@ fn main() {
     // ========================================================================
 
     // Try to get OPTIX_ROOT from environment, expanding ~ if needed
-    let optix_root = env::var("OPTIX_ROOT").ok().or_else(|| {
-        // Check home directory first
-        if let Ok(home) = env::var("HOME") {
-            let local_optix = format!("{}/.local/opt/optix-9.1.0", home);
-            if std::path::Path::new(&local_optix).join("include/optix.h").exists() {
-                return Some(local_optix);
+    let optix_root = env::var("OPTIX_ROOT")
+        .ok()
+        .or_else(|| {
+            // Check home directory first
+            if let Ok(home) = env::var("HOME") {
+                let local_optix = format!("{}/.local/opt/optix-9.1.0", home);
+                if std::path::Path::new(&local_optix)
+                    .join("include/optix.h")
+                    .exists()
+                {
+                    return Some(local_optix);
+                }
             }
-        }
 
-        // Try common system locations
-        for path in &[
-            "/opt/optix-9.1.0",
-            "/usr/local/optix",
-            "/opt/optix",
-        ] {
-            if std::path::Path::new(path).join("include/optix.h").exists() {
-                return Some(path.to_string());
+            // Try common system locations
+            for path in &["/opt/optix-9.1.0", "/usr/local/optix", "/opt/optix"] {
+                if std::path::Path::new(path).join("include/optix.h").exists() {
+                    return Some(path.to_string());
+                }
             }
-        }
 
-        None
-    }).unwrap_or_else(|| {
-        panic!(
-            "❌ OPTIX_ROOT not set and OptiX SDK not found in common locations!\n\
+            None
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "❌ OPTIX_ROOT not set and OptiX SDK not found in common locations!\n\
              \n\
              Please set OPTIX_ROOT to your OptiX SDK installation:\n\
              export OPTIX_ROOT=/path/to/optix-9.1.0\n\
@@ -62,8 +64,8 @@ fn main() {
              - /opt/optix-9.1.0\n\
              - /usr/local/optix\n\
              - /opt/optix"
-        );
-    });
+            );
+        });
 
     let optix_include = format!("{}/include", optix_root);
 
@@ -97,7 +99,7 @@ fn main() {
                 return path.to_string();
             }
         }
-        "/usr/local/cuda".to_string()  // Fallback
+        "/usr/local/cuda".to_string() // Fallback
     });
 
     let cuda_include = format!("{}/include", cuda_path);
@@ -117,47 +119,39 @@ fn main() {
         // Primary OptiX header (includes all others)
         .header(&optix_host_header)
         .header(&optix_stubs_header)
-
         // Include paths
         .clang_arg(format!("-I{}", optix_include))
         .clang_arg(format!("-I{}", cuda_include))
         .clang_arg(format!("-I{}", gcc_include))
         .clang_arg(format!("-I{}", system_include))
-
         // OptiX 9.1 API functions and types
         .allowlist_function("optix.*")
         .allowlist_type("Optix.*")
         .allowlist_type("OPTIX_.*")
         .allowlist_var("OPTIX_.*")
-
         // CUDA types used by OptiX (cudaStream_t, CUdeviceptr, etc.)
         .allowlist_type("cudaStream_t")
         .allowlist_type("CUstream")
         .allowlist_type("CUdeviceptr")
         .allowlist_type("CUcontext")
         .allowlist_type("CUdevice")
-
         // Derive common traits where possible
         .derive_debug(true)
         .derive_default(true)
         .derive_copy(true)
         .derive_eq(true)
         .derive_hash(true)
-
         // Layout configuration
-        .layout_tests(false)  // Skip layout tests (large generated code)
+        .layout_tests(false) // Skip layout tests (large generated code)
         .default_enum_style(bindgen::EnumVariation::Rust {
             non_exhaustive: false,
         })
-
         // Generate comments from headers
         .generate_comments(true)
         .clang_arg("-fparse-all-comments")
-
         // Target x86_64 Linux
         .clang_arg("-target")
         .clang_arg("x86_64-unknown-linux-gnu")
-
         // Finish
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
@@ -185,8 +179,8 @@ fn main() {
 
     let cuda_lib = format!("{}/lib64", cuda_path);
     println!("cargo:rustc-link-search=native={}", cuda_lib);
-    println!("cargo:rustc-link-lib=cuda");      // libcuda.so (CUDA Driver API)
-    println!("cargo:rustc-link-lib=cudart");    // libcudart.so (CUDA Runtime API)
+    println!("cargo:rustc-link-lib=cuda"); // libcuda.so (CUDA Driver API)
+    println!("cargo:rustc-link-lib=cudart"); // libcudart.so (CUDA Runtime API)
 
     println!("✅ Build script complete");
 }

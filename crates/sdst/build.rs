@@ -7,8 +7,8 @@
 use std::env;
 
 fn main() {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR must be set by cargo");
+    let manifest_dir =
+        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by cargo");
     let lib_dir = format!("{}/lib", manifest_dir);
 
     // Tell the linker where to find libsdst.so at compile time

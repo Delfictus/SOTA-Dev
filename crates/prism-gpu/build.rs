@@ -576,7 +576,7 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
         .arg("--restrict") // Enable restrict keyword optimization
         // Include paths
         .arg("-I/usr/local/cuda/include")
-        .arg("-Isrc/kernels")  // For shared headers (protocol_state.cuh)
+        .arg("-Isrc/kernels") // For shared headers (protocol_state.cuh)
         // Warning flags
         .arg("-Xptxas=-v") // Verbose PTX assembly info (shows register usage)
         .arg("--expt-relaxed-constexpr") // Allow constexpr in device code
@@ -598,7 +598,11 @@ fn compile_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &Pa
 
 /// Compiles a CUDA cooperative kernel to PTX (requires -rdc=true for grid.sync())
 fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target_output: &PathBuf) {
-    println!("cargo:info=Compiling (cooperative) {} -> {}", source, output.display());
+    println!(
+        "cargo:info=Compiling (cooperative) {} -> {}",
+        source,
+        output.display()
+    );
 
     let status = Command::new(nvcc)
         .arg("--ptx")
@@ -606,7 +610,7 @@ fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target
         .arg(output)
         .arg(source)
         .arg("-arch=sm_120")
-        .arg("-rdc=true")           // relocatable device code for grid.sync()
+        .arg("-rdc=true") // relocatable device code for grid.sync()
         .arg("-O3")
         // --use_fast_math intentionally REMOVED — see compile_kernel
         // above for the full rationale (Phase 0 / Bug C fix). Same fix
@@ -616,7 +620,7 @@ fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target
         // zero by FTZ semantics.
         .arg("--restrict")
         .arg("-I/usr/local/cuda/include")
-        .arg("-Isrc/kernels")  // For shared headers (protocol_state.cuh)
+        .arg("-Isrc/kernels") // For shared headers (protocol_state.cuh)
         .arg("-Xptxas=-v")
         .arg("--expt-relaxed-constexpr")
         .status()
@@ -628,7 +632,10 @@ fn compile_cooperative_kernel(nvcc: &str, source: &str, output: &PathBuf, target
 
     std::fs::copy(output, target_output).expect("Failed to copy cooperative PTX to target/ptx");
     generate_ptx_signature(target_output);
-    println!("cargo:info=PTX compiled (cooperative): {}", target_output.display());
+    println!(
+        "cargo:info=PTX compiled (cooperative): {}",
+        target_output.display()
+    );
 }
 
 /// Generates SHA-256 signature for PTX file

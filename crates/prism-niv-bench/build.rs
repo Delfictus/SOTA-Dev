@@ -1,7 +1,7 @@
-use std::process::Command;
 use std::env;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/kernels/feature_merge.cu");
@@ -18,7 +18,11 @@ fn main() {
         "src/kernels/feature_merge.cu",
         &out_dir.join("feature_merge.ptx"),
     );
-    fs::copy(out_dir.join("feature_merge.ptx"), target_ptx_dir.join("feature_merge.ptx")).ok();
+    fs::copy(
+        out_dir.join("feature_merge.ptx"),
+        target_ptx_dir.join("feature_merge.ptx"),
+    )
+    .ok();
 
     // 2. Compile Cryptic Kernels
     let cryptic_dir = Path::new("../prism-gpu/src/kernels/cryptic");
@@ -26,27 +30,34 @@ fn main() {
         "cryptic_hessian.cu",
         "cryptic_eigenmodes.cu",
         "cryptic_probe_score.cu",
-        "cryptic_signal_fusion.cu"
+        "cryptic_signal_fusion.cu",
     ];
 
     for kernel in cryptic_kernels {
         let source = cryptic_dir.join(kernel);
         let output = out_dir.join(kernel.replace(".cu", ".ptx"));
         if source.exists() {
-             compile_kernel(source.to_str().unwrap(), &output);
-             fs::copy(&output, target_ptx_dir.join(kernel.replace(".cu", ".ptx"))).ok();
+            compile_kernel(source.to_str().unwrap(), &output);
+            fs::copy(&output, target_ptx_dir.join(kernel.replace(".cu", ".ptx"))).ok();
         } else {
-            println!("cargo:warning=Cryptic kernel source not found: {:?}", source);
+            println!(
+                "cargo:warning=Cryptic kernel source not found: {:?}",
+                source
+            );
         }
     }
 
     // 3. Copy mega_fused_batch.ptx
     let mega_batch_ptx = Path::new("../prism-gpu/src/kernels/mega_fused_batch.ptx");
     if mega_batch_ptx.exists() {
-        fs::copy(mega_batch_ptx, out_dir.join("mega_fused_batch.ptx")).expect("Failed to copy mega_fused_batch.ptx");
+        fs::copy(mega_batch_ptx, out_dir.join("mega_fused_batch.ptx"))
+            .expect("Failed to copy mega_fused_batch.ptx");
         fs::copy(mega_batch_ptx, target_ptx_dir.join("mega_fused_batch.ptx")).ok();
     } else {
-        println!("cargo:warning=mega_fused_batch.ptx not found at {:?}", mega_batch_ptx);
+        println!(
+            "cargo:warning=mega_fused_batch.ptx not found at {:?}",
+            mega_batch_ptx
+        );
     }
 }
 
@@ -68,7 +79,10 @@ fn compile_kernel(source: &str, output: &PathBuf) {
         }
         println!("cargo:warning=Compiled {} to PTX", source);
     } else {
-        println!("cargo:warning=nvcc not found, skipping CUDA compilation for {}", source);
+        println!(
+            "cargo:warning=nvcc not found, skipping CUDA compilation for {}",
+            source
+        );
         // Create dummy file to prevent build failure if CUDA not present (for CI/non-GPU dev)
         if !output.exists() {
             fs::write(output, "dummy ptx").unwrap();
