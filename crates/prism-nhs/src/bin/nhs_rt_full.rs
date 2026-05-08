@@ -1550,6 +1550,71 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 
+    // ── OPERATOR MANDATE 2026-05-08 §3.V — CU_CTX_SCHED_BLOCKING_SYNC ──
+    //
+    // Switch CUDA scheduling policy from default Auto (which spins under
+    // n_streams ≤ n_cpus/2) to BLOCKING_SYNC so cudaStreamSynchronize
+    // yields the host thread to the OS scheduler instead of busy-waiting.
+    //
+    // This is the root-cause fix for the 99% CPU/core utilization observed
+    // during MD chunk execution: with §3 (monolithic graph unroll) the
+    // host thread must wait ~135-200 ms per chunk for the unrolled
+    // graph to drain, and that wait should be a sleep, not a spin.
+    //
+    // Driver API path: cuDevicePrimaryCtxSetFlags_v2 must run BEFORE any
+    // primary-context retain (cudarc::CudaContext::new -> primary ctx
+    // retain). If a primary context is already active for this thread on
+    // device 0, the call returns CUDA_ERROR_PRIMARY_CONTEXT_ACTIVE; we log
+    // it and continue (the host's worker threads will pick up the flag
+    // when they first touch device 0 in their own thread-local context).
+    //
+    // Since this site runs at process start (first line after env_logger
+    // and Args::parse), no CUDA work has happened yet — the flag set
+    // takes effect for every primary-context retain that follows.
+    #[cfg(feature = "gpu")]
+    {
+        use cudarc::driver::sys::{
+            cuDevicePrimaryCtxSetFlags_v2, cuInit, CUresult,
+        };
+        unsafe {
+            // cuInit is idempotent within a process; cudarc calls it on
+            // first context creation but we need it ordered BEFORE the
+            // flag set.
+            let _ = cuInit(0);
+            // CU_CTX_SCHED_BLOCKING_SYNC = 0x4 (driver API flag bits).
+            const CU_CTX_SCHED_BLOCKING_SYNC: u32 = 0x4;
+            let rc = cuDevicePrimaryCtxSetFlags_v2(
+                0, // device 0
+                CU_CTX_SCHED_BLOCKING_SYNC,
+            );
+            match rc {
+                CUresult::CUDA_SUCCESS => {
+                    log::info!(
+                        "  [§3.V CU_CTX_SCHED_BLOCKING_SYNC] device 0 primary \
+                         context flag set (cudaStreamSynchronize will yield \
+                         to OS scheduler instead of spinning)"
+                    );
+                }
+                CUresult::CUDA_ERROR_PRIMARY_CONTEXT_ACTIVE => {
+                    log::warn!(
+                        "  [§3.V CU_CTX_SCHED_BLOCKING_SYNC] primary context \
+                         already active on device 0 — flag NOT applied for \
+                         this run. Spin-wait behavior will persist. (Run \
+                         this binary as a fresh process to apply.)"
+                    );
+                }
+                other => {
+                    log::warn!(
+                        "  [§3.V CU_CTX_SCHED_BLOCKING_SYNC] \
+                         cuDevicePrimaryCtxSetFlags_v2 returned {:?} — \
+                         continuing with default schedule policy",
+                        other
+                    );
+                }
+            }
+        }
+    }
+
     // ── Spatial backend dispatch policy (LBVH Phase 1 + P0x post-MD lane) ─
     //
     // Production rule #10 (2026-04-21):
@@ -7441,6 +7506,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     // `--ghost-diagnostic-firehose=false` to
                                                     // restore the legacy adj-gated path.
                                                     firehose_enable: if args.ghost_diagnostic_firehose { 1 } else { 0 },
+                                                    // OPERATOR MANDATE 2026-05-08 §3.II+III —
+                                                    // captured-graph body unroll factor. Default 1
+                                                    // preserves bit-identical legacy behavior; raise
+                                                    // it (e.g. via a future --captured-graph-body-unroll
+                                                    // CLI flag) once the per-iteration vectorization of
+                                                    // g26_bridge_node / zstr_*_node / fork-join events
+                                                    // lands in captured_pipeline.rs::build.
+                                                    body_unroll: 1,
                                                     // Wave 1 / Q2 — F2-pool d_kcc_lead[n_clusters]
                                                     // not yet plumbed through the engine; kernel
                                                     // emits 0xFFFFFFFFu sentinels until host argmax

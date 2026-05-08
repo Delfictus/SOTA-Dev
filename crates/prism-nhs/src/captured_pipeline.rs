@@ -1317,6 +1317,39 @@ pub struct PipelineConfig {
     /// (default ON post-audit).
     pub firehose_enable: u32,
 
+    /// **OPERATOR MANDATE 2026-05-08 §3.II+III — Captured-graph body unroll.**
+    ///
+    /// How many times the per-step body region (Path C dual-stream fork +
+    /// SO(3) projection + G28 SISR + Adjudicator + Dynamic-T7 + Ghost
+    /// emission + ASC + G26 gearbox + energy monitor + ZSTR
+    /// stage/fence) is replicated INSIDE the cuStreamBeginCapture /
+    /// cuStreamEndCapture window. Each iteration appends another copy of
+    /// the per-step graph nodes, so a single `cuGraphLaunch` advances
+    /// physics by `body_unroll` logical steps.
+    ///
+    /// Default: 1 (no unroll, legacy bit-identical behavior — host loop in
+    /// `nhs_rt_full.rs` invokes `mono.launch_on_stream` once per logical
+    /// step). When > 1, the host loop divides chunk_size by this factor
+    /// and launches the graph that many times. Setting body_unroll =
+    /// chunk_size achieves the directive's "1 launch = 1 chunk" target.
+    ///
+    /// **Topology caveat at body_unroll > 1**: the per-step body contains
+    /// graph constructs that need per-iteration uniqueness — fork/join
+    /// `cuEvent`s, the G26 conditional bridge node, and the ZSTR
+    /// pos_stage / fence-signal node snapshots. The unroll wrapper at
+    /// the build site replays the body N times verbatim; CUDA accepts
+    /// the resulting linear DAG (each iteration's nodes are distinct
+    /// graph identities), but the post-capture wiring that consumes
+    /// snapshot variables (`g26_bridge_node`, `zstr_pos_stage_node`,
+    /// `zstr_fence_node`) currently retains only the LAST iteration's
+    /// snapshot. That is sufficient for correctness when the snapshot
+    /// is used solely as a wiring anchor; it is INSUFFICIENT when the
+    /// post-capture wiring needs to update all N iterations'
+    /// kernel-node params (e.g., per-step gear write-backs through G26).
+    /// Callers driving body_unroll > 1 must validate the ZSTR Reaper
+    /// + G26 wiring against their expected per-step semantics.
+    pub body_unroll: u32,
+
     /// **Wave 1 / Q2 — Causal-lead residue F2-pool buffer.**
     /// Device pointer (`u64` raw) to a `[u32; n_clusters]` buffer
     /// holding the per-cluster KCC argmax residue id.  The Ghost
@@ -4060,6 +4093,33 @@ impl CapturedAdjudicationPipeline {
                         return Err(BuildError::Cuda {
                             stage: "OPERATOR-2026-05-08 §1 prism_increment_time_launch",
                             rc: rc_clk,
+                        });
+                    }
+                    // OPERATOR MANDATE 2026-05-08 §3.I — wire the device-side
+                    // ZSTR slot updater into the captured graph body. Reads
+                    // the freshly-incremented *d_step_counter, computes
+                    // (step % N_SLOTS), and writes to the writable
+                    // d_zstr_active_slot __device__ symbol. The downstream
+                    // ZSTR pos_stage / fence_signal kernels read that symbol
+                    // at execution time, so the slot rolls forward without
+                    // host cudaMemcpyToSymbolAsync per step. This is the
+                    // foundation for the §3.IV host-loop eradication: when
+                    // the host launches the captured graph once per chunk
+                    // (rather than once per step) the slot still rolls
+                    // correctly because each replay (or each unrolled
+                    // iteration inside a single replay) re-runs both the
+                    // increment and slot-update kernels.
+                    let rc_slot = unsafe {
+                        crate::zstr::ffi::prism_zstr_device_slot_update_launch(
+                            mar.d_step_counter as *const c_void,
+                            crate::zstr::ZstrRing::N_SLOTS as u32,
+                            md_stream.cu_stream() as *mut c_void,
+                        )
+                    };
+                    if rc_slot != 0 {
+                        return Err(BuildError::Cuda {
+                            stage: "OPERATOR-2026-05-08 §3.I prism_zstr_device_slot_update_launch",
+                            rc: rc_slot,
                         });
                     }
                 }

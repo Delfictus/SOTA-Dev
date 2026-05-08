@@ -20,11 +20,24 @@
 
 namespace prism_nhs { namespace zstr {
 
-// Active slot index (0..N_SLOTS-1).  Updated by the host orchestrator before
-// each monolithic graph launch via cudaMemcpyToSymbolAsync; the captured
-// kernels READ this value at execution time, so the same fused exec rolls
-// through all slots without graph mutation.
-__constant__ uint32_t d_zstr_active_slot;
+// Active slot index (0..N_SLOTS-1).
+//
+// OPERATOR MANDATE 2026-05-08 §3.I — converted from `__constant__` to
+// writable `__device__` so a captured-graph kernel
+// (`prism_zstr_device_slot_update_kernel` below) can update the slot from
+// inside the unrolled graph body. The host launcher
+// `prism_zstr_set_active_slot` still works (cudaMemcpyToSymbolAsync targets
+// `__device__` symbols just like `__constant__`), preserving the legacy
+// per-launch host-update path bit-for-bit.
+//
+// Rationale: the legacy host-loop wrote slot via cudaMemcpyToSymbolAsync
+// 500× per chunk between cuGraphLaunch calls. Under §3 (Monolithic Graph
+// Unroll) the host launches the captured graph exactly ONCE per chunk,
+// so the slot update must happen on-device, derived from the §1
+// d_step_counter. A `__device__` symbol is writable from any kernel; a
+// `__constant__` symbol is not (constant memory is read-only from device
+// code).
+__device__ uint32_t d_zstr_active_slot;
 
 // ─── Completion fence signal ────────────────────────────────────────────────
 
@@ -251,6 +264,61 @@ int prism_zstr_set_active_slot(uint32_t slot, void* stream)
         static_cast<cudaStream_t>(stream)
     );
     return static_cast<int>(rc);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPERATOR MANDATE 2026-05-08 §3.I — DEVICE-SIDE ZSTR SLOT RESOLUTION
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Single-thread `__global__` kernel that derives the active slot from the
+// §1 device step counter and writes it to the writable `d_zstr_active_slot`
+// __device__ symbol.
+//
+// The host's per-step `prism_zstr_set_active_slot` call is replaced by an
+// in-graph kernel injection: the unrolled captured graph fires this kernel
+// before each ZSTR snapshot/fence node, so the slot rolls forward without
+// host intervention. Eradicates the host-side cudaMemcpyToSymbolAsync that
+// previously fired 500× per chunk and was the dominant per-step host
+// overhead alongside cuGraphLaunch.
+//
+// Pre-condition: the §1 device step counter (uint64_t* d_step_counter,
+// allocated by nhs_rt_full at V2-BUILD seeded with v2_trigger_step) must
+// have been incremented by `prism_increment_time_kernel` earlier in the
+// captured body of the same iteration. Topology order inside the unrolled
+// body:
+//   §1 increment_time_kernel  -> *d_step_counter += 1
+//   §3.I device_slot_update   -> d_zstr_active_slot = (*d_step_counter % N_SLOTS)
+//   physics integration / SO(3) / Adjudicator / ASC nodes
+//   ZSTR snapshot kernels (read d_zstr_active_slot)
+//   Ghost v2 emission (reads *d_step_counter via §1)
+
+namespace prism_nhs { namespace zstr {
+
+extern "C" __global__
+void prism_zstr_device_slot_update_kernel(
+    const unsigned long long* __restrict__ d_step_counter,
+    uint32_t                               n_slots)
+{
+    if (threadIdx.x != 0u || blockIdx.x != 0u) return;
+    if (d_step_counter == nullptr || n_slots == 0u) return;
+    const unsigned long long step = *d_step_counter;
+    d_zstr_active_slot = static_cast<uint32_t>(step % static_cast<unsigned long long>(n_slots));
+}
+
+}} // namespace prism_nhs::zstr
+
+extern "C"
+int prism_zstr_device_slot_update_launch(
+    const void* d_step_counter,   // u64 device pointer (may be null → no-op)
+    uint32_t    n_slots,          // typically 5 (ZstrRing::N_SLOTS)
+    void*       stream)
+{
+    prism_nhs::zstr::prism_zstr_device_slot_update_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        reinterpret_cast<const unsigned long long*>(d_step_counter),
+        n_slots
+    );
+    return static_cast<int>(cudaGetLastError());
 }
 
 // ─── T11 — Force-stage launchers ────────────────────────────────────────────

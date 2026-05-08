@@ -939,7 +939,27 @@ pub mod ffi {
 
         /// Path Z host helper: stream-ordered update of d_zstr_active_slot.
         /// Caller invokes BEFORE each cuGraphLaunch on the same stream.
+        ///
+        /// LEGACY HOST-LOOP PATH. With the §3 monolithic graph unroll
+        /// landed, the captured graph itself updates the slot via
+        /// `prism_zstr_device_slot_update_launch` (see below); this host
+        /// helper is retained for the no-unroll fallback path and for
+        /// initial slot seeding before the first captured-graph launch.
         pub fn prism_zstr_set_active_slot(slot: u32, stream: *mut c_void) -> i32;
+
+        /// OPERATOR MANDATE 2026-05-08 §3.I — device-side ZSTR slot update.
+        /// Single-thread kernel reads the §1 device step counter and
+        /// writes `(step % n_slots)` to the writable `d_zstr_active_slot`
+        /// `__device__` symbol. Captured into the unrolled graph body so
+        /// the slot rolls forward without host `cudaMemcpyToSymbolAsync`
+        /// per step.
+        ///
+        /// Returns 0 on success, non-zero `cudaError_t` on launch failure.
+        pub fn prism_zstr_device_slot_update_launch(
+            d_step_counter: *const c_void, // u64 device pointer
+            n_slots: u32,
+            stream: *mut c_void,
+        ) -> i32;
 
         /// T11 — Action-Recovery force exfiltration (DMA + Σ‖F‖² atomic-add).
         ///
