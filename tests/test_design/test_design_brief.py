@@ -229,8 +229,11 @@ class TestDesignBriefBuilder:
         assert "PI_STACK" in content
         assert "lead" in content
         assert "CONSERVED_UNHAPPY" in content
-        # No recommendations or confidence statements
-        assert "recommend" not in content.lower()
+        # Tier 2 PRISM-TWIN recommendation card must be present
+        assert "PRISM-TWIN Tier 2 Analysis" in content
+        assert "Request Tier 2 Analysis" in content
+        assert "beacon" in content.lower()
+        # No generic confidence statements (Tier 2 card is intentional)
         assert "confidence" not in content.lower()
 
     def test_write_all(self, tmp_path):

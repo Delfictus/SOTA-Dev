@@ -602,8 +602,49 @@ def cluster_to_sites(probabilities, residue_list, ca_positions, top_pct=0.20):
     sites.sort(key=lambda s: -s["rank_score"])
     for i, s in enumerate(sites):
         s["rank"] = i + 1
+        # Attach Tier 2 PRISM-TWIN recommendation (product upsell)
+        s["validation_recommendation"] = {
+            "tier2_recommendation": _build_tier2_recommendation(s),
+        }
 
     return sites
+
+
+def _build_tier2_recommendation(site):
+    """Build PRISM-TWIN Tier 2 recommendation for a site."""
+    return {
+        "action": "Run PRISM-TWIN Tier 2 focused analysis",
+        "description": (
+            "The PRISM-AI inference identified this site as a candidate. "
+            "A PRISM-TWIN engine run with beacon-guided NMA perturbation "
+            "will provide full thermodynamic characterization, barrier "
+            "estimation, mechanism classification (7-class TWIN taxonomy), "
+            "and CCF allosteric network mapping at sub-angstrom resolution."
+        ),
+        "beacon_guidance": {
+            "focus_residues": site["residue_ids"],
+            "suggested_nma_modes": (
+                "Focus NMA perturbation on modes that displace these residues"
+            ),
+            "expected_outputs": [
+                "Thermodynamic barrier (kcal/mol)",
+                "TWIN classification (CONSENSUS_CRYPTIC / BARRIER_GATED / "
+                "ALLOSTERIC_HUB / etc.)",
+                "CCF allosteric coupling network",
+                "Druggability with full MD-derived volume and hydration",
+                "Per-residue TWIN features (48 dimensions)",
+                "Mechanism of pocket opening",
+            ],
+            "estimated_runtime": "5-15 minutes per target on GPU",
+        },
+        "value_proposition": (
+            "Tier 2 resolves what Tier 1 cannot: the activation barrier, "
+            "the opening mechanism, and whether the pocket is thermally "
+            "accessible or requires perturbation. Sites classified as "
+            "BARRIER_GATED by TWIN are invisible to all static methods "
+            "-- only coupled interferometric observation reveals them."
+        ),
+    }
 
 
 # ═══════════════════════════════════════════════════════════
