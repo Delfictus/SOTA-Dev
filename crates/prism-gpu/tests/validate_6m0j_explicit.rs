@@ -17,8 +17,8 @@ mod tests {
     use super::*;
     use cudarc::driver::CudaContext;
     use prism_gpu::{AmberMegaFusedHmc, HConstraintCluster};
+    use prism_physics::amber_ff14sb::{get_atom_mass, get_lj_param, AmberAtomType, LJParam};
     use prism_physics::{SolvationBox, SolvationConfig, TIP3PWater};
-    use prism_physics::amber_ff14sb::{AmberAtomType, get_lj_param, get_atom_mass, LJParam};
 
     /// Known escape mutation sites for validation (from publication)
     const ESCAPE_SITES: &[(usize, &str, &str, f32)] = &[
@@ -39,7 +39,7 @@ mod tests {
     fn find_pdb_file() -> PathBuf {
         // Prefer OpenMM-prepared structure (properly protonated, minimized)
         let candidates = [
-            "data/structures/6M0J_RBD_prepared.pdb",        // OpenMM-prepared (best)
+            "data/structures/6M0J_RBD_prepared.pdb", // OpenMM-prepared (best)
             "../data/structures/6M0J_RBD_prepared.pdb",
             "../../data/structures/6M0J_RBD_prepared.pdb",
             "publication/figures/6M0J_RBD_RMSF_bfactor.pdb", // Fallback
@@ -59,7 +59,14 @@ mod tests {
     }
 
     /// Parse PDB file for explicit solvent simulation
-    fn parse_pdb_for_solvation(content: &str) -> (Vec<f32>, Vec<AmberAtomType>, Vec<f32>, Vec<(usize, String, String)>) {
+    fn parse_pdb_for_solvation(
+        content: &str,
+    ) -> (
+        Vec<f32>,
+        Vec<AmberAtomType>,
+        Vec<f32>,
+        Vec<(usize, String, String)>,
+    ) {
         let mut positions = Vec::new();
         let mut atom_types = Vec::new();
         let mut charges = Vec::new();
@@ -71,9 +78,24 @@ mod tests {
             }
 
             // Parse coordinates
-            let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-            let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-            let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+            let x: f32 = line
+                .get(30..38)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
+            let y: f32 = line
+                .get(38..46)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
+            let z: f32 = line
+                .get(46..54)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
             positions.extend_from_slice(&[x, y, z]);
 
             // Parse atom/residue names
@@ -133,12 +155,15 @@ mod tests {
 
     /// Extract Cα positions from full position array
     fn extract_ca_positions(all_positions: &[f32], ca_indices: &[usize]) -> Vec<[f32; 3]> {
-        ca_indices.iter()
-            .map(|&idx| [
-                all_positions[idx * 3],
-                all_positions[idx * 3 + 1],
-                all_positions[idx * 3 + 2],
-            ])
+        ca_indices
+            .iter()
+            .map(|&idx| {
+                [
+                    all_positions[idx * 3],
+                    all_positions[idx * 3 + 1],
+                    all_positions[idx * 3 + 2],
+                ]
+            })
             .collect()
     }
 
@@ -149,7 +174,9 @@ mod tests {
         }
 
         let n = ref_coords.len() as f32;
-        let sum_sq: f32 = ref_coords.iter().zip(coords.iter())
+        let sum_sq: f32 = ref_coords
+            .iter()
+            .zip(coords.iter())
             .map(|(r, c)| {
                 let dx = c[0] - r[0];
                 let dy = c[1] - r[1];
@@ -179,8 +206,7 @@ mod tests {
         let pdb_path = find_pdb_file();
         println!("  PDB file: {:?}", pdb_path);
 
-        let pdb_content = fs::read_to_string(&pdb_path)
-            .expect("Failed to read PDB file");
+        let pdb_content = fs::read_to_string(&pdb_path).expect("Failed to read PDB file");
 
         let (positions, atom_types, charges, atom_info) = parse_pdb_for_solvation(&pdb_content);
         let n_protein_atoms = atom_types.len();
@@ -208,15 +234,12 @@ mod tests {
             min_water_distance: 2.5,
             target_density: 0.997,
             max_box_dimension: 80.0,
-            salt_concentration: 0.0,  // No extra salt - just neutralize
+            salt_concentration: 0.0, // No extra salt - just neutralize
         };
 
-        let mut solvbox = SolvationBox::from_protein(
-            &positions,
-            &atom_types,
-            &charges,
-            &solv_config
-        ).expect("Failed to create solvation box");
+        let mut solvbox =
+            SolvationBox::from_protein(&positions, &atom_types, &charges, &solv_config)
+                .expect("Failed to create solvation box");
 
         let n_waters_added = solvbox.add_waters(&solv_config);
         let (n_na, n_cl) = solvbox.neutralize(&solv_config);
@@ -225,8 +248,10 @@ mod tests {
         let n_waters = solvbox.n_waters();
         let n_total = solvbox.total_atoms;
 
-        println!("  Box dimensions: {:.1} × {:.1} × {:.1} Å",
-                 box_dims[0], box_dims[1], box_dims[2]);
+        println!(
+            "  Box dimensions: {:.1} × {:.1} × {:.1} Å",
+            box_dims[0], box_dims[1], box_dims[2]
+        );
         println!("  Water molecules: {} ({} atoms)", n_waters, n_waters * 3);
         println!("  Ions: {} Na+, {} Cl-", n_na, n_cl);
         println!("  Total atoms: {}", n_total);
@@ -252,23 +277,31 @@ mod tests {
 
         // Convert topology to upload format
         // Bonds: (i, j, k_bond, r0)
-        let bonds: Vec<(usize, usize, f32, f32)> = combined_topology.bonds.iter()
+        let bonds: Vec<(usize, usize, f32, f32)> = combined_topology
+            .bonds
+            .iter()
             .zip(combined_topology.bond_params.iter())
             .map(|(&(i, j), param)| (i as usize, j as usize, param.k, param.r0))
             .collect();
 
         // Angles: (i, j, k, k_angle, theta0)
-        let angles: Vec<(usize, usize, usize, f32, f32)> = combined_topology.angles.iter()
+        let angles: Vec<(usize, usize, usize, f32, f32)> = combined_topology
+            .angles
+            .iter()
             .zip(combined_topology.angle_params.iter())
             .map(|(&(i, j, k), param)| (i as usize, j as usize, k as usize, param.k, param.theta0))
             .collect();
 
         // Dihedrals: (i, j, k, l, k_dih, phase, n)
-        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = combined_topology.dihedrals.iter()
+        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = combined_topology
+            .dihedrals
+            .iter()
             .zip(combined_topology.dihedral_params.iter())
             .flat_map(|(&(i, j, k, l), params)| {
                 params.iter().map(move |p| {
-                    (i as usize, j as usize, k as usize, l as usize, p.k, p.phase, p.n as f32)
+                    (
+                        i as usize, j as usize, k as usize, l as usize, p.k, p.phase, p.n as f32,
+                    )
                 })
             })
             .collect();
@@ -279,7 +312,12 @@ mod tests {
                 let lj = &combined_topology.lj_params[i];
                 // Convert rmin_half to sigma: sigma = 2 * rmin_half / 2^(1/6)
                 let sigma = lj.rmin_half * 2.0 / 1.122462f32;
-                (sigma, lj.epsilon, combined_topology.charges[i], combined_topology.masses[i])
+                (
+                    sigma,
+                    lj.epsilon,
+                    combined_topology.charges[i],
+                    combined_topology.masses[i],
+                )
             })
             .collect();
 
@@ -291,8 +329,15 @@ mod tests {
         }
 
         // Upload topology and positions
-        hmc.upload_topology(&combined_positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-            .expect("Failed to upload topology");
+        hmc.upload_topology(
+            &combined_positions,
+            &bonds,
+            &angles,
+            &dihedrals,
+            &nb_params,
+            &exclusions,
+        )
+        .expect("Failed to upload topology");
 
         // Enable explicit solvent features
         hmc.enable_explicit_solvent(box_dims)
@@ -313,14 +358,20 @@ mod tests {
 
         println!("  ✓ Explicit solvent: ENABLED");
         println!("  ✓ PME electrostatics: ENABLED");
-        println!("  ✓ SETTLE constraints: {} waters", water_oxygen_indices.len());
+        println!(
+            "  ✓ SETTLE constraints: {} waters",
+            water_oxygen_indices.len()
+        );
         println!("  ✓ H-bond constraints: {} clusters", h_clusters.len());
         println!("  ✓ Mixed precision: ENABLED");
         println!("  ✓ Fused kernels: run_fused()");
 
         // Debug: Check SETTLE constraint satisfaction for first few waters
         if let Some((max_oh_viol, max_hh_viol)) = hmc.check_settle_constraints().unwrap() {
-            println!("  SETTLE violations (BEFORE any SETTLE applied): max_OH={:.6}Å, max_HH={:.6}Å", max_oh_viol, max_hh_viol);
+            println!(
+                "  SETTLE violations (BEFORE any SETTLE applied): max_OH={:.6}Å, max_HH={:.6}Å",
+                max_oh_viol, max_hh_viol
+            );
         }
 
         // Debug: Print first 3 water geometries (INITIAL - before any processing)
@@ -342,16 +393,21 @@ mod tests {
                 let h2x = positions[h2_idx * 3];
                 let h2y = positions[h2_idx * 3 + 1];
                 let h2z = positions[h2_idx * 3 + 2];
-                let oh1 = ((ox-h1x).powi(2) + (oy-h1y).powi(2) + (oz-h1z).powi(2)).sqrt();
-                let oh2 = ((ox-h2x).powi(2) + (oy-h2y).powi(2) + (oz-h2z).powi(2)).sqrt();
-                let hh = ((h1x-h2x).powi(2) + (h1y-h2y).powi(2) + (h1z-h2z).powi(2)).sqrt();
-                max_oh_err = max_oh_err.max((oh1 - 0.9572).abs()).max((oh2 - 0.9572).abs());
+                let oh1 = ((ox - h1x).powi(2) + (oy - h1y).powi(2) + (oz - h1z).powi(2)).sqrt();
+                let oh2 = ((ox - h2x).powi(2) + (oy - h2y).powi(2) + (oz - h2z).powi(2)).sqrt();
+                let hh = ((h1x - h2x).powi(2) + (h1y - h2y).powi(2) + (h1z - h2z).powi(2)).sqrt();
+                max_oh_err = max_oh_err
+                    .max((oh1 - 0.9572).abs())
+                    .max((oh2 - 0.9572).abs());
                 max_hh_err = max_hh_err.max((hh - 1.5136).abs());
                 if i < 3 {
                     println!("    Water {}: O-H1={:.4}Å, O-H2={:.4}Å, H-H={:.4}Å (target: 0.9572, 0.9572, 1.5136)", i, oh1, oh2, hh);
                 }
             }
-            println!("    Max OH error: {:.6}Å, Max HH error: {:.6}Å across {} waters", max_oh_err, max_hh_err, n_waters);
+            println!(
+                "    Max OH error: {:.6}Å, Max HH error: {:.6}Å across {} waters",
+                max_oh_err, max_hh_err, n_waters
+            );
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -366,34 +422,40 @@ mod tests {
             // Check distances between different waters (O atoms only for speed)
             let water_start = n_protein_atoms;
             for i in 0..n_waters {
-                let o_i = water_start + i * 3;  // O index of water i
+                let o_i = water_start + i * 3; // O index of water i
                 let ox_i = positions[o_i * 3];
                 let oy_i = positions[o_i * 3 + 1];
                 let oz_i = positions[o_i * 3 + 2];
 
-                for j in (i+1)..n_waters {
-                    let o_j = water_start + j * 3;  // O index of water j
+                for j in (i + 1)..n_waters {
+                    let o_j = water_start + j * 3; // O index of water j
                     let ox_j = positions[o_j * 3];
                     let oy_j = positions[o_j * 3 + 1];
                     let oz_j = positions[o_j * 3 + 2];
 
-                    let dist = ((ox_i - ox_j).powi(2) + (oy_i - oy_j).powi(2) + (oz_i - oz_j).powi(2)).sqrt();
+                    let dist =
+                        ((ox_i - ox_j).powi(2) + (oy_i - oy_j).powi(2) + (oz_i - oz_j).powi(2))
+                            .sqrt();
                     if dist < min_dist {
                         min_dist = dist;
                         min_pair = (i, j);
                     }
                 }
             }
-            println!("  Minimum water O-O distance: {:.3} Å (between waters {} and {})", min_dist, min_pair.0, min_pair.1);
+            println!(
+                "  Minimum water O-O distance: {:.3} Å (between waters {} and {})",
+                min_dist, min_pair.0, min_pair.1
+            );
 
             // Check if any water H atoms are too close to other atoms
             let mut min_h_dist = f32::MAX;
             let mut min_h_pair = (0, 0);
-            for i in 0..n_waters.min(100) {  // Check first 100 waters for speed
+            for i in 0..n_waters.min(100) {
+                // Check first 100 waters for speed
                 let h1_i = water_start + i * 3 + 1;
                 let h2_i = water_start + i * 3 + 2;
 
-                for j in (i+1)..n_waters.min(100) {
+                for j in (i + 1)..n_waters.min(100) {
                     let o_j = water_start + j * 3;
                     let h1_j = water_start + j * 3 + 1;
                     let h2_j = water_start + j * 3 + 2;
@@ -403,7 +465,8 @@ mod tests {
                         for &b in &[o_j, h1_j, h2_j] {
                             let dist = ((positions[a * 3] - positions[b * 3]).powi(2)
                                 + (positions[a * 3 + 1] - positions[b * 3 + 1]).powi(2)
-                                + (positions[a * 3 + 2] - positions[b * 3 + 2]).powi(2)).sqrt();
+                                + (positions[a * 3 + 2] - positions[b * 3 + 2]).powi(2))
+                            .sqrt();
                             if dist < min_h_dist {
                                 min_h_dist = dist;
                                 min_h_pair = (a, b);
@@ -412,7 +475,10 @@ mod tests {
                     }
                 }
             }
-            println!("  Minimum water H-X distance: {:.3} Å (between atoms {} and {})", min_h_dist, min_h_pair.0, min_h_pair.1);
+            println!(
+                "  Minimum water H-X distance: {:.3} Å (between atoms {} and {})",
+                min_h_dist, min_h_pair.0, min_h_pair.1
+            );
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -423,16 +489,19 @@ mod tests {
         let min_start = Instant::now();
         // Aggressive minimization with many steps and small step size
         // Goal: reduce average force to <5 kcal/(mol·Å)
-        let final_energy = hmc.minimize(10000, 0.002)
-            .expect("Minimization failed");
+        let final_energy = hmc.minimize(10000, 0.002).expect("Minimization failed");
         let min_time = min_start.elapsed();
 
-        println!("  Minimization complete in {:.2} seconds", min_time.as_secs_f64());
+        println!(
+            "  Minimization complete in {:.2} seconds",
+            min_time.as_secs_f64()
+        );
         println!("  Final energy: {:.2} kcal/mol", final_energy);
 
         // Force diagnostics after minimization
         println!("\n━━━ Step 4b: Force Diagnostics ━━━");
-        let (max_f, avg_f, top_forces) = hmc.get_force_diagnostics()
+        let (max_f, avg_f, top_forces) = hmc
+            .get_force_diagnostics()
             .expect("Failed to get force diagnostics");
         println!("  Max force: {:.2} kcal/(mol·Å)", max_f);
         println!("  Avg force: {:.2} kcal/(mol·Å)", avg_f);
@@ -467,7 +536,10 @@ mod tests {
                     }
                 }
             };
-            println!("    Atom {:5}: |F|={:7.1} kcal/(mol·Å)  [{}]", idx, force, atom_type);
+            println!(
+                "    Atom {:5}: |F|={:7.1} kcal/(mol·Å)  [{}]",
+                idx, force, atom_type
+            );
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -488,7 +560,9 @@ mod tests {
             let mut min_dist = f32::MAX;
             let mut closest_idx = 0;
             for j in 0..n_total {
-                if j == *atom_idx { continue; }
+                if j == *atom_idx {
+                    continue;
+                }
                 let qx = positions[j * 3];
                 let qy = positions[j * 3 + 1];
                 let qz = positions[j * 3 + 2];
@@ -530,8 +604,14 @@ mod tests {
                 }
             };
 
-            println!("  High-force atom {} ({}) |F|={:.1}:", atom_idx, atom_type_a, force);
-            println!("    Closest: {} ({}) at {:.3} Å", closest_idx, atom_type_b, min_dist);
+            println!(
+                "  High-force atom {} ({}) |F|={:.1}:",
+                atom_idx, atom_type_a, force
+            );
+            println!(
+                "    Closest: {} ({}) at {:.3} Å",
+                closest_idx, atom_type_b, min_dist
+            );
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -539,12 +619,12 @@ mod tests {
         // ═══════════════════════════════════════════════════════════════
         println!("\n━━━ Step 5: Equilibration (20 ps) ━━━");
 
-        let dt = 1.0_f32;  // 1 fs timestep (reduced for stability with high forces)
-        let temperature = 310.0_f32;  // 37°C
-        // DISABLE Langevin thermostat for explicit solvent - use velocity rescaling only
-        // The DOF mismatch between thermostat (3N) and SETTLE constraints (N_water * 3)
-        // causes energy pumping. Velocity rescaling in run_fused handles temperature.
-        let gamma = 0.0_f32;  // NVE dynamics with velocity rescaling thermostat
+        let dt = 1.0_f32; // 1 fs timestep (reduced for stability with high forces)
+        let temperature = 310.0_f32; // 37°C
+                                     // DISABLE Langevin thermostat for explicit solvent - use velocity rescaling only
+                                     // The DOF mismatch between thermostat (3N) and SETTLE constraints (N_water * 3)
+                                     // causes energy pumping. Velocity rescaling in run_fused handles temperature.
+        let gamma = 0.0_f32; // NVE dynamics with velocity rescaling thermostat
 
         hmc.initialize_velocities(temperature)
             .expect("Failed to initialize velocities");
@@ -552,13 +632,23 @@ mod tests {
         // Debug: Check velocities after initialization
         let velocities_after_init = hmc.get_velocities().expect("Failed to get velocities");
         let vel_sum: f32 = velocities_after_init.iter().map(|v| v.abs()).sum();
-        let vel_max: f32 = velocities_after_init.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
-        println!("  DEBUG: After init_velocities - sum(|v|)={:.2}, max(|v|)={:.4}", vel_sum, vel_max);
+        let vel_max: f32 = velocities_after_init
+            .iter()
+            .map(|v| v.abs())
+            .fold(0.0f32, f32::max);
+        println!(
+            "  DEBUG: After init_velocities - sum(|v|)={:.2}, max(|v|)={:.4}",
+            vel_sum, vel_max
+        );
 
         // Debug: Build neighbor lists explicitly and check
-        hmc.build_neighbor_lists().expect("Failed to build neighbor lists");
+        hmc.build_neighbor_lists()
+            .expect("Failed to build neighbor lists");
         let max_force = hmc.get_max_force().expect("Failed to get max force");
-        println!("  DEBUG: After build_neighbor_lists - max_force={:.4}", max_force);
+        println!(
+            "  DEBUG: After build_neighbor_lists - max_force={:.4}",
+            max_force
+        );
 
         // CRITICAL: Add position restraints on protein heavy atoms during equilibration
         // This prevents the protein from exploding while water equilibrates
@@ -566,24 +656,31 @@ mod tests {
         let protein_heavy_atoms: Vec<usize> = (0..n_protein_atoms)
             .filter(|&i| {
                 let (_, _, atom_name) = &atom_info[i];
-                !atom_name.starts_with('H')  // Heavy atoms only
+                !atom_name.starts_with('H') // Heavy atoms only
             })
             .collect();
 
-        println!("  Setting position restraints on {} protein heavy atoms (k=100)", protein_heavy_atoms.len());
-        hmc.set_position_restraints(&protein_heavy_atoms, 100.0)  // Strong restraints (100 kcal/(mol·Å²))
+        println!(
+            "  Setting position restraints on {} protein heavy atoms (k=100)",
+            protein_heavy_atoms.len()
+        );
+        hmc.set_position_restraints(&protein_heavy_atoms, 100.0) // Strong restraints (100 kcal/(mol·Å²))
             .expect("Failed to set position restraints");
 
         // Use run_verlet for equilibration - it has proper position restraint support
         // (restraint forces are added BEFORE integration, not after like in run_fused)
-        let equil_steps = 50000;  // 50 ps with dt=1fs for better thermalization
+        let equil_steps = 50000; // 50 ps with dt=1fs for better thermalization
         let equil_start = Instant::now();
 
-        let result = hmc.run_verlet(equil_steps, dt, temperature, gamma)
+        let result = hmc
+            .run_verlet(equil_steps, dt, temperature, gamma)
             .expect("Equilibration failed");
 
         let equil_time = equil_start.elapsed();
-        println!("  Equilibration complete in {:.2} seconds", equil_time.as_secs_f64());
+        println!(
+            "  Equilibration complete in {:.2} seconds",
+            equil_time.as_secs_f64()
+        );
         println!("  Final temperature: {:.1} K", result.avg_temperature);
 
         // ═══════════════════════════════════════════════════════════════
@@ -601,7 +698,10 @@ mod tests {
         let steps_per_chunk = (save_interval_ps * 1000.0 / dt as f64) as usize;
         let n_chunks = (production_ps / save_interval_ps) as usize;
 
-        println!("  Saving every {} ps ({} frames total)", save_interval_ps, n_chunks);
+        println!(
+            "  Saving every {} ps ({} frames total)",
+            save_interval_ps, n_chunks
+        );
 
         let reference_positions = hmc.get_positions().expect("Failed to get positions");
         let reference_ca = extract_ca_positions(&reference_positions, &ca_indices);
@@ -612,7 +712,8 @@ mod tests {
         let prod_start = Instant::now();
 
         for chunk in 0..n_chunks {
-            let result = hmc.run_fused(steps_per_chunk, dt, temperature, gamma, false)
+            let result = hmc
+                .run_fused(steps_per_chunk, dt, temperature, gamma, false)
                 .expect("Production step failed");
 
             let positions = hmc.get_positions().expect("Failed to get positions");
@@ -627,12 +728,14 @@ mod tests {
                 let steps_per_sec = steps_done as f64 / elapsed;
                 let ns_per_day = steps_per_sec * dt as f64 * 86400.0 / 1e6;
 
-                println!("  [{:5.1}%] {:.0}/{:.0} ps | T={:.1}K | {:.0} ns/day",
-                         progress,
-                         (chunk + 1) as f64 * save_interval_ps,
-                         production_ps,
-                         result.avg_temperature,
-                         ns_per_day);
+                println!(
+                    "  [{:5.1}%] {:.0}/{:.0} ps | T={:.1}K | {:.0} ns/day",
+                    progress,
+                    (chunk + 1) as f64 * save_interval_ps,
+                    production_ps,
+                    result.avg_temperature,
+                    ns_per_day
+                );
             }
         }
 
@@ -654,25 +757,34 @@ mod tests {
 
         // Debug: Check if positions actually changed
         println!("\n  DEBUG: First 3 Cα positions comparison:");
-        println!("         Frame 0 (ref)    vs    Frame {}  (last)", trajectory_ca.len() - 1);
+        println!(
+            "         Frame 0 (ref)    vs    Frame {}  (last)",
+            trajectory_ca.len() - 1
+        );
         for i in 0..3.min(reference_ca.len()) {
             let first = &trajectory_ca[0][i];
             let last = &trajectory_ca[trajectory_ca.len() - 1][i];
-            let diff = ((last[0] - first[0]).powi(2) +
-                       (last[1] - first[1]).powi(2) +
-                       (last[2] - first[2]).powi(2)).sqrt();
-            println!("    Cα[{}]: [{:.3}, {:.3}, {:.3}]  vs  [{:.3}, {:.3}, {:.3}]  diff={:.4}",
-                     i, first[0], first[1], first[2], last[0], last[1], last[2], diff);
+            let diff = ((last[0] - first[0]).powi(2)
+                + (last[1] - first[1]).powi(2)
+                + (last[2] - first[2]).powi(2))
+            .sqrt();
+            println!(
+                "    Cα[{}]: [{:.3}, {:.3}, {:.3}]  vs  [{:.3}, {:.3}, {:.3}]  diff={:.4}",
+                i, first[0], first[1], first[2], last[0], last[1], last[2], diff
+            );
         }
 
-        let rmsd_values: Vec<f32> = trajectory_ca.iter()
+        let rmsd_values: Vec<f32> = trajectory_ca
+            .iter()
             .map(|frame| compute_ca_rmsd(&reference_ca, frame))
             .collect();
 
         let rmsd_mean = rmsd_values.iter().sum::<f32>() / rmsd_values.len() as f32;
-        let rmsd_var: f32 = rmsd_values.iter()
+        let rmsd_var: f32 = rmsd_values
+            .iter()
             .map(|r| (r - rmsd_mean).powi(2))
-            .sum::<f32>() / rmsd_values.len() as f32;
+            .sum::<f32>()
+            / rmsd_values.len() as f32;
         let rmsd_std = rmsd_var.sqrt();
         let rmsd_max = rmsd_values.iter().cloned().fold(0.0f32, f32::max);
 
@@ -718,9 +830,11 @@ mod tests {
         }
 
         let rmsf_mean = rmsf_values.iter().sum::<f32>() / n_ca as f32;
-        let rmsf_var: f32 = rmsf_values.iter()
+        let rmsf_var: f32 = rmsf_values
+            .iter()
             .map(|r| (r - rmsf_mean).powi(2))
-            .sum::<f32>() / n_ca as f32;
+            .sum::<f32>()
+            / n_ca as f32;
         let rmsf_std = rmsf_var.sqrt();
         let rmsf_max = rmsf_values.iter().cloned().fold(0.0f32, f32::max);
 
@@ -729,8 +843,15 @@ mod tests {
         println!("  Max RMSF:  {:.3} Å", rmsf_max);
 
         // Calculate z-scores
-        let rmsf_zscores: Vec<f32> = rmsf_values.iter()
-            .map(|r| if rmsf_std > 0.0 { (r - rmsf_mean) / rmsf_std } else { 0.0 })
+        let rmsf_zscores: Vec<f32> = rmsf_values
+            .iter()
+            .map(|r| {
+                if rmsf_std > 0.0 {
+                    (r - rmsf_mean) / rmsf_std
+                } else {
+                    0.0
+                }
+            })
             .collect();
 
         let high_flex_count = rmsf_zscores.iter().filter(|z| **z > 1.5).count();
@@ -751,7 +872,8 @@ mod tests {
 
         for &(resid, mutation, variant, implicit_z) in ESCAPE_SITES {
             // Find the Cα index for this residue
-            let ca_idx = atom_info.iter()
+            let ca_idx = atom_info
+                .iter()
                 .enumerate()
                 .find(|(i, (rid, _, name))| *rid == resid && name == "CA")
                 .map(|(i, _)| ca_indices.iter().position(|&idx| idx == i))
@@ -766,11 +888,17 @@ mod tests {
             let implicit_detected = implicit_z > 1.0;
             let explicit_detected = explicit_z > 1.0;
 
-            if implicit_detected { detected_implicit += 1; }
-            if explicit_detected { detected_explicit += 1; }
+            if implicit_detected {
+                detected_implicit += 1;
+            }
+            if explicit_detected {
+                detected_explicit += 1;
+            }
 
-            println!("  │ {:>7} │ {:>9} │ {:>18} │ {:>10.2} │ {:>10.2} │",
-                     resid, mutation, variant, implicit_z, explicit_z);
+            println!(
+                "  │ {:>7} │ {:>9} │ {:>18} │ {:>10.2} │ {:>10.2} │",
+                resid, mutation, variant, implicit_z, explicit_z
+            );
         }
 
         println!("  └─────────┴───────────┴────────────────────┴────────────┴────────────┘");
@@ -781,8 +909,14 @@ mod tests {
         let explicit_rate = detected_explicit as f64 / total_sites as f64 * 100.0;
 
         println!("  Detection Rate (z > 1.0):");
-        println!("    Implicit (baseline):  {}/{} ({:.1}%)", detected_implicit, total_sites, implicit_rate);
-        println!("    Explicit (this run):  {}/{} ({:.1}%)", detected_explicit, total_sites, explicit_rate);
+        println!(
+            "    Implicit (baseline):  {}/{} ({:.1}%)",
+            detected_implicit, total_sites, implicit_rate
+        );
+        println!(
+            "    Explicit (this run):  {}/{} ({:.1}%)",
+            detected_explicit, total_sites, explicit_rate
+        );
 
         // ═══════════════════════════════════════════════════════════════
         // FINAL REPORT
@@ -792,26 +926,59 @@ mod tests {
         println!("║                    VALIDATION RESULTS                        ║");
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║  SYSTEM                                                      ║");
-        println!("║    Protein: 6M0J Chain E ({} atoms, {} residues)         ║",
-                 n_protein_atoms, n_residues);
-        println!("║    Waters:  {} TIP3P ({} atoms)                         ║",
-                 n_waters, n_waters * 3);
-        println!("║    Ions:    {} Na+, {} Cl-                                   ║", n_na, n_cl);
-        println!("║    Total:   {} atoms                                     ║", n_total);
-        println!("║    Box:     {:.1} × {:.1} × {:.1} Å                            ║",
-                 box_dims[0], box_dims[1], box_dims[2]);
+        println!(
+            "║    Protein: 6M0J Chain E ({} atoms, {} residues)         ║",
+            n_protein_atoms, n_residues
+        );
+        println!(
+            "║    Waters:  {} TIP3P ({} atoms)                         ║",
+            n_waters,
+            n_waters * 3
+        );
+        println!(
+            "║    Ions:    {} Na+, {} Cl-                                   ║",
+            n_na, n_cl
+        );
+        println!(
+            "║    Total:   {} atoms                                     ║",
+            n_total
+        );
+        println!(
+            "║    Box:     {:.1} × {:.1} × {:.1} Å                            ║",
+            box_dims[0], box_dims[1], box_dims[2]
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║  PERFORMANCE (Phase 7-8 Fused Kernels)                       ║");
-        println!("║    Wall time:     {:6.2} seconds                            ║",
-                 prod_time.as_secs_f64());
-        println!("║    Performance:   {:6.0} ns/day                              ║", ns_per_day);
-        println!("║    Time/step:     {:6.2} µs                                  ║", time_per_step_us);
+        println!(
+            "║    Wall time:     {:6.2} seconds                            ║",
+            prod_time.as_secs_f64()
+        );
+        println!(
+            "║    Performance:   {:6.0} ns/day                              ║",
+            ns_per_day
+        );
+        println!(
+            "║    Time/step:     {:6.2} µs                                  ║",
+            time_per_step_us
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║  STRUCTURE METRICS                                           ║");
-        println!("║    RMSD mean:     {:6.3} Å                                   ║", rmsd_mean);
-        println!("║    RMSD std:      {:6.3} Å                                   ║", rmsd_std);
-        println!("║    RMSF mean:     {:6.3} Å                                   ║", rmsf_mean);
-        println!("║    RMSF max:      {:6.3} Å                                   ║", rmsf_max);
+        println!(
+            "║    RMSD mean:     {:6.3} Å                                   ║",
+            rmsd_mean
+        );
+        println!(
+            "║    RMSD std:      {:6.3} Å                                   ║",
+            rmsd_std
+        );
+        println!(
+            "║    RMSF mean:     {:6.3} Å                                   ║",
+            rmsf_mean
+        );
+        println!(
+            "║    RMSF max:      {:6.3} Å                                   ║",
+            rmsf_max
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
 
         // Overall verdict
@@ -819,10 +986,14 @@ mod tests {
         let performance_ok = ns_per_day > 1000.0;
 
         println!("║  VALIDATION CHECKLIST                                        ║");
-        println!("║    [{}] RMSD < 3.0 Å (stable fold)                           ║",
-                 if rmsd_ok { "✓" } else { "✗" });
-        println!("║    [{}] Performance > 1,000 ns/day                           ║",
-                 if performance_ok { "✓" } else { "✗" });
+        println!(
+            "║    [{}] RMSD < 3.0 Å (stable fold)                           ║",
+            if rmsd_ok { "✓" } else { "✗" }
+        );
+        println!(
+            "║    [{}] Performance > 1,000 ns/day                           ║",
+            if performance_ok { "✓" } else { "✗" }
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
 
         if rmsd_ok && performance_ok {
@@ -834,7 +1005,11 @@ mod tests {
 
         // Assert criteria
         assert!(rmsd_mean < 3.0, "RMSD too high: {:.3} Å", rmsd_mean);
-        assert!(ns_per_day > 500.0, "Performance too low: {:.0} ns/day", ns_per_day);
+        assert!(
+            ns_per_day > 500.0,
+            "Performance too low: {:.0} ns/day",
+            ns_per_day
+        );
     }
 
     /// Build H-bond constraint clusters from protein atoms
@@ -870,19 +1045,21 @@ mod tests {
 
             // Find the parent atom in the same residue
             let res_id = atom_info[i].0;
-            let parent_idx = atom_info.iter()
+            let parent_idx = atom_info
+                .iter()
                 .position(|(rid, _, name)| *rid == res_id && name == &parent_name);
 
             if let Some(parent) = parent_idx {
                 // Determine bond length based on parent type
                 let bond_length = match atom_types.get(parent) {
-                    Some(AmberAtomType::N) => 1.01,  // N-H
-                    Some(AmberAtomType::O | AmberAtomType::OH) => 0.96,  // O-H
-                    Some(AmberAtomType::S | AmberAtomType::SH) => 1.34,  // S-H
-                    _ => 1.09,  // C-H (default)
+                    Some(AmberAtomType::N) => 1.01,                     // N-H
+                    Some(AmberAtomType::O | AmberAtomType::OH) => 0.96, // O-H
+                    Some(AmberAtomType::S | AmberAtomType::SH) => 1.34, // S-H
+                    _ => 1.09,                                          // C-H (default)
                 };
 
-                heavy_to_hydrogens.entry(parent)
+                heavy_to_hydrogens
+                    .entry(parent)
                     .or_default()
                     .push((i, bond_length));
             }
@@ -895,24 +1072,54 @@ mod tests {
             let mass_heavy = get_atom_mass(atom_types[heavy_idx]);
             let mass_h = 1.008;
 
-            let is_nitrogen = matches!(atom_types.get(heavy_idx),
-                Some(AmberAtomType::N | AmberAtomType::N2 | AmberAtomType::N3 | AmberAtomType::NA | AmberAtomType::NB));
+            let is_nitrogen = matches!(
+                atom_types.get(heavy_idx),
+                Some(
+                    AmberAtomType::N
+                        | AmberAtomType::N2
+                        | AmberAtomType::N3
+                        | AmberAtomType::NA
+                        | AmberAtomType::NB
+                )
+            );
 
             match hydrogens.len() {
                 1 => {
                     let (h, d) = hydrogens[0];
-                    clusters.push(HConstraintCluster::single_h(heavy_idx, h, d, mass_heavy, mass_h));
+                    clusters.push(HConstraintCluster::single_h(
+                        heavy_idx, h, d, mass_heavy, mass_h,
+                    ));
                 }
                 2 => {
                     let (h1, d1) = hydrogens[0];
                     let (h2, d2) = hydrogens[1];
-                    clusters.push(HConstraintCluster::two_h(heavy_idx, h1, h2, d1, d2, mass_heavy, mass_h, is_nitrogen));
+                    clusters.push(HConstraintCluster::two_h(
+                        heavy_idx,
+                        h1,
+                        h2,
+                        d1,
+                        d2,
+                        mass_heavy,
+                        mass_h,
+                        is_nitrogen,
+                    ));
                 }
                 3 => {
                     let (h1, d1) = hydrogens[0];
                     let (h2, d2) = hydrogens[1];
                     let (h3, d3) = hydrogens[2];
-                    clusters.push(HConstraintCluster::three_h(heavy_idx, h1, h2, h3, d1, d2, d3, mass_heavy, mass_h, is_nitrogen));
+                    clusters.push(HConstraintCluster::three_h(
+                        heavy_idx,
+                        h1,
+                        h2,
+                        h3,
+                        d1,
+                        d2,
+                        d3,
+                        mass_heavy,
+                        mass_h,
+                        is_nitrogen,
+                    ));
                 }
                 _ => {} // Skip unusual cases
             }

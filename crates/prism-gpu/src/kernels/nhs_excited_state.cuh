@@ -276,14 +276,28 @@ __device__ __forceinline__ void excite_aromatic_wavelength(
     float* time_since_excitation,
     float* electronic_population,
     float* vibrational_energy,
-    float* franck_condon_progress
+    float* franck_condon_progress,
+    // M1.2.26.RECOUPLE Part 1.1 — Operator override (kcal/mol).
+    // When > 0.0f the caller has populated ProtocolState.uv_burst_energy
+    // and wants the excitation kernel to bypass the cross-section physics
+    // path. Sentinel <= 0.0f preserves the hardcoded compute_deposited_
+    // energy_wavelength() Naive Safety baseline.
+    float uv_burst_energy_override
 ) {
     is_excited[aromatic_idx] = 1;
     time_since_excitation[aromatic_idx] = 0.0f;
     electronic_population[aromatic_idx] = 1.0f;
 
-    // WAVELENGTH-DEPENDENT: Energy depends on σ(λ) via Gaussian band model
+    // Baseline: physics cross-section path (Transition Dipole Moment).
     float energy = compute_deposited_energy_wavelength(residue_type, wavelength_nm);
+    // M1.2.26.RECOUPLE Part 1.1 — Operator Override (Target T28.1).
+    // The orchestrator-supplied UV burst energy supersedes the baseline.
+    // This connects the --uv-burst-energy CLI surface (host) to the actual
+    // kinetic injection on the Blackwell SM, closing the dead-parameter
+    // gap identified in the M1.2.26 coupling audit.
+    if (uv_burst_energy_override > 0.0f) {
+        energy = uv_burst_energy_override;
+    }
     vibrational_energy[aromatic_idx] = energy;
 
 #ifdef DEBUG_UV_PHYSICS
@@ -315,11 +329,14 @@ __device__ __forceinline__ void excite_aromatic_inline(
     float* vibrational_energy,
     float* franck_condon_progress
 ) {
-    // Call wavelength-dependent version with default 280nm
+    // Call wavelength-dependent version with default 280nm.
+    // Legacy path: no operator override (uv_burst_energy_override = 0.0f),
+    // physics-derived deposit applies.
     excite_aromatic_wavelength(
         aromatic_idx, residue_type, 280.0f,
         is_excited, time_since_excitation, electronic_population,
-        vibrational_energy, franck_condon_progress
+        vibrational_energy, franck_condon_progress,
+        0.0f /* uv_burst_energy_override = sentinel */
     );
 }
 

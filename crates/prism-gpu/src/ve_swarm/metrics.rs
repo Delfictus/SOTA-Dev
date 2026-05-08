@@ -15,14 +15,14 @@ pub struct VeSwarmMetrics {
 
     // Swarm metrics
     swarm_generation: AtomicU64,
-    swarm_best_fitness: AtomicU64,  // Stored as f32 * 1000
+    swarm_best_fitness: AtomicU64, // Stored as f32 * 1000
 
     // Agent metrics
     agent_fitness_sum: AtomicU64,   // Stored as f32 * 1000
     agent_agreement_sum: AtomicU64, // Stored as f32 * 1000
 
     // Pheromone metrics
-    pheromone_entropy: AtomicU64,   // Stored as f32 * 1000
+    pheromone_entropy: AtomicU64, // Stored as f32 * 1000
 
     // Temporal metrics
     velocity_correction_applied: AtomicU64,
@@ -40,7 +40,7 @@ impl VeSwarmMetrics {
             predictions_rise: AtomicU64::new(0),
             predictions_fall: AtomicU64::new(0),
             swarm_generation: AtomicU64::new(0),
-            swarm_best_fitness: AtomicU64::new(500),  // 0.5 * 1000
+            swarm_best_fitness: AtomicU64::new(500), // 0.5 * 1000
             agent_fitness_sum: AtomicU64::new(0),
             agent_agreement_sum: AtomicU64::new(0),
             pheromone_entropy: AtomicU64::new(0),
@@ -66,37 +66,44 @@ impl VeSwarmMetrics {
 
     /// Record swarm generation
     pub fn record_generation(&self, generation: usize) {
-        self.swarm_generation.store(generation as u64, Ordering::Relaxed);
+        self.swarm_generation
+            .store(generation as u64, Ordering::Relaxed);
     }
 
     /// Record best fitness
     pub fn record_best_fitness(&self, fitness: f32) {
-        self.swarm_best_fitness.store((fitness * 1000.0) as u64, Ordering::Relaxed);
+        self.swarm_best_fitness
+            .store((fitness * 1000.0) as u64, Ordering::Relaxed);
     }
 
     /// Record agent fitness
     pub fn record_agent_fitness(&self, mean_fitness: f32) {
-        self.agent_fitness_sum.store((mean_fitness * 1000.0) as u64, Ordering::Relaxed);
+        self.agent_fitness_sum
+            .store((mean_fitness * 1000.0) as u64, Ordering::Relaxed);
     }
 
     /// Record agent agreement
     pub fn record_agent_agreement(&self, agreement: f32) {
-        self.agent_agreement_sum.store((agreement * 1000.0) as u64, Ordering::Relaxed);
+        self.agent_agreement_sum
+            .store((agreement * 1000.0) as u64, Ordering::Relaxed);
     }
 
     /// Record pheromone entropy
     pub fn record_pheromone_entropy(&self, entropy: f32) {
-        self.pheromone_entropy.store((entropy * 1000.0) as u64, Ordering::Relaxed);
+        self.pheromone_entropy
+            .store((entropy * 1000.0) as u64, Ordering::Relaxed);
     }
 
     /// Record velocity correction
     pub fn record_velocity_correction(&self) {
-        self.velocity_correction_applied.fetch_add(1, Ordering::Relaxed);
+        self.velocity_correction_applied
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// Record prediction latency
     pub fn record_latency(&self, latency_us: u64) {
-        self.prediction_latency_us.store(latency_us, Ordering::Relaxed);
+        self.prediction_latency_us
+            .store(latency_us, Ordering::Relaxed);
     }
 
     /// Get current accuracy
@@ -104,7 +111,7 @@ impl VeSwarmMetrics {
         let total = self.predictions_total.load(Ordering::Relaxed);
         let correct = self.predictions_correct.load(Ordering::Relaxed);
         if total == 0 {
-            0.5  // Prior
+            0.5 // Prior
         } else {
             correct as f32 / total as f32
         }
@@ -124,9 +131,14 @@ impl VeSwarmMetrics {
         let vel_correction = self.velocity_correction_applied.load(Ordering::Relaxed);
         let latency = self.prediction_latency_us.load(Ordering::Relaxed);
 
-        let accuracy = if total > 0 { correct as f32 / total as f32 } else { 0.5 };
+        let accuracy = if total > 0 {
+            correct as f32 / total as f32
+        } else {
+            0.5
+        };
 
-        format!(r#"# HELP prism_ve_swarm_predictions_total Total predictions made
+        format!(
+            r#"# HELP prism_ve_swarm_predictions_total Total predictions made
 # TYPE prism_ve_swarm_predictions_total counter
 prism_ve_swarm_predictions_total{{country="{country}"}} {total}
 
@@ -173,7 +185,8 @@ prism_ve_swarm_velocity_corrections{{country="{country}"}} {vel_correction}
 # HELP prism_ve_swarm_prediction_latency_us Prediction latency in microseconds
 # TYPE prism_ve_swarm_prediction_latency_us gauge
 prism_ve_swarm_prediction_latency_us{{country="{country}"}} {latency}
-"#)
+"#
+        )
     }
 }
 
@@ -203,11 +216,26 @@ pub fn compute_pheromone_entropy(pheromone: &[f32]) -> f32 {
 pub fn format_feature_importance(importance: &[f32], top_n: usize) -> String {
     let feature_names = [
         // Top 20 most important features
-        "ddG_bind", "ddG_stab", "expression", "transmit",  // 92-95
-        "velocity", "frequency", "emergence", "time_peak", "phase",  // 96-100
-        "spike_0", "spike_1", "spike_2", "spike_3",  // 101-104
-        "electro_1", "electro_2", "hydro_1", "hydro_2",  // 80-83, 84-87
-        "res_0", "res_1", "res_2",  // 48-50
+        "ddG_bind",
+        "ddG_stab",
+        "expression",
+        "transmit", // 92-95
+        "velocity",
+        "frequency",
+        "emergence",
+        "time_peak",
+        "phase", // 96-100
+        "spike_0",
+        "spike_1",
+        "spike_2",
+        "spike_3", // 101-104
+        "electro_1",
+        "electro_2",
+        "hydro_1",
+        "hydro_2", // 80-83, 84-87
+        "res_0",
+        "res_1",
+        "res_2", // 48-50
     ];
 
     let mut indexed: Vec<(usize, f32)> = importance.iter().cloned().enumerate().collect();

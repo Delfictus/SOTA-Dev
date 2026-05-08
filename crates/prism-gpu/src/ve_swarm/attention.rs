@@ -11,9 +11,8 @@ use anyhow::Result;
 /// ACE2 interface residue positions (from 6M0J structure)
 /// These are RBD residues that directly contact the ACE2 receptor
 pub const ACE2_INTERFACE_RESIDUES: &[usize] = &[
-    417, 446, 449, 453, 455, 456, 475, 476, 484, 486,
-    487, 489, 490, 493, 494, 496, 498, 500, 501, 502,
-    503, 505, 506, 520, 521,
+    417, 446, 449, 453, 455, 456, 475, 476, 484, 486, 487, 489, 490, 493, 494, 496, 498, 500, 501,
+    502, 503, 505, 506, 520, 521,
 ];
 
 /// Epitope class centers (representative residue for each of 10 antibody classes)
@@ -33,16 +32,16 @@ pub const EPITOPE_CLASS_CENTERS: &[(usize, &str)] = &[
 
 /// Known escape mutation hotspots (high DMS escape scores)
 pub const ESCAPE_HOTSPOTS: &[usize] = &[
-    484,  // E484K/Q - Major escape
-    501,  // N501Y - Enhanced binding + escape
-    417,  // K417N/T - Escape in Beta/Gamma
-    452,  // L452R - Delta escape
-    478,  // T478K - Delta escape
-    486,  // F486V - Omicron escape
-    493,  // Q493R - Omicron escape
-    498,  // Q498R - Omicron escape
-    346,  // R346K - BA.2.75 escape
-    444,  // K444T - BQ.1 escape
+    484, // E484K/Q - Major escape
+    501, // N501Y - Enhanced binding + escape
+    417, // K417N/T - Escape in Beta/Gamma
+    452, // L452R - Delta escape
+    478, // T478K - Delta escape
+    486, // F486V - Omicron escape
+    493, // Q493R - Omicron escape
+    498, // Q498R - Omicron escape
+    346, // R346K - BA.2.75 escape
+    444, // K444T - BQ.1 escape
 ];
 
 /// Attention configuration
@@ -121,15 +120,18 @@ pub fn compute_residue_attention(
     let epitope_score = (-epitope_dist / 10.0).exp();
 
     // Escape hotspot score
-    let hotspot_score = if is_escape_hotspot(residue_pos) { 2.0 } else { 0.0 };
+    let hotspot_score = if is_escape_hotspot(residue_pos) {
+        2.0
+    } else {
+        0.0
+    };
 
     // Combine scores
-    let raw_attention =
-        config.interface_weight * interface_score +
-        config.epitope_weight * epitope_score +
-        config.hotspot_weight * hotspot_score +
-        config.reservoir_weight * reservoir_magnitude +
-        config.centrality_weight * degree_centrality;
+    let raw_attention = config.interface_weight * interface_score
+        + config.epitope_weight * epitope_score
+        + config.hotspot_weight * hotspot_score
+        + config.reservoir_weight * reservoir_magnitude
+        + config.centrality_weight * degree_centrality;
 
     raw_attention
 }
@@ -170,8 +172,8 @@ pub fn compute_attention_weights(
 
 /// Apply attention to features
 pub fn apply_attention(
-    features: &[f32],      // [N_residues x 136]
-    attention: &[f32],     // [N_residues]
+    features: &[f32],  // [N_residues x 136]
+    attention: &[f32], // [N_residues]
     n_residues: usize,
 ) -> Vec<f32> {
     assert_eq!(features.len(), n_residues * 136);
@@ -206,9 +208,9 @@ pub fn get_epitope_class(residue_pos: usize) -> Option<usize> {
 
 /// Compute per-epitope escape scores
 pub fn compute_epitope_escape_scores(
-    mutations: &[(usize, char, char)],  // (position, wt, mut)
-    per_site_escape: &[f32],            // [N_sites] escape score per site
-    rbd_start: usize,                   // First RBD residue number
+    mutations: &[(usize, char, char)], // (position, wt, mut)
+    per_site_escape: &[f32],           // [N_sites] escape score per site
+    rbd_start: usize,                  // First RBD residue number
 ) -> [f32; 10] {
     let mut epitope_scores = [0.0f32; 10];
     let mut epitope_counts = [0usize; 10];
@@ -284,8 +286,8 @@ mod tests {
 
     #[test]
     fn test_epitope_class() {
-        assert_eq!(get_epitope_class(484), Some(0));  // Class 1
-        assert_eq!(get_epitope_class(501), Some(1));  // Class 2
-        assert_eq!(get_epitope_class(417), Some(2));  // Class 3
+        assert_eq!(get_epitope_class(484), Some(0)); // Class 1
+        assert_eq!(get_epitope_class(501), Some(1)); // Class 2
+        assert_eq!(get_epitope_class(417), Some(2)); // Class 3
     }
 }

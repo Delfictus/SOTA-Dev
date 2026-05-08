@@ -3,8 +3,10 @@
 //! This module provides the host-side interface for the fractal interference
 //! model that replaces single-center gamma computation.
 
-use anyhow::{Result, Context};
-use cudarc::driver::{CudaContext, CudaStream, CudaFunction, CudaSlice, LaunchConfig, PushKernelArg, DeviceSlice};
+use anyhow::{Context, Result};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceSlice, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -24,16 +26,16 @@ pub const POLYCENTRIC_OUTPUT_DIM: usize = 22;
 /// Entry [i,j] = protection conferred by immunity to epitope i against epitope j
 pub const DEFAULT_CROSS_REACTIVITY: [[f32; 10]; 10] = [
     // Class1  Class2  Class3  Class4  S309    CR3022  NTD1    NTD2    NTD3    S2
-    [1.00,   0.30,   0.25,   0.20,   0.15,   0.10,   0.05,   0.05,   0.05,   0.10], // Class 1
-    [0.30,   1.00,   0.35,   0.25,   0.20,   0.15,   0.05,   0.05,   0.05,   0.10], // Class 2
-    [0.25,   0.35,   1.00,   0.30,   0.25,   0.20,   0.05,   0.05,   0.05,   0.10], // Class 3
-    [0.20,   0.25,   0.30,   1.00,   0.30,   0.25,   0.05,   0.05,   0.05,   0.10], // Class 4
-    [0.15,   0.20,   0.25,   0.30,   1.00,   0.30,   0.05,   0.05,   0.05,   0.15], // S309
-    [0.10,   0.15,   0.20,   0.25,   0.30,   1.00,   0.05,   0.05,   0.05,   0.20], // CR3022
-    [0.05,   0.05,   0.05,   0.05,   0.05,   0.05,   1.00,   0.60,   0.50,   0.05], // NTD-1
-    [0.05,   0.05,   0.05,   0.05,   0.05,   0.05,   0.60,   1.00,   0.60,   0.05], // NTD-2
-    [0.05,   0.05,   0.05,   0.05,   0.05,   0.05,   0.50,   0.60,   1.00,   0.05], // NTD-3
-    [0.10,   0.10,   0.10,   0.10,   0.15,   0.20,   0.05,   0.05,   0.05,   1.00], // S2
+    [1.00, 0.30, 0.25, 0.20, 0.15, 0.10, 0.05, 0.05, 0.05, 0.10], // Class 1
+    [0.30, 1.00, 0.35, 0.25, 0.20, 0.15, 0.05, 0.05, 0.05, 0.10], // Class 2
+    [0.25, 0.35, 1.00, 0.30, 0.25, 0.20, 0.05, 0.05, 0.05, 0.10], // Class 3
+    [0.20, 0.25, 0.30, 1.00, 0.30, 0.25, 0.05, 0.05, 0.05, 0.10], // Class 4
+    [0.15, 0.20, 0.25, 0.30, 1.00, 0.30, 0.05, 0.05, 0.05, 0.15], // S309
+    [0.10, 0.15, 0.20, 0.25, 0.30, 1.00, 0.05, 0.05, 0.05, 0.20], // CR3022
+    [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 1.00, 0.60, 0.50, 0.05], // NTD-1
+    [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.60, 1.00, 0.60, 0.05], // NTD-2
+    [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.50, 0.60, 1.00, 0.05], // NTD-3
+    [0.10, 0.10, 0.10, 0.10, 0.15, 0.20, 0.05, 0.05, 0.05, 1.00], // S2
 ];
 
 /// Polycentric immunity GPU processor
@@ -45,10 +47,10 @@ pub struct PolycentricImmunityGpu {
     kernel_init_centers: CudaFunction,
 
     // Device memory for constants
-    epitope_centers: CudaSlice<f32>,      // [10 × 136]
-    cross_reactivity: CudaSlice<f32>,     // [10 × 10]
-    pk_tmax: CudaSlice<f32>,              // [75]
-    pk_thalf: CudaSlice<f32>,             // [75]
+    epitope_centers: CudaSlice<f32>,  // [10 × 136]
+    cross_reactivity: CudaSlice<f32>, // [10 × 10]
+    pk_tmax: CudaSlice<f32>,          // [75]
+    pk_thalf: CudaSlice<f32>,         // [75]
 }
 
 impl PolycentricImmunityGpu {
@@ -63,12 +65,15 @@ impl PolycentricImmunityGpu {
         let ptx = Ptx::from_src(ptx_src);
 
         // Load module
-        let module = context.load_module(ptx)
+        let module = context
+            .load_module(ptx)
             .context("Failed to load polycentric PTX module")?;
 
-        let kernel_main = module.load_function("polycentric_immunity_kernel")
+        let kernel_main = module
+            .load_function("polycentric_immunity_kernel")
             .context("Failed to load polycentric_immunity_kernel function")?;
-        let kernel_init_centers = module.load_function("init_epitope_centers")
+        let kernel_init_centers = module
+            .load_function("init_epitope_centers")
             .context("Failed to load init_epitope_centers function")?;
 
         // Allocate constant memory
@@ -102,12 +107,18 @@ impl PolycentricImmunityGpu {
     /// Call this ONCE at startup with representative samples
     pub fn init_centers(
         &mut self,
-        features: &[f32],           // [n_samples × 136] flattened
-        epitope_labels: &[i32],     // [n_samples] class assignments (0-9)
+        features: &[f32],       // [n_samples × 136] flattened
+        epitope_labels: &[i32], // [n_samples] class assignments (0-9)
     ) -> Result<()> {
         let n_samples = epitope_labels.len();
-        assert_eq!(features.len(), n_samples * FEATURE_DIM,
-                   "Features length mismatch: {} != {} * {}", features.len(), n_samples, FEATURE_DIM);
+        assert_eq!(
+            features.len(),
+            n_samples * FEATURE_DIM,
+            "Features length mismatch: {} != {} * {}",
+            features.len(),
+            n_samples,
+            FEATURE_DIM
+        );
 
         // Upload to device using context (atomic copy)
         let d_features = self.stream.clone_htod(features)?;
@@ -132,7 +143,9 @@ impl PolycentricImmunityGpu {
         let n_samples_i32 = n_samples as i32;
 
         unsafe {
-            &self.stream.launch_builder(&self.kernel_init_centers)
+            &self
+                .stream
+                .launch_builder(&self.kernel_init_centers)
                 .arg(&d_features)
                 .arg(&d_labels)
                 .arg(&d_counts)
@@ -149,18 +162,20 @@ impl PolycentricImmunityGpu {
     #[allow(clippy::too_many_arguments)]
     pub fn process_batch(
         &self,
-        features_packed: &CudaSlice<f32>,      // [total_residues × 136]
-        residue_offsets: &CudaSlice<i32>,      // [n_structures]
-        n_residues: &CudaSlice<i32>,           // [n_structures]
-        escape_10d: &CudaSlice<f32>,           // [n_structures × 10]
-        pk_immunity: &CudaSlice<f32>,          // [n_structures × 75]
+        features_packed: &CudaSlice<f32>, // [total_residues × 136]
+        residue_offsets: &CudaSlice<i32>, // [n_structures]
+        n_residues: &CudaSlice<i32>,      // [n_structures]
+        escape_10d: &CudaSlice<f32>,      // [n_structures × 10]
+        pk_immunity: &CudaSlice<f32>,     // [n_structures × 75]
         time_since_infection: &CudaSlice<f32>, // [n_structures]
-        freq_history: &CudaSlice<f32>,         // [n_structures × 7]
-        current_freq: &CudaSlice<f32>,         // [n_structures]
+        freq_history: &CudaSlice<f32>,    // [n_structures × 7]
+        current_freq: &CudaSlice<f32>,    // [n_structures]
         n_structures: usize,
     ) -> Result<CudaSlice<f32>> {
         // Allocate output on device
-        let mut output = self.stream.alloc_zeros::<f32>(n_structures * POLYCENTRIC_OUTPUT_DIM)?;
+        let mut output = self
+            .stream
+            .alloc_zeros::<f32>(n_structures * POLYCENTRIC_OUTPUT_DIM)?;
 
         // Launch kernel
         let config = LaunchConfig {
@@ -172,7 +187,9 @@ impl PolycentricImmunityGpu {
         let n_structures_i32 = n_structures as i32;
 
         unsafe {
-            &self.stream.launch_builder(&self.kernel_main)
+            &self
+                .stream
+                .launch_builder(&self.kernel_main)
                 .arg(features_packed)
                 .arg(residue_offsets)
                 .arg(n_residues)
@@ -239,8 +256,11 @@ mod tests {
     fn test_cross_reactivity_symmetric() {
         // Verify matrix is properly defined (not necessarily symmetric, but well-formed)
         for i in 0..10 {
-            assert!((DEFAULT_CROSS_REACTIVITY[i][i] - 1.0).abs() < 0.01,
-                    "Diagonal should be 1.0 at position {}", i);
+            assert!(
+                (DEFAULT_CROSS_REACTIVITY[i][i] - 1.0).abs() < 0.01,
+                "Diagonal should be 1.0 at position {}",
+                i
+            );
         }
     }
 }

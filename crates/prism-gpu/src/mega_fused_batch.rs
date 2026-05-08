@@ -11,22 +11,21 @@
 //! - BatchStructureDesc provides offsets for each structure
 //! - 6 stages fused: Distance → Contact → Centrality → Reservoir → Consensus → Kempe
 
-use cudarc::driver::{DevicePtrMut, 
-    CudaStream, CudaFunction, CudaSlice,
-    LaunchConfig, PushKernelArg, DeviceSlice};
 use cudarc::driver::CudaContext;
+use cudarc::driver::{
+    CudaFunction, CudaSlice, CudaStream, DevicePtrMut, DeviceSlice, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use prism_core::PrismError;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
-use serde::{Serialize, Deserialize};
 
 // Re-export from mega_fused.rs for shared types
 pub use super::mega_fused::{
-    MegaFusedParams, MegaFusedConfig, MegaFusedMode, MegaFusedOutput,
-    GpuTelemetry, GpuProvenanceData, KernelTelemetryEvent,
-    confidence, signals,
+    confidence, signals, GpuProvenanceData, GpuTelemetry, KernelTelemetryEvent, MegaFusedConfig,
+    MegaFusedMode, MegaFusedOutput, MegaFusedParams,
 };
 
 /// Structure descriptor for batch processing - MUST match CUDA BatchStructureDesc
@@ -91,16 +90,31 @@ impl StructureInput {
     pub fn validate(&self) -> Result<(), String> {
         let n_res = self.n_residues();
         if self.atoms.len() % 3 != 0 {
-            return Err(format!("atoms array length {} not divisible by 3", self.atoms.len()));
+            return Err(format!(
+                "atoms array length {} not divisible by 3",
+                self.atoms.len()
+            ));
         }
         if self.conservation.len() != n_res {
-            return Err(format!("conservation length {} != n_residues {}", self.conservation.len(), n_res));
+            return Err(format!(
+                "conservation length {} != n_residues {}",
+                self.conservation.len(),
+                n_res
+            ));
         }
         if self.bfactor.len() != n_res {
-            return Err(format!("bfactor length {} != n_residues {}", self.bfactor.len(), n_res));
+            return Err(format!(
+                "bfactor length {} != n_residues {}",
+                self.bfactor.len(),
+                n_res
+            ));
         }
         if self.burial.len() != n_res {
-            return Err(format!("burial length {} != n_residues {}", self.burial.len(), n_res));
+            return Err(format!(
+                "burial length {} != n_residues {}",
+                self.burial.len(),
+                n_res
+            ));
         }
         Ok(())
     }
@@ -218,7 +232,9 @@ pub struct PackedBatchWithGT {
 }
 
 impl PackedBatchWithGT {
-    pub fn from_structures_with_gt(structures: &[StructureInputWithGT]) -> Result<Self, PrismError> {
+    pub fn from_structures_with_gt(
+        structures: &[StructureInputWithGT],
+    ) -> Result<Self, PrismError> {
         // FIX 3: GT mask validation
         for s in structures {
             assert_eq!(
@@ -259,7 +275,9 @@ impl PackedBatchWithGT {
 
         log::info!(
             "PackedBatchWithGT: {} structures, {} residues, {} tiles",
-            structures.len(), base.total_residues, total_tiles
+            structures.len(),
+            base.total_residues,
+            total_tiles
         );
 
         Ok(Self {
@@ -317,9 +335,9 @@ pub struct PackedBatch {
 
     //=== STAGE 8: CYCLE FEATURES (FIX #1) ===
     /// Per-structure GISAID frequencies for Stage 8 Cycle Module
-    pub frequencies_packed: Vec<f32>,        // [n_structures]
+    pub frequencies_packed: Vec<f32>, // [n_structures]
     /// Per-structure frequency velocities (Δfreq/Δt) for Stage 8 Cycle Module
-    pub velocities_packed: Vec<f32>,         // [n_structures]
+    pub velocities_packed: Vec<f32>, // [n_structures]
 
     //=== STAGE 9-10: 75 PK IMMUNITY FEATURES (FIX #2 CORRECTED) ===
     /// P_neut time series for 75 PK combinations per country
@@ -406,7 +424,9 @@ impl PackedBatch {
 
         log::info!(
             "Packed {} structures: {} atoms, {} residues",
-            n_structures, total_atoms, total_residues
+            n_structures,
+            total_atoms,
+            total_residues
         );
 
         Ok(Self {
@@ -429,7 +449,7 @@ impl PackedBatch {
             p_neut_time_series_75pk_packed: Vec::new(),
             current_immunity_levels_75_packed: Vec::new(),
             pk_params_packed: Vec::new(),
-            epitope_escape_packed: Vec::new(),  // Real DMS (per-residue)
+            epitope_escape_packed: Vec::new(), // Real DMS (per-residue)
         })
     }
 
@@ -498,7 +518,7 @@ impl PackedBatch {
             // Pack residue-level data
             atoms_packed.extend_from_slice(&structure.atoms);
             for &ca_idx in &structure.ca_indices {
-                ca_indices_packed.push(ca_idx + atom_offset);  // Offset adjustment
+                ca_indices_packed.push(ca_idx + atom_offset); // Offset adjustment
             }
             conservation_packed.extend_from_slice(&structure.conservation);
             bfactor_packed.extend_from_slice(&structure.bfactor);
@@ -515,7 +535,9 @@ impl PackedBatch {
 
         log::info!(
             "Packed {} structures with metadata: {} atoms, {} residues",
-            n_structures, total_atoms, total_residues
+            n_structures,
+            total_atoms,
+            total_residues
         );
 
         Ok(Self {
@@ -537,7 +559,7 @@ impl PackedBatch {
             p_neut_time_series_75pk_packed: Vec::new(),
             current_immunity_levels_75_packed: Vec::new(),
             pk_params_packed: Vec::new(),
-            epitope_escape_packed: Vec::new(),  // Real DMS (per-residue)
+            epitope_escape_packed: Vec::new(), // Real DMS (per-residue)
         })
     }
 
@@ -591,7 +613,7 @@ struct BatchBufferPool {
     d_conservation: Option<CudaSlice<f32>>,
     d_bfactor: Option<CudaSlice<f32>>,
     d_burial: Option<CudaSlice<f32>>,
-    d_residue_types: Option<CudaSlice<i32>>,  // PRISM>4D
+    d_residue_types: Option<CudaSlice<i32>>, // PRISM>4D
 
     // Structure descriptors
     descriptors_capacity: usize,
@@ -603,15 +625,15 @@ struct BatchBufferPool {
     d_signal_mask: Option<CudaSlice<i32>>,
     d_pocket_assignment: Option<CudaSlice<i32>>,
     d_centrality: Option<CudaSlice<f32>>,
-    d_combined_features: Option<CudaSlice<f32>>,  // 136-dim features per residue (PRISM>4D + Epi)
+    d_combined_features: Option<CudaSlice<f32>>, // 136-dim features per residue (PRISM>4D + Epi)
 
     // Params buffer
     d_params: Option<CudaSlice<u8>>,
 
     //=== STAGE 8: CYCLE FEATURE GPU BUFFERS (FIX #1) ===
     structure_capacity: usize,
-    d_frequencies: Option<CudaSlice<f32>>,  // Per-structure frequencies
-    d_velocities: Option<CudaSlice<f32>>,   // Per-structure velocities
+    d_frequencies: Option<CudaSlice<f32>>, // Per-structure frequencies
+    d_velocities: Option<CudaSlice<f32>>,  // Per-structure velocities
 
     //=== STAGE 9-10: 75 PK IMMUNITY GPU BUFFERS (FIX #2 CORRECTED) ===
     // P_neut time series with 75 PK combinations
@@ -664,7 +686,7 @@ impl BatchBufferPool {
             immunity_75_capacity: 0,
             d_current_immunity_levels_75: None,
             d_pk_params: None,
-            d_epitope_escape: None,  // Real DMS
+            d_epitope_escape: None, // Real DMS
             allocations: 0,
             reuses: 0,
         }
@@ -706,12 +728,17 @@ impl MegaFusedBatchGpu {
         // Load batch kernel
         let batch_path = ptx_dir.join("mega_fused_batch.ptx");
         let batch_func = if batch_path.exists() {
-            let ptx_src = std::fs::read_to_string(&batch_path)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e)))?;
-            let module = context.load_module(Ptx::from_src(ptx_src))
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e)))?;
-            let func = module.load_function("mega_fused_batch_detection")
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to load kernel: {}", e)))?;
+            let ptx_src = std::fs::read_to_string(&batch_path).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e))
+            })?;
+            let module = context.load_module(Ptx::from_src(ptx_src)).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e))
+            })?;
+            let func = module
+                .load_function("mega_fused_batch_detection")
+                .map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Failed to load kernel: {}", e))
+                })?;
             log::info!("Hey, loaded mega_fused_batch.ptx (L1/Register optimized batch kernel)");
             Some(func)
         } else {
@@ -728,10 +755,12 @@ impl MegaFusedBatchGpu {
 
         // Load v2.0 metrics kernels from the same PTX
         let batch_metrics_func = if batch_path.exists() {
-            let ptx_src = std::fs::read_to_string(&batch_path)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e)))?;
-            let module = context.load_module(Ptx::from_src(ptx_src))
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e)))?;
+            let ptx_src = std::fs::read_to_string(&batch_path).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e))
+            })?;
+            let module = context.load_module(Ptx::from_src(ptx_src)).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e))
+            })?;
             match module.load_function("mega_fused_pocket_detection_batch_with_metrics") {
                 Ok(func) => {
                     log::info!("Hey, loaded mega_fused_pocket_detection_batch_with_metrics (v2.0 metrics kernel)");
@@ -747,10 +776,12 @@ impl MegaFusedBatchGpu {
         };
 
         let finalize_func = if batch_path.exists() {
-            let ptx_src = std::fs::read_to_string(&batch_path)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e)))?;
-            let module = context.load_module(Ptx::from_src(ptx_src))
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e)))?;
+            let ptx_src = std::fs::read_to_string(&batch_path).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e))
+            })?;
+            let module = context.load_module(Ptx::from_src(ptx_src)).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e))
+            })?;
             match module.load_function("finalize_batch_metrics") {
                 Ok(func) => {
                     log::info!("Hey, loaded finalize_batch_metrics (v2.0 finalize kernel)");
@@ -767,13 +798,17 @@ impl MegaFusedBatchGpu {
 
         // Load training kernel (exports reservoir states for readout training)
         let training_func = if batch_path.exists() {
-            let ptx_src = std::fs::read_to_string(&batch_path)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e)))?;
-            let module = context.load_module(Ptx::from_src(ptx_src))
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e)))?;
+            let ptx_src = std::fs::read_to_string(&batch_path).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to read PTX: {}", e))
+            })?;
+            let module = context.load_module(Ptx::from_src(ptx_src)).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Failed to load PTX: {}", e))
+            })?;
             match module.load_function("mega_fused_batch_training") {
                 Ok(func) => {
-                    log::info!("Hey, loaded mega_fused_batch_training (reservoir state export kernel)");
+                    log::info!(
+                        "Hey, loaded mega_fused_batch_training (reservoir state export kernel)"
+                    );
                     Some(func)
                 }
                 Err(e) => {
@@ -848,9 +883,10 @@ impl MegaFusedBatchGpu {
             });
         }
 
-        let func = self.batch_func.as_ref().ok_or_else(|| {
-            PrismError::gpu("mega_fused_batch", "Batch kernel not loaded")
-        })?;
+        let func = self
+            .batch_func
+            .as_ref()
+            .ok_or_else(|| PrismError::gpu("mega_fused_batch", "Batch kernel not loaded"))?;
 
         // === ALLOCATE/REUSE BUFFERS ===
 
@@ -858,8 +894,13 @@ impl MegaFusedBatchGpu {
         let atoms_size = total_atoms * 3;
         if atoms_size > self.buffer_pool.atoms_capacity || self.buffer_pool.d_atoms.is_none() {
             let new_cap = (atoms_size * 6 / 5).max(atoms_size);
-            self.buffer_pool.d_atoms = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Failed to allocate atoms: {}", e)))?);
+            self.buffer_pool.d_atoms =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused_batch",
+                        format!("Failed to allocate atoms: {}", e),
+                    )
+                })?);
             self.buffer_pool.atoms_capacity = new_cap;
             self.buffer_pool.allocations += 1;
         } else {
@@ -867,60 +908,97 @@ impl MegaFusedBatchGpu {
         }
 
         // Residue buffers
-        if total_residues > self.buffer_pool.residue_capacity || self.buffer_pool.d_ca_indices.is_none() {
+        if total_residues > self.buffer_pool.residue_capacity
+            || self.buffer_pool.d_ca_indices.is_none()
+        {
             let new_cap = (total_residues * 6 / 5).max(total_residues);
 
-            self.buffer_pool.d_ca_indices = Some(self.stream.alloc_zeros::<i32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc ca_indices: {}", e)))?);
-            self.buffer_pool.d_conservation = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc conservation: {}", e)))?);
-            self.buffer_pool.d_bfactor = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc bfactor: {}", e)))?);
-            self.buffer_pool.d_burial = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc burial: {}", e)))?);
+            self.buffer_pool.d_ca_indices =
+                Some(self.stream.alloc_zeros::<i32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc ca_indices: {}", e))
+                })?);
+            self.buffer_pool.d_conservation =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc conservation: {}", e))
+                })?);
+            self.buffer_pool.d_bfactor =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc bfactor: {}", e))
+                })?);
+            self.buffer_pool.d_burial =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc burial: {}", e))
+                })?);
 
             // PRISM>4D: Residue types
-            self.buffer_pool.d_residue_types = Some(self.stream.alloc_zeros::<i32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc residue_types: {}", e)))?);
+            self.buffer_pool.d_residue_types =
+                Some(self.stream.alloc_zeros::<i32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc residue_types: {}", e))
+                })?);
 
             // Output buffers
-            self.buffer_pool.d_consensus_scores = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc consensus: {}", e)))?);
-            self.buffer_pool.d_confidence = Some(self.stream.alloc_zeros::<i32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc confidence: {}", e)))?);
-            self.buffer_pool.d_signal_mask = Some(self.stream.alloc_zeros::<i32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc signal_mask: {}", e)))?);
-            self.buffer_pool.d_pocket_assignment = Some(self.stream.alloc_zeros::<i32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc pocket_assign: {}", e)))?);
-            self.buffer_pool.d_centrality = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc centrality: {}", e)))?);
+            self.buffer_pool.d_consensus_scores =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc consensus: {}", e))
+                })?);
+            self.buffer_pool.d_confidence =
+                Some(self.stream.alloc_zeros::<i32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc confidence: {}", e))
+                })?);
+            self.buffer_pool.d_signal_mask =
+                Some(self.stream.alloc_zeros::<i32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc signal_mask: {}", e))
+                })?);
+            self.buffer_pool.d_pocket_assignment =
+                Some(self.stream.alloc_zeros::<i32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc pocket_assign: {}", e))
+                })?);
+            self.buffer_pool.d_centrality =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc centrality: {}", e))
+                })?);
 
             // Combined 136-dim features (TDA + Fitness + Cycle + Spike + Immunity + Epi)
-            self.buffer_pool.d_combined_features = Some(self.stream.alloc_zeros::<f32>(new_cap * 136)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc combined_features: {}", e)))?);
+            self.buffer_pool.d_combined_features =
+                Some(self.stream.alloc_zeros::<f32>(new_cap * 136).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused_batch",
+                        format!("Alloc combined_features: {}", e),
+                    )
+                })?);
 
             self.buffer_pool.residue_capacity = new_cap;
-            self.buffer_pool.allocations += 11;  // Updated for residue_types
+            self.buffer_pool.allocations += 11; // Updated for residue_types
         }
 
         // Descriptors buffer
         let desc_size = n_structures * std::mem::size_of::<BatchStructureDesc>();
-        if desc_size > self.buffer_pool.descriptors_capacity || self.buffer_pool.d_descriptors.is_none() {
+        if desc_size > self.buffer_pool.descriptors_capacity
+            || self.buffer_pool.d_descriptors.is_none()
+        {
             let new_cap = (desc_size * 6 / 5).max(desc_size);
-            self.buffer_pool.d_descriptors = Some(self.stream.alloc_zeros::<u8>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc descriptors: {}", e)))?);
+            self.buffer_pool.d_descriptors =
+                Some(self.stream.alloc_zeros::<u8>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc descriptors: {}", e))
+                })?);
             self.buffer_pool.descriptors_capacity = new_cap;
             self.buffer_pool.allocations += 1;
         }
 
         // Stage 8: Per-structure metadata buffers (FIX #1)
-        if n_structures > self.buffer_pool.structure_capacity || self.buffer_pool.d_frequencies.is_none() {
+        if n_structures > self.buffer_pool.structure_capacity
+            || self.buffer_pool.d_frequencies.is_none()
+        {
             let new_cap = (n_structures * 6 / 5).max(n_structures);
 
-            self.buffer_pool.d_frequencies = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc d_frequencies: {}", e)))?);
-            self.buffer_pool.d_velocities = Some(self.stream.alloc_zeros::<f32>(new_cap)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc d_velocities: {}", e)))?);
+            self.buffer_pool.d_frequencies =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc d_frequencies: {}", e))
+                })?);
+            self.buffer_pool.d_velocities =
+                Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc d_velocities: {}", e))
+                })?);
 
             self.buffer_pool.structure_capacity = new_cap;
             self.buffer_pool.allocations += 2;
@@ -929,8 +1007,10 @@ impl MegaFusedBatchGpu {
         // Params buffer
         if self.buffer_pool.d_params.is_none() {
             let params_size = std::mem::size_of::<MegaFusedParams>();
-            self.buffer_pool.d_params = Some(self.stream.alloc_zeros::<u8>(params_size)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc params: {}", e)))?);
+            self.buffer_pool.d_params =
+                Some(self.stream.alloc_zeros::<u8>(params_size).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Alloc params: {}", e))
+                })?);
             self.buffer_pool.allocations += 1;
         }
 
@@ -943,7 +1023,7 @@ impl MegaFusedBatchGpu {
         } else {
             0
         };
-        let n_time_samples = 86i32;  // VASIL standard: 86 weekly samples (600 days / 7)
+        let n_time_samples = 86i32; // VASIL standard: 86 weekly samples (600 days / 7)
 
         // P_neut with 75 PK combinations
         if n_countries > 0 {
@@ -953,10 +1033,10 @@ impl MegaFusedBatchGpu {
             {
                 let new_cap = (p_neut_75pk_size * 6 / 5).max(p_neut_75pk_size);
 
-                self.buffer_pool.d_p_neut_time_series_75pk = Some(
-                    self.stream.alloc_zeros::<f32>(new_cap)
-                        .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc d_p_neut_75pk: {}", e)))?
-                );
+                self.buffer_pool.d_p_neut_time_series_75pk =
+                    Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                        PrismError::gpu("mega_fused_batch", format!("Alloc d_p_neut_75pk: {}", e))
+                    })?);
 
                 self.buffer_pool.p_neut_75pk_capacity = new_cap;
                 self.buffer_pool.allocations += 1;
@@ -971,10 +1051,10 @@ impl MegaFusedBatchGpu {
             {
                 let new_cap = (immunity_75_size * 6 / 5).max(immunity_75_size);
 
-                self.buffer_pool.d_current_immunity_levels_75 = Some(
-                    self.stream.alloc_zeros::<f32>(new_cap)
-                        .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc d_immunity_75: {}", e)))?
-                );
+                self.buffer_pool.d_current_immunity_levels_75 =
+                    Some(self.stream.alloc_zeros::<f32>(new_cap).map_err(|e| {
+                        PrismError::gpu("mega_fused_batch", format!("Alloc d_immunity_75: {}", e))
+                    })?);
 
                 self.buffer_pool.immunity_75_capacity = new_cap;
                 self.buffer_pool.allocations += 1;
@@ -984,23 +1064,32 @@ impl MegaFusedBatchGpu {
         // PK parameters (constant - allocate once if data is present)
         if !batch.pk_params_packed.is_empty() && self.buffer_pool.d_pk_params.is_none() {
             self.buffer_pool.d_pk_params = Some(
-                self.stream.alloc_zeros::<f32>(300)  // 75 × 4
-                    .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc d_pk_params: {}", e)))?
+                self.stream
+                    .alloc_zeros::<f32>(300) // 75 × 4
+                    .map_err(|e| {
+                        PrismError::gpu("mega_fused_batch", format!("Alloc d_pk_params: {}", e))
+                    })?,
             );
             self.buffer_pool.allocations += 1;
         }
 
         //=== ALLOCATE EPITOPE ESCAPE BUFFER (PER-RESIDUE LAYOUT) ===
         if !batch.epitope_escape_packed.is_empty() {
-            let epitope_size = batch.epitope_escape_packed.len();  // total_residues × 10
+            let epitope_size = batch.epitope_escape_packed.len(); // total_residues × 10
             if self.buffer_pool.d_epitope_escape.is_none()
                 || epitope_size > self.buffer_pool.d_epitope_escape.as_ref().unwrap().len()
             {
-                eprintln!("[DMS GPU] Allocating epitope escape buffer: {} values", epitope_size);
-                self.buffer_pool.d_epitope_escape = Some(
-                    self.stream.alloc_zeros::<f32>(epitope_size)
-                        .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc d_epitope_escape: {}", e)))?
+                eprintln!(
+                    "[DMS GPU] Allocating epitope escape buffer: {} values",
+                    epitope_size
                 );
+                self.buffer_pool.d_epitope_escape =
+                    Some(self.stream.alloc_zeros::<f32>(epitope_size).map_err(|e| {
+                        PrismError::gpu(
+                            "mega_fused_batch",
+                            format!("Alloc d_epitope_escape: {}", e),
+                        )
+                    })?);
                 self.buffer_pool.allocations += 1;
             }
         }
@@ -1047,18 +1136,34 @@ impl MegaFusedBatchGpu {
         // eprintln!("[GPU DEBUG] Array sizes: atoms={}, ca_indices={}, res_types={}",
         //     atoms_to_copy.len(), ca_indices_to_copy.len(), residue_types_to_copy.len();
 
-        *d_atoms = self.stream.clone_htod(&atoms_to_copy[..])
+        *d_atoms = self
+            .stream
+            .clone_htod(&atoms_to_copy[..])
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy atoms: {}", e)))?;
-        *d_ca_indices = self.stream.clone_htod(&ca_indices_to_copy[..])
+        *d_ca_indices = self
+            .stream
+            .clone_htod(&ca_indices_to_copy[..])
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy ca_indices: {}", e)))?;
-        *d_conservation = self.stream.clone_htod(&conservation_to_copy[..])
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy conservation: {}", e)))?;
-        *d_bfactor = self.stream.clone_htod(&bfactor_to_copy[..])
+        *d_conservation = self
+            .stream
+            .clone_htod(&conservation_to_copy[..])
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Copy conservation: {}", e))
+            })?;
+        *d_bfactor = self
+            .stream
+            .clone_htod(&bfactor_to_copy[..])
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy bfactor: {}", e)))?;
-        *d_burial = self.stream.clone_htod(&burial_to_copy[..])
+        *d_burial = self
+            .stream
+            .clone_htod(&burial_to_copy[..])
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy burial: {}", e)))?;
-        *d_residue_types = self.stream.clone_htod(&residue_types_to_copy[..])
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy residue_types: {}", e)))?;
+        *d_residue_types = self
+            .stream
+            .clone_htod(&residue_types_to_copy[..])
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Copy residue_types: {}", e))
+            })?;
 
         //=== STAGE 8: COPY FREQUENCY/VELOCITY DATA TO GPU (FIX #1) ===
 
@@ -1068,37 +1173,65 @@ impl MegaFusedBatchGpu {
             let frequencies_to_copy = &batch.frequencies_packed[..n_structures];
             let velocities_to_copy = &batch.velocities_packed[..n_structures];
 
-            let d_frequencies = self.buffer_pool.d_frequencies.as_mut()
+            let d_frequencies = self
+                .buffer_pool
+                .d_frequencies
+                .as_mut()
                 .expect("d_frequencies not allocated");
-            let d_velocities = self.buffer_pool.d_velocities.as_mut()
+            let d_velocities = self
+                .buffer_pool
+                .d_velocities
+                .as_mut()
                 .expect("d_velocities not allocated");
 
-            eprintln!("[DEBUG] Uploading {} frequencies, {} velocities", frequencies_to_copy.len(), velocities_to_copy.len());
+            eprintln!(
+                "[DEBUG] Uploading {} frequencies, {} velocities",
+                frequencies_to_copy.len(),
+                velocities_to_copy.len()
+            );
 
-            *d_frequencies = self.stream.clone_htod(frequencies_to_copy)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy frequencies: {}", e)))?;
-            *d_velocities = self.stream.clone_htod(velocities_to_copy)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy velocities: {}", e)))?;
+            *d_frequencies = self.stream.clone_htod(frequencies_to_copy).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Copy frequencies: {}", e))
+            })?;
+            *d_velocities = self.stream.clone_htod(velocities_to_copy).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Copy velocities: {}", e))
+            })?;
             eprintln!("[DEBUG] Stage 8 uploads OK");
         }
 
         //=== STAGE 9-10: COPY 75-PK IMMUNITY DATA TO GPU (FIX #2 CORRECTED) ===
 
         eprintln!("[DEBUG] Starting Stage 9-10 75-PK uploads...");
-        eprintln!("[DEBUG] p_neut_75pk data size: {}", batch.p_neut_time_series_75pk_packed.len());
-        eprintln!("[DEBUG] immunity_75 data size: {}", batch.current_immunity_levels_75_packed.len());
-        eprintln!("[DEBUG] pk_params data size: {}", batch.pk_params_packed.len());
+        eprintln!(
+            "[DEBUG] p_neut_75pk data size: {}",
+            batch.p_neut_time_series_75pk_packed.len()
+        );
+        eprintln!(
+            "[DEBUG] immunity_75 data size: {}",
+            batch.current_immunity_levels_75_packed.len()
+        );
+        eprintln!(
+            "[DEBUG] pk_params data size: {}",
+            batch.pk_params_packed.len()
+        );
 
         // Copy P_neut time series (75 PK combos per country)
         if !batch.p_neut_time_series_75pk_packed.is_empty() {
             if let Some(d_p_neut_75pk) = self.buffer_pool.d_p_neut_time_series_75pk.as_mut() {
                 eprintln!("[DEBUG FIX2] p_neut_75pk upload:");
-                eprintln!("  Source len: {}", batch.p_neut_time_series_75pk_packed.len());
+                eprintln!(
+                    "  Source len: {}",
+                    batch.p_neut_time_series_75pk_packed.len()
+                );
                 eprintln!("  Dest capacity: {}", d_p_neut_75pk.len());
                 eprintln!("  Pool capacity: {}", self.buffer_pool.p_neut_75pk_capacity);
 
-                *d_p_neut_75pk = self.stream.clone_htod(&batch.p_neut_time_series_75pk_packed)
-                    .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy p_neut_75pk: {}", e)))?;
+                *d_p_neut_75pk = self
+                    .stream
+                    .clone_htod(&batch.p_neut_time_series_75pk_packed)
+                    .map_err(|e| {
+                        PrismError::gpu("mega_fused_batch", format!("Copy p_neut_75pk: {}", e))
+                    })?;
                 eprintln!("  Upload OK");
             }
         }
@@ -1107,16 +1240,21 @@ impl MegaFusedBatchGpu {
         if !batch.current_immunity_levels_75_packed.is_empty() {
             if let Some(d_immunity_75) = self.buffer_pool.d_current_immunity_levels_75.as_mut() {
                 eprintln!("[DEBUG FIX2] immunity_75 upload:");
-                eprintln!("  Source len: {}", batch.current_immunity_levels_75_packed.len());
+                eprintln!(
+                    "  Source len: {}",
+                    batch.current_immunity_levels_75_packed.len()
+                );
                 eprintln!("  Dest capacity: {}", d_immunity_75.len());
                 eprintln!("  n_structures (limited): {}", n_structures);
                 eprintln!("  Expected size: {} (n_structures × 75)", n_structures * 75);
 
                 // FIX: Only upload data for structures we're actually processing
-                let immunity_to_copy = &batch.current_immunity_levels_75_packed[..n_structures * 75];
+                let immunity_to_copy =
+                    &batch.current_immunity_levels_75_packed[..n_structures * 75];
 
-                *d_immunity_75 = self.stream.clone_htod(immunity_to_copy)
-                    .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy immunity_75: {}", e)))?;
+                *d_immunity_75 = self.stream.clone_htod(immunity_to_copy).map_err(|e| {
+                    PrismError::gpu("mega_fused_batch", format!("Copy immunity_75: {}", e))
+                })?;
                 eprintln!("  Upload OK");
             }
         }
@@ -1124,18 +1262,28 @@ impl MegaFusedBatchGpu {
         // Copy PK parameters (constant - 75 × 4 = 300 values)
         if !batch.pk_params_packed.is_empty() {
             if let Some(d_pk_params) = self.buffer_pool.d_pk_params.as_mut() {
-                *d_pk_params = self.stream.clone_htod(&batch.pk_params_packed)
-                    .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy pk_params: {}", e)))?;
+                *d_pk_params = self
+                    .stream
+                    .clone_htod(&batch.pk_params_packed)
+                    .map_err(|e| {
+                        PrismError::gpu("mega_fused_batch", format!("Copy pk_params: {}", e))
+                    })?;
             }
         }
 
         //=== UPLOAD REAL EPITOPE ESCAPE (PER-RESIDUE LAYOUT) ===
         if !batch.epitope_escape_packed.is_empty() {
             if let Some(d_epitope_escape) = self.buffer_pool.d_epitope_escape.as_mut() {
-                eprintln!("[DMS GPU] Uploading {} epitope escape values (per-residue)",
-                    batch.epitope_escape_packed.len());
-                *d_epitope_escape = self.stream.clone_htod(&batch.epitope_escape_packed)
-                    .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy epitope_escape: {}", e)))?;
+                eprintln!(
+                    "[DMS GPU] Uploading {} epitope escape values (per-residue)",
+                    batch.epitope_escape_packed.len()
+                );
+                *d_epitope_escape = self
+                    .stream
+                    .clone_htod(&batch.epitope_escape_packed)
+                    .map_err(|e| {
+                        PrismError::gpu("mega_fused_batch", format!("Copy epitope_escape: {}", e))
+                    })?;
             }
         }
 
@@ -1146,7 +1294,9 @@ impl MegaFusedBatchGpu {
                 descriptors_to_copy.len() * std::mem::size_of::<BatchStructureDesc>(),
             )
         };
-        *d_descriptors = self.stream.clone_htod(desc_bytes)
+        *d_descriptors = self
+            .stream
+            .clone_htod(desc_bytes)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy descriptors: {}", e)))?;
 
         // Copy params
@@ -1158,7 +1308,9 @@ impl MegaFusedBatchGpu {
             )
         };
         let d_params = self.buffer_pool.d_params.as_mut().unwrap();
-        *d_params = self.stream.clone_htod(params_bytes)
+        *d_params = self
+            .stream
+            .clone_htod(params_bytes)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy params: {}", e)))?;
 
         // === LAUNCH KERNEL ===
@@ -1215,18 +1367,22 @@ impl MegaFusedBatchGpu {
         const HISTORY_WEEKS: usize = 35;
 
         // Allocate and initialize frequency history (35 weeks × 1 variant)
-        let freq_hist_data = vec![0.10f32; HISTORY_WEEKS];  // Constant 10% frequency
-        let d_freq_history = self.stream.clone_htod(&freq_hist_data[..])
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy freq_history: {}", e)))?;
+        let freq_hist_data = vec![0.10f32; HISTORY_WEEKS]; // Constant 10% frequency
+        let d_freq_history = self.stream.clone_htod(&freq_hist_data[..]).map_err(|e| {
+            PrismError::gpu("mega_fused_batch", format!("Copy freq_history: {}", e))
+        })?;
 
         // Allocate and initialize current frequencies (1 variant)
-        let curr_freq_data = vec![0.15f32];  // Current 15% frequency
-        let d_all_frequencies = self.stream.clone_htod(&curr_freq_data[..])
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy all_frequencies: {}", e)))?;
+        let curr_freq_data = vec![0.15f32]; // Current 15% frequency
+        let d_all_frequencies = self.stream.clone_htod(&curr_freq_data[..]).map_err(|e| {
+            PrismError::gpu("mega_fused_batch", format!("Copy all_frequencies: {}", e))
+        })?;
 
         // Allocate and initialize fitness scores (1 variant)
-        let gamma_data = vec![0.50f32];  // Moderate fitness
-        let d_all_gammas = self.stream.clone_htod(&gamma_data[..])
+        let gamma_data = vec![0.50f32]; // Moderate fitness
+        let d_all_gammas = self
+            .stream
+            .clone_htod(&gamma_data[..])
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy all_gammas: {}", e)))?;
 
         // eprintln!("[GPU DEBUG] Building kernel args (grid: {}, block: {})...", n_structures, block_size);
@@ -1250,32 +1406,34 @@ impl MegaFusedBatchGpu {
             builder.arg(d_velocities);
             builder.arg(&epitope_ptr);
             builder.arg(&null_ptr); // immunity_events_packed
-            builder.arg(&0i32);     // n_immunity_events
-            builder.arg(&600i32);   // current_day
-            builder.arg(&5i32);     // variant_family_idx
+            builder.arg(&0i32); // n_immunity_events
+            builder.arg(&600i32); // current_day
+            builder.arg(&5i32); // variant_family_idx
             builder.arg(&p_neut_ptr);
             builder.arg(&immunity_ptr);
             builder.arg(&pk_params_ptr);
-            builder.arg(&86i32);    // n_time_samples
+            builder.arg(&86i32); // n_time_samples
             builder.arg(&d_all_frequencies);
             builder.arg(&d_all_gammas);
             builder.arg(&d_freq_history);
-            builder.arg(&0i32);     // my_variant_idx
+            builder.arg(&0i32); // my_variant_idx
             builder.arg(&N_VARIANTS);
-            builder.arg(&0.5f32);   // days_since_vaccine_norm
-            builder.arg(&0.5f32);   // days_since_wave_norm
-            builder.arg(&0.0f32);   // immunity_derivative
-            builder.arg(&0.6f32);   // immunity_source_ratio
-            builder.arg(&0.45f32);  // country_id_norm
+            builder.arg(&0.5f32); // days_since_vaccine_norm
+            builder.arg(&0.5f32); // days_since_wave_norm
+            builder.arg(&0.0f32); // immunity_derivative
+            builder.arg(&0.6f32); // immunity_source_ratio
+            builder.arg(&0.45f32); // country_id_norm
             builder.arg(d_params);
-            builder.launch(launch_config)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Kernel launch failed: {}", e)))?;
+            builder.launch(launch_config).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Kernel launch failed: {}", e))
+            })?;
             // eprintln!("[GPU DEBUG] Kernel launched OK, now sync...");
         }
 
         // Synchronize
         // eprintln!("[GPU DEBUG] Calling stream.synchronize()...");
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Sync failed: {}", e)))?;
         // eprintln!("[GPU DEBUG] Synchronize complete!");
 
@@ -1295,18 +1453,30 @@ impl MegaFusedBatchGpu {
         // The buffers were allocated with capacity = (total_residues * 6/5) for growth headroom
         let capacity = self.buffer_pool.residue_capacity;
 
-        let all_consensus: Vec<f32> = self.stream.clone_dtoh(d_consensus_scores)
+        let all_consensus: Vec<f32> = self
+            .stream
+            .clone_dtoh(d_consensus_scores)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read consensus: {}", e)))?;
-        let all_confidence: Vec<i32> = self.stream.clone_dtoh(d_confidence)
+        let all_confidence: Vec<i32> = self
+            .stream
+            .clone_dtoh(d_confidence)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read confidence: {}", e)))?;
-        let all_signal_mask: Vec<i32> = self.stream.clone_dtoh(d_signal_mask)
+        let all_signal_mask: Vec<i32> = self
+            .stream
+            .clone_dtoh(d_signal_mask)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read signal_mask: {}", e)))?;
-        let all_pocket_assignment: Vec<i32> = self.stream.clone_dtoh(d_pocket_assignment)
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read pocket_assign: {}", e)))?;
-        let all_centrality: Vec<f32> = self.stream.clone_dtoh(d_centrality)
+        let all_pocket_assignment: Vec<i32> =
+            self.stream.clone_dtoh(d_pocket_assignment).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Read pocket_assign: {}", e))
+            })?;
+        let all_centrality: Vec<f32> = self
+            .stream
+            .clone_dtoh(d_centrality)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read centrality: {}", e)))?;
-        let all_combined_features: Vec<f32> = self.stream.clone_dtoh(d_combined_features)
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read combined_features: {}", e)))?;
+        let all_combined_features: Vec<f32> =
+            self.stream.clone_dtoh(d_combined_features).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Read combined_features: {}", e))
+            })?;
 
         // === UNPACK RESULTS ===
         // Only unpack results for the structures we actually processed (respects PRISM_MAX_STRUCTURES limit)
@@ -1325,16 +1495,16 @@ impl MegaFusedBatchGpu {
             // Only check first structure to avoid log spam
             if i == 0 && n_residues > 0 {
                 for feat_idx in 101..109 {
-                    let values: Vec<f32> = combined_features.iter()
+                    let values: Vec<f32> = combined_features
+                        .iter()
                         .skip(feat_idx)
                         .step_by(136)
                         .copied()
                         .collect();
                     if !values.is_empty() {
                         let mean: f32 = values.iter().sum::<f32>() / values.len() as f32;
-                        let variance: f32 = values.iter()
-                            .map(|x| (x - mean).powi(2))
-                            .sum::<f32>() / values.len() as f32;
+                        let variance: f32 = values.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
+                            / values.len() as f32;
                         if variance < 1e-6 {
                             log::warn!(
                                 "[DFV-002] Spike feature F{} has near-zero variance: mean={:.4}, var={:.6}",
@@ -1426,94 +1596,167 @@ impl MegaFusedBatchGpu {
             });
         }
 
-        let metrics_func = self.batch_metrics_func.as_ref().ok_or_else(|| {
-            PrismError::gpu("mega_fused_batch", "v2.0 metrics kernel not loaded")
-        })?;
+        let metrics_func = self
+            .batch_metrics_func
+            .as_ref()
+            .ok_or_else(|| PrismError::gpu("mega_fused_batch", "v2.0 metrics kernel not loaded"))?;
         let finalize_func = self.finalize_func.as_ref().ok_or_else(|| {
             PrismError::gpu("mega_fused_batch", "v2.0 finalize kernel not loaded")
         })?;
 
         // === ALLOCATE INPUT BUFFERS ===
-        let mut d_atoms = self.stream.alloc_zeros::<f32>(batch.base.atoms_packed.len().max(1))
+        let mut d_atoms = self
+            .stream
+            .alloc_zeros::<f32>(batch.base.atoms_packed.len().max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc atoms: {}", e)))?;
-        let mut d_ca_indices = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+        let mut d_ca_indices = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc ca_indices: {}", e)))?;
-        let mut d_conservation = self.stream.alloc_zeros::<f32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc conservation: {}", e)))?;
-        let mut d_bfactor = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+        let mut d_conservation = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Alloc conservation: {}", e))
+            })?;
+        let mut d_bfactor = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc bfactor: {}", e)))?;
-        let mut d_burial = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+        let mut d_burial = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc burial: {}", e)))?;
-        let mut d_gt_mask = self.stream.alloc_zeros::<u8>(total_residues.max(1))
+        let mut d_gt_mask = self
+            .stream
+            .alloc_zeros::<u8>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc gt_mask: {}", e)))?;
 
         // FIX 1: StructureOffset upload using bytemuck::cast_slice
-        let mut d_offsets = self.stream.alloc_zeros::<u8>(n_structures * std::mem::size_of::<StructureOffset>())
+        let mut d_offsets = self
+            .stream
+            .alloc_zeros::<u8>(n_structures * std::mem::size_of::<StructureOffset>())
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc offsets: {}", e)))?;
 
-        let mut d_tile_prefix = self.stream.alloc_zeros::<i32>(batch.tile_prefix_sum.len())
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc tile_prefix: {}", e)))?;
+        let mut d_tile_prefix = self
+            .stream
+            .alloc_zeros::<i32>(batch.tile_prefix_sum.len())
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Alloc tile_prefix: {}", e))
+            })?;
 
         // === ALLOCATE OUTPUT BUFFERS ===
-        let mut d_consensus_scores = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+        let mut d_consensus_scores = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc consensus: {}", e)))?;
-        let mut d_confidence = self.stream.alloc_zeros::<i32>(total_residues.max(1))
+        let mut d_confidence = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc confidence: {}", e)))?;
-        let mut d_signal_mask = self.stream.alloc_zeros::<i32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc signal_mask: {}", e)))?;
-        let mut d_pocket_assignment = self.stream.alloc_zeros::<i32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc pocket_assign: {}", e)))?;
-        let mut d_centrality = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+        let mut d_signal_mask = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Alloc signal_mask: {}", e))
+            })?;
+        let mut d_pocket_assignment = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Alloc pocket_assign: {}", e))
+            })?;
+        let mut d_centrality = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc centrality: {}", e)))?;
         // NOTE: combined_features not output by with_metrics kernel - use detect_pockets_batch for features
 
         // === ALLOCATE METRICS BUFFERS ===
-        let mut d_tp_counts = self.stream.alloc_zeros::<i32>(n_structures)
+        let mut d_tp_counts = self
+            .stream
+            .alloc_zeros::<i32>(n_structures)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc tp: {}", e)))?;
-        let mut d_fp_counts = self.stream.alloc_zeros::<i32>(n_structures)
+        let mut d_fp_counts = self
+            .stream
+            .alloc_zeros::<i32>(n_structures)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc fp: {}", e)))?;
-        let mut d_tn_counts = self.stream.alloc_zeros::<i32>(n_structures)
+        let mut d_tn_counts = self
+            .stream
+            .alloc_zeros::<i32>(n_structures)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc tn: {}", e)))?;
-        let mut d_fn_counts = self.stream.alloc_zeros::<i32>(n_structures)
+        let mut d_fn_counts = self
+            .stream
+            .alloc_zeros::<i32>(n_structures)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc fn: {}", e)))?;
-        let mut d_score_sums = self.stream.alloc_zeros::<f32>(n_structures)
+        let mut d_score_sums = self
+            .stream
+            .alloc_zeros::<f32>(n_structures)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc score_sums: {}", e)))?;
-        let mut d_pocket_counts = self.stream.alloc_zeros::<i32>(n_structures)
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc pocket_counts: {}", e)))?;
+        let mut d_pocket_counts = self.stream.alloc_zeros::<i32>(n_structures).map_err(|e| {
+            PrismError::gpu("mega_fused_batch", format!("Alloc pocket_counts: {}", e))
+        })?;
 
         // Histogram buffers (100 bins per structure)
-        let mut d_hist_pos = self.stream.alloc_zeros::<u64>(n_structures * N_BINS)
+        let mut d_hist_pos = self
+            .stream
+            .alloc_zeros::<u64>(n_structures * N_BINS)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc hist_pos: {}", e)))?;
-        let mut d_hist_neg = self.stream.alloc_zeros::<u64>(n_structures * N_BINS)
+        let mut d_hist_neg = self
+            .stream
+            .alloc_zeros::<u64>(n_structures * N_BINS)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc hist_neg: {}", e)))?;
 
         // FIX 2: Metrics buffer as alloc_zeros::<BatchMetricsOutput>(n_structures) NOT u8
-        let mut d_metrics_out = self.stream.alloc_zeros::<BatchMetricsOutput>(n_structures)
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc metrics_out: {}", e)))?;
+        let mut d_metrics_out = self
+            .stream
+            .alloc_zeros::<BatchMetricsOutput>(n_structures)
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Alloc metrics_out: {}", e))
+            })?;
 
         // Params buffer
-        let mut d_params = self.stream.alloc_zeros::<u8>(std::mem::size_of::<MegaFusedParams>())
+        let mut d_params = self
+            .stream
+            .alloc_zeros::<u8>(std::mem::size_of::<MegaFusedParams>())
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Alloc params: {}", e)))?;
 
         // === COPY DATA TO GPU ===
-        d_atoms = self.stream.clone_htod(&batch.base.atoms_packed)
+        d_atoms = self
+            .stream
+            .clone_htod(&batch.base.atoms_packed)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy atoms: {}", e)))?;
-        d_ca_indices = self.stream.clone_htod(&batch.base.ca_indices_packed)
+        d_ca_indices = self
+            .stream
+            .clone_htod(&batch.base.ca_indices_packed)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy ca_indices: {}", e)))?;
-        d_conservation = self.stream.clone_htod(&batch.base.conservation_packed)
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy conservation: {}", e)))?;
-        d_bfactor = self.stream.clone_htod(&batch.base.bfactor_packed)
+        d_conservation = self
+            .stream
+            .clone_htod(&batch.base.conservation_packed)
+            .map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Copy conservation: {}", e))
+            })?;
+        d_bfactor = self
+            .stream
+            .clone_htod(&batch.base.bfactor_packed)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy bfactor: {}", e)))?;
-        d_burial = self.stream.clone_htod(&batch.base.burial_packed)
+        d_burial = self
+            .stream
+            .clone_htod(&batch.base.burial_packed)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy burial: {}", e)))?;
-        d_gt_mask = self.stream.clone_htod(&batch.gt_pocket_mask_packed)
+        d_gt_mask = self
+            .stream
+            .clone_htod(&batch.gt_pocket_mask_packed)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy gt_mask: {}", e)))?;
-        d_tile_prefix = self.stream.clone_htod(&batch.tile_prefix_sum)
+        d_tile_prefix = self
+            .stream
+            .clone_htod(&batch.tile_prefix_sum)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy tile_prefix: {}", e)))?;
 
         // FIX 1: Use bytemuck::cast_slice for StructureOffset
         let offsets_bytes: &[u8] = bytemuck::cast_slice(&batch.offsets);
-        self.stream.memcpy_htod(offsets_bytes, &mut d_offsets)
+        self.stream
+            .memcpy_htod(offsets_bytes, &mut d_offsets)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy offsets: {}", e)))?;
 
         // Copy params
@@ -1524,7 +1767,8 @@ impl MegaFusedBatchGpu {
                 std::mem::size_of::<MegaFusedParams>(),
             )
         };
-        self.stream.memcpy_htod(params_bytes, &mut d_params)
+        self.stream
+            .memcpy_htod(params_bytes, &mut d_params)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Copy params: {}", e)))?;
 
         // === LAUNCH BATCH METRICS KERNEL ===
@@ -1564,8 +1808,12 @@ impl MegaFusedBatchGpu {
             builder.arg(&d_hist_pos);
             builder.arg(&d_hist_neg);
             builder.arg(&d_params);
-            builder.launch(launch_config)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Metrics kernel launch failed: {}", e)))?;
+            builder.launch(launch_config).map_err(|e| {
+                PrismError::gpu(
+                    "mega_fused_batch",
+                    format!("Metrics kernel launch failed: {}", e),
+                )
+            })?;
         }
 
         // === LAUNCH FINALIZE KERNEL ===
@@ -1589,30 +1837,47 @@ impl MegaFusedBatchGpu {
             builder.arg(&d_metrics_out);
             builder.arg(&d_offsets);
             builder.arg(&n_structures_i32);
-            builder.launch(finalize_config)
-                .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Finalize kernel launch failed: {}", e)))?;
+            builder.launch(finalize_config).map_err(|e| {
+                PrismError::gpu(
+                    "mega_fused_batch",
+                    format!("Finalize kernel launch failed: {}", e),
+                )
+            })?;
         }
 
         // Synchronize
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Sync failed: {}", e)))?;
 
         let kernel_elapsed = kernel_start.elapsed();
 
         // === COPY RESULTS BACK ===
-        let all_consensus: Vec<f32> = self.stream.clone_dtoh(&d_consensus_scores)
+        let all_consensus: Vec<f32> = self
+            .stream
+            .clone_dtoh(&d_consensus_scores)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read consensus: {}", e)))?;
-        let all_confidence: Vec<i32> = self.stream.clone_dtoh(&d_confidence)
+        let all_confidence: Vec<i32> = self
+            .stream
+            .clone_dtoh(&d_confidence)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read confidence: {}", e)))?;
-        let all_signal_mask: Vec<i32> = self.stream.clone_dtoh(&d_signal_mask)
+        let all_signal_mask: Vec<i32> = self
+            .stream
+            .clone_dtoh(&d_signal_mask)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read signal_mask: {}", e)))?;
-        let all_pocket_assignment: Vec<i32> = self.stream.clone_dtoh(&d_pocket_assignment)
-            .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read pocket_assign: {}", e)))?;
-        let all_centrality: Vec<f32> = self.stream.clone_dtoh(&d_centrality)
+        let all_pocket_assignment: Vec<i32> =
+            self.stream.clone_dtoh(&d_pocket_assignment).map_err(|e| {
+                PrismError::gpu("mega_fused_batch", format!("Read pocket_assign: {}", e))
+            })?;
+        let all_centrality: Vec<f32> = self
+            .stream
+            .clone_dtoh(&d_centrality)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read centrality: {}", e)))?;
 
         // Read metrics
-        let metrics: Vec<BatchMetricsOutput> = self.stream.clone_dtoh(&d_metrics_out)
+        let metrics: Vec<BatchMetricsOutput> = self
+            .stream
+            .clone_dtoh(&d_metrics_out)
             .map_err(|e| PrismError::gpu("mega_fused_batch", format!("Read metrics: {}", e)))?;
 
         // === UNPACK STRUCTURE OUTPUTS (FIX 5: Return real BatchStructureOutput) ===
@@ -1680,9 +1945,10 @@ impl MegaFusedBatchGpu {
         batch: &PackedBatchWithGT,
         config: &MegaFusedConfig,
     ) -> Result<TrainingOutput, PrismError> {
-        let training_func = self.training_func.as_ref().ok_or_else(|| {
-            PrismError::gpu("mega_fused_batch", "Training kernel not available")
-        })?;
+        let training_func = self
+            .training_func
+            .as_ref()
+            .ok_or_else(|| PrismError::gpu("mega_fused_batch", "Training kernel not available"))?;
 
         let n_structures = batch.base.n_structures();
         let total_residues = batch.base.total_residues;
@@ -1699,69 +1965,133 @@ impl MegaFusedBatchGpu {
         let kernel_start = Instant::now();
 
         // Allocate and upload input data
-        let mut d_atoms = self.stream.alloc_zeros::<f32>(batch.base.atoms_packed.len().max(1))
+        let mut d_atoms = self
+            .stream
+            .alloc_zeros::<f32>(batch.base.atoms_packed.len().max(1))
             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc atoms: {}", e)))?;
-        d_atoms = self.stream.clone_htod(&batch.base.atoms_packed)
+        d_atoms = self
+            .stream
+            .clone_htod(&batch.base.atoms_packed)
             .map_err(|e| PrismError::gpu("training", format!("Failed to upload atoms: {}", e)))?;
 
-        let mut d_ca_indices = self.stream.alloc_zeros::<i32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc ca_indices: {}", e)))?;
-        d_ca_indices = self.stream.clone_htod(&batch.base.ca_indices_packed)
-            .map_err(|e| PrismError::gpu("training", format!("Failed to upload ca_indices: {}", e)))?;
+        let mut d_ca_indices = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc ca_indices: {}", e))
+            })?;
+        d_ca_indices = self
+            .stream
+            .clone_htod(&batch.base.ca_indices_packed)
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to upload ca_indices: {}", e))
+            })?;
 
-        let mut d_conservation = self.stream.alloc_zeros::<f32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc conservation: {}", e)))?;
-        d_conservation = self.stream.clone_htod(&batch.base.conservation_packed)
-            .map_err(|e| PrismError::gpu("training", format!("Failed to upload conservation: {}", e)))?;
+        let mut d_conservation = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc conservation: {}", e))
+            })?;
+        d_conservation = self
+            .stream
+            .clone_htod(&batch.base.conservation_packed)
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to upload conservation: {}", e))
+            })?;
 
-        let mut d_bfactor = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+        let mut d_bfactor = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc bfactor: {}", e)))?;
-        d_bfactor = self.stream.clone_htod(&batch.base.bfactor_packed)
+        d_bfactor = self
+            .stream
+            .clone_htod(&batch.base.bfactor_packed)
             .map_err(|e| PrismError::gpu("training", format!("Failed to upload bfactor: {}", e)))?;
 
-        let mut d_burial = self.stream.alloc_zeros::<f32>(total_residues.max(1))
+        let mut d_burial = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc burial: {}", e)))?;
-        d_burial = self.stream.clone_htod(&batch.base.burial_packed)
+        d_burial = self
+            .stream
+            .clone_htod(&batch.base.burial_packed)
             .map_err(|e| PrismError::gpu("training", format!("Failed to upload burial: {}", e)))?;
 
         // Upload descriptors (as raw bytes)
         let desc_size = std::mem::size_of::<BatchStructureDesc>() * n_structures;
-        let mut d_descriptors = self.stream.alloc_zeros::<u8>(desc_size.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc descriptors: {}", e)))?;
+        let mut d_descriptors = self
+            .stream
+            .alloc_zeros::<u8>(desc_size.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc descriptors: {}", e))
+            })?;
         let desc_bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(
-                batch.base.descriptors.as_ptr() as *const u8,
-                desc_size,
-            )
+            std::slice::from_raw_parts(batch.base.descriptors.as_ptr() as *const u8, desc_size)
         };
-        self.stream.memcpy_htod(desc_bytes, &mut d_descriptors)
-            .map_err(|e| PrismError::gpu("training", format!("Failed to upload descriptors: {}", e)))?;
+        self.stream
+            .memcpy_htod(desc_bytes, &mut d_descriptors)
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to upload descriptors: {}", e))
+            })?;
 
         // Allocate output buffers
-        let d_consensus = self.stream.alloc_zeros::<f32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc consensus: {}", e)))?;
-        let d_confidence = self.stream.alloc_zeros::<i32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc confidence: {}", e)))?;
-        let d_signal_mask = self.stream.alloc_zeros::<i32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc signal_mask: {}", e)))?;
-        let d_pocket_assignment = self.stream.alloc_zeros::<i32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc pocket_assignment: {}", e)))?;
-        let d_centrality = self.stream.alloc_zeros::<f32>(total_residues.max(1))
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc centrality: {}", e)))?;
+        let d_consensus = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc consensus: {}", e))
+            })?;
+        let d_confidence = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc confidence: {}", e))
+            })?;
+        let d_signal_mask = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc signal_mask: {}", e))
+            })?;
+        let d_pocket_assignment = self
+            .stream
+            .alloc_zeros::<i32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu(
+                    "training",
+                    format!("Failed to alloc pocket_assignment: {}", e),
+                )
+            })?;
+        let d_centrality = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1))
+            .map_err(|e| {
+                PrismError::gpu("training", format!("Failed to alloc centrality: {}", e))
+            })?;
 
         // Reservoir states output buffer [total_residues * 4]
-        let d_reservoir_states = self.stream.alloc_zeros::<f32>(total_residues.max(1) * RESERVOIR_DIM)
-            .map_err(|e| PrismError::gpu("training", format!("Failed to alloc reservoir_states: {}", e)))?;
+        let d_reservoir_states = self
+            .stream
+            .alloc_zeros::<f32>(total_residues.max(1) * RESERVOIR_DIM)
+            .map_err(|e| {
+                PrismError::gpu(
+                    "training",
+                    format!("Failed to alloc reservoir_states: {}", e),
+                )
+            })?;
 
         // Upload params
         let params = MegaFusedParams::from_config(config);
         let params_size = std::mem::size_of::<MegaFusedParams>();
-        let mut d_params = self.stream.alloc_zeros::<u8>(params_size)
+        let mut d_params = self
+            .stream
+            .alloc_zeros::<u8>(params_size)
             .map_err(|e| PrismError::gpu("training", format!("Failed to alloc params: {}", e)))?;
-        let params_bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(&params as *const _ as *const u8, params_size)
-        };
-        self.stream.memcpy_htod(params_bytes, &mut d_params)
+        let params_bytes: &[u8] =
+            unsafe { std::slice::from_raw_parts(&params as *const _ as *const u8, params_size) };
+        self.stream
+            .memcpy_htod(params_bytes, &mut d_params)
             .map_err(|e| PrismError::gpu("training", format!("Failed to upload params: {}", e)))?;
 
         // Launch training kernel
@@ -1789,19 +2119,26 @@ impl MegaFusedBatchGpu {
             builder.arg(&d_centrality);
             builder.arg(&d_reservoir_states);
             builder.arg(&d_params);
-            builder.launch(launch_config)
+            builder
+                .launch(launch_config)
                 .map_err(|e| PrismError::gpu("training", format!("Kernel launch failed: {}", e)))?;
         }
 
         // Synchronize
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| PrismError::gpu("training", format!("Sync failed: {}", e)))?;
 
         let kernel_elapsed = kernel_start.elapsed();
 
         // Download reservoir states
-        let reservoir_states_flat: Vec<f32> = self.stream.clone_dtoh(&d_reservoir_states)
-            .map_err(|e| PrismError::gpu("training", format!("Failed to download reservoir_states: {}", e)))?;
+        let reservoir_states_flat: Vec<f32> =
+            self.stream.clone_dtoh(&d_reservoir_states).map_err(|e| {
+                PrismError::gpu(
+                    "training",
+                    format!("Failed to download reservoir_states: {}", e),
+                )
+            })?;
 
         // Split by structure
         let mut reservoir_states = Vec::with_capacity(n_structures);
@@ -1827,7 +2164,9 @@ impl MegaFusedBatchGpu {
 
         log::info!(
             "Extracted reservoir states: {} structures, {} residues in {:.2}ms",
-            n_structures, total_residues, kernel_elapsed.as_secs_f64() * 1000.0
+            n_structures,
+            total_residues,
+            kernel_elapsed.as_secs_f64() * 1000.0
         );
 
         Ok(TrainingOutput {
@@ -1856,7 +2195,11 @@ impl MegaFusedBatchGpu {
         use crate::polycentric_immunity::POLYCENTRIC_OUTPUT_DIM;
 
         let n_structures = output.structures.len();
-        let total_residues: usize = output.structures.iter().map(|s| s.combined_features.len() / 136).sum();
+        let total_residues: usize = output
+            .structures
+            .iter()
+            .map(|s| s.combined_features.len() / 136)
+            .sum();
 
         if n_structures == 0 {
             return Ok(output);
@@ -1893,33 +2236,57 @@ impl MegaFusedBatchGpu {
         let pk_immunity_flat = &batch.current_immunity_levels_75_packed[..n_structures * 75];
 
         // 3. Compute time_since_infection (placeholder - should come from metadata)
-        let time_since_infection = vec![30.0f32; n_structures];  // TODO: Extract from batch metadata
+        let time_since_infection = vec![30.0f32; n_structures]; // TODO: Extract from batch metadata
 
         // 4. Extract frequency history (placeholder - should come from metadata)
-        let freq_history_flat = vec![0.10f32; n_structures * 7];  // TODO: Extract from batch metadata
+        let freq_history_flat = vec![0.10f32; n_structures * 7]; // TODO: Extract from batch metadata
 
         // 5. Extract current frequency (placeholder)
-        let current_freq = vec![0.15f32; n_structures];  // TODO: Extract from batch metadata
+        let current_freq = vec![0.15f32; n_structures]; // TODO: Extract from batch metadata
 
         // === UPLOAD TO GPU ===
-        let mut d_escape_10d = self.stream.alloc_zeros::<f32>(escape_10d_flat.len().max(1))
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Alloc escape_10d: {}", e)))?;
-        d_escape_10d = self.stream.clone_htod(&escape_10d_flat)
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload escape_10d: {}", e)))?;
+        let mut d_escape_10d = self
+            .stream
+            .alloc_zeros::<f32>(escape_10d_flat.len().max(1))
+            .map_err(|e| {
+                PrismError::gpu("polycentric_enhance", format!("Alloc escape_10d: {}", e))
+            })?;
+        d_escape_10d = self.stream.clone_htod(&escape_10d_flat).map_err(|e| {
+            PrismError::gpu("polycentric_enhance", format!("Upload escape_10d: {}", e))
+        })?;
 
-        let mut d_pk_immunity = self.stream.alloc_zeros::<f32>(pk_immunity_flat.len().max(1))
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Alloc pk_immunity: {}", e)))?;
-        self.stream.memcpy_htod(&pk_immunity_flat[..], &mut d_pk_immunity)
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload pk_immunity: {}", e)))?;
+        let mut d_pk_immunity = self
+            .stream
+            .alloc_zeros::<f32>(pk_immunity_flat.len().max(1))
+            .map_err(|e| {
+                PrismError::gpu("polycentric_enhance", format!("Alloc pk_immunity: {}", e))
+            })?;
+        self.stream
+            .memcpy_htod(&pk_immunity_flat[..], &mut d_pk_immunity)
+            .map_err(|e| {
+                PrismError::gpu("polycentric_enhance", format!("Upload pk_immunity: {}", e))
+            })?;
 
-        let d_time_since_infection = self.stream.clone_htod(&time_since_infection[..])
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload time_since_infection: {}", e)))?;
+        let d_time_since_infection =
+            self.stream
+                .clone_htod(&time_since_infection[..])
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "polycentric_enhance",
+                        format!("Upload time_since_infection: {}", e),
+                    )
+                })?;
 
-        let d_freq_history = self.stream.clone_htod(&freq_history_flat[..])
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload freq_history: {}", e)))?;
+        let d_freq_history = self
+            .stream
+            .clone_htod(&freq_history_flat[..])
+            .map_err(|e| {
+                PrismError::gpu("polycentric_enhance", format!("Upload freq_history: {}", e))
+            })?;
 
-        let d_current_freq = self.stream.clone_htod(&current_freq[..])
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload current_freq: {}", e)))?;
+        let d_current_freq = self.stream.clone_htod(&current_freq[..]).map_err(|e| {
+            PrismError::gpu("polycentric_enhance", format!("Upload current_freq: {}", e))
+        })?;
 
         // Prepare features_packed and residue metadata
         let mut features_flat = Vec::with_capacity(total_residues * 136);
@@ -1935,31 +2302,54 @@ impl MegaFusedBatchGpu {
             cumulative_offset += n_res;
         }
 
-        let d_features = self.stream.clone_htod(&features_flat[..])
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload features: {}", e)))?;
+        let d_features = self.stream.clone_htod(&features_flat[..]).map_err(|e| {
+            PrismError::gpu("polycentric_enhance", format!("Upload features: {}", e))
+        })?;
 
-        let d_residue_offsets = self.stream.clone_htod(&residue_offsets_flat[..])
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload residue_offsets: {}", e)))?;
+        let d_residue_offsets = self
+            .stream
+            .clone_htod(&residue_offsets_flat[..])
+            .map_err(|e| {
+                PrismError::gpu(
+                    "polycentric_enhance",
+                    format!("Upload residue_offsets: {}", e),
+                )
+            })?;
 
-        let d_n_residues = self.stream.clone_htod(&n_residues_flat[..])
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Upload n_residues: {}", e)))?;
+        let d_n_residues = self.stream.clone_htod(&n_residues_flat[..]).map_err(|e| {
+            PrismError::gpu("polycentric_enhance", format!("Upload n_residues: {}", e))
+        })?;
 
         // === CALL POLYCENTRIC GPU ===
-        let d_polycentric_output = polycentric.process_batch(
-            &d_features,
-            &d_residue_offsets,
-            &d_n_residues,
-            &d_escape_10d,
-            &d_pk_immunity,
-            &d_time_since_infection,
-            &d_freq_history,
-            &d_current_freq,
-            n_structures,
-        ).map_err(|e| PrismError::gpu("polycentric_enhance", format!("Polycentric process_batch failed: {}", e)))?;
+        let d_polycentric_output = polycentric
+            .process_batch(
+                &d_features,
+                &d_residue_offsets,
+                &d_n_residues,
+                &d_escape_10d,
+                &d_pk_immunity,
+                &d_time_since_infection,
+                &d_freq_history,
+                &d_current_freq,
+                n_structures,
+            )
+            .map_err(|e| {
+                PrismError::gpu(
+                    "polycentric_enhance",
+                    format!("Polycentric process_batch failed: {}", e),
+                )
+            })?;
 
         // === DOWNLOAD RESULTS ===
-        let polycentric_features = polycentric.download_output(&d_polycentric_output)
-            .map_err(|e| PrismError::gpu("polycentric_enhance", format!("Download polycentric output: {}", e)))?;
+        let polycentric_features =
+            polycentric
+                .download_output(&d_polycentric_output)
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "polycentric_enhance",
+                        format!("Download polycentric output: {}", e),
+                    )
+                })?;
 
         // === MERGE INTO OUTPUT ===
         let mut enhanced_structures = Vec::with_capacity(n_structures);
@@ -1978,7 +2368,8 @@ impl MegaFusedBatchGpu {
                 // Copy original 136 features
                 let base_start = r * 136;
                 let base_end = base_start + 136;
-                enhanced_features.extend_from_slice(&structure.combined_features[base_start..base_end]);
+                enhanced_features
+                    .extend_from_slice(&structure.combined_features[base_start..base_end]);
 
                 // Append 22 polycentric features (same for all residues in this structure)
                 enhanced_features.extend_from_slice(poly_features);
@@ -2016,7 +2407,8 @@ pub struct TrainingOutput {
 impl TrainingOutput {
     /// Convert to format expected by TrainedReadout::train()
     pub fn to_train_data(&self) -> Vec<(Vec<f32>, Vec<u8>)> {
-        self.reservoir_states.iter()
+        self.reservoir_states
+            .iter()
             .zip(&self.gt_masks)
             .map(|(states, mask)| (states.clone(), mask.clone()))
             .collect()
@@ -2026,7 +2418,9 @@ impl TrainingOutput {
     pub fn stats(&self) -> (usize, usize, usize) {
         let n_structures = self.reservoir_states.len();
         let n_residues: usize = self.gt_masks.iter().map(|m| m.len()).sum();
-        let n_positive: usize = self.gt_masks.iter()
+        let n_positive: usize = self
+            .gt_masks
+            .iter()
             .flat_map(|m| m.iter())
             .filter(|&&l| l > 0)
             .count();

@@ -13,8 +13,8 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
-    PushKernelArg, DevicePtrMut,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtrMut, DeviceSlice,
+    LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
@@ -56,7 +56,10 @@ pub const DEFAULT_PME_TOLERANCE: f32 = 1e-5;
 /// ```
 pub fn compute_ewald_beta(cutoff: f32, tolerance: f32) -> f32 {
     debug_assert!(cutoff > 0.0, "Cutoff must be positive");
-    debug_assert!(tolerance > 0.0 && tolerance < 1.0, "Tolerance must be in (0, 1)");
+    debug_assert!(
+        tolerance > 0.0 && tolerance < 1.0,
+        "Tolerance must be in (0, 1)"
+    );
 
     (-tolerance.ln()).sqrt() / cutoff
 }
@@ -84,9 +87,9 @@ pub struct PME {
     plans_initialized: bool,
 
     // Device buffers
-    d_charge_grid: CudaSlice<f32>,     // [nx * ny * nz] real grid
-    d_complex_grid: CudaSlice<f32>,    // [nx * ny * (nz/2+1) * 2] complex (interleaved)
-    d_energy: CudaSlice<f32>,          // [1] reciprocal energy
+    d_charge_grid: CudaSlice<f32>,  // [nx * ny * nz] real grid
+    d_complex_grid: CudaSlice<f32>, // [nx * ny * (nz/2+1) * 2] complex (interleaved)
+    d_energy: CudaSlice<f32>,       // [1] reciprocal energy
 
     // Kernels
     spread_kernel: CudaFunction,
@@ -103,7 +106,7 @@ pub struct PME {
     // Note: cuFFT requires FP32, so FP16 is only used for charge spreading
     // The grid is then converted to FP32 before FFT
     fp16_enabled: bool,
-    d_charge_grid_fp16: Option<CudaSlice<u16>>,  // FP16 charge grid for spreading
+    d_charge_grid_fp16: Option<CudaSlice<u16>>, // FP16 charge grid for spreading
 }
 
 impl PME {
@@ -113,14 +116,13 @@ impl PME {
     /// * `context` - CUDA context
     /// * `n_atoms` - Number of atoms
     /// * `box_dims` - Periodic box dimensions [Lx, Ly, Lz] in Angstroms
-    pub fn new(
-        context: Arc<CudaContext>,
-        n_atoms: usize,
-        box_dims: [f32; 3],
-    ) -> Result<Self> {
+    pub fn new(context: Arc<CudaContext>, n_atoms: usize, box_dims: [f32; 3]) -> Result<Self> {
         log::info!(
             "⚡ Initializing PME for {} atoms, box = {:.1}×{:.1}×{:.1} Å",
-            n_atoms, box_dims[0], box_dims[1], box_dims[2]
+            n_atoms,
+            box_dims[0],
+            box_dims[1],
+            box_dims[2]
         );
 
         let stream = context.default_stream();
@@ -166,7 +168,9 @@ impl PME {
 
         log::info!(
             "📊 PME grid: {}×{}×{} = {} points, spacing ≈ {:.2} Å",
-            nx, ny, nz,
+            nx,
+            ny,
+            nz,
             nx * ny * nz,
             box_dims[0] / nx as f32
         );
@@ -188,7 +192,9 @@ impl PME {
         let beta = compute_ewald_beta(DEFAULT_REAL_SPACE_CUTOFF, DEFAULT_PME_TOLERANCE);
         log::info!(
             "✅ PME initialized: β={:.4} Å⁻¹ (cutoff={:.1} Å, tolerance={:.0e})",
-            beta, DEFAULT_REAL_SPACE_CUTOFF, DEFAULT_PME_TOLERANCE
+            beta,
+            DEFAULT_REAL_SPACE_CUTOFF,
+            DEFAULT_PME_TOLERANCE
         );
 
         Ok(Self {
@@ -233,11 +239,12 @@ impl PME {
     /// - Slight precision loss in accumulation (~0.01% typical)
     pub fn enable_fp16_grid(&mut self) -> Result<()> {
         if self.fp16_enabled {
-            return Ok(());  // Already enabled
+            return Ok(()); // Already enabled
         }
 
         let grid_size = self.nx * self.ny * self.nz;
-        let d_charge_grid_fp16 = self.stream
+        let d_charge_grid_fp16 = self
+            .stream
             .alloc_zeros::<u16>(grid_size)
             .context("Failed to allocate FP16 charge grid")?;
 
@@ -246,7 +253,7 @@ impl PME {
 
         log::info!(
             "⚡ FP16 PME grid enabled: saved {} KB",
-            (grid_size * 2) / 1024  // 4 bytes -> 2 bytes = 2 bytes saved per element
+            (grid_size * 2) / 1024 // 4 bytes -> 2 bytes = 2 bytes saved per element
         );
 
         Ok(())
@@ -267,7 +274,7 @@ impl PME {
     /// Get memory savings from FP16 grid (in bytes)
     pub fn fp16_memory_savings(&self) -> usize {
         if self.fp16_enabled {
-            self.nx * self.ny * self.nz * 2  // 4 bytes -> 2 bytes = 2 bytes saved
+            self.nx * self.ny * self.nz * 2 // 4 bytes -> 2 bytes = 2 bytes saved
         } else {
             0
         }
@@ -294,7 +301,9 @@ impl PME {
         self.beta = compute_ewald_beta(cutoff, tolerance);
         log::info!(
             "🔧 PME β = {:.4} Å⁻¹ (cutoff={:.1} Å, tolerance={:.0e})",
-            self.beta, cutoff, tolerance
+            self.beta,
+            cutoff,
+            tolerance
         );
     }
 
@@ -372,7 +381,8 @@ impl PME {
         // DEBUG: Check charge grid after spreading
         self.stream.synchronize()?;
         let mut charge_grid = vec![0.0f32; grid_size];
-        self.stream.memcpy_dtoh(&self.d_charge_grid, &mut charge_grid)?;
+        self.stream
+            .memcpy_dtoh(&self.d_charge_grid, &mut charge_grid)?;
         let mut max_q = 0.0f32;
         let mut sum_q = 0.0f32;
         for &q in &charge_grid {
@@ -383,7 +393,8 @@ impl PME {
         }
         log::info!(
             "🔬 PME charge grid after spreading: max_q={:.6}, sum_q={:.6}",
-            max_q, sum_q
+            max_q,
+            sum_q
         );
 
         // 4. Forward FFT (R2C)
@@ -425,10 +436,11 @@ impl PME {
         self.stream.synchronize()?;
         let complex_total = self.nx * self.ny * (self.nz / 2 + 1) * 2;
         let mut complex_grid = vec![0.0f32; complex_total];
-        self.stream.memcpy_dtoh(&self.d_complex_grid, &mut complex_grid)?;
+        self.stream
+            .memcpy_dtoh(&self.d_complex_grid, &mut complex_grid)?;
         let mut max_cplx = 0.0f32;
         for chunk in complex_grid.chunks(2) {
-            let mag = (chunk[0]*chunk[0] + chunk[1]*chunk[1]).sqrt();
+            let mag = (chunk[0] * chunk[0] + chunk[1] * chunk[1]).sqrt();
             if mag > max_cplx {
                 max_cplx = mag;
             }
@@ -450,17 +462,15 @@ impl PME {
         // DEBUG: Check potential grid right after IFFT, before normalization
         self.stream.synchronize()?;
         let mut potential_pre = vec![0.0f32; grid_size];
-        self.stream.memcpy_dtoh(&self.d_charge_grid, &mut potential_pre)?;
+        self.stream
+            .memcpy_dtoh(&self.d_charge_grid, &mut potential_pre)?;
         let mut max_pre = 0.0f32;
         for &p in &potential_pre {
             if p.abs() > max_pre {
                 max_pre = p.abs();
             }
         }
-        log::info!(
-            "🔬 PME potential BEFORE normalization: max={:.6}",
-            max_pre
-        );
+        log::info!("🔬 PME potential BEFORE normalization: max={:.6}", max_pre);
 
         // 7. Skip normalization - the Green's function already includes 1/V
         // The cuFFT IFFT output is exactly what we want for PME
@@ -479,7 +489,8 @@ impl PME {
         // Copy full grid to check values (memcpy_dtoh requires dst.len() >= src.len())
         self.stream.synchronize()?;
         let mut potential_full = vec![0.0f32; grid_size];
-        self.stream.memcpy_dtoh(&self.d_charge_grid, &mut potential_full)?;
+        self.stream
+            .memcpy_dtoh(&self.d_charge_grid, &mut potential_full)?;
         let mut max_phi = 0.0f32;
         let mut sum_phi = 0.0f32;
         for &phi in &potential_full {
@@ -490,7 +501,8 @@ impl PME {
         }
         log::info!(
             "🔬 PME potential grid: max_φ={:.6}, avg_φ={:.6}",
-            max_phi, sum_phi / grid_size as f32
+            max_phi,
+            sum_phi / grid_size as f32
         );
 
         // 8. Interpolate forces from potential grid

@@ -15,8 +15,8 @@
 //! - 10-20% faster data movement compared to pageable memory
 
 use cudarc::driver::{CudaContext, DriverError};
-use std::sync::Arc;
 use std::ptr::NonNull;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// VRAM safety threshold - 90% of available memory
@@ -123,11 +123,7 @@ impl<T> PinnedBuffer<T> {
             }
         }
 
-        log::debug!(
-            "Allocated {} bytes pinned memory at {:p}",
-            size_bytes,
-            ptr
-        );
+        log::debug!("Allocated {} bytes pinned memory at {:p}", size_bytes, ptr);
 
         Ok(Self {
             ptr: NonNull::new(ptr as *mut T).expect("cuMemAllocHost returned null"),
@@ -210,9 +206,8 @@ impl<T> Drop for PinnedBuffer<T> {
     fn drop(&mut self) {
         if self.len > 0 {
             unsafe {
-                let result = cudarc::driver::sys::cuMemFreeHost(
-                    self.ptr.as_ptr() as *mut std::ffi::c_void
-                );
+                let result =
+                    cudarc::driver::sys::cuMemFreeHost(self.ptr.as_ptr() as *mut std::ffi::c_void);
                 if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
                     log::error!("cuMemFreeHost failed: {:?}", result);
                 }
@@ -500,7 +495,8 @@ pub fn init_global_vram_guard(context: Arc<CudaContext>) {
 /// If VRAM guard not initialized via `init_global_vram_guard`
 pub fn global_vram_guard() -> &'static VramGuard {
     unsafe {
-        GLOBAL_VRAM_GUARD.as_ref()
+        GLOBAL_VRAM_GUARD
+            .as_ref()
             .expect("VRAM Guard not initialized - call init_global_vram_guard() first")
     }
 }

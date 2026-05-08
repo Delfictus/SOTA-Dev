@@ -19,8 +19,7 @@
 
 use anyhow::{bail, Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
@@ -68,7 +67,7 @@ impl ReplicaParallelConfig {
             n_replicas,
             seeds,
             temperature,
-            gamma: 200.0,  // ps⁻¹ - aggressive coupling (compensates for force-driven heating)
+            gamma: 200.0, // ps⁻¹ - aggressive coupling (compensates for force-driven heating)
             dt,
         }
     }
@@ -197,7 +196,7 @@ pub struct ReplicaParallelMD {
     d_positions: CudaSlice<f32>,
     d_velocities: CudaSlice<f32>,
     d_forces: CudaSlice<f32>,
-    d_rng_states: CudaSlice<u8>,  // curandState is opaque
+    d_rng_states: CudaSlice<u8>, // curandState is opaque
 
     // Per-replica energies [n_replicas]
     d_potential_energies: CudaSlice<f32>,
@@ -221,8 +220,8 @@ pub struct ReplicaParallelMD {
     d_n_excl: CudaSlice<i32>,
 
     // Positional restraints (to stabilize protein in implicit solvent)
-    d_ref_positions: CudaSlice<f32>,  // [n_atoms × 3] reference positions
-    d_restraint_k: CudaSlice<f32>,    // [n_atoms] force constants
+    d_ref_positions: CudaSlice<f32>, // [n_atoms × 3] reference positions
+    d_restraint_k: CudaSlice<f32>,   // [n_atoms] force constants
 
     // Neighbor list (shared, built from replica 0)
     d_neighbor_list: CudaSlice<i32>,
@@ -238,12 +237,12 @@ pub struct ReplicaParallelMD {
 
     // Reference structure for stability tracking
     h_initial_positions: Vec<f32>,
-    h_restraint_k: Vec<f32>,  // For computing backbone-only RMSD
+    h_restraint_k: Vec<f32>, // For computing backbone-only RMSD
     initial_rg: f64,
 
     // BAOAB coefficients (precomputed)
-    c1: f32,  // exp(-gamma * dt)
-    c2: f32,  // sqrt(1 - c1^2)
+    c1: f32, // exp(-gamma * dt)
+    c2: f32, // sqrt(1 - c1^2)
     sqrt_kT: f32,
     half_dt: f32,
 
@@ -264,7 +263,10 @@ impl ReplicaParallelMD {
         // Load pre-compiled PTX (compiled by nvcc with full CUDA headers including curand)
         // Pre-compile with: nvcc -ptx -arch=sm_86 -O3 --use_fast_math \
         //                   -o target/ptx/amber_replica_parallel.ptx src/kernels/amber_replica_parallel.cu
-        let ptx_path = concat!(env!("CARGO_MANIFEST_DIR"), "/target/ptx/amber_replica_parallel.ptx");
+        let ptx_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/target/ptx/amber_replica_parallel.ptx"
+        );
         let ptx_src = std::fs::read_to_string(ptx_path)
             .with_context(|| format!("Failed to read PTX file: {}. Pre-compile with: cd crates/prism-gpu && mkdir -p target/ptx && nvcc -ptx -arch=sm_86 -O3 --use_fast_math -o target/ptx/amber_replica_parallel.ptx src/kernels/amber_replica_parallel.cu", ptx_path))?;
         let ptx = Ptx::from_src(&ptx_src);
@@ -317,8 +319,10 @@ impl ReplicaParallelMD {
         let mut d_bond_params = stream.alloc_zeros::<f32>(topology.bond_params.len().max(1))?;
         let mut d_angle_atoms = stream.alloc_zeros::<i32>(topology.angle_atoms.len().max(1))?;
         let mut d_angle_params = stream.alloc_zeros::<f32>(topology.angle_params.len().max(1))?;
-        let mut d_dihedral_atoms = stream.alloc_zeros::<i32>(topology.dihedral_atoms.len().max(1))?;
-        let mut d_dihedral_params = stream.alloc_zeros::<f32>(topology.dihedral_params.len().max(1))?;
+        let mut d_dihedral_atoms =
+            stream.alloc_zeros::<i32>(topology.dihedral_atoms.len().max(1))?;
+        let mut d_dihedral_params =
+            stream.alloc_zeros::<f32>(topology.dihedral_params.len().max(1))?;
         let mut d_charges = stream.alloc_zeros::<f32>(topology.charges.len())?;
         let mut d_sigmas = stream.alloc_zeros::<f32>(topology.sigmas.len())?;
         let mut d_epsilons = stream.alloc_zeros::<f32>(topology.epsilons.len())?;
@@ -367,8 +371,16 @@ impl ReplicaParallelMD {
             let n_restrained = topology.restraint_k.iter().filter(|&&k| k > 0.0).count();
             let sum_k: f32 = topology.restraint_k.iter().sum();
             let max_k: f32 = topology.restraint_k.iter().copied().fold(0.0, f32::max);
-            log::info!("Positional restraints: {} of {} atoms restrained", n_restrained, n_atoms);
-            log::info!("Restraint k: sum={:.1}, max={:.1} kcal/(mol·Å²)", sum_k, max_k);
+            log::info!(
+                "Positional restraints: {} of {} atoms restrained",
+                n_restrained,
+                n_atoms
+            );
+            log::info!(
+                "Restraint k: sum={:.1}, max={:.1} kcal/(mol·Å²)",
+                sum_k,
+                max_k
+            );
         }
 
         // Allocate neighbor list
@@ -384,8 +396,7 @@ impl ReplicaParallelMD {
         let mut h_positions = vec![0.0f32; state_size];
         for replica in 0..n_replicas {
             let offset = replica * n_atoms * 3;
-            h_positions[offset..offset + n_atoms * 3]
-                .copy_from_slice(&topology.initial_positions);
+            h_positions[offset..offset + n_atoms * 3].copy_from_slice(&topology.initial_positions);
         }
 
         // Store initial positions for stability tracking (RMSD from initial)
@@ -395,7 +406,8 @@ impl ReplicaParallelMD {
         let h_restraint_k = topology.restraint_k.clone();
 
         // Compute initial radius of gyration for stability monitoring
-        let initial_rg = Self::compute_radius_of_gyration_static(&topology.initial_positions, n_atoms);
+        let initial_rg =
+            Self::compute_radius_of_gyration_static(&topology.initial_positions, n_atoms);
         log::info!("Initial radius of gyration: {:.2} Å", initial_rg);
 
         // Host buffers
@@ -407,14 +419,14 @@ impl ReplicaParallelMD {
         // kB = 0.001987204 kcal/(mol·K) gives velocities in Å/ps
         // So all time-dependent terms must use ps, not fs
         // NOTE: gamma is specified in ps⁻¹ (typical: 1.0 ps⁻¹ for implicit solvent)
-        let gamma_ps = config.gamma;           // Already in ps⁻¹ (standard AMBER units)
-        let dt_ps = config.dt * 0.001;         // Convert fs to ps
+        let gamma_ps = config.gamma; // Already in ps⁻¹ (standard AMBER units)
+        let dt_ps = config.dt * 0.001; // Convert fs to ps
         let temperature = config.temperature;
 
         let c1 = (-gamma_ps * dt_ps).exp();
         let c2 = (1.0 - c1 * c1).sqrt();
         let sqrt_kT = (KB_KCAL_MOL_K as f32 * temperature).sqrt();
-        let half_dt = 0.5 * dt_ps;  // In ps for correct position/velocity updates
+        let half_dt = 0.5 * dt_ps; // In ps for correct position/velocity updates
 
         log::info!(
             "BAOAB coefficients: c1={:.6}, c2={:.6}, sqrt_kT={:.6}, half_dt_ps={:.6} (gamma={:.1} ps⁻¹, dt={:.1} fs)",
@@ -511,7 +523,8 @@ impl ReplicaParallelMD {
         let n_atoms = self.n_atoms as i32;
 
         // Upload initial positions
-        self.stream.memcpy_htod(&self.h_positions, &mut self.d_positions)?;
+        self.stream
+            .memcpy_htod(&self.h_positions, &mut self.d_positions)?;
 
         // Initialize RNG for all replicas
         let cfg = self.launch_config_2d(self.n_atoms);
@@ -532,19 +545,25 @@ impl ReplicaParallelMD {
 
         // DEBUG: Verify restraint_k was uploaded correctly
         let mut h_restraint_k = vec![0.0f32; self.n_atoms];
-        self.stream.memcpy_dtoh(&self.d_restraint_k, &mut h_restraint_k)?;
+        self.stream
+            .memcpy_dtoh(&self.d_restraint_k, &mut h_restraint_k)?;
         let gpu_n_restrained = h_restraint_k.iter().filter(|&&k| k > 0.0).count();
         let gpu_sum_k: f32 = h_restraint_k.iter().sum();
         let gpu_max_k: f32 = h_restraint_k.iter().copied().fold(0.0, f32::max);
-        log::debug!("GPU restraint_k verification: {} restrained, sum={:.1}, max={:.1}",
-            gpu_n_restrained, gpu_sum_k, gpu_max_k);
+        log::debug!(
+            "GPU restraint_k verification: {} restrained, sum={:.1}, max={:.1}",
+            gpu_n_restrained,
+            gpu_sum_k,
+            gpu_max_k
+        );
         if gpu_n_restrained == 0 {
             log::warn!("WARNING: No restraints on GPU! Restraint_k buffer may not have been uploaded correctly");
         }
 
         // DEBUG: Verify d_ref_positions contains correct reference structure
         let mut h_ref_check = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_ref_positions, &mut h_ref_check)?;
+        self.stream
+            .memcpy_dtoh(&self.d_ref_positions, &mut h_ref_check)?;
         let ref_nonzero = h_ref_check.iter().filter(|&&x| x.abs() > 0.001).count();
         // Compute sum of absolute values as sanity check
         let ref_sum: f32 = h_ref_check.iter().map(|&x| x.abs()).sum();
@@ -552,16 +571,24 @@ impl ReplicaParallelMD {
         let match_count = (0..std::cmp::min(30, self.n_atoms * 3))
             .filter(|&i| (h_ref_check[i] - self.h_initial_positions[i]).abs() < 0.001)
             .count();
-        log::debug!("GPU ref_positions verification: {} non-zero coords, sum={:.1}, first 30 match={}/30",
-            ref_nonzero, ref_sum, match_count);
-        if ref_nonzero < self.n_atoms * 2 {  // Should have ~3N non-zero
+        log::debug!(
+            "GPU ref_positions verification: {} non-zero coords, sum={:.1}, first 30 match={}/30",
+            ref_nonzero,
+            ref_sum,
+            match_count
+        );
+        if ref_nonzero < self.n_atoms * 2 {
+            // Should have ~3N non-zero
             log::warn!("WARNING: Reference positions may not be uploaded correctly!");
         }
 
         self.initialized = true;
         self.step_count = 0;
 
-        log::info!("ReplicaParallelMD initialized: {} replicas ready", self.config.n_replicas);
+        log::info!(
+            "ReplicaParallelMD initialized: {} replicas ready",
+            self.config.n_replicas
+        );
         Ok(())
     }
 
@@ -630,13 +657,21 @@ impl ReplicaParallelMD {
             let test_T = 2.0 * test_ke / (dof * KB_KCAL_MOL_K);
             log::info!(
                 "Replica {} init (HOST): KE={:.2} kcal/mol, T={:.1}K (target={:.1}K)",
-                replica, test_ke, test_T, temperature
+                replica,
+                test_ke,
+                test_T,
+                temperature
             );
         }
 
-        self.stream.memcpy_htod(&h_velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&h_velocities, &mut self.d_velocities)?;
 
-        log::info!("Initialized velocities for {} replicas at {}K", n_replicas, self.config.temperature);
+        log::info!(
+            "Initialized velocities for {} replicas at {}K",
+            n_replicas,
+            self.config.temperature
+        );
         Ok(())
     }
 
@@ -652,7 +687,7 @@ impl ReplicaParallelMD {
 
         unsafe {
             let mut builder = self.stream.launch_builder(&self.build_neighbor_list_kernel);
-            builder.arg(&self.d_positions);  // Uses replica 0 (offset 0)
+            builder.arg(&self.d_positions); // Uses replica 0 (offset 0)
             builder.arg(&self.d_neighbor_list);
             builder.arg(&self.d_neighbor_counts);
             builder.arg(&self.d_exclusions);
@@ -700,8 +735,10 @@ impl ReplicaParallelMD {
 
         // Zero energies
         let zero_energies = vec![0.0f32; self.config.n_replicas];
-        self.stream.memcpy_htod(&zero_energies, &mut self.d_potential_energies)?;
-        self.stream.memcpy_htod(&zero_energies, &mut self.d_kinetic_energies)?;
+        self.stream
+            .memcpy_htod(&zero_energies, &mut self.d_potential_energies)?;
+        self.stream
+            .memcpy_htod(&zero_energies, &mut self.d_kinetic_energies)?;
 
         // ===== STEP 2: Compute forces (all types) =====
 
@@ -954,12 +991,15 @@ impl ReplicaParallelMD {
         }
 
         // Download energies
-        self.stream.memcpy_dtoh(&self.d_potential_energies, &mut self.h_potential_energies)?;
-        self.stream.memcpy_dtoh(&self.d_kinetic_energies, &mut self.h_kinetic_energies)?;
+        self.stream
+            .memcpy_dtoh(&self.d_potential_energies, &mut self.h_potential_energies)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kinetic_energies, &mut self.h_kinetic_energies)?;
 
         // Compute temperatures
-        let dof = (3 * self.n_atoms - 6) as f64;  // 3N - 6 for non-linear molecule
-        let temperatures: Vec<f64> = self.h_kinetic_energies
+        let dof = (3 * self.n_atoms - 6) as f64; // 3N - 6 for non-linear molecule
+        let temperatures: Vec<f64> = self
+            .h_kinetic_energies
             .iter()
             .map(|&ke| 2.0 * ke as f64 / (dof * KB_KCAL_MOL_K))
             .collect();
@@ -968,7 +1008,11 @@ impl ReplicaParallelMD {
 
         Ok(ReplicaStepResult {
             step: self.step_count,
-            potential_energies: self.h_potential_energies.iter().map(|&e| e as f64).collect(),
+            potential_energies: self
+                .h_potential_energies
+                .iter()
+                .map(|&e| e as f64)
+                .collect(),
             kinetic_energies: self.h_kinetic_energies.iter().map(|&e| e as f64).collect(),
             temperatures,
         })
@@ -983,7 +1027,8 @@ impl ReplicaParallelMD {
         let n_frames = n_steps / frame_interval;
         let n_replicas = self.config.n_replicas;
 
-        let mut all_frames: Vec<Vec<ReplicaFrameData>> = vec![Vec::with_capacity(n_frames); n_replicas];
+        let mut all_frames: Vec<Vec<ReplicaFrameData>> =
+            vec![Vec::with_capacity(n_frames); n_replicas];
 
         let start_time = std::time::Instant::now();
 
@@ -997,7 +1042,8 @@ impl ReplicaParallelMD {
             let result = last_result.unwrap();
 
             // Download positions
-            self.stream.memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
+            self.stream
+                .memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
 
             // Extract per-replica frames
             for replica in 0..n_replicas {
@@ -1096,15 +1142,18 @@ impl ReplicaParallelMD {
 
     /// Compute RMSD for backbone atoms only (where restraint_k > 0)
     /// This tells us if the restrained atoms are actually staying in place
-    fn compute_backbone_rmsd(pos_a: &[f32], pos_b: &[f32], restraint_k: &[f32], n_atoms: usize) -> f64 {
+    fn compute_backbone_rmsd(
+        pos_a: &[f32],
+        pos_b: &[f32],
+        restraint_k: &[f32],
+        n_atoms: usize,
+    ) -> f64 {
         assert_eq!(pos_a.len(), n_atoms * 3);
         assert_eq!(pos_b.len(), n_atoms * 3);
         assert_eq!(restraint_k.len(), n_atoms);
 
         // Find backbone atoms (restraint_k > 0)
-        let backbone_indices: Vec<usize> = (0..n_atoms)
-            .filter(|&i| restraint_k[i] > 0.0)
-            .collect();
+        let backbone_indices: Vec<usize> = (0..n_atoms).filter(|&i| restraint_k[i] > 0.0).collect();
 
         if backbone_indices.is_empty() {
             return 0.0;
@@ -1226,9 +1275,11 @@ impl ReplicaParallelMD {
         let max_rmsd = all_rmsd.iter().cloned().fold(0.0, f64::max);
         let mean_rmsd = all_rmsd.iter().sum::<f64>() / all_rmsd.len() as f64;
 
-        let variance = all_rmsd.iter()
+        let variance = all_rmsd
+            .iter()
             .map(|r| (r - mean_rmsd).powi(2))
-            .sum::<f64>() / all_rmsd.len() as f64;
+            .sum::<f64>()
+            / all_rmsd.len() as f64;
         let std_rmsd = variance.sqrt();
 
         // === STABILITY METRICS ===
@@ -1248,7 +1299,7 @@ impl ReplicaParallelMD {
                 replica_positions[r],
                 &self.h_initial_positions,
                 &self.h_restraint_k,
-                n_atoms
+                n_atoms,
             );
             backbone_rmsd_from_initial.push(rmsd);
         }
@@ -1261,7 +1312,9 @@ impl ReplicaParallelMD {
             mean_rmsd_from_initial, mean_backbone_rmsd
         );
         if mean_backbone_rmsd > 5.0 {
-            log::warn!("⚠️  BACKBONE RMSD > 5Å: Restraints may be ineffective! Protein core compromised.");
+            log::warn!(
+                "⚠️  BACKBONE RMSD > 5Å: Restraints may be ineffective! Protein core compromised."
+            );
         }
 
         // Compute radius of gyration for each replica
@@ -1313,7 +1366,8 @@ impl ReplicaParallelMD {
         let n_frames = n_steps / frame_interval;
         let n_replicas = self.config.n_replicas;
 
-        let mut all_frames: Vec<Vec<ReplicaFrameData>> = vec![Vec::with_capacity(n_frames); n_replicas];
+        let mut all_frames: Vec<Vec<ReplicaFrameData>> =
+            vec![Vec::with_capacity(n_frames); n_replicas];
         let mut diagnostics: Vec<ReplicaDiagnostics> = Vec::new();
 
         let start_time = std::time::Instant::now();
@@ -1328,7 +1382,8 @@ impl ReplicaParallelMD {
             let result = last_result.unwrap();
 
             // Download positions
-            self.stream.memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
+            self.stream
+                .memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
 
             // Extract per-replica frames
             for replica in 0..n_replicas {
@@ -1356,7 +1411,11 @@ impl ReplicaParallelMD {
                     diag.min_rmsd,
                     diag.max_rmsd,
                     diag.mean_rmsd,
-                    if diag.replicas_diverged { " [DIVERGED ✓]" } else { " [IDENTICAL ✗]" }
+                    if diag.replicas_diverged {
+                        " [DIVERGED ✓]"
+                    } else {
+                        " [IDENTICAL ✗]"
+                    }
                 );
 
                 // Log stability metrics
@@ -1368,7 +1427,11 @@ impl ReplicaParallelMD {
                     diag.mean_rg,
                     diag.initial_rg,
                     rg_change,
-                    if diag.simulation_stable { " [STABLE ✓]" } else { " [UNSTABLE ✗]" }
+                    if diag.simulation_stable {
+                        " [STABLE ✓]"
+                    } else {
+                        " [UNSTABLE ✗]"
+                    }
                 );
 
                 diagnostics.push(diag);
@@ -1401,43 +1464,75 @@ impl ReplicaParallelMD {
 
         // Final summary with stability assessment
         if let Some(last_diag) = diagnostics.last() {
-            let rg_change = ((last_diag.mean_rg - last_diag.initial_rg) / last_diag.initial_rg * 100.0).abs();
+            let rg_change =
+                ((last_diag.mean_rg - last_diag.initial_rg) / last_diag.initial_rg * 100.0).abs();
 
             log::info!("╔══════════════════════════════════════════════════════════════════╗");
             log::info!("║                    FINAL DIAGNOSTICS                              ║");
             log::info!("╠══════════════════════════════════════════════════════════════════╣");
             log::info!("║  Inter-Replica Divergence:                                        ║");
-            log::info!("║    Mean RMSD:      {:6.2} Å  (min: {:5.2}Å, max: {:5.2}Å)         ║",
-                last_diag.mean_rmsd, last_diag.min_rmsd, last_diag.max_rmsd);
-            log::info!("║    Replicas diverged: {}                                          ║",
-                if last_diag.replicas_diverged { "YES ✓" } else { "NO ✗ " });
+            log::info!(
+                "║    Mean RMSD:      {:6.2} Å  (min: {:5.2}Å, max: {:5.2}Å)         ║",
+                last_diag.mean_rmsd,
+                last_diag.min_rmsd,
+                last_diag.max_rmsd
+            );
+            log::info!(
+                "║    Replicas diverged: {}                                          ║",
+                if last_diag.replicas_diverged {
+                    "YES ✓"
+                } else {
+                    "NO ✗ "
+                }
+            );
             log::info!("╠══════════════════════════════════════════════════════════════════╣");
             log::info!("║  Structural Stability (BACKBONE RMSD = TRUE FOLD INDICATOR):      ║");
-            log::info!("║    BACKBONE RMSD:    {:5.2} Å  (threshold: <10Å for stability)  ║",
-                last_diag.mean_backbone_rmsd);
-            log::info!("║    All-atom RMSD:    {:5.2} Å  (includes sidechain flexibility)  ║",
-                last_diag.mean_rmsd_from_initial);
-            log::info!("║    Radius of gyration: {:5.2} Å  (initial: {:5.2}Å, Δ={:.1}%)   ║",
-                last_diag.mean_rg, last_diag.initial_rg, rg_change);
-            log::info!("║    Protein fold:    {}                                          ║",
-                if last_diag.mean_backbone_rmsd < 5.0 { "INTACT ✓" }
-                else if last_diag.mean_backbone_rmsd < 10.0 { "STRAINED" }
-                else { "COMPROMISED ✗" });
+            log::info!(
+                "║    BACKBONE RMSD:    {:5.2} Å  (threshold: <10Å for stability)  ║",
+                last_diag.mean_backbone_rmsd
+            );
+            log::info!(
+                "║    All-atom RMSD:    {:5.2} Å  (includes sidechain flexibility)  ║",
+                last_diag.mean_rmsd_from_initial
+            );
+            log::info!(
+                "║    Radius of gyration: {:5.2} Å  (initial: {:5.2}Å, Δ={:.1}%)   ║",
+                last_diag.mean_rg,
+                last_diag.initial_rg,
+                rg_change
+            );
+            log::info!(
+                "║    Protein fold:    {}                                          ║",
+                if last_diag.mean_backbone_rmsd < 5.0 {
+                    "INTACT ✓"
+                } else if last_diag.mean_backbone_rmsd < 10.0 {
+                    "STRAINED"
+                } else {
+                    "COMPROMISED ✗"
+                }
+            );
             log::info!("╚══════════════════════════════════════════════════════════════════╝");
 
             // Warnings based on BACKBONE RMSD (true fold indicator)
             if last_diag.mean_backbone_rmsd >= 5.0 {
-                log::warn!("⚠️  BACKBONE RMSD WARNING: {:.2}Å (>5Å = restraints may be ineffective)",
-                    last_diag.mean_backbone_rmsd);
+                log::warn!(
+                    "⚠️  BACKBONE RMSD WARNING: {:.2}Å (>5Å = restraints may be ineffective)",
+                    last_diag.mean_backbone_rmsd
+                );
             }
             if last_diag.mean_backbone_rmsd >= 10.0 {
-                log::warn!("⚠️  PROTEIN FOLD COMPROMISED: Backbone RMSD {:.2}Å exceeds 10Å threshold!",
-                    last_diag.mean_backbone_rmsd);
+                log::warn!(
+                    "⚠️  PROTEIN FOLD COMPROMISED: Backbone RMSD {:.2}Å exceeds 10Å threshold!",
+                    last_diag.mean_backbone_rmsd
+                );
                 log::warn!("   - Consider increasing backbone restraint strength (k=100+)");
                 log::warn!("   - Or use serial mode (AmberMegaFusedHmc) which is more stable");
             }
             if rg_change >= 100.0 {
-                log::warn!("⚠️  EXCESSIVE EXPANSION: Rg changed by {:.1}% (protein may have exploded)", rg_change);
+                log::warn!(
+                    "⚠️  EXCESSIVE EXPANSION: Rg changed by {:.1}% (protein may have exploded)",
+                    rg_change
+                );
             }
         }
 
@@ -1466,7 +1561,6 @@ pub struct ReplicaDiagnostics {
     pub replicas_diverged: bool,
 
     // === STABILITY METRICS (to detect unfolding) ===
-
     /// RMSD from initial structure for each replica (Å) - ALL ATOMS
     pub rmsd_from_initial: Vec<f64>,
     /// Mean all-atom RMSD from initial across all replicas
@@ -1489,7 +1583,10 @@ impl ReplicaDiagnostics {
     /// Generate a formatted report string
     pub fn report(&self) -> String {
         let mut s = String::new();
-        s.push_str(&format!("=== Replica Diagnostics (Step {}) ===\n", self.step));
+        s.push_str(&format!(
+            "=== Replica Diagnostics (Step {}) ===\n",
+            self.step
+        ));
         s.push_str(&format!("Number of replicas: {}\n\n", self.n_replicas));
 
         // Inter-replica divergence
@@ -1498,22 +1595,44 @@ impl ReplicaDiagnostics {
         s.push_str(&format!("Max pairwise RMSD: {:.3} Å\n", self.max_rmsd));
         s.push_str(&format!("Mean pairwise RMSD: {:.3} Å\n", self.mean_rmsd));
         s.push_str(&format!("Std pairwise RMSD: {:.3} Å\n", self.std_rmsd));
-        s.push_str(&format!("Replicas diverged: {}\n\n", if self.replicas_diverged { "YES ✓" } else { "NO ✗" }));
+        s.push_str(&format!(
+            "Replicas diverged: {}\n\n",
+            if self.replicas_diverged {
+                "YES ✓"
+            } else {
+                "NO ✗"
+            }
+        ));
 
         // Stability metrics
         s.push_str("--- Structural Stability ---\n");
-        s.push_str(&format!("Mean RMSD from initial: {:.3} Å\n", self.mean_rmsd_from_initial));
+        s.push_str(&format!(
+            "Mean RMSD from initial: {:.3} Å\n",
+            self.mean_rmsd_from_initial
+        ));
         s.push_str(&format!("Mean radius of gyration: {:.3} Å\n", self.mean_rg));
-        s.push_str(&format!("Initial radius of gyration: {:.3} Å\n", self.initial_rg));
+        s.push_str(&format!(
+            "Initial radius of gyration: {:.3} Å\n",
+            self.initial_rg
+        ));
         let rg_change = ((self.mean_rg - self.initial_rg) / self.initial_rg * 100.0).abs();
         s.push_str(&format!("Rg change: {:.1}%\n", rg_change));
-        s.push_str(&format!("Simulation stable: {}\n\n", if self.simulation_stable { "YES ✓" } else { "NO ✗" }));
+        s.push_str(&format!(
+            "Simulation stable: {}\n\n",
+            if self.simulation_stable {
+                "YES ✓"
+            } else {
+                "NO ✗"
+            }
+        ));
 
         // Per-replica details
         s.push_str("--- Per-Replica Details ---\n");
         for r in 0..self.n_replicas {
-            s.push_str(&format!("  R{}: RMSD_init={:.2}Å, Rg={:.2}Å\n",
-                r, self.rmsd_from_initial[r], self.radius_of_gyration[r]));
+            s.push_str(&format!(
+                "  R{}: RMSD_init={:.2}Å, Rg={:.2}Å\n",
+                r, self.rmsd_from_initial[r], self.radius_of_gyration[r]
+            ));
         }
         s.push('\n');
 

@@ -8,10 +8,7 @@
 //! - Energy conservation: <0.1% drift over 1000 steps
 //! - Temperature stability: ±5% of target temperature
 
-use prism_gpu::{
-    f32_to_f16_bits, f16_bits_to_f32,
-    MixedPrecisionConfig,
-};
+use prism_gpu::{f16_bits_to_f32, f32_to_f16_bits, MixedPrecisionConfig};
 
 // =============================================================================
 // FP16 Conversion Precision Tests
@@ -21,14 +18,14 @@ use prism_gpu::{
 fn test_lj_force_precision_sigma() {
     // AMBER ff14SB typical sigma values (Angstroms)
     let test_sigmas = [
-        1.9080,  // H
-        1.8240,  // HO
-        3.3997,  // C
-        3.2500,  // N
-        3.0665,  // O
-        3.5636,  // S
-        3.8160,  // P
-        4.0100,  // Cl
+        1.9080, // H
+        1.8240, // HO
+        3.3997, // C
+        3.2500, // N
+        3.0665, // O
+        3.5636, // S
+        3.8160, // P
+        4.0100, // Cl
     ];
 
     let mut max_error = 0.0f32;
@@ -57,7 +54,11 @@ fn test_lj_force_precision_sigma() {
     println!("  Avg error:  {:.4}%", avg_error * 100.0);
 
     // Overall max error must be <0.1%
-    assert!(max_error < 0.001, "Max sigma error {:.4}% exceeds 0.1%", max_error * 100.0);
+    assert!(
+        max_error < 0.001,
+        "Max sigma error {:.4}% exceeds 0.1%",
+        max_error * 100.0
+    );
 }
 
 #[test]
@@ -65,14 +66,14 @@ fn test_lj_force_precision_epsilon() {
     // AMBER ff14SB typical epsilon values (kcal/mol)
     // Note: some very small values that stress FP16 precision
     let test_epsilons = [
-        0.0157,  // H
-        0.0100,  // HO (very small)
-        0.1094,  // C
-        0.1700,  // N
-        0.2100,  // O
-        0.2500,  // S
-        0.2000,  // P
-        0.2650,  // Cl
+        0.0157, // H
+        0.0100, // HO (very small)
+        0.1094, // C
+        0.1700, // N
+        0.2100, // O
+        0.2500, // S
+        0.2000, // P
+        0.2650, // Cl
     ];
 
     let mut max_error = 0.0f32;
@@ -81,7 +82,7 @@ fn test_lj_force_precision_epsilon() {
 
     for &eps in &test_epsilons {
         if eps < 1e-6 {
-            continue;  // Skip values too small for meaningful FP16
+            continue; // Skip values too small for meaningful FP16
         }
 
         let fp16_bits = f32_to_f16_bits(eps);
@@ -107,7 +108,11 @@ fn test_lj_force_precision_epsilon() {
     println!("  Avg error:  {:.4}%", avg_error * 100.0);
 
     // Overall max error should be <1% for epsilon
-    assert!(max_error < 0.01, "Max epsilon error {:.4}% exceeds 1%", max_error * 100.0);
+    assert!(
+        max_error < 0.01,
+        "Max epsilon error {:.4}% exceeds 1%",
+        max_error * 100.0
+    );
 }
 
 #[test]
@@ -122,10 +127,10 @@ fn test_lj_force_combined_error() {
     // In practice, the averaging over many interactions reduces this
 
     let sigma_pairs = [
-        (3.4, 3.4),    // C-C
-        (3.4, 3.1),    // C-O
-        (1.9, 3.4),    // H-C
-        (3.0, 3.5),    // Generic
+        (3.4, 3.4), // C-C
+        (3.4, 3.1), // C-O
+        (1.9, 3.4), // H-C
+        (3.0, 3.5), // Generic
     ];
 
     let epsilon_pairs = [
@@ -135,7 +140,7 @@ fn test_lj_force_combined_error() {
         (0.10, 0.25),  // Generic
     ];
 
-    let r_values = [3.0f32, 4.0, 5.0, 8.0];  // Typical interaction distances
+    let r_values = [3.0f32, 4.0, 5.0, 8.0]; // Typical interaction distances
 
     let mut max_force_error = 0.0f32;
     let mut max_energy_error = 0.0f32;
@@ -165,7 +170,8 @@ fn test_lj_force_combined_error() {
             let sigma6_r6_fp16 = sigma6_fp16 * r6_inv;
 
             let lj_energy_fp16 = 4.0 * eps_ij_fp16 * sigma6_r6_fp16 * (sigma6_r6_fp16 - 1.0);
-            let lj_force_fp16 = 24.0 * eps_ij_fp16 * (2.0 * sigma6_r6_fp16 * sigma6_r6_fp16 - sigma6_r6_fp16) / r2;
+            let lj_force_fp16 =
+                24.0 * eps_ij_fp16 * (2.0 * sigma6_r6_fp16 * sigma6_r6_fp16 - sigma6_r6_fp16) / r2;
 
             // Compute relative errors
             let force_error = if lj_force_ref.abs() > 1e-10 {
@@ -276,7 +282,7 @@ fn test_fp16_negative_values() {
 #[test]
 fn test_fp16_subnormal_handling() {
     // Very small values that become subnormal in FP16
-    let tiny = 1e-6f32;  // Below FP16 normal range but above subnormal
+    let tiny = 1e-6f32; // Below FP16 normal range but above subnormal
 
     let fp16_bits = f32_to_f16_bits(tiny);
     let back = f16_bits_to_f32(fp16_bits);
@@ -308,11 +314,11 @@ fn test_fp16_batch_statistics() {
     // Generate a batch of random-ish LJ parameters and compute statistics
 
     let sigmas: Vec<f32> = (0..100)
-        .map(|i| 1.8 + (i as f32) * 0.03)  // 1.8 to 4.8 range
+        .map(|i| 1.8 + (i as f32) * 0.03) // 1.8 to 4.8 range
         .collect();
 
     let epsilons: Vec<f32> = (0..100)
-        .map(|i| 0.01 + (i as f32) * 0.003)  // 0.01 to 0.31 range
+        .map(|i| 0.01 + (i as f32) * 0.003) // 0.01 to 0.31 range
         .collect();
 
     // Compute statistics
@@ -337,8 +343,16 @@ fn test_fp16_batch_statistics() {
     let epsilon_max = epsilon_errors.iter().cloned().fold(0.0f32, f32::max);
 
     println!("Batch FP16 conversion statistics (N=100):");
-    println!("  Sigma:   mean={:.6}%, max={:.6}%", sigma_mean * 100.0, sigma_max * 100.0);
-    println!("  Epsilon: mean={:.6}%, max={:.6}%", epsilon_mean * 100.0, epsilon_max * 100.0);
+    println!(
+        "  Sigma:   mean={:.6}%, max={:.6}%",
+        sigma_mean * 100.0,
+        sigma_max * 100.0
+    );
+    println!(
+        "  Epsilon: mean={:.6}%, max={:.6}%",
+        epsilon_mean * 100.0,
+        epsilon_max * 100.0
+    );
 
     // Assertions
     assert!(sigma_mean < 0.0005, "Mean sigma error should be <0.05%");

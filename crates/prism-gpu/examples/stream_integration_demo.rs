@@ -54,7 +54,10 @@ fn demo_sync_execution(device: Arc<CudaDevice>) -> Result<()> {
 
     println!("  Stream management: {}", ctx.has_stream_management());
     println!("  Stream pool:       {:?}", ctx.stream_pool().is_some());
-    println!("  Coordinator:       {:?}", ctx.pipeline_coordinator().is_some());
+    println!(
+        "  Coordinator:       {:?}",
+        ctx.pipeline_coordinator().is_some()
+    );
 
     // Synchronous execution path
     ctx.device().synchronize()?;
@@ -69,11 +72,17 @@ fn demo_async_execution(device: Arc<CudaDevice>) -> Result<()> {
 
     println!("  Stream management: {}", ctx.has_stream_management());
     println!("  Stream pool:       {:?}", ctx.stream_pool().is_some());
-    println!("  Coordinator:       {:?}", ctx.pipeline_coordinator().is_some());
+    println!(
+        "  Coordinator:       {:?}",
+        ctx.pipeline_coordinator().is_some()
+    );
 
     // Run triple-buffered iterations
     let num_iterations = 10;
-    println!("\n  Running {} triple-buffered iterations...", num_iterations);
+    println!(
+        "\n  Running {} triple-buffered iterations...",
+        num_iterations
+    );
 
     for iter in 0..num_iterations {
         let config = RuntimeConfig::default();

@@ -8,17 +8,17 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 // Explicit solvent components
+use crate::h_constraints::{HConstraintCluster, HConstraints};
 use crate::pme::PME;
 use crate::settle::Settle;
-use crate::h_constraints::{HConstraints, HConstraintCluster};
 
 /// Maximum exclusions per atom (1-2, 1-3 bonded pairs)
 pub const MAX_EXCLUSIONS: usize = 32;
@@ -95,9 +95,9 @@ impl Default for MixedPrecisionConfig {
     fn default() -> Self {
         Self {
             fp16_lj_params: true,
-            fp16_pme_grid: false,  // Conservative default - enable after validation
-            half2_lj: false,       // Requires sm_70+ and kernel changes
-            max_relative_error: 0.001,  // 0.1% max error
+            fp16_pme_grid: false, // Conservative default - enable after validation
+            half2_lj: false,      // Requires sm_70+ and kernel changes
+            max_relative_error: 0.001, // 0.1% max error
         }
     }
 }
@@ -157,7 +157,7 @@ impl MixedPrecisionBuffers {
         log::debug!(
             "Allocated FP16 LJ buffers: {} atoms, {} bytes total",
             n_atoms,
-            n_atoms * 4  // 2 bytes each for sigma and epsilon
+            n_atoms * 4 // 2 bytes each for sigma and epsilon
         );
 
         Ok(Self {
@@ -244,7 +244,7 @@ impl MixedPrecisionBuffers {
 
     /// Memory usage in bytes
     pub fn memory_bytes(&self) -> usize {
-        self.n_atoms * 4  // 2 bytes sigma + 2 bytes epsilon
+        self.n_atoms * 4 // 2 bytes sigma + 2 bytes epsilon
     }
 }
 
@@ -262,9 +262,9 @@ pub fn f32_to_f16_bits(value: f32) -> u16 {
     if exponent == 255 {
         // NaN or infinity
         if mantissa != 0 {
-            return sign | 0x7E00;  // NaN
+            return sign | 0x7E00; // NaN
         } else {
-            return sign | 0x7C00;  // Infinity
+            return sign | 0x7C00; // Infinity
         }
     }
 
@@ -279,7 +279,7 @@ pub fn f32_to_f16_bits(value: f32) -> u16 {
     if new_exp <= 0 {
         // Subnormal or underflow
         if new_exp < -10 {
-            return sign;  // Underflow to zero
+            return sign; // Underflow to zero
         }
         // Subnormal handling
         let mant = (mantissa | 0x00800000) >> (14 - new_exp);
@@ -310,7 +310,7 @@ pub fn f16_bits_to_f32(bits: u16) -> f32 {
 
     if exponent == 0 {
         if mantissa == 0 {
-            return f32::from_bits(sign);  // Zero
+            return f32::from_bits(sign); // Zero
         }
         // Subnormal - normalize
         let mut mant = mantissa;
@@ -326,9 +326,9 @@ pub fn f16_bits_to_f32(bits: u16) -> f32 {
 
     if exponent == 31 {
         if mantissa == 0 {
-            return f32::from_bits(sign | 0x7F800000);  // Infinity
+            return f32::from_bits(sign | 0x7F800000); // Infinity
         }
-        return f32::from_bits(sign | 0x7FC00000);  // NaN
+        return f32::from_bits(sign | 0x7FC00000); // NaN
     }
 
     // Normal number
@@ -378,7 +378,7 @@ pub struct AmberMegaFusedHmc {
     // Phase 8: Fused kernels
     mega_fused_md_step_kernel: CudaFunction,
     mega_fused_md_step_tiled_kernel: CudaFunction,
-    mega_fused_md_step_mixed_kernel: CudaFunction,  // Phase 8.5: FP16 version
+    mega_fused_md_step_mixed_kernel: CudaFunction, // Phase 8.5: FP16 version
     fused_constraints_kernel: CudaFunction,
 
     // Device buffers - State (as flat f32 arrays)
@@ -389,12 +389,12 @@ pub struct AmberMegaFusedHmc {
     d_kinetic_energy: CudaSlice<f32>, // [1]
 
     // Device buffers - Topology (as flat primitive arrays)
-    d_bond_atoms: CudaSlice<i32>,     // [n_bonds * 2] (i, j)
-    d_bond_params: CudaSlice<f32>,    // [n_bonds * 2] (k, r0)
-    d_angle_atoms: CudaSlice<i32>,    // [n_angles * 4] (i, j, k, pad)
-    d_angle_params: CudaSlice<f32>,   // [n_angles * 2] (k, theta0)
-    d_dihedral_atoms: CudaSlice<i32>, // [n_dihedrals * 4] (i, j, k, l)
-    d_dihedral_params: CudaSlice<f32>,// [n_dihedrals * 4] (k, n, phase, pad)
+    d_bond_atoms: CudaSlice<i32>,      // [n_bonds * 2] (i, j)
+    d_bond_params: CudaSlice<f32>,     // [n_bonds * 2] (k, r0)
+    d_angle_atoms: CudaSlice<i32>,     // [n_angles * 4] (i, j, k, pad)
+    d_angle_params: CudaSlice<f32>,    // [n_angles * 2] (k, theta0)
+    d_dihedral_atoms: CudaSlice<i32>,  // [n_dihedrals * 4] (i, j, k, l)
+    d_dihedral_params: CudaSlice<f32>, // [n_dihedrals * 4] (k, n, phase, pad)
 
     // Device buffers - Non-bonded
     d_nb_sigma: CudaSlice<f32>,       // [n_atoms]
@@ -405,17 +405,17 @@ pub struct AmberMegaFusedHmc {
     d_n_exclusions: CudaSlice<i32>,   // [n_atoms]
 
     // Device buffers - 1-4 pairs (scaled non-bonded: LJ*0.5, Coulomb*0.833)
-    d_pair14_list: CudaSlice<i32>,    // [n_atoms * MAX_14_PAIRS]
-    d_n_pairs14: CudaSlice<i32>,      // [n_atoms]
+    d_pair14_list: CudaSlice<i32>, // [n_atoms * MAX_14_PAIRS]
+    d_n_pairs14: CudaSlice<i32>,   // [n_atoms]
 
     // Device buffers - Cell lists (O(N) non-bonded)
-    d_cell_list: CudaSlice<i32>,      // [MAX_TOTAL_CELLS * MAX_ATOMS_PER_CELL]
-    d_cell_counts: CudaSlice<i32>,    // [MAX_TOTAL_CELLS]
-    d_atom_cell: CudaSlice<i32>,      // [n_atoms]
-    d_neighbor_list: CudaSlice<i32>,  // [n_atoms * NEIGHBOR_LIST_SIZE]
-    d_n_neighbors: CudaSlice<i32>,    // [n_atoms]
-    d_bbox_min: CudaSlice<f32>,       // [3]
-    d_bbox_max: CudaSlice<f32>,       // [3]
+    d_cell_list: CudaSlice<i32>, // [MAX_TOTAL_CELLS * MAX_ATOMS_PER_CELL]
+    d_cell_counts: CudaSlice<i32>, // [MAX_TOTAL_CELLS]
+    d_atom_cell: CudaSlice<i32>, // [n_atoms]
+    d_neighbor_list: CudaSlice<i32>, // [n_atoms * NEIGHBOR_LIST_SIZE]
+    d_n_neighbors: CudaSlice<i32>, // [n_atoms]
+    d_bbox_min: CudaSlice<f32>,  // [3]
+    d_bbox_max: CudaSlice<f32>,  // [3]
 
     // Cell grid dimensions (computed from bounding box)
     grid_origin: [f32; 3],
@@ -437,20 +437,20 @@ pub struct AmberMegaFusedHmc {
     box_dimensions: [f32; 3],
 
     // Phase 1: COM drift removal buffer
-    d_com_velocity: CudaSlice<f32>,    // [4]: momentum_x, momentum_y, momentum_z, total_mass
-    com_removal_interval: usize,       // How often to remove COM drift (default: 10 steps)
+    d_com_velocity: CudaSlice<f32>, // [4]: momentum_x, momentum_y, momentum_z, total_mass
+    com_removal_interval: usize,    // How often to remove COM drift (default: 10 steps)
 
     // Phase 2: Displacement-based neighbor list rebuild buffers
-    d_pos_at_build: CudaSlice<f32>,    // [n_atoms * 3] - positions when neighbor list was built
+    d_pos_at_build: CudaSlice<f32>, // [n_atoms * 3] - positions when neighbor list was built
     d_max_displacement: CudaSlice<f32>, // [1] - max displacement since last rebuild
     d_neighbor_overflow: CudaSlice<i32>, // [1] - overflow counter for neighbor list
-    rebuild_threshold: f32,             // Rebuild when max_disp > threshold (skin/2 = 0.5 Å)
-    neighbor_rebuild_count: usize,      // Statistics: number of rebuilds
+    rebuild_threshold: f32,         // Rebuild when max_disp > threshold (skin/2 = 0.5 Å)
+    neighbor_rebuild_count: usize,  // Statistics: number of rebuilds
 
     // Explicit solvent components (optional)
     pme: Option<PME>,
     settle: Option<Settle>,
-    d_old_positions: Option<CudaSlice<f32>>,  // For SETTLE constraint projection
+    d_old_positions: Option<CudaSlice<f32>>, // For SETTLE constraint projection
 
     // H-bond constraints for protein (optional)
     h_constraints: Option<HConstraints>,
@@ -474,7 +474,10 @@ impl AmberMegaFusedHmc {
         let stream = context.default_stream();
 
         // Load PTX module - use absolute path for reliability across different working directories
-        let ptx_path = concat!(env!("CARGO_MANIFEST_DIR"), "/target/ptx/amber_mega_fused.ptx");
+        let ptx_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/target/ptx/amber_mega_fused.ptx"
+        );
         let ptx_src = std::fs::read_to_string(ptx_path)
             .with_context(|| format!("Failed to read PTX file: {}", ptx_path))?;
         let ptx = Ptx::from_src(&ptx_src);
@@ -680,11 +683,11 @@ impl AmberMegaFusedHmc {
             pbc_enabled: false,
             box_dimensions: [0.0, 0.0, 0.0],
             d_com_velocity,
-            com_removal_interval: 10,  // Remove COM drift every 10 steps (default)
+            com_removal_interval: 10, // Remove COM drift every 10 steps (default)
             d_pos_at_build,
             d_max_displacement,
             d_neighbor_overflow,
-            rebuild_threshold: 0.5,  // Rebuild when max_disp > skin/2 = 0.5 Å
+            rebuild_threshold: 0.5, // Rebuild when max_disp > skin/2 = 0.5 Å
             neighbor_rebuild_count: 0,
             pme: None,
             settle: None,
@@ -735,15 +738,14 @@ impl AmberMegaFusedHmc {
                 .iter()
                 .flat_map(|&(i, j, _, _)| [i as i32, j as i32])
                 .collect();
-            let bond_params: Vec<f32> = bonds
-                .iter()
-                .flat_map(|&(_, _, k, r0)| [k, r0])
-                .collect();
+            let bond_params: Vec<f32> = bonds.iter().flat_map(|&(_, _, k, r0)| [k, r0]).collect();
 
             self.d_bond_atoms = self.stream.alloc_zeros::<i32>(bond_atoms.len())?;
             self.d_bond_params = self.stream.alloc_zeros::<f32>(bond_params.len())?;
-            self.stream.memcpy_htod(&bond_atoms, &mut self.d_bond_atoms)?;
-            self.stream.memcpy_htod(&bond_params, &mut self.d_bond_params)?;
+            self.stream
+                .memcpy_htod(&bond_atoms, &mut self.d_bond_atoms)?;
+            self.stream
+                .memcpy_htod(&bond_params, &mut self.d_bond_params)?;
         }
         self.n_bonds = bonds.len();
 
@@ -760,8 +762,10 @@ impl AmberMegaFusedHmc {
 
             self.d_angle_atoms = self.stream.alloc_zeros::<i32>(angle_atoms.len())?;
             self.d_angle_params = self.stream.alloc_zeros::<f32>(angle_params.len())?;
-            self.stream.memcpy_htod(&angle_atoms, &mut self.d_angle_atoms)?;
-            self.stream.memcpy_htod(&angle_params, &mut self.d_angle_params)?;
+            self.stream
+                .memcpy_htod(&angle_atoms, &mut self.d_angle_atoms)?;
+            self.stream
+                .memcpy_htod(&angle_params, &mut self.d_angle_params)?;
         }
         self.n_angles = angles.len();
 
@@ -778,8 +782,10 @@ impl AmberMegaFusedHmc {
 
             self.d_dihedral_atoms = self.stream.alloc_zeros::<i32>(dihedral_atoms.len())?;
             self.d_dihedral_params = self.stream.alloc_zeros::<f32>(dihedral_params.len())?;
-            self.stream.memcpy_htod(&dihedral_atoms, &mut self.d_dihedral_atoms)?;
-            self.stream.memcpy_htod(&dihedral_params, &mut self.d_dihedral_params)?;
+            self.stream
+                .memcpy_htod(&dihedral_atoms, &mut self.d_dihedral_atoms)?;
+            self.stream
+                .memcpy_htod(&dihedral_params, &mut self.d_dihedral_params)?;
         }
         self.n_dihedrals = dihedrals.len();
 
@@ -808,7 +814,8 @@ impl AmberMegaFusedHmc {
             }
         }
 
-        self.stream.memcpy_htod(&excl_flat, &mut self.d_exclusion_list)?;
+        self.stream
+            .memcpy_htod(&excl_flat, &mut self.d_exclusion_list)?;
         self.stream.memcpy_htod(&n_excl, &mut self.d_n_exclusions)?;
 
         // Build and upload 1-4 pairs from dihedrals
@@ -834,7 +841,8 @@ impl AmberMegaFusedHmc {
             }
         }
 
-        self.stream.memcpy_htod(&pair14_flat, &mut self.d_pair14_list)?;
+        self.stream
+            .memcpy_htod(&pair14_flat, &mut self.d_pair14_list)?;
         self.stream.memcpy_htod(&n_pairs14, &mut self.d_n_pairs14)?;
 
         self.topology_ready = true;
@@ -911,7 +919,8 @@ impl AmberMegaFusedHmc {
         let constraint_info = self.get_constraint_info();
 
         let com_dof = if remove_com { 3 } else { 0 };
-        let constrained_dof = constraint_info.n_settle_constraints + constraint_info.n_h_constraints;
+        let constrained_dof =
+            constraint_info.n_settle_constraints + constraint_info.n_h_constraints;
 
         // Log DOF accounting for debugging
         log::info!(
@@ -922,7 +931,9 @@ impl AmberMegaFusedHmc {
             constraint_info.n_h_constraints
         );
 
-        let n_dof = base_dof.saturating_sub(com_dof).saturating_sub(constrained_dof);
+        let n_dof = base_dof
+            .saturating_sub(com_dof)
+            .saturating_sub(constrained_dof);
 
         log::info!(
             "N_dof = {} - {} - {} - {} = {}",
@@ -983,7 +994,10 @@ impl AmberMegaFusedHmc {
 
         log::info!(
             "📦 PBC enabled: box = {:.1} × {:.1} × {:.1} Å, PME = {}",
-            dims[0], dims[1], dims[2], use_pme
+            dims[0],
+            dims[1],
+            dims[2],
+            use_pme
         );
 
         Ok(())
@@ -1026,7 +1040,7 @@ impl AmberMegaFusedHmc {
     /// intact before being wrapped. Only operates when PBC is enabled.
     pub fn wrap_positions(&mut self) -> Result<()> {
         if !self.pbc_enabled {
-            return Ok(());  // No-op for non-periodic systems
+            return Ok(()); // No-op for non-periodic systems
         }
 
         let threads_per_block = 256;
@@ -1058,7 +1072,7 @@ impl AmberMegaFusedHmc {
     /// 2. Subtract COM velocity from all atoms
     pub fn remove_com_drift(&mut self) -> Result<()> {
         if !self.pbc_enabled {
-            return Ok(());  // No-op for non-periodic systems
+            return Ok(()); // No-op for non-periodic systems
         }
 
         let threads_per_block = 256;
@@ -1073,7 +1087,9 @@ impl AmberMegaFusedHmc {
 
         // Step 1: Compute COM velocity (accumulates into d_com_velocity)
         unsafe {
-            let mut builder = self.stream.launch_builder(&self.compute_com_velocity_kernel);
+            let mut builder = self
+                .stream
+                .launch_builder(&self.compute_com_velocity_kernel);
             builder.arg(&self.d_velocities);
             builder.arg(&self.d_nb_mass);
             builder.arg(&self.d_com_velocity);
@@ -1127,7 +1143,9 @@ impl AmberMegaFusedHmc {
 
         // Step 1: Reset max displacement counter
         unsafe {
-            let mut builder = self.stream.launch_builder(&self.reset_max_displacement_kernel);
+            let mut builder = self
+                .stream
+                .launch_builder(&self.reset_max_displacement_kernel);
             builder.arg(&self.d_max_displacement);
             builder.launch(LaunchConfig {
                 grid_dim: (1, 1, 1),
@@ -1138,7 +1156,9 @@ impl AmberMegaFusedHmc {
 
         // Step 2: Compute max displacement (parallel reduction with atomic max)
         unsafe {
-            let mut builder = self.stream.launch_builder(&self.compute_max_displacement_kernel);
+            let mut builder = self
+                .stream
+                .launch_builder(&self.compute_max_displacement_kernel);
             builder.arg(&self.d_positions);
             builder.arg(&self.d_pos_at_build);
             builder.arg(&self.d_max_displacement);
@@ -1149,7 +1169,8 @@ impl AmberMegaFusedHmc {
         // Synchronize and read result
         self.stream.synchronize()?;
         let mut max_disp = [0.0f32];
-        self.stream.memcpy_dtoh(&self.d_max_displacement, &mut max_disp)?;
+        self.stream
+            .memcpy_dtoh(&self.d_max_displacement, &mut max_disp)?;
 
         let needs_rebuild = max_disp[0] > self.rebuild_threshold;
         Ok((needs_rebuild, max_disp[0]))
@@ -1170,7 +1191,9 @@ impl AmberMegaFusedHmc {
         let n_atoms_i32 = self.n_atoms as i32;
 
         unsafe {
-            let mut builder = self.stream.launch_builder(&self.save_positions_at_build_kernel);
+            let mut builder = self
+                .stream
+                .launch_builder(&self.save_positions_at_build_kernel);
             builder.arg(&self.d_positions);
             builder.arg(&self.d_pos_at_build);
             builder.arg(&n_atoms_i32);
@@ -1197,7 +1220,9 @@ impl AmberMegaFusedHmc {
         let n_atoms_i32 = self.n_atoms as i32;
 
         unsafe {
-            let mut builder = self.stream.launch_builder(&self.check_neighbor_overflow_kernel);
+            let mut builder = self
+                .stream
+                .launch_builder(&self.check_neighbor_overflow_kernel);
             builder.arg(&self.d_n_neighbors);
             builder.arg(&self.d_neighbor_overflow);
             builder.arg(&n_atoms_i32);
@@ -1206,7 +1231,8 @@ impl AmberMegaFusedHmc {
 
         self.stream.synchronize()?;
         let mut overflow_count = [0i32];
-        self.stream.memcpy_dtoh(&self.d_neighbor_overflow, &mut overflow_count)?;
+        self.stream
+            .memcpy_dtoh(&self.d_neighbor_overflow, &mut overflow_count)?;
 
         if overflow_count[0] > 0 {
             log::warn!(
@@ -1243,7 +1269,9 @@ impl AmberMegaFusedHmc {
     pub fn enable_explicit_solvent(&mut self, box_dims: [f32; 3]) -> Result<()> {
         log::info!(
             "🌊 Enabling explicit solvent: box = {:.1} × {:.1} × {:.1} Å",
-            box_dims[0], box_dims[1], box_dims[2]
+            box_dims[0],
+            box_dims[1],
+            box_dims[2]
         );
 
         // Set up periodic boundary conditions WITH PME enabled
@@ -1277,11 +1305,7 @@ impl AmberMegaFusedHmc {
             water_oxygen_indices.len()
         );
 
-        let settle = Settle::new(
-            self.context.clone(),
-            water_oxygen_indices,
-            self.n_atoms,
-        )?;
+        let settle = Settle::new(self.context.clone(), water_oxygen_indices, self.n_atoms)?;
         self.settle = Some(settle);
 
         log::info!("✅ SETTLE constraints initialized");
@@ -1362,9 +1386,15 @@ impl AmberMegaFusedHmc {
     ///   - 10.0: Strong (limits motion to ~0.3 Å)
     ///   - 1.0: Moderate (allows ~1 Å fluctuations)
     ///   - 0.1: Weak (allows ~3 Å fluctuations)
-    pub fn set_position_restraints(&mut self, restrained_atoms: &[usize], k_restraint: f32) -> Result<()> {
+    pub fn set_position_restraints(
+        &mut self,
+        restrained_atoms: &[usize],
+        k_restraint: f32,
+    ) -> Result<()> {
         if !self.topology_ready {
-            return Err(anyhow::anyhow!("Topology not uploaded - call upload_topology first"));
+            return Err(anyhow::anyhow!(
+                "Topology not uploaded - call upload_topology first"
+            ));
         }
 
         if restrained_atoms.is_empty() {
@@ -1380,7 +1410,11 @@ impl AmberMegaFusedHmc {
         let mut ref_positions = Vec::with_capacity(restrained_atoms.len() * 3);
         for &atom_idx in restrained_atoms {
             if atom_idx >= self.n_atoms {
-                return Err(anyhow::anyhow!("Atom index {} out of range (n_atoms={})", atom_idx, self.n_atoms));
+                return Err(anyhow::anyhow!(
+                    "Atom index {} out of range (n_atoms={})",
+                    atom_idx,
+                    self.n_atoms
+                ));
             }
             ref_positions.push(positions[atom_idx * 3]);
             ref_positions.push(positions[atom_idx * 3 + 1]);
@@ -1391,7 +1425,8 @@ impl AmberMegaFusedHmc {
         let restrained_i32: Vec<i32> = restrained_atoms.iter().map(|&x| x as i32).collect();
         let mut d_restrained = self.stream.alloc_zeros::<i32>(restrained_atoms.len())?;
         let mut d_ref = self.stream.alloc_zeros::<f32>(ref_positions.len())?;
-        self.stream.memcpy_htod(&restrained_i32, &mut d_restrained)?;
+        self.stream
+            .memcpy_htod(&restrained_i32, &mut d_restrained)?;
         self.stream.memcpy_htod(&ref_positions, &mut d_ref)?;
 
         self.d_restrained_atoms = Some(d_restrained);
@@ -1401,7 +1436,8 @@ impl AmberMegaFusedHmc {
 
         log::info!(
             "⚓ Position restraints enabled: {} atoms with k={:.1} kcal/(mol*Å²)",
-            self.n_restrained, self.k_restraint
+            self.n_restrained,
+            self.k_restraint
         );
 
         Ok(())
@@ -1438,7 +1474,8 @@ impl AmberMegaFusedHmc {
         let mut positions = vec![0.0f32; self.n_atoms * 3];
 
         self.stream.memcpy_dtoh(&self.d_forces, &mut forces)?;
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         self.stream.memcpy_dtoh(&self.d_nb_mass, &mut masses)?;
         self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
 
@@ -1451,7 +1488,8 @@ impl AmberMegaFusedHmc {
             self.stream.memcpy_dtoh(d_ref, &mut ref_positions)?;
         }
         if let Some(ref d_restrained) = &self.d_restrained_atoms {
-            self.stream.memcpy_dtoh(d_restrained, &mut restrained_atoms)?;
+            self.stream
+                .memcpy_dtoh(d_restrained, &mut restrained_atoms)?;
         }
 
         // FORCE_TO_ACCEL converts kcal/(mol*Å) to Å/fs² when mass is in g/mol
@@ -1497,7 +1535,8 @@ impl AmberMegaFusedHmc {
         }
 
         // Upload corrected velocities and positions
-        self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&velocities, &mut self.d_velocities)?;
         self.stream.memcpy_htod(&positions, &mut self.d_positions)?;
         self.stream.synchronize()?;
 
@@ -1525,7 +1564,8 @@ impl AmberMegaFusedHmc {
             .as_nanos() as u64;
 
         // Load flat velocity init kernel
-        let init_kernel = self.module
+        let init_kernel = self
+            .module
             .load_function("initialize_velocities_flat")
             .context("Failed to load initialize_velocities_flat")?;
 
@@ -1575,7 +1615,8 @@ impl AmberMegaFusedHmc {
         };
 
         // Load minimize kernel
-        let minimize_kernel = self.module
+        let minimize_kernel = self
+            .module
             .load_function("amber_steepest_descent_step")
             .context("Failed to load amber_steepest_descent_step")?;
 
@@ -1587,7 +1628,11 @@ impl AmberMegaFusedHmc {
         let n_angles_i32 = self.n_angles as i32;
         let n_dihedrals_i32 = self.n_dihedrals as i32;
 
-        log::info!("⚡ Running {} minimization steps (step_size={} Å)", n_steps, step_size);
+        log::info!(
+            "⚡ Running {} minimization steps (step_size={} Å)",
+            n_steps,
+            step_size
+        );
 
         let mut last_energy = f32::MAX;
         for step in 0..n_steps {
@@ -1598,11 +1643,7 @@ impl AmberMegaFusedHmc {
             // Without PME, system relaxes to a state invalid for the full physics engine
             if let Some(ref mut pme) = self.pme {
                 self.stream.synchronize()?;
-                let _ = pme.compute(
-                    &self.d_positions,
-                    &self.d_nb_charge,
-                    &mut self.d_forces,
-                )?;
+                let _ = pme.compute(&self.d_positions, &self.d_nb_charge, &mut self.d_forces)?;
             }
 
             // 3. Launch Minimize Kernel (Accumulates Short-Range + Moves Atoms)
@@ -1660,14 +1701,23 @@ impl AmberMegaFusedHmc {
                         let fx = forces[i * 3];
                         let fy = forces[i * 3 + 1];
                         let fz = forces[i * 3 + 2];
-                        let mag = (fx*fx + fy*fy + fz*fz).sqrt();
-                        if mag > max_force { max_force = mag; }
+                        let mag = (fx * fx + fy * fy + fz * fz).sqrt();
+                        if mag > max_force {
+                            max_force = mag;
+                        }
                         total_force_mag += mag;
-                        if mag > 100.0 { n_large += 1; }
+                        if mag > 100.0 {
+                            n_large += 1;
+                        }
                     }
                     let avg_force = total_force_mag / self.n_atoms as f32;
-                    log::info!("  Force stats: max={:.1}, avg={:.1}, n_large(>100)={}/{}",
-                        max_force, avg_force, n_large, self.n_atoms);
+                    log::info!(
+                        "  Force stats: max={:.1}, avg={:.1}, n_large(>100)={}/{}",
+                        max_force,
+                        avg_force,
+                        n_large,
+                        self.n_atoms
+                    );
                 } else if step == n_steps - 1 {
                     log::info!("  Step {}: PE = {:.2} kcal/mol (final)", step, energy[0]);
                 }
@@ -1693,9 +1743,13 @@ impl AmberMegaFusedHmc {
 
         self.stream.synchronize()?;
         let mut final_energy = vec![0.0f32; 1];
-        self.stream.memcpy_dtoh(&self.d_total_energy, &mut final_energy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_total_energy, &mut final_energy)?;
 
-        log::info!("✅ Minimization complete: PE = {:.2} kcal/mol", final_energy[0]);
+        log::info!(
+            "✅ Minimization complete: PE = {:.2} kcal/mol",
+            final_energy[0]
+        );
         Ok(final_energy[0])
     }
 
@@ -1769,12 +1823,18 @@ impl AmberMegaFusedHmc {
 
         log::debug!(
             "📦 Cell grid: {}x{}x{} cells, origin: ({:.1}, {:.1}, {:.1})",
-            nx, ny, nz, min_x, min_y, min_z
+            nx,
+            ny,
+            nz,
+            min_x,
+            min_y,
+            min_z
         );
 
         // Step 2: Zero cell counts
         let zero_counts = vec![0i32; MAX_TOTAL_CELLS];
-        self.stream.memcpy_htod(&zero_counts, &mut self.d_cell_counts)?;
+        self.stream
+            .memcpy_htod(&zero_counts, &mut self.d_cell_counts)?;
 
         // Step 3: Build cell lists (assign atoms to cells)
         let n_atoms_i32 = self.n_atoms as i32;
@@ -1830,8 +1890,10 @@ impl AmberMegaFusedHmc {
 
         // Debug: check average neighbor count (use debug level to avoid spam during rebuilds)
         let mut n_neighbors = vec![0i32; self.n_atoms];
-        self.stream.memcpy_dtoh(&self.d_n_neighbors, &mut n_neighbors)?;
-        let avg_neighbors: f64 = n_neighbors.iter().map(|&n| n as f64).sum::<f64>() / self.n_atoms as f64;
+        self.stream
+            .memcpy_dtoh(&self.d_n_neighbors, &mut n_neighbors)?;
+        let avg_neighbors: f64 =
+            n_neighbors.iter().map(|&n| n as f64).sum::<f64>() / self.n_atoms as f64;
         log::debug!(
             "Neighbor lists built (rebuild #{}): avg {:.1} neighbors/atom (vs {} for O(N²))",
             self.neighbor_rebuild_count,
@@ -1859,9 +1921,17 @@ impl AmberMegaFusedHmc {
     ///
     /// # Returns
     /// HMC run results including final energies and positions
-    pub fn run(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma_fs: f32) -> Result<HmcRunResult> {
+    pub fn run(
+        &mut self,
+        n_steps: usize,
+        dt: f32,
+        temperature: f32,
+        gamma_fs: f32,
+    ) -> Result<HmcRunResult> {
         if !self.topology_ready {
-            return Err(anyhow::anyhow!("Topology not uploaded - call upload_topology first"));
+            return Err(anyhow::anyhow!(
+                "Topology not uploaded - call upload_topology first"
+            ));
         }
 
         // Build neighbor lists for O(N) non-bonded (required for full-atom)
@@ -1876,8 +1946,14 @@ impl AmberMegaFusedHmc {
         }
 
         let threads_per_block = 256;
-        let num_blocks = (self.n_atoms.max(self.n_bonds).max(self.n_angles).max(self.n_dihedrals)
-            + threads_per_block - 1) / threads_per_block;
+        let num_blocks = (self
+            .n_atoms
+            .max(self.n_bonds)
+            .max(self.n_angles)
+            .max(self.n_dihedrals)
+            + threads_per_block
+            - 1)
+            / threads_per_block;
 
         let cfg = LaunchConfig {
             grid_dim: (num_blocks as u32, 1, 1),
@@ -1886,11 +1962,13 @@ impl AmberMegaFusedHmc {
         };
 
         // Load flat HMC kernel
-        let hmc_kernel = self.module
+        let hmc_kernel = self
+            .module
             .load_function("amber_mega_fused_hmc_step_flat")
             .context("Failed to load amber_mega_fused_hmc_step_flat")?;
 
-        let thermostat_kernel = self.module
+        let thermostat_kernel = self
+            .module
             .load_function("apply_thermostat_flat")
             .context("Failed to load apply_thermostat_flat")?;
 
@@ -1912,9 +1990,16 @@ impl AmberMegaFusedHmc {
 
         // Initialize energy trajectory
         const ENERGY_SAMPLE_INTERVAL: usize = 100;
-        let mut energy_trajectory: Vec<EnergyRecord> = Vec::with_capacity(n_steps / ENERGY_SAMPLE_INTERVAL + 1);
+        let mut energy_trajectory: Vec<EnergyRecord> =
+            Vec::with_capacity(n_steps / ENERGY_SAMPLE_INTERVAL + 1);
 
-        log::info!("🏃 Running {} HMC steps on GPU (dt={}fs, T={}K, γ={}fs⁻¹)", n_steps, dt, temperature, gamma_fs);
+        log::info!(
+            "🏃 Running {} HMC steps on GPU (dt={}fs, T={}K, γ={}fs⁻¹)",
+            n_steps,
+            dt,
+            temperature,
+            gamma_fs
+        );
 
         // Phase 2: Displacement-based neighbor list rebuild
         // Check displacement every N steps (checking every step is expensive)
@@ -1954,9 +2039,10 @@ impl AmberMegaFusedHmc {
                 if let (Some(ref d_restrained), Some(ref d_ref)) =
                     (&self.d_restrained_atoms, &self.d_ref_positions)
                 {
-                    let restraint_kernel = self.module
-                        .load_function("apply_position_restraints")
-                        .context("Failed to load apply_position_restraints kernel")?;
+                    let restraint_kernel =
+                        self.module
+                            .load_function("apply_position_restraints")
+                            .context("Failed to load apply_position_restraints kernel")?;
 
                     let threads = 256;
                     let blocks = (self.n_restrained + threads - 1) / threads;
@@ -1984,11 +2070,8 @@ impl AmberMegaFusedHmc {
             // Add PME reciprocal forces BEFORE kernel
             if let Some(ref mut pme) = self.pme {
                 self.stream.synchronize()?;
-                let pme_energy = pme.compute(
-                    &self.d_positions,
-                    &self.d_nb_charge,
-                    &mut self.d_forces,
-                )?;
+                let pme_energy =
+                    pme.compute(&self.d_positions, &self.d_nb_charge, &mut self.d_forces)?;
 
                 // DIAGNOSTIC: Check PME force magnitudes on first few steps
                 if step < 5 {
@@ -2010,7 +2093,10 @@ impl AmberMegaFusedHmc {
                     let rms_f = (sum_f2 / self.n_atoms as f32).sqrt();
                     log::info!(
                         "🔍 Step {} PME: E={:.2} kcal/mol, max_F={:.2}, rms_F={:.2} kcal/(mol·Å)",
-                        step, pme_energy, max_f, rms_f
+                        step,
+                        pme_energy,
+                        max_f,
+                        rms_f
                     );
                 }
             }
@@ -2046,8 +2132,8 @@ impl AmberMegaFusedHmc {
                 builder.arg(&n_dihedrals_i32);
                 builder.arg(&dt);
                 builder.arg(&temperature);
-                builder.arg(&gamma_fs);  // Langevin friction coefficient
-                builder.arg(&step_u32);  // Step counter for RNG seeding
+                builder.arg(&gamma_fs); // Langevin friction coefficient
+                builder.arg(&step_u32); // Step counter for RNG seeding
                 builder.launch(cfg)?;
             }
 
@@ -2077,12 +2163,16 @@ impl AmberMegaFusedHmc {
                 let rms_f = (sum_f2 / self.n_atoms as f32).sqrt();
                 log::info!(
                     "🔍 Step {} TOTAL: max_F={:.2} (atom {}), rms_F={:.2} kcal/(mol·Å)",
-                    step, max_f, max_idx, rms_f
+                    step,
+                    max_f,
+                    max_idx,
+                    rms_f
                 );
 
                 // Also log velocities
                 let mut velocities = vec![0.0f32; self.n_atoms * 3];
-                self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+                self.stream
+                    .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
                 let mut max_v = 0.0f32;
                 for i in 0..self.n_atoms {
                     let vx = velocities[i * 3];
@@ -2093,10 +2183,7 @@ impl AmberMegaFusedHmc {
                         max_v = v2.sqrt();
                     }
                 }
-                log::info!(
-                    "🔍 Step {} VEL: max_v={:.4} Å/fs",
-                    step, max_v
-                );
+                log::info!("🔍 Step {} VEL: max_v={:.4} Å/fs", step, max_v);
             }
 
             // ============================================================
@@ -2160,7 +2247,8 @@ impl AmberMegaFusedHmc {
                 // Download corrected velocities and masses
                 let mut velocities = vec![0.0f32; self.n_atoms * 3];
                 let mut masses = vec![0.0f32; self.n_atoms];
-                self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+                self.stream
+                    .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
                 self.stream.memcpy_dtoh(&self.d_nb_mass, &mut masses)?;
 
                 // Compute corrected KE
@@ -2202,7 +2290,11 @@ impl AmberMegaFusedHmc {
 
                 log::info!(
                     "📊 Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K (DOF={})",
-                    step, pe[0], ke[0], inst_temp, n_dof
+                    step,
+                    pe[0],
+                    ke[0],
+                    inst_temp,
+                    n_dof
                 );
             }
         }
@@ -2212,12 +2304,15 @@ impl AmberMegaFusedHmc {
         // Download final results
         let mut h_total_energy = vec![0.0f32; 1];
         let mut h_kinetic_energy = vec![0.0f32; 1];
-        self.stream.memcpy_dtoh(&self.d_total_energy, &mut h_total_energy)?;
-        self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut h_kinetic_energy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_total_energy, &mut h_total_energy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kinetic_energy, &mut h_kinetic_energy)?;
 
         let positions = self.get_positions()?;
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
 
         // Average temperature using proper DOF
         let n_samples = (n_steps / 10).max(1);
@@ -2228,13 +2323,20 @@ impl AmberMegaFusedHmc {
         let expected_ke_at_target = 0.5 * n_dof as f64 * KB_KCAL_MOL_K * temperature as f64;
         log::info!(
             "🔬 DIAG: avg_ke={:.1}, expected_ke@{}K={:.1}, ratio={:.3}, n_dof={}, n_samples={}",
-            avg_ke, temperature, expected_ke_at_target,
-            avg_ke / expected_ke_at_target, n_dof, n_samples
+            avg_ke,
+            temperature,
+            expected_ke_at_target,
+            avg_ke / expected_ke_at_target,
+            n_dof,
+            n_samples
         );
 
         log::info!(
             "✅ HMC complete: PE={:.2} kcal/mol, KE={:.2} kcal/mol, T_avg={:.1}K (DOF={})",
-            h_total_energy[0], h_kinetic_energy[0], avg_temperature, n_dof
+            h_total_energy[0],
+            h_kinetic_energy[0],
+            avg_temperature,
+            n_dof
         );
 
         Ok(HmcRunResult {
@@ -2258,9 +2360,17 @@ impl AmberMegaFusedHmc {
     /// 4. velocity_verlet_step2: v += (dt/2)*a; O-step
     ///
     /// This is 2x slower than the mega-fused kernel but conserves energy properly.
-    pub fn run_verlet(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma_fs: f32) -> Result<HmcRunResult> {
+    pub fn run_verlet(
+        &mut self,
+        n_steps: usize,
+        dt: f32,
+        temperature: f32,
+        gamma_fs: f32,
+    ) -> Result<HmcRunResult> {
         if !self.topology_ready {
-            return Err(anyhow::anyhow!("Topology not uploaded - call upload_topology first"));
+            return Err(anyhow::anyhow!(
+                "Topology not uploaded - call upload_topology first"
+            ));
         }
 
         // Build neighbor lists for O(N) non-bonded
@@ -2284,7 +2394,11 @@ impl AmberMegaFusedHmc {
         };
 
         // Config for force kernel (needs more threads for bonds/angles)
-        let max_n = self.n_atoms.max(self.n_bonds).max(self.n_angles).max(self.n_dihedrals);
+        let max_n = self
+            .n_atoms
+            .max(self.n_bonds)
+            .max(self.n_angles)
+            .max(self.n_dihedrals);
         let force_blocks = (max_n + threads - 1) / threads;
         let force_cfg = LaunchConfig {
             grid_dim: (force_blocks as u32, 1, 1),
@@ -2313,9 +2427,13 @@ impl AmberMegaFusedHmc {
         let constraint_info = self.get_constraint_info();
 
         // Initialize energy trajectory
-        let mut energy_trajectory: Vec<EnergyRecord> = Vec::with_capacity(n_steps / ENERGY_SAMPLE_INTERVAL + 1);
+        let mut energy_trajectory: Vec<EnergyRecord> =
+            Vec::with_capacity(n_steps / ENERGY_SAMPLE_INTERVAL + 1);
 
-        log::info!("🏃 Running {} Velocity Verlet steps (2-force-eval per step)", n_steps);
+        log::info!(
+            "🏃 Running {} Velocity Verlet steps (2-force-eval per step)",
+            n_steps
+        );
 
         for step in 0..n_steps {
             // Phase 2: Check if neighbor list rebuild is needed based on displacement
@@ -2346,9 +2464,10 @@ impl AmberMegaFusedHmc {
                 if let (Some(ref d_restrained), Some(ref d_ref)) =
                     (&self.d_restrained_atoms, &self.d_ref_positions)
                 {
-                    let restraint_kernel = self.module
-                        .load_function("apply_position_restraints")
-                        .context("Failed to load apply_position_restraints kernel")?;
+                    let restraint_kernel =
+                        self.module
+                            .load_function("apply_position_restraints")
+                            .context("Failed to load apply_position_restraints kernel")?;
 
                     let n_restrained_i32 = self.n_restrained as i32;
                     let r_blocks = (self.n_restrained + threads - 1) / threads;
@@ -2379,7 +2498,9 @@ impl AmberMegaFusedHmc {
                 // FP16 mixed precision path - ~40% bandwidth reduction
                 let buffers = self.mixed_precision_buffers.as_ref().unwrap();
                 unsafe {
-                    let mut builder = self.stream.launch_builder(&self.compute_forces_mixed_kernel);
+                    let mut builder = self
+                        .stream
+                        .launch_builder(&self.compute_forces_mixed_kernel);
                     builder.arg(&self.d_positions);
                     builder.arg(&self.d_forces);
                     builder.arg(&self.d_total_energy);
@@ -2459,9 +2580,10 @@ impl AmberMegaFusedHmc {
                 if let (Some(ref d_restrained), Some(ref d_ref)) =
                     (&self.d_restrained_atoms, &self.d_ref_positions)
                 {
-                    let restraint_kernel = self.module
-                        .load_function("apply_position_restraints")
-                        .context("Failed to load apply_position_restraints kernel")?;
+                    let restraint_kernel =
+                        self.module
+                            .load_function("apply_position_restraints")
+                            .context("Failed to load apply_position_restraints kernel")?;
 
                     let n_restrained_i32 = self.n_restrained as i32;
                     let r_blocks = (self.n_restrained + threads - 1) / threads;
@@ -2488,7 +2610,9 @@ impl AmberMegaFusedHmc {
             if use_mixed {
                 let buffers = self.mixed_precision_buffers.as_ref().unwrap();
                 unsafe {
-                    let mut builder = self.stream.launch_builder(&self.compute_forces_mixed_kernel);
+                    let mut builder = self
+                        .stream
+                        .launch_builder(&self.compute_forces_mixed_kernel);
                     builder.arg(&self.d_positions);
                     builder.arg(&self.d_forces);
                     builder.arg(&self.d_total_energy);
@@ -2625,8 +2749,15 @@ impl AmberMegaFusedHmc {
                     });
                 }
 
-                log::info!("📊 VV Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K (DOF={}) TE={:>10.2}",
-                    step, pe[0], ke[0], inst_temp, n_dof, pe[0] + ke[0]);
+                log::info!(
+                    "📊 VV Step {:>5}: PE={:>12.2} KE={:>10.2} T={:>8.1}K (DOF={}) TE={:>10.2}",
+                    step,
+                    pe[0],
+                    ke[0],
+                    inst_temp,
+                    n_dof,
+                    pe[0] + ke[0]
+                );
             }
         }
 
@@ -2635,20 +2766,28 @@ impl AmberMegaFusedHmc {
         // Download final results
         let mut h_total_energy = vec![0.0f32; 1];
         let mut h_kinetic_energy = vec![0.0f32; 1];
-        self.stream.memcpy_dtoh(&self.d_total_energy, &mut h_total_energy)?;
-        self.stream.memcpy_dtoh(&self.d_kinetic_energy, &mut h_kinetic_energy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_total_energy, &mut h_total_energy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kinetic_energy, &mut h_kinetic_energy)?;
 
         let positions = self.get_positions()?;
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
 
         // Average temperature using proper DOF
         let n_samples = (n_steps / 10).max(1);
         let avg_ke = total_ke / n_samples as f64;
         let avg_temperature = 2.0 * avg_ke / (n_dof as f64 * KB_KCAL_MOL_K);
 
-        log::info!("✅ Velocity Verlet complete: PE={:.2}, KE={:.2}, T_avg={:.1}K (DOF={})",
-            h_total_energy[0], h_kinetic_energy[0], avg_temperature, n_dof);
+        log::info!(
+            "✅ Velocity Verlet complete: PE={:.2}, KE={:.2}, T_avg={:.1}K (DOF={})",
+            h_total_energy[0],
+            h_kinetic_energy[0],
+            avg_temperature,
+            n_dof
+        );
 
         Ok(HmcRunResult {
             potential_energy: h_total_energy[0] as f64,
@@ -2665,7 +2804,8 @@ impl AmberMegaFusedHmc {
     /// Get current velocities
     pub fn get_velocities(&self) -> Result<Vec<f32>> {
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         Ok(velocities)
     }
 
@@ -2679,8 +2819,14 @@ impl AmberMegaFusedHmc {
         }
 
         let threads_per_block = 256;
-        let num_blocks = (self.n_atoms.max(self.n_bonds).max(self.n_angles).max(self.n_dihedrals)
-            + threads_per_block - 1) / threads_per_block;
+        let num_blocks = (self
+            .n_atoms
+            .max(self.n_bonds)
+            .max(self.n_angles)
+            .max(self.n_dihedrals)
+            + threads_per_block
+            - 1)
+            / threads_per_block;
 
         let cfg = LaunchConfig {
             grid_dim: (num_blocks as u32, 1, 1),
@@ -2689,7 +2835,8 @@ impl AmberMegaFusedHmc {
         };
 
         // Load minimize kernel (computes forces without integrating)
-        let force_kernel = self.module
+        let force_kernel = self
+            .module
             .load_function("amber_steepest_descent_step")
             .context("Failed to load amber_steepest_descent_step")?;
 
@@ -2769,8 +2916,14 @@ impl AmberMegaFusedHmc {
         }
 
         let threads_per_block = 256;
-        let num_blocks = (self.n_atoms.max(self.n_bonds).max(self.n_angles).max(self.n_dihedrals)
-            + threads_per_block - 1) / threads_per_block;
+        let num_blocks = (self
+            .n_atoms
+            .max(self.n_bonds)
+            .max(self.n_angles)
+            .max(self.n_dihedrals)
+            + threads_per_block
+            - 1)
+            / threads_per_block;
 
         let cfg = LaunchConfig {
             grid_dim: (num_blocks as u32, 1, 1),
@@ -2779,7 +2932,8 @@ impl AmberMegaFusedHmc {
         };
 
         // Load minimize kernel (computes forces without integrating)
-        let force_kernel = self.module
+        let force_kernel = self
+            .module
             .load_function("amber_steepest_descent_step")
             .context("Failed to load amber_steepest_descent_step")?;
 
@@ -2868,7 +3022,8 @@ impl AmberMegaFusedHmc {
     /// the target temperature, compensating for numerical integration drift.
     pub fn rescale_velocities(&mut self, target_temperature: f32) -> Result<()> {
         // Track rescale calls for debugging
-        static RESCALE_CALL_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        static RESCALE_CALL_COUNT: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
         let call_count = RESCALE_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         if !self.velocities_initialized {
@@ -2879,7 +3034,8 @@ impl AmberMegaFusedHmc {
         // Download current velocities and masses
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
         let mut masses = vec![0.0f32; self.n_atoms];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         self.stream.memcpy_dtoh(&self.d_nb_mass, &mut masses)?;
 
         // Calculate current kinetic energy: KE = 0.5 * sum(m_i * v_i^2) / FORCE_TO_ACCEL
@@ -2905,7 +3061,10 @@ impl AmberMegaFusedHmc {
 
         if current_temp < 1.0 {
             // Temperature too low, reinitialize
-            log::warn!("Temperature too low ({:.1}K), reinitializing velocities", current_temp);
+            log::warn!(
+                "Temperature too low ({:.1}K), reinitializing velocities",
+                current_temp
+            );
             return self.initialize_velocities(target_temperature);
         }
 
@@ -2918,7 +3077,8 @@ impl AmberMegaFusedHmc {
         }
 
         // Upload scaled velocities back to GPU
-        self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&velocities, &mut self.d_velocities)?;
 
         // Log every 10000 calls to avoid spam
         if call_count % 10000 == 0 {
@@ -2947,8 +3107,12 @@ impl AmberMegaFusedHmc {
             return Ok(());
         }
 
-        log::info!("⚡ Enabling mixed precision: FP16_LJ={}, FP16_PME={}, Half2={}",
-            config.fp16_lj_params, config.fp16_pme_grid, config.half2_lj);
+        log::info!(
+            "⚡ Enabling mixed precision: FP16_LJ={}, FP16_PME={}, Half2={}",
+            config.fp16_lj_params,
+            config.fp16_pme_grid,
+            config.half2_lj
+        );
 
         // Allocate FP16 buffers
         let mut buffers = MixedPrecisionBuffers::new(&self.stream, self.n_atoms)?;
@@ -2968,7 +3132,7 @@ impl AmberMegaFusedHmc {
             log::info!(
                 "✅ Converted {} atoms to FP16: saved {} bytes",
                 self.n_atoms,
-                self.n_atoms * 4  // 4 bytes saved per atom (sigma + epsilon: FP32→FP16)
+                self.n_atoms * 4 // 4 bytes saved per atom (sigma + epsilon: FP32→FP16)
             );
         }
 
@@ -3076,14 +3240,16 @@ impl AmberMegaFusedHmc {
         let use_neighbor_list: i32 = if self.pbc_enabled { 1 } else { 0 };
 
         // Check if mixed precision is enabled and FP16 buffers are available
-        let use_mixed = self.mixed_precision_config.fp16_lj_params
-            && self.mixed_precision_buffers.is_some();
+        let use_mixed =
+            self.mixed_precision_config.fp16_lj_params && self.mixed_precision_buffers.is_some();
 
         if use_mixed {
             // Use FP16 kernel with mixed precision LJ parameters
             let buffers = self.mixed_precision_buffers.as_ref().unwrap();
             unsafe {
-                let mut builder = self.stream.launch_builder(&self.mega_fused_md_step_mixed_kernel);
+                let mut builder = self
+                    .stream
+                    .launch_builder(&self.mega_fused_md_step_mixed_kernel);
                 // Positions and velocities
                 builder.arg(&self.d_positions);
                 builder.arg(&self.d_velocities);
@@ -3232,7 +3398,9 @@ impl AmberMegaFusedHmc {
         // NOTE: tiled version does NOT use neighbor lists
 
         unsafe {
-            let mut builder = self.stream.launch_builder(&self.mega_fused_md_step_tiled_kernel);
+            let mut builder = self
+                .stream
+                .launch_builder(&self.mega_fused_md_step_tiled_kernel);
             // Positions and velocities
             builder.arg(&self.d_positions);
             builder.arg(&self.d_velocities);
@@ -3292,7 +3460,11 @@ impl AmberMegaFusedHmc {
     pub fn run_fused_constraints(&mut self, dt: f32) -> Result<i32> {
         // Check if we have any constraints
         let n_water = self.settle.as_ref().map(|s| s.n_waters()).unwrap_or(0);
-        let n_h_clusters = self.h_constraints.as_ref().map(|h| h.n_clusters()).unwrap_or(0);
+        let n_h_clusters = self
+            .h_constraints
+            .as_ref()
+            .map(|h| h.n_clusters())
+            .unwrap_or(0);
 
         if n_water == 0 && n_h_clusters == 0 {
             return Ok(0); // No constraints to apply
@@ -3314,11 +3486,7 @@ impl AmberMegaFusedHmc {
 
         // Apply H-constraints for protein
         if let Some(ref h_constraints) = self.h_constraints {
-            h_constraints.apply(
-                &mut self.d_positions,
-                &mut self.d_velocities,
-                dt,
-            )?;
+            h_constraints.apply(&mut self.d_positions, &mut self.d_velocities, dt)?;
             iterations += 1;
         }
 
@@ -3348,8 +3516,13 @@ impl AmberMegaFusedHmc {
         use_tiled: bool,
     ) -> Result<HmcRunResult> {
         let has_explicit_solvent = self.pbc_enabled && self.settle.is_some();
-        eprintln!(">>> run_fused CALLED: n_steps={}, pbc_enabled={}, settle={}, has_explicit_solvent={}",
-            n_steps, self.pbc_enabled, self.settle.is_some(), has_explicit_solvent);
+        eprintln!(
+            ">>> run_fused CALLED: n_steps={}, pbc_enabled={}, settle={}, has_explicit_solvent={}",
+            n_steps,
+            self.pbc_enabled,
+            self.settle.is_some(),
+            has_explicit_solvent
+        );
 
         if self.n_atoms == 0 {
             anyhow::bail!("No atoms loaded");
@@ -3372,8 +3545,10 @@ impl AmberMegaFusedHmc {
             // Scale temperature for explicit solvent with SETTLE constraints
             const EXPLICIT_SOLVENT_TEMP_SCALE: f32 = 0.598;
             let scaled = temperature * EXPLICIT_SOLVENT_TEMP_SCALE;
-            eprintln!(">>> EXPLICIT SOLVENT: scaling kernel temp {} K → {:.1} K (factor {})",
-                temperature, scaled, EXPLICIT_SOLVENT_TEMP_SCALE);
+            eprintln!(
+                ">>> EXPLICIT SOLVENT: scaling kernel temp {} K → {:.1} K (factor {})",
+                temperature, scaled, EXPLICIT_SOLVENT_TEMP_SCALE
+            );
             scaled
         } else {
             temperature
@@ -3398,11 +3573,8 @@ impl AmberMegaFusedHmc {
             // Compute PME long-range electrostatics (CRITICAL for explicit solvent!)
             if let Some(ref mut pme) = self.pme {
                 self.stream.synchronize()?;
-                let _pme_energy = pme.compute(
-                    &self.d_positions,
-                    &self.d_nb_charge,
-                    &mut self.d_forces,
-                )?;
+                let _pme_energy =
+                    pme.compute(&self.d_positions, &self.d_nb_charge, &mut self.d_forces)?;
             }
 
             // Add position restraint forces (if enabled)
@@ -3410,9 +3582,10 @@ impl AmberMegaFusedHmc {
                 if let (Some(ref d_restrained), Some(ref d_ref)) =
                     (&self.d_restrained_atoms, &self.d_ref_positions)
                 {
-                    let restraint_kernel = self.module
-                        .load_function("apply_position_restraints")
-                        .context("Failed to load apply_position_restraints kernel")?;
+                    let restraint_kernel =
+                        self.module
+                            .load_function("apply_position_restraints")
+                            .context("Failed to load apply_position_restraints kernel")?;
 
                     let threads = 256;
                     let blocks = (self.n_restrained + threads - 1) / threads;
@@ -3461,7 +3634,8 @@ impl AmberMegaFusedHmc {
             if step > 0 && step % RESCALE_INTERVAL == 0 {
                 // Download velocities and masses to compute actual KE after constraints
                 let mut velocities = vec![0.0f32; self.n_atoms * 3];
-                self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+                self.stream
+                    .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
 
                 let mut masses = vec![0.0f32; self.n_atoms];
                 self.stream.memcpy_dtoh(&self.d_nb_mass, &mut masses)?;
@@ -3473,7 +3647,8 @@ impl AmberMegaFusedHmc {
                     let vy = velocities[i * 3 + 1] as f64;
                     let vz = velocities[i * 3 + 2] as f64;
                     let m = masses[i] as f64;
-                    ke_actual += 0.5 * m * (vx * vx + vy * vy + vz * vz) / 4.184e-4; // Convert to kcal/mol
+                    ke_actual += 0.5 * m * (vx * vx + vy * vy + vz * vz) / 4.184e-4;
+                    // Convert to kcal/mol
                 }
 
                 let n_dof = self.compute_n_dof(true);
@@ -3487,12 +3662,15 @@ impl AmberMegaFusedHmc {
                         *v *= scale;
                     }
 
-                    self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+                    self.stream
+                        .memcpy_htod(&velocities, &mut self.d_velocities)?;
                     self.stream.synchronize()?;
 
                     if step % 100 == 0 {
-                        eprintln!(">>> RESCALE step {}: T={:.1}K → {:.1}K (scale={:.4}, n_dof={})",
-                            step, current_temp, temperature, scale, n_dof);
+                        eprintln!(
+                            ">>> RESCALE step {}: T={:.1}K → {:.1}K (scale={:.4}, n_dof={})",
+                            step, current_temp, temperature, scale, n_dof
+                        );
                     }
                 }
             }
@@ -3635,11 +3813,10 @@ mod tests {
     fn test_f32_to_f16_roundtrip_normal() {
         // Test normal values typical for LJ parameters
         let test_values = [
-            0.0f32, 1.0, -1.0, 0.5, 2.0,
-            3.4,    // Typical sigma in Angstroms
-            0.1,    // Typical epsilon in kcal/mol
-            0.01,   // Small epsilon
-            10.0,   // Large value
+            0.0f32, 1.0, -1.0, 0.5, 2.0, 3.4,  // Typical sigma in Angstroms
+            0.1,  // Typical epsilon in kcal/mol
+            0.01, // Small epsilon
+            10.0, // Large value
             100.0,
         ];
 
@@ -3654,7 +3831,9 @@ mod tests {
                 assert!(
                     rel_error < 0.001,
                     "Value {} -> {} has error {:.4}% (max 0.1%)",
-                    v, back, rel_error * 100.0
+                    v,
+                    back,
+                    rel_error * 100.0
                 );
             }
         }
@@ -3664,22 +3843,22 @@ mod tests {
     fn test_f32_to_f16_typical_lj_params() {
         // AMBER ff14SB typical sigma values (Angstroms)
         let sigmas = [
-            1.9080,  // H
-            1.8240,  // HO
-            3.3997,  // C
-            3.2500,  // N
-            3.0665,  // O
-            3.5636,  // S
+            1.9080, // H
+            1.8240, // HO
+            3.3997, // C
+            3.2500, // N
+            3.0665, // O
+            3.5636, // S
         ];
 
         // AMBER ff14SB typical epsilon values (kcal/mol)
         let epsilons = [
-            0.0157,  // H
-            0.0000,  // HO
-            0.1094,  // C
-            0.1700,  // N
-            0.2100,  // O
-            0.2500,  // S
+            0.0157, // H
+            0.0000, // HO
+            0.1094, // C
+            0.1700, // N
+            0.2100, // O
+            0.2500, // S
         ];
 
         for &sigma in &sigmas {
@@ -3689,7 +3868,8 @@ mod tests {
             assert!(
                 rel_error < 0.001,
                 "Sigma {} has FP16 error {:.4}%",
-                sigma, rel_error * 100.0
+                sigma,
+                rel_error * 100.0
             );
         }
 
@@ -3699,9 +3879,10 @@ mod tests {
                 let back = f16_bits_to_f32(bits);
                 let rel_error = ((back - eps) / eps).abs();
                 assert!(
-                    rel_error < 0.01,  // 1% tolerance for small values
+                    rel_error < 0.01, // 1% tolerance for small values
                     "Epsilon {} has FP16 error {:.4}%",
-                    eps, rel_error * 100.0
+                    eps,
+                    rel_error * 100.0
                 );
             }
         }
@@ -3727,7 +3908,7 @@ mod tests {
         let neg_zero = -0.0f32;
         let nz_bits = f32_to_f16_bits(neg_zero);
         let nz_back = f16_bits_to_f32(nz_bits);
-        assert_eq!(nz_back, 0.0);  // Value is 0
+        assert_eq!(nz_back, 0.0); // Value is 0
     }
 
     #[test]
@@ -3736,7 +3917,10 @@ mod tests {
         let big = 100000.0f32;
         let bits = f32_to_f16_bits(big);
         let back = f16_bits_to_f32(bits);
-        assert!(back.is_infinite(), "Large values should overflow to infinity");
+        assert!(
+            back.is_infinite(),
+            "Large values should overflow to infinity"
+        );
     }
 
     #[test]

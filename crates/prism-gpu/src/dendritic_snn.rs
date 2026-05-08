@@ -39,7 +39,9 @@
 //! ```
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -88,15 +90,15 @@ pub struct DendriticSNNReservoir {
     compute_q_values: CudaFunction,
 
     // Persistent GPU buffers (survive across calls)
-    input_weights: CudaSlice<f32>,      // [reservoir_size × EXPANDED_INPUT_DIM]
-    recurrent_weights: CudaSlice<f32>,  // [reservoir_size × reservoir_size]
-    membrane: CudaSlice<f32>,           // [reservoir_size]
-    filtered_rates: CudaSlice<f32>,     // [reservoir_size]
-    tau_mem_array: CudaSlice<f32>,      // [reservoir_size] - adaptive time constants
-    neuron_signs: CudaSlice<f32>,       // [reservoir_size] - E/I type (+1/-1)
+    input_weights: CudaSlice<f32>, // [reservoir_size × EXPANDED_INPUT_DIM]
+    recurrent_weights: CudaSlice<f32>, // [reservoir_size × reservoir_size]
+    membrane: CudaSlice<f32>,      // [reservoir_size]
+    filtered_rates: CudaSlice<f32>, // [reservoir_size]
+    tau_mem_array: CudaSlice<f32>, // [reservoir_size] - adaptive time constants
+    neuron_signs: CudaSlice<f32>,  // [reservoir_size] - E/I type (+1/-1)
 
     // Feature history for velocity computation (CPU-side)
-    prev_features: Option<Vec<f32>>,    // Previous 23-dim raw features
+    prev_features: Option<Vec<f32>>, // Previous 23-dim raw features
 
     /// Reservoir size
     reservoir_size: usize,
@@ -227,7 +229,7 @@ impl DendriticSNNReservoir {
             filtered_rates,
             tau_mem_array,
             neuron_signs,
-            prev_features: None,  // Will be set on first process_features call
+            prev_features: None, // Will be set on first process_features call
             reservoir_size,
             steps_per_inference,
             initialized: false,
@@ -273,12 +275,15 @@ impl DendriticSNNReservoir {
     /// Must be called once before processing features. Can be called again
     /// to re-randomize weights (e.g., for different random seeds).
     pub fn initialize(&mut self, seed: u64) -> Result<()> {
-        log::info!("Initializing E/I balanced SNN reservoir (Flashbulb) with seed={}", seed);
+        log::info!(
+            "Initializing E/I balanced SNN reservoir (Flashbulb) with seed={}",
+            seed
+        );
 
         // Calculate total elements to initialize
         let total_weights = self.reservoir_size * EXPANDED_INPUT_DIM  // Input weights (46-dim)
             + self.reservoir_size * self.reservoir_size               // Recurrent weights
-            + self.reservoir_size * 4;                                // membrane, filtered_rates, tau_mem, neuron_signs
+            + self.reservoir_size * 4; // membrane, filtered_rates, tau_mem, neuron_signs
         let grid_dim = (total_weights as u32).div_ceil(BLOCK_SIZE as u32);
 
         let cfg = LaunchConfig {
@@ -288,7 +293,8 @@ impl DendriticSNNReservoir {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.init_reservoir)
+            self.stream
+                .launch_builder(&self.init_reservoir)
                 .arg(&self.input_weights)
                 .arg(&self.recurrent_weights)
                 .arg(&self.membrane)
@@ -303,13 +309,16 @@ impl DendriticSNNReservoir {
 
         self.context.synchronize()?;
         self.initialized = true;
-        self.prev_features = None;  // Reset feature history
+        self.prev_features = None; // Reset feature history
 
         let excitatory_count = (self.reservoir_size as f32 * 0.8) as usize;
         let inhibitory_count = self.reservoir_size - excitatory_count;
         log::info!("SNN reservoir initialized (E/I balanced):");
         log::info!("  Excitatory: {} neurons (80%)", excitatory_count);
-        log::info!("  Inhibitory: {} neurons (20%, 2× strength)", inhibitory_count);
+        log::info!(
+            "  Inhibitory: {} neurons (20%, 2× strength)",
+            inhibitory_count
+        );
         log::info!("  τ_mem: fast(5-10ms) for I, gradient(5-50ms) for E");
         Ok(())
     }
@@ -379,7 +388,8 @@ impl DendriticSNNReservoir {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.lif_multistep)
+            self.stream
+                .launch_builder(&self.lif_multistep)
                 .arg(&features_device)
                 .arg(&self.membrane)
                 .arg(&self.filtered_rates)
@@ -399,7 +409,8 @@ impl DendriticSNNReservoir {
             .context("Failed to allocate output buffer")?;
 
         unsafe {
-            self.stream.launch_builder(&self.extract_state)
+            self.stream
+                .launch_builder(&self.extract_state)
                 .arg(&self.filtered_rates)
                 .arg(&output)
                 .arg(&(self.reservoir_size as i32))
@@ -439,7 +450,8 @@ impl DendriticSNNReservoir {
             .as_nanos() as u64;
 
         unsafe {
-            self.stream.launch_builder(&self.reset_state_fn)
+            self.stream
+                .launch_builder(&self.reset_state_fn)
                 .arg(&self.membrane)
                 .arg(&self.filtered_rates)
                 .arg(&(self.reservoir_size as i32))
@@ -507,7 +519,8 @@ impl DendriticSNNReservoir {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.compute_q_values)
+            self.stream
+                .launch_builder(&self.compute_q_values)
                 .arg(&self.filtered_rates)
                 .arg(&weights_device)
                 .arg(&q_values_device)
@@ -552,13 +565,16 @@ mod tests {
         env_logger::builder().is_test(true).try_init().ok();
 
         let context = Arc::new(CudaContext::new(0).expect("CUDA not available"));
-        let mut reservoir = DendriticSNNReservoir::new(context, 512).expect("Failed to create reservoir");
+        let mut reservoir =
+            DendriticSNNReservoir::new(context, 512).expect("Failed to create reservoir");
 
         reservoir.initialize(42).expect("Failed to initialize");
 
         // Create dummy features
         let features = vec![0.5f32; INPUT_DIM];
-        let state = reservoir.process_features(&features).expect("Failed to process");
+        let state = reservoir
+            .process_features(&features)
+            .expect("Failed to process");
 
         assert_eq!(state.len(), 512);
         // Verify values are in reasonable range (filtered rates should be ~[0, 1])
@@ -571,20 +587,25 @@ mod tests {
     #[ignore] // Requires GPU
     fn test_snn_reset() {
         let context = Arc::new(CudaContext::new(0).expect("CUDA not available"));
-        let mut reservoir = DendriticSNNReservoir::new(context, 256).expect("Failed to create reservoir");
+        let mut reservoir =
+            DendriticSNNReservoir::new(context, 256).expect("Failed to create reservoir");
 
         reservoir.initialize(42).expect("Failed to initialize");
 
         // Process some features
         let features = vec![1.0f32; INPUT_DIM];
-        let _ = reservoir.process_features(&features).expect("Failed to process");
+        let _ = reservoir
+            .process_features(&features)
+            .expect("Failed to process");
 
         // Reset
         reservoir.reset_state().expect("Failed to reset");
 
         // State should be near zero after reset
         let features_zero = vec![0.0f32; INPUT_DIM];
-        let state = reservoir.process_features(&features_zero).expect("Failed to process");
+        let state = reservoir
+            .process_features(&features_zero)
+            .expect("Failed to process");
 
         let sum: f32 = state.iter().sum();
         assert!(sum < 50.0, "State sum {} too high after reset", sum);

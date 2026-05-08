@@ -79,25 +79,29 @@ pub fn compute_consensus(
     // Constraint 1: High frequency saturation
     // Variants at high frequency tend to FALL (no room to grow)
     if current_frequency > constraints.saturation_threshold {
-        let adjustment = 0.2 * (current_frequency - constraints.saturation_threshold) /
-                         (1.0 - constraints.saturation_threshold);
+        let adjustment = 0.2 * (current_frequency - constraints.saturation_threshold)
+            / (1.0 - constraints.saturation_threshold);
         consensus *= 1.0 - adjustment;
         constraints_applied.push(format!(
             "Saturation: freq={:.2} > {:.2}, consensus *= {:.2}",
-            current_frequency, constraints.saturation_threshold, 1.0 - adjustment
+            current_frequency,
+            constraints.saturation_threshold,
+            1.0 - adjustment
         ));
     }
 
     // Constraint 2: Velocity inversion at moderate-high frequency
     // High velocity + high frequency = AT PEAK, about to FALL
-    if current_velocity > constraints.peak_velocity_threshold &&
-       current_frequency > 0.3 {
+    if current_velocity > constraints.peak_velocity_threshold && current_frequency > 0.3 {
         let adjustment = 0.3 * current_velocity / constraints.peak_velocity_threshold;
         let new_consensus = consensus * (1.0 - adjustment) + 0.3 * adjustment;
         constraints_applied.push(format!(
             "Peak detection: vel={:.3} > {:.3} at freq={:.2}, {} -> {}",
-            current_velocity, constraints.peak_velocity_threshold,
-            current_frequency, consensus, new_consensus
+            current_velocity,
+            constraints.peak_velocity_threshold,
+            current_frequency,
+            consensus,
+            new_consensus
         ));
         consensus = new_consensus;
     }
@@ -179,11 +183,11 @@ pub fn predict_label(rise_prob: f32, confidence: f32, threshold: f32) -> (bool, 
 
 /// Batch prediction for multiple variants
 pub fn batch_consensus(
-    all_predictions: &[Vec<f32>],  // [N_variants x N_agents]
-    all_confidences: &[Vec<f32>],  // [N_variants x N_agents]
-    all_fitness: &[f32],           // [N_agents] (shared)
-    frequencies: &[f32],           // [N_variants]
-    velocities: &[f32],            // [N_variants]
+    all_predictions: &[Vec<f32>], // [N_variants x N_agents]
+    all_confidences: &[Vec<f32>], // [N_variants x N_agents]
+    all_fitness: &[f32],          // [N_agents] (shared)
+    frequencies: &[f32],          // [N_variants]
+    velocities: &[f32],           // [N_variants]
     constraints: &PhysicsConstraints,
 ) -> Vec<ConsensusPrediction> {
     let n_variants = all_predictions.len();
@@ -228,18 +232,29 @@ mod tests {
 
         // Low frequency: prediction should pass through mostly unchanged
         let result = compute_consensus(
-            &predictions, &confidences, &fitness,
-            0.1, 0.05, &constraints
+            &predictions,
+            &confidences,
+            &fitness,
+            0.1,
+            0.05,
+            &constraints,
         );
         assert!(result.rise_prob > 0.6);
 
         // High frequency: prediction should be dampened
         let result = compute_consensus(
-            &predictions, &confidences, &fitness,
-            0.8, 0.05, &constraints
+            &predictions,
+            &confidences,
+            &fitness,
+            0.8,
+            0.05,
+            &constraints,
         );
         assert!(result.rise_prob < 0.6);
-        assert!(result.constraints_applied.iter().any(|s| s.contains("Saturation")));
+        assert!(result
+            .constraints_applied
+            .iter()
+            .any(|s| s.contains("Saturation")));
     }
 
     #[test]
@@ -252,10 +267,17 @@ mod tests {
 
         // High velocity at moderate frequency: should detect peak
         let result = compute_consensus(
-            &predictions, &confidences, &fitness,
-            0.4, 0.15, &constraints
+            &predictions,
+            &confidences,
+            &fitness,
+            0.4,
+            0.15,
+            &constraints,
         );
-        assert!(result.constraints_applied.iter().any(|s| s.contains("Peak")));
+        assert!(result
+            .constraints_applied
+            .iter()
+            .any(|s| s.contains("Peak")));
     }
 
     #[test]

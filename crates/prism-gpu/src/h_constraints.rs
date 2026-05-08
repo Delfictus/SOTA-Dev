@@ -29,11 +29,11 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum ClusterType {
-    SingleH = 1,  // C-H, N-H, O-H, S-H
-    CH2 = 2,      // Methylene groups
-    CH3 = 3,      // Methyl groups
-    NH2 = 4,      // Amide groups (Asn, Gln sidechains)
-    NH3 = 5,      // Protonated lysine
+    SingleH = 1, // C-H, N-H, O-H, S-H
+    CH2 = 2,     // Methylene groups
+    CH3 = 3,     // Methyl groups
+    NH2 = 4,     // Amide groups (Asn, Gln sidechains)
+    NH3 = 5,     // Protonated lysine
 }
 
 /// H-bond constraint cluster data (matches CUDA struct)
@@ -42,11 +42,11 @@ pub enum ClusterType {
 #[repr(C)]
 pub struct HConstraintCluster {
     pub central_atom: i32,
-    pub hydrogen_atoms: [i32; 3],  // -1 for unused slots
-    pub bond_lengths: [f32; 3],    // Target distances in Angstroms
-    pub inv_mass_central: f32,     // 1/m_heavy
-    pub inv_mass_h: f32,           // 1/m_H
-    pub n_hydrogens: i32,          // 1, 2, or 3
+    pub hydrogen_atoms: [i32; 3], // -1 for unused slots
+    pub bond_lengths: [f32; 3],   // Target distances in Angstroms
+    pub inv_mass_central: f32,    // 1/m_heavy
+    pub inv_mass_h: f32,          // 1/m_H
+    pub n_hydrogens: i32,         // 1, 2, or 3
     pub cluster_type: i32,
 }
 
@@ -56,8 +56,13 @@ unsafe impl cudarc::driver::ValidAsZeroBits for HConstraintCluster {}
 
 impl HConstraintCluster {
     /// Create a new single-H cluster (C-H, N-H, O-H, S-H)
-    pub fn single_h(central: usize, hydrogen: usize, bond_length: f32,
-                    mass_central: f32, mass_h: f32) -> Self {
+    pub fn single_h(
+        central: usize,
+        hydrogen: usize,
+        bond_length: f32,
+        mass_central: f32,
+        mass_h: f32,
+    ) -> Self {
         Self {
             central_atom: central as i32,
             hydrogen_atoms: [hydrogen as i32, -1, -1],
@@ -70,9 +75,16 @@ impl HConstraintCluster {
     }
 
     /// Create a CH2/NH2 cluster (2 hydrogens)
-    pub fn two_h(central: usize, h1: usize, h2: usize,
-                 d1: f32, d2: f32, mass_central: f32, mass_h: f32,
-                 is_nitrogen: bool) -> Self {
+    pub fn two_h(
+        central: usize,
+        h1: usize,
+        h2: usize,
+        d1: f32,
+        d2: f32,
+        mass_central: f32,
+        mass_h: f32,
+        is_nitrogen: bool,
+    ) -> Self {
         Self {
             central_atom: central as i32,
             hydrogen_atoms: [h1 as i32, h2 as i32, -1],
@@ -80,14 +92,27 @@ impl HConstraintCluster {
             inv_mass_central: 1.0 / mass_central,
             inv_mass_h: 1.0 / mass_h,
             n_hydrogens: 2,
-            cluster_type: if is_nitrogen { ClusterType::NH2 as i32 } else { ClusterType::CH2 as i32 },
+            cluster_type: if is_nitrogen {
+                ClusterType::NH2 as i32
+            } else {
+                ClusterType::CH2 as i32
+            },
         }
     }
 
     /// Create a CH3/NH3 cluster (3 hydrogens)
-    pub fn three_h(central: usize, h1: usize, h2: usize, h3: usize,
-                   d1: f32, d2: f32, d3: f32,
-                   mass_central: f32, mass_h: f32, is_nitrogen: bool) -> Self {
+    pub fn three_h(
+        central: usize,
+        h1: usize,
+        h2: usize,
+        h3: usize,
+        d1: f32,
+        d2: f32,
+        d3: f32,
+        mass_central: f32,
+        mass_h: f32,
+        is_nitrogen: bool,
+    ) -> Self {
         Self {
             central_atom: central as i32,
             hydrogen_atoms: [h1 as i32, h2 as i32, h3 as i32],
@@ -95,7 +120,11 @@ impl HConstraintCluster {
             inv_mass_central: 1.0 / mass_central,
             inv_mass_h: 1.0 / mass_h,
             n_hydrogens: 3,
-            cluster_type: if is_nitrogen { ClusterType::NH3 as i32 } else { ClusterType::CH3 as i32 },
+            cluster_type: if is_nitrogen {
+                ClusterType::NH3 as i32
+            } else {
+                ClusterType::CH3 as i32
+            },
         }
     }
 
@@ -153,8 +182,13 @@ impl HConstraints {
         let n_ch2 = clusters.iter().filter(|c| c.n_hydrogens == 2).count();
         let n_ch3 = clusters.iter().filter(|c| c.n_hydrogens == 3).count();
 
-        log::info!("🔗 HConstraints: {} clusters ({} single, {} CH2/NH2, {} CH3/NH3)",
-            clusters.len(), n_single_h, n_ch2, n_ch3);
+        log::info!(
+            "🔗 HConstraints: {} clusters ({} single, {} CH2/NH2, {} CH3/NH3)",
+            clusters.len(),
+            n_single_h,
+            n_ch2,
+            n_ch3
+        );
 
         let stream = context.default_stream();
 
@@ -261,7 +295,7 @@ impl HConstraints {
 ///
 /// This automatically detects H-bond clusters from bonds and masses.
 pub fn build_h_clusters(
-    bonds: &[(usize, usize, f32)],  // (i, j, r0)
+    bonds: &[(usize, usize, f32)], // (i, j, r0)
     masses: &[f32],
     elements: &[&str],
 ) -> Vec<HConstraintCluster> {
@@ -271,12 +305,16 @@ pub fn build_h_clusters(
     let mut h_neighbors: HashMap<usize, Vec<(usize, f32)>> = HashMap::new();
 
     for &(i, j, r0) in bonds {
-        let (heavy, h, bond_len) = if elements.get(i).map(|s| *s) == Some("H") && elements.get(j).map(|s| *s) != Some("H") {
+        let (heavy, h, bond_len) = if elements.get(i).map(|s| *s) == Some("H")
+            && elements.get(j).map(|s| *s) != Some("H")
+        {
             (j, i, r0)
-        } else if elements.get(j).map(|s| *s) == Some("H") && elements.get(i).map(|s| *s) != Some("H") {
+        } else if elements.get(j).map(|s| *s) == Some("H")
+            && elements.get(i).map(|s| *s) != Some("H")
+        {
             (i, j, r0)
         } else {
-            continue;  // Not an X-H bond
+            continue; // Not an X-H bond
         };
 
         h_neighbors.entry(heavy).or_default().push((h, bond_len));
@@ -308,9 +346,20 @@ pub fn build_h_clusters(
                 let (h1, d1) = hydrogens[0];
                 let (h2, d2) = hydrogens[1];
                 let (h3, d3) = hydrogens[2];
-                HConstraintCluster::three_h(heavy, h1, h2, h3, d1, d2, d3, mass_central, mass_h, is_nitrogen)
+                HConstraintCluster::three_h(
+                    heavy,
+                    h1,
+                    h2,
+                    h3,
+                    d1,
+                    d2,
+                    d3,
+                    mass_central,
+                    mass_h,
+                    is_nitrogen,
+                )
             }
-            _ => continue,  // Unusual, skip
+            _ => continue, // Unusual, skip
         };
 
         clusters.push(cluster);
@@ -330,7 +379,7 @@ mod tests {
         assert_eq!(cluster.central_atom, 10);
         assert_eq!(cluster.hydrogen_atoms[0], 11);
         assert_eq!(cluster.n_hydrogens, 1);
-        assert!((cluster.inv_mass_h - 1.0/1.008).abs() < 1e-6);
+        assert!((cluster.inv_mass_h - 1.0 / 1.008).abs() < 1e-6);
     }
 
     #[test]

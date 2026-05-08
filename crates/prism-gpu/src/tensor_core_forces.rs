@@ -53,10 +53,10 @@ pub struct TensorCoreForces {
     tensor_core_distances_kernel: CudaFunction,
 
     // GPU buffers
-    d_norms_sq: CudaSlice<f32>,       // ||r_i||² for each atom
-    d_positions_fp16: CudaSlice<u16>, // FP16 positions (half = u16)
-    d_sigma_fp16: CudaSlice<u16>,     // FP16 LJ sigma
-    d_epsilon_fp16: CudaSlice<u16>,   // FP16 LJ epsilon
+    d_norms_sq: CudaSlice<f32>,        // ||r_i||² for each atom
+    d_positions_fp16: CudaSlice<u16>,  // FP16 positions (half = u16)
+    d_sigma_fp16: CudaSlice<u16>,      // FP16 LJ sigma
+    d_epsilon_fp16: CudaSlice<u16>,    // FP16 LJ epsilon
     d_distance_matrix: CudaSlice<f32>, // Tile distance matrix (temporary)
 
     // Configuration

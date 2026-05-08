@@ -46,8 +46,8 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
@@ -109,16 +109,16 @@ pub struct NovaConfig {
 impl Default for NovaConfig {
     fn default() -> Self {
         Self {
-            dt: 0.002,              // 2 fs timestep
-            temperature: 310.0,     // 37°C
-            goal_strength: 0.1,     // Moderate AI bias
-            lambda: 0.99,           // RLS forgetting factor
+            dt: 0.002,          // 2 fs timestep
+            temperature: 310.0, // 37°C
+            goal_strength: 0.1, // Moderate AI bias
+            lambda: 0.99,       // RLS forgetting factor
 
             n_atoms: 0,
             n_residues: 0,
             n_target_residues: 0,
 
-            leapfrog_steps: 3,      // Very short trajectory for high acceptance
+            leapfrog_steps: 3, // Very short trajectory for high acceptance
             mass_scale: 1.0,
 
             nn_hidden_dim: 64,
@@ -162,45 +162,45 @@ pub struct PrismNova {
     init_rls_kernel: CudaFunction,
 
     // Device memory - Simulation state
-    d_positions: CudaSlice<f32>,       // [n_atoms * 3]
-    d_momenta: CudaSlice<f32>,         // [n_atoms * 3]
-    d_positions_old: CudaSlice<f32>,   // [n_atoms * 3] for rejection
+    d_positions: CudaSlice<f32>,     // [n_atoms * 3]
+    d_momenta: CudaSlice<f32>,       // [n_atoms * 3]
+    d_positions_old: CudaSlice<f32>, // [n_atoms * 3] for rejection
 
     // Device memory - Force field
-    d_masses: CudaSlice<f32>,          // [n_atoms]
-    d_charges: CudaSlice<f32>,         // [n_atoms]
-    d_lj_params: CudaSlice<f32>,       // [n_atoms * 2] (epsilon, sigma)
-    d_bond_list: CudaSlice<i32>,       // [n_bonds * 2]
-    d_bond_params: CudaSlice<f32>,     // [n_bonds * 2] (r0, k)
-    d_angle_list: CudaSlice<i32>,      // [n_angles * 3] (i, j, k)
-    d_angle_params: CudaSlice<f32>,    // [n_angles * 2] (theta0, k)
-    d_dihedral_list: CudaSlice<i32>,   // [n_dihedrals * 4] (i, j, k, l)
-    d_dihedral_params: CudaSlice<f32>, // Flattened: [k, n, phase, paths, ...] per term
+    d_masses: CudaSlice<f32>,               // [n_atoms]
+    d_charges: CudaSlice<f32>,              // [n_atoms]
+    d_lj_params: CudaSlice<f32>,            // [n_atoms * 2] (epsilon, sigma)
+    d_bond_list: CudaSlice<i32>,            // [n_bonds * 2]
+    d_bond_params: CudaSlice<f32>,          // [n_bonds * 2] (r0, k)
+    d_angle_list: CudaSlice<i32>,           // [n_angles * 3] (i, j, k)
+    d_angle_params: CudaSlice<f32>,         // [n_angles * 2] (theta0, k)
+    d_dihedral_list: CudaSlice<i32>,        // [n_dihedrals * 4] (i, j, k, l)
+    d_dihedral_params: CudaSlice<f32>,      // Flattened: [k, n, phase, paths, ...] per term
     d_dihedral_term_counts: CudaSlice<i32>, // [n_dihedrals] - terms per dihedral
-    d_exclusion_list: CudaSlice<i32>,  // [n_exclusions * 2] - 1-2 and 1-3 pairs to skip
-    d_pair_14_list: CudaSlice<i32>,    // [n_pairs_14 * 2] - 1-4 pairs for scaled interactions
-    d_atom_types: CudaSlice<i32>,      // [n_atoms]
-    d_residue_atoms: CudaSlice<i32>,   // [n_residues] - representative atom per residue
-    d_target_residues: CudaSlice<i32>, // [n_target_residues] - target residues for TDA
+    d_exclusion_list: CudaSlice<i32>,       // [n_exclusions * 2] - 1-2 and 1-3 pairs to skip
+    d_pair_14_list: CudaSlice<i32>,         // [n_pairs_14 * 2] - 1-4 pairs for scaled interactions
+    d_atom_types: CudaSlice<i32>,           // [n_atoms]
+    d_residue_atoms: CudaSlice<i32>,        // [n_residues] - representative atom per residue
+    d_target_residues: CudaSlice<i32>,      // [n_target_residues] - target residues for TDA
 
     // Device memory - Neural network
     d_nn_weights: CudaSlice<f32>,
 
     // Device memory - Reservoir
-    d_reservoir_activations: CudaSlice<f32>,  // [RESERVOIR_SIZE]
-    d_reservoir_filtered: CudaSlice<f32>,     // [RESERVOIR_SIZE]
-    d_reservoir_membrane: CudaSlice<f32>,     // [RESERVOIR_SIZE]
-    d_reservoir_adaptation: CudaSlice<f32>,   // [RESERVOIR_SIZE]
-    d_reservoir_weights: CudaSlice<f32>,      // [input_dim * RESERVOIR_SIZE + RESERVOIR_SIZE^2]
+    d_reservoir_activations: CudaSlice<f32>, // [RESERVOIR_SIZE]
+    d_reservoir_filtered: CudaSlice<f32>,    // [RESERVOIR_SIZE]
+    d_reservoir_membrane: CudaSlice<f32>,    // [RESERVOIR_SIZE]
+    d_reservoir_adaptation: CudaSlice<f32>,  // [RESERVOIR_SIZE]
+    d_reservoir_weights: CudaSlice<f32>,     // [input_dim * RESERVOIR_SIZE + RESERVOIR_SIZE^2]
 
     // Device memory - RLS
-    d_rls_weights: CudaSlice<f32>,     // [NUM_OUTPUTS * RESERVOIR_SIZE]
-    d_rls_P_matrices: CudaSlice<f32>,  // [NUM_OUTPUTS * RESERVOIR_SIZE * RESERVOIR_SIZE]
+    d_rls_weights: CudaSlice<f32>,    // [NUM_OUTPUTS * RESERVOIR_SIZE]
+    d_rls_P_matrices: CudaSlice<f32>, // [NUM_OUTPUTS * RESERVOIR_SIZE * RESERVOIR_SIZE]
 
     // Device memory - Outputs
-    d_features: CudaSlice<f32>,        // [FEATURE_DIM]
-    d_reward: CudaSlice<f32>,          // [1]
-    d_accepted: CudaSlice<i32>,        // [1]
+    d_features: CudaSlice<f32>, // [FEATURE_DIM]
+    d_reward: CudaSlice<f32>,   // [1]
+    d_accepted: CudaSlice<i32>, // [1]
 
     // Configuration
     config: NovaConfig,
@@ -367,7 +367,8 @@ impl PrismNova {
             + reservoir_weights_size
             + NUM_OUTPUTS * RESERVOIR_SIZE
             + NUM_OUTPUTS * RESERVOIR_SIZE * RESERVOIR_SIZE
-            + FEATURE_DIM + 1 + 1) * 4;  // outputs
+            + FEATURE_DIM + 1 + 1)
+            * 4; // outputs
 
         log::info!(
             "💾 Allocated {:.1} MB GPU memory for NOVA",
@@ -610,7 +611,10 @@ impl PrismNova {
             .memcpy_htod(exclusion_list, &mut self.d_exclusion_list)
             .context("Failed to upload exclusion list")?;
 
-        log::info!("⊘ Uploaded {} exclusions (1-2/1-3 pairs)", self.n_exclusions);
+        log::info!(
+            "⊘ Uploaded {} exclusions (1-2/1-3 pairs)",
+            self.n_exclusions
+        );
         Ok(())
     }
 
@@ -638,7 +642,10 @@ impl PrismNova {
             .memcpy_htod(pair_14_list, &mut self.d_pair_14_list)
             .context("Failed to upload 1-4 pair list")?;
 
-        log::info!("⚖️ Uploaded {} 1-4 pairs (scaled non-bonded)", self.n_pairs_14);
+        log::info!(
+            "⚖️ Uploaded {} 1-4 pairs (scaled non-bonded)",
+            self.n_pairs_14
+        );
         Ok(())
     }
 
@@ -672,7 +679,8 @@ impl PrismNova {
             builder.arg(&self.config.temperature);
             builder.arg(&self.config.seed);
             builder.arg(&self.config.n_atoms);
-            builder.launch(launch_config)
+            builder
+                .launch(launch_config)
                 .context("Failed to launch init_momenta kernel")?;
         }
 
@@ -695,11 +703,15 @@ impl PrismNova {
             builder.arg(&mut self.d_rls_P_matrices);
             builder.arg(&initial_precision);
             builder.arg(&num_outputs_i32);
-            builder.launch(launch_config)
+            builder
+                .launch(launch_config)
                 .context("Failed to launch init_rls kernel")?;
         }
 
-        log::info!("📊 Initialized RLS P matrices (precision={})", initial_precision);
+        log::info!(
+            "📊 Initialized RLS P matrices (precision={})",
+            initial_precision
+        );
         Ok(())
     }
 
@@ -718,7 +730,7 @@ impl PrismNova {
         let launch_config = LaunchConfig {
             grid_dim: (1, 1, 1),
             block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,  // Kernel uses static shared memory
+            shared_mem_bytes: 0, // Kernel uses static shared memory
         };
 
         // Increment seed for stochastic elements
@@ -797,18 +809,22 @@ impl PrismNova {
             builder.arg(&self.config.leapfrog_steps);
             builder.arg(&self.config.seed);
 
-            builder.launch(launch_config)
+            builder
+                .launch(launch_config)
                 .context("Failed to launch step kernel")?;
         }
 
         // Download results using new API (clone_dtoh returns Vec directly)
-        let features: Vec<f32> = self.stream
+        let features: Vec<f32> = self
+            .stream
             .clone_dtoh(&self.d_features)
             .context("Failed to download features")?;
-        let reward: Vec<f32> = self.stream
+        let reward: Vec<f32> = self
+            .stream
             .clone_dtoh(&self.d_reward)
             .context("Failed to download reward")?;
-        let accepted: Vec<i32> = self.stream
+        let accepted: Vec<i32> = self
+            .stream
             .clone_dtoh(&self.d_accepted)
             .context("Failed to download accepted flag")?;
 
@@ -829,7 +845,8 @@ impl PrismNova {
 
     /// Download current positions from GPU
     pub fn download_positions(&self) -> Result<Vec<f32>> {
-        let positions: Vec<f32> = self.stream
+        let positions: Vec<f32> = self
+            .stream
             .clone_dtoh(&self.d_positions)
             .context("Failed to download positions")?;
         Ok(positions)
@@ -869,9 +886,9 @@ mod tests {
     #[test]
     fn test_step_result_parse() {
         let mut features = vec![0.0f32; FEATURE_DIM];
-        features[0] = 1.0;  // betti_0
-        features[1] = 2.0;  // betti_1
-        features[2] = 3.0;  // betti_2 (voids!)
+        features[0] = 1.0; // betti_0
+        features[1] = 2.0; // betti_1
+        features[2] = 3.0; // betti_2 (voids!)
         features[4] = 0.75; // pocket_signature
         features[8] = -1.5; // efe
         features[10] = 0.8; // goal_prior
@@ -887,7 +904,7 @@ mod tests {
         };
 
         assert!(result.accepted);
-        assert_eq!(result.betti[2], 3.0);  // 3 voids detected
+        assert_eq!(result.betti[2], 3.0); // 3 voids detected
         assert_eq!(result.pocket_signature, 0.75);
     }
 }

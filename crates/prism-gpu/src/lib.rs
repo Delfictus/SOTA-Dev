@@ -3,19 +3,19 @@
 //! GPU acceleration layer for PRISM v2.
 //! Optimized for PRISM-VE Benchmark.
 
-pub mod context;
-pub mod global_context;
-pub mod feature_merge;
-pub mod dendritic_reservoir;
-pub mod dendritic_snn;
-pub mod mega_fused;
-pub mod mega_fused_batch;
-pub mod reservoir_construction;
-pub mod ve_swarm;
-pub mod polycentric_immunity;
 pub mod active_inference;
 pub mod bio_chemistry_gpu;
+pub mod context;
+pub mod dendritic_reservoir;
+pub mod dendritic_snn;
+pub mod feature_merge;
+pub mod global_context;
+pub mod mega_fused;
+pub mod mega_fused_batch;
+pub mod polycentric_immunity;
 pub mod prism_nova;
+pub mod reservoir_construction;
+pub mod ve_swarm;
 
 // AMBER ff14SB bonded force calculator
 pub mod amber_forces;
@@ -60,60 +60,84 @@ pub mod adaptive_protocol;
 pub mod amber_replica_parallel;
 
 // Essential exports
-pub use context::{GpuContext, GpuInfo, GpuSecurityConfig};
-pub use global_context::{GlobalGpuContext, GlobalGpuError};
-pub use feature_merge::{FeatureMergeGpu, FeatureMergeConfig, FeatureMergeResult};
-pub use dendritic_reservoir::DendriticReservoirGpu;
-pub use dendritic_snn::{DendriticSNNReservoir, INPUT_DIM as SNN_INPUT_DIM, EXPANDED_INPUT_DIM as SNN_EXPANDED_INPUT_DIM, DEFAULT_RESERVOIR_SIZE};
-pub use mega_fused::{MegaFusedGpu, MegaFusedConfig, MegaFusedMode, MegaFusedOutput, MegaFusedParams, GpuProvenanceData, KernelTelemetryEvent, GpuTelemetry, confidence, signals};
-pub use mega_fused_batch::{MegaFusedBatchGpu, BatchStructureDesc, StructureInput, StructureMetadata, PkParams, ImmunityMetadataV2, CountryImmunityTimeSeriesV2, PackedBatch, BatchStructureOutput, BatchOutput, TrainingOutput};
-pub use reservoir_construction::{BioReservoir, SparseConnection, compute_readout_weights};
-pub use polycentric_immunity::{PolycentricImmunityGpu, N_EPITOPE_CENTERS, N_PK_SCENARIOS, POLYCENTRIC_OUTPUT_DIM, DEFAULT_CROSS_REACTIVITY};
 pub use active_inference::{ActiveInferenceGpu, ActiveInferencePolicy};
-pub use bio_chemistry_gpu::{BiochemistryGpu, GpuAtomicMetadata, MAX_ATOMS as BIO_MAX_ATOMS};
-pub use prism_nova::{PrismNova, NovaConfig, NovaStepResult, RESERVOIR_SIZE as NOVA_RESERVOIR_SIZE};
-pub use amber_forces::{AmberBondedForces, TopologyBuilder, BondParam, AngleParam, DihedralParam, NB14Param, EnergyComponents, Bond, Angle, Dihedral, Pair14};
+pub use adaptive_protocol::{
+    AdaptiveProtocolConfig, AdaptiveProtocolState, ExplorationPhase, HotSpotCandidate,
+};
+pub use amber_forces::{
+    AmberBondedForces, Angle, AngleParam, Bond, BondParam, Dihedral, DihedralParam,
+    EnergyComponents, NB14Param, Pair14, TopologyBuilder,
+};
 pub use amber_mega_fused::{
-    AmberMegaFusedHmc, HmcRunResult, EnergyRecord, ConstraintInfo,
-    KB_KCAL_MOL_K, build_exclusion_lists as build_amber_exclusions,
-    MAX_EXCLUSIONS as AMBER_MAX_EXCLUSIONS,
+    build_exclusion_lists as build_amber_exclusions,
+    f16_bits_to_f32,
+    f32_to_f16_bits,
+    AmberMegaFusedHmc,
+    ConstraintInfo,
+    EnergyRecord,
+    HmcRunResult,
+    MixedPrecisionBuffers,
     // Phase 7: Mixed precision exports
-    MixedPrecisionConfig, MixedPrecisionBuffers,
-    f32_to_f16_bits, f16_bits_to_f32,
-};
-pub use pme::{PME, compute_ewald_beta, DEFAULT_PME_TOLERANCE};
-pub use settle::Settle;
-pub use h_constraints::{HConstraints, HConstraintCluster, ClusterType, build_h_clusters};
-pub use amber_simd_batch::{
-    AmberSimdBatch, StructureTopology, BatchMdResult, OptimizationConfig, SotaStats,
-    ReplicaConfig, ReplicaFrame, ReplicaMergedResult,
-    merge_replica_frames, compute_rmsf_per_residue, merge_rmsf_cross_replica,
-    merge_cv_cross_replica, compute_convergence_confidence,
-    BATCH_SPATIAL_OFFSET, MAX_BATCH_SIZE, NB_CUTOFF,
-};
-pub use verlet_list::{
-    VerletList, VERLET_SKIN, VERLET_SKIN_HALF, VERLET_LIST_CUTOFF, MAX_NEIGHBORS_PER_ATOM,
-};
-pub use tensor_core_forces::{
-    TensorCoreForces, TC_TILE_SIZE, TC_BLOCK_SIZE,
-};
-pub use async_md_pipeline::{
-    AsyncMdPipeline, AsyncPipelineConfig, PipelineStats, MdPhase, PipelineExecutor, SyncPoint,
-};
-pub use ensemble_warp_md::{
-    EnsembleWarpMd, EnsembleResult, EnsembleTopology, topology_from_prism_prep,
-    MAX_ATOMS_WARP, WARP_SIZE,
+    MixedPrecisionConfig,
+    KB_KCAL_MOL_K,
+    MAX_EXCLUSIONS as AMBER_MAX_EXCLUSIONS,
 };
 pub use amber_replica_parallel::{
-    ReplicaParallelMD, ReplicaParallelConfig, SharedTopology,
-    ReplicaFrameData, ReplicaStepResult, ReplicaDiagnostics, KB_KCAL_MOL_K as REPLICA_KB,
+    ReplicaDiagnostics, ReplicaFrameData, ReplicaParallelConfig, ReplicaParallelMD,
+    ReplicaStepResult, SharedTopology, KB_KCAL_MOL_K as REPLICA_KB,
 };
-pub use adaptive_protocol::{
-    AdaptiveProtocolState, AdaptiveProtocolConfig, ExplorationPhase, HotSpotCandidate,
+pub use amber_simd_batch::{
+    compute_convergence_confidence, compute_rmsf_per_residue, merge_cv_cross_replica,
+    merge_replica_frames, merge_rmsf_cross_replica, AmberSimdBatch, BatchMdResult,
+    OptimizationConfig, ReplicaConfig, ReplicaFrame, ReplicaMergedResult, SotaStats,
+    StructureTopology, BATCH_SPATIAL_OFFSET, MAX_BATCH_SIZE, NB_CUTOFF,
 };
-pub use memory::{VramGuard, VramInfo, VramGuardError, init_global_vram_guard, global_vram_guard};
-pub use whcr::{WhcrGpu, RepairResult as WhcrRepairResult};
-pub use lcpo_sasa::{LcpoSasaGpu, SasaResult, BatchedSasaResult, AtomType as LcpoAtomType, elements_to_atom_types, elements_to_radii};
+pub use async_md_pipeline::{
+    AsyncMdPipeline, AsyncPipelineConfig, MdPhase, PipelineExecutor, PipelineStats, SyncPoint,
+};
+pub use bio_chemistry_gpu::{BiochemistryGpu, GpuAtomicMetadata, MAX_ATOMS as BIO_MAX_ATOMS};
+pub use context::{GpuContext, GpuInfo, GpuSecurityConfig};
+pub use dendritic_reservoir::DendriticReservoirGpu;
+pub use dendritic_snn::{
+    DendriticSNNReservoir, DEFAULT_RESERVOIR_SIZE, EXPANDED_INPUT_DIM as SNN_EXPANDED_INPUT_DIM,
+    INPUT_DIM as SNN_INPUT_DIM,
+};
+pub use ensemble_warp_md::{
+    topology_from_prism_prep, EnsembleResult, EnsembleTopology, EnsembleWarpMd, MAX_ATOMS_WARP,
+    WARP_SIZE,
+};
+pub use feature_merge::{FeatureMergeConfig, FeatureMergeGpu, FeatureMergeResult};
+pub use global_context::{GlobalGpuContext, GlobalGpuError};
+pub use h_constraints::{build_h_clusters, ClusterType, HConstraintCluster, HConstraints};
+pub use lcpo_sasa::{
+    elements_to_atom_types, elements_to_radii, AtomType as LcpoAtomType, BatchedSasaResult,
+    LcpoSasaGpu, SasaResult,
+};
+pub use mega_fused::{
+    confidence, signals, GpuProvenanceData, GpuTelemetry, KernelTelemetryEvent, MegaFusedConfig,
+    MegaFusedGpu, MegaFusedMode, MegaFusedOutput, MegaFusedParams,
+};
+pub use mega_fused_batch::{
+    BatchOutput, BatchStructureDesc, BatchStructureOutput, CountryImmunityTimeSeriesV2,
+    ImmunityMetadataV2, MegaFusedBatchGpu, PackedBatch, PkParams, StructureInput,
+    StructureMetadata, TrainingOutput,
+};
+pub use memory::{global_vram_guard, init_global_vram_guard, VramGuard, VramGuardError, VramInfo};
+pub use pme::{compute_ewald_beta, DEFAULT_PME_TOLERANCE, PME};
+pub use polycentric_immunity::{
+    PolycentricImmunityGpu, DEFAULT_CROSS_REACTIVITY, N_EPITOPE_CENTERS, N_PK_SCENARIOS,
+    POLYCENTRIC_OUTPUT_DIM,
+};
+pub use prism_nova::{
+    NovaConfig, NovaStepResult, PrismNova, RESERVOIR_SIZE as NOVA_RESERVOIR_SIZE,
+};
+pub use reservoir_construction::{compute_readout_weights, BioReservoir, SparseConnection};
+pub use settle::Settle;
+pub use tensor_core_forces::{TensorCoreForces, TC_BLOCK_SIZE, TC_TILE_SIZE};
+pub use verlet_list::{
+    VerletList, MAX_NEIGHBORS_PER_ATOM, VERLET_LIST_CUTOFF, VERLET_SKIN, VERLET_SKIN_HALF,
+};
+pub use whcr::{RepairResult as WhcrRepairResult, WhcrGpu};
 
 // Commented out unused modules to isolate benchmark requirements
 // pub mod aatgs;
@@ -144,7 +168,7 @@ pub mod memory;
 // pub mod thermodynamic;
 // pub mod transfer_entropy;
 // pub mod ultra_kernel;
-pub mod whcr;  // Re-enabled for prism-whcr dependency
-// pub mod batch_tda;
-// pub mod mega_fused_integrated;
-// pub mod training;
+pub mod whcr; // Re-enabled for prism-whcr dependency
+              // pub mod batch_tda;
+              // pub mod mega_fused_integrated;
+              // pub mod training;

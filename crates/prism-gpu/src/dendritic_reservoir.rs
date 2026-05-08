@@ -37,7 +37,10 @@
 //! REFERENCE: PRISM GPU Plan §4.1 (Phase 0 Dendritic Reservoir Kernel)
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -388,7 +391,8 @@ impl DendriticReservoirGpu {
         log::debug!("Initializing reservoir state with seed={}", seed);
 
         unsafe {
-            self.stream.launch_builder(&self.init_reservoir)
+            self.stream
+                .launch_builder(&self.init_reservoir)
                 .arg(state)
                 .arg(&(num_vertices as i32))
                 .arg(&(self.num_branches as i32))
@@ -422,7 +426,8 @@ impl DendriticReservoirGpu {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.propagate_dendritic)
+            self.stream
+                .launch_builder(&self.propagate_dendritic)
                 .arg(state_out)
                 .arg(state_in)
                 .arg(row_ptr)
@@ -468,7 +473,8 @@ impl DendriticReservoirGpu {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.compute_metrics_combined)
+            self.stream
+                .launch_builder(&self.compute_metrics_combined)
                 .arg(state)
                 .arg(&mut difficulty_device)
                 .arg(&mut uncertainty_device)

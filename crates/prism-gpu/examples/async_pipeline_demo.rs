@@ -6,7 +6,9 @@
 
 use anyhow::Result;
 use cudarc::driver::{CudaContext, LaunchConfig};
-use prism_gpu::{AsyncCoordinator, GpuPipelineStage, GpuTripleBuffer, ManagedGpuContext, PipelineStageManager};
+use prism_gpu::{
+    AsyncCoordinator, GpuPipelineStage, GpuTripleBuffer, ManagedGpuContext, PipelineStageManager,
+};
 use std::sync::Arc;
 
 fn main() -> Result<()> {
@@ -101,7 +103,10 @@ fn demo_async_coordinator(device: &Arc<CudaContext>) -> Result<()> {
     println!("✓ Queued upload (op_id: {})", upload_id);
 
     let compute_id = coordinator.queue_compute("demo_kernel", &[upload_id])?;
-    println!("✓ Queued compute (op_id: {}, depends on: {})", compute_id, upload_id);
+    println!(
+        "✓ Queued compute (op_id: {}, depends on: {})",
+        compute_id, upload_id
+    );
 
     let download_id = coordinator.queue_download(&buffer, &mut host_result)?;
     println!("✓ Queued download (op_id: {})", download_id);
@@ -179,7 +184,11 @@ fn demo_pipeline_manager(device: &Arc<CudaContext>) -> Result<()> {
         pipeline.execute_iteration()?;
         if (i + 1) % 5 == 0 {
             let stats = pipeline.get_stats();
-            println!("    After {} iterations: {:.2} iter/sec", i + 1, stats.throughput);
+            println!(
+                "    After {} iterations: {:.2} iter/sec",
+                i + 1,
+                stats.throughput
+            );
         }
     }
 
@@ -205,8 +214,14 @@ fn demo_managed_context(device: &Arc<CudaContext>) -> Result<()> {
     // Check capabilities
     println!("  Capabilities:");
     println!("    - Stream management: {}", ctx.has_stream_management());
-    println!("    - Async coordinator: {}", ctx.async_coordinator().is_some());
-    println!("    - Pipeline coordinator: {}", ctx.pipeline_coordinator().is_some());
+    println!(
+        "    - Async coordinator: {}",
+        ctx.async_coordinator().is_some()
+    );
+    println!(
+        "    - Pipeline coordinator: {}",
+        ctx.pipeline_coordinator().is_some()
+    );
 
     // Create triple buffer via context
     let buffer = ctx.create_triple_buffer::<f32>(2048)?;

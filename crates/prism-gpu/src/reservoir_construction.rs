@@ -57,13 +57,19 @@ impl BioReservoir {
                 let end = (i + local_radius as usize + 1).min(n_residues);
 
                 for j in start..end {
-                    if i == j { continue; }
+                    if i == j {
+                        continue;
+                    }
 
                     let dist = (i as i32 - j as i32).abs() as f32;
                     let weight = (-dist / tau).exp();
 
                     // Deterministic sign based on XOR pattern (no randomness)
-                    let sign = if (i ^ j ^ (b as usize)) & 1 == 0 { 1.0 } else { -1.0 };
+                    let sign = if (i ^ j ^ (b as usize)) & 1 == 0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
 
                     connections[i].push(SparseConnection {
                         target: j,
@@ -202,9 +208,9 @@ impl BioReservoir {
 ///
 /// Computes: W = (H^T H + λI)^-1 H^T y
 pub fn compute_readout_weights(
-    reservoir_states: &[Vec<f32>],  // [n_samples][state_dim]
-    targets: &[f32],                 // [n_samples] target values
-    lambda: f32,                     // Regularization (default: 1e-4)
+    reservoir_states: &[Vec<f32>], // [n_samples][state_dim]
+    targets: &[f32],               // [n_samples] target values
+    lambda: f32,                   // Regularization (default: 1e-4)
 ) -> Vec<f32> {
     if reservoir_states.is_empty() || targets.is_empty() {
         return Vec::new();
@@ -303,8 +309,14 @@ mod tests {
         // Check that connections are deterministic
         let reservoir2 = BioReservoir::construct(100, 8, 16, 0.95, 8);
         for i in 0..100 {
-            assert_eq!(reservoir.connections[i].len(), reservoir2.connections[i].len());
-            for (c1, c2) in reservoir.connections[i].iter().zip(&reservoir2.connections[i]) {
+            assert_eq!(
+                reservoir.connections[i].len(),
+                reservoir2.connections[i].len()
+            );
+            for (c1, c2) in reservoir.connections[i]
+                .iter()
+                .zip(&reservoir2.connections[i])
+            {
                 assert_eq!(c1.target, c2.target);
                 assert!((c1.weight - c2.weight).abs() < 1e-6);
             }

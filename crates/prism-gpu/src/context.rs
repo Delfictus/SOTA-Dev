@@ -20,7 +20,7 @@
 //! REFERENCE: PRISM GPU Plan §4.0 (GPU Context Management)
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaModule, PushKernelArg, DeviceSlice};
+use cudarc::driver::{CudaContext, CudaModule, DeviceSlice, PushKernelArg};
 use cudarc::nvrtc::Ptx;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -328,7 +328,8 @@ impl GpuContext {
         let ptx = Ptx::from_src(ptx_str);
 
         // Load PTX module into device context
-        let module = self.context
+        let module = self
+            .context
             .load_module(ptx)
             .with_context(|| format!("Failed to load PTX module '{}'", name))?;
 

@@ -20,7 +20,9 @@
 //! - **Pragmatic Value**: Goal-directed (vertex degree-based)
 //! - **Epistemic Value**: Information-seeking (phase variance-based)
 
-use cudarc::driver::{CudaContext, CudaFunction, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaStream, DeviceSlice, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use prism_core::{Graph, PrismError};
 use std::sync::Arc;
@@ -114,7 +116,7 @@ impl ActiveInferenceGpu {
 
         // Load PTX module (spec reference: foundation/active_inference/gpu.rs:54-77)
         let ptx = Ptx::from_file(ptx_path);
-        
+
         // Load PTX module
         let module = context.load_module(ptx).map_err(|e| {
             PrismError::gpu(
@@ -126,7 +128,10 @@ impl ActiveInferenceGpu {
         // Retrieve functions
         let get_kernel = |name| {
             module.load_function(name).map_err(|e| {
-                PrismError::gpu("active_inference", format!("Failed to find kernel {}: {}", name, e))
+                PrismError::gpu(
+                    "active_inference",
+                    format!("Failed to find kernel {}: {}", name, e),
+                )
             })
         };
 
@@ -230,18 +235,20 @@ impl ActiveInferenceGpu {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.prediction_error_kernel)
+            self.stream
+                .launch_builder(&self.prediction_error_kernel)
                 .arg(&mut d_pred_error)
                 .arg(&d_observations)
                 .arg(&d_mean)
                 .arg(&d_precision)
                 .arg(&(n as i32))
-                .launch(cfg).map_err(|e| {
-                PrismError::gpu(
-                    "active_inference",
-                    format!("Prediction error kernel failed: {}", e),
-                )
-            })?;
+                .launch(cfg)
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "active_inference",
+                        format!("Prediction error kernel failed: {}", e),
+                    )
+                })?;
         }
 
         // Download prediction errors using device
@@ -420,19 +427,21 @@ impl ActiveInferenceGpu {
         })?;
 
         unsafe {
-            self.stream.launch_builder(&self.kl_divergence_kernel)
+            self.stream
+                .launch_builder(&self.kl_divergence_kernel)
                 .arg(&d_mean_q)
                 .arg(&d_mean_p)
                 .arg(&d_var_q)
                 .arg(&d_var_p)
                 .arg(&mut d_kl_components)
                 .arg(&(n as i32))
-                .launch(cfg).map_err(|e| {
-                PrismError::gpu(
-                    "active_inference",
-                    format!("KL divergence kernel failed: {}", e),
-                )
-            })?;
+                .launch(cfg)
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "active_inference",
+                        format!("KL divergence kernel failed: {}", e),
+                    )
+                })?;
         }
 
         // Sum KL components
@@ -444,16 +453,18 @@ impl ActiveInferenceGpu {
         })?;
 
         unsafe {
-            self.stream.launch_builder(&self.sum_reduction_kernel)
+            self.stream
+                .launch_builder(&self.sum_reduction_kernel)
                 .arg(&d_kl_components)
                 .arg(&mut d_complexity)
                 .arg(&(n as i32))
-                .launch(cfg).map_err(|e| {
-                PrismError::gpu(
-                    "active_inference",
-                    format!("Sum reduction kernel failed: {}", e),
-                )
-            })?;
+                .launch(cfg)
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "active_inference",
+                        format!("Sum reduction kernel failed: {}", e),
+                    )
+                })?;
         }
 
         // Compute accuracy (similar process for prediction errors)
@@ -484,18 +495,20 @@ impl ActiveInferenceGpu {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.prediction_error_kernel)
+            self.stream
+                .launch_builder(&self.prediction_error_kernel)
                 .arg(&mut d_errors)
                 .arg(&d_obs)
                 .arg(&d_mean_q)
                 .arg(&d_precision)
                 .arg(&(observations.len() as i32))
-                .launch(obs_cfg).map_err(|e| {
-                PrismError::gpu(
-                    "active_inference",
-                    format!("Prediction error kernel failed: {}", e),
-                )
-            })?;
+                .launch(obs_cfg)
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "active_inference",
+                        format!("Prediction error kernel failed: {}", e),
+                    )
+                })?;
         }
 
         let mut d_accuracy_components = self
@@ -509,14 +522,16 @@ impl ActiveInferenceGpu {
             })?;
 
         unsafe {
-            self.stream.launch_builder(&self.accuracy_kernel)
+            self.stream
+                .launch_builder(&self.accuracy_kernel)
                 .arg(&d_errors)
                 .arg(&d_precision)
                 .arg(&mut d_accuracy_components)
                 .arg(&(observations.len() as i32))
-                .launch(obs_cfg).map_err(|e| {
-                PrismError::gpu("active_inference", format!("Accuracy kernel failed: {}", e))
-            })?;
+                .launch(obs_cfg)
+                .map_err(|e| {
+                    PrismError::gpu("active_inference", format!("Accuracy kernel failed: {}", e))
+                })?;
         }
 
         let mut d_accuracy = self.stream.alloc_zeros::<f64>(1).map_err(|e| {
@@ -527,16 +542,18 @@ impl ActiveInferenceGpu {
         })?;
 
         unsafe {
-            self.stream.launch_builder(&self.sum_reduction_kernel)
+            self.stream
+                .launch_builder(&self.sum_reduction_kernel)
                 .arg(&d_accuracy_components)
                 .arg(&mut d_accuracy)
                 .arg(&(observations.len() as i32))
-                .launch(obs_cfg).map_err(|e| {
-                PrismError::gpu(
-                    "active_inference",
-                    format!("Sum reduction kernel failed: {}", e),
-                )
-            })?;
+                .launch(obs_cfg)
+                .map_err(|e| {
+                    PrismError::gpu(
+                        "active_inference",
+                        format!("Sum reduction kernel failed: {}", e),
+                    )
+                })?;
         }
 
         // Download results

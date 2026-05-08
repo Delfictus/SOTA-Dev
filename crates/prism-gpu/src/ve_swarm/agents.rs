@@ -4,7 +4,10 @@
 //! optimal feature combinations for RISE/FALL prediction.
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -97,7 +100,7 @@ impl SwarmAgents {
     pub fn new(ctx: Arc<CudaContext>, ptx_path: &str, config: SwarmConfig) -> Result<Self> {
         let stream = ctx.default_stream();
         let ptx = Ptx::from_file(ptx_path);
-        
+
         let module = ctx.load_module(ptx)?;
 
         let fn_init = module.load_function("ve_swarm_init_agents").unwrap();
@@ -149,7 +152,8 @@ impl SwarmAgents {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_init)
+            self.stream
+                .launch_builder(&self.fn_init)
                 .arg(&mut self.agent_states)
                 .arg(&mut self.swarm_state)
                 .arg(&seed)
@@ -180,7 +184,8 @@ impl SwarmAgents {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_predict)
+            self.stream
+                .launch_builder(&self.fn_predict)
                 .arg(&self.agent_states)
                 .arg(attended_features)
                 .arg(temporal_embedding)
@@ -214,7 +219,8 @@ impl SwarmAgents {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_consensus)
+            self.stream
+                .launch_builder(&self.fn_consensus)
                 .arg(agent_predictions)
                 .arg(agent_confidences)
                 .arg(&self.agent_states)
@@ -245,7 +251,8 @@ impl SwarmAgents {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_update)
+            self.stream
+                .launch_builder(&self.fn_update)
                 .arg(&mut self.agent_states)
                 .arg(&mut self.swarm_state)
                 .arg(agent_predictions)
@@ -280,7 +287,8 @@ impl SwarmAgents {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_evolve)
+            self.stream
+                .launch_builder(&self.fn_evolve)
                 .arg(&mut self.agent_states)
                 .arg(&mut self.swarm_state)
                 .arg(&seed)
@@ -307,7 +315,8 @@ impl SwarmAgents {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_importance)
+            self.stream
+                .launch_builder(&self.fn_importance)
                 .arg(&self.agent_states)
                 .arg(&self.swarm_state)
                 .arg(&mut importance)
@@ -341,12 +350,12 @@ impl SwarmAgents {
 /// Feature groups for analysis
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeatureGroup {
-    Tda,        // 0-47
-    Reservoir,  // 48-79
-    Physics,    // 80-91
-    Fitness,    // 92-95
-    Cycle,      // 96-100
-    Spike,      // 101-108
+    Tda,       // 0-47
+    Reservoir, // 48-79
+    Physics,   // 80-91
+    Fitness,   // 92-95
+    Cycle,     // 96-100
+    Spike,     // 101-108
 }
 
 impl FeatureGroup {

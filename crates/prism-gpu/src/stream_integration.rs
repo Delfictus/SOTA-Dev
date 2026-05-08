@@ -61,7 +61,10 @@
 
 use crate::stream_manager::{AsyncPipelineCoordinator, StreamPool, StreamPurpose};
 use anyhow::{anyhow, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DeviceRepr, LaunchConfig, ValidAsZeroBits, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaSlice, CudaStream, DeviceRepr, DeviceSlice, LaunchConfig, PushKernelArg,
+    ValidAsZeroBits,
+};
 use prism_core::{KernelTelemetry, RuntimeConfig};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
@@ -179,12 +182,15 @@ impl<T: DeviceRepr + ValidAsZeroBits> TripleBuffer<T> {
         let state = &self.states[idx];
 
         // Try to transition Free → Uploading
-        if state.compare_exchange(
-            BufferState::Free as u8,
-            BufferState::Uploading as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ).is_ok() {
+        if state
+            .compare_exchange(
+                BufferState::Free as u8,
+                BufferState::Uploading as u8,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
             Some(&self.buffers[idx])
         } else {
             None
@@ -202,12 +208,15 @@ impl<T: DeviceRepr + ValidAsZeroBits> TripleBuffer<T> {
         // Check if buffer finished uploading
         if state.load(Ordering::Acquire) == BufferState::Uploading as u8 {
             // Try to transition Uploading → Processing
-            if state.compare_exchange(
-                BufferState::Uploading as u8,
-                BufferState::Processing as u8,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ).is_ok() {
+            if state
+                .compare_exchange(
+                    BufferState::Uploading as u8,
+                    BufferState::Processing as u8,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
                 return Some(&self.buffers[idx]);
             }
         }
@@ -225,12 +234,15 @@ impl<T: DeviceRepr + ValidAsZeroBits> TripleBuffer<T> {
         // Check if buffer finished processing
         if state.load(Ordering::Acquire) == BufferState::Processing as u8 {
             // Try to transition Processing → Downloading
-            if state.compare_exchange(
-                BufferState::Processing as u8,
-                BufferState::Downloading as u8,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ).is_ok() {
+            if state
+                .compare_exchange(
+                    BufferState::Processing as u8,
+                    BufferState::Downloading as u8,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
                 return Some(&self.buffers[idx]);
             }
         }
@@ -279,20 +291,11 @@ impl<T: DeviceRepr + ValidAsZeroBits> TripleBuffer<T> {
 #[derive(Debug, Clone)]
 enum PendingOp {
     /// Upload operation
-    Upload {
-        buffer_id: usize,
-        event_idx: usize,
-    },
+    Upload { buffer_id: usize, event_idx: usize },
     /// Compute operation
-    Compute {
-        kernel: String,
-        event_idx: usize,
-    },
+    Compute { kernel: String, event_idx: usize },
     /// Download operation
-    Download {
-        buffer_id: usize,
-        event_idx: usize,
-    },
+    Download { buffer_id: usize, event_idx: usize },
 }
 
 /// Completed operation result
@@ -487,7 +490,9 @@ impl AsyncCoordinator {
         while let Some(op) = self.pending_ops.pop_front() {
             let (op_id, op_type) = match op {
                 PendingOp::Upload { event_idx, .. } => (event_idx, "upload".to_string()),
-                PendingOp::Compute { kernel, event_idx } => (event_idx, format!("compute:{}", kernel)),
+                PendingOp::Compute { kernel, event_idx } => {
+                    (event_idx, format!("compute:{}", kernel))
+                }
                 PendingOp::Download { event_idx, .. } => (event_idx, "download".to_string()),
             };
 
@@ -694,8 +699,7 @@ impl PipelineStageManager {
 
         // Running average
         let n = self.stats.iterations as f64;
-        self.stats.avg_iteration_ms =
-            (self.stats.avg_iteration_ms * (n - 1.0) + iter_time) / n;
+        self.stats.avg_iteration_ms = (self.stats.avg_iteration_ms * (n - 1.0) + iter_time) / n;
 
         // Calculate throughput
         if let Some(start) = self.start_time {
@@ -1042,7 +1046,10 @@ impl ManagedGpuContext {
         if let Some(ref coordinator) = self.pipeline_coordinator {
             coordinator.synchronize()
         } else {
-            self.context.default_stream().synchronize().map_err(Into::into)
+            self.context
+                .default_stream()
+                .synchronize()
+                .map_err(Into::into)
         }
     }
 

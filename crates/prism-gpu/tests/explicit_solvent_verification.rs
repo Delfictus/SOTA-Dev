@@ -55,7 +55,11 @@ fn test_minimum_image_convention() {
     let p3 = [9.0f32, 1.0, 1.0];
     let d = min_image_distance(p1, p3, box_dims);
     println!("Case 2 (across boundary): distance = {:.4} Å", d);
-    assert!((d - 2.0).abs() < 1e-5, "Expected 2.0 via PBC wrap, got {}", d);
+    assert!(
+        (d - 2.0).abs() < 1e-5,
+        "Expected 2.0 via PBC wrap, got {}",
+        d
+    );
 
     // Case 3: Corner to corner (requires 3D wrapping)
     // (0.5, 0.5, 0.5) to (9.5, 9.5, 9.5) should be sqrt(3) Å
@@ -63,8 +67,16 @@ fn test_minimum_image_convention() {
     let p5 = [9.5f32, 9.5, 9.5];
     let d = min_image_distance(p4, p5, box_dims);
     let expected = (3.0f32).sqrt(); // sqrt(1^2 + 1^2 + 1^2)
-    println!("Case 3 (corner wrap): distance = {:.4} Å (expected {:.4})", d, expected);
-    assert!((d - expected).abs() < 1e-4, "Expected {:.4}, got {:.4}", expected, d);
+    println!(
+        "Case 3 (corner wrap): distance = {:.4} Å (expected {:.4})",
+        d, expected
+    );
+    assert!(
+        (d - expected).abs() < 1e-4,
+        "Expected {:.4}, got {:.4}",
+        expected,
+        d
+    );
 
     // Case 4: Exactly at half box - should be 5.0 Å
     let p6 = [6.0f32, 1.0, 1.0];
@@ -83,12 +95,18 @@ fn test_minimum_image_convention() {
             rand_f32() * box_dims[2],
         ];
         let d = min_image_distance(p1, p_rand, box_dims);
-        assert!(d <= max_possible + 0.01,
+        assert!(
+            d <= max_possible + 0.01,
             "Distance {} exceeds max possible {} for random point {:?}",
-            d, max_possible, p_rand
+            d,
+            max_possible,
+            p_rand
         );
     }
-    println!("Case 5 (random check): All 100 random distances <= {:.2} Å ✓", max_possible);
+    println!(
+        "Case 5 (random check): All 100 random distances <= {:.2} Å ✓",
+        max_possible
+    );
 
     println!("\n✓ Minimum image convention test PASSED");
 }
@@ -121,13 +139,13 @@ fn test_neighbor_list_pbc_brute_force() {
     // Create test system: 8 particles at corners + 1 in center
     // This ensures we have pairs that cross boundaries
     let positions = vec![
-        [0.5f32, 0.5, 0.5],     // 0: near corner 0,0,0
-        [9.5f32, 0.5, 0.5],     // 1: near corner L,0,0 - close to 0 via PBC
-        [0.5f32, 9.5, 0.5],     // 2: near corner 0,L,0 - close to 0 via PBC
-        [0.5f32, 0.5, 9.5],     // 3: near corner 0,0,L - close to 0 via PBC
-        [9.5f32, 9.5, 0.5],     // 4: close to 0,1,2 via PBC
-        [5.0f32, 5.0, 5.0],     // 5: center (far from corners)
-        [4.5f32, 0.5, 0.5],     // 6: close to 0 (same side)
+        [0.5f32, 0.5, 0.5], // 0: near corner 0,0,0
+        [9.5f32, 0.5, 0.5], // 1: near corner L,0,0 - close to 0 via PBC
+        [0.5f32, 9.5, 0.5], // 2: near corner 0,L,0 - close to 0 via PBC
+        [0.5f32, 0.5, 9.5], // 3: near corner 0,0,L - close to 0 via PBC
+        [9.5f32, 9.5, 0.5], // 4: close to 0,1,2 via PBC
+        [5.0f32, 5.0, 5.0], // 5: center (far from corners)
+        [4.5f32, 0.5, 0.5], // 6: close to 0 (same side)
     ];
 
     let n_atoms = positions.len();
@@ -149,12 +167,19 @@ fn test_neighbor_list_pbc_brute_force() {
             let r = (dx * dx + dy * dy + dz * dz).sqrt();
             if r < cutoff {
                 brute_force_pairs.push((i, j));
-                println!("   Pair ({}, {}): distance = {:.3} Å (within cutoff)", i, j, r);
+                println!(
+                    "   Pair ({}, {}): distance = {:.3} Å (within cutoff)",
+                    i, j, r
+                );
             }
         }
     }
 
-    println!("\nBrute-force found {} pairs within cutoff {:.1} Å:", brute_force_pairs.len(), cutoff);
+    println!(
+        "\nBrute-force found {} pairs within cutoff {:.1} Å:",
+        brute_force_pairs.len(),
+        cutoff
+    );
     for (i, j) in &brute_force_pairs {
         println!("   ({}, {})", i, j);
     }
@@ -178,7 +203,9 @@ fn test_neighbor_list_pbc_brute_force() {
     for (i, j) in &expected_pairs {
         assert!(
             brute_force_pairs.contains(&(*i, *j)),
-            "Expected pair ({}, {}) not found in brute-force pairs", i, j
+            "Expected pair ({}, {}) not found in brute-force pairs",
+            i,
+            j
         );
     }
 
@@ -194,8 +221,8 @@ fn test_settle_geometry_tolerance() {
     println!("\n=== SETTLE Constraint Tolerance Test ===\n");
 
     // TIP3P ideal geometry
-    let oh_bond = 0.9572f32;         // O-H bond length
-    let hh_distance = 1.5139f32;     // H-H distance (derived from angle)
+    let oh_bond = 0.9572f32; // O-H bond length
+    let hh_distance = 1.5139f32; // H-H distance (derived from angle)
     let hoh_angle_deg = 104.52f32;
 
     // Calculate H-H distance from angle: h-h = 2 * oh * sin(angle/2)
@@ -205,7 +232,10 @@ fn test_settle_geometry_tolerance() {
     println!("TIP3P ideal geometry:");
     println!("   O-H bond: {:.4} Å", oh_bond);
     println!("   H-O-H angle: {:.2}°", hoh_angle_deg);
-    println!("   H-H distance: {:.4} Å (calculated: {:.4} Å)", hh_distance, calc_hh);
+    println!(
+        "   H-H distance: {:.4} Å (calculated: {:.4} Å)",
+        hh_distance, calc_hh
+    );
 
     // Helper function to check SETTLE satisfaction
     fn check_settle_violations(
@@ -215,15 +245,18 @@ fn test_settle_geometry_tolerance() {
         oh_target: f32,
         hh_target: f32,
     ) -> (f32, f32, f32) {
-        let oh1 = ((h1_pos[0] - o_pos[0]).powi(2) +
-                   (h1_pos[1] - o_pos[1]).powi(2) +
-                   (h1_pos[2] - o_pos[2]).powi(2)).sqrt();
-        let oh2 = ((h2_pos[0] - o_pos[0]).powi(2) +
-                   (h2_pos[1] - o_pos[1]).powi(2) +
-                   (h2_pos[2] - o_pos[2]).powi(2)).sqrt();
-        let hh = ((h2_pos[0] - h1_pos[0]).powi(2) +
-                  (h2_pos[1] - h1_pos[1]).powi(2) +
-                  (h2_pos[2] - h1_pos[2]).powi(2)).sqrt();
+        let oh1 = ((h1_pos[0] - o_pos[0]).powi(2)
+            + (h1_pos[1] - o_pos[1]).powi(2)
+            + (h1_pos[2] - o_pos[2]).powi(2))
+        .sqrt();
+        let oh2 = ((h2_pos[0] - o_pos[0]).powi(2)
+            + (h2_pos[1] - o_pos[1]).powi(2)
+            + (h2_pos[2] - o_pos[2]).powi(2))
+        .sqrt();
+        let hh = ((h2_pos[0] - h1_pos[0]).powi(2)
+            + (h2_pos[1] - h1_pos[1]).powi(2)
+            + (h2_pos[2] - h1_pos[2]).powi(2))
+        .sqrt();
 
         let oh1_violation = (oh1 - oh_target).abs();
         let oh2_violation = (oh2 - oh_target).abs();
@@ -279,8 +312,15 @@ fn test_settle_geometry_tolerance() {
         max_violation = max_violation.max(v1).max(v2).max(v3);
     }
 
-    println!("   Maximum violation across {} waters: {:.6} Å", n_waters, max_violation);
-    assert!(max_violation < tolerance, "Max violation {} exceeds tolerance", max_violation);
+    println!(
+        "   Maximum violation across {} waters: {:.6} Å",
+        n_waters, max_violation
+    );
+    assert!(
+        max_violation < tolerance,
+        "Max violation {} exceeds tolerance",
+        max_violation
+    );
     println!("   ✓ All {} waters satisfy SETTLE tolerance", n_waters);
 
     println!("\n✓ SETTLE geometry tolerance test PASSED");
@@ -295,9 +335,9 @@ fn test_displacement_rebuild_trigger() {
     println!("\n=== Displacement-Based Rebuild Trigger Test ===\n");
 
     // Verlet list parameters
-    let cutoff = 9.0f32;        // Non-bonded cutoff
-    let skin = 1.0f32;          // Verlet skin
-    let rebuild_threshold = 0.5f32;  // Rebuild when max_disp > skin/2
+    let cutoff = 9.0f32; // Non-bonded cutoff
+    let skin = 1.0f32; // Verlet skin
+    let rebuild_threshold = 0.5f32; // Rebuild when max_disp > skin/2
 
     println!("Neighbor list parameters:");
     println!("   Cutoff: {:.1} Å", cutoff);
@@ -331,38 +371,42 @@ fn test_displacement_rebuild_trigger() {
     let box_dims = [30.0f32, 30.0, 30.0];
 
     // Initial positions (saved at neighbor list build)
-    let reference_positions = vec![
-        [5.0f32, 5.0, 5.0],
-        [15.0, 15.0, 15.0],
-        [25.0, 25.0, 25.0],
-    ];
+    let reference_positions = vec![[5.0f32, 5.0, 5.0], [15.0, 15.0, 15.0], [25.0, 25.0, 25.0]];
 
     // Test case 1: Small movement (no rebuild needed)
     let current_positions_small = vec![
-        [5.1f32, 5.1, 5.1],     // Moved 0.17 Å
-        [15.0, 15.0, 15.0],     // No movement
-        [25.0, 25.0, 25.0],     // No movement
+        [5.1f32, 5.1, 5.1], // Moved 0.17 Å
+        [15.0, 15.0, 15.0], // No movement
+        [25.0, 25.0, 25.0], // No movement
     ];
 
-    let max_disp = compute_max_displacement(&current_positions_small, &reference_positions, box_dims);
+    let max_disp =
+        compute_max_displacement(&current_positions_small, &reference_positions, box_dims);
     println!("\nTest case 1 (small movement):");
     println!("   Max displacement: {:.4} Å", max_disp);
     println!("   Rebuild needed: {}", max_disp > rebuild_threshold);
-    assert!(max_disp < rebuild_threshold, "Small movement shouldn't trigger rebuild");
+    assert!(
+        max_disp < rebuild_threshold,
+        "Small movement shouldn't trigger rebuild"
+    );
     println!("   ✓ No rebuild triggered (correct)");
 
     // Test case 2: Large movement (rebuild needed)
     let current_positions_large = vec![
-        [5.0f32, 5.0, 5.0],     // No movement
-        [15.6, 15.0, 15.0],     // Moved 0.6 Å in x
-        [25.0, 25.0, 25.0],     // No movement
+        [5.0f32, 5.0, 5.0], // No movement
+        [15.6, 15.0, 15.0], // Moved 0.6 Å in x
+        [25.0, 25.0, 25.0], // No movement
     ];
 
-    let max_disp = compute_max_displacement(&current_positions_large, &reference_positions, box_dims);
+    let max_disp =
+        compute_max_displacement(&current_positions_large, &reference_positions, box_dims);
     println!("\nTest case 2 (large movement):");
     println!("   Max displacement: {:.4} Å", max_disp);
     println!("   Rebuild needed: {}", max_disp > rebuild_threshold);
-    assert!(max_disp > rebuild_threshold, "Large movement should trigger rebuild");
+    assert!(
+        max_disp > rebuild_threshold,
+        "Large movement should trigger rebuild"
+    );
     println!("   ✓ Rebuild triggered (correct)");
 
     // Test case 3: Movement across PBC boundary
@@ -375,22 +419,23 @@ fn test_displacement_rebuild_trigger() {
     let current_positions_pbc = vec![
         [5.0f32, 5.0, 5.0],
         [15.0, 15.0, 15.0],
-        [25.3, 25.0, 25.0],     // Small movement in same direction
+        [25.3, 25.0, 25.0], // Small movement in same direction
     ];
 
     let max_disp = compute_max_displacement(&current_positions_pbc, &reference_positions, box_dims);
     println!("\nTest case 3 (small movement near boundary):");
     println!("   Max displacement: {:.4} Å", max_disp);
-    assert!(max_disp < 0.5, "0.3 Å movement should give 0.3 Å displacement");
+    assert!(
+        max_disp < 0.5,
+        "0.3 Å movement should give 0.3 Å displacement"
+    );
     println!("   ✓ PBC displacement calculation correct");
 
     // Test case 4: True cross-boundary movement
     // Reference at (29.5, 5, 5), current at (0.5, 5, 5) - moved 1 Å across boundary
-    let reference_boundary = vec![
-        [29.5f32, 5.0, 5.0],
-    ];
+    let reference_boundary = vec![[29.5f32, 5.0, 5.0]];
     let current_boundary = vec![
-        [0.5f32, 5.0, 5.0],     // Crossed boundary, real displacement = 1 Å
+        [0.5f32, 5.0, 5.0], // Crossed boundary, real displacement = 1 Å
     ];
 
     let max_disp = compute_max_displacement(&current_boundary, &reference_boundary, box_dims);
@@ -399,7 +444,10 @@ fn test_displacement_rebuild_trigger() {
     println!("   Current: (0.5, 5, 5)");
     println!("   Box: 30 Å");
     println!("   Max displacement: {:.4} Å (expected: 1.0 Å)", max_disp);
-    assert!((max_disp - 1.0).abs() < 0.01, "Cross-boundary displacement should be 1 Å via PBC");
+    assert!(
+        (max_disp - 1.0).abs() < 0.01,
+        "Cross-boundary displacement should be 1 Å via PBC"
+    );
     println!("   ✓ Cross-boundary displacement correctly computed");
 
     println!("\n✓ Displacement-based rebuild trigger test PASSED");
@@ -416,9 +464,9 @@ fn test_dof_calculation() {
     // Helper to calculate DOF
     fn calculate_dof(n_atoms: usize, n_waters: usize, n_h_constraints: usize) -> usize {
         let raw_dof = 3 * n_atoms;
-        let com_removal = 3;  // 3 translational DOF removed
-        let settle_constraints = 3 * n_waters;  // Each water has 3 constraints
-        let h_constraints = n_h_constraints;  // Each X-H bond has 1 constraint
+        let com_removal = 3; // 3 translational DOF removed
+        let settle_constraints = 3 * n_waters; // Each water has 3 constraints
+        let h_constraints = n_h_constraints; // Each X-H bond has 1 constraint
 
         raw_dof - com_removal - settle_constraints - h_constraints
     }
@@ -428,10 +476,17 @@ fn test_dof_calculation() {
     let n_atoms_1 = n_waters_1 * 3;
     let dof_1 = calculate_dof(n_atoms_1, n_waters_1, 0);
 
-    println!("Test case 1: Pure water box ({} waters, {} atoms)", n_waters_1, n_atoms_1);
+    println!(
+        "Test case 1: Pure water box ({} waters, {} atoms)",
+        n_waters_1, n_atoms_1
+    );
     println!("   Raw DOF: {} (3 * {})", 3 * n_atoms_1, n_atoms_1);
     println!("   COM removal: -3");
-    println!("   SETTLE constraints: -{} (3 * {})", 3 * n_waters_1, n_waters_1);
+    println!(
+        "   SETTLE constraints: -{} (3 * {})",
+        3 * n_waters_1,
+        n_waters_1
+    );
     println!("   Final DOF: {}", dof_1);
 
     // Expected: 3*81 - 3 - 3*27 = 243 - 3 - 81 = 159
@@ -446,7 +501,10 @@ fn test_dof_calculation() {
     let n_h_constraints = 40;
     let dof_2 = calculate_dof(n_atoms_2, n_waters_2, n_h_constraints);
 
-    println!("\nTest case 2: Protein ({} atoms) + water ({} waters)", n_protein_atoms, n_waters_2);
+    println!(
+        "\nTest case 2: Protein ({} atoms) + water ({} waters)",
+        n_protein_atoms, n_waters_2
+    );
     println!("   Total atoms: {}", n_atoms_2);
     println!("   Raw DOF: {}", 3 * n_atoms_2);
     println!("   COM removal: -3");
@@ -460,19 +518,29 @@ fn test_dof_calculation() {
 
     // Test case 3: Verify temperature formula
     // T = 2 * KE / (kB * DOF) where kB = 0.001987204 kcal/(mol·K)
-    let kb = 0.001987204f64;  // Boltzmann constant in kcal/(mol·K)
+    let kb = 0.001987204f64; // Boltzmann constant in kcal/(mol·K)
     let target_temp = 310.0f64;
     let expected_ke = 0.5 * kb * target_temp * (dof_2 as f64);
 
     println!("\nTest case 3: Temperature-energy relationship");
     println!("   Target temperature: {:.1} K", target_temp);
-    println!("   Expected KE at {:.1} K: {:.2} kcal/mol", target_temp, expected_ke);
-    println!("   KE per DOF: {:.4} kcal/mol/DOF", expected_ke / (dof_2 as f64));
+    println!(
+        "   Expected KE at {:.1} K: {:.2} kcal/mol",
+        target_temp, expected_ke
+    );
+    println!(
+        "   KE per DOF: {:.4} kcal/mol/DOF",
+        expected_ke / (dof_2 as f64)
+    );
 
     // Verify inverse: T = 2*KE/(kB*DOF)
     let calc_temp = 2.0 * expected_ke / (kb * (dof_2 as f64));
-    assert!((calc_temp - target_temp).abs() < 0.01,
-        "Temperature calculation mismatch: {:.2} vs {:.2}", calc_temp, target_temp);
+    assert!(
+        (calc_temp - target_temp).abs() < 0.01,
+        "Temperature calculation mismatch: {:.2} vs {:.2}",
+        calc_temp,
+        target_temp
+    );
     println!("   ✓ Temperature formula verified");
 
     println!("\n✓ DOF calculation test PASSED");

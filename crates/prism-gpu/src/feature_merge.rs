@@ -7,7 +7,9 @@
 //! into 140-dimensional output for DQN consumption.
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceSlice, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -23,7 +25,7 @@ pub struct FeatureMergeConfig {
 impl Default for FeatureMergeConfig {
     fn default() -> Self {
         Self {
-            block_size: 128, // __launch_bounds__(128) as specified
+            block_size: 128,         // __launch_bounds__(128) as specified
             max_residues: 1_048_576, // 1M residues max
         }
     }
@@ -47,12 +49,14 @@ impl FeatureMergeGpu {
         // Load PTX and extract feature_merge_kernel function
         let ptx_src = include_str!("../target/ptx/feature_merge.ptx");
         let ptx = Ptx::from_src(ptx_src);
-        
+
         // cudarc 0.18.1: load_ptx registers the module and functions
-        let module = device.load_module(ptx)
+        let module = device
+            .load_module(ptx)
             .context("Failed to load feature_merge PTX module")?;
 
-        let feature_merge_kernel = module.load_function("feature_merge_kernel")
+        let feature_merge_kernel = module
+            .load_function("feature_merge_kernel")
             .context("Failed to load feature_merge_kernel function")?;
 
         // Create stream for kernel execution
@@ -127,7 +131,8 @@ impl FeatureMergeGpu {
 
         // Launch kernel
         unsafe {
-            self.stream.launch_builder(&self.feature_merge_kernel)
+            self.stream
+                .launch_builder(&self.feature_merge_kernel)
                 .arg(main_features)
                 .arg(cryptic_features)
                 .arg(&mut combined_features)
@@ -205,7 +210,8 @@ impl FeatureMergeGpu {
 
         // Launch kernel
         unsafe {
-            self.stream.launch_builder(&self.feature_merge_kernel)
+            self.stream
+                .launch_builder(&self.feature_merge_kernel)
                 .arg(main_features)
                 .arg(cryptic_features)
                 .arg(output)

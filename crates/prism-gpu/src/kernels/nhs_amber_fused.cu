@@ -1930,6 +1930,11 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     }
 #endif
     if (uv_burst_active && n_aromatics > 0) {
+        // M1.2.26.RECOUPLE Part 1.1 — read operator override per replay.
+        // d_protocol->uv_burst_energy is set by the host on every chunk
+        // boundary (or once at engine init when --uv-burst-energy is set).
+        // Sentinel 0.0f means "use physics-derived hardcoded path".
+        const float uv_burst_energy_override = d_protocol->uv_burst_energy;
         // Use first 14 threads of block 0 for excitation (one per aromatic max)
         if (blockIdx.x == 0 && threadIdx.x < n_aromatics) {
             int arom_idx = threadIdx.x;
@@ -1944,7 +1949,8 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                     d_time_since_excitation,
                     d_electronic_population,
                     d_vibrational_energy,
-                    d_franck_condon_progress
+                    d_franck_condon_progress,
+                    uv_burst_energy_override  // M1.2.26.RECOUPLE Part 1.1
                 );
             }
         }

@@ -7,14 +7,13 @@
 //!
 //! Expected: N× speedup for N clones (theoretical)
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Maximum atoms per structure for warp-based processing
 /// Reduced from 512 to fit within 48KB shared memory budget
@@ -45,7 +44,7 @@ pub struct EnsembleTopology {
     pub charges: Vec<f32>,
     pub sigmas: Vec<f32>,
     pub epsilons: Vec<f32>,
-    pub bonds: Vec<(usize, usize, f32, f32)>,     // (i, j, k, r0)
+    pub bonds: Vec<(usize, usize, f32, f32)>, // (i, j, k, r0)
     pub angles: Vec<(usize, usize, usize, f32, f32)>, // (i, j, k, k_angle, theta0)
 }
 
@@ -116,12 +115,15 @@ impl EnsembleWarpMd {
                 fmad: Some(true),
                 ..Default::default()
             },
-        ).context("Failed to compile ensemble_warp_md.cu")?;
+        )
+        .context("Failed to compile ensemble_warp_md.cu")?;
 
         let module = context.load_module(ptx)?;
-        let md_kernel = module.load_function("ensemble_warp_md_kernel")
+        let md_kernel = module
+            .load_function("ensemble_warp_md_kernel")
             .context("ensemble_warp_md_kernel not found")?;
-        let init_vel_kernel = module.load_function("ensemble_init_velocities_kernel")
+        let init_vel_kernel = module
+            .load_function("ensemble_init_velocities_kernel")
             .context("ensemble_init_velocities_kernel not found")?;
 
         let n_atoms = topology.n_atoms;
@@ -137,7 +139,7 @@ impl EnsembleWarpMd {
         stream.memcpy_htod(&topology.epsilons, &mut d_epsilons)?;
 
         // Upload bonds
-        let n_bonds = topology.bonds.len();  // Actual bond count for kernel
+        let n_bonds = topology.bonds.len(); // Actual bond count for kernel
         let mut bond_atoms: Vec<i32> = Vec::with_capacity(n_bonds * 2);
         let mut bond_params: Vec<f32> = Vec::with_capacity(n_bonds * 2);
         for &(i, j, k, r0) in &topology.bonds {
@@ -159,7 +161,7 @@ impl EnsembleWarpMd {
         stream.memcpy_htod(&bond_params, &mut d_bond_params)?;
 
         // Upload angles
-        let n_angles = topology.angles.len();  // Actual angle count for kernel
+        let n_angles = topology.angles.len(); // Actual angle count for kernel
         let mut angle_atoms: Vec<i32> = Vec::with_capacity(n_angles * 4);
         let mut angle_params: Vec<f32> = Vec::with_capacity(n_angles * 2);
         for &(i, j, k, k_angle, theta0) in &topology.angles {
@@ -228,7 +230,8 @@ impl EnsembleWarpMd {
             all_positions.extend_from_slice(template_positions);
         }
 
-        self.stream.memcpy_htod(&all_positions, &mut self.d_positions)?;
+        self.stream
+            .memcpy_htod(&all_positions, &mut self.d_positions)?;
         Ok(())
     }
 
@@ -266,13 +269,7 @@ impl EnsembleWarpMd {
     }
 
     /// Run MD simulation for all clones in parallel
-    pub fn run(
-        &mut self,
-        n_steps: usize,
-        dt: f32,
-        temperature: f32,
-        gamma: f32,
-    ) -> Result<()> {
+    pub fn run(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
         if !self.initialized {
             bail!("Velocities not initialized - call initialize_velocities first");
         }
@@ -349,7 +346,8 @@ impl EnsembleWarpMd {
 
         // Download velocities
         let mut velocities = vec![0.0f32; total_pos];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
 
         // Download energies
         let mut energies = vec![0.0f32; self.n_clones * 4];

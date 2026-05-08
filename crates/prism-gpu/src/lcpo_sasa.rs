@@ -59,7 +59,7 @@ impl AtomType {
     /// Convert element symbol to atom type
     pub fn from_element(element: &str) -> Self {
         match element.trim().to_uppercase().as_str() {
-            "C" => AtomType::CarbonSp3,  // Default to sp3
+            "C" => AtomType::CarbonSp3, // Default to sp3
             "N" => AtomType::Nitrogen,
             "O" => AtomType::Oxygen,
             "S" => AtomType::Sulfur,
@@ -133,16 +133,20 @@ impl LcpoSasaGpu {
             .context("Failed to load lcpo_sasa PTX module")?;
 
         // Load kernel functions
-        let lcpo_kernel = module.load_function("lcpo_sasa_kernel")
+        let lcpo_kernel = module
+            .load_function("lcpo_sasa_kernel")
             .context("Failed to load lcpo_sasa_kernel")?;
 
-        let lcpo_batched_kernel = module.load_function("lcpo_sasa_batched_kernel")
+        let lcpo_batched_kernel = module
+            .load_function("lcpo_sasa_batched_kernel")
             .context("Failed to load lcpo_sasa_batched_kernel")?;
 
-        let sum_kernel = module.load_function("sum_sasa_kernel")
+        let sum_kernel = module
+            .load_function("sum_sasa_kernel")
             .context("Failed to load sum_sasa_kernel")?;
 
-        let residue_kernel = module.load_function("residue_sasa_atomic_kernel")
+        let residue_kernel = module
+            .load_function("residue_sasa_atomic_kernel")
             .context("Failed to load residue_sasa_atomic_kernel")?;
 
         log::info!("[LCPO] GPU SASA calculator initialized");
@@ -176,25 +180,34 @@ impl LcpoSasaGpu {
         if positions.len() != n_atoms * 3 {
             anyhow::bail!(
                 "Position array length {} doesn't match n_atoms * 3 = {}",
-                positions.len(), n_atoms * 3
+                positions.len(),
+                n_atoms * 3
             );
         }
 
         // Allocate device memory
-        let mut d_positions: CudaSlice<f32> = self.stream.alloc_zeros(n_atoms * 3)
+        let mut d_positions: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_atoms * 3)
             .context("Failed to allocate d_positions")?;
 
-        let mut d_atom_types: CudaSlice<i32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_atom_types: CudaSlice<i32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_atom_types")?;
 
-        let mut d_sasa: CudaSlice<f32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_sasa: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_sasa")?;
 
         // Copy data to device
-        self.stream.memcpy_htod(positions, &mut d_positions)
+        self.stream
+            .memcpy_htod(positions, &mut d_positions)
             .context("Failed to copy positions to device")?;
 
-        self.stream.memcpy_htod(atom_types, &mut d_atom_types)
+        self.stream
+            .memcpy_htod(atom_types, &mut d_atom_types)
             .context("Failed to copy atom_types to device")?;
 
         // Handle radii - if custom radii provided, use them; otherwise generate from atom types
@@ -202,21 +215,27 @@ impl LcpoSasaGpu {
             r.to_vec()
         } else {
             // Generate radii from atom types
-            atom_types.iter().map(|&t| {
-                match t {
-                    0 | 1 => 1.70,  // Carbon
-                    2 => 1.55,      // Nitrogen
-                    3 => 1.52,      // Oxygen
-                    4 | 5 => 1.80,  // Sulfur, Phosphorus
-                    6 => 1.20,      // Hydrogen
-                    _ => 1.70,      // Other
-                }
-            }).collect()
+            atom_types
+                .iter()
+                .map(|&t| {
+                    match t {
+                        0 | 1 => 1.70, // Carbon
+                        2 => 1.55,     // Nitrogen
+                        3 => 1.52,     // Oxygen
+                        4 | 5 => 1.80, // Sulfur, Phosphorus
+                        6 => 1.20,     // Hydrogen
+                        _ => 1.70,     // Other
+                    }
+                })
+                .collect()
         };
 
-        let mut d_radii: CudaSlice<f32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_radii: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_radii")?;
-        self.stream.memcpy_htod(&radii_vec, &mut d_radii)
+        self.stream
+            .memcpy_htod(&radii_vec, &mut d_radii)
             .context("Failed to copy radii to device")?;
 
         // Launch kernel
@@ -238,14 +257,19 @@ impl LcpoSasaGpu {
             builder.arg(&d_radii);
             builder.arg(&n_atoms_i32);
             builder.arg(&d_sasa);
-            builder.launch(cfg).context("Failed to launch lcpo_sasa_kernel")?;
+            builder
+                .launch(cfg)
+                .context("Failed to launch lcpo_sasa_kernel")?;
         }
 
-        self.stream.synchronize().context("Failed to synchronize after SASA kernel")?;
+        self.stream
+            .synchronize()
+            .context("Failed to synchronize after SASA kernel")?;
 
         // Copy results back
         let mut per_atom = vec![0.0f32; n_atoms];
-        self.stream.memcpy_dtoh(&d_sasa, &mut per_atom)
+        self.stream
+            .memcpy_dtoh(&d_sasa, &mut per_atom)
             .context("Failed to copy SASA results from device")?;
 
         let total: f32 = per_atom.iter().sum();
@@ -280,49 +304,64 @@ impl LcpoSasaGpu {
         if positions.len() != expected_len {
             anyhow::bail!(
                 "Position array length {} doesn't match n_frames * n_atoms * 3 = {}",
-                positions.len(), expected_len
+                positions.len(),
+                expected_len
             );
         }
 
         // Allocate device memory
-        let mut d_positions: CudaSlice<f32> = self.stream.alloc_zeros(n_frames * n_atoms * 3)
+        let mut d_positions: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_frames * n_atoms * 3)
             .context("Failed to allocate d_positions")?;
 
-        let mut d_atom_types: CudaSlice<i32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_atom_types: CudaSlice<i32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_atom_types")?;
 
-        let mut d_sasa: CudaSlice<f32> = self.stream.alloc_zeros(n_frames * n_atoms)
+        let mut d_sasa: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_frames * n_atoms)
             .context("Failed to allocate d_sasa")?;
 
-        let mut d_totals: CudaSlice<f32> = self.stream.alloc_zeros(n_frames)
+        let mut d_totals: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_frames)
             .context("Failed to allocate d_totals")?;
 
         // Copy data to device
-        self.stream.memcpy_htod(positions, &mut d_positions)
+        self.stream
+            .memcpy_htod(positions, &mut d_positions)
             .context("Failed to copy positions to device")?;
 
-        self.stream.memcpy_htod(atom_types, &mut d_atom_types)
+        self.stream
+            .memcpy_htod(atom_types, &mut d_atom_types)
             .context("Failed to copy atom_types to device")?;
 
         // Handle radii
         let radii_vec: Vec<f32> = if let Some(r) = radii {
             r.to_vec()
         } else {
-            atom_types.iter().map(|&t| {
-                match t {
+            atom_types
+                .iter()
+                .map(|&t| match t {
                     0 | 1 => 1.70,
                     2 => 1.55,
                     3 => 1.52,
                     4 | 5 => 1.80,
                     6 => 1.20,
                     _ => 1.70,
-                }
-            }).collect()
+                })
+                .collect()
         };
 
-        let mut d_radii: CudaSlice<f32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_radii: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_radii")?;
-        self.stream.memcpy_htod(&radii_vec, &mut d_radii)
+        self.stream
+            .memcpy_htod(&radii_vec, &mut d_radii)
             .context("Failed to copy radii to device")?;
 
         // Launch batched kernel
@@ -347,7 +386,9 @@ impl LcpoSasaGpu {
             builder.arg(&n_atoms_i32);
             builder.arg(&n_frames_i32);
             builder.arg(&d_sasa);
-            builder.launch(cfg).context("Failed to launch lcpo_sasa_batched_kernel")?;
+            builder
+                .launch(cfg)
+                .context("Failed to launch lcpo_sasa_batched_kernel")?;
         }
 
         // Sum per-atom SASA to get totals
@@ -363,18 +404,24 @@ impl LcpoSasaGpu {
             builder.arg(&n_atoms_i32);
             builder.arg(&n_frames_i32);
             builder.arg(&d_totals);
-            builder.launch(sum_cfg).context("Failed to launch sum_sasa_kernel")?;
+            builder
+                .launch(sum_cfg)
+                .context("Failed to launch sum_sasa_kernel")?;
         }
 
-        self.stream.synchronize().context("Failed to synchronize after batched SASA kernel")?;
+        self.stream
+            .synchronize()
+            .context("Failed to synchronize after batched SASA kernel")?;
 
         // Copy results back
         let mut all_sasa = vec![0.0f32; n_frames * n_atoms];
-        self.stream.memcpy_dtoh(&d_sasa, &mut all_sasa)
+        self.stream
+            .memcpy_dtoh(&d_sasa, &mut all_sasa)
             .context("Failed to copy SASA results from device")?;
 
         let mut totals = vec![0.0f32; n_frames];
-        self.stream.memcpy_dtoh(&d_totals, &mut totals)
+        self.stream
+            .memcpy_dtoh(&d_totals, &mut totals)
             .context("Failed to copy totals from device")?;
 
         // Reshape per_atom into [n_frames][n_atoms]
@@ -383,10 +430,7 @@ impl LcpoSasaGpu {
             .map(|chunk| chunk.to_vec())
             .collect();
 
-        Ok(BatchedSasaResult {
-            per_atom,
-            totals,
-        })
+        Ok(BatchedSasaResult { per_atom, totals })
     }
 
     /// Compute per-residue SASA from per-atom SASA
@@ -405,30 +449,40 @@ impl LcpoSasaGpu {
         if residue_map.len() != n_atoms {
             anyhow::bail!(
                 "residue_map length {} doesn't match n_atoms {}",
-                residue_map.len(), n_atoms
+                residue_map.len(),
+                n_atoms
             );
         }
 
         // Allocate device memory
-        let mut d_sasa: CudaSlice<f32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_sasa: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_sasa")?;
 
-        let mut d_residue_map: CudaSlice<i32> = self.stream.alloc_zeros(n_atoms)
+        let mut d_residue_map: CudaSlice<i32> = self
+            .stream
+            .alloc_zeros(n_atoms)
             .context("Failed to allocate d_residue_map")?;
 
-        let mut d_residue_sasa: CudaSlice<f32> = self.stream.alloc_zeros(n_residues)
+        let mut d_residue_sasa: CudaSlice<f32> = self
+            .stream
+            .alloc_zeros(n_residues)
             .context("Failed to allocate d_residue_sasa")?;
 
         // Copy data to device
-        self.stream.memcpy_htod(per_atom_sasa, &mut d_sasa)
+        self.stream
+            .memcpy_htod(per_atom_sasa, &mut d_sasa)
             .context("Failed to copy sasa to device")?;
 
-        self.stream.memcpy_htod(residue_map, &mut d_residue_map)
+        self.stream
+            .memcpy_htod(residue_map, &mut d_residue_map)
             .context("Failed to copy residue_map to device")?;
 
         // Zero the output (already zeros from alloc_zeros, but be explicit)
         let zeros = vec![0.0f32; n_residues];
-        self.stream.memcpy_htod(&zeros, &mut d_residue_sasa)
+        self.stream
+            .memcpy_htod(&zeros, &mut d_residue_sasa)
             .context("Failed to zero residue_sasa")?;
 
         // Launch kernel
@@ -449,14 +503,19 @@ impl LcpoSasaGpu {
             builder.arg(&d_residue_map);
             builder.arg(&n_atoms_i32);
             builder.arg(&d_residue_sasa);
-            builder.launch(cfg).context("Failed to launch residue_sasa_atomic_kernel")?;
+            builder
+                .launch(cfg)
+                .context("Failed to launch residue_sasa_atomic_kernel")?;
         }
 
-        self.stream.synchronize().context("Failed to synchronize after residue kernel")?;
+        self.stream
+            .synchronize()
+            .context("Failed to synchronize after residue kernel")?;
 
         // Copy results back
         let mut residue_sasa = vec![0.0f32; n_residues];
-        self.stream.memcpy_dtoh(&d_residue_sasa, &mut residue_sasa)
+        self.stream
+            .memcpy_dtoh(&d_residue_sasa, &mut residue_sasa)
             .context("Failed to copy residue_sasa from device")?;
 
         Ok(residue_sasa)
@@ -465,14 +524,16 @@ impl LcpoSasaGpu {
 
 /// Convert element symbols to atom type indices
 pub fn elements_to_atom_types(elements: &[String]) -> Vec<i32> {
-    elements.iter()
+    elements
+        .iter()
         .map(|e| AtomType::from_element(e) as i32)
         .collect()
 }
 
 /// Get default VDW radii from element symbols
 pub fn elements_to_radii(elements: &[String]) -> Vec<f32> {
-    elements.iter()
+    elements
+        .iter()
         .map(|e| AtomType::from_element(e).vdw_radius())
         .collect()
 }
@@ -501,7 +562,12 @@ mod tests {
 
     #[test]
     fn test_elements_to_atom_types() {
-        let elements = vec!["C".to_string(), "N".to_string(), "O".to_string(), "H".to_string()];
+        let elements = vec![
+            "C".to_string(),
+            "N".to_string(),
+            "O".to_string(),
+            "H".to_string(),
+        ];
         let types = elements_to_atom_types(&elements);
         assert_eq!(types, vec![0, 2, 3, 6]);
     }

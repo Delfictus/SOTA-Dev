@@ -95,8 +95,10 @@ fn test_langevin_thermostat_statistics() {
     // <v^2> ≈ 0.001987 * 300 / 12 * 418.4 ≈ 20.8 Å²/fs²
     // |v|_rms ≈ 4.6 Å/fs
 
-    assert!(expected_v2 > 10.0 && expected_v2 < 100.0,
-        "Expected velocity variance in reasonable range");
+    assert!(
+        expected_v2 > 10.0 && expected_v2 < 100.0,
+        "Expected velocity variance in reasonable range"
+    );
 
     println!("\n✓ Langevin thermostat statistics test PASSED");
 }
@@ -115,18 +117,29 @@ fn test_shared_memory_tile_calculations() {
 
     println!("Tile size: {} atoms (SOTA)", SM_TILE_SIZE);
     println!("Bytes per atom: {} bytes", bytes_per_atom);
-    println!("Total tile size: {} bytes (~{}KB)", tile_bytes, tile_bytes / 1024);
+    println!(
+        "Total tile size: {} bytes (~{}KB)",
+        tile_bytes,
+        tile_bytes / 1024
+    );
 
     // Typical shared memory limit: 48KB per SM
     let sm_limit = 48 * 1024;
-    assert!(tile_bytes < sm_limit,
-        "Tile size {} exceeds shared memory limit {}", tile_bytes, sm_limit);
+    assert!(
+        tile_bytes < sm_limit,
+        "Tile size {} exceeds shared memory limit {}",
+        tile_bytes,
+        sm_limit
+    );
 
     // Calculate number of tiles for various system sizes
     for n_atoms in [500, 1000, 5000, 10000, 50000] {
         let n_tiles = (n_atoms + SM_TILE_SIZE - 1) / SM_TILE_SIZE;
         let tile_pairs = n_tiles * n_tiles;
-        println!("System {} atoms: {} tiles, {} tile pairs", n_atoms, n_tiles, tile_pairs);
+        println!(
+            "System {} atoms: {} tiles, {} tile pairs",
+            n_atoms, n_tiles, tile_pairs
+        );
     }
 
     println!("\n✓ Shared memory tile calculations test PASSED");
@@ -156,9 +169,15 @@ fn test_constraint_cluster_packing() {
     let total_clusters = n_waters + n_h_clusters;
 
     let buffer_size = total_clusters * cluster_size;
-    println!("Total clusters: {} ({} SETTLE + {} H-constraint)",
-        total_clusters, n_waters, n_h_clusters);
-    println!("Buffer size: {} bytes ({:.2} MB)", buffer_size, buffer_size as f64 / 1e6);
+    println!(
+        "Total clusters: {} ({} SETTLE + {} H-constraint)",
+        total_clusters, n_waters, n_h_clusters
+    );
+    println!(
+        "Buffer size: {} bytes ({:.2} MB)",
+        buffer_size,
+        buffer_size as f64 / 1e6
+    );
 
     // Should fit easily in GPU memory
     assert!(buffer_size < 10 * 1024 * 1024, "Cluster buffer too large");
@@ -194,19 +213,29 @@ fn test_kernel_launch_overhead_estimation() {
     let savings = overhead_separate - overhead_fused;
     let speedup = overhead_separate / overhead_fused;
 
-    println!("Separate kernels: {} launches, {:.0} μs overhead",
-        launches_separate, overhead_separate);
-    println!("Fused kernels: {} launches, {:.0} μs overhead",
-        launches_fused, overhead_fused);
+    println!(
+        "Separate kernels: {} launches, {:.0} μs overhead",
+        launches_separate, overhead_separate
+    );
+    println!(
+        "Fused kernels: {} launches, {:.0} μs overhead",
+        launches_fused, overhead_fused
+    );
     println!("Overhead savings: {:.0} μs per step", savings);
     println!("Launch overhead speedup: {:.1}x", speedup);
 
     // For 1M steps: savings = 70M μs = 70 seconds
     let steps = 1_000_000;
     let total_savings_s = savings * steps as f64 / 1e6;
-    println!("Total savings for {} steps: {:.1} seconds", steps, total_savings_s);
+    println!(
+        "Total savings for {} steps: {:.1} seconds",
+        steps, total_savings_s
+    );
 
-    assert!(speedup > 2.0, "Fused kernels should provide >2x launch overhead reduction");
+    assert!(
+        speedup > 2.0,
+        "Fused kernels should provide >2x launch overhead reduction"
+    );
 
     println!("\n✓ Kernel launch overhead estimation test PASSED");
 }
@@ -218,9 +247,9 @@ fn test_kernel_launch_overhead_estimation() {
 #[cfg(feature = "cuda")]
 mod gpu_tests {
     use super::*;
-    use prism_gpu::{AmberMegaFusedHmc, KB_KCAL_MOL_K};
-    use cudarc::driver::CudaContext;
     use anyhow::Result;
+    use cudarc::driver::CudaContext;
+    use prism_gpu::{AmberMegaFusedHmc, KB_KCAL_MOL_K};
 
     /// Test fused MD step produces reasonable energies
     #[test]
@@ -242,12 +271,12 @@ mod gpu_tests {
 
         // Upload minimal topology (no bonds for simple test)
         hmc.upload_topology(
-            &[], // bonds
-            &[], // angles
-            &[], // dihedrals
-            &vec![3.4; n_atoms], // sigma (carbon)
+            &[],                  // bonds
+            &[],                  // angles
+            &[],                  // dihedrals
+            &vec![3.4; n_atoms],  // sigma (carbon)
             &vec![0.11; n_atoms], // epsilon (carbon)
-            &vec![0.0; n_atoms], // charges
+            &vec![0.0; n_atoms],  // charges
             &vec![12.0; n_atoms], // masses
         )?;
 
@@ -329,10 +358,14 @@ mod gpu_tests {
         // Run separate (regular Verlet)
         let result_separate = hmc_separate.run_verlet(n_steps, dt, temperature, gamma_fs)?;
 
-        println!("Fused: avg_temp={:.2}K, PE={:.2} kcal/mol",
-            result_fused.avg_temperature, result_fused.potential_energy);
-        println!("Separate: avg_temp={:.2}K, PE={:.2} kcal/mol",
-            result_separate.avg_temperature, result_separate.potential_energy);
+        println!(
+            "Fused: avg_temp={:.2}K, PE={:.2} kcal/mol",
+            result_fused.avg_temperature, result_fused.potential_energy
+        );
+        println!(
+            "Separate: avg_temp={:.2}K, PE={:.2} kcal/mol",
+            result_separate.avg_temperature, result_separate.potential_energy
+        );
 
         // Results should be similar (not identical due to different RNG usage)
         let temp_diff = (result_fused.avg_temperature - result_separate.avg_temperature).abs();
@@ -391,12 +424,18 @@ mod gpu_tests {
 
         println!("Initial total energy: {:.4} kcal/mol", e_start);
         println!("Final total energy: {:.4} kcal/mol", e_end);
-        println!("Energy drift: {:.4} kcal/mol ({:.2}%)", e_drift, e_drift_percent);
+        println!(
+            "Energy drift: {:.4} kcal/mol ({:.2}%)",
+            e_drift, e_drift_percent
+        );
 
         // With Verlet integrator and low friction, drift should be small
         // Allow up to 10% for 100 steps (this is conservative)
-        assert!(e_drift_percent < 10.0,
-            "Energy drift {:.2}% exceeds 10% threshold", e_drift_percent);
+        assert!(
+            e_drift_percent < 10.0,
+            "Energy drift {:.2}% exceeds 10% threshold",
+            e_drift_percent
+        );
 
         println!("\n✓ Fused energy conservation test PASSED");
         Ok(())
@@ -472,8 +511,16 @@ mod gpu_tests {
             let tiled_speedup = separate_ns_step / tiled_ns_step;
 
             println!("  Separate: {:.1} μs/step", separate_ns_step / 1000.0);
-            println!("  Fused:    {:.1} μs/step ({:.2}x speedup)", fused_ns_step / 1000.0, fused_speedup);
-            println!("  Tiled:    {:.1} μs/step ({:.2}x speedup)", tiled_ns_step / 1000.0, tiled_speedup);
+            println!(
+                "  Fused:    {:.1} μs/step ({:.2}x speedup)",
+                fused_ns_step / 1000.0,
+                fused_speedup
+            );
+            println!(
+                "  Tiled:    {:.1} μs/step ({:.2}x speedup)",
+                tiled_ns_step / 1000.0,
+                tiled_speedup
+            );
             println!();
         }
 

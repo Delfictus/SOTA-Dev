@@ -17,11 +17,7 @@ const COULOMB_CONSTANT: f64 = 332.0637;
 /// E = k_e * q1 * q2 / r
 ///
 /// This is the "truth" we compare simulation energy against.
-fn direct_coulomb_energy(
-    positions: &[[f32; 3]],
-    charges: &[f32],
-    box_dims: [f32; 3],
-) -> f64 {
+fn direct_coulomb_energy(positions: &[[f32; 3]], charges: &[f32], box_dims: [f32; 3]) -> f64 {
     let n = positions.len();
     let mut energy = 0.0f64;
 
@@ -50,22 +46,23 @@ fn direct_coulomb_energy(
 #[test]
 fn test_direct_coulomb_math() {
     // Two +1/-1 charges 10 Å apart should give -33.2 kcal/mol
-    let positions = vec![
-        [0.0f32, 0.0, 0.0],
-        [10.0f32, 0.0, 0.0],
-    ];
+    let positions = vec![[0.0f32, 0.0, 0.0], [10.0f32, 0.0, 0.0]];
     let charges = vec![1.0f32, -1.0f32];
     let box_dims = [100.0f32, 100.0, 100.0]; // Large box to avoid image interactions
 
     let energy = direct_coulomb_energy(&positions, &charges, box_dims);
     let expected = -COULOMB_CONSTANT / 10.0; // -33.2 kcal/mol
 
-    println!("Direct Coulomb energy: {:.4} kcal/mol (expected: {:.4})", energy, expected);
+    println!(
+        "Direct Coulomb energy: {:.4} kcal/mol (expected: {:.4})",
+        energy, expected
+    );
 
     assert!(
         (energy - expected).abs() < 0.01,
         "Direct Coulomb math error: {} vs {}",
-        energy, expected
+        energy,
+        expected
     );
 }
 
@@ -139,8 +136,7 @@ fn test_pme_water_box_stability() {
     let context = CudaContext::new(0).expect("Failed to create CUDA context");
 
     // Create MD engine
-    let mut hmc = AmberMegaFusedHmc::new(context, n_atoms)
-        .expect("Failed to create HMC engine");
+    let mut hmc = AmberMegaFusedHmc::new(context, n_atoms).expect("Failed to create HMC engine");
 
     // TIP3P parameters
     let mut nb_params = Vec::with_capacity(n_atoms);
@@ -175,29 +171,43 @@ fn test_pme_water_box_stability() {
 
     // Upload topology
     println!("\n📤 Uploading topology...");
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-        .expect("Failed to upload topology");
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )
+    .expect("Failed to upload topology");
 
     // Enable PBC and explicit solvent (PME)
     println!("   Setting up PBC and PME...");
     hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
-    hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
+    hmc.enable_explicit_solvent(box_dims)
+        .expect("Failed to enable explicit solvent");
 
     // Enable SETTLE for water constraints
-    hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
+    hmc.set_water_molecules(&water_oxygens)
+        .expect("Failed to set waters");
 
     println!("   ✓ Topology uploaded");
-    println!("   ✓ PBC enabled: {:.1} × {:.1} × {:.1} Å", box_dims[0], box_dims[1], box_dims[2]);
+    println!(
+        "   ✓ PBC enabled: {:.1} × {:.1} × {:.1} Å",
+        box_dims[0], box_dims[1], box_dims[2]
+    );
     println!("   ✓ PME electrostatics enabled");
     println!("   ✓ SETTLE constraints for {} waters", n_waters);
 
     // Initialize velocities at 310 K
     println!("\n🌡️  Initializing velocities at 310 K...");
-    hmc.initialize_velocities(310.0).expect("Failed to init velocities");
+    hmc.initialize_velocities(310.0)
+        .expect("Failed to init velocities");
 
     // Run equilibration (1000 steps = 2 ps with dt=2fs)
     println!("\n🔥 Equilibration (1000 steps, 2 ps)...");
-    let eq_result = hmc.run_verlet(1000, 2.0, 310.0, 0.01)
+    let eq_result = hmc
+        .run_verlet(1000, 2.0, 310.0, 0.01)
         .expect("Equilibration failed");
 
     println!("   Temperature: {:.1} K", eq_result.avg_temperature);
@@ -207,27 +217,37 @@ fn test_pme_water_box_stability() {
     // Check equilibration didn't explode
     assert!(
         eq_result.potential_energy.is_finite(),
-        "PE exploded during equilibration: {}", eq_result.potential_energy
+        "PE exploded during equilibration: {}",
+        eq_result.potential_energy
     );
     assert!(
         eq_result.avg_temperature > 50.0,
-        "System froze during equilibration: T={:.1} K", eq_result.avg_temperature
+        "System froze during equilibration: T={:.1} K",
+        eq_result.avg_temperature
     );
     assert!(
         eq_result.avg_temperature < 800.0,
-        "System overheated during equilibration: T={:.1} K", eq_result.avg_temperature
+        "System overheated during equilibration: T={:.1} K",
+        eq_result.avg_temperature
     );
 
     // Run production (5000 steps = 10 ps)
     println!("\n🏃 Production run (5000 steps, 10 ps)...");
-    let result = hmc.run_verlet(5000, 2.0, 310.0, 0.01)
+    let result = hmc
+        .run_verlet(5000, 2.0, 310.0, 0.01)
         .expect("Production run failed");
 
     println!("\n📊 Production Results:");
-    println!("   Average temperature: {:.1} K (target: 310 K)", result.avg_temperature);
+    println!(
+        "   Average temperature: {:.1} K (target: 310 K)",
+        result.avg_temperature
+    );
     println!("   Final PE: {:.1} kcal/mol", result.potential_energy);
     println!("   Final KE: {:.1} kcal/mol", result.kinetic_energy);
-    println!("   Total E: {:.1} kcal/mol", result.potential_energy + result.kinetic_energy);
+    println!(
+        "   Total E: {:.1} kcal/mol",
+        result.potential_energy + result.kinetic_energy
+    );
 
     // Verification checks
     println!("\n✅ Verification:");
@@ -238,17 +258,20 @@ fn test_pme_water_box_stability() {
     assert!(
         temp_error < 0.3,
         "Temperature drifted too far: {:.1} K vs 310 K target ({:.1}% error)",
-        result.avg_temperature, temp_error * 100.0
+        result.avg_temperature,
+        temp_error * 100.0
     );
 
     // 2. Energy stability (finite values)
     assert!(
         result.potential_energy.is_finite(),
-        "PE is non-finite: {}", result.potential_energy
+        "PE is non-finite: {}",
+        result.potential_energy
     );
     assert!(
         result.kinetic_energy.is_finite(),
-        "KE is non-finite: {}", result.kinetic_energy
+        "KE is non-finite: {}",
+        result.kinetic_energy
     );
 
     // 3. Temperature in reasonable range
@@ -267,7 +290,8 @@ fn test_pme_water_box_stability() {
     assert!(
         constraint_info.n_waters == n_waters,
         "Expected {} SETTLE waters, got {}",
-        n_waters, constraint_info.n_waters
+        n_waters,
+        constraint_info.n_waters
     );
 
     println!("\n╔══════════════════════════════════════════════════════════════╗");
@@ -301,37 +325,53 @@ fn test_water_dimer_energy() {
     // Water 2 centered at (12, 10, 10) - 4 Å apart (O-O distance)
     let positions = vec![
         // Water 1: O, H1, H2
-        8.0, 10.0, 10.0,
-        8.0 + h_offset_x, 10.0 + h_offset_y, 10.0,
-        8.0 - h_offset_x, 10.0 + h_offset_y, 10.0,
+        8.0,
+        10.0,
+        10.0,
+        8.0 + h_offset_x,
+        10.0 + h_offset_y,
+        10.0,
+        8.0 - h_offset_x,
+        10.0 + h_offset_y,
+        10.0,
         // Water 2: O, H1, H2
-        12.0, 10.0, 10.0,
-        12.0 + h_offset_x, 10.0 + h_offset_y, 10.0,
-        12.0 - h_offset_x, 10.0 + h_offset_y, 10.0,
+        12.0,
+        10.0,
+        10.0,
+        12.0 + h_offset_x,
+        10.0 + h_offset_y,
+        10.0,
+        12.0 - h_offset_x,
+        10.0 + h_offset_y,
+        10.0,
     ];
 
     let water_oxygens = vec![0, 3];
 
     // Calculate expected Coulomb energy between the two water molecules
-    let positions_3d: Vec<[f32; 3]> = positions.chunks(3)
-        .map(|c| [c[0], c[1], c[2]])
-        .collect();
+    let positions_3d: Vec<[f32; 3]> = positions.chunks(3).map(|c| [c[0], c[1], c[2]]).collect();
     let charges = vec![-0.834f32, 0.417, 0.417, -0.834, 0.417, 0.417];
 
     // Only inter-molecular interactions (exclude intra-molecular)
     let mut expected_coulomb = 0.0f64;
-    for i in 0..3 {  // Water 1 atoms
-        for j in 3..6 {  // Water 2 atoms
+    for i in 0..3 {
+        // Water 1 atoms
+        for j in 3..6 {
+            // Water 2 atoms
             let dx = positions_3d[j][0] - positions_3d[i][0];
             let dy = positions_3d[j][1] - positions_3d[i][1];
             let dz = positions_3d[j][2] - positions_3d[i][2];
             let r = (dx * dx + dy * dy + dz * dz).sqrt() as f64;
             if r > 1e-6 {
-                expected_coulomb += COULOMB_CONSTANT * (charges[i] as f64) * (charges[j] as f64) / r;
+                expected_coulomb +=
+                    COULOMB_CONSTANT * (charges[i] as f64) * (charges[j] as f64) / r;
             }
         }
     }
-    println!("Expected inter-molecular Coulomb energy: {:.4} kcal/mol", expected_coulomb);
+    println!(
+        "Expected inter-molecular Coulomb energy: {:.4} kcal/mol",
+        expected_coulomb
+    );
 
     // Initialize CUDA
     let context = CudaContext::new(0).expect("Failed to create CUDA context");
@@ -339,10 +379,10 @@ fn test_water_dimer_energy() {
 
     // TIP3P parameters
     let nb_params = vec![
-        (3.15061f32, 0.1521f32, -0.834f32, 15.9994f32),  // O
+        (3.15061f32, 0.1521f32, -0.834f32, 15.9994f32), // O
         (0.0f32, 0.0f32, 0.417f32, 1.008f32),           // H1
         (0.0f32, 0.0f32, 0.417f32, 1.008f32),           // H2
-        (3.15061f32, 0.1521f32, -0.834f32, 15.9994f32),  // O
+        (3.15061f32, 0.1521f32, -0.834f32, 15.9994f32), // O
         (0.0f32, 0.0f32, 0.417f32, 1.008f32),           // H1
         (0.0f32, 0.0f32, 0.417f32, 1.008f32),           // H2
     ];
@@ -355,41 +395,58 @@ fn test_water_dimer_energy() {
     // Exclusions within each water
     let mut exclusions: Vec<HashSet<usize>> = vec![HashSet::new(); n_atoms];
     // Water 1
-    exclusions[0].insert(1); exclusions[0].insert(2);
-    exclusions[1].insert(0); exclusions[1].insert(2);
-    exclusions[2].insert(0); exclusions[2].insert(1);
+    exclusions[0].insert(1);
+    exclusions[0].insert(2);
+    exclusions[1].insert(0);
+    exclusions[1].insert(2);
+    exclusions[2].insert(0);
+    exclusions[2].insert(1);
     // Water 2
-    exclusions[3].insert(4); exclusions[3].insert(5);
-    exclusions[4].insert(3); exclusions[4].insert(5);
-    exclusions[5].insert(3); exclusions[5].insert(4);
+    exclusions[3].insert(4);
+    exclusions[3].insert(5);
+    exclusions[4].insert(3);
+    exclusions[4].insert(5);
+    exclusions[5].insert(3);
+    exclusions[5].insert(4);
 
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-        .expect("Failed to upload topology");
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )
+    .expect("Failed to upload topology");
 
     hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
-    hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
-    hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
+    hmc.enable_explicit_solvent(box_dims)
+        .expect("Failed to enable explicit solvent");
+    hmc.set_water_molecules(&water_oxygens)
+        .expect("Failed to set waters");
 
     // Compute energy (single point, no dynamics)
     let pe = hmc.minimize(1, 0.0).expect("Failed to compute energy");
 
     println!("\nSimulation energy:");
     println!("   Total PE: {:.4} kcal/mol", pe);
-    println!("   Expected Coulomb (inter-molecular): {:.4} kcal/mol", expected_coulomb);
+    println!(
+        "   Expected Coulomb (inter-molecular): {:.4} kcal/mol",
+        expected_coulomb
+    );
 
     // The simulation PE includes LJ and Coulomb; we can't separate them easily
     // But we can verify the energy is negative (attractive) and reasonable
-    assert!(
-        pe.is_finite(),
-        "PE is non-finite"
-    );
+    assert!(pe.is_finite(), "PE is non-finite");
     assert!(
         pe < 0.0,
-        "Water dimer should have attractive (negative) energy, got {}", pe
+        "Water dimer should have attractive (negative) energy, got {}",
+        pe
     );
     assert!(
         pe > -100.0,
-        "Water dimer energy {} kcal/mol seems too negative", pe
+        "Water dimer energy {} kcal/mol seems too negative",
+        pe
     );
 
     println!("\n✓ Water dimer test passed (energy is finite, negative, and reasonable)");
@@ -411,7 +468,10 @@ fn test_compute_ewald_beta() {
     // Test case 1: 12 Å cutoff, 1e-5 tolerance
     // β = sqrt(-ln(1e-5)) / 12 = sqrt(11.5129) / 12 = 3.393 / 12 = 0.2828
     let beta1 = compute_ewald_beta(12.0, 1e-5);
-    println!("Case 1: cutoff=12.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.2828)", beta1);
+    println!(
+        "Case 1: cutoff=12.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.2828)",
+        beta1
+    );
     assert!(
         (beta1 - 0.2828).abs() < 0.001,
         "Expected β ≈ 0.283, got {:.4}",
@@ -421,7 +481,10 @@ fn test_compute_ewald_beta() {
     // Test case 2: 10 Å cutoff, 1e-5 tolerance
     // β = sqrt(11.5129) / 10 = 0.3393
     let beta2 = compute_ewald_beta(10.0, 1e-5);
-    println!("Case 2: cutoff=10.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.3393)", beta2);
+    println!(
+        "Case 2: cutoff=10.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.3393)",
+        beta2
+    );
     assert!(
         (beta2 - 0.3393).abs() < 0.001,
         "Expected β ≈ 0.339, got {:.4}",
@@ -431,7 +494,10 @@ fn test_compute_ewald_beta() {
     // Test case 3: 12 Å cutoff, 1e-6 tolerance
     // β = sqrt(-ln(1e-6)) / 12 = sqrt(13.8155) / 12 = 0.3098
     let beta3 = compute_ewald_beta(12.0, 1e-6);
-    println!("Case 3: cutoff=12.0 Å, tol=1e-6 → β={:.4} Å⁻¹ (expected ≈0.3098)", beta3);
+    println!(
+        "Case 3: cutoff=12.0 Å, tol=1e-6 → β={:.4} Å⁻¹ (expected ≈0.3098)",
+        beta3
+    );
     assert!(
         (beta3 - 0.3098).abs() < 0.001,
         "Expected β ≈ 0.310, got {:.4}",
@@ -441,7 +507,10 @@ fn test_compute_ewald_beta() {
     // Test case 4: 14 Å cutoff, 1e-5 tolerance
     // β = sqrt(11.5129) / 14 = 0.2424
     let beta4 = compute_ewald_beta(14.0, 1e-5);
-    println!("Case 4: cutoff=14.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.2424)", beta4);
+    println!(
+        "Case 4: cutoff=14.0 Å, tol=1e-5 → β={:.4} Å⁻¹ (expected ≈0.2424)",
+        beta4
+    );
     assert!(
         (beta4 - 0.2424).abs() < 0.001,
         "Expected β ≈ 0.242, got {:.4}",
@@ -453,18 +522,40 @@ fn test_compute_ewald_beta() {
     let beta_10 = compute_ewald_beta(10.0, 1e-5);
     let beta_12 = compute_ewald_beta(12.0, 1e-5);
     let beta_14 = compute_ewald_beta(14.0, 1e-5);
-    println!("   β(10Å)={:.4} > β(12Å)={:.4} > β(14Å)={:.4}", beta_10, beta_12, beta_14);
-    assert!(beta_10 > beta_12, "β should decrease with cutoff: {:.4} vs {:.4}", beta_10, beta_12);
-    assert!(beta_12 > beta_14, "β should decrease with cutoff: {:.4} vs {:.4}", beta_12, beta_14);
+    println!(
+        "   β(10Å)={:.4} > β(12Å)={:.4} > β(14Å)={:.4}",
+        beta_10, beta_12, beta_14
+    );
+    assert!(
+        beta_10 > beta_12,
+        "β should decrease with cutoff: {:.4} vs {:.4}",
+        beta_10,
+        beta_12
+    );
+    assert!(
+        beta_12 > beta_14,
+        "β should decrease with cutoff: {:.4} vs {:.4}",
+        beta_12,
+        beta_14
+    );
 
     // Test case 6: Verify β increases with tighter tolerance
     println!("\nCase 6: Verifying β increases with tighter tolerance...");
     let beta_1e5 = compute_ewald_beta(12.0, 1e-5);
     let beta_1e6 = compute_ewald_beta(12.0, 1e-6);
     let beta_1e7 = compute_ewald_beta(12.0, 1e-7);
-    println!("   β(1e-5)={:.4} < β(1e-6)={:.4} < β(1e-7)={:.4}", beta_1e5, beta_1e6, beta_1e7);
-    assert!(beta_1e6 > beta_1e5, "β should increase with tighter tolerance");
-    assert!(beta_1e7 > beta_1e6, "β should increase with tighter tolerance");
+    println!(
+        "   β(1e-5)={:.4} < β(1e-6)={:.4} < β(1e-7)={:.4}",
+        beta_1e5, beta_1e6, beta_1e7
+    );
+    assert!(
+        beta_1e6 > beta_1e5,
+        "β should increase with tighter tolerance"
+    );
+    assert!(
+        beta_1e7 > beta_1e6,
+        "β should increase with tighter tolerance"
+    );
 
     println!("\n✓ Ewald beta computation test PASSED");
 }
@@ -478,8 +569,14 @@ fn test_default_pme_tolerance() {
 
     // Should be a small positive value
     assert!(DEFAULT_PME_TOLERANCE > 0.0, "Tolerance must be positive");
-    assert!(DEFAULT_PME_TOLERANCE < 1e-3, "Tolerance should be small (< 1e-3)");
-    assert!(DEFAULT_PME_TOLERANCE >= 1e-8, "Tolerance should be >= 1e-8 for numerical stability");
+    assert!(
+        DEFAULT_PME_TOLERANCE < 1e-3,
+        "Tolerance should be small (< 1e-3)"
+    );
+    assert!(
+        DEFAULT_PME_TOLERANCE >= 1e-8,
+        "Tolerance should be >= 1e-8 for numerical stability"
+    );
 
     println!("DEFAULT_PME_TOLERANCE = {:.0e}", DEFAULT_PME_TOLERANCE);
     println!("\n✓ Default PME tolerance test PASSED");
@@ -492,8 +589,8 @@ fn test_beta_improvement_over_hardcoded() {
 
     println!("\n=== Beta Improvement Test ===\n");
 
-    let old_hardcoded_beta = 0.34;  // What was hardcoded before
-    let cutoff = 12.0;  // PRISM-4D standard cutoff
+    let old_hardcoded_beta = 0.34; // What was hardcoded before
+    let cutoff = 12.0; // PRISM-4D standard cutoff
     let tolerance = 1e-5;
 
     let correct_beta = compute_ewald_beta(cutoff, tolerance);

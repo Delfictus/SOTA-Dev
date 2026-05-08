@@ -20,10 +20,10 @@ use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
 /// TIP3P water geometry parameters
-pub const TIP3P_OH_DISTANCE: f32 = 0.9572;  // Å
-pub const TIP3P_HH_DISTANCE: f32 = 1.5136;  // Å (computed from angle)
-pub const TIP3P_MASS_O: f32 = 15.9994;      // g/mol
-pub const TIP3P_MASS_H: f32 = 1.008;        // g/mol
+pub const TIP3P_OH_DISTANCE: f32 = 0.9572; // Å
+pub const TIP3P_HH_DISTANCE: f32 = 1.5136; // Å (computed from angle)
+pub const TIP3P_MASS_O: f32 = 15.9994; // g/mol
+pub const TIP3P_MASS_H: f32 = 1.008; // g/mol
 
 /// SETTLE constraint solver for rigid water molecules
 pub struct Settle {
@@ -36,7 +36,7 @@ pub struct Settle {
     velocity_correction_kernel: CudaFunction,
 
     // Device buffers
-    d_water_indices: CudaSlice<i32>,  // [n_waters * 3] - O, H1, H2 indices for each water
+    d_water_indices: CudaSlice<i32>, // [n_waters * 3] - O, H1, H2 indices for each water
     d_old_positions: CudaSlice<f32>, // [n_total_atoms * 3] - positions before integration
 
     // Water molecule parameters
@@ -47,13 +47,13 @@ pub struct Settle {
     mass_o: f32,
     mass_h: f32,
     inv_total_mass: f32,
-    ra: f32,  // Distance from O to center of mass
-    rb: f32,  // Distance from H to center of mass along OH
-    rc: f32,  // Half HH distance
+    ra: f32, // Distance from O to center of mass
+    rb: f32, // Distance from H to center of mass along OH
+    rc: f32, // Half HH distance
 
     // Target distances (squared for efficiency)
-    roh2: f32,  // OH² target
-    rhh2: f32,  // HH² target
+    roh2: f32, // OH² target
+    rhh2: f32, // HH² target
 }
 
 impl Settle {
@@ -98,8 +98,8 @@ impl Settle {
         let mut water_indices = Vec::with_capacity(n_waters * 3);
         for &o_idx in water_oxygen_indices {
             water_indices.push(o_idx as i32);
-            water_indices.push((o_idx + 1) as i32);  // H1
-            water_indices.push((o_idx + 2) as i32);  // H2
+            water_indices.push((o_idx + 1) as i32); // H1
+            water_indices.push((o_idx + 2) as i32); // H2
         }
 
         // Allocate device buffers
@@ -149,7 +149,10 @@ impl Settle {
 
         log::info!(
             "✅ SETTLE initialized: {} waters, ra={:.4}, rb={:.4}, rc={:.4}",
-            n_waters, ra, rb, rc
+            n_waters,
+            ra,
+            rb,
+            rc
         );
 
         Ok(Self {
@@ -181,7 +184,8 @@ impl Settle {
         // Copy current positions to old positions buffer
         // This is needed because SETTLE needs the old positions to compute
         // the constraint projection direction
-        self.stream.memcpy_dtod(d_positions, &mut self.d_old_positions)?;
+        self.stream
+            .memcpy_dtod(d_positions, &mut self.d_old_positions)?;
         Ok(())
     }
 
@@ -294,7 +298,8 @@ impl Settle {
 
         // Download water indices
         let mut water_indices = vec![0i32; self.n_waters * 3];
-        self.stream.memcpy_dtoh(&self.d_water_indices, &mut water_indices)?;
+        self.stream
+            .memcpy_dtoh(&self.d_water_indices, &mut water_indices)?;
 
         let mut max_oh_violation = 0.0f32;
         let mut max_hh_violation = 0.0f32;

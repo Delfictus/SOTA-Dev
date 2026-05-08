@@ -85,11 +85,7 @@ pub struct VerletList {
 
 impl VerletList {
     /// Create a new Verlet list manager
-    pub fn new(
-        context: Arc<CudaContext>,
-        stream: Arc<CudaStream>,
-        n_atoms: usize,
-    ) -> Result<Self> {
+    pub fn new(context: Arc<CudaContext>, stream: Arc<CudaStream>, n_atoms: usize) -> Result<Self> {
         // Load PTX module
         let ptx_path = concat!(env!("CARGO_MANIFEST_DIR"), "/target/ptx/verlet_list.ptx");
         let ptx_src = std::fs::read_to_string(ptx_path)
@@ -317,9 +313,7 @@ impl VerletList {
         let n_atoms_i32 = self.n_atoms as i32;
 
         unsafe {
-            let mut builder = self
-                .stream
-                .launch_builder(&self.positions_to_fp16_kernel);
+            let mut builder = self.stream.launch_builder(&self.positions_to_fp16_kernel);
             builder.arg(d_positions);
             builder.arg(&self.d_positions_fp16);
             builder.arg(&n_atoms_i32);
@@ -337,8 +331,7 @@ impl VerletList {
     /// Get total pairs in current neighbor list
     pub fn total_pairs(&self) -> Result<i32> {
         let mut total = vec![0i32; 1];
-        self.stream
-            .memcpy_dtoh(&self.d_total_pairs, &mut total)?;
+        self.stream.memcpy_dtoh(&self.d_total_pairs, &mut total)?;
         Ok(total[0])
     }
 

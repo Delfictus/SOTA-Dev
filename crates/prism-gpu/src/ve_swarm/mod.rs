@@ -66,15 +66,18 @@
 //! println!("RISE probability: {:.2}%", prediction.rise_prob * 100.0);
 //! ```
 
-pub mod dendritic;
-pub mod attention;
 pub mod agents;
-pub mod temporal;
+pub mod attention;
 pub mod consensus;
+pub mod dendritic;
 pub mod metrics;
+pub mod temporal;
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -164,9 +167,9 @@ pub struct VeSwarmPipeline {
     fn_velocity_correction: CudaFunction,
 
     // Persistent GPU buffers
-    agent_states: CudaSlice<u8>,  // AgentState[32]
-    swarm_state: CudaSlice<u8>,   // SwarmState
-    pheromone: CudaSlice<f32>,    // [136] - now includes immunity features
+    agent_states: CudaSlice<u8>, // AgentState[32]
+    swarm_state: CudaSlice<u8>,  // SwarmState
+    pheromone: CudaSlice<f32>,   // [136] - now includes immunity features
 
     // Statistics
     prediction_count: usize,
@@ -177,7 +180,10 @@ pub struct VeSwarmPipeline {
 impl VeSwarmPipeline {
     /// Create a new VE-Swarm pipeline
     pub fn new(ctx: Arc<CudaContext>, config: VeSwarmConfig) -> Result<Self> {
-        log::info!("Initializing VE-Swarm pipeline with {} agents", config.n_agents);
+        log::info!(
+            "Initializing VE-Swarm pipeline with {} agents",
+            config.n_agents
+        );
 
         let stream = ctx.default_stream();
 
@@ -202,9 +208,11 @@ impl VeSwarmPipeline {
 
         // Load kernel functions
         let fn_init_reservoir = dendritic_module.load_function("ve_swarm_init_reservoir")?;
-        let fn_dendritic_reservoir = dendritic_module.load_function("ve_swarm_dendritic_reservoir")?;
+        let fn_dendritic_reservoir =
+            dendritic_module.load_function("ve_swarm_dendritic_reservoir")?;
         let fn_compute_attention = dendritic_module.load_function("ve_swarm_compute_attention")?;
-        let fn_aggregate_features = dendritic_module.load_function("ve_swarm_aggregate_features")?;
+        let fn_aggregate_features =
+            dendritic_module.load_function("ve_swarm_aggregate_features")?;
 
         let fn_init_agents = agents_module.load_function("ve_swarm_init_agents")?;
         let fn_agent_predict = agents_module.load_function("ve_swarm_agent_predict")?;
@@ -212,9 +220,11 @@ impl VeSwarmPipeline {
         let fn_update_stats = agents_module.load_function("ve_swarm_update_stats")?;
         let fn_evolve = agents_module.load_function("ve_swarm_evolve")?;
 
-        let fn_preprocess_temporal = temporal_module.load_function("ve_swarm_preprocess_temporal")?;
+        let fn_preprocess_temporal =
+            temporal_module.load_function("ve_swarm_preprocess_temporal")?;
         let fn_temporal_conv = temporal_module.load_function("ve_swarm_temporal_conv")?;
-        let fn_velocity_correction = temporal_module.load_function("ve_swarm_velocity_correction")?;
+        let fn_velocity_correction =
+            temporal_module.load_function("ve_swarm_velocity_correction")?;
 
         log::info!("All VE-Swarm kernel functions loaded successfully");
 
@@ -275,7 +285,8 @@ impl VeSwarmPipeline {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_init_agents)
+            self.stream
+                .launch_builder(&self.fn_init_agents)
                 .arg(&mut self.agent_states)
                 .arg(&mut self.swarm_state)
                 .arg(&seed)
@@ -292,12 +303,12 @@ impl VeSwarmPipeline {
     /// Predict RISE/FALL for a single variant
     pub fn predict_variant(
         &mut self,
-        features: &[f32],        // [N_residues x 136]
-        csr_row: &[i32],         // [N_residues + 1]
-        csr_col: &[i32],         // [N_edges]
-        csr_weight: &[f32],      // [N_edges]
-        eigenvector: &[f32],     // [N_residues]
-        freq_series: &[f32],     // [N_weeks]
+        features: &[f32],    // [N_residues x 136]
+        csr_row: &[i32],     // [N_residues + 1]
+        csr_col: &[i32],     // [N_edges]
+        csr_weight: &[f32],  // [N_edges]
+        eigenvector: &[f32], // [N_residues]
+        freq_series: &[f32], // [N_weeks]
         current_freq: f32,
         current_velocity: f32,
     ) -> Result<VeSwarmPrediction> {
@@ -305,9 +316,12 @@ impl VeSwarmPipeline {
         let n_weeks = freq_series.len();
 
         // Validate inputs
-        anyhow::ensure!(features.len() == n_residues * 136,
+        anyhow::ensure!(
+            features.len() == n_residues * 136,
             "Features must be [N_residues x 136], got {} for {} residues",
-            features.len(), n_residues);
+            features.len(),
+            n_residues
+        );
 
         // Upload data to GPU
         let d_features: CudaSlice<f32> = self.stream.clone_htod(features)?;
@@ -332,12 +346,13 @@ impl VeSwarmPipeline {
         for iter in 0..self.config.reservoir_iterations {
             let cfg = LaunchConfig {
                 grid_dim: (n_residues as u32, 1, 1),
-                block_dim: (32, 1, 1),  // One warp per residue
+                block_dim: (32, 1, 1), // One warp per residue
                 shared_mem_bytes: 0,
             };
 
             unsafe {
-                self.stream.launch_builder(&self.fn_dendritic_reservoir)
+                self.stream
+                    .launch_builder(&self.fn_dendritic_reservoir)
                     .arg(&d_features)
                     .arg(&d_csr_row)
                     .arg(&d_csr_col)
@@ -363,7 +378,8 @@ impl VeSwarmPipeline {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_compute_attention)
+            self.stream
+                .launch_builder(&self.fn_compute_attention)
                 .arg(&d_reservoir_prev) // Final reservoir state
                 .arg(&d_eigenvector)
                 .arg(&d_csr_row)
@@ -378,12 +394,13 @@ impl VeSwarmPipeline {
         // Aggregate attended features
         let cfg_agg = LaunchConfig {
             grid_dim: (1, 1, 1),
-            block_dim: (136, 1, 1),  // 136-dim features with immunity
+            block_dim: (136, 1, 1), // 136-dim features with immunity
             shared_mem_bytes: 0,
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_aggregate_features)
+            self.stream
+                .launch_builder(&self.fn_aggregate_features)
                 .arg(&d_features)
                 .arg(&d_attention)
                 .arg(&mut d_attended_features)
@@ -413,7 +430,8 @@ impl VeSwarmPipeline {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_preprocess_temporal)
+            self.stream
+                .launch_builder(&self.fn_preprocess_temporal)
                 .arg(&d_freq_series)
                 .arg(&d_freq_series) // processed output
                 .arg(&mut d_velocity)
@@ -426,7 +444,8 @@ impl VeSwarmPipeline {
 
         // Temporal conv
         unsafe {
-            self.stream.launch_builder(&self.fn_temporal_conv)
+            self.stream
+                .launch_builder(&self.fn_temporal_conv)
                 .arg(&d_freq_series)
                 .arg(&d_velocity)
                 .arg(&d_acceleration)
@@ -457,7 +476,8 @@ impl VeSwarmPipeline {
         let d_reservoir_summary: CudaSlice<f32> = self.stream.clone_htod(&reservoir_summary[..])?;
 
         unsafe {
-            self.stream.launch_builder(&self.fn_agent_predict)
+            self.stream
+                .launch_builder(&self.fn_agent_predict)
                 .arg(&self.agent_states)
                 .arg(&d_attended_features)
                 .arg(&d_temporal_embedding)
@@ -470,7 +490,8 @@ impl VeSwarmPipeline {
 
         // Stage 5: Swarm Consensus
         unsafe {
-            self.stream.launch_builder(&self.fn_swarm_consensus)
+            self.stream
+                .launch_builder(&self.fn_swarm_consensus)
                 .arg(&d_agent_predictions)
                 .arg(&d_agent_confidences)
                 .arg(&self.agent_states)
@@ -495,7 +516,7 @@ impl VeSwarmPipeline {
             confidence: final_conf[0],
             predicted_rise: final_pred[0] > self.config.prediction_threshold,
             agent_predictions: agent_preds,
-            feature_importance: vec![0.0; 136],  // Would be computed from pheromone
+            feature_importance: vec![0.0; 136], // Would be computed from pheromone
             corrected_momentum: if self.config.velocity_correction {
                 self.correct_velocity(current_velocity, current_freq)
             } else {
@@ -553,7 +574,8 @@ impl VeSwarmPipeline {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_evolve)
+            self.stream
+                .launch_builder(&self.fn_evolve)
                 .arg(&mut self.agent_states)
                 .arg(&mut self.swarm_state)
                 .arg(&seed)
@@ -571,7 +593,7 @@ impl VeSwarmPipeline {
     /// Get current swarm accuracy
     pub fn accuracy(&self) -> f32 {
         if self.prediction_count == 0 {
-            0.5  // Prior
+            0.5 // Prior
         } else {
             self.correct_count as f32 / self.prediction_count as f32
         }
@@ -592,28 +614,120 @@ impl VeSwarmPipeline {
 pub fn analyze_feature_importance(pheromone: &[f32]) -> Vec<(usize, f32, &'static str)> {
     let feature_names = [
         // TDA (0-47)
-        "tda_0", "tda_1", "tda_2", "tda_3", "tda_4", "tda_5", "tda_6", "tda_7",
-        "tda_8", "tda_9", "tda_10", "tda_11", "tda_12", "tda_13", "tda_14", "tda_15",
-        "tda_16", "tda_17", "tda_18", "tda_19", "tda_20", "tda_21", "tda_22", "tda_23",
-        "tda_24", "tda_25", "tda_26", "tda_27", "tda_28", "tda_29", "tda_30", "tda_31",
-        "tda_32", "tda_33", "tda_34", "tda_35", "tda_36", "tda_37", "tda_38", "tda_39",
-        "tda_40", "tda_41", "tda_42", "tda_43", "tda_44", "tda_45", "tda_46", "tda_47",
+        "tda_0",
+        "tda_1",
+        "tda_2",
+        "tda_3",
+        "tda_4",
+        "tda_5",
+        "tda_6",
+        "tda_7",
+        "tda_8",
+        "tda_9",
+        "tda_10",
+        "tda_11",
+        "tda_12",
+        "tda_13",
+        "tda_14",
+        "tda_15",
+        "tda_16",
+        "tda_17",
+        "tda_18",
+        "tda_19",
+        "tda_20",
+        "tda_21",
+        "tda_22",
+        "tda_23",
+        "tda_24",
+        "tda_25",
+        "tda_26",
+        "tda_27",
+        "tda_28",
+        "tda_29",
+        "tda_30",
+        "tda_31",
+        "tda_32",
+        "tda_33",
+        "tda_34",
+        "tda_35",
+        "tda_36",
+        "tda_37",
+        "tda_38",
+        "tda_39",
+        "tda_40",
+        "tda_41",
+        "tda_42",
+        "tda_43",
+        "tda_44",
+        "tda_45",
+        "tda_46",
+        "tda_47",
         // Reservoir (48-79)
-        "res_0", "res_1", "res_2", "res_3", "res_4", "res_5", "res_6", "res_7",
-        "res_8", "res_9", "res_10", "res_11", "res_12", "res_13", "res_14", "res_15",
-        "res_16", "res_17", "res_18", "res_19", "res_20", "res_21", "res_22", "res_23",
-        "res_24", "res_25", "res_26", "res_27", "res_28", "res_29", "res_30", "res_31",
+        "res_0",
+        "res_1",
+        "res_2",
+        "res_3",
+        "res_4",
+        "res_5",
+        "res_6",
+        "res_7",
+        "res_8",
+        "res_9",
+        "res_10",
+        "res_11",
+        "res_12",
+        "res_13",
+        "res_14",
+        "res_15",
+        "res_16",
+        "res_17",
+        "res_18",
+        "res_19",
+        "res_20",
+        "res_21",
+        "res_22",
+        "res_23",
+        "res_24",
+        "res_25",
+        "res_26",
+        "res_27",
+        "res_28",
+        "res_29",
+        "res_30",
+        "res_31",
         // Physics (80-91)
-        "electro_1", "electro_2", "electro_3", "electro_4",
-        "hydro_1", "hydro_2", "hydro_3", "hydro_4",
-        "volume_1", "volume_2", "charge_1", "charge_2",
+        "electro_1",
+        "electro_2",
+        "electro_3",
+        "electro_4",
+        "hydro_1",
+        "hydro_2",
+        "hydro_3",
+        "hydro_4",
+        "volume_1",
+        "volume_2",
+        "charge_1",
+        "charge_2",
         // Fitness (92-95)
-        "ddG_bind", "ddG_stab", "expression", "transmit",
+        "ddG_bind",
+        "ddG_stab",
+        "expression",
+        "transmit",
         // Cycle (96-100)
-        "phase", "emergence", "time_to_peak", "freq", "velocity",
+        "phase",
+        "emergence",
+        "time_to_peak",
+        "freq",
+        "velocity",
         // Spike (101-108)
-        "spike_0", "spike_1", "spike_2", "spike_3",
-        "spike_4", "spike_5", "spike_6", "spike_7",
+        "spike_0",
+        "spike_1",
+        "spike_2",
+        "spike_3",
+        "spike_4",
+        "spike_5",
+        "spike_6",
+        "spike_7",
     ];
 
     let mut importance: Vec<(usize, f32, &str)> = pheromone
@@ -646,7 +760,11 @@ mod tests {
         assert!(corrected < 0.0);
 
         // Low frequency: amplify
-        let corrected = if 0.05 < 0.1 && 0.02 > 0.0 { 0.02 * 1.5 } else { 0.02 };
+        let corrected = if 0.05 < 0.1 && 0.02 > 0.0 {
+            0.02 * 1.5
+        } else {
+            0.02
+        };
         assert!(corrected > 0.02);
     }
 }

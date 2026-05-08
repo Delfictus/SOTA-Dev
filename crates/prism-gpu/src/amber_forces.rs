@@ -18,36 +18,36 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct BondParam {
-    pub k: f32,      // Force constant (kcal/mol/Å²)
-    pub r0: f32,     // Equilibrium distance (Å)
+    pub k: f32,  // Force constant (kcal/mol/Å²)
+    pub r0: f32, // Equilibrium distance (Å)
 }
 
 /// Angle interaction parameters
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct AngleParam {
-    pub k: f32,       // Force constant (kcal/mol/rad²)
-    pub theta0: f32,  // Equilibrium angle (radians)
+    pub k: f32,      // Force constant (kcal/mol/rad²)
+    pub theta0: f32, // Equilibrium angle (radians)
 }
 
 /// Dihedral interaction parameters
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct DihedralParam {
-    pub k: f32,           // Barrier height (kcal/mol)
-    pub n: f32,           // Periodicity (1, 2, 3, 4, 6)
-    pub phase: f32,       // Phase offset (radians)
-    pub _pad: f32,        // Padding for alignment
+    pub k: f32,     // Barrier height (kcal/mol)
+    pub n: f32,     // Periodicity (1, 2, 3, 4, 6)
+    pub phase: f32, // Phase offset (radians)
+    pub _pad: f32,  // Padding for alignment
 }
 
 /// 1-4 nonbonded interaction parameters
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct NB14Param {
-    pub sigma: f32,       // LJ sigma (Å)
-    pub epsilon: f32,     // LJ epsilon (kcal/mol)
-    pub qi: f32,          // Charge of atom i (e)
-    pub qj: f32,          // Charge of atom j (e)
+    pub sigma: f32,   // LJ sigma (Å)
+    pub epsilon: f32, // LJ epsilon (kcal/mol)
+    pub qi: f32,      // Charge of atom i (e)
+    pub qj: f32,      // Charge of atom j (e)
 }
 
 /// Bond interaction
@@ -112,31 +112,55 @@ impl TopologyBuilder {
 
     pub fn add_bond(&mut self, i: usize, j: usize, k: f32, r0: f32) {
         self.bonds.push(Bond {
-            atom_i: i as u32, atom_j: j as u32,
-            params: BondParam { k, r0 }
+            atom_i: i as u32,
+            atom_j: j as u32,
+            params: BondParam { k, r0 },
         });
     }
 
     pub fn add_angle(&mut self, i: usize, j: usize, k_idx: usize, k: f32, theta0: f32) {
         self.angles.push(Angle {
-            atom_i: i as u32, atom_j: j as u32, atom_k: k_idx as u32,
-            params: AngleParam { k, theta0 }
+            atom_i: i as u32,
+            atom_j: j as u32,
+            atom_k: k_idx as u32,
+            params: AngleParam { k, theta0 },
         });
     }
 
-    pub fn add_dihedral(&mut self, i: usize, j: usize, k_idx: usize, l: usize,
-                        k: f32, periodicity: f32, phase: f32) {
+    pub fn add_dihedral(
+        &mut self,
+        i: usize,
+        j: usize,
+        k_idx: usize,
+        l: usize,
+        k: f32,
+        periodicity: f32,
+        phase: f32,
+    ) {
         self.dihedrals.push(Dihedral {
-            atom_i: i as u32, atom_j: j as u32, atom_k: k_idx as u32, atom_l: l as u32,
-            params: DihedralParam { k, n: periodicity, phase, _pad: 0.0 }
+            atom_i: i as u32,
+            atom_j: j as u32,
+            atom_k: k_idx as u32,
+            atom_l: l as u32,
+            params: DihedralParam {
+                k,
+                n: periodicity,
+                phase,
+                _pad: 0.0,
+            },
         });
     }
 
-    pub fn add_pair_14(&mut self, i: usize, j: usize, sigma: f32, epsilon: f32,
-                       qi: f32, qj: f32) {
+    pub fn add_pair_14(&mut self, i: usize, j: usize, sigma: f32, epsilon: f32, qi: f32, qj: f32) {
         self.pairs_14.push(Pair14 {
-            atom_i: i as u32, atom_j: j as u32,
-            params: NB14Param { sigma, epsilon, qi, qj }
+            atom_i: i as u32,
+            atom_j: j as u32,
+            params: NB14Param {
+                sigma,
+                epsilon,
+                qi,
+                qj,
+            },
         });
     }
 }
@@ -164,9 +188,11 @@ impl AmberBondedForces {
         let stream = context.default_stream();
 
         // Allocate GPU buffers
-        let d_positions = stream.alloc_zeros::<f32>(n_atoms * 3)
+        let d_positions = stream
+            .alloc_zeros::<f32>(n_atoms * 3)
             .context("Failed to allocate positions buffer")?;
-        let d_forces = stream.alloc_zeros::<f32>(n_atoms * 3)
+        let d_forces = stream
+            .alloc_zeros::<f32>(n_atoms * 3)
             .context("Failed to allocate forces buffer")?;
 
         Ok(Self {
@@ -220,8 +246,11 @@ impl AmberBondedForces {
     /// Upload positions to GPU
     pub fn upload_positions(&mut self, positions: &[f32]) -> Result<()> {
         if positions.len() != self.n_atoms * 3 {
-            anyhow::bail!("Position array size mismatch: expected {}, got {}",
-                         self.n_atoms * 3, positions.len());
+            anyhow::bail!(
+                "Position array size mismatch: expected {}, got {}",
+                self.n_atoms * 3,
+                positions.len()
+            );
         }
         self.stream.memcpy_htod(positions, &mut self.d_positions)?;
         Ok(())
@@ -247,7 +276,9 @@ impl AmberBondedForces {
             let dy = positions[j * 3 + 1] - positions[i * 3 + 1];
             let dz = positions[j * 3 + 2] - positions[i * 3 + 2];
             let r = (dx * dx + dy * dy + dz * dz).sqrt();
-            if r < 1e-10 { continue; }
+            if r < 1e-10 {
+                continue;
+            }
 
             let dr = r - bond.params.r0;
             let force_mag = -2.0 * bond.params.k * dr / r;
@@ -266,11 +297,13 @@ impl AmberBondedForces {
 
         // Compute angle forces
         for angle in &self.angles {
-            let (ai, aj, ak) = (angle.atom_i as usize, angle.atom_j as usize, angle.atom_k as usize);
-            let (fi, fj, fk) = compute_angle_forces(
-                &positions, ai, aj, ak,
-                angle.params.k, angle.params.theta0
+            let (ai, aj, ak) = (
+                angle.atom_i as usize,
+                angle.atom_j as usize,
+                angle.atom_k as usize,
             );
+            let (fi, fj, fk) =
+                compute_angle_forces(&positions, ai, aj, ak, angle.params.k, angle.params.theta0);
 
             for c in 0..3 {
                 forces[ai * 3 + c] += fi[c];
@@ -282,12 +315,20 @@ impl AmberBondedForces {
         // Compute dihedral forces
         for dihedral in &self.dihedrals {
             let (ai, aj, ak, al) = (
-                dihedral.atom_i as usize, dihedral.atom_j as usize,
-                dihedral.atom_k as usize, dihedral.atom_l as usize
+                dihedral.atom_i as usize,
+                dihedral.atom_j as usize,
+                dihedral.atom_k as usize,
+                dihedral.atom_l as usize,
             );
             let (fi, fj, fk, fl) = compute_dihedral_forces(
-                &positions, ai, aj, ak, al,
-                dihedral.params.k, dihedral.params.n, dihedral.params.phase
+                &positions,
+                ai,
+                aj,
+                ak,
+                al,
+                dihedral.params.k,
+                dihedral.params.n,
+                dihedral.params.phase,
             );
 
             for c in 0..3 {
@@ -326,7 +367,11 @@ impl AmberBondedForces {
 
         // Angle energies: E = k(θ - θ0)²
         for angle in &self.angles {
-            let (ai, aj, ak) = (angle.atom_i as usize, angle.atom_j as usize, angle.atom_k as usize);
+            let (ai, aj, ak) = (
+                angle.atom_i as usize,
+                angle.atom_j as usize,
+                angle.atom_k as usize,
+            );
             let theta = compute_angle(&positions, ai, aj, ak);
             let dtheta = theta - angle.params.theta0;
             energy.angle_energy += (angle.params.k * dtheta * dtheta) as f64;
@@ -335,17 +380,19 @@ impl AmberBondedForces {
         // Dihedral energies: E = k(1 + cos(n*φ - δ))
         for dihedral in &self.dihedrals {
             let (ai, aj, ak, al) = (
-                dihedral.atom_i as usize, dihedral.atom_j as usize,
-                dihedral.atom_k as usize, dihedral.atom_l as usize
+                dihedral.atom_i as usize,
+                dihedral.atom_j as usize,
+                dihedral.atom_k as usize,
+                dihedral.atom_l as usize,
             );
             let phi = compute_dihedral_angle(&positions, ai, aj, ak, al);
             let n = dihedral.params.n;
-            energy.dihedral_energy += (dihedral.params.k *
-                (1.0 + (n * phi - dihedral.params.phase).cos())) as f64;
+            energy.dihedral_energy +=
+                (dihedral.params.k * (1.0 + (n * phi - dihedral.params.phase).cos())) as f64;
         }
 
-        energy.total = energy.bond_energy + energy.angle_energy +
-                       energy.dihedral_energy + energy.nb14_energy;
+        energy.total =
+            energy.bond_energy + energy.angle_energy + energy.dihedral_energy + energy.nb14_energy;
         Ok(energy)
     }
 }
@@ -374,8 +421,14 @@ fn compute_angle(positions: &[f32], i: usize, j: usize, k: usize) -> f32 {
 }
 
 /// Compute angle forces
-fn compute_angle_forces(positions: &[f32], i: usize, j: usize, k: usize,
-                        k_angle: f32, theta0: f32) -> ([f32; 3], [f32; 3], [f32; 3]) {
+fn compute_angle_forces(
+    positions: &[f32],
+    i: usize,
+    j: usize,
+    k: usize,
+    k_angle: f32,
+    theta0: f32,
+) -> ([f32; 3], [f32; 3], [f32; 3]) {
     let rji = [
         positions[i * 3] - positions[j * 3],
         positions[i * 3 + 1] - positions[j * 3 + 1],
@@ -447,8 +500,16 @@ fn compute_dihedral_angle(positions: &[f32], i: usize, j: usize, k: usize, l: us
 }
 
 /// Compute dihedral forces
-fn compute_dihedral_forces(positions: &[f32], i: usize, j: usize, k: usize, l: usize,
-                           k_dih: f32, n: f32, phase: f32) -> ([f32; 3], [f32; 3], [f32; 3], [f32; 3]) {
+fn compute_dihedral_forces(
+    positions: &[f32],
+    i: usize,
+    j: usize,
+    k: usize,
+    l: usize,
+    k_dih: f32,
+    n: f32,
+    phase: f32,
+) -> ([f32; 3], [f32; 3], [f32; 3], [f32; 3]) {
     let phi = compute_dihedral_angle(positions, i, j, k, l);
 
     // dE/dphi = k * n * sin(n*phi - phase)
@@ -525,7 +586,12 @@ mod tests {
 
     #[test]
     fn test_dihedral_param() {
-        let param = DihedralParam { k: 1.0, n: 2.0, phase: 0.0, _pad: 0.0 };
+        let param = DihedralParam {
+            k: 1.0,
+            n: 2.0,
+            phase: 0.0,
+            _pad: 0.0,
+        };
         assert_eq!(param.n, 2.0);
     }
 }

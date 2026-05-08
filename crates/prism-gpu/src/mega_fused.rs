@@ -19,18 +19,19 @@
 //! All detection parameters are now runtime-configurable via `MegaFusedParams`.
 //! This allows tuning precision/recall tradeoffs without PTX recompilation.
 
-use cudarc::driver::{DevicePtrMut, 
-    CudaContext, CudaStream, CudaFunction, CudaSlice,
-    LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DevicePtrMut, DeviceSlice, LaunchConfig,
+    PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use prism_core::PrismError;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
-use serde::{Serialize, Deserialize};
 
 // NVML for GPU telemetry (optional - gracefully degrades if unavailable)
-use nvml_wrapper::{Nvml, Device as NvmlDevice, enum_wrappers::device::Clock};
+use nvml_wrapper::{enum_wrappers::device::Clock, Device as NvmlDevice, Nvml};
 
 /// GPU kernel telemetry event for provenance tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +79,11 @@ impl GpuTelemetry {
 
         if is_wsl2 {
             log::warn!("WSL2 detected - disabling ALL GPU telemetry (dxg hang prevention)");
-            return Self { nvml: None, device: None, use_smi_fallback: false };
+            return Self {
+                nvml: None,
+                device: None,
+                use_smi_fallback: false,
+            };
         }
 
         let nvml = match Nvml::init() {
@@ -87,7 +92,10 @@ impl GpuTelemetry {
                 Some(nvml)
             }
             Err(e) => {
-                log::info!("NVML initialization failed: {:?} - trying nvidia-smi fallback", e);
+                log::info!(
+                    "NVML initialization failed: {:?} - trying nvidia-smi fallback",
+                    e
+                );
                 None
             }
         };
@@ -101,17 +109,26 @@ impl GpuTelemetry {
             log::warn!("No GPU telemetry available (neither NVML nor nvidia-smi)");
         }
 
-        Self { nvml, device: None, use_smi_fallback }
+        Self {
+            nvml,
+            device: None,
+            use_smi_fallback,
+        }
     }
 
     /// Check if nvidia-smi is available (with 1 second timeout for WSL2 compatibility)
     fn check_nvidia_smi_available() -> bool {
-        use std::time::Duration;
         use std::process::Stdio;
+        use std::time::Duration;
 
         // Use timeout command to prevent hanging on WSL2/dxg issues
         let result = std::process::Command::new("timeout")
-            .args(["1", "nvidia-smi", "--query-gpu=gpu_name", "--format=csv,noheader,nounits"])
+            .args([
+                "1",
+                "nvidia-smi",
+                "--query-gpu=gpu_name",
+                "--format=csv,noheader,nounits",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output();
@@ -136,15 +153,20 @@ impl GpuTelemetry {
 
         // Use timeout command to prevent hanging on WSL2/dxg issues
         let result = std::process::Command::new("timeout")
-            .args(["1", "nvidia-smi", &format!("--query-gpu={}", query), "--format=csv,noheader,nounits"])
+            .args([
+                "1",
+                "nvidia-smi",
+                &format!("--query-gpu={}", query),
+                "--format=csv,noheader,nounits",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output();
 
         match result {
-            Ok(o) if o.status.success() => {
-                String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
-            }
+            Ok(o) if o.status.success() => String::from_utf8(o.stdout)
+                .ok()
+                .map(|s| s.trim().to_string()),
             _ => {
                 // Fallback without timeout (returns quickly on error)
                 std::process::Command::new("nvidia-smi")
@@ -214,7 +236,9 @@ impl GpuTelemetry {
         // Try NVML first
         if let Some(ref nvml) = self.nvml {
             if let Ok(dev) = nvml.device_by_index(0) {
-                if let Ok(temp) = dev.temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu) {
+                if let Ok(temp) =
+                    dev.temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
+                {
                     log::trace!("GPU temperature (NVML): {}C", temp);
                     return Some(temp);
                 }
@@ -450,7 +474,6 @@ pub struct MegaFusedParams {
     // === QUALITY CONTROL (QC) GATE PARAMETERS ===
     // These parameters enforce scientifically validated thresholds from hyper-tuning campaigns.
     // They act as QC gates to filter out noise and ensure only druggable binding sites pass.
-
     /// Minimum pocket volume in Å³ (default: 160.0)
     /// Pockets smaller than this are noise - real binding sites need space for ligands.
     /// Validated on CryptoSite benchmark: eliminates false positives from surface irregularities.
@@ -530,11 +553,11 @@ impl Default for MegaFusedParams {
             centrality_eigenvector_weight: 0.40,
 
             // QC gate parameters (validated thresholds)
-            min_pocket_volume: 160.0,      // Å³ - minimum for real binding sites
-            max_pocket_volume: 4800.0,     // Å³ - prevents mega-pockets
-            min_druggability: 0.60,        // High-confidence threshold for druggable pockets
-            max_pocket_residues: 80,       // Hard limit on pocket size
-            max_pockets: 10,               // Top-N limit
+            min_pocket_volume: 160.0,  // Å³ - minimum for real binding sites
+            max_pocket_volume: 4800.0, // Å³ - prevents mega-pockets
+            min_druggability: 0.60,    // High-confidence threshold for druggable pockets
+            max_pocket_residues: 80,   // Hard limit on pocket size
+            max_pockets: 10,           // Top-N limit
         }
     }
 }
@@ -552,35 +575,35 @@ impl MegaFusedParams {
     pub fn precision() -> Self {
         Self {
             // Tighter consensus
-            consensus_threshold: 0.50,        // Higher (default: 0.35)
-            min_signals: 3,                   // Require 3 signals (default: 2)
+            consensus_threshold: 0.50, // Higher (default: 0.35)
+            min_signals: 3,            // Require 3 signals (default: 2)
 
             // Stricter signal thresholds
-            thresh_geometric: 0.50,           // Higher (default: 0.40)
-            thresh_conservation: 0.55,        // Higher (default: 0.50)
-            thresh_centrality: 0.40,          // Higher (default: 0.30)
-            thresh_flexibility: 0.50,         // Higher (default: 0.45)
+            thresh_geometric: 0.50,    // Higher (default: 0.40)
+            thresh_conservation: 0.55, // Higher (default: 0.50)
+            thresh_centrality: 0.40,   // Higher (default: 0.30)
+            thresh_flexibility: 0.50,  // Higher (default: 0.45)
 
             // Higher confidence requirements
-            confidence_high_score: 0.75,      // Higher (default: 0.70)
-            confidence_medium_score: 0.50,    // Higher (default: 0.40)
-            confidence_high_signals: 3,       // Same
-            confidence_medium_signals: 3,     // Higher (default: 2)
+            confidence_high_score: 0.75,   // Higher (default: 0.70)
+            confidence_medium_score: 0.50, // Higher (default: 0.40)
+            confidence_high_signals: 3,    // Same
+            confidence_medium_signals: 3,  // Higher (default: 2)
 
             // More conservative Kempe
-            kempe_contact_threshold: 0.30,    // Higher (default: 0.20)
-            kempe_swap_threshold: 1.25,       // Higher (default: 1.10)
+            kempe_contact_threshold: 0.30, // Higher (default: 0.20)
+            kempe_swap_threshold: 1.25,    // Higher (default: 1.10)
 
             // More iterations for accuracy
-            power_iterations: 20,             // More (default: 15)
-            kempe_iterations: 12,             // More (default: 10)
+            power_iterations: 20, // More (default: 15)
+            kempe_iterations: 12, // More (default: 10)
 
             // Stricter QC gates for precision mode
-            min_pocket_volume: 200.0,         // Higher (default: 160)
-            max_pocket_volume: 4000.0,        // Lower (default: 4800)
-            min_druggability: 0.70,           // Higher (default: 0.60) - stricter precision
-            max_pocket_residues: 60,          // Lower (default: 80)
-            max_pockets: 5,                   // Fewer (default: 10)
+            min_pocket_volume: 200.0,  // Higher (default: 160)
+            max_pocket_volume: 4000.0, // Lower (default: 4800)
+            min_druggability: 0.70,    // Higher (default: 0.60) - stricter precision
+            max_pocket_residues: 60,   // Lower (default: 80)
+            max_pockets: 5,            // Fewer (default: 10)
 
             // Keep other defaults
             ..Default::default()
@@ -603,26 +626,26 @@ impl MegaFusedParams {
             kempe_iterations: 15,
 
             // Optimized consensus threshold (best F1 found at 0.30)
-            consensus_threshold: 0.30,        // Best F1/AUC-ROC balance
-            min_signals: 1,                   // Allow 1 signal
+            consensus_threshold: 0.30, // Best F1/AUC-ROC balance
+            min_signals: 1,            // Allow 1 signal
 
             // Optimized signal thresholds
-            thresh_geometric: 0.30,           // Moderate geometric threshold
-            thresh_conservation: 0.99,        // Disabled - always 0 without HMMER
-            thresh_centrality: 0.25,          // Moderate centrality threshold
-            thresh_flexibility: 0.99,         // Disabled - inverted for binding sites
+            thresh_geometric: 0.30,    // Moderate geometric threshold
+            thresh_conservation: 0.99, // Disabled - always 0 without HMMER
+            thresh_centrality: 0.25,   // Moderate centrality threshold
+            thresh_flexibility: 0.99,  // Disabled - inverted for binding sites
 
             // Balanced weights (geometric from reservoir, centrality from network)
-            consensus_weight_geometric: 0.50,     // Main signal from dendritic reservoir
-            consensus_weight_conservation: 0.0,   // Disabled - no HMMER data
-            consensus_weight_centrality: 0.40,    // Secondary signal - structural importance
-            consensus_weight_flexibility: 0.0,    // Disabled - signal inverted
+            consensus_weight_geometric: 0.50, // Main signal from dendritic reservoir
+            consensus_weight_conservation: 0.0, // Disabled - no HMMER data
+            consensus_weight_centrality: 0.40, // Secondary signal - structural importance
+            consensus_weight_flexibility: 0.0, // Disabled - signal inverted
 
             // Signal bonuses tuned for recall
-            signal_bonus_0: 0.80,             // Mild penalty for no signals
-            signal_bonus_1: 1.00,             // Neutral for 1 signal
-            signal_bonus_2: 1.15,             // Bonus for 2 signals
-            signal_bonus_3: 1.30,             // Bonus for 3+ signals
+            signal_bonus_0: 0.80, // Mild penalty for no signals
+            signal_bonus_1: 1.00, // Neutral for 1 signal
+            signal_bonus_2: 1.15, // Bonus for 2 signals
+            signal_bonus_3: 1.30, // Bonus for 3+ signals
 
             // Higher confidence requirements
             confidence_high_score: 0.65,
@@ -677,11 +700,11 @@ impl MegaFusedParams {
             kempe_swap_threshold: 1.30,
 
             // Strictest QC gates for publication quality
-            min_pocket_volume: 250.0,         // Higher (default: 160) - only well-defined
-            max_pocket_volume: 3500.0,        // Lower (default: 4800) - tight bound
-            min_druggability: 0.80,           // Higher (default: 0.60) - only high-confidence
-            max_pocket_residues: 50,          // Lower (default: 80) - focused sites
-            max_pockets: 3,                   // Fewer (default: 10) - only top 3
+            min_pocket_volume: 250.0, // Higher (default: 160) - only well-defined
+            max_pocket_volume: 3500.0, // Lower (default: 4800) - tight bound
+            min_druggability: 0.80,   // Higher (default: 0.60) - only high-confidence
+            max_pocket_residues: 50,  // Lower (default: 80) - focused sites
+            max_pockets: 3,           // Fewer (default: 10) - only top 3
 
             // Keep other defaults
             ..Default::default()
@@ -728,10 +751,10 @@ struct BufferPool {
     d_burial: Option<CudaSlice<f32>>,
 
     // TDA spatial neighborhood buffers (pre-computed on CPU with KD-tree)
-    tda_neighbor_capacity: usize,  // Total neighbor coords capacity
-    d_tda_neighbor_coords: Option<CudaSlice<f32>>,   // [total_neighbors * 3]
-    d_tda_neighbor_offsets: Option<CudaSlice<i32>>,  // [n_residues + 1] CSR offsets
-    d_tda_neighbor_counts: Option<CudaSlice<i32>>,   // [n_residues] neighbor counts
+    tda_neighbor_capacity: usize, // Total neighbor coords capacity
+    d_tda_neighbor_coords: Option<CudaSlice<f32>>, // [total_neighbors * 3]
+    d_tda_neighbor_offsets: Option<CudaSlice<i32>>, // [n_residues + 1] CSR offsets
+    d_tda_neighbor_counts: Option<CudaSlice<i32>>, // [n_residues] neighbor counts
 
     // Output buffers (same capacity as residue buffers)
     d_consensus_scores: Option<CudaSlice<f32>>,
@@ -806,10 +829,7 @@ struct TdaNeighborhoods {
 /// Build TDA spatial neighborhoods using brute-force O(n²) search
 /// For each residue, finds all CA neighbors within TDA_NEIGHBOR_RADIUS (16Å)
 /// Caps at TDA_MAX_NEIGHBORS (64) per residue
-fn build_tda_neighborhoods(
-    atoms: &[f32],
-    ca_indices: &[i32],
-) -> TdaNeighborhoods {
+fn build_tda_neighborhoods(atoms: &[f32], ca_indices: &[i32]) -> TdaNeighborhoods {
     let n_residues = ca_indices.len();
     let radius_sq = TDA_NEIGHBOR_RADIUS * TDA_NEIGHBOR_RADIUS;
 
@@ -820,7 +840,7 @@ fn build_tda_neighborhoods(
         if idx * 3 + 2 < atoms.len() {
             ca_coords.push((atoms[idx * 3], atoms[idx * 3 + 1], atoms[idx * 3 + 2]));
         } else {
-            ca_coords.push((0.0, 0.0, 0.0));  // Fallback for invalid indices
+            ca_coords.push((0.0, 0.0, 0.0)); // Fallback for invalid indices
         }
     }
 
@@ -833,16 +853,18 @@ fn build_tda_neighborhoods(
 
     for i in 0..n_residues {
         let (cx, cy, cz) = ca_coords[i];
-        let mut neighbors: Vec<(f32, f32, f32, f32)> = Vec::new();  // (dist, x, y, z)
+        let mut neighbors: Vec<(f32, f32, f32, f32)> = Vec::new(); // (dist, x, y, z)
 
         // Find all neighbors within radius
         for j in 0..n_residues {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let (nx, ny, nz) = ca_coords[j];
             let dx = nx - cx;
             let dy = ny - cy;
             let dz = nz - cz;
-            let dist_sq = dx*dx + dy*dy + dz*dz;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
 
             if dist_sq <= radius_sq && dist_sq > 0.0 {
                 neighbors.push((dist_sq.sqrt(), nx, ny, nz));
@@ -855,9 +877,9 @@ fn build_tda_neighborhoods(
 
         // Add neighbor coords to flat array
         for k in 0..n_neighbors {
-            all_coords.push(neighbors[k].1);  // x
-            all_coords.push(neighbors[k].2);  // y
-            all_coords.push(neighbors[k].3);  // z
+            all_coords.push(neighbors[k].1); // x
+            all_coords.push(neighbors[k].2); // y
+            all_coords.push(neighbors[k].3); // z
         }
 
         counts.push(n_neighbors as i32);
@@ -897,7 +919,7 @@ impl MegaFusedMode {
         match self {
             MegaFusedMode::UltraPrecise => (15, 25),
             MegaFusedMode::Balanced => (10, 15),
-            MegaFusedMode::Screening => (15, 20),  // Tuned for CryptoBench
+            MegaFusedMode::Screening => (15, 20), // Tuned for CryptoBench
         }
     }
 }
@@ -931,7 +953,7 @@ impl MegaFusedConfig {
         Self {
             use_fp16: true,
             contact_sigma: 6.0,
-            consensus_threshold: 0.30,  // Optimized threshold (best F1/AUC-ROC)
+            consensus_threshold: 0.30, // Optimized threshold (best F1/AUC-ROC)
             mode: MegaFusedMode::Screening,
             kempe_iterations: kempe,
             power_iterations: power,
@@ -1029,7 +1051,7 @@ pub struct GpuProvenanceData {
 /// Kernel handles are immutable once loaded (no per-call overhead).
 pub struct MegaFusedGpu {
     #[allow(dead_code)]
-    context: Arc<CudaContext>,  // Keep for lifetime, operations use stream
+    context: Arc<CudaContext>, // Keep for lifetime, operations use stream
     stream: Arc<CudaStream>,
     /// FP32 mega-fused kernel function (immutable after load)
     fp32_func: Option<CudaFunction>,
@@ -1069,12 +1091,17 @@ impl MegaFusedGpu {
         // Load FP32 mega-fused module
         let fp32_path = ptx_dir.join("mega_fused_pocket.ptx");
         let fp32_func = if fp32_path.exists() {
-            let ptx_src = std::fs::read_to_string(&fp32_path)
-                .map_err(|e| PrismError::gpu("mega_fused_fp32", format!("Failed to read PTX: {}", e)))?;
-            let module = context.load_module(Ptx::from_src(ptx_src))
-                .map_err(|e| PrismError::gpu("mega_fused_fp32", format!("Failed to load PTX: {}", e)))?;
-            let func = module.load_function("mega_fused_pocket_detection")
-                .map_err(|e| PrismError::gpu("mega_fused_fp32", format!("Failed to load kernel: {}", e)))?;
+            let ptx_src = std::fs::read_to_string(&fp32_path).map_err(|e| {
+                PrismError::gpu("mega_fused_fp32", format!("Failed to read PTX: {}", e))
+            })?;
+            let module = context.load_module(Ptx::from_src(ptx_src)).map_err(|e| {
+                PrismError::gpu("mega_fused_fp32", format!("Failed to load PTX: {}", e))
+            })?;
+            let func = module
+                .load_function("mega_fused_pocket_detection")
+                .map_err(|e| {
+                    PrismError::gpu("mega_fused_fp32", format!("Failed to load kernel: {}", e))
+                })?;
             log::info!("Loaded mega_fused_pocket.ptx (FP32)");
             Some(func)
         } else {
@@ -1086,26 +1113,22 @@ impl MegaFusedGpu {
         let fp16_path = ptx_dir.join("mega_fused_fp16.ptx");
         let fp16_func = if fp16_path.exists() {
             match std::fs::read_to_string(&fp16_path) {
-                Ok(ptx_src) => {
-                    match context.load_module(Ptx::from_src(ptx_src)) {
-                        Ok(module) => {
-                            match module.load_function("mega_fused_pocket_detection_fp16") {
-                                Ok(func) => {
-                                    log::info!("Loaded mega_fused_fp16.ptx (FP16/Tensor Core)");
-                                    Some(func)
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to load FP16 kernel function: {}", e);
-                                    None
-                                }
-                            }
+                Ok(ptx_src) => match context.load_module(Ptx::from_src(ptx_src)) {
+                    Ok(module) => match module.load_function("mega_fused_pocket_detection_fp16") {
+                        Ok(func) => {
+                            log::info!("Loaded mega_fused_fp16.ptx (FP16/Tensor Core)");
+                            Some(func)
                         }
                         Err(e) => {
-                            log::warn!("Failed to load FP16 PTX module: {}", e);
+                            log::warn!("Failed to load FP16 kernel function: {}", e);
                             None
                         }
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to load FP16 PTX module: {}", e);
+                        None
                     }
-                }
+                },
                 Err(e) => {
                     log::warn!("Failed to read mega_fused_fp16.ptx: {}", e);
                     None
@@ -1131,26 +1154,22 @@ impl MegaFusedGpu {
             log::info!("Loading SESSION 10E multi-pass kernels");
 
             let distance_kernel = match std::fs::read_to_string(&distance_path) {
-                Ok(ptx_src) => {
-                    match context.load_module(Ptx::from_src(ptx_src)) {
-                        Ok(module) => {
-                            match module.load_function("compute_distance_matrix_kernel") {
-                                Ok(func) => {
-                                    log::info!("✅ Loaded distance_matrix.ptx");
-                                    Some(func)
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to load distance kernel: {:?}", e);
-                                    None
-                                }
-                            }
+                Ok(ptx_src) => match context.load_module(Ptx::from_src(ptx_src)) {
+                    Ok(module) => match module.load_function("compute_distance_matrix_kernel") {
+                        Ok(func) => {
+                            log::info!("✅ Loaded distance_matrix.ptx");
+                            Some(func)
                         }
                         Err(e) => {
-                            log::warn!("Failed to load distance PTX module: {:?}", e);
+                            log::warn!("Failed to load distance kernel: {:?}", e);
                             None
                         }
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to load distance PTX module: {:?}", e);
+                        None
                     }
-                }
+                },
                 Err(e) => {
                     log::warn!("Failed to read distance_matrix.ptx: {:?}", e);
                     None
@@ -1158,26 +1177,22 @@ impl MegaFusedGpu {
             };
 
             let sota_kernel = match std::fs::read_to_string(&sota_path) {
-                Ok(ptx_src) => {
-                    match context.load_module(Ptx::from_src(ptx_src)) {
-                        Ok(module) => {
-                            match module.load_function("compute_sota_features_kernel") {
-                                Ok(func) => {
-                                    log::info!("✅ Loaded sota_features.ptx");
-                                    Some(func)
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to load SOTA kernel: {:?}", e);
-                                    None
-                                }
-                            }
+                Ok(ptx_src) => match context.load_module(Ptx::from_src(ptx_src)) {
+                    Ok(module) => match module.load_function("compute_sota_features_kernel") {
+                        Ok(func) => {
+                            log::info!("✅ Loaded sota_features.ptx");
+                            Some(func)
                         }
                         Err(e) => {
-                            log::warn!("Failed to load SOTA PTX module: {:?}", e);
+                            log::warn!("Failed to load SOTA kernel: {:?}", e);
                             None
                         }
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to load SOTA PTX module: {:?}", e);
+                        None
                     }
-                }
+                },
                 Err(e) => {
                     log::warn!("Failed to read sota_features.ptx: {:?}", e);
                     None
@@ -1284,9 +1299,9 @@ impl MegaFusedGpu {
         conservation: &[f32],
         bfactor: &[f32],
         burial: &[f32],
-        residue_types: Option<&[i32]>,       // Enable physics features
-        gisaid_frequencies: Option<&[f32]>,  // PRISM-VE: Variant frequencies (optional)
-        gisaid_velocities: Option<&[f32]>,   // PRISM-VE: Frequency velocities (optional)
+        residue_types: Option<&[i32]>,      // Enable physics features
+        gisaid_frequencies: Option<&[f32]>, // PRISM-VE: Variant frequencies (optional)
+        gisaid_velocities: Option<&[f32]>,  // PRISM-VE: Frequency velocities (optional)
         config: &MegaFusedConfig,
     ) -> Result<MegaFusedOutput, PrismError> {
         let n_residues = ca_indices.len();
@@ -1305,12 +1320,18 @@ impl MegaFusedGpu {
         }
 
         // Validate input sizes
-        if conservation.len() != n_residues || bfactor.len() != n_residues || burial.len() != n_residues {
+        if conservation.len() != n_residues
+            || bfactor.len() != n_residues
+            || burial.len() != n_residues
+        {
             return Err(PrismError::gpu(
                 "mega_fused",
                 format!(
                     "Input size mismatch: n_residues={}, conservation={}, bfactor={}, burial={}",
-                    n_residues, conservation.len(), bfactor.len(), burial.len()
+                    n_residues,
+                    conservation.len(),
+                    bfactor.len(),
+                    burial.len()
                 ),
             ));
         }
@@ -1342,15 +1363,26 @@ impl MegaFusedGpu {
             if res_types.len() != n_residues {
                 return Err(PrismError::gpu(
                     "mega_fused",
-                    format!("residue_types length {} != n_residues {}", res_types.len(), n_residues)
+                    format!(
+                        "residue_types length {} != n_residues {}",
+                        res_types.len(),
+                        n_residues
+                    ),
                 ));
             }
-            let mut d_res_types = self.stream.alloc_zeros::<i32>(n_residues)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Alloc residue_types: {}", e)))?;
-            self.stream.memcpy_htod(res_types, &mut d_res_types)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Upload residue_types: {}", e)))?;
+            let mut d_res_types = self.stream.alloc_zeros::<i32>(n_residues).map_err(|e| {
+                PrismError::gpu("mega_fused", format!("Alloc residue_types: {}", e))
+            })?;
+            self.stream
+                .memcpy_htod(res_types, &mut d_res_types)
+                .map_err(|e| {
+                    PrismError::gpu("mega_fused", format!("Upload residue_types: {}", e))
+                })?;
             d_residue_types_temp = Some(d_res_types);
-            log::debug!("Uploaded {} residue types to GPU (enables hydrophobicity physics)", n_residues);
+            log::debug!(
+                "Uploaded {} residue types to GPU (enables hydrophobicity physics)",
+                n_residues
+            );
         }
 
         // === ALLOCATE/UPLOAD GISAID DATA (PRISM-VE variant evolution - if provided) ===
@@ -1361,12 +1393,19 @@ impl MegaFusedGpu {
             if freq.len() != n_residues {
                 return Err(PrismError::gpu(
                     "mega_fused",
-                    format!("gisaid_frequencies length {} != n_residues {}", freq.len(), n_residues)
+                    format!(
+                        "gisaid_frequencies length {} != n_residues {}",
+                        freq.len(),
+                        n_residues
+                    ),
                 ));
             }
-            let mut d_freq = self.stream.alloc_zeros::<f32>(n_residues)
+            let mut d_freq = self
+                .stream
+                .alloc_zeros::<f32>(n_residues)
                 .map_err(|e| PrismError::gpu("mega_fused", format!("Alloc gisaid_freq: {}", e)))?;
-            self.stream.memcpy_htod(freq, &mut d_freq)
+            self.stream
+                .memcpy_htod(freq, &mut d_freq)
                 .map_err(|e| PrismError::gpu("mega_fused", format!("Upload gisaid_freq: {}", e)))?;
             d_gisaid_freq_temp = Some(d_freq);
             log::debug!("Uploaded GISAID frequencies to GPU (enables cycle features)");
@@ -1376,12 +1415,19 @@ impl MegaFusedGpu {
             if vel.len() != n_residues {
                 return Err(PrismError::gpu(
                     "mega_fused",
-                    format!("gisaid_velocities length {} != n_residues {}", vel.len(), n_residues)
+                    format!(
+                        "gisaid_velocities length {} != n_residues {}",
+                        vel.len(),
+                        n_residues
+                    ),
                 ));
             }
-            let mut d_vel = self.stream.alloc_zeros::<f32>(n_residues)
+            let mut d_vel = self
+                .stream
+                .alloc_zeros::<f32>(n_residues)
                 .map_err(|e| PrismError::gpu("mega_fused", format!("Alloc gisaid_vel: {}", e)))?;
-            self.stream.memcpy_htod(vel, &mut d_vel)
+            self.stream
+                .memcpy_htod(vel, &mut d_vel)
                 .map_err(|e| PrismError::gpu("mega_fused", format!("Upload gisaid_vel: {}", e)))?;
             d_gisaid_vel_temp = Some(d_vel);
             log::debug!("Uploaded GISAID velocities to GPU (enables cycle predictions)");
@@ -1389,16 +1435,25 @@ impl MegaFusedGpu {
 
         // === BUFFER POOLING: Zero-allocation hot path ===
         // Only reallocate if current structure exceeds pool capacity
-        let (atoms_need_realloc, residues_need_realloc) = self.buffer_pool.needs_realloc(n_atoms, n_residues);
+        let (atoms_need_realloc, residues_need_realloc) =
+            self.buffer_pool.needs_realloc(n_atoms, n_residues);
 
         // Reallocate atoms buffer if needed (with 20% growth factor)
         if atoms_need_realloc || self.buffer_pool.d_atoms.is_none() {
             let new_capacity = (n_atoms * 3 * 6 / 5).max(n_atoms * 3); // 20% growth
-            self.buffer_pool.d_atoms = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate atoms pool: {}", e)))?);
+            self.buffer_pool.d_atoms =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate atoms pool: {}", e),
+                    )
+                })?);
             self.buffer_pool.atoms_capacity = new_capacity;
             self.buffer_pool.allocations += 1;
-            log::debug!("Buffer pool: allocated atoms buffer (capacity={})", new_capacity);
+            log::debug!(
+                "Buffer pool: allocated atoms buffer (capacity={})",
+                new_capacity
+            );
         } else {
             self.buffer_pool.reuses += 1;
         }
@@ -1408,43 +1463,107 @@ impl MegaFusedGpu {
             let new_capacity = (n_residues * 6 / 5).max(n_residues); // 20% growth
 
             // Input buffers
-            self.buffer_pool.d_ca_indices = Some(self.stream.alloc_zeros::<i32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate ca_indices pool: {}", e)))?);
-            self.buffer_pool.d_conservation = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate conservation pool: {}", e)))?);
-            self.buffer_pool.d_bfactor = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate bfactor pool: {}", e)))?);
-            self.buffer_pool.d_burial = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate burial pool: {}", e)))?);
+            self.buffer_pool.d_ca_indices =
+                Some(self.stream.alloc_zeros::<i32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate ca_indices pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_conservation =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate conservation pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_bfactor =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate bfactor pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_burial =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate burial pool: {}", e),
+                    )
+                })?);
 
             // Output buffers
-            self.buffer_pool.d_consensus_scores = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate consensus_scores pool: {}", e)))?);
-            self.buffer_pool.d_confidence = Some(self.stream.alloc_zeros::<i32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate confidence pool: {}", e)))?);
-            self.buffer_pool.d_signal_mask = Some(self.stream.alloc_zeros::<i32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate signal_mask pool: {}", e)))?);
-            self.buffer_pool.d_pocket_assignment = Some(self.stream.alloc_zeros::<i32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate pocket_assignment pool: {}", e)))?);
-            self.buffer_pool.d_centrality = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate centrality pool: {}", e)))?);
+            self.buffer_pool.d_consensus_scores =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate consensus_scores pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_confidence =
+                Some(self.stream.alloc_zeros::<i32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate confidence pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_signal_mask =
+                Some(self.stream.alloc_zeros::<i32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate signal_mask pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_pocket_assignment =
+                Some(self.stream.alloc_zeros::<i32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate pocket_assignment pool: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_centrality =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate centrality pool: {}", e),
+                    )
+                })?);
 
             // Combined features: 70 floats per residue (16 base + 12 reservoir + 12 physics + 30 SOTA)
-            self.buffer_pool.d_combined_features = Some(self.stream.alloc_zeros::<f32>(new_capacity * TOTAL_COMBINED_FEATURES)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate combined_features pool: {}", e)))?);
+            self.buffer_pool.d_combined_features = Some(
+                self.stream
+                    .alloc_zeros::<f32>(new_capacity * TOTAL_COMBINED_FEATURES)
+                    .map_err(|e| {
+                        PrismError::gpu(
+                            "mega_fused",
+                            format!("Failed to allocate combined_features pool: {}", e),
+                        )
+                    })?,
+            );
 
             self.buffer_pool.residue_capacity = new_capacity;
             self.buffer_pool.allocations += 10; // 4 input + 6 output buffers
-            log::debug!("Buffer pool: allocated residue buffers (capacity={})", new_capacity);
+            log::debug!(
+                "Buffer pool: allocated residue buffers (capacity={})",
+                new_capacity
+            );
         }
 
         // Allocate params buffer if not done (single MegaFusedParams struct = 128 bytes)
         if self.buffer_pool.d_params.is_none() {
             let params_size = std::mem::size_of::<MegaFusedParams>();
-            self.buffer_pool.d_params = Some(self.stream.alloc_zeros::<u8>(params_size)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate params buffer: {}", e)))?);
+            self.buffer_pool.d_params =
+                Some(self.stream.alloc_zeros::<u8>(params_size).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate params buffer: {}", e),
+                    )
+                })?);
             self.buffer_pool.allocations += 1;
-            log::debug!("Buffer pool: allocated params buffer ({} bytes)", params_size);
+            log::debug!(
+                "Buffer pool: allocated params buffer ({} bytes)",
+                params_size
+            );
         }
 
         // === TDA SPATIAL NEIGHBORHOODS ===
@@ -1453,22 +1572,44 @@ impl MegaFusedGpu {
         let total_tda_neighbors = tda_neighborhoods.coords.len() / 3;
 
         // Allocate TDA buffers if needed (grow by 20%)
-        if total_tda_neighbors * 3 > self.buffer_pool.tda_neighbor_capacity || self.buffer_pool.d_tda_neighbor_coords.is_none() {
-            let new_capacity = (total_tda_neighbors * 3 * 6 / 5).max(total_tda_neighbors * 3).max(1);
-            self.buffer_pool.d_tda_neighbor_coords = Some(self.stream.alloc_zeros::<f32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate TDA neighbor coords: {}", e)))?);
+        if total_tda_neighbors * 3 > self.buffer_pool.tda_neighbor_capacity
+            || self.buffer_pool.d_tda_neighbor_coords.is_none()
+        {
+            let new_capacity = (total_tda_neighbors * 3 * 6 / 5)
+                .max(total_tda_neighbors * 3)
+                .max(1);
+            self.buffer_pool.d_tda_neighbor_coords =
+                Some(self.stream.alloc_zeros::<f32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate TDA neighbor coords: {}", e),
+                    )
+                })?);
             self.buffer_pool.tda_neighbor_capacity = new_capacity;
             self.buffer_pool.allocations += 1;
-            log::debug!("Buffer pool: allocated TDA neighbor coords (capacity={})", new_capacity);
+            log::debug!(
+                "Buffer pool: allocated TDA neighbor coords (capacity={})",
+                new_capacity
+            );
         }
 
         // TDA offsets and counts always need residue capacity
         if self.buffer_pool.d_tda_neighbor_offsets.is_none() || residues_need_realloc {
-            let new_capacity = (n_residues + 1) * 6 / 5;  // +1 for CSR format
-            self.buffer_pool.d_tda_neighbor_offsets = Some(self.stream.alloc_zeros::<i32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate TDA neighbor offsets: {}", e)))?);
-            self.buffer_pool.d_tda_neighbor_counts = Some(self.stream.alloc_zeros::<i32>(new_capacity)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to allocate TDA neighbor counts: {}", e)))?);
+            let new_capacity = (n_residues + 1) * 6 / 5; // +1 for CSR format
+            self.buffer_pool.d_tda_neighbor_offsets =
+                Some(self.stream.alloc_zeros::<i32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate TDA neighbor offsets: {}", e),
+                    )
+                })?);
+            self.buffer_pool.d_tda_neighbor_counts =
+                Some(self.stream.alloc_zeros::<i32>(new_capacity).map_err(|e| {
+                    PrismError::gpu(
+                        "mega_fused",
+                        format!("Failed to allocate TDA neighbor counts: {}", e),
+                    )
+                })?);
             self.buffer_pool.allocations += 2;
         }
 
@@ -1491,37 +1632,59 @@ impl MegaFusedGpu {
         let d_combined_features = self.buffer_pool.d_combined_features.as_mut().unwrap();
 
         // Copy input data to device (fast path: only copy, no alloc)
-        *d_atoms = self.stream.clone_htod(atoms)
+        *d_atoms = self
+            .stream
+            .clone_htod(atoms)
             .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy atoms: {}", e)))?;
-        *d_ca_indices = self.stream.clone_htod(ca_indices)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy ca_indices: {}", e)))?;
-        *d_conservation = self.stream.clone_htod(conservation)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy conservation: {}", e)))?;
-        *d_bfactor = self.stream.clone_htod(bfactor)
+        *d_ca_indices = self.stream.clone_htod(ca_indices).map_err(|e| {
+            PrismError::gpu("mega_fused", format!("Failed to copy ca_indices: {}", e))
+        })?;
+        *d_conservation = self.stream.clone_htod(conservation).map_err(|e| {
+            PrismError::gpu("mega_fused", format!("Failed to copy conservation: {}", e))
+        })?;
+        *d_bfactor = self
+            .stream
+            .clone_htod(bfactor)
             .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy bfactor: {}", e)))?;
-        *d_burial = self.stream.clone_htod(burial)
+        *d_burial = self
+            .stream
+            .clone_htod(burial)
             .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy burial: {}", e)))?;
 
         // Copy TDA neighborhood data to device
         if !tda_neighborhoods.coords.is_empty() {
-            *d_tda_neighbor_coords = self.stream.clone_htod(&tda_neighborhoods.coords)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy TDA coords: {}", e)))?;
+            *d_tda_neighbor_coords =
+                self.stream
+                    .clone_htod(&tda_neighborhoods.coords)
+                    .map_err(|e| {
+                        PrismError::gpu("mega_fused", format!("Failed to copy TDA coords: {}", e))
+                    })?;
         }
-        *d_tda_neighbor_offsets = self.stream.clone_htod(&tda_neighborhoods.offsets)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy TDA offsets: {}", e)))?;
-        *d_tda_neighbor_counts = self.stream.clone_htod(&tda_neighborhoods.counts)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy TDA counts: {}", e)))?;
+        *d_tda_neighbor_offsets =
+            self.stream
+                .clone_htod(&tda_neighborhoods.offsets)
+                .map_err(|e| {
+                    PrismError::gpu("mega_fused", format!("Failed to copy TDA offsets: {}", e))
+                })?;
+        *d_tda_neighbor_counts =
+            self.stream
+                .clone_htod(&tda_neighborhoods.counts)
+                .map_err(|e| {
+                    PrismError::gpu("mega_fused", format!("Failed to copy TDA counts: {}", e))
+                })?;
 
         // Convert config to runtime params and copy to device
         let params = MegaFusedParams::from_config(config);
         let params_bytes: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 &params as *const MegaFusedParams as *const u8,
-                std::mem::size_of::<MegaFusedParams>()
+                std::mem::size_of::<MegaFusedParams>(),
             )
         };
         let d_params = self.buffer_pool.d_params.as_mut().unwrap();
-        *d_params = self.stream.clone_htod(params_bytes)
+        *d_params = self
+            .stream
+            .clone_htod(params_bytes)
             .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to copy params: {}", e)))?;
 
         // Configure kernel launch
@@ -1561,7 +1724,9 @@ impl MegaFusedGpu {
                 Some(d) => d,
                 None => {
                     // Create dummy buffer (kernel checks for nullptr behavior)
-                    &self.stream.alloc_zeros::<i32>(1)
+                    &self
+                        .stream
+                        .alloc_zeros::<i32>(1)
                         .map_err(|e| PrismError::gpu("mega_fused", format!("Alloc dummy: {}", e)))?
                 }
             };
@@ -1569,24 +1734,26 @@ impl MegaFusedGpu {
             builder.arg(&n_atoms_i32);
             builder.arg(&n_residues_i32);
             // TDA spatial neighborhood buffers (pre-computed on CPU)
-            builder.arg(&*d_tda_neighbor_coords);   // [total_neighbors * 3] neighbor CA coords
-            builder.arg(&*d_tda_neighbor_offsets);  // [n_residues + 1] CSR offsets
-            builder.arg(&*d_tda_neighbor_counts);   // [n_residues] neighbor count per residue
-            // PRISM-VE: GISAID temporal data (optional)
+            builder.arg(&*d_tda_neighbor_coords); // [total_neighbors * 3] neighbor CA coords
+            builder.arg(&*d_tda_neighbor_offsets); // [n_residues + 1] CSR offsets
+            builder.arg(&*d_tda_neighbor_counts); // [n_residues] neighbor count per residue
+                                                  // PRISM-VE: GISAID temporal data (optional)
             let d_gisaid_freq_for_kernel = match &d_gisaid_freq_temp {
                 Some(d) => d,
                 None => {
                     // Create dummy buffer (kernel checks for nullptr)
-                    &self.stream.alloc_zeros::<f32>(1)
-                        .map_err(|e| PrismError::gpu("mega_fused", format!("Alloc dummy freq: {}", e)))?
+                    &self.stream.alloc_zeros::<f32>(1).map_err(|e| {
+                        PrismError::gpu("mega_fused", format!("Alloc dummy freq: {}", e))
+                    })?
                 }
             };
             let d_gisaid_vel_for_kernel = match &d_gisaid_vel_temp {
                 Some(d) => d,
                 None => {
                     // Create dummy buffer (kernel checks for nullptr)
-                    &self.stream.alloc_zeros::<f32>(1)
-                        .map_err(|e| PrismError::gpu("mega_fused", format!("Alloc dummy vel: {}", e)))?
+                    &self.stream.alloc_zeros::<f32>(1).map_err(|e| {
+                        PrismError::gpu("mega_fused", format!("Alloc dummy vel: {}", e))
+                    })?
                 }
             };
             builder.arg(d_gisaid_freq_for_kernel);
@@ -1597,15 +1764,17 @@ impl MegaFusedGpu {
             builder.arg(d_signal_mask);
             builder.arg(d_pocket_assignment);
             builder.arg(d_centrality);
-            builder.arg(d_combined_features);   // Output: 70-dim combined features (16+12+12+30)
-            builder.arg(&*d_params);            // Runtime params struct pointer
+            builder.arg(d_combined_features); // Output: 70-dim combined features (16+12+12+30)
+            builder.arg(&*d_params); // Runtime params struct pointer
 
-            builder.launch(launch_config)
-                .map_err(|e| PrismError::gpu("mega_fused", format!("Kernel launch failed: {}", e)))?;
+            builder.launch(launch_config).map_err(|e| {
+                PrismError::gpu("mega_fused", format!("Kernel launch failed: {}", e))
+            })?;
         }
 
         // Synchronize and copy results back
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| PrismError::gpu("mega_fused", format!("Sync failed: {}", e)))?;
 
         // Capture GPU telemetry after kernel completion
@@ -1647,18 +1816,33 @@ impl MegaFusedGpu {
         let d_centrality = self.buffer_pool.d_centrality.as_ref().unwrap();
         let d_combined_features = self.buffer_pool.d_combined_features.as_ref().unwrap();
 
-        let mut consensus_scores = self.stream.clone_dtoh(d_consensus_scores)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to read consensus_scores: {}", e)))?;
-        let mut confidence = self.stream.clone_dtoh(d_confidence)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to read confidence: {}", e)))?;
-        let mut signal_mask = self.stream.clone_dtoh(d_signal_mask)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to read signal_mask: {}", e)))?;
-        let mut pocket_assignment = self.stream.clone_dtoh(d_pocket_assignment)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to read pocket_assignment: {}", e)))?;
-        let mut centrality = self.stream.clone_dtoh(d_centrality)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to read centrality: {}", e)))?;
-        let mut combined_features = self.stream.clone_dtoh(d_combined_features)
-            .map_err(|e| PrismError::gpu("mega_fused", format!("Failed to read combined_features: {}", e)))?;
+        let mut consensus_scores = self.stream.clone_dtoh(d_consensus_scores).map_err(|e| {
+            PrismError::gpu(
+                "mega_fused",
+                format!("Failed to read consensus_scores: {}", e),
+            )
+        })?;
+        let mut confidence = self.stream.clone_dtoh(d_confidence).map_err(|e| {
+            PrismError::gpu("mega_fused", format!("Failed to read confidence: {}", e))
+        })?;
+        let mut signal_mask = self.stream.clone_dtoh(d_signal_mask).map_err(|e| {
+            PrismError::gpu("mega_fused", format!("Failed to read signal_mask: {}", e))
+        })?;
+        let mut pocket_assignment = self.stream.clone_dtoh(d_pocket_assignment).map_err(|e| {
+            PrismError::gpu(
+                "mega_fused",
+                format!("Failed to read pocket_assignment: {}", e),
+            )
+        })?;
+        let mut centrality = self.stream.clone_dtoh(d_centrality).map_err(|e| {
+            PrismError::gpu("mega_fused", format!("Failed to read centrality: {}", e))
+        })?;
+        let mut combined_features = self.stream.clone_dtoh(d_combined_features).map_err(|e| {
+            PrismError::gpu(
+                "mega_fused",
+                format!("Failed to read combined_features: {}", e),
+            )
+        })?;
 
         // DEBUG: Print first 10 values to verify GPU output
         if combined_features.len() >= 10 {
@@ -1705,31 +1889,55 @@ impl MegaFusedGpu {
         }
 
         // Allocate and upload atoms
-        let mut atoms_dev = self.stream.alloc_zeros::<f32>(atoms.len())
+        let mut atoms_dev = self
+            .stream
+            .alloc_zeros::<f32>(atoms.len())
             .map_err(|e| PrismError::gpu("multipass", format!("Alloc atoms failed: {:?}", e)))?;
-        self.stream.memcpy_htod(atoms, &mut atoms_dev)
+        self.stream
+            .memcpy_htod(atoms, &mut atoms_dev)
             .map_err(|e| PrismError::gpu("multipass", format!("Upload atoms failed: {:?}", e)))?;
 
         // Allocate and upload ca_indices
-        let mut ca_indices_dev = self.stream.alloc_zeros::<i32>(ca_indices.len())
-            .map_err(|e| PrismError::gpu("multipass", format!("Alloc ca_indices failed: {:?}", e)))?;
-        self.stream.memcpy_htod(ca_indices, &mut ca_indices_dev)
-            .map_err(|e| PrismError::gpu("multipass", format!("Upload ca_indices failed: {:?}", e)))?;
+        let mut ca_indices_dev = self
+            .stream
+            .alloc_zeros::<i32>(ca_indices.len())
+            .map_err(|e| {
+                PrismError::gpu("multipass", format!("Alloc ca_indices failed: {:?}", e))
+            })?;
+        self.stream
+            .memcpy_htod(ca_indices, &mut ca_indices_dev)
+            .map_err(|e| {
+                PrismError::gpu("multipass", format!("Upload ca_indices failed: {:?}", e))
+            })?;
 
         // Allocate and upload bfactor
-        let mut bfactor_dev = self.stream.alloc_zeros::<f32>(bfactor.len())
+        let mut bfactor_dev = self
+            .stream
+            .alloc_zeros::<f32>(bfactor.len())
             .map_err(|e| PrismError::gpu("multipass", format!("Alloc bfactor failed: {:?}", e)))?;
-        self.stream.memcpy_htod(bfactor, &mut bfactor_dev)
+        self.stream
+            .memcpy_htod(bfactor, &mut bfactor_dev)
             .map_err(|e| PrismError::gpu("multipass", format!("Upload bfactor failed: {:?}", e)))?;
 
         // Allocate distance matrix
         let distance_matrix_size = n_residues * n_residues;
         if self.distance_matrix_capacity < distance_matrix_size {
-            log::debug!("Allocating distance matrix: {} x {} = {} floats ({} MB)",
-                       n_residues, n_residues, distance_matrix_size, distance_matrix_size * 4 / 1_000_000);
+            log::debug!(
+                "Allocating distance matrix: {} x {} = {} floats ({} MB)",
+                n_residues,
+                n_residues,
+                distance_matrix_size,
+                distance_matrix_size * 4 / 1_000_000
+            );
             self.distance_matrix_buffer = Some(
-                self.stream.alloc_zeros::<f32>(distance_matrix_size)
-                    .map_err(|e| PrismError::gpu("multipass", format!("Alloc distance matrix failed: {:?}", e)))?
+                self.stream
+                    .alloc_zeros::<f32>(distance_matrix_size)
+                    .map_err(|e| {
+                        PrismError::gpu(
+                            "multipass",
+                            format!("Alloc distance matrix failed: {:?}", e),
+                        )
+                    })?,
             );
             self.distance_matrix_capacity = distance_matrix_size;
         }
@@ -1742,7 +1950,11 @@ impl MegaFusedGpu {
         let block_dim = (16, 16, 1);
         let cutoff = 15.0f32;
 
-        log::debug!("Pass 1: Distance matrix (grid: {}x{}, block: 16x16)", grid_x, grid_y);
+        log::debug!(
+            "Pass 1: Distance matrix (grid: {}x{}, block: 16x16)",
+            grid_x,
+            grid_y
+        );
 
         let distance_kernel = self.distance_kernel.as_ref().unwrap();
         let launch_config = LaunchConfig {
@@ -1759,11 +1971,13 @@ impl MegaFusedGpu {
             builder.arg(&n_residues_i32);
             builder.arg(distance_matrix);
             builder.arg(&cutoff);
-            builder.launch(launch_config)
-                .map_err(|e| PrismError::gpu("distance_kernel", format!("Launch failed: {:?}", e)))?;
+            builder.launch(launch_config).map_err(|e| {
+                PrismError::gpu("distance_kernel", format!("Launch failed: {:?}", e))
+            })?;
         }
 
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| PrismError::gpu("distance_kernel", format!("Sync failed: {:?}", e)))?;
 
         log::debug!("Pass 1 complete");
@@ -1772,25 +1986,38 @@ impl MegaFusedGpu {
         let burial: Vec<f32> = vec![0.5; n_residues];
         let conservation: Vec<f32> = vec![0.5; n_residues];
 
-        let mut burial_dev = self.stream.alloc_zeros::<f32>(burial.len())
+        let mut burial_dev = self
+            .stream
+            .alloc_zeros::<f32>(burial.len())
             .map_err(|e| PrismError::gpu("multipass", format!("Alloc burial failed: {:?}", e)))?;
-        burial_dev = self.stream.clone_htod(&burial)
+        burial_dev = self
+            .stream
+            .clone_htod(&burial)
             .map_err(|e| PrismError::gpu("multipass", format!("Upload burial failed: {:?}", e)))?;
 
-        let mut conservation_dev = self.stream.alloc_zeros::<f32>(conservation.len())
-            .map_err(|e| PrismError::gpu("multipass", format!("Alloc conservation failed: {:?}", e)))?;
-        conservation_dev = self.stream.clone_htod(&conservation)
-            .map_err(|e| PrismError::gpu("multipass", format!("Upload conservation failed: {:?}", e)))?;
+        let mut conservation_dev =
+            self.stream
+                .alloc_zeros::<f32>(conservation.len())
+                .map_err(|e| {
+                    PrismError::gpu("multipass", format!("Alloc conservation failed: {:?}", e))
+                })?;
+        conservation_dev = self.stream.clone_htod(&conservation).map_err(|e| {
+            PrismError::gpu("multipass", format!("Upload conservation failed: {:?}", e))
+        })?;
 
         // Allocate SOTA features
         let sota_size = n_residues * 30;
         if self.sota_features_capacity < sota_size {
-            log::debug!("Allocating SOTA features: {} x 30 = {} floats ({} KB)",
-                       n_residues, sota_size, sota_size * 4 / 1000);
-            self.sota_features_buffer = Some(
-                self.stream.alloc_zeros::<f32>(sota_size)
-                    .map_err(|e| PrismError::gpu("multipass", format!("Alloc SOTA buffer failed: {:?}", e)))?
+            log::debug!(
+                "Allocating SOTA features: {} x 30 = {} floats ({} KB)",
+                n_residues,
+                sota_size,
+                sota_size * 4 / 1000
             );
+            self.sota_features_buffer =
+                Some(self.stream.alloc_zeros::<f32>(sota_size).map_err(|e| {
+                    PrismError::gpu("multipass", format!("Alloc SOTA buffer failed: {:?}", e))
+                })?);
             self.sota_features_capacity = sota_size;
         }
         let sota_features = self.sota_features_buffer.as_ref().unwrap();
@@ -1818,22 +2045,29 @@ impl MegaFusedGpu {
             builder.arg(&conservation_dev);
             builder.arg(&n_residues_i32);
             builder.arg(sota_features);
-            builder.launch(launch_config)
+            builder
+                .launch(launch_config)
                 .map_err(|e| PrismError::gpu("sota_kernel", format!("Launch failed: {:?}", e)))?;
         }
 
-        self.stream.synchronize()
+        self.stream
+            .synchronize()
             .map_err(|e| PrismError::gpu("sota_kernel", format!("Sync failed: {:?}", e)))?;
 
         log::debug!("Pass 2 complete");
 
         // Download SOTA features
-        let sota_host: Vec<f32> = self.stream.clone_dtoh(sota_features)
+        let sota_host: Vec<f32> = self
+            .stream
+            .clone_dtoh(sota_features)
             .map_err(|e| PrismError::gpu("multipass", format!("Download SOTA failed: {:?}", e)))?;
 
         // For now, return just SOTA features (30-dim) for testing
         // TODO: Combine with base features for full 70-dim
-        log::info!("Multi-pass extraction complete: {} residues x 30 SOTA features", n_residues);
+        log::info!(
+            "Multi-pass extraction complete: {} residues x 30 SOTA features",
+            n_residues
+        );
 
         Ok(sota_host)
     }
@@ -1881,8 +2115,14 @@ mod tests {
     fn test_signal_count() {
         assert_eq!(signals::count(0), 0);
         assert_eq!(signals::count(signals::GEOMETRIC), 1);
-        assert_eq!(signals::count(signals::GEOMETRIC | signals::CONSERVATION), 2);
-        assert_eq!(signals::count(signals::GEOMETRIC | signals::CONSERVATION | signals::CENTRALITY), 3);
+        assert_eq!(
+            signals::count(signals::GEOMETRIC | signals::CONSERVATION),
+            2
+        );
+        assert_eq!(
+            signals::count(signals::GEOMETRIC | signals::CONSERVATION | signals::CENTRALITY),
+            3
+        );
         assert_eq!(signals::count(0x0F), 4);
     }
 }

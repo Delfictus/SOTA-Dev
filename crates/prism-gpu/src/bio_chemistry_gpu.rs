@@ -14,10 +14,12 @@
 //! - **Zero-Copy When Possible**: Reuse GPU buffers from physics simulation
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Maximum supported atoms for GPU feature extraction
 pub const MAX_ATOMS: usize = 32768;
@@ -96,11 +98,7 @@ impl BiochemistryGpu {
     /// * `context` - CUDA context
     /// * `max_atoms` - Maximum number of atoms to support
     /// * `neighbor_cutoff` - Cutoff distance for neighbor counting (Angstroms)
-    pub fn new(
-        context: Arc<CudaContext>,
-        max_atoms: usize,
-        neighbor_cutoff: f32,
-    ) -> Result<Self> {
+    pub fn new(context: Arc<CudaContext>, max_atoms: usize, neighbor_cutoff: f32) -> Result<Self> {
         anyhow::ensure!(
             max_atoms <= MAX_ATOMS,
             "max_atoms {} exceeds limit {}",
@@ -201,10 +199,7 @@ impl BiochemistryGpu {
         // Try to compile from .cu file
         let cu_path = "crates/prism-gpu/src/kernels/bio_chemistry_features.cu";
         if Path::new(cu_path).exists() {
-            log::warn!(
-                "PTX not found, will need to compile from {}",
-                cu_path
-            );
+            log::warn!("PTX not found, will need to compile from {}", cu_path);
             // For now, return error - in production, would compile on-the-fly
             anyhow::bail!(
                 "bio_chemistry_features.ptx not found. Compile with: \
@@ -235,27 +230,33 @@ impl BiochemistryGpu {
         );
 
         // Upload to GPU
-        self.d_hydrophobicity = self.stream
+        self.d_hydrophobicity = self
+            .stream
             .clone_htod(&metadata.hydrophobicity)
             .context("Failed to upload hydrophobicity")?;
 
-        self.d_atom_to_residue = self.stream
+        self.d_atom_to_residue = self
+            .stream
             .clone_htod(&metadata.atom_to_residue)
             .context("Failed to upload atom_to_residue")?;
 
-        self.d_target_residues = self.stream
+        self.d_target_residues = self
+            .stream
             .clone_htod(&metadata.target_residues)
             .context("Failed to upload target_residues")?;
 
-        self.d_ca_indices = self.stream
+        self.d_ca_indices = self
+            .stream
             .clone_htod(&metadata.ca_indices)
             .context("Failed to upload ca_indices")?;
 
-        self.d_charges = self.stream
+        self.d_charges = self
+            .stream
             .clone_htod(&metadata.charges)
             .context("Failed to upload charges")?;
 
-        self.d_charged_indices = self.stream
+        self.d_charged_indices = self
+            .stream
             .clone_htod(&metadata.charged_indices)
             .context("Failed to upload charged_indices")?;
 
@@ -284,7 +285,8 @@ impl BiochemistryGpu {
             positions.len()
         );
 
-        self.d_initial_positions = self.stream
+        self.d_initial_positions = self
+            .stream
             .clone_htod(positions)
             .context("Failed to upload initial positions")?;
 
@@ -312,13 +314,15 @@ impl BiochemistryGpu {
         );
 
         // Upload current positions
-        self.d_positions = self.stream
+        self.d_positions = self
+            .stream
             .clone_htod(positions)
             .context("Failed to upload positions")?;
 
         // Clear result buffer (upload zeros since memset not available)
         let zeros = vec![0.0f32; 3];
-        self.d_result = self.stream
+        self.d_result = self
+            .stream
             .clone_htod(&zeros)
             .context("Failed to clear result buffer")?;
 
@@ -340,7 +344,8 @@ impl BiochemistryGpu {
         let n_charged_i32 = self.n_charged as i32;
 
         unsafe {
-            self.stream.launch_builder(&self.kernel_unified)
+            self.stream
+                .launch_builder(&self.kernel_unified)
                 .arg(&self.d_positions)
                 .arg(&self.d_initial_positions)
                 .arg(&n_atoms_i32)
@@ -363,7 +368,8 @@ impl BiochemistryGpu {
         // Synchronize and download result
         self.stream.synchronize().context("Stream sync failed")?;
 
-        let result_vec: Vec<f32> = self.stream
+        let result_vec: Vec<f32> = self
+            .stream
             .clone_dtoh(&self.d_result)
             .context("Failed to download result")?;
 

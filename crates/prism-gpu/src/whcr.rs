@@ -1,6 +1,8 @@
 use anyhow::Result;
 use cudarc::{
-    driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice},
+    driver::{
+        CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceSlice, LaunchConfig, PushKernelArg,
+    },
     nvrtc::Ptx,
 };
 use std::sync::Arc;
@@ -132,9 +134,12 @@ impl WhcrGpu {
         let compute_wavelet_details = module.load_function("compute_wavelet_details").unwrap();
         let evaluate_moves_f32 = module.load_function("evaluate_moves_f32").unwrap();
         let evaluate_moves_f64 = module.load_function("evaluate_moves_f64").unwrap();
-        let compute_wavelet_priorities = module.load_function("compute_wavelet_priorities").unwrap();
+        let compute_wavelet_priorities =
+            module.load_function("compute_wavelet_priorities").unwrap();
         let apply_moves_with_locking = module.load_function("apply_moves_with_locking").unwrap();
-        let apply_moves_with_locking_f64 = module.load_function("apply_moves_with_locking_f64").unwrap();
+        let apply_moves_with_locking_f64 = module
+            .load_function("apply_moves_with_locking_f64")
+            .unwrap();
 
         // Allocate graph data on GPU
         let d_coloring = stream.alloc_zeros::<i32>(num_vertices)?;
@@ -509,7 +514,8 @@ impl WhcrGpu {
                 let cfg = LaunchConfig::for_num_elems(fine_size as u32);
 
                 unsafe {
-                    self.stream.launch_builder(&self.compute_wavelet_details)
+                    self.stream
+                        .launch_builder(&self.compute_wavelet_details)
                         .arg(&prev_level.approximations)
                         .arg(&current_level.approximations)
                         .arg(proj)
@@ -534,7 +540,8 @@ impl WhcrGpu {
                     .unwrap_or(&self.d_locks);
 
                 unsafe {
-                    self.stream.launch_builder(&self.compute_wavelet_priorities)
+                    self.stream
+                        .launch_builder(&self.compute_wavelet_priorities)
                         .arg(details)
                         .arg(&self.d_conflict_counts_f32)
                         .arg(stress_buffer)
@@ -555,7 +562,8 @@ impl WhcrGpu {
                 // f32 path
                 let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
                 unsafe {
-                    self.stream.launch_builder(&self.count_conflicts_f32)
+                    self.stream
+                        .launch_builder(&self.count_conflicts_f32)
                         .arg(&self.d_coloring)
                         .arg(&self.d_adjacency_row_ptr)
                         .arg(&self.d_adjacency_col_idx)
@@ -568,7 +576,8 @@ impl WhcrGpu {
                 // f64 path with geometry
                 let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
                 unsafe {
-                    self.stream.launch_builder(&self.count_conflicts_f64)
+                    self.stream
+                        .launch_builder(&self.count_conflicts_f64)
                         .arg(&self.d_coloring)
                         .arg(&self.d_adjacency_row_ptr)
                         .arg(&self.d_adjacency_col_idx)
@@ -584,7 +593,8 @@ impl WhcrGpu {
                 // Fallback to f32 if geometry not available
                 let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
                 unsafe {
-                    self.stream.launch_builder(&self.count_conflicts_f32)
+                    self.stream
+                        .launch_builder(&self.count_conflicts_f32)
                         .arg(&self.d_coloring)
                         .arg(&self.d_adjacency_row_ptr)
                         .arg(&self.d_adjacency_col_idx)
@@ -614,17 +624,17 @@ impl WhcrGpu {
             // Wait, error log said "no method named memset_zeros found for struct Arc<CudaContext>".
             // So we need to use stream.memset_zeros or device.memset_zeros.
             // We'll use stream for now if possible? Or create a buffer of zeros and copy.
-            // No, memset is better. 
+            // No, memset is better.
             // `cudarc::driver::CudaDevice` usually has `memset_d8`.
             // If `context` doesn't have it, we use `stream.memset_d8_async`?
             // Let's check imports.
-            
+
             // I will use stream.memset_d8_async if available. Or loop.
             // Or just assuming I can fix memset later. I'll comment out memset and do copy of zeros for now.
             // But memset is faster.
-            
+
             // Actually, I'll use `stream.memset_d8_async`.
-            
+
             // if let Some(ref mut buf) = self.d_move_deltas_f32 {
             //    self.stream.memset_d8_async(buf, 0)?;
             // }
@@ -706,7 +716,8 @@ impl WhcrGpu {
                     .unwrap_or(&self.d_zero_f32);
 
                 unsafe {
-                    self.stream.launch_builder(&self.evaluate_moves_f32)
+                    self.stream
+                        .launch_builder(&self.evaluate_moves_f32)
                         .arg(&self.d_coloring)
                         .arg(&self.d_adjacency_row_ptr)
                         .arg(&self.d_adjacency_col_idx)
@@ -790,7 +801,8 @@ impl WhcrGpu {
 
                 // 12 parameters: removed hotspot_mask (now derived from stress in kernel)
                 unsafe {
-                    self.stream.launch_builder(&self.evaluate_moves_f64)
+                    self.stream
+                        .launch_builder(&self.evaluate_moves_f64)
                         .arg(&self.d_coloring)
                         .arg(&self.d_adjacency_row_ptr)
                         .arg(&self.d_adjacency_col_idx)
@@ -817,8 +829,8 @@ impl WhcrGpu {
 
             // Reset num_moves_applied counter
             // self.stream.memset_zeros(&mut self.d_num_moves_applied)?;
-             let zero = vec![0i32; 1];
-             self.d_num_moves_applied = self.stream.clone_htod(&zero)?;
+            let zero = vec![0i32; 1];
+            self.d_num_moves_applied = self.stream.clone_htod(&zero)?;
 
             let cfg = LaunchConfig::for_num_elems(num_conflict_vertices as u32);
 
@@ -843,7 +855,8 @@ impl WhcrGpu {
                 let hotspot_buffer = self.d_hotspot_mask.as_ref().unwrap_or(&self.d_zero_i32);
 
                 unsafe {
-                    self.stream.launch_builder(&self.apply_moves_with_locking_f64)
+                    self.stream
+                        .launch_builder(&self.apply_moves_with_locking_f64)
                         .arg(&mut self.d_coloring)
                         .arg(&d_conflict_vertices)
                         .arg(&self.d_best_colors)
@@ -868,7 +881,8 @@ impl WhcrGpu {
                     .ok_or_else(|| anyhow::anyhow!("Move deltas f32 not allocated"))?;
 
                 unsafe {
-                    self.stream.launch_builder(&self.apply_moves_with_locking)
+                    self.stream
+                        .launch_builder(&self.apply_moves_with_locking)
                         .arg(&mut self.d_coloring)
                         .arg(&d_conflict_vertices)
                         .arg(&self.d_best_colors)
@@ -949,7 +963,8 @@ impl WhcrGpu {
         // Launch conflict counting kernel
         let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
         unsafe {
-            self.stream.launch_builder(&self.count_conflicts_f32)
+            self.stream
+                .launch_builder(&self.count_conflicts_f32)
                 .arg(&self.d_coloring)
                 .arg(&self.d_adjacency_row_ptr)
                 .arg(&self.d_adjacency_col_idx)
@@ -1004,12 +1019,13 @@ impl WhcrGpu {
             curr_level.approximations = self.stream.clone_htod(&coarse_host)?;
 
             // Compute details: fine - coarse[proj]
-            if let (Some(details), Some(proj)) = 
+            if let (Some(details), Some(proj)) =
                 (curr_level.details.as_ref(), curr_level.projections.as_ref())
             {
                 let cfg = LaunchConfig::for_num_elems(prev_level.approx_size as u32);
                 unsafe {
-                    self.stream.launch_builder(&self.compute_wavelet_details)
+                    self.stream
+                        .launch_builder(&self.compute_wavelet_details)
                         .arg(&prev_level.approximations)
                         .arg(&curr_level.approximations)
                         .arg(proj)
@@ -1039,7 +1055,8 @@ impl WhcrGpu {
     pub fn count_conflicts_async(&self) -> Result<()> {
         let cfg = LaunchConfig::for_num_elems(self.num_vertices as u32);
         unsafe {
-            self.stream.launch_builder(&self.count_conflicts_f32)
+            self.stream
+                .launch_builder(&self.count_conflicts_f32)
                 .arg(&self.d_coloring)
                 .arg(&self.d_adjacency_row_ptr)
                 .arg(&self.d_adjacency_col_idx)

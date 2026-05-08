@@ -3,7 +3,10 @@
 //! Multi-scale 1D convolutions over variant frequency time series.
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -109,10 +112,15 @@ impl TemporalConv {
     pub fn compute(
         &self,
         freq_series: &[f32],
-        feature_series: Option<&[f32]>,  // [N_weeks x 136]
+        feature_series: Option<&[f32]>, // [N_weeks x 136]
     ) -> Result<(CudaSlice<f32>, f32)> {
         let n_weeks = freq_series.len();
-        anyhow::ensure!(n_weeks <= MAX_WEEKS, "Time series too long: {} > {}", n_weeks, MAX_WEEKS);
+        anyhow::ensure!(
+            n_weeks <= MAX_WEEKS,
+            "Time series too long: {} > {}",
+            n_weeks,
+            MAX_WEEKS
+        );
 
         // Upload frequency series
         let d_freq: CudaSlice<f32> = self.stream.clone_htod(freq_series)?;
@@ -135,7 +143,8 @@ impl TemporalConv {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_batch)
+            self.stream
+                .launch_builder(&self.fn_batch)
                 .arg(&d_freq)
                 .arg(&d_features)
                 .arg(&mut d_embedding)
@@ -192,13 +201,16 @@ impl TemporalConv {
         };
 
         // Velocity variance
-        let vel_var: f32 = velocity.iter()
+        let vel_var: f32 = velocity
+            .iter()
             .map(|v| (v - mean_velocity).powi(2))
-            .sum::<f32>() / velocity.len().max(1) as f32;
+            .sum::<f32>()
+            / velocity.len().max(1) as f32;
         let velocity_variance = vel_var.sqrt();
 
         // Oscillation (sign changes)
-        let sign_changes = velocity.windows(2)
+        let sign_changes = velocity
+            .windows(2)
             .filter(|w| (w[0] > 0.0) != (w[1] > 0.0))
             .count();
         let oscillation = sign_changes as f32 / velocity.len().max(1) as f32;
@@ -216,7 +228,8 @@ impl TemporalConv {
 
         // S-curve detection (max curvature)
         let s_curve_score = if velocity.len() >= 3 {
-            velocity.windows(3)
+            velocity
+                .windows(3)
                 .map(|w| {
                     let acc = (w[2] - w[0]) / 2.0;
                     let curv = acc.abs() / (1.0 + w[1].powi(2)).powf(1.5);

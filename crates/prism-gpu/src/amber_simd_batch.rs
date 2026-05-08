@@ -18,24 +18,23 @@
 //! - Async pipeline with stream overlap (1.1-1.3× speedup)
 //! - True batched processing (all structures in parallel)
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 // H-bond constraints for stable MD at 2fs timestep
-use crate::h_constraints::{HConstraints, HConstraintCluster};
+use crate::h_constraints::{HConstraintCluster, HConstraints};
 
 // SOTA optimization imports
-use crate::verlet_list::VerletList;
-use crate::tensor_core_forces::TensorCoreForces;
-use crate::async_md_pipeline::{AsyncMdPipeline, AsyncPipelineConfig};
 use crate::amber_mega_fused::f32_to_f16_bits;
+use crate::async_md_pipeline::{AsyncMdPipeline, AsyncPipelineConfig};
+use crate::tensor_core_forces::TensorCoreForces;
+use crate::verlet_list::VerletList;
 
 /// Spatial offset between structures in batch (Å)
 pub const BATCH_SPATIAL_OFFSET: f32 = 100.0;
@@ -254,7 +253,7 @@ pub struct AmberSimdBatch {
 
     // Kernels
     md_step_kernel: CudaFunction,
-    md_step_cell_list_kernel: CudaFunction,  // O(N) cell list version (50x faster)
+    md_step_cell_list_kernel: CudaFunction, // O(N) cell list version (50x faster)
     build_cell_list_kernel: CudaFunction,
     zero_cell_counts_kernel: CudaFunction,
     init_velocities_kernel: CudaFunction,
@@ -301,9 +300,9 @@ pub struct AmberSimdBatch {
     d_batch_descs: CudaSlice<i32>,
 
     // Cell list buffers (for O(N) non-bonded)
-    d_cell_list: CudaSlice<i32>,     // [MAX_TOTAL_CELLS * MAX_ATOMS_PER_CELL]
-    d_cell_counts: CudaSlice<i32>,   // [MAX_TOTAL_CELLS]
-    d_atom_cell: CudaSlice<i32>,     // [total_atoms]
+    d_cell_list: CudaSlice<i32>, // [MAX_TOTAL_CELLS * MAX_ATOMS_PER_CELL]
+    d_cell_counts: CudaSlice<i32>, // [MAX_TOTAL_CELLS]
+    d_atom_cell: CudaSlice<i32>, // [total_atoms]
 
     // Configuration
     max_atoms_per_struct: usize,
@@ -344,7 +343,6 @@ pub struct AmberSimdBatch {
     h_constraints: Option<HConstraints>,
 
     // =========== SOTA OPTIMIZATIONS ===========
-
     /// Optimization configuration
     opt_config: OptimizationConfig,
 
@@ -380,7 +378,12 @@ impl AmberSimdBatch {
         max_atoms_per_struct: usize,
         max_batch_size: usize,
     ) -> Result<Self> {
-        Self::new_with_config(context, max_atoms_per_struct, max_batch_size, OptimizationConfig::default())
+        Self::new_with_config(
+            context,
+            max_atoms_per_struct,
+            max_batch_size,
+            OptimizationConfig::default(),
+        )
     }
 
     /// Create a new SIMD batch engine with custom optimization config
@@ -491,7 +494,7 @@ impl AmberSimdBatch {
             minimize_kernel,
             apply_offsets_kernel,
             remove_offsets_kernel,
-            use_cell_list: false,  // DEBUG: Disabled to test O(N²) kernel
+            use_cell_list: false, // DEBUG: Disabled to test O(N²) kernel
             batch_descs: Vec::with_capacity(max_batch_size),
             d_positions,
             d_velocities,
@@ -574,7 +577,9 @@ impl AmberSimdBatch {
 
         // 2. Check OUT_DIR from build.rs
         if let Ok(out_dir) = std::env::var("OUT_DIR") {
-            let ptx_path = std::path::PathBuf::from(&out_dir).join("ptx").join(ptx_name);
+            let ptx_path = std::path::PathBuf::from(&out_dir)
+                .join("ptx")
+                .join(ptx_name);
             if ptx_path.exists() {
                 log::debug!("Found PTX in OUT_DIR: {:?}", ptx_path);
                 return Ok(ptx_path);
@@ -737,10 +742,13 @@ impl AmberSimdBatch {
             } else if mass_j < 1.2 && mass_i > 1.2 {
                 (i, j, r0)
             } else {
-                continue;  // Not an X-H bond
+                continue; // Not an X-H bond
             };
 
-            h_neighbors.entry(heavy).or_default().push((hydrogen, bond_len));
+            h_neighbors
+                .entry(heavy)
+                .or_default()
+                .push((hydrogen, bond_len));
         }
 
         // Build H-constraint clusters with GLOBAL indices
@@ -749,7 +757,11 @@ impl AmberSimdBatch {
             let heavy_global = atom_offset + heavy_local;
             let mass_central = topology.masses.get(heavy_local).copied().unwrap_or(12.0);
             let mass_h = if !hydrogens.is_empty() {
-                topology.masses.get(hydrogens[0].0).copied().unwrap_or(1.008)
+                topology
+                    .masses
+                    .get(hydrogens[0].0)
+                    .copied()
+                    .unwrap_or(1.008)
             } else {
                 1.008
             };
@@ -760,26 +772,55 @@ impl AmberSimdBatch {
             let (cluster, n_constraints) = match hydrogens.len() {
                 1 => {
                     let (h_local, d) = hydrogens[0];
-                    (HConstraintCluster::single_h(heavy_global, atom_offset + h_local, d, mass_central, mass_h), 1)
+                    (
+                        HConstraintCluster::single_h(
+                            heavy_global,
+                            atom_offset + h_local,
+                            d,
+                            mass_central,
+                            mass_h,
+                        ),
+                        1,
+                    )
                 }
                 2 => {
                     let (h1_local, d1) = hydrogens[0];
                     let (h2_local, d2) = hydrogens[1];
-                    (HConstraintCluster::two_h(
-                        heavy_global, atom_offset + h1_local, atom_offset + h2_local,
-                        d1, d2, mass_central, mass_h, is_nitrogen
-                    ), 2)
+                    (
+                        HConstraintCluster::two_h(
+                            heavy_global,
+                            atom_offset + h1_local,
+                            atom_offset + h2_local,
+                            d1,
+                            d2,
+                            mass_central,
+                            mass_h,
+                            is_nitrogen,
+                        ),
+                        2,
+                    )
                 }
                 3 => {
                     let (h1_local, d1) = hydrogens[0];
                     let (h2_local, d2) = hydrogens[1];
                     let (h3_local, d3) = hydrogens[2];
-                    (HConstraintCluster::three_h(
-                        heavy_global, atom_offset + h1_local, atom_offset + h2_local, atom_offset + h3_local,
-                        d1, d2, d3, mass_central, mass_h, is_nitrogen
-                    ), 3)
+                    (
+                        HConstraintCluster::three_h(
+                            heavy_global,
+                            atom_offset + h1_local,
+                            atom_offset + h2_local,
+                            atom_offset + h3_local,
+                            d1,
+                            d2,
+                            d3,
+                            mass_central,
+                            mass_h,
+                            is_nitrogen,
+                        ),
+                        3,
+                    )
                 }
-                _ => continue,  // Unusual, skip
+                _ => continue, // Unusual, skip
             };
 
             self.h_constraint_clusters.push(cluster);
@@ -787,7 +828,8 @@ impl AmberSimdBatch {
         }
 
         // Store per-structure constraint count for DOF calculation
-        self.constraints_per_structure.push(structure_constraint_count);
+        self.constraints_per_structure
+            .push(structure_constraint_count);
 
         // Update totals
         self.total_atoms += n_atoms;
@@ -810,73 +852,91 @@ impl AmberSimdBatch {
         }
 
         // Upload state arrays
-        self.stream.memcpy_htod(&self.h_positions, &mut self.d_positions)?;
-        self.stream.memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&self.h_positions, &mut self.d_positions)?;
+        self.stream
+            .memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
 
         // Upload topology
         if !self.h_bond_atoms.is_empty() {
-            self.stream.memcpy_htod(&self.h_bond_atoms, &mut self.d_bond_atoms)?;
-            self.stream.memcpy_htod(&self.h_bond_params, &mut self.d_bond_params)?;
+            self.stream
+                .memcpy_htod(&self.h_bond_atoms, &mut self.d_bond_atoms)?;
+            self.stream
+                .memcpy_htod(&self.h_bond_params, &mut self.d_bond_params)?;
         }
 
         if !self.h_angle_atoms.is_empty() {
-            self.stream.memcpy_htod(&self.h_angle_atoms, &mut self.d_angle_atoms)?;
-            self.stream.memcpy_htod(&self.h_angle_params, &mut self.d_angle_params)?;
+            self.stream
+                .memcpy_htod(&self.h_angle_atoms, &mut self.d_angle_atoms)?;
+            self.stream
+                .memcpy_htod(&self.h_angle_params, &mut self.d_angle_params)?;
         }
 
         if !self.h_dihedral_atoms.is_empty() {
-            self.stream.memcpy_htod(&self.h_dihedral_atoms, &mut self.d_dihedral_atoms)?;
-            self.stream.memcpy_htod(&self.h_dihedral_params, &mut self.d_dihedral_params)?;
+            self.stream
+                .memcpy_htod(&self.h_dihedral_atoms, &mut self.d_dihedral_atoms)?;
+            self.stream
+                .memcpy_htod(&self.h_dihedral_params, &mut self.d_dihedral_params)?;
         }
 
-        self.stream.memcpy_htod(&self.h_nb_sigma, &mut self.d_nb_sigma)?;
-        self.stream.memcpy_htod(&self.h_nb_epsilon, &mut self.d_nb_epsilon)?;
-        self.stream.memcpy_htod(&self.h_nb_charge, &mut self.d_nb_charge)?;
-        self.stream.memcpy_htod(&self.h_nb_mass, &mut self.d_nb_mass)?;
+        self.stream
+            .memcpy_htod(&self.h_nb_sigma, &mut self.d_nb_sigma)?;
+        self.stream
+            .memcpy_htod(&self.h_nb_epsilon, &mut self.d_nb_epsilon)?;
+        self.stream
+            .memcpy_htod(&self.h_nb_charge, &mut self.d_nb_charge)?;
+        self.stream
+            .memcpy_htod(&self.h_nb_mass, &mut self.d_nb_mass)?;
 
-        self.stream.memcpy_htod(&self.h_excl_list, &mut self.d_excl_list)?;
-        self.stream.memcpy_htod(&self.h_n_excl, &mut self.d_n_excl)?;
+        self.stream
+            .memcpy_htod(&self.h_excl_list, &mut self.d_excl_list)?;
+        self.stream
+            .memcpy_htod(&self.h_n_excl, &mut self.d_n_excl)?;
 
         // Apply spatial offsets
         self.apply_spatial_offsets()?;
 
         // Create and upload GPU batch descriptors as flattened i32 array
         // Layout must match BatchStructureDesc in CUDA (32-byte aligned, 14 fields + padding)
-        let mut gpu_descs_flat: Vec<i32> = Vec::with_capacity(self.n_structures * GPU_BATCH_DESC_SIZE_I32);
+        let mut gpu_descs_flat: Vec<i32> =
+            Vec::with_capacity(self.n_structures * GPU_BATCH_DESC_SIZE_I32);
 
         for desc in &self.batch_descs {
             // Pack each descriptor as GPU_BATCH_DESC_SIZE_I32 i32 values
             // Fields match BatchStructureDesc in amber_simd_batch.cu
-            gpu_descs_flat.push(desc.atom_offset as i32);           // 0: atom_offset
-            gpu_descs_flat.push(desc.n_atoms as i32);               // 1: n_atoms
-            gpu_descs_flat.push(desc.bond_offset as i32);           // 2: bond_offset
-            gpu_descs_flat.push(desc.n_bonds as i32);               // 3: n_bonds
-            gpu_descs_flat.push(desc.angle_offset as i32);          // 4: angle_offset
-            gpu_descs_flat.push(desc.n_angles as i32);              // 5: n_angles
-            gpu_descs_flat.push(desc.dihedral_offset as i32);       // 6: dihedral_offset
-            gpu_descs_flat.push(desc.n_dihedrals as i32);           // 7: n_dihedrals
-            gpu_descs_flat.push(desc.atom_offset as i32);           // 8: nb_param_offset (same as atom_offset)
+            gpu_descs_flat.push(desc.atom_offset as i32); // 0: atom_offset
+            gpu_descs_flat.push(desc.n_atoms as i32); // 1: n_atoms
+            gpu_descs_flat.push(desc.bond_offset as i32); // 2: bond_offset
+            gpu_descs_flat.push(desc.n_bonds as i32); // 3: n_bonds
+            gpu_descs_flat.push(desc.angle_offset as i32); // 4: angle_offset
+            gpu_descs_flat.push(desc.n_angles as i32); // 5: n_angles
+            gpu_descs_flat.push(desc.dihedral_offset as i32); // 6: dihedral_offset
+            gpu_descs_flat.push(desc.n_dihedrals as i32); // 7: n_dihedrals
+            gpu_descs_flat.push(desc.atom_offset as i32); // 8: nb_param_offset (same as atom_offset)
             gpu_descs_flat.push((desc.atom_offset * MAX_EXCLUSIONS) as i32); // 9: excl_offset
-            gpu_descs_flat.push(desc.spatial_offset_x.to_bits() as i32);     // 10: spatial_offset_x (as bits)
-            gpu_descs_flat.push(0i32);                              // 11: spatial_offset_y
-            gpu_descs_flat.push(0i32);                              // 12: spatial_offset_z
-            gpu_descs_flat.push(0i32);                              // 13: pad
-            // Padding to GPU_BATCH_DESC_SIZE_I32
+            gpu_descs_flat.push(desc.spatial_offset_x.to_bits() as i32); // 10: spatial_offset_x (as bits)
+            gpu_descs_flat.push(0i32); // 11: spatial_offset_y
+            gpu_descs_flat.push(0i32); // 12: spatial_offset_z
+            gpu_descs_flat.push(0i32); // 13: pad
+                                       // Padding to GPU_BATCH_DESC_SIZE_I32
             while gpu_descs_flat.len() % GPU_BATCH_DESC_SIZE_I32 != 0 {
                 gpu_descs_flat.push(0i32);
             }
         }
 
-        self.stream.memcpy_htod(&gpu_descs_flat, &mut self.d_batch_descs)?;
+        self.stream
+            .memcpy_htod(&gpu_descs_flat, &mut self.d_batch_descs)?;
 
         // Initialize energy outputs to zero (2 floats per structure)
         let zero_energies = vec![0.0f32; self.n_structures * 2];
-        self.stream.memcpy_htod(&zero_energies, &mut self.d_energies)?;
+        self.stream
+            .memcpy_htod(&zero_energies, &mut self.d_energies)?;
 
         // Create H-constraints solver if we have any H-bond clusters
         if !self.h_constraint_clusters.is_empty() {
-            let h_constraints = HConstraints::new(self.context.clone(), &self.h_constraint_clusters)
-                .context("Failed to create H-constraints solver")?;
+            let h_constraints =
+                HConstraints::new(self.context.clone(), &self.h_constraint_clusters)
+                    .context("Failed to create H-constraints solver")?;
             self.total_constraints = h_constraints.n_constraints();
             log::info!(
                 "H-constraints: {} clusters ({} total constraints, DOF adjusted)",
@@ -886,12 +946,15 @@ impl AmberSimdBatch {
             self.h_constraints = Some(h_constraints);
         } else {
             self.total_constraints = 0;
-            log::warn!("No H-constraint clusters found - simulation may be unstable at 2fs timestep");
+            log::warn!(
+                "No H-constraint clusters found - simulation may be unstable at 2fs timestep"
+            );
         }
 
         // Copy initial positions as reference for restraints (before spatial offsets applied)
         // Note: spatial offsets are already in h_positions, so ref positions also have offsets
-        self.stream.memcpy_htod(&self.h_positions, &mut self.d_ref_positions)?;
+        self.stream
+            .memcpy_htod(&self.h_positions, &mut self.d_ref_positions)?;
 
         // =========== SOTA OPTIMIZATIONS INITIALIZATION ===========
 
@@ -905,23 +968,29 @@ impl AmberSimdBatch {
             let d_positions_fp16 = self.stream.alloc_zeros::<u16>(self.total_atoms * 3)?;
 
             // Convert FP32 params to FP16 on host and upload
-            let sigma_fp16: Vec<u16> = self.h_nb_sigma.iter()
+            let sigma_fp16: Vec<u16> = self
+                .h_nb_sigma
+                .iter()
                 .map(|&v| f32_to_f16_bits(v))
                 .collect();
-            let epsilon_fp16: Vec<u16> = self.h_nb_epsilon.iter()
+            let epsilon_fp16: Vec<u16> = self
+                .h_nb_epsilon
+                .iter()
                 .map(|&v| f32_to_f16_bits(v))
                 .collect();
 
             self.stream.memcpy_htod(&sigma_fp16, &mut d_sigma_fp16)?;
-            self.stream.memcpy_htod(&epsilon_fp16, &mut d_epsilon_fp16)?;
+            self.stream
+                .memcpy_htod(&epsilon_fp16, &mut d_epsilon_fp16)?;
 
             self.d_nb_sigma_fp16 = Some(d_sigma_fp16);
             self.d_nb_epsilon_fp16 = Some(d_epsilon_fp16);
             self.d_positions_fp16 = Some(d_positions_fp16);
 
-            log::info!("  FP16 buffers: {} atoms ({} KB saved)",
+            log::info!(
+                "  FP16 buffers: {} atoms ({} KB saved)",
                 self.total_atoms,
-                self.total_atoms * 2 / 1024  // 2 bytes per param vs 4
+                self.total_atoms * 2 / 1024 // 2 bytes per param vs 4
             );
         }
 
@@ -929,19 +998,19 @@ impl AmberSimdBatch {
         if self.opt_config.use_verlet_list {
             log::info!("Initializing Verlet neighbor list...");
 
-            let verlet = VerletList::new(
-                self.context.clone(),
-                self.stream.clone(),
-                self.total_atoms,
-            ).context("Failed to create Verlet list")?;
+            let verlet =
+                VerletList::new(self.context.clone(), self.stream.clone(), self.total_atoms)
+                    .context("Failed to create Verlet list")?;
 
             // Build initial Verlet list using existing cell list
             // First, build the cell list
             self.build_cell_list_once()?;
 
             self.verlet_list = Some(verlet);
-            log::info!("  Verlet list: {} atoms, skin=2.0Å, rebuild threshold=1.0Å",
-                self.total_atoms);
+            log::info!(
+                "  Verlet list: {} atoms, skin=2.0Å, rebuild threshold=1.0Å",
+                self.total_atoms
+            );
         }
 
         // Initialize Tensor Core forces if enabled and supported
@@ -992,16 +1061,51 @@ impl AmberSimdBatch {
 
         // Log optimization summary
         log::info!("SOTA optimizations enabled:");
-        log::info!("  - Verlet list: {}", if self.verlet_list.is_some() { "YES" } else { "NO" });
-        log::info!("  - Tensor Cores: {}", if self.has_tensor_cores { "YES" } else { "NO" });
-        log::info!("  - FP16 params: {}", if self.d_nb_sigma_fp16.is_some() { "YES" } else { "NO" });
-        log::info!("  - Async pipeline: {}", if self.async_pipeline.is_some() { "YES" } else { "NO" });
-        log::info!("  - Batched forces: {}", if self.opt_config.use_batched_forces { "YES" } else { "NO" });
+        log::info!(
+            "  - Verlet list: {}",
+            if self.verlet_list.is_some() {
+                "YES"
+            } else {
+                "NO"
+            }
+        );
+        log::info!(
+            "  - Tensor Cores: {}",
+            if self.has_tensor_cores { "YES" } else { "NO" }
+        );
+        log::info!(
+            "  - FP16 params: {}",
+            if self.d_nb_sigma_fp16.is_some() {
+                "YES"
+            } else {
+                "NO"
+            }
+        );
+        log::info!(
+            "  - Async pipeline: {}",
+            if self.async_pipeline.is_some() {
+                "YES"
+            } else {
+                "NO"
+            }
+        );
+        log::info!(
+            "  - Batched forces: {}",
+            if self.opt_config.use_batched_forces {
+                "YES"
+            } else {
+                "NO"
+            }
+        );
 
         self.finalized = true;
         self.stream.synchronize()?;
 
-        log::info!("Batch finalized: {} structures, {} atoms", self.n_structures, self.total_atoms);
+        log::info!(
+            "Batch finalized: {} structures, {} atoms",
+            self.n_structures,
+            self.total_atoms
+        );
 
         Ok(())
     }
@@ -1089,7 +1193,8 @@ impl AmberSimdBatch {
         }
 
         // Re-upload positions with offsets
-        self.stream.memcpy_htod(&self.h_positions, &mut self.d_positions)?;
+        self.stream
+            .memcpy_htod(&self.h_positions, &mut self.d_positions)?;
 
         Ok(())
     }
@@ -1100,7 +1205,11 @@ impl AmberSimdBatch {
     }
 
     /// Initialize velocities with deterministic seed for reproducibility
-    pub fn initialize_velocities_seeded(&mut self, temperature: f32, seed: Option<u64>) -> Result<()> {
+    pub fn initialize_velocities_seeded(
+        &mut self,
+        temperature: f32,
+        seed: Option<u64>,
+    ) -> Result<()> {
         if !self.finalized {
             bail!("Batch not finalized");
         }
@@ -1147,7 +1256,8 @@ impl AmberSimdBatch {
 
                 // σ = sqrt(kB * T * FORCE_TO_ACCEL / m)
                 // This is correct for v in Å/fs units
-                let sigma = ((KB_KCAL_MOL_K * temperature as f64 * FORCE_TO_ACCEL) / mass as f64).sqrt() as f32;
+                let sigma = ((KB_KCAL_MOL_K * temperature as f64 * FORCE_TO_ACCEL) / mass as f64)
+                    .sqrt() as f32;
 
                 // Box-Muller transform for Gaussian random numbers
                 let u1: f32 = get_rand!().max(1e-10);
@@ -1184,10 +1294,14 @@ impl AmberSimdBatch {
 
         log::debug!(
             "Velocity init: {} atoms, total KE = {:.1} kcal/mol, T = {:.1} K (target: {} K)",
-            n_atoms_init, total_ke, init_temp, temperature
+            n_atoms_init,
+            total_ke,
+            init_temp,
+            temperature
         );
 
-        self.stream.memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
 
         Ok(())
     }
@@ -1206,7 +1320,13 @@ impl AmberSimdBatch {
     /// For tightly-coupled multi-chain structures (WHOLE routing), use lower gamma (0.01-0.05)
     /// to avoid disrupting inter-chain contacts. For loosely-coupled or single-chain structures,
     /// use higher gamma (0.1) for faster equilibration.
-    pub fn equilibrate_with_gamma(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
+    pub fn equilibrate_with_gamma(
+        &mut self,
+        n_steps: usize,
+        dt: f32,
+        temperature: f32,
+        gamma: f32,
+    ) -> Result<()> {
         if !self.finalized {
             bail!("Batch not finalized");
         }
@@ -1222,7 +1342,8 @@ impl AmberSimdBatch {
 
         // Download and check temperature
         let results = self.get_all_results()?;
-        let avg_temp: f64 = results.iter().map(|r| r.temperature).sum::<f64>() / results.len() as f64;
+        let avg_temp: f64 =
+            results.iter().map(|r| r.temperature).sum::<f64>() / results.len() as f64;
         log::info!("Equilibration complete. Avg T = {:.1} K", avg_temp);
 
         Ok(())
@@ -1234,7 +1355,12 @@ impl AmberSimdBatch {
     /// 1. Heat slowly from low temperature to target
     /// 2. Use strong friction during heating, then relax
     /// 3. Avoid thermal shock that can break inter-chain contacts
-    pub fn equilibrate_staged(&mut self, total_steps: usize, dt: f32, target_temp: f32) -> Result<()> {
+    pub fn equilibrate_staged(
+        &mut self,
+        total_steps: usize,
+        dt: f32,
+        target_temp: f32,
+    ) -> Result<()> {
         if !self.finalized {
             bail!("Batch not finalized");
         }
@@ -1244,26 +1370,43 @@ impl AmberSimdBatch {
         let temps = [50.0, 100.0, 150.0, 200.0, 250.0, target_temp];
         let steps_per_temp = heat_steps / temps.len();
 
-        log::info!("Staged equilibration: {} total steps, target {} K", total_steps, target_temp);
+        log::info!(
+            "Staged equilibration: {} total steps, target {} K",
+            total_steps,
+            target_temp
+        );
 
         for temp in temps.iter() {
-            log::info!("  Heating to {} K ({} steps, γ=0.1)...", temp, steps_per_temp);
+            log::info!(
+                "  Heating to {} K ({} steps, γ=0.1)...",
+                temp,
+                steps_per_temp
+            );
             self.run_internal(steps_per_temp, dt, *temp, 0.1)?;
         }
 
         // Stage 2: Equilibrate at target with moderate friction (40% of steps)
         let eq_steps = total_steps * 4 / 10;
-        log::info!("  Equilibrating at {} K ({} steps, γ=0.05)...", target_temp, eq_steps);
+        log::info!(
+            "  Equilibrating at {} K ({} steps, γ=0.05)...",
+            target_temp,
+            eq_steps
+        );
         self.run_internal(eq_steps, dt, target_temp, 0.05)?;
 
         // Stage 3: Relax with gentle friction (20% of steps)
         let relax_steps = total_steps - heat_steps - eq_steps;
-        log::info!("  Relaxing at {} K ({} steps, γ=0.01)...", target_temp, relax_steps);
+        log::info!(
+            "  Relaxing at {} K ({} steps, γ=0.01)...",
+            target_temp,
+            relax_steps
+        );
         self.run_internal(relax_steps, dt, target_temp, 0.01)?;
 
         // Check final temperature
         let results = self.get_all_results()?;
-        let avg_temp: f64 = results.iter().map(|r| r.temperature).sum::<f64>() / results.len() as f64;
+        let avg_temp: f64 =
+            results.iter().map(|r| r.temperature).sum::<f64>() / results.len() as f64;
         log::info!("Staged equilibration complete. Avg T = {:.1} K", avg_temp);
 
         Ok(())
@@ -1285,18 +1428,21 @@ impl AmberSimdBatch {
             bail!("Batch not finalized");
         }
 
-        log::info!("Energy minimization: {} steps (steepest descent with velocity reset)", n_steps);
+        log::info!(
+            "Energy minimization: {} steps (steepest descent with velocity reset)",
+            n_steps
+        );
 
         // Steepest descent approach:
         // - Run short bursts of damped dynamics to move atoms
         // - Zero velocities between bursts to prevent overshooting
         // - This approximates true steepest descent
-        let dt = 0.2;           // Small timestep (fs)
-        let temperature = 0.0;  // Zero temperature
-        let gamma = 0.5;        // Moderate friction
+        let dt = 0.2; // Small timestep (fs)
+        let temperature = 0.0; // Zero temperature
+        let gamma = 0.5; // Moderate friction
 
         // Run in short bursts with velocity reset between each
-        let burst_size = 50;    // Steps per burst
+        let burst_size = 50; // Steps per burst
         let n_bursts = (n_steps + burst_size - 1) / burst_size;
 
         for burst in 0..n_bursts {
@@ -1317,14 +1463,20 @@ impl AmberSimdBatch {
             // Log energy progress every 10 bursts
             if burst % 10 == 0 || burst == n_bursts - 1 {
                 let results = self.get_all_results()?;
-                let avg_pe: f64 = results.iter().map(|r| r.potential_energy).sum::<f64>() / results.len() as f64;
-                log::info!("  Step {}: avg PE = {:.2e} kcal/mol", (burst + 1) * burst_size, avg_pe);
+                let avg_pe: f64 =
+                    results.iter().map(|r| r.potential_energy).sum::<f64>() / results.len() as f64;
+                log::info!(
+                    "  Step {}: avg PE = {:.2e} kcal/mol",
+                    (burst + 1) * burst_size,
+                    avg_pe
+                );
             }
         }
 
         // Return final average energy
         let results = self.get_all_results()?;
-        let avg_pe: f64 = results.iter().map(|r| r.potential_energy).sum::<f64>() / results.len() as f64;
+        let avg_pe: f64 =
+            results.iter().map(|r| r.potential_energy).sum::<f64>() / results.len() as f64;
         log::info!("Minimization complete: avg PE = {:.2e} kcal/mol", avg_pe);
 
         Ok(avg_pe)
@@ -1332,7 +1484,13 @@ impl AmberSimdBatch {
 
     /// Internal run method used by both run() and equilibrate()
     /// Dispatches to SOTA optimized path or legacy path based on configuration
-    fn run_internal(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
+    fn run_internal(
+        &mut self,
+        n_steps: usize,
+        dt: f32,
+        temperature: f32,
+        gamma: f32,
+    ) -> Result<()> {
         if self.opt_config.use_verlet_list {
             log::info!("Using SOTA path with Verlet neighbor lists");
             self.run_internal_sota(n_steps, dt, temperature, gamma)
@@ -1349,7 +1507,13 @@ impl AmberSimdBatch {
     /// 2. Same Verlet list valid for BOTH phase 1 AND phase 2 (F(t) and F(t+dt))
     /// 3. Batched structure processing - all structures in single kernel launch
     /// 4. Tensor Core forces (if available) - WMMA for distance computation
-    fn run_internal_sota(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
+    fn run_internal_sota(
+        &mut self,
+        n_steps: usize,
+        dt: f32,
+        temperature: f32,
+        gamma: f32,
+    ) -> Result<()> {
         let max_excl_i32 = MAX_EXCLUSIONS as i32;
         const MAX_TOTAL_CELLS: i32 = 128 * 16 * 16;
 
@@ -1360,7 +1524,9 @@ impl AmberSimdBatch {
 
         // Build initial Verlet list if this is first run
         {
-            let verlet = self.verlet_list.as_mut()
+            let verlet = self
+                .verlet_list
+                .as_mut()
                 .expect("SOTA path requires Verlet list");
             if verlet.rebuild_count() == 0 {
                 // Need to drop verlet borrow before calling self.build_cell_list_once
@@ -1395,7 +1561,8 @@ impl AmberSimdBatch {
         for step in 0..n_steps {
             // Reset energy accumulators each step
             let zero_energies = vec![0.0f32; self.alloc_energies_size];
-            self.stream.memcpy_htod(&zero_energies, &mut self.d_energies)?;
+            self.stream
+                .memcpy_htod(&zero_energies, &mut self.d_energies)?;
 
             let step_u32 = step as u32;
 
@@ -1441,7 +1608,11 @@ impl AmberSimdBatch {
                 self.verlet_rebuild_count += 1;
 
                 if step % 100 == 0 {
-                    log::debug!("Step {}: Verlet rebuild (total: {})", step, self.verlet_rebuild_count);
+                    log::debug!(
+                        "Step {}: Verlet rebuild (total: {})",
+                        step,
+                        self.verlet_rebuild_count
+                    );
                 }
             }
 
@@ -1452,7 +1623,8 @@ impl AmberSimdBatch {
             if self.opt_config.use_batched_forces {
                 // BATCHED: Process all structures in single kernel launch
                 // Upload all batch descriptors at once
-                let mut gpu_descs_flat: Vec<i32> = Vec::with_capacity(self.n_structures * GPU_BATCH_DESC_SIZE_I32);
+                let mut gpu_descs_flat: Vec<i32> =
+                    Vec::with_capacity(self.n_structures * GPU_BATCH_DESC_SIZE_I32);
                 for desc in &self.batch_descs {
                     gpu_descs_flat.push(desc.atom_offset as i32);
                     gpu_descs_flat.push(desc.n_atoms as i32);
@@ -1472,7 +1644,8 @@ impl AmberSimdBatch {
                         gpu_descs_flat.push(0i32);
                     }
                 }
-                self.stream.memcpy_htod(&gpu_descs_flat, &mut self.d_batch_descs)?;
+                self.stream
+                    .memcpy_htod(&gpu_descs_flat, &mut self.d_batch_descs)?;
 
                 // Launch with total_atoms threads (processes all structures)
                 let n_blocks = (self.total_atoms + 255) / 256;
@@ -1532,13 +1705,15 @@ impl AmberSimdBatch {
                     };
 
                     let single_desc = self.create_gpu_desc_for_structure(struct_idx);
-                    self.stream.memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
+                    self.stream
+                        .memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
 
                     let one_structure = 1i32;
                     let energy_base_idx = struct_idx as i32;
 
                     unsafe {
-                        let mut builder = self.stream.launch_builder(&self.md_step_cell_list_kernel);
+                        let mut builder =
+                            self.stream.launch_builder(&self.md_step_cell_list_kernel);
                         builder.arg(&self.d_batch_descs);
                         builder.arg(&one_structure);
                         builder.arg(&self.d_positions);
@@ -1605,7 +1780,8 @@ impl AmberSimdBatch {
             }
 
             let zero_energies2 = vec![0.0f32; self.alloc_energies_size];
-            self.stream.memcpy_htod(&zero_energies2, &mut self.d_energies)?;
+            self.stream
+                .memcpy_htod(&zero_energies2, &mut self.d_energies)?;
 
             let phase2: i32 = 2;
 
@@ -1668,13 +1844,15 @@ impl AmberSimdBatch {
                     };
 
                     let single_desc = self.create_gpu_desc_for_structure(struct_idx);
-                    self.stream.memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
+                    self.stream
+                        .memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
 
                     let one_structure = 1i32;
                     let energy_base_idx = struct_idx as i32;
 
                     unsafe {
-                        let mut builder = self.stream.launch_builder(&self.md_step_cell_list_kernel);
+                        let mut builder =
+                            self.stream.launch_builder(&self.md_step_cell_list_kernel);
                         builder.arg(&self.d_batch_descs);
                         builder.arg(&one_structure);
                         builder.arg(&self.d_positions);
@@ -1721,10 +1899,13 @@ impl AmberSimdBatch {
 
         // Log Verlet statistics
         if n_steps > 0 {
-            let avg_steps_per_rebuild = self.verlet_check_count as f64 / self.verlet_rebuild_count.max(1) as f64;
+            let avg_steps_per_rebuild =
+                self.verlet_check_count as f64 / self.verlet_rebuild_count.max(1) as f64;
             log::info!(
                 "SOTA MD complete: {} steps, {} Verlet rebuilds (avg {:.1} steps/rebuild)",
-                n_steps, self.verlet_rebuild_count, avg_steps_per_rebuild
+                n_steps,
+                self.verlet_rebuild_count,
+                avg_steps_per_rebuild
             );
         }
 
@@ -1734,15 +1915,21 @@ impl AmberSimdBatch {
 
     /// Legacy run method (cell list rebuilt every step)
     /// Uses cell lists for O(N) non-bonded (50x faster than O(N²))
-    fn run_internal_legacy(&mut self, n_steps: usize, dt: f32, temperature: f32, gamma: f32) -> Result<()> {
+    fn run_internal_legacy(
+        &mut self,
+        n_steps: usize,
+        dt: f32,
+        temperature: f32,
+        gamma: f32,
+    ) -> Result<()> {
         let max_excl_i32 = MAX_EXCLUSIONS as i32;
 
         // Cell list constants
-        const MAX_TOTAL_CELLS: i32 = 128 * 16 * 16;  // Must match CUDA kernel
+        const MAX_TOTAL_CELLS: i32 = 128 * 16 * 16; // Must match CUDA kernel
 
         // Compute bounding box origin (minimum position - padding)
         // First structure starts at (0,0,0), subsequent at (100*idx, 0, 0)
-        let origin_x = -10.0f32;  // Padding for atoms near origin
+        let origin_x = -10.0f32; // Padding for atoms near origin
         let origin_y = -10.0f32;
         let origin_z = -10.0f32;
         let total_atoms_i32 = self.total_atoms as i32;
@@ -1750,7 +1937,8 @@ impl AmberSimdBatch {
         for step in 0..n_steps {
             // Reset energy accumulators each step
             let zero_energies = vec![0.0f32; self.alloc_energies_size];
-            self.stream.memcpy_htod(&zero_energies, &mut self.d_energies)?;
+            self.stream
+                .memcpy_htod(&zero_energies, &mut self.d_energies)?;
 
             let step_u32 = step as u32;
 
@@ -1797,7 +1985,7 @@ impl AmberSimdBatch {
 
                 // Run phase 1 for each structure: compute forces + half_kick1 + drift
                 // Use phase=0 (legacy all-in-one) for stability testing, phase=1 for proper velocity Verlet
-                let use_proper_velocity_verlet = true;  // Set to true for proper VV, false for legacy
+                let use_proper_velocity_verlet = true; // Set to true for proper VV, false for legacy
                 let phase1: i32 = if use_proper_velocity_verlet { 1 } else { 0 };
                 for struct_idx in 0..self.n_structures {
                     let desc = &self.batch_descs[struct_idx];
@@ -1810,13 +1998,15 @@ impl AmberSimdBatch {
                     };
 
                     let single_desc = self.create_gpu_desc_for_structure(struct_idx);
-                    self.stream.memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
+                    self.stream
+                        .memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
 
                     let one_structure = 1i32;
                     let energy_base_idx = struct_idx as i32;
 
                     unsafe {
-                        let mut builder = self.stream.launch_builder(&self.md_step_cell_list_kernel);
+                        let mut builder =
+                            self.stream.launch_builder(&self.md_step_cell_list_kernel);
                         builder.arg(&self.d_batch_descs);
                         builder.arg(&one_structure);
                         builder.arg(&self.d_positions);
@@ -1846,7 +2036,7 @@ impl AmberSimdBatch {
                         builder.arg(&temperature);
                         builder.arg(&gamma);
                         builder.arg(&step_u32);
-                        builder.arg(&phase1);  // Phase 1: forces + half_kick1 + drift
+                        builder.arg(&phase1); // Phase 1: forces + half_kick1 + drift
                         builder.launch(cfg)?;
                     }
                 }
@@ -1858,84 +2048,86 @@ impl AmberSimdBatch {
                     // Zero energy accumulators before phase 2 so we only report final energies
                     // (Phase 1 energies were at x(t), Phase 2 energies are at x(t+dt) which is what we want)
                     let zero_energies2 = vec![0.0f32; self.alloc_energies_size];
-                    self.stream.memcpy_htod(&zero_energies2, &mut self.d_energies)?;
+                    self.stream
+                        .memcpy_htod(&zero_energies2, &mut self.d_energies)?;
 
-                // ===== PHASE 2: Rebuild cell list at x(t+dt), compute F(t+dt), half_kick2, thermostat =====
-                unsafe {
-                    let mut builder = self.stream.launch_builder(&self.zero_cell_counts_kernel);
-                    builder.arg(&self.d_cell_counts);
-                    builder.arg(&MAX_TOTAL_CELLS);
-                    builder.launch(zero_cfg)?;
-                }
-                unsafe {
-                    let mut builder = self.stream.launch_builder(&self.build_cell_list_kernel);
-                    builder.arg(&self.d_positions);
-                    builder.arg(&self.d_cell_list);
-                    builder.arg(&self.d_cell_counts);
-                    builder.arg(&self.d_atom_cell);
-                    builder.arg(&origin_x);
-                    builder.arg(&origin_y);
-                    builder.arg(&origin_z);
-                    builder.arg(&total_atoms_i32);
-                    builder.launch(build_cfg)?;
-                }
-
-                // Run phase 2 for each structure: compute forces + half_kick2 + thermostat
-                let phase2: i32 = 2;  // forces + half_kick2 + thermostat
-                for struct_idx in 0..self.n_structures {
-                    let desc = &self.batch_descs[struct_idx];
-                    let n_atoms = desc.n_atoms;
-                    let n_blocks = (n_atoms + 255) / 256;
-                    let cfg = LaunchConfig {
-                        grid_dim: (n_blocks as u32, 1, 1),
-                        block_dim: (256, 1, 1),
-                        shared_mem_bytes: 0,
-                    };
-
-                    let single_desc = self.create_gpu_desc_for_structure(struct_idx);
-                    self.stream.memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
-
-                    let one_structure = 1i32;
-                    let energy_base_idx = struct_idx as i32;
-
+                    // ===== PHASE 2: Rebuild cell list at x(t+dt), compute F(t+dt), half_kick2, thermostat =====
                     unsafe {
-                        let mut builder = self.stream.launch_builder(&self.md_step_cell_list_kernel);
-                        builder.arg(&self.d_batch_descs);
-                        builder.arg(&one_structure);
+                        let mut builder = self.stream.launch_builder(&self.zero_cell_counts_kernel);
+                        builder.arg(&self.d_cell_counts);
+                        builder.arg(&MAX_TOTAL_CELLS);
+                        builder.launch(zero_cfg)?;
+                    }
+                    unsafe {
+                        let mut builder = self.stream.launch_builder(&self.build_cell_list_kernel);
                         builder.arg(&self.d_positions);
-                        builder.arg(&self.d_velocities);
-                        builder.arg(&self.d_forces);
-                        builder.arg(&self.d_bond_atoms);
-                        builder.arg(&self.d_bond_params);
-                        builder.arg(&self.d_angle_atoms);
-                        builder.arg(&self.d_angle_params);
-                        builder.arg(&self.d_dihedral_atoms);
-                        builder.arg(&self.d_dihedral_params);
-                        builder.arg(&self.d_nb_sigma);
-                        builder.arg(&self.d_nb_epsilon);
-                        builder.arg(&self.d_nb_charge);
-                        builder.arg(&self.d_nb_mass);
-                        builder.arg(&self.d_excl_list);
-                        builder.arg(&self.d_n_excl);
-                        builder.arg(&max_excl_i32);
                         builder.arg(&self.d_cell_list);
                         builder.arg(&self.d_cell_counts);
                         builder.arg(&self.d_atom_cell);
-                        builder.arg(&self.d_energies);
-                        builder.arg(&energy_base_idx);
-                        builder.arg(&self.d_ref_positions);
-                        builder.arg(&self.restraint_k);
-                        builder.arg(&dt);
-                        builder.arg(&temperature);
-                        builder.arg(&gamma);
-                        builder.arg(&step_u32);
-                        builder.arg(&phase2);  // Phase 2: forces + half_kick2 + thermostat
-                        builder.launch(cfg)?;
+                        builder.arg(&origin_x);
+                        builder.arg(&origin_y);
+                        builder.arg(&origin_z);
+                        builder.arg(&total_atoms_i32);
+                        builder.launch(build_cfg)?;
                     }
-                }
-                self.stream.synchronize()?;
-                } // end if use_proper_velocity_verlet
 
+                    // Run phase 2 for each structure: compute forces + half_kick2 + thermostat
+                    let phase2: i32 = 2; // forces + half_kick2 + thermostat
+                    for struct_idx in 0..self.n_structures {
+                        let desc = &self.batch_descs[struct_idx];
+                        let n_atoms = desc.n_atoms;
+                        let n_blocks = (n_atoms + 255) / 256;
+                        let cfg = LaunchConfig {
+                            grid_dim: (n_blocks as u32, 1, 1),
+                            block_dim: (256, 1, 1),
+                            shared_mem_bytes: 0,
+                        };
+
+                        let single_desc = self.create_gpu_desc_for_structure(struct_idx);
+                        self.stream
+                            .memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
+
+                        let one_structure = 1i32;
+                        let energy_base_idx = struct_idx as i32;
+
+                        unsafe {
+                            let mut builder =
+                                self.stream.launch_builder(&self.md_step_cell_list_kernel);
+                            builder.arg(&self.d_batch_descs);
+                            builder.arg(&one_structure);
+                            builder.arg(&self.d_positions);
+                            builder.arg(&self.d_velocities);
+                            builder.arg(&self.d_forces);
+                            builder.arg(&self.d_bond_atoms);
+                            builder.arg(&self.d_bond_params);
+                            builder.arg(&self.d_angle_atoms);
+                            builder.arg(&self.d_angle_params);
+                            builder.arg(&self.d_dihedral_atoms);
+                            builder.arg(&self.d_dihedral_params);
+                            builder.arg(&self.d_nb_sigma);
+                            builder.arg(&self.d_nb_epsilon);
+                            builder.arg(&self.d_nb_charge);
+                            builder.arg(&self.d_nb_mass);
+                            builder.arg(&self.d_excl_list);
+                            builder.arg(&self.d_n_excl);
+                            builder.arg(&max_excl_i32);
+                            builder.arg(&self.d_cell_list);
+                            builder.arg(&self.d_cell_counts);
+                            builder.arg(&self.d_atom_cell);
+                            builder.arg(&self.d_energies);
+                            builder.arg(&energy_base_idx);
+                            builder.arg(&self.d_ref_positions);
+                            builder.arg(&self.restraint_k);
+                            builder.arg(&dt);
+                            builder.arg(&temperature);
+                            builder.arg(&gamma);
+                            builder.arg(&step_u32);
+                            builder.arg(&phase2); // Phase 2: forces + half_kick2 + thermostat
+                            builder.launch(cfg)?;
+                        }
+                    }
+                    self.stream.synchronize()?;
+                } // end if use_proper_velocity_verlet
             } else {
                 // ========== LEGACY O(N²) PATH ==========
                 for struct_idx in 0..self.n_structures {
@@ -1950,7 +2142,8 @@ impl AmberSimdBatch {
                     };
 
                     let single_desc = self.create_gpu_desc_for_structure(struct_idx);
-                    self.stream.memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
+                    self.stream
+                        .memcpy_htod(&single_desc, &mut self.d_batch_descs)?;
 
                     let one_structure = 1i32;
 
@@ -2031,7 +2224,9 @@ impl AmberSimdBatch {
             let ke = energies[i * 2 + 1];
             log::trace!(
                 "Structure {}: PE={:.2} kcal/mol, KE={:.2} kcal/mol",
-                i, pe, ke
+                i,
+                pe,
+                ke
             );
         }
 
@@ -2050,7 +2245,8 @@ impl AmberSimdBatch {
         let mut energies = vec![0.0f32; self.alloc_energies_size];
 
         self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         self.stream.memcpy_dtoh(&self.d_energies, &mut energies)?;
 
         // Remove spatial offsets from positions
@@ -2167,12 +2363,12 @@ impl AmberSimdBatch {
         gpu_desc.push(desc.n_angles as i32);
         gpu_desc.push(desc.dihedral_offset as i32);
         gpu_desc.push(desc.n_dihedrals as i32);
-        gpu_desc.push(desc.atom_offset as i32);  // nb_param_offset
-        gpu_desc.push((desc.atom_offset * MAX_EXCLUSIONS) as i32);  // excl_offset
+        gpu_desc.push(desc.atom_offset as i32); // nb_param_offset
+        gpu_desc.push((desc.atom_offset * MAX_EXCLUSIONS) as i32); // excl_offset
         gpu_desc.push(desc.spatial_offset_x.to_bits() as i32);
-        gpu_desc.push(0i32);  // spatial_offset_y
-        gpu_desc.push(0i32);  // spatial_offset_z
-        gpu_desc.push(0i32);  // pad
+        gpu_desc.push(0i32); // spatial_offset_y
+        gpu_desc.push(0i32); // spatial_offset_z
+        gpu_desc.push(0i32); // pad
 
         // Pad to GPU_BATCH_DESC_SIZE_I32
         while gpu_desc.len() < GPU_BATCH_DESC_SIZE_I32 {
@@ -2351,9 +2547,12 @@ impl AmberSimdBatch {
                 let u5: f64 = rng.gen::<f64>().max(1e-10);
                 let u6: f64 = rng.gen::<f64>();
 
-                let g1: f64 = (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
-                let g2: f64 = (-2.0_f64 * u3.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u4).cos();
-                let g3: f64 = (-2.0_f64 * u5.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u6).cos();
+                let g1: f64 =
+                    (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
+                let g2: f64 =
+                    (-2.0_f64 * u3.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u4).cos();
+                let g3: f64 =
+                    (-2.0_f64 * u5.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u6).cos();
 
                 let vel_idx = (atom_offset + i) * 3;
                 self.h_velocities[vel_idx] = (sigma * g1) as f32;
@@ -2371,7 +2570,8 @@ impl AmberSimdBatch {
         }
 
         // Upload velocities to GPU
-        self.stream.memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&self.h_velocities, &mut self.d_velocities)?;
 
         log::info!(
             "Initialized {} replicas with Maxwell-Boltzmann velocities at {}K",
@@ -2431,7 +2631,8 @@ impl AmberSimdBatch {
             self.run_internal(frame_interval, dt, temperature, gamma)?;
 
             // Download positions from GPU
-            self.stream.memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
+            self.stream
+                .memcpy_dtoh(&self.d_positions, &mut self.h_positions)?;
 
             // Download energies
             let mut h_energies = vec![0.0f32; self.n_structures * 2];
@@ -2508,7 +2709,8 @@ impl AmberSimdBatch {
     pub fn get_velocities(&self) -> Result<Vec<f32>> {
         let gpu_size = self.max_atoms_per_struct * self.max_batch_size * 3;
         let mut velocities = vec![0.0f32; gpu_size];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         Ok(velocities)
     }
 
@@ -2522,7 +2724,8 @@ impl AmberSimdBatch {
                 gpu_size
             );
         }
-        self.stream.memcpy_htod(velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(velocities, &mut self.d_velocities)?;
         Ok(())
     }
 }
@@ -2543,14 +2746,57 @@ pub struct SotaStats {
 impl std::fmt::Display for SotaStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "SOTA Optimization Statistics:")?;
-        writeln!(f, "  Verlet neighbor list: {}", if self.verlet_enabled { "ENABLED" } else { "disabled" })?;
-        writeln!(f, "  Tensor Cores (WMMA): {}", if self.tensor_cores_enabled { "ENABLED" } else { "disabled" })?;
-        writeln!(f, "  FP16 parameters: {}", if self.fp16_enabled { "ENABLED" } else { "disabled" })?;
-        writeln!(f, "  Async pipeline: {}", if self.async_pipeline_enabled { "ENABLED" } else { "disabled" })?;
-        writeln!(f, "  Batched forces: {}", if self.batched_forces_enabled { "ENABLED" } else { "disabled" })?;
+        writeln!(
+            f,
+            "  Verlet neighbor list: {}",
+            if self.verlet_enabled {
+                "ENABLED"
+            } else {
+                "disabled"
+            }
+        )?;
+        writeln!(
+            f,
+            "  Tensor Cores (WMMA): {}",
+            if self.tensor_cores_enabled {
+                "ENABLED"
+            } else {
+                "disabled"
+            }
+        )?;
+        writeln!(
+            f,
+            "  FP16 parameters: {}",
+            if self.fp16_enabled {
+                "ENABLED"
+            } else {
+                "disabled"
+            }
+        )?;
+        writeln!(
+            f,
+            "  Async pipeline: {}",
+            if self.async_pipeline_enabled {
+                "ENABLED"
+            } else {
+                "disabled"
+            }
+        )?;
+        writeln!(
+            f,
+            "  Batched forces: {}",
+            if self.batched_forces_enabled {
+                "ENABLED"
+            } else {
+                "disabled"
+            }
+        )?;
         if self.verlet_enabled {
-            writeln!(f, "  Verlet rebuilds: {} ({:.1} avg steps/rebuild)",
-                self.verlet_rebuild_count, self.avg_steps_per_rebuild)?;
+            writeln!(
+                f,
+                "  Verlet rebuilds: {} ({:.1} avg steps/rebuild)",
+                self.verlet_rebuild_count, self.avg_steps_per_rebuild
+            )?;
         }
         Ok(())
     }

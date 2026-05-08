@@ -13,8 +13,8 @@ pub type CufftHandle = c_int;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CufftComplex {
-    pub x: f32,  // Real part
-    pub y: f32,  // Imaginary part
+    pub x: f32, // Real part
+    pub y: f32, // Imaginary part
 }
 
 // Safety: CufftComplex is a POD type

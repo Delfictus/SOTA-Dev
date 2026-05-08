@@ -23,7 +23,7 @@
 use crate::context::{GpuContext, GpuSecurityConfig};
 use crate::mega_fused::{MegaFusedConfig, MegaFusedGpu, MegaFusedOutput};
 // use crate::lbs::LbsGpu;
-use cudarc::driver::{CudaContext, CudaStream, PushKernelArg, DeviceSlice};
+use cudarc::driver::{CudaContext, CudaStream, DeviceSlice, PushKernelArg};
 use once_cell::sync::OnceCell;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use std::collections::HashMap;
@@ -75,7 +75,8 @@ impl StreamPool {
 
         // Slow path: create new stream for this thread
         let mut streams = self.streams.write();
-        streams.entry(tid)
+        streams
+            .entry(tid)
             .or_insert_with(|| self.context.default_stream())
             .clone()
     }
@@ -120,9 +121,8 @@ impl GlobalGpuContext {
     /// Panics if GPU initialization fails (no GPU, driver issues, missing PTX).
     /// Use `try_get()` for fallible initialization.
     pub fn get() -> &'static Self {
-        GLOBAL_GPU.get_or_init(|| {
-            Self::initialize().expect("Failed to initialize global GPU context")
-        })
+        GLOBAL_GPU
+            .get_or_init(|| Self::initialize().expect("Failed to initialize global GPU context"))
     }
 
     /// Try to get or initialize the global GPU context.
@@ -220,7 +220,7 @@ impl GlobalGpuContext {
         }
 
         Err(GlobalGpuError::PtxDirNotFound(
-            "No PTX directory found. Set PRISM_PTX_DIR or ensure target/ptx exists".to_string()
+            "No PTX directory found. Set PRISM_PTX_DIR or ensure target/ptx exists".to_string(),
         ))
     }
 
@@ -282,7 +282,8 @@ impl GlobalGpuContext {
 
     /// Check if FP16 Tensor Core support is available
     pub fn has_fp16(&self) -> bool {
-        self.mega_fused.as_ref()
+        self.mega_fused
+            .as_ref()
             .map(|mf| mf.lock().has_fp16())
             .unwrap_or(false)
     }

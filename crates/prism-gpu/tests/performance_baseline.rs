@@ -38,13 +38,28 @@ impl PerformanceMetrics {
         println!("\n╔══════════════════════════════════════════════════════════════╗");
         println!("║  Performance Baseline: {}  ", self.system);
         println!("╠══════════════════════════════════════════════════════════════╣");
-        println!("║  Atoms: {:>8}    Waters: {:>8}                        ║", self.n_atoms, self.n_waters);
+        println!(
+            "║  Atoms: {:>8}    Waters: {:>8}                        ║",
+            self.n_atoms, self.n_waters
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
-        println!("║  Time per step:      {:>10.1} µs                         ║", self.time_per_step_us);
-        println!("║  Neighbor build:     {:>10.1} µs                         ║", self.neighbor_build_us);
-        println!("║  Force computation:  {:>10.1} µs                         ║", self.force_compute_us);
+        println!(
+            "║  Time per step:      {:>10.1} µs                         ║",
+            self.time_per_step_us
+        );
+        println!(
+            "║  Neighbor build:     {:>10.1} µs                         ║",
+            self.neighbor_build_us
+        );
+        println!(
+            "║  Force computation:  {:>10.1} µs                         ║",
+            self.force_compute_us
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
-        println!("║  Estimated throughput: {:>8.2} ns/day                     ║", self.ns_per_day);
+        println!(
+            "║  Estimated throughput: {:>8.2} ns/day                     ║",
+            self.ns_per_day
+        );
         println!("╚══════════════════════════════════════════════════════════════╝");
     }
 }
@@ -76,8 +91,8 @@ fn benchmark_water_box_216() {
     println!("\n=== Performance Benchmark: 216 Water Box ===\n");
 
     let n_waters = 216;
-    let n_atoms = n_waters * 3;  // 648 atoms
-    let box_dim = 18.6f32;  // Approximately correct density
+    let n_atoms = n_waters * 3; // 648 atoms
+    let box_dim = 18.6f32; // Approximately correct density
     let box_dims = [box_dim, box_dim, box_dim];
 
     // Generate water positions on grid
@@ -95,24 +110,37 @@ fn benchmark_water_box_216() {
     let angles: Vec<(usize, usize, usize, f32, f32)> = vec![];
     let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = vec![];
 
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-        .expect("Failed to upload topology");
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )
+    .expect("Failed to upload topology");
 
     hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
-    hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
-    hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
-    hmc.initialize_velocities(310.0).expect("Failed to init velocities");
+    hmc.enable_explicit_solvent(box_dims)
+        .expect("Failed to enable explicit solvent");
+    hmc.set_water_molecules(&water_oxygens)
+        .expect("Failed to set waters");
+    hmc.initialize_velocities(310.0)
+        .expect("Failed to init velocities");
 
     // Warm-up (100 steps)
     println!("Warming up (100 steps)...");
-    let _ = hmc.run_fused(100, 2.0, 310.0, 0.01, false).expect("Warmup failed");
+    let _ = hmc
+        .run_fused(100, 2.0, 310.0, 0.01, false)
+        .expect("Warmup failed");
 
     // Benchmark neighbor list build
     println!("Benchmarking neighbor list build...");
     let n_neighbor_builds = 10;
     let neighbor_start = Instant::now();
     for _ in 0..n_neighbor_builds {
-        hmc.build_neighbor_lists().expect("Failed to build neighbor list");
+        hmc.build_neighbor_lists()
+            .expect("Failed to build neighbor list");
     }
     let neighbor_elapsed = neighbor_start.elapsed();
     let neighbor_build_us = neighbor_elapsed.as_micros() as f64 / n_neighbor_builds as f64;
@@ -121,7 +149,9 @@ fn benchmark_water_box_216() {
     println!("Benchmarking MD steps (1000 steps)...");
     let n_steps = 1000;
     let md_start = Instant::now();
-    let _ = hmc.run_fused(n_steps, 2.0, 310.0, 0.01, false).expect("Benchmark failed");
+    let _ = hmc
+        .run_fused(n_steps, 2.0, 310.0, 0.01, false)
+        .expect("Benchmark failed");
     let md_elapsed = md_start.elapsed();
     let time_per_step_us = md_elapsed.as_micros() as f64 / n_steps as f64;
 
@@ -132,7 +162,7 @@ fn benchmark_water_box_216() {
         n_waters,
         time_per_step_us,
         neighbor_build_us,
-        force_compute_us: time_per_step_us * 0.8,  // Estimate: forces ~80% of step time
+        force_compute_us: time_per_step_us * 0.8, // Estimate: forces ~80% of step time
         ns_per_day: calculate_ns_per_day(time_per_step_us, 2.0),
     };
 
@@ -166,7 +196,7 @@ fn benchmark_water_box_1000() {
     println!("\n=== Performance Benchmark: 1000 Water Box ===\n");
 
     let n_waters = 1000;
-    let n_atoms = n_waters * 3;  // 3000 atoms
+    let n_atoms = n_waters * 3; // 3000 atoms
     let box_dim = 31.0f32;
     let box_dims = [box_dim, box_dim, box_dim];
 
@@ -181,21 +211,35 @@ fn benchmark_water_box_1000() {
     let angles: Vec<(usize, usize, usize, f32, f32)> = vec![];
     let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = vec![];
 
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-        .expect("Failed to upload topology");
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )
+    .expect("Failed to upload topology");
 
     hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
-    hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
-    hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
-    hmc.initialize_velocities(310.0).expect("Failed to init velocities");
+    hmc.enable_explicit_solvent(box_dims)
+        .expect("Failed to enable explicit solvent");
+    hmc.set_water_molecules(&water_oxygens)
+        .expect("Failed to set waters");
+    hmc.initialize_velocities(310.0)
+        .expect("Failed to init velocities");
 
     // Warm-up
-    let _ = hmc.run_fused(100, 2.0, 310.0, 0.01, false).expect("Warmup failed");
+    let _ = hmc
+        .run_fused(100, 2.0, 310.0, 0.01, false)
+        .expect("Warmup failed");
 
     // Benchmark
     let n_steps = 500;
     let md_start = Instant::now();
-    let _ = hmc.run_fused(n_steps, 2.0, 310.0, 0.01, false).expect("Benchmark failed");
+    let _ = hmc
+        .run_fused(n_steps, 2.0, 310.0, 0.01, false)
+        .expect("Benchmark failed");
     let md_elapsed = md_start.elapsed();
     let time_per_step_us = md_elapsed.as_micros() as f64 / n_steps as f64;
 
@@ -204,7 +248,7 @@ fn benchmark_water_box_1000() {
         n_atoms,
         n_waters,
         time_per_step_us,
-        neighbor_build_us: 0.0,  // Not measured separately
+        neighbor_build_us: 0.0, // Not measured separately
         force_compute_us: time_per_step_us * 0.8,
         ns_per_day: calculate_ns_per_day(time_per_step_us, 2.0),
     };
@@ -232,12 +276,12 @@ fn benchmark_scaling_analysis() {
 
     println!("\n=== Performance Scaling Analysis ===\n");
 
-    let water_counts = [27, 64, 125, 216, 343];  // 3x3x3, 4x4x4, 5x5x5, 6x6x6, 7x7x7
+    let water_counts = [27, 64, 125, 216, 343]; // 3x3x3, 4x4x4, 5x5x5, 6x6x6, 7x7x7
     let mut results: Vec<(usize, f64)> = Vec::new();
 
     for &n_waters in &water_counts {
         let n_atoms = n_waters * 3;
-        let n_per_side = (n_waters as f64).powf(1.0/3.0).round() as usize;
+        let n_per_side = (n_waters as f64).powf(1.0 / 3.0).round() as usize;
         let box_dim = (n_per_side as f32) * 3.1;
         let box_dims = [box_dim, box_dim, box_dim];
 
@@ -252,20 +296,34 @@ fn benchmark_scaling_analysis() {
         let angles: Vec<(usize, usize, usize, f32, f32)> = vec![];
         let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = vec![];
 
-        hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-            .expect("Failed to upload topology");
+        hmc.upload_topology(
+            &positions,
+            &bonds,
+            &angles,
+            &dihedrals,
+            &nb_params,
+            &exclusions,
+        )
+        .expect("Failed to upload topology");
 
         hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
-        hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
-        hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
-        hmc.initialize_velocities(310.0).expect("Failed to init velocities");
+        hmc.enable_explicit_solvent(box_dims)
+            .expect("Failed to enable explicit solvent");
+        hmc.set_water_molecules(&water_oxygens)
+            .expect("Failed to set waters");
+        hmc.initialize_velocities(310.0)
+            .expect("Failed to init velocities");
 
         // Warm-up and benchmark
-        let _ = hmc.run_fused(50, 2.0, 310.0, 0.01, false).expect("Scaling benchmark failed");
+        let _ = hmc
+            .run_fused(50, 2.0, 310.0, 0.01, false)
+            .expect("Scaling benchmark failed");
 
         let n_steps = 200;
         let start = Instant::now();
-        let _ = hmc.run_fused(n_steps, 2.0, 310.0, 0.01, false).expect("Benchmark failed");
+        let _ = hmc
+            .run_fused(n_steps, 2.0, 310.0, 0.01, false)
+            .expect("Benchmark failed");
         let elapsed = start.elapsed();
         let time_per_step_us = elapsed.as_micros() as f64 / n_steps as f64;
 
@@ -314,20 +372,23 @@ fn benchmark_1ns_production() {
     // System configuration: 5000 waters = 15,000 atoms
     let n_waters = 5000;
     let n_atoms = n_waters * 3;
-    let box_dim = 54.0f32;  // ~54 Å for proper density
+    let box_dim = 54.0f32; // ~54 Å for proper density
     let box_dims = [box_dim, box_dim, box_dim];
 
     println!("System Setup:");
     println!("  Waters: {}", n_waters);
     println!("  Atoms:  {}", n_atoms);
-    println!("  Box:    {:.1} × {:.1} × {:.1} Å", box_dim, box_dim, box_dim);
+    println!(
+        "  Box:    {:.1} × {:.1} × {:.1} Å",
+        box_dim, box_dim, box_dim
+    );
 
     // Simulation parameters
-    let dt_fs = 2.0f32;      // 2 fs timestep
-    let total_steps = 500_000;  // 500,000 steps = 1 ns
-    let report_interval = 50_000;  // Report every 100 ps
+    let dt_fs = 2.0f32; // 2 fs timestep
+    let total_steps = 500_000; // 500,000 steps = 1 ns
+    let report_interval = 50_000; // Report every 100 ps
     let temperature = 310.0f32;
-    let gamma_fs = 0.01f32;  // Langevin friction
+    let gamma_fs = 0.01f32; // Langevin friction
 
     println!("\nSimulation Parameters:");
     println!("  Timestep:    {} fs", dt_fs);
@@ -351,17 +412,29 @@ fn benchmark_1ns_production() {
     let angles: Vec<(usize, usize, usize, f32, f32)> = vec![];
     let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = vec![];
 
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-        .expect("Failed to upload topology");
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )
+    .expect("Failed to upload topology");
 
     hmc.set_pbc_box(box_dims).expect("Failed to set PBC");
-    hmc.enable_explicit_solvent(box_dims).expect("Failed to enable explicit solvent");
-    hmc.set_water_molecules(&water_oxygens).expect("Failed to set waters");
-    hmc.initialize_velocities(temperature).expect("Failed to init velocities");
+    hmc.enable_explicit_solvent(box_dims)
+        .expect("Failed to enable explicit solvent");
+    hmc.set_water_molecules(&water_oxygens)
+        .expect("Failed to set waters");
+    hmc.initialize_velocities(temperature)
+        .expect("Failed to init velocities");
 
     // Warm-up
     println!("\nWarming up (1000 steps)...");
-    let _ = hmc.run_fused(1000, dt_fs, temperature, gamma_fs, false).expect("Warmup failed");
+    let _ = hmc
+        .run_fused(1000, dt_fs, temperature, gamma_fs, false)
+        .expect("Warmup failed");
 
     // Production run
     println!("\n════════════════════════════════════════════════════════════════");
@@ -376,7 +449,8 @@ fn benchmark_1ns_production() {
     while steps_completed < total_steps {
         let chunk_size = report_interval.min(total_steps - steps_completed);
 
-        let _ = hmc.run_fused(chunk_size, dt_fs, temperature, gamma_fs, false)
+        let _ = hmc
+            .run_fused(chunk_size, dt_fs, temperature, gamma_fs, false)
             .expect("MD step failed");
 
         steps_completed += chunk_size;
@@ -410,15 +484,29 @@ fn benchmark_1ns_production() {
     println!("\n╔══════════════════════════════════════════════════════════════╗");
     println!("║                    BENCHMARK RESULTS                         ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║  System:        {:>6} atoms ({} waters)                   ║", n_atoms, n_waters);
+    println!(
+        "║  System:        {:>6} atoms ({} waters)                   ║",
+        n_atoms, n_waters
+    );
     println!("║  Simulated:     1.000 ns (500,000 steps)                    ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║  Wall time:     {:>7.2} seconds ({:.2} minutes)             ║",
-             total_elapsed.as_secs_f64(),
-             total_elapsed.as_secs_f64() / 60.0);
-    println!("║  Time/step:     {:>7.2} µs                                  ║", time_per_step_us);
-    println!("║  Steps/second:  {:>7.0}                                     ║", avg_steps_per_sec);
-    println!("║  Performance:   {:>7.1} ns/day                              ║", avg_ns_per_day);
+    println!(
+        "║  Wall time:     {:>7.2} seconds ({:.2} minutes)             ║",
+        total_elapsed.as_secs_f64(),
+        total_elapsed.as_secs_f64() / 60.0
+    );
+    println!(
+        "║  Time/step:     {:>7.2} µs                                  ║",
+        time_per_step_us
+    );
+    println!(
+        "║  Steps/second:  {:>7.0}                                     ║",
+        avg_steps_per_sec
+    );
+    println!(
+        "║  Performance:   {:>7.1} ns/day                              ║",
+        avg_ns_per_day
+    );
     println!("╚══════════════════════════════════════════════════════════════╝");
 
     // Performance assertions
@@ -437,7 +525,7 @@ fn benchmark_1ns_production() {
 
 /// Generate TIP3P water molecules on a grid
 fn generate_water_grid(n_waters: usize, box_dim: f32) -> (Vec<f32>, Vec<usize>) {
-    let n_per_side = (n_waters as f64).powf(1.0/3.0).ceil() as usize;
+    let n_per_side = (n_waters as f64).powf(1.0 / 3.0).ceil() as usize;
     let spacing = box_dim / n_per_side as f32;
 
     // TIP3P geometry

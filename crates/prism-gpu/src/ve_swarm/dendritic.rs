@@ -4,7 +4,10 @@
 //! contact graph. Preserves full 136-dim feature tensor across residues.
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
+    PushKernelArg,
+};
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
 
@@ -49,11 +52,13 @@ impl DendriticReservoir {
     pub fn new(ctx: Arc<CudaContext>, ptx_path: &str, config: DendriticConfig) -> Result<Self> {
         let stream = ctx.default_stream();
         let ptx = Ptx::from_file(ptx_path);
-        
+
         let module = ctx.load_module(ptx)?;
 
         let fn_init = module.load_function("ve_swarm_init_reservoir").unwrap();
-        let fn_propagate = module.load_function("ve_swarm_dendritic_reservoir").unwrap();
+        let fn_propagate = module
+            .load_function("ve_swarm_dendritic_reservoir")
+            .unwrap();
         let fn_attention = module.load_function("ve_swarm_compute_attention").unwrap();
 
         Ok(Self {
@@ -94,7 +99,8 @@ impl DendriticReservoir {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_init)
+            self.stream
+                .launch_builder(&self.fn_init)
                 .arg(&mut state_a)
                 .arg(&(n_residues as i32))
                 .arg(&seed)
@@ -111,7 +117,8 @@ impl DendriticReservoir {
 
             if iter % 2 == 0 {
                 unsafe {
-                    self.stream.launch_builder(&self.fn_propagate)
+                    self.stream
+                        .launch_builder(&self.fn_propagate)
                         .arg(features)
                         .arg(csr_row)
                         .arg(csr_col)
@@ -125,7 +132,8 @@ impl DendriticReservoir {
                 }
             } else {
                 unsafe {
-                    self.stream.launch_builder(&self.fn_propagate)
+                    self.stream
+                        .launch_builder(&self.fn_propagate)
                         .arg(features)
                         .arg(csr_row)
                         .arg(csr_col)
@@ -172,7 +180,8 @@ impl DendriticReservoir {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.fn_attention)
+            self.stream
+                .launch_builder(&self.fn_attention)
                 .arg(reservoir_state)
                 .arg(eigenvector)
                 .arg(csr_row)
@@ -191,10 +200,7 @@ impl DendriticReservoir {
 }
 
 /// Build contact graph CSR from distance matrix
-pub fn build_contact_graph(
-    ca_coords: &[[f32; 3]],
-    cutoff: f32,
-) -> (Vec<i32>, Vec<i32>, Vec<f32>) {
+pub fn build_contact_graph(ca_coords: &[[f32; 3]], cutoff: f32) -> (Vec<i32>, Vec<i32>, Vec<f32>) {
     let n = ca_coords.len();
     let mut row_ptr = vec![0i32; n + 1];
     let mut col_idx = Vec::new();
