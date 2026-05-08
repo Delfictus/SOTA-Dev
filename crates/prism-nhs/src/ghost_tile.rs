@@ -251,14 +251,22 @@ pub const GHOST_RECORD_BYTES: usize = 4096;
 //   offset 138  field_completeness_flags u16
 //   offset 140  gear_id                 u32   (Wave A default 0)
 //   offset 144  dt_fs                   f32
-//   offset 148  step_idx                u64
-//   offset 156  _pad32                  u32
+//   offset 148  _pad32_for_step_align   u32   (slot reserved so step_idx u64 lands 8-aligned)
+//   offset 152  step_idx                u64   (8-aligned — required for STG.E.64 stores)
 //   offset 160  aabb_min                [f32; 3]   (160, 164, 168)
 //   offset 172  aabb_max                [f32; 3]   (172, 176, 180)
 //   offset 184  centroid_xyz            [f32; 3]   (184, 188, 192)
 //   offset 196  _v2_reserved            [u32; 15]  (196..256, 60 B for future)
 //
 //   offset 256  _slack [u8; 3840]       (unchanged; ends at 4096)
+//
+// M1.2.24 fix: step_idx was at 148 in the v2 schema landed by Commit 3.
+// 148 mod 8 = 4 → not 8-aligned → CUDA STG.E.64 traps with
+// CUDA_ERROR_MISALIGNED_ADDRESS (deferred). The misaligned u64 store in
+// the v2 kernel was the root cause of the M1.2.24 segfault. Swapping the
+// pad and step_idx so step_idx lands at 152 (152 mod 8 = 0) fixes the
+// alignment. No on-disk format compat issue exists because v2 records
+// were never written (smoke aborted before any kernel completed).
 //
 // Total payload usage: 128 B (offsets 128..256). _slack and all v1 offsets
 // are byte-identical to v1. CUDA mirror's _reserved_payload[32] still spans
@@ -275,7 +283,7 @@ pub const GHOST_V2_OFFSET_UV_WAVELENGTH_NM:  usize = 136;
 pub const GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS: usize = 138;
 pub const GHOST_V2_OFFSET_GEAR_ID:           usize = 140;
 pub const GHOST_V2_OFFSET_DT_FS:             usize = 144;
-pub const GHOST_V2_OFFSET_STEP_IDX:          usize = 148;
+pub const GHOST_V2_OFFSET_STEP_IDX:          usize = 152;
 pub const GHOST_V2_OFFSET_AABB_MIN:          usize = 160;
 pub const GHOST_V2_OFFSET_AABB_MAX:          usize = 172;
 pub const GHOST_V2_OFFSET_CENTROID:          usize = 184;
@@ -290,7 +298,8 @@ const _: () = {
     assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM  == 136);
     assert!(GHOST_V2_OFFSET_GEAR_ID           == 140);
     assert!(GHOST_V2_OFFSET_DT_FS             == 144);
-    assert!(GHOST_V2_OFFSET_STEP_IDX          == 148);
+    assert!(GHOST_V2_OFFSET_STEP_IDX          == 152);
+    assert!(GHOST_V2_OFFSET_STEP_IDX % 8       == 0); // 8-aligned for STG.E.64
     assert!(GHOST_V2_OFFSET_AABB_MIN          == 160);
     assert!(GHOST_V2_OFFSET_AABB_MAX          == 172);
     assert!(GHOST_V2_OFFSET_CENTROID          == 184);
@@ -299,6 +308,26 @@ const _: () = {
     assert!(GHOST_V2_OFFSET_V2_RESERVED + 60   == 256);
     // Reserved-payload region begins at 128 and ends just before _slack at 256.
     assert!(GHOST_V2_OFFSET_SCHEMA_VERSION + 128 == 256);
+
+    // ── M1.2.24 — natural-alignment audit ─────────────────────────────────
+    // Every offset must be naturally aligned for its load/store width on
+    // CUDA Blackwell (sm_120 issues STG.E.64/STG.E.32/STG.E.16 which trap
+    // CUDA_ERROR_MISALIGNED_ADDRESS on misaligned destinations). Prior
+    // step_idx misalignment at offset 148 was the M1.2.24 root cause.
+    // This block is regression protection.
+    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION       % 4 == 0); // u32
+    assert!(GHOST_V2_OFFSET_OBSERVATION_PASS     % 1 == 0); // u8
+    assert!(GHOST_V2_OFFSET_DISCOVERY_PASS       % 1 == 0); // u8
+    assert!(GHOST_V2_OFFSET_PERTURBATION_CHAN    % 1 == 0); // u8
+    assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM     % 2 == 0); // u16
+    assert!(GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS % 2 == 0); // u16
+    assert!(GHOST_V2_OFFSET_GEAR_ID              % 4 == 0); // u32
+    assert!(GHOST_V2_OFFSET_DT_FS                % 4 == 0); // f32
+    assert!(GHOST_V2_OFFSET_STEP_IDX             % 8 == 0); // u64 ← M1.2.24 fix
+    assert!(GHOST_V2_OFFSET_AABB_MIN             % 4 == 0); // f32[3] component-wise
+    assert!(GHOST_V2_OFFSET_AABB_MAX             % 4 == 0); // f32[3]
+    assert!(GHOST_V2_OFFSET_CENTROID             % 4 == 0); // f32[3]
+    assert!(GHOST_V2_OFFSET_V2_RESERVED          % 4 == 0); // u32 array
 };
 
 /// UV wavelength bit-code → wavelength_nm. Cited mapping authoritative source:

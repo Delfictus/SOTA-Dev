@@ -645,7 +645,10 @@ fn parse_ghost_tiles_file(
                 u16::from_le_bytes(buf[138..140].try_into().unwrap()),
                 u32::from_le_bytes(buf[140..144].try_into().unwrap()),
                 f32::from_le_bytes(buf[144..148].try_into().unwrap()),
-                u64::from_le_bytes(buf[148..156].try_into().unwrap()),
+                // M1.2.24 fix: step_idx moved from 148 → 152 (148 was
+                // misaligned for STG.E.64). Bytes 148..152 are reserved
+                // padding (zero-initialized by the v2 kernel).
+                u64::from_le_bytes(buf[152..160].try_into().unwrap()),
             )
         } else {
             (false, false, 0xFFu8, 0u16, 0u16, 0u32, 0.0f32, 0u64)

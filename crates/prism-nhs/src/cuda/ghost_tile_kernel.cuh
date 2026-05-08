@@ -97,7 +97,9 @@ constexpr size_t GHOST_V2_OFFSET_UV_WAVELENGTH_NM     = 136;  // u16
 constexpr size_t GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS = 138;  // u16
 constexpr size_t GHOST_V2_OFFSET_GEAR_ID              = 140;  // u32
 constexpr size_t GHOST_V2_OFFSET_DT_FS                = 144;  // f32
-constexpr size_t GHOST_V2_OFFSET_STEP_IDX             = 148;  // u64
+// M1.2.24 fix: was 148; 148 mod 8 = 4 → CUDA STG.E.64 traps with
+// MISALIGNED_ADDRESS. Realigned to 152 (152 mod 8 = 0).
+constexpr size_t GHOST_V2_OFFSET_STEP_IDX             = 152;  // u64 (8-aligned)
 constexpr size_t GHOST_V2_OFFSET_AABB_MIN             = 160;  // f32 × 3
 constexpr size_t GHOST_V2_OFFSET_AABB_MAX             = 172;  // f32 × 3
 constexpr size_t GHOST_V2_OFFSET_CENTROID             = 184;  // f32 × 3
@@ -115,7 +117,9 @@ static_assert(GHOST_V2_OFFSET_UV_WAVELENGTH_NM     == 136, "v2 uv_wavelength_nm 
 static_assert(GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS == 138, "v2 field_completeness_flags offset drift");
 static_assert(GHOST_V2_OFFSET_GEAR_ID              == 140, "v2 gear_id offset drift");
 static_assert(GHOST_V2_OFFSET_DT_FS                == 144, "v2 dt_fs offset drift");
-static_assert(GHOST_V2_OFFSET_STEP_IDX             == 148, "v2 step_idx offset drift");
+static_assert(GHOST_V2_OFFSET_STEP_IDX             == 152, "v2 step_idx offset drift");
+static_assert(GHOST_V2_OFFSET_STEP_IDX % 8          == 0,
+              "v2 step_idx u64 must be 8-aligned for STG.E.64 (M1.2.24 fix)");
 static_assert(GHOST_V2_OFFSET_AABB_MIN             == 160, "v2 aabb_min offset drift");
 static_assert(GHOST_V2_OFFSET_AABB_MAX             == 172, "v2 aabb_max offset drift");
 static_assert(GHOST_V2_OFFSET_CENTROID             == 184, "v2 centroid offset drift");
@@ -125,6 +129,22 @@ static_assert(GHOST_V2_OFFSET_V2_RESERVED + 60     == 256, "v2 region must end a
 // All v2 offsets must lie within the legacy _reserved_payload[32] span (128..256).
 static_assert(GHOST_V2_OFFSET_SCHEMA_VERSION       >= 128, "v2 schema must be inside _reserved_payload");
 static_assert(GHOST_V2_OFFSET_V2_RESERVED + 60     <= 256, "v2 region must fit inside _reserved_payload");
+
+// ── M1.2.24 — natural-alignment audit ───────────────────────────────────
+// Every offset must be naturally aligned for its store width on CUDA
+// Blackwell (sm_120). STG.E.64 traps CUDA_ERROR_MISALIGNED_ADDRESS on
+// misaligned destinations. Prior step_idx u64 at offset 148 was the
+// M1.2.24 root cause. These asserts are regression protection.
+static_assert(GHOST_V2_OFFSET_SCHEMA_VERSION       % 4 == 0, "u32 schema_version not 4-aligned");
+static_assert(GHOST_V2_OFFSET_UV_WAVELENGTH_NM     % 2 == 0, "u16 uv_wavelength_nm not 2-aligned");
+static_assert(GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS % 2 == 0, "u16 field_completeness_flags not 2-aligned");
+static_assert(GHOST_V2_OFFSET_GEAR_ID              % 4 == 0, "u32 gear_id not 4-aligned");
+static_assert(GHOST_V2_OFFSET_DT_FS                % 4 == 0, "f32 dt_fs not 4-aligned");
+static_assert(GHOST_V2_OFFSET_STEP_IDX             % 8 == 0, "u64 step_idx not 8-aligned (M1.2.24 root cause)");
+static_assert(GHOST_V2_OFFSET_AABB_MIN             % 4 == 0, "f32[3] aabb_min not 4-aligned");
+static_assert(GHOST_V2_OFFSET_AABB_MAX             % 4 == 0, "f32[3] aabb_max not 4-aligned");
+static_assert(GHOST_V2_OFFSET_CENTROID             % 4 == 0, "f32[3] centroid not 4-aligned");
+static_assert(GHOST_V2_OFFSET_V2_RESERVED          % 4 == 0, "u32 v2_reserved not 4-aligned");
 
 #ifdef __cplusplus
 extern "C" {
