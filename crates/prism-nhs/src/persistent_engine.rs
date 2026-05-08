@@ -1049,6 +1049,12 @@ pub struct PersistentNhsEngine {
     /// When present, `cluster_spikes` dispatches here on SM120+ instead of
     /// the `fallback_grid_cluster` CPU path. See `gpu_cluster_backend.rs`.
     gpu_cluster: Option<crate::gpu_cluster_backend::GpuSpatialHashBackend>,
+    /// GhostPhaseLattice4D backend — physically-constrained 4D edge
+    /// adjudication on Ghost v2 records. Lazy-initialised on the first
+    /// call to `cluster_ghost_phase_lattice` (or when `cluster_spikes`
+    /// has been routed through `BACKEND_GHOST_LATTICE_4D` and a Ghost v2
+    /// payload is available on disk).
+    ghost_lattice: Option<crate::ghost_phase_lattice::GhostPhaseLattice4D>,
 
     /// Pre-allocated buffer capacity
     max_atoms: usize,
@@ -1125,6 +1131,7 @@ impl PersistentNhsEngine {
             engine: None,
             rt_engine: None,   // Lazy initialized on first use
             gpu_cluster: None, // Lazy initialized on first cluster_spikes call
+            ghost_lattice: None, // Lazy initialized on first cluster_ghost_phase_lattice call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
             grid_spacing: config.grid_spacing,
@@ -1157,6 +1164,7 @@ impl PersistentNhsEngine {
             engine: None,
             rt_engine: None,
             gpu_cluster: None, // Lazy initialized on first cluster_spikes call
+            ghost_lattice: None, // Lazy initialized on first cluster_ghost_phase_lattice call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
             grid_spacing: config.grid_spacing,
@@ -2655,6 +2663,22 @@ impl PersistentNhsEngine {
                      (arrives in the Phase-2 LBVH lane). Use auto or gpu-hash."
                 );
             }
+            gcb::BACKEND_GHOST_LATTICE_4D => {
+                // The lattice operates on Ghost v2 records, not raw spike
+                // positions. cluster_spikes() only has access to positions,
+                // so route the operator to the proper entry point.
+                anyhow::bail!(
+                    "--clustering-backend=ghost-phase-lattice-4d operates on \
+                     Ghost v2 records, not raw spike positions. Invoke \
+                     PersistentNhsEngine::cluster_ghost_phase_lattice() \
+                     with projected ghost nodes (see \
+                     crate::ghost_phase_lattice::load_ghost_v2_payloads_from_dir), \
+                     or call this from the post-run materializer in \
+                     `prism_materialize_sites`. Use \
+                     --clustering-backend=auto to fall back to gpu-hash for \
+                     spike-only clustering."
+                );
+            }
             gcb::BACKEND_GRID_DEBUG => {
                 log::warn!(
                     "POST_MD_CLUSTER_BACKEND_DEBUG grid fallback active (debug only — degrades at N>>1M)"
@@ -2674,6 +2698,61 @@ impl PersistentNhsEngine {
         );
 
         Ok(result)
+    }
+
+    /// Run the GhostPhaseLattice4D backend against a pre-projected slice of
+    /// [`crate::ghost_phase_lattice::GhostPhaseLatticeNode`]s. The caller is
+    /// responsible for projecting Ghost v2 records (see
+    /// [`crate::ghost_phase_lattice::project_ghost_v2_payload`] or
+    /// [`crate::ghost_phase_lattice::load_ghost_v2_payloads_from_dir`])
+    /// before invoking this method.
+    ///
+    /// This is the canonical post-MD clustering entry point when
+    /// `--clustering-backend=ghost-phase-lattice-4d` is selected, or when
+    /// `--clustering-backend=auto` resolves to the lattice (Ghost v2
+    /// records present). Returns the full
+    /// [`crate::ghost_phase_lattice::GhostPhaseLatticeOutcome`] — the
+    /// caller materialises sites via
+    /// [`crate::ghost_phase_materializer::materialize_components`].
+    pub fn cluster_ghost_phase_lattice(
+        &mut self,
+        nodes: &[crate::ghost_phase_lattice::GhostPhaseLatticeNode],
+        config: crate::ghost_phase_lattice::GhostPhaseLatticeConfig,
+    ) -> Result<crate::ghost_phase_lattice::GhostPhaseLatticeOutcome> {
+        log::info!(
+            "POST_MD_CLUSTER_BACKEND_SELECTED backend=ghost_phase_lattice_4d tiles={} \
+             cell={:.1}A max_temporal={} so3_thresh={:.2}",
+            nodes.len(),
+            config.spatial_cell_size_a,
+            config.max_temporal_edge_steps,
+            config.so3_threshold
+        );
+        log::info!("POST_MD_CLUSTER_START tiles={} (lattice)", nodes.len());
+        let t = std::time::Instant::now();
+
+        if self.ghost_lattice.is_none() {
+            self.ghost_lattice = Some(
+                crate::ghost_phase_lattice::GhostPhaseLattice4D::new(
+                    self.context.clone(),
+                    self.stream.clone(),
+                    config,
+                ),
+            );
+        }
+        let backend = self
+            .ghost_lattice
+            .as_mut()
+            .expect("lattice backend just initialised");
+        let outcome = backend.cluster(nodes).context("ghost-phase-lattice cluster")?;
+        log::info!(
+            "POST_MD_CLUSTER_DONE backend=ghost_phase_lattice_4d components={} \
+             pairs={} edges={} elapsed_ms={}",
+            outcome.components.len(),
+            outcome.stats.n_pairs_evaluated,
+            outcome.stats.n_directed_edges,
+            t.elapsed().as_millis()
+        );
+        Ok(outcome)
     }
 
     /// Re-cluster spikes at a specific epsilon (for mega-cluster subdivision).

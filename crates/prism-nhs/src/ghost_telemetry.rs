@@ -465,6 +465,10 @@ fn build_minimal_site_manifest_from_tile(cluster_id: u32, tile: &ContactShellTil
         adjudicator_elapsed_ns: None,
         kcc_metrics: None,
         therm_dossier: None,
+        ghost_phase_lattice: None,
+        phase_manifold: None,
+        therm_ccns_lifecycle: None,
+        so3_manifold: None,
     }
 }
 

@@ -771,6 +771,29 @@ extern "C" {
         gear_id:                  u32,
         dt_fs:                    f32,
         step_idx:                 u64,
+        // OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper. u64
+        // device pointer to a single uint64_t. 0 ⇒ legacy host-baked
+        // behavior (the FFI step_idx arg is used). Non-zero ⇒ kernel
+        // dereferences the counter and that becomes the authoritative
+        // step_idx written into every record.
+        d_step_counter:           u64,
+        // OPERATOR MANDATE 2026-05-08 §2 — device-side firehose prune.
+        // kl_divergence magnitude threshold; records below this are
+        // silently dropped before the ring atomicAdd when firehose is on.
+        // 0.0 disables (legacy unconditional firehose).
+        prune_kl_threshold:       f32,
+    ) -> i32;
+
+    /// OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper increment
+    /// kernel. Single-thread `__global__` that performs an atomicAdd of
+    /// `increment` (typically 1) into the device-side step counter.
+    /// Captured into the V2 graph body so each replay advances the GPU
+    /// clock without host intervention.
+    #[allow(dead_code)]
+    pub fn prism_increment_time_launch(
+        d_step_counter: *mut c_void,  // u64 device pointer
+        increment:      u32,
+        stream:         *mut c_void,
     ) -> i32;
 }
 
@@ -1043,6 +1066,23 @@ pub struct MarV2Config {
     pub gear_id: u32,
     /// Integration timestep in femtoseconds. Stamped into v2 records.
     pub dt_fs: f32,
+    /// OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper.
+    /// u64 device pointer to a single uint64_t step counter. 0 ⇒ legacy
+    /// host-baked behavior (every record carries the FFI step_idx
+    /// captured at graph-build time, which is the "step_span [N, N]"
+    /// temporal-collapse bug). Non-zero ⇒ kernel reads
+    /// `*d_step_counter` and uses it as the authoritative step_idx for
+    /// every emitted record. Counter is incremented inside the captured
+    /// graph by the `prism_increment_time_kernel` node, so each replay
+    /// of the captured graph advances the GPU clock without host
+    /// intervention.
+    pub d_step_counter: u64,
+    /// OPERATOR MANDATE 2026-05-08 §2 — device-side firehose prune.
+    /// kl_divergence magnitude threshold below which the kernel silently
+    /// drops the record before the ring atomicAdd, even when
+    /// firehose_enable is set. Directive default: 0.01. Set to 0.0 to
+    /// preserve legacy unconditional-firehose behavior.
+    pub prune_kl_threshold: f32,
 }
 
 impl Default for MarV2Config {
@@ -1054,6 +1094,12 @@ impl Default for MarV2Config {
             noise_floor_sigma: 1.0,
             gear_id: 0,
             dt_fs: 2.0,
+            // §1 + §2 — wired into the build path; default 0 / 0.0
+            // preserves legacy semantics for any caller that hasn't
+            // populated them yet (caller responsibility to set them
+            // when the V2 build path allocates the device counter).
+            d_step_counter: 0,
+            prune_kl_threshold: 0.01,
         }
     }
 }
@@ -3988,9 +4034,35 @@ impl CapturedAdjudicationPipeline {
                 let disc_thr = mar.discovery_threshold_kl();
                 log::info!(
                     "[M1.2.23 v2] ghost launcher: schema_version=2 \
-                     obs_thr={:.6} disc_thr={:.6} gear_id={} dt_fs={:.3}",
-                    obs_thr, disc_thr, mar.gear_id, mar.dt_fs
+                     obs_thr={:.6} disc_thr={:.6} gear_id={} dt_fs={:.3} \
+                     d_step_counter=0x{:x} prune_kl={:.4}",
+                    obs_thr, disc_thr, mar.gear_id, mar.dt_fs,
+                    mar.d_step_counter, mar.prune_kl_threshold
                 );
+                // OPERATOR MANDATE 2026-05-08 §1 — inject the device
+                // timekeeper increment kernel into the captured graph
+                // body BEFORE the ghost launcher fires. The kernel is
+                // a single-thread atomicAdd; recorded once, replayed on
+                // every captured-graph launch. Each replay advances
+                // *d_step_counter by 1, and the ghost launcher below
+                // dereferences it to stamp the authoritative step_idx
+                // into the emitted v2 record. No-op when
+                // d_step_counter == 0 (legacy host-baked behavior).
+                if mar.d_step_counter != 0 {
+                    let rc_clk = unsafe {
+                        prism_increment_time_launch(
+                            mar.d_step_counter as *mut c_void,
+                            1u32, // increment per logical step
+                            md_stream.cu_stream() as *mut c_void,
+                        )
+                    };
+                    if rc_clk != 0 {
+                        return Err(BuildError::Cuda {
+                            stage: "OPERATOR-2026-05-08 §1 prism_increment_time_launch",
+                            rc: rc_clk,
+                        });
+                    }
+                }
                 unsafe {
                     prism_ghost_pipe_stage_launch_v2(
                         cfg.ghost_tile_ring_dev,
@@ -4006,7 +4078,9 @@ impl CapturedAdjudicationPipeline {
                         disc_thr,
                         mar.gear_id,
                         mar.dt_fs,
-                        cfg.initial_frame_id as u64, // step_idx ≈ initial_frame_id at capture; refined per-chunk by host re-record
+                        cfg.initial_frame_id as u64, // legacy fallback when d_step_counter==0
+                        mar.d_step_counter,          // §1 device clock — authoritative when non-zero
+                        mar.prune_kl_threshold,      // §2 device-side firehose prune (default 0.01)
                     )
                 }
             } else {

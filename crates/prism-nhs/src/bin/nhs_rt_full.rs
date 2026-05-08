@@ -685,17 +685,53 @@ struct Args {
 
     /// Spatial neighbor-index backend for clustering.
     ///
-    /// Production (default): `auto` — uses LBVH on SM120+ (when available),
-    /// OptiX elsewhere. Phase 1 lands with `auto` == OptiX or grid depending
-    /// on runtime detection; Phase 2 adds LBVH.
+    /// Production (default): `auto` — resolves to `gpu-hash` on SM120 today,
+    /// or to `ghost-phase-lattice-4d` post-MD when `--mar-v2-telemetry` was
+    /// active and the GhostTileRing successfully captured `schema_version=2`
+    /// records.
+    ///
+    /// **`ghost-phase-lattice-4d`**: physically-constrained 4D edge
+    /// adjudication on Ghost v2 records (spatial cell × protocol phase ×
+    /// step bucket). Requires `--m1-monolithic-discovery` AND
+    /// `--mar-v2-telemetry` AND a successfully-fired V2 capture. Explicit
+    /// selection without a valid V2 feed produces a hard-error degraded
+    /// status (not a silent fallback) — see CORRECTION ADDENDUM clause 2.
     ///
     /// **Debug only:** `grid` selects the degraded grid-LIGSITE path. This
     /// path skips multi-scale persistence analysis and will ERROR-exit when
     /// combined with --multi-differential (production rule #10).
     ///
-    /// Values: `auto` | `optix` | `lbvh` | `grid`
+    /// Values: `auto` | `gpu-hash` | `ghost-phase-lattice-4d` | `optix` |
+    /// `lbvh` | `grid`
     #[arg(long, default_value = "auto")]
     clustering_backend: String,
+
+    /// Cosine-similarity threshold for SO(3) spherical-manifold edge
+    /// adjudication in the GhostPhaseLattice4D backend. Higher values
+    /// require stricter morphological agreement between Ghost v2 tiles
+    /// before an edge can be drawn. Below this threshold the boolean
+    /// constraints (arrow of time, AABB overlap, monotone phase) still
+    /// apply but the continuous-physics composite score is rejected.
+    /// Directive default: 0.75.
+    #[arg(long, default_value = "0.75")]
+    ghost_phase_lattice_so3_threshold: f32,
+
+    /// Spatial cell edge length (Å) for the GhostPhaseLattice4D lattice
+    /// key. Default 5.0 Å mirrors the legacy DBSCAN epsilon so the
+    /// 27-spatial-cell neighborhood covers the same physical radius.
+    #[arg(long, default_value = "5.0")]
+    ghost_phase_lattice_cell_a: f32,
+
+    /// Maximum step gap allowed for a temporal edge between two Ghost v2
+    /// tiles. Default 500 steps — beyond ~500 steps the kinematic
+    /// continuity assumption fails for cryptic-pocket lifecycles.
+    #[arg(long, default_value = "500")]
+    ghost_phase_lattice_max_temporal_edge_steps: u64,
+
+    /// Bucket size for the temporal lattice key (`step_idx / bucket_size`).
+    /// Default 500 — a single bucket spans one max-edge window.
+    #[arg(long, default_value = "500")]
+    ghost_phase_lattice_step_bucket_size: u64,
 
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
@@ -1567,13 +1603,54 @@ fn main() -> Result<()> {
                     if backend_str == "auto" || backend_str == "gpu-hash" {
                         log::info!(
                             "  [SPATIAL-INDEX] P0x GPU spatial-hash CCL backend will be used \
-                             for post-MD clustering on SM120."
+                             for post-MD clustering on SM120 (auto mode upgrades to \
+                             ghost-phase-lattice-4d post-MD when v2 records are present)."
+                        );
+                    }
+                    if backend_str == "ghost-phase-lattice-4d"
+                        || backend_str == "ghost-lattice"
+                        || backend_str == "lattice-4d"
+                    {
+                        // Hard predicate guards on the explicit selection. Per
+                        // CORRECTION ADDENDUM clause 2: explicit selection
+                        // without v2 telemetry must NOT silently fall back —
+                        // the run reaches the post-MD routing gate and emits
+                        // a degraded-status failure if v2 records are absent.
+                        if !args.m1_monolithic_discovery {
+                            eprintln!(
+                                "ERROR: --clustering-backend={} requires --m1-monolithic-discovery \
+                                 (the V2 captured-graph emits the GhostTileFrame v2 records the \
+                                 lattice consumes).",
+                                backend_str
+                            );
+                            std::process::exit(5);
+                        }
+                        if !args.mar_v2_telemetry {
+                            eprintln!(
+                                "ERROR: --clustering-backend={} requires --mar-v2-telemetry \
+                                 (the v2 launcher writes schema_version=2 records; without this \
+                                 flag the captured graph emits v1 records the lattice cannot \
+                                 project).",
+                                backend_str
+                            );
+                            std::process::exit(5);
+                        }
+                        log::info!(
+                            "  [SPATIAL-INDEX] GhostPhaseLattice4D backend selected. \
+                             so3_threshold={:.3} cell_a={:.1}A max_temporal_edge_steps={} \
+                             step_bucket_size={}.",
+                            args.ghost_phase_lattice_so3_threshold,
+                            args.ghost_phase_lattice_cell_a,
+                            args.ghost_phase_lattice_max_temporal_edge_steps,
+                            args.ghost_phase_lattice_step_bucket_size,
                         );
                     }
                 }
                 None => {
                     eprintln!("ERROR: unknown --clustering-backend value: {}", backend_str);
-                    eprintln!("  Valid: auto | gpu-hash | optix | lbvh | grid");
+                    eprintln!(
+                        "  Valid: auto | gpu-hash | ghost-phase-lattice-4d | optix | lbvh | grid"
+                    );
                     std::process::exit(4);
                 }
             }
@@ -1581,7 +1658,8 @@ fn main() -> Result<()> {
         #[cfg(not(feature = "gpu"))]
         {
             match backend_str {
-                "auto" | "gpu-hash" | "optix" | "lbvh" | "grid" => {
+                "auto" | "gpu-hash" | "ghost-phase-lattice-4d" | "ghost-lattice"
+                | "lattice-4d" | "optix" | "lbvh" | "grid" => {
                     log::info!(
                         "  [SPATIAL-INDEX] backend request (no-gpu build): {}",
                         backend_str
@@ -1589,7 +1667,9 @@ fn main() -> Result<()> {
                 }
                 other => {
                     eprintln!("ERROR: unknown --clustering-backend value: {}", other);
-                    eprintln!("  Valid: auto | gpu-hash | optix | lbvh | grid");
+                    eprintln!(
+                        "  Valid: auto | gpu-hash | ghost-phase-lattice-4d | optix | lbvh | grid"
+                    );
                     std::process::exit(4);
                 }
             }
@@ -6588,9 +6668,35 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             // ASC Bayesian baseline-lock.  Only honored when
                             // --path-a-evidence-exit is set; flag set-site
                             // is the ASC barrier emit (~line 8300+).
+                            //
+                            // PHASE-A V2 CAPTURE GUARD (2026-05-08): when
+                            // --m1-monolithic-discovery is active, evidence_exit
+                            // must NOT terminate the integration loop before V2
+                            // has had its chance to build.  Without this guard,
+                            // evidence_complete fires at the ASC barrier (often
+                            // in the cold_hold phase) before steps_run reaches
+                            // v2_trigger_step, and the chunk loop breaks before
+                            // ever entering the V2 build conditional below.
+                            // Result: ghost_tiles.bin never written, v2_was_live
+                            // stays false, native spatial fields absent from
+                            // disk.  Guard semantics: honor the break only if
+                            // (a) monolithic-discovery is OFF (legacy v1 path,
+                            // V2 not requested), OR (b) we've passed
+                            // v2_trigger_step AND V2 has had a definitive
+                            // outcome (built successfully OR terminally failed).
+                            // This converts evidence_exit from "fastest possible"
+                            // to "fastest possible AFTER V2 had its chance."
+                            #[cfg(feature = "v2_ignition")]
+                            let v2_had_its_chance: bool =
+                                v2_pipeline.is_some() || v2_build_terminal_failure;
+                            #[cfg(not(feature = "v2_ignition"))]
+                            let v2_had_its_chance: bool = true;
+                            let v2_capture_guard_blocks: bool = args.m1_monolithic_discovery
+                                && (steps_run < v2_trigger_step || !v2_had_its_chance);
                             if path_a_evidence_exit_local
                                 && path_a_evidence_complete_local
                                     .load(std::sync::atomic::Ordering::Acquire)
+                                && !v2_capture_guard_blocks
                             {
                                 log::info!(
                                     "    [PATH-A EVIDENCE-EXIT stream {}] evidence_complete signaled at chunk_idx={}; breaking integration loop",
@@ -6602,6 +6708,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     }
                                 }
                                 break;
+                            } else if path_a_evidence_exit_local
+                                && path_a_evidence_complete_local
+                                    .load(std::sync::atomic::Ordering::Acquire)
+                                && v2_capture_guard_blocks
+                            {
+                                log::info!(
+                                    "    [PATH-A EVIDENCE-EXIT stream {}] evidence_complete signaled at chunk_idx={} but V2 CAPTURE GUARD blocks early-exit (steps_run={} v2_trigger_step={} v2_had_chance={}); continuing integration loop",
+                                    i, chunk_idx, steps_run, v2_trigger_step, v2_had_its_chance
+                                );
                             }
                             if steps_run < steps {
                                 let this_chunk = chunk_size.min(steps - steps_run);
@@ -7368,6 +7483,54 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     // and host-resolved gear_id (Wave A default 0)
                                                     // / dt_fs (4.0 if --hmr else 2.0).
                                                     mar_v2: if args.mar_v2_telemetry {
+                                                        // OPERATOR MANDATE 2026-05-08 §1 —
+                                                        // Allocate the device-side step counter
+                                                        // (uint64_t) and seed it with v2_trigger_step.
+                                                        // The captured graph's increment kernel
+                                                        // bumps it once per replay so every emitted
+                                                        // v2 record carries the actual MD step.
+                                                        // Eradicates the "step_span [N, N]"
+                                                        // temporal-collapse bug observed in the
+                                                        // 2026-05-08 22:46 smoke run (step_span
+                                                        // collapsed to [6000, 6000]).
+                                                        let mut d_step_ctr: cudarc::driver::sys::CUdeviceptr = 0;
+                                                        let step_ctr_alloc_ok = unsafe {
+                                                            use cudarc::driver::sys::{cuMemAlloc_v2, cuMemcpyHtoD_v2, CUresult};
+                                                            let alloc = matches!(
+                                                                cuMemAlloc_v2(&mut d_step_ctr, std::mem::size_of::<u64>()),
+                                                                CUresult::CUDA_SUCCESS
+                                                            );
+                                                            if alloc {
+                                                                let seed = v2_trigger_step as u64;
+                                                                matches!(
+                                                                    cuMemcpyHtoD_v2(
+                                                                        d_step_ctr,
+                                                                        &seed as *const u64 as *const _,
+                                                                        std::mem::size_of::<u64>(),
+                                                                    ),
+                                                                    CUresult::CUDA_SUCCESS
+                                                                )
+                                                            } else {
+                                                                false
+                                                            }
+                                                        };
+                                                        let d_step_counter_for_mar = if step_ctr_alloc_ok {
+                                                            log::info!(
+                                                                "    [V2-BUILD stream {}] §1 device clock \
+                                                                 allocated d_step_counter=0x{:x} seed={} \
+                                                                 (mandate 2026-05-08)",
+                                                                i, d_step_ctr, v2_trigger_step
+                                                            );
+                                                            d_step_ctr as u64
+                                                        } else {
+                                                            log::warn!(
+                                                                "    [V2-BUILD stream {}] §1 device clock \
+                                                                 alloc/init FAILED — temporal-collapse \
+                                                                 fallback (legacy host-baked step_idx)",
+                                                                i
+                                                            );
+                                                            0u64
+                                                        };
                                                         Some(prism_nhs::captured_pipeline::MarV2Config {
                                                             threshold_sigma_observation: 3.0,
                                                             threshold_sigma_discovery:   12.0,
@@ -7377,6 +7540,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                 .map(|(_, s)| s).unwrap_or(0.001),
                                                             gear_id: 0,
                                                             dt_fs:   if args.hmr { 4.0 } else { 2.0 },
+                                                            // §1 device clock — when non-zero, the
+                                                            // ghost kernel deref's this and stamps
+                                                            // the actual step into every record.
+                                                            d_step_counter: d_step_counter_for_mar,
+                                                            // §2 device-side firehose prune. 0.01 is
+                                                            // the directive default. Operator can
+                                                            // tune via --mar-v2-prune-kl in a follow-up.
+                                                            prune_kl_threshold: 0.01,
                                                         })
                                                     } else {
                                                         None
@@ -11313,7 +11484,379 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // The teardown block below flushes ALL host-accessible metadata to disk
     // before returning, per the comprehensive audit (2026-05-01).
     #[cfg(feature = "v2_ignition")]
-    if v2_was_live.load(std::sync::atomic::Ordering::Acquire) {
+    let v2_was_live_for_lattice =
+        v2_was_live.load(std::sync::atomic::Ordering::Acquire);
+    #[cfg(not(feature = "v2_ignition"))]
+    let v2_was_live_for_lattice = false;
+
+    // ── GhostPhaseLattice4D routing gate ─────────────────────────────────
+    // Operates BEFORE the V2 HARD-GATE legacy bypass. If the operator
+    // explicitly selected --clustering-backend=ghost-phase-lattice-4d (or
+    // auto resolved to it), this block:
+    //
+    //   1. Validates V2 was live (ghost_tiles.bin files were written to disk
+    //      with `schema_version=2` records via the per-stream teardown at
+    //      L10706);
+    //   2. Loads + projects the v2 records via
+    //      `crate::ghost_phase_lattice::load_ghost_v2_payloads_from_dir`;
+    //   3. Runs `cluster_ghost_phase_lattice` on the projected nodes;
+    //   4. Materializes the per-component manifold blocks via
+    //      `crate::ghost_phase_materializer::materialize_components`.
+    //
+    // CORRECTION ADDENDUM clause 2: explicit ghost-lattice mode without a
+    // valid V2 feed is a degraded-status FAILURE, not a silent fallback.
+    // Auto mode is allowed to fall through to the legacy gpu-hash path.
+    let backend_str_for_routing = args.clustering_backend.as_str();
+    let lattice_explicit_request = matches!(
+        backend_str_for_routing,
+        "ghost-phase-lattice-4d" | "ghost-lattice" | "lattice-4d"
+    );
+    let lattice_auto_request = backend_str_for_routing == "auto"
+        && args.m1_monolithic_discovery
+        && args.mar_v2_telemetry
+        && v2_was_live_for_lattice;
+    let mut lattice_run_status: &'static str = "not_requested";
+    let mut lattice_outcome_handle: Option<(
+        Vec<prism_nhs::ghost_phase_lattice::GhostPhaseLatticeNode>,
+        prism_nhs::ghost_phase_lattice::GhostPhaseLatticeOutcome,
+    )> = None;
+    let mut lattice_kernel_ms: f64 = 0.0;
+
+    if lattice_explicit_request || lattice_auto_request {
+        use prism_nhs::ghost_phase_lattice::{
+            load_ghost_v2_payloads_from_dir, GhostPhaseLattice4D,
+            GhostPhaseLatticeConfig, QuartilePhaseSchedule,
+        };
+
+        // Resolve the topo stem the per-stream ghost_tiles writer used.
+        let topo_stem = match args
+            .topology
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .and_then(|s| s.to_str())
+            .map(|s| s.trim_end_matches(".topology").to_string())
+        {
+            Some(s) => s,
+            None => "unknown_target".to_string(),
+        };
+
+        if !v2_was_live_for_lattice {
+            // V2 never fired — predicate failure. Per CORRECTION ADDENDUM
+            // clause 2, explicit lattice request is a hard error; auto
+            // mode silently falls through to gpu-hash.
+            if lattice_explicit_request {
+                log::error!(
+                    "FATAL: --clustering-backend=ghost-phase-lattice-4d requested but \
+                     V2 capture never fired (v2_was_live=false). Predicate failure: \
+                     --m1-monolithic-discovery={} --mar-v2-telemetry={} v2_was_live={}. \
+                     Per CORRECTION ADDENDUM clause 2, this is a degraded-status \
+                     failure — falling through to gpu-hash to preserve output but \
+                     phase_manifold blocks will be ABSENT from binding_sites.json.",
+                    args.m1_monolithic_discovery,
+                    args.mar_v2_telemetry,
+                    v2_was_live_for_lattice
+                );
+                lattice_run_status = "failure_v2_starved";
+            } else {
+                log::info!(
+                    "  [GHOST-LATTICE-4D] auto mode: V2 was not live — falling \
+                     through to gpu-hash (legacy DBSCAN)."
+                );
+                lattice_run_status = "auto_fallback_v2_absent";
+            }
+        } else {
+            // V2 fired. Load v2 records from per-stream ghost_tiles.bin.
+            // The path roots are the same the per-stream writer used at
+            // L10706: `{output_dir}/{topo_stem}_stream{NN}_ghost_tiles.bin`.
+            let lattice_cfg = GhostPhaseLatticeConfig {
+                spatial_cell_size_a: args.ghost_phase_lattice_cell_a,
+                max_temporal_edge_steps: args
+                    .ghost_phase_lattice_max_temporal_edge_steps,
+                step_bucket_size: args.ghost_phase_lattice_step_bucket_size,
+                so3_threshold: args.ghost_phase_lattice_so3_threshold,
+            };
+            // Step span is the producer-side step_idx range. Pull bounds
+            // from the v2 records themselves once loaded so the
+            // QuartilePhaseSchedule partitions the actual run.
+            //
+            // Phase 1 — discover step bounds via a probe scan.
+            // Phase 2 — re-load with the schedule pinned to those bounds.
+            //
+            // To avoid a double-scan, build a "wide" schedule that maps
+            // every observed step into a quartile based on a min/max we
+            // refine on the fly. For the smoke-validation regime the
+            // single quartile schedule built post-load is sufficient.
+            let mut probe_schedule = QuartilePhaseSchedule {
+                min_step: 0,
+                max_step: 1,
+            };
+            let payload_probe = match load_ghost_v2_payloads_from_dir(
+                &args.output,
+                &topo_stem,
+                &probe_schedule,
+                lattice_cfg.step_bucket_size,
+            ) {
+                Ok(nodes) => nodes,
+                Err(e) => {
+                    log::error!(
+                        "  [GHOST-LATTICE-4D] load_ghost_v2_payloads_from_dir failed: {}. \
+                         Falling through to gpu-hash. Status: \
+                         {}.",
+                        e,
+                        if lattice_explicit_request {
+                            "FAILURE_V2_RECORDS_UNREADABLE"
+                        } else {
+                            "auto_fallback_load_error"
+                        }
+                    );
+                    lattice_run_status = if lattice_explicit_request {
+                        "failure_v2_records_unreadable"
+                    } else {
+                        "auto_fallback_load_error"
+                    };
+                    Vec::new()
+                }
+            };
+            if !payload_probe.is_empty() {
+                let mut min_step = u64::MAX;
+                let mut max_step = 0u64;
+                for n in &payload_probe {
+                    min_step = min_step.min(n.step_idx);
+                    max_step = max_step.max(n.step_idx);
+                }
+                probe_schedule = QuartilePhaseSchedule {
+                    min_step,
+                    max_step,
+                };
+                // Re-project with the calibrated quartile schedule so
+                // protocol_phase ordinals reflect the actual run extent.
+                let nodes_recalibrated = match load_ghost_v2_payloads_from_dir(
+                    &args.output,
+                    &topo_stem,
+                    &probe_schedule,
+                    lattice_cfg.step_bucket_size,
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::warn!(
+                            "  [GHOST-LATTICE-4D] recalibrated load failed ({}); \
+                             using probe-loaded nodes (step span [{}, {}]).",
+                            e, min_step, max_step
+                        );
+                        payload_probe
+                    }
+                };
+
+                if nodes_recalibrated.is_empty() {
+                    log::error!(
+                        "  [GHOST-LATTICE-4D] no v2 records survived projection \
+                         (every record was either schema_version!=2 or had the \
+                         spatial-native AABB bit clear). Cannot run lattice."
+                    );
+                    lattice_run_status = if lattice_explicit_request {
+                        "failure_no_v2_records_projected"
+                    } else {
+                        "auto_fallback_no_v2_records_projected"
+                    };
+                } else {
+                    log::info!(
+                        "POST_MD_CLUSTER_BACKEND_SELECTED backend=ghost-phase-lattice-4d \
+                         tiles={} step_span=[{}, {}] so3_thresh={:.3} cell_a={:.1} \
+                         max_temporal={}",
+                        nodes_recalibrated.len(),
+                        min_step,
+                        max_step,
+                        lattice_cfg.so3_threshold,
+                        lattice_cfg.spatial_cell_size_a,
+                        lattice_cfg.max_temporal_edge_steps
+                    );
+                    // Acquire a CUDA stream — the lattice backend needs one.
+                    match cudarc::driver::CudaContext::new(0) {
+                        Ok(context) => {
+                            let stream = context.default_stream();
+                            let mut backend = GhostPhaseLattice4D::new(
+                                context.clone(),
+                                stream.clone(),
+                                lattice_cfg,
+                            );
+                            match backend.cluster(&nodes_recalibrated) {
+                                Ok(outcome) => {
+                                    lattice_kernel_ms =
+                                        outcome.stats.kernel_elapsed_ms;
+                                    log::info!(
+                                        "[GHOST-GRAPH] 4D intersection: {:.2} ms \
+                                         (host_total {:.2} ms, components={}, \
+                                         edges={})",
+                                        outcome.stats.kernel_elapsed_ms,
+                                        outcome.stats.host_elapsed_ms,
+                                        outcome.components.len(),
+                                        outcome.stats.n_directed_edges
+                                    );
+                                    lattice_run_status = "ok";
+                                    lattice_outcome_handle =
+                                        Some((nodes_recalibrated, outcome));
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "  [GHOST-LATTICE-4D] cluster() failed: {:#}",
+                                        e
+                                    );
+                                    lattice_run_status = if lattice_explicit_request
+                                    {
+                                        "failure_lattice_kernel_error"
+                                    } else {
+                                        "auto_fallback_lattice_kernel_error"
+                                    };
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "  [GHOST-LATTICE-4D] CUDA context init failed: \
+                                 {:?}. Falling through to gpu-hash.",
+                                e
+                            );
+                            lattice_run_status = if lattice_explicit_request {
+                                "failure_cuda_init"
+                            } else {
+                                "auto_fallback_cuda_init"
+                            };
+                        }
+                    }
+                }
+            } else if lattice_run_status == "not_requested" {
+                // No payload, no error logged yet — treat as v2 starved.
+                log::error!(
+                    "  [GHOST-LATTICE-4D] no v2 records found in {} for stem {}. \
+                     V2 was live but ghost_tiles.bin files are absent or empty.",
+                    args.output.display(),
+                    topo_stem
+                );
+                lattice_run_status = if lattice_explicit_request {
+                    "failure_no_v2_records_on_disk"
+                } else {
+                    "auto_fallback_no_v2_records_on_disk"
+                };
+            }
+        }
+    }
+
+    // Persist a concise lattice-routing-status sidecar so the smoke test
+    // and downstream reranker can audit which path produced the
+    // binding_sites.json. Emitted unconditionally (even when the lattice
+    // was not requested) so the consumer always knows.
+    {
+        let status_json = serde_json::json!({
+            "schema_version": 1,
+            "backend_request":  args.clustering_backend,
+            "v2_was_live":      v2_was_live_for_lattice,
+            "m1_monolithic_discovery": args.m1_monolithic_discovery,
+            "mar_v2_telemetry": args.mar_v2_telemetry,
+            "lattice_run_status": lattice_run_status,
+            "lattice_kernel_ms":  lattice_kernel_ms,
+            "n_components":       lattice_outcome_handle
+                .as_ref()
+                .map(|(_, o)| o.components.len())
+                .unwrap_or(0),
+            "explicit_request":   lattice_explicit_request,
+            "auto_request":       lattice_auto_request,
+        });
+        if let Err(e) = std::fs::create_dir_all(&args.output) {
+            log::warn!(
+                "  [GHOST-LATTICE-4D] could not ensure output dir {}: {}",
+                args.output.display(),
+                e
+            );
+        }
+        let status_path = args.output.join("ghost_lattice_routing_status.json");
+        match std::fs::write(
+            &status_path,
+            serde_json::to_string_pretty(&status_json)
+                .unwrap_or_else(|_| "{}".to_string()),
+        ) {
+            Ok(()) => log::info!(
+                "  [GHOST-LATTICE-4D] routing status → {}",
+                status_path.display()
+            ),
+            Err(e) => log::warn!(
+                "  [GHOST-LATTICE-4D] write {} failed: {}",
+                status_path.display(),
+                e
+            ),
+        }
+    }
+
+    // If the lattice ran successfully, emit a per-component manifest
+    // (binding_sites_lattice.json) so consumers downstream of the V2
+    // HARD-GATE can pick it up without going through prism_materialize_sites
+    // (which is wired in a follow-up commit). The legacy binding_sites.json
+    // emission is unaffected — this is an additive sidecar.
+    if let Some((ref nodes, ref outcome)) = lattice_outcome_handle {
+        use prism_nhs::ghost_phase_materializer::materialize_components;
+        let blocks = materialize_components(nodes, outcome);
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "backend": "ghost_phase_lattice_4d",
+            "config": {
+                "so3_threshold": outcome.config.so3_threshold,
+                "spatial_cell_size_a": outcome.config.spatial_cell_size_a,
+                "max_temporal_edge_steps": outcome.config.max_temporal_edge_steps,
+                "step_bucket_size": outcome.config.step_bucket_size,
+            },
+            "stats": {
+                "n_nodes": outcome.stats.n_nodes,
+                "n_lattice_cells": outcome.stats.n_lattice_cells,
+                "n_pairs_evaluated": outcome.stats.n_pairs_evaluated,
+                "n_pairs_phase_legal": outcome.stats.n_pairs_phase_legal,
+                "n_pairs_aabb_overlap": outcome.stats.n_pairs_aabb_overlap,
+                "n_directed_edges": outcome.stats.n_directed_edges,
+                "kernel_elapsed_ms": outcome.stats.kernel_elapsed_ms,
+                "host_elapsed_ms": outcome.stats.host_elapsed_ms,
+                "min_step_idx": outcome.stats.min_step_idx,
+                "max_step_idx": outcome.stats.max_step_idx,
+            },
+            "components": blocks.iter().enumerate().map(|(i, b)| {
+                serde_json::json!({
+                    "component_id": i,
+                    "n_nodes": b.n_nodes,
+                    "component_aabb_min": b.component_aabb_min,
+                    "component_aabb_max": b.component_aabb_max,
+                    "ghost_phase_lattice": b.ghost_phase_lattice,
+                    "phase_manifold": b.phase_manifold,
+                    "therm_ccns_lifecycle": b.therm_ccns_lifecycle,
+                    "so3_manifold": b.so3_manifold,
+                })
+            }).collect::<Vec<_>>(),
+        });
+        let topo_stem_for_emit = args
+            .topology
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .and_then(|s| s.to_str())
+            .map(|s| s.trim_end_matches(".topology").to_string())
+            .unwrap_or_else(|| "unknown_target".to_string());
+        let lattice_emit_path = args
+            .output
+            .join(format!("{}_binding_sites_lattice.json", topo_stem_for_emit));
+        match std::fs::write(
+            &lattice_emit_path,
+            serde_json::to_string_pretty(&manifest).unwrap_or_default(),
+        ) {
+            Ok(()) => log::info!(
+                "  [GHOST-LATTICE-4D] manifest → {} ({} components)",
+                lattice_emit_path.display(),
+                blocks.len()
+            ),
+            Err(e) => log::warn!(
+                "  [GHOST-LATTICE-4D] write {} failed: {}",
+                lattice_emit_path.display(),
+                e
+            ),
+        }
+    }
+
+    #[cfg(feature = "v2_ignition")]
+    if v2_was_live_for_lattice {
         log::info!(
             "  [V2 HARD-GATE] CapturedAdjudicationPipeline was live — \
                     bypassing legacy post-MD CPU pipeline. \

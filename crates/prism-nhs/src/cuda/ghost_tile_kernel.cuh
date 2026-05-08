@@ -209,7 +209,25 @@ int prism_ghost_pipe_stage_launch_v2(
     float          discovery_threshold_kl,     /* mu + 12σ */
     uint32_t       gear_id,                    /* Wave A default 0 */
     float          dt_fs,                      /* picoseconds × 1000 */
-    uint64_t       step_idx);                  /* monotonic step counter */
+    uint64_t       step_idx,                   /* monotonic step counter */
+    /* OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper.
+       u64 device pointer (or 0 = legacy host-baked behavior). */
+    uint64_t       d_step_counter,
+    /* OPERATOR MANDATE 2026-05-08 §2 — device-side firehose prune.
+       kl_divergence magnitude threshold; records below this are
+       silently dropped before the ring atomicAdd when firehose is on.
+       0.0 disables (legacy unconditional firehose). */
+    float          prune_kl_threshold);
+
+/// OPERATOR MANDATE 2026-05-08 §1 — device-side step counter increment kernel.
+/// Single-thread `__global__`; atomicAdds `increment` (typically 1) into
+/// `*d_step_counter`. Captured into the V2 graph body so each replay of
+/// the captured graph advances the device clock without host intervention.
+/// Returns cudaError_t code (0 = success).
+int prism_increment_time_launch(
+    void*    d_step_counter,
+    uint32_t increment,
+    void*    stream);
 
 /// Wave 1 / Q1 — host-side populator for the __constant__ cluster→repr
 /// residue table.  Call once per campaign after Pillar 1 clustering

@@ -536,3 +536,20 @@ pub mod simd_batch_integration;
 // Pinned-host, device-mapped GhostTileFrame ring + capture-kernel FFI.
 #[cfg(feature = "gpu")]
 pub mod ghost_tile;
+
+/// GhostPhaseLattice4D — physically-constrained spatiotemporal connected
+/// components for Ghost v2 records. Replaces the legacy O(N²) DBSCAN on
+/// post-MD spike clouds with a 4D phase lattice (spatial × protocol-phase ×
+/// step bucket) gated by AABB overlap, monotone protocol-phase transitions,
+/// and 4-plane SO(3) cosine-similarity scoring. See
+/// `crates/prism-nhs/src/cuda/ghost_lattice_kernel.cu` for the kernel and
+/// `crates/prism-nhs/src/cuda/ghost_lattice_kernel.cuh` for the FFI.
+#[cfg(feature = "gpu")]
+pub mod ghost_phase_lattice;
+
+/// Materializer that bridges a `GhostPhaseLattice4D` outcome into the
+/// per-site `Option<...>` extension blocks on
+/// `crate::site_manifest::SiteManifest` (provenance + phase manifold +
+/// therm/ccns lifecycle + so3 manifold).
+#[cfg(feature = "gpu")]
+pub mod ghost_phase_materializer;

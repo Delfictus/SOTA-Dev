@@ -391,6 +391,51 @@ int prism_ghost_set_cluster_chain_id(
 // the kernel-computed booleans, regardless of whether emission was gated
 // by adj_code or by observation_pass. Downstream consumers can filter.
 
+// ═══════════════════════════════════════════════════════════════════════════
+// LANE A / §1 — DEVICE-SIDE TIMEKEEPER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Single-thread kernel that increments the device-side step counter once
+// per logical step. Captured into the V2 graph body so each replay of the
+// captured graph advances `*d_step_counter` by 1 (or by the unroll factor
+// when the body has been time-multiplexed by §3).
+//
+// Operator Mandate (FULL AUTONOMY OVERRIDE 2026-05-08 §1):
+//   * The GPU keeps its own time. The host no longer babysits the clock.
+//   * Allocate uint64_t* d_step_counter at V2 init, initialised to
+//     v2_trigger_step (host-side responsibility — see Rust counterpart).
+//   * Kernel reads its step_idx via dereference of d_step_counter,
+//     completely ignoring the FFI-baked argument when d_step_counter
+//     is non-null.
+//
+// No-op when d_step_counter is nullptr (host-only / legacy fallback path).
+
+extern "C" __global__
+void prism_increment_time_kernel(unsigned long long* d_step_counter,
+                                  unsigned int        increment) {
+    if (d_step_counter == nullptr) return;
+    if (threadIdx.x == 0u && blockIdx.x == 0u) {
+        atomicAdd(d_step_counter, static_cast<unsigned long long>(increment));
+    }
+}
+
+extern "C" int prism_increment_time_launch(
+    void* d_step_counter,    // u64 device pointer (may be null → no-op)
+    uint32_t increment,      // typically 1 (per logical step) or unroll factor
+    void* stream)
+{
+    prism_increment_time_kernel<<<1, 1, 0,
+        static_cast<cudaStream_t>(stream)>>>(
+        reinterpret_cast<unsigned long long*>(d_step_counter),
+        increment
+    );
+    return static_cast<int>(cudaGetLastError());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// V2 emission kernel (§1 device-clock-aware + §2 device-side firehose prune)
+// ═══════════════════════════════════════════════════════════════════════════
+
 extern "C" __global__
 void prism_ghost_pipe_stage_kernel_v2(
     uint8_t* __restrict__       ring_base,
@@ -406,7 +451,17 @@ void prism_ghost_pipe_stage_kernel_v2(
     float                       discovery_threshold_kl,
     uint32_t                    gear_id,
     float                       dt_fs,
-    uint64_t                    step_idx)
+    uint64_t                    step_idx,
+    // OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper.
+    // Non-null pointer ⇒ kernel reads its actual step_idx via
+    // *d_step_counter, ignoring the FFI-baked step_idx arg above. Null
+    // pointer preserves the legacy host-baked behavior bit-for-bit.
+    const unsigned long long* d_step_counter,
+    // OPERATOR MANDATE 2026-05-08 §2 — device-side firehose prune gate.
+    // Records below this kl_divergence magnitude are skipped before the
+    // ring-buffer atomic claim, even when firehose_enable is set. Set to
+    // 0.0f to disable pruning (legacy unconditional-firehose behavior).
+    float                       prune_kl_threshold)
 {
     const uint32_t i = static_cast<uint32_t>(blockIdx.x * blockDim.x + threadIdx.x);
     if (i >= n_clusters) return;
@@ -415,9 +470,29 @@ void prism_ghost_pipe_stage_kernel_v2(
     const float kl = *reinterpret_cast<const float*>(adj + PRISM_ADJ_CURRENT_DIVERGENCE_OFF);
     const bool obs_pass = isfinite(kl) && (kl >= observation_threshold_kl);
     const bool disc_pass = isfinite(kl) && (kl >= discovery_threshold_kl);
+    // §2 — Device-side firehose prune. The directive specifies:
+    //   write IF burst_motion > 0.5 OR ccns_phase != cold_hold OR kl_divergence > 0.01
+    // burst_motion + ccns_phase are not yet plumbed into ContactShellTile;
+    // the kernel uses kl_divergence as the available physics-activity
+    // proxy. Records with finite-but-tiny kl are dead/inert and don't
+    // need to cross the PCIe bus. The host-passed `prune_kl_threshold`
+    // is 0.01f by default per the directive; setting it to 0.0f disables
+    // the prune (legacy unconditional firehose).
+    const bool kl_active = isfinite(kl) && (fabsf(kl) > prune_kl_threshold);
 
-    // Widened emission gate (v2): legacy adj_code gate OR observation pass.
-    if (firehose_enable == 0u && adj_code < 1u && !obs_pass) return;
+    // Widened emission gate (v2 + §2):
+    //   * Always emit on Construct/Violation (adj_code >= 1)
+    //   * Always emit on observation-pass (kl >= obs_thr)
+    //   * In firehose mode, ONLY emit if kl is also physically active
+    //     (kl_active). This is the device-side prune that supersedes
+    //     the previous "firehose ⇒ unconditional emit" behavior.
+    //   * In non-firehose mode, the legacy gate (adj_code || obs_pass)
+    //     stands.
+    if (firehose_enable != 0u) {
+        if (adj_code < 1u && !obs_pass && !kl_active) return;
+    } else {
+        if (adj_code < 1u && !obs_pass) return;
+    }
 
     // Atomic counter at offset 0.
     uint32_t* counter = reinterpret_cast<uint32_t*>(ring_base);
@@ -502,7 +577,16 @@ void prism_ghost_pipe_stage_kernel_v2(
       | (!tainted ? 0x0008u : 0u);
     *reinterpret_cast<uint32_t*>(record_base + GHOST_V2_OFFSET_GEAR_ID) = gear_id;
     *reinterpret_cast<float*>(record_base + GHOST_V2_OFFSET_DT_FS) = dt_fs;
-    *reinterpret_cast<uint64_t*>(record_base + GHOST_V2_OFFSET_STEP_IDX) = step_idx;
+    // OPERATOR MANDATE 2026-05-08 §1 — read step_idx from the device-side
+    // timekeeper when present. The host's FFI step_idx becomes the seed /
+    // legacy-fallback value; the device clock is authoritative whenever
+    // d_step_counter is non-null. This eradicates the temporal-collapse
+    // bug where every Ghost v2 record carried a static step_idx baked in
+    // at graph-build time (root cause: captured_pipeline.rs:4009 TODO).
+    const uint64_t effective_step_idx = (d_step_counter != nullptr)
+        ? static_cast<uint64_t>(*d_step_counter)
+        : step_idx;
+    *reinterpret_cast<uint64_t*>(record_base + GHOST_V2_OFFSET_STEP_IDX) = effective_step_idx;
 
     // ─── GHOST_NATIVE_SPATIAL_MAPPING_WIRE — native AABB + centroid ───
     //
@@ -572,7 +656,18 @@ int prism_ghost_pipe_stage_launch_v2(
     float         discovery_threshold_kl,
     uint32_t      gear_id,
     float         dt_fs,
-    uint64_t      step_idx)
+    uint64_t      step_idx,
+    // OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper.
+    // u64 device pointer to a single uint64_t step counter. When the
+    // engine has wired the device clock, the kernel reads *d_step_counter
+    // and writes that into every emitted record. When 0 (null), the kernel
+    // falls back to the FFI step_idx arg above (legacy behavior).
+    uint64_t      d_step_counter,
+    // OPERATOR MANDATE 2026-05-08 §2 — device-side firehose prune.
+    // kl_divergence threshold below which a record is silently dropped
+    // when firehose_enable is set. 0.0f preserves legacy unconditional-
+    // firehose behavior.
+    float         prune_kl_threshold)
 {
     if (ring_base_dev == 0ull || tiles == nullptr || adj == nullptr) {
         return static_cast<int>(cudaErrorInvalidValue);
@@ -596,7 +691,9 @@ int prism_ghost_pipe_stage_launch_v2(
         discovery_threshold_kl,
         gear_id,
         dt_fs,
-        step_idx
+        step_idx,
+        reinterpret_cast<const unsigned long long*>(d_step_counter),
+        prune_kl_threshold
     );
     return static_cast<int>(cudaGetLastError());
 }

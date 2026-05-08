@@ -56,12 +56,16 @@ use crate::rt_clustering::RtClusteringResult;
 /// of a `OnceLock<Enum>` keeps the read on the hot path a single unlocked load.
 ///
 /// Encoding:
-///   0 = uninitialized  -> treated as Auto (equivalent to 1)
-///   1 = Auto           -> resolves to GpuSpatialHash on SM120, OptiX elsewhere
-///   2 = GpuSpatialHash (explicit)
-///   3 = RtOptix        (explicit; errors on SM120)
-///   4 = GridDebug      (explicit; debug only)
-///   5 = Lbvh           (explicit; not yet implemented — errors loudly)
+///   0 = uninitialized       -> treated as Auto (equivalent to 1)
+///   1 = Auto                -> resolves to GhostPhaseLattice4D when v2 Ghost
+///                              records are present, else GpuSpatialHash.
+///   2 = GpuSpatialHash      (explicit; legacy O(N²)-prone DBSCAN)
+///   3 = RtOptix             (explicit; errors on SM120)
+///   4 = GridDebug           (explicit; debug only)
+///   5 = Lbvh                (explicit; not yet implemented — errors loudly)
+///   6 = GhostPhaseLattice4D (explicit; physically-constrained 4D edge
+///                              adjudication on Ghost v2 records — directive
+///                              MASTER ARCHITECTURAL DIRECTIVE V5).
 pub static SELECTED_BACKEND: AtomicU8 = AtomicU8::new(0);
 
 pub const BACKEND_UNINIT: u8 = 0;
@@ -70,6 +74,7 @@ pub const BACKEND_GPU_HASH: u8 = 2;
 pub const BACKEND_RT_OPTIX: u8 = 3;
 pub const BACKEND_GRID_DEBUG: u8 = 4;
 pub const BACKEND_LBVH: u8 = 5;
+pub const BACKEND_GHOST_LATTICE_4D: u8 = 6;
 
 /// Human-readable name of the currently-selected backend.
 pub fn backend_name(b: u8) -> &'static str {
@@ -79,6 +84,7 @@ pub fn backend_name(b: u8) -> &'static str {
         BACKEND_RT_OPTIX => "optix",
         BACKEND_GRID_DEBUG => "grid-debug",
         BACKEND_LBVH => "lbvh",
+        BACKEND_GHOST_LATTICE_4D => "ghost-phase-lattice-4d",
         _ => "unknown",
     }
 }
@@ -91,6 +97,9 @@ pub fn parse_backend_str(s: &str) -> Option<u8> {
         "optix" => Some(BACKEND_RT_OPTIX),
         "grid" => Some(BACKEND_GRID_DEBUG),
         "lbvh" => Some(BACKEND_LBVH),
+        "ghost-phase-lattice-4d" | "ghost-lattice" | "lattice-4d" => {
+            Some(BACKEND_GHOST_LATTICE_4D)
+        }
         _ => None,
     }
 }

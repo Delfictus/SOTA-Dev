@@ -43,6 +43,14 @@ fn main() {
     // M1.2.19.B — Asynchronous Manifold Sequencer Channel-B (ghost tiles).
     println!("cargo:rerun-if-changed=src/cuda/ghost_tile_kernel.cu");
     println!("cargo:rerun-if-changed=src/cuda/ghost_tile_kernel.cuh");
+    // GhostPhaseLattice4D — physically-constrained 4D edge adjudication.
+    // Replaces the legacy O(N²) DBSCAN on Ghost v2 records. The wrapper
+    // .cu pulls in `ghost_lattice_kernel_nvrtc.cu` via #include so the
+    // same kernel source serves both the static archive (this build) and
+    // the NVRTC fallback (compiled at runtime in `ghost_phase_lattice.rs`).
+    println!("cargo:rerun-if-changed=src/cuda/ghost_lattice_kernel.cu");
+    println!("cargo:rerun-if-changed=src/cuda/ghost_lattice_kernel.cuh");
+    println!("cargo:rerun-if-changed=src/cuda/ghost_lattice_kernel_nvrtc.cu");
     // TIER 7 (2026-05-03) — CUDA 13.x cuGraphAddNode FFI wrappers.
     println!("cargo:rerun-if-changed=src/cuda/graph_node.cu");
     println!("cargo:rerun-if-changed=src/cuda/graph_node.cuh");
@@ -284,6 +292,19 @@ fn main() {
         &nvcc,
         "src/cuda/ghost_tile_kernel.cu",
         "ghost_tile_kernel",
+        &out_dir,
+    );
+
+    // GhostPhaseLattice4D — edge adjudication kernel + host orchestrator.
+    // Replaces the legacy O(N²) DBSCAN clustering of post-MD Ghost v2
+    // records with a physically-constrained 4D phase lattice (spatial
+    // cell × protocol phase × step bucket). Single .cu translation unit
+    // pulls in `ghost_lattice_kernel_nvrtc.cu` via #include and exposes
+    // `prism_ghost_phase_lattice_run` as the extern "C" host entry point.
+    compile_to_static_archive(
+        &nvcc,
+        "src/cuda/ghost_lattice_kernel.cu",
+        "ghost_lattice_kernel",
         &out_dir,
     );
 }

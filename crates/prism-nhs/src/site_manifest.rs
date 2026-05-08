@@ -472,6 +472,255 @@ pub struct SiteManifest {
     /// the per-site fields in `<target>.binding_sites.json`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub therm_dossier: Option<ThermDossier>,
+
+    // ─── GhostPhaseLattice4D extension (MASTER ARCHITECTURAL DIRECTIVE V5) ──
+    // The four blocks below are populated by the
+    // `crate::ghost_phase_lattice` backend on its post-MD run. They are
+    // strictly host-side (no GPU kernel reads them) and use the same
+    // skip_serializing_if=None policy as the CLA-2 extension fields above
+    // so legacy DBSCAN-only runs (without Ghost v2 records) emit the same
+    // shape as before — no key produced. Populated together: emitting
+    // any one without the other three is a producer bug, but the schema
+    // tolerates partial population (None means "the lattice backend did
+    // not run" or "the consumer stripped this block").
+
+    /// Provenance metadata for the GhostPhaseLattice4D run that produced
+    /// this site. Fields mirror directive Part IV.1 (`ghost_phase_lattice`
+    /// JSON block): backend identifier, configuration parameters, and
+    /// global edge-adjudication telemetry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ghost_phase_lattice: Option<GhostPhaseLatticeProvenance>,
+
+    /// Per-protocol-phase aggregated centroid + driver block. Replaces the
+    /// legacy single dead centroid with a per-phase trajectory: cold_hold
+    /// position → heating position → warm_hold position → cooling
+    /// position. Phases that did not produce any nodes for this site are
+    /// omitted (the JSON object simply lacks that key — directive 4.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_manifold: Option<PhaseManifold>,
+
+    /// Thermodynamic + CCNS lifecycle aggregates (mean KL by phase, mean
+    /// thermo flux by phase, driver-residue persistence, mean water
+    /// density by phase). The `water_density_status` field carries the
+    /// directive Part V "unavailable_neutral" sentinel when the
+    /// prism-therm sidecar has not been populated yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub therm_ccns_lifecycle: Option<ThermCcnsLifecycle>,
+
+    /// SO(3) spherical-coherence summary for this site: which planes were
+    /// populated across the constituent ghost nodes, the mean cosine
+    /// similarity of accepted intra-component edges, and per-transition
+    /// phase-boundary cosine values. Directive 4.4.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub so3_manifold: Option<So3Manifold>,
+}
+
+// ============================================================================
+// GhostPhaseLattice4D provenance + manifold blocks (Anti-Greenfield: surgical
+// additive types, all `Option`-wrapped on SiteManifest, all
+// `skip_serializing_if=None` so legacy emission is byte-identical).
+// ============================================================================
+
+/// Metadata for a single GhostPhaseLattice4D run. Surfaced under the
+/// per-site `ghost_phase_lattice` JSON key (directive 4.1). All values are
+/// run-global (not per-site); placing them on each SiteManifest is the
+/// price of serialising sites independently — consumers that aggregate
+/// will see the same provenance on every site within one run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GhostPhaseLatticeProvenance {
+    /// Backend identifier — always `"ghost_phase_lattice_4d"` for sites
+    /// produced by this backend. Allows a downstream consumer to switch
+    /// between legacy DBSCAN sites (no `ghost_phase_lattice` key emitted)
+    /// and 4D-lattice sites (this string present).
+    pub backend: String,
+    /// Spatial cell size in Å (directive default 5.0).
+    pub spatial_cell_size_a: f32,
+    /// Maximum step gap allowed for a temporal edge (directive default 500).
+    pub max_temporal_edge_steps: u64,
+    /// Temporal-bucket size used by the lattice key (`step_idx /
+    /// step_bucket_size`).
+    pub step_bucket_size: u64,
+    /// SO(3) acceptance threshold (directive default 0.75).
+    pub so3_threshold: f32,
+    /// Phase-transition policy descriptor — always
+    /// `"monotone_protocol_lifecycle"` for the canonical lattice (directive
+    /// Part II.1: cold_hold → heating → warm_hold → cooling, no skips).
+    pub phase_transition_policy: String,
+    /// Number of lattice nodes (Ghost v2 records) consumed by this run.
+    pub n_tiles: u32,
+    /// Number of distinct (spatial cell × phase × step bucket) cells the
+    /// nodes bucketed into. Lower = denser temporal/spatial coupling.
+    pub n_lattice_cells: u32,
+    /// Number of directed edges accepted across all components in the
+    /// run (directive 4.1's `n_directed_edges`).
+    pub n_directed_edges: u64,
+    /// Step range covered by this run.
+    pub lattice_extent: LatticeExtent,
+}
+
+/// Step-range + phase-list extent for a GhostPhaseLattice4D run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LatticeExtent {
+    pub step_start: u64,
+    pub step_end: u64,
+    /// Phase names actually present in the input nodes (e.g.
+    /// `["cold_hold", "heating", "warm_hold"]` if cooling never fired).
+    pub phases_present: Vec<String>,
+}
+
+/// Per-phase aggregate for a single site. Each `Option` field mirrors one
+/// of the four protocol phases (cold_hold / heating / warm_hold / cooling);
+/// `None` means the site had no nodes in that phase. Directive 4.2 emits
+/// only the phases that fired — this struct's `skip_serializing_if=None`
+/// preserves that semantics.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PhaseManifold {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cold_hold: Option<PhaseAggregate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heating: Option<PhaseAggregate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warm_hold: Option<PhaseAggregate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooling: Option<PhaseAggregate>,
+}
+
+/// Single-phase aggregate: AABB-volume-weighted centroid, axis-aligned
+/// bounding box union, mean KL divergence, set of unique driver residues.
+/// The `centroid_xyz` here is the *phase-specific* centroid — labelled
+/// explicitly so consumers don't conflate it with the legacy single dead
+/// centroid the old DBSCAN backend emitted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhaseAggregate {
+    /// AABB-volume-weighted centroid of the constituent ghost nodes.
+    pub centroid_xyz: [f32; 3],
+    /// Axis-aligned bounding box union over the constituent nodes.
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
+    /// Number of ghost nodes contributing to this phase.
+    pub n_nodes: u32,
+    /// Mean KL divergence over the constituent nodes (NaN values are
+    /// excluded from the mean — `n_finite_kl` reports how many were
+    /// counted).
+    pub mean_kl_divergence: f32,
+    /// Number of nodes that contributed a finite KL value to the mean.
+    pub n_finite_kl: u32,
+    /// Distinct driver residues observed in this phase. Empty when no
+    /// node had a resolved causal lead.
+    pub driver_residues: Vec<u32>,
+    /// Step-range covered in this phase (`step_idx_min`..=`step_idx_max`).
+    pub step_idx_min: u64,
+    pub step_idx_max: u64,
+}
+
+/// Thermodynamic + CCNS lifecycle aggregates per phase. Directive 4.3.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ThermCcnsLifecycle {
+    /// `phase_name -> mean_kl_divergence`. Populated only for phases the
+    /// site participated in; missing phases are absent from the map (not
+    /// emitted as null).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub mean_kl_by_phase: std::collections::BTreeMap<String, f32>,
+    /// `phase_name -> [mean_wd_change, mean_vib_energy]`. Components are
+    /// excluded from the mean if NaN; `[NaN, NaN]` may be emitted when
+    /// the upstream telemetry plane has not populated the field yet —
+    /// downstream consumers MUST check `water_density_status` before
+    /// integrating these values.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub mean_thermo_flux_by_phase: std::collections::BTreeMap<String, [f32; 2]>,
+    /// `driver_residue_id -> persistence_fraction`. Sums to 1.0 if any
+    /// drivers were observed; empty when no node had a resolved causal
+    /// lead.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub driver_residue_persistence: std::collections::BTreeMap<u32, f32>,
+    /// One of `"available"` / `"unavailable_neutral"`. Set to
+    /// `"unavailable_neutral"` whenever every constituent node had `NaN`
+    /// for `water_density` — directive Part V mandates the explicit
+    /// sentinel rather than a zero-fill.
+    pub water_density_status: String,
+    /// `phase_name -> mean_water_density`. Empty when
+    /// `water_density_status == "unavailable_neutral"`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub mean_water_density_by_phase: std::collections::BTreeMap<String, f32>,
+}
+
+/// SO(3) spherical-coherence summary per site. Directive 4.4.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct So3Manifold {
+    /// Per-plane status descriptor: `"populated"` if at least one
+    /// constituent node had a non-zero value on that plane, otherwise
+    /// `"sentinel"`.
+    pub plane_status: So3PlaneStatus,
+    /// Mean cosine similarity of accepted intra-component edges. Carries
+    /// the kernel's directive Part II.2 weighted-cosine score (already
+    /// normalised by active plane weights). Surfaced as `_estimate`
+    /// because per-component intra-edge counts are apportioned by
+    /// component pair-budget when the kernel emits a global score
+    /// accumulator only.
+    pub intra_component_mean_cosine: f32,
+    /// Number of intra-component edges aggregated into the mean.
+    pub n_intra_edges: u32,
+    /// `phase_a_to_phase_b -> mean_cosine` for accepted edges that crossed
+    /// the named phase boundary. Only emitted boundaries that fired.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub phase_transition_cosine: std::collections::BTreeMap<String, f32>,
+}
+
+/// Per-plane populated/sentinel labels. `populated` means at least one
+/// constituent node carried non-zero values on that plane; `sentinel`
+/// means every node had the default zero spectrum. The 4 planes match
+/// the GhostTileFrame `power_spectrum` plane order (geometry, causality,
+/// thermodynamics, chemistry).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct So3PlaneStatus {
+    pub geometry: String,
+    pub causality: String,
+    pub thermodynamics: String,
+    pub chemistry: String,
+}
+
+impl Default for So3PlaneStatus {
+    fn default() -> Self {
+        Self {
+            geometry: "sentinel".to_string(),
+            causality: "sentinel".to_string(),
+            thermodynamics: "sentinel".to_string(),
+            chemistry: "sentinel".to_string(),
+        }
+    }
+}
+
+impl So3PlaneStatus {
+    /// Build a status block from a 4-bit plane-presence mask
+    /// (bit 0=geo, 1=caus, 2=thermo, 3=chem).
+    pub fn from_mask(mask: u8) -> Self {
+        let label = |bit: u8| -> String {
+            if (mask & bit) != 0 {
+                "populated".to_string()
+            } else {
+                "sentinel".to_string()
+            }
+        };
+        Self {
+            geometry: label(0b0001),
+            causality: label(0b0010),
+            thermodynamics: label(0b0100),
+            chemistry: label(0b1000),
+        }
+    }
+}
+
+/// Canonical phase-name list — index = protocol_phase ordinal.
+pub const PHASE_NAMES: [&str; 4] = ["cold_hold", "heating", "warm_hold", "cooling"];
+
+/// Resolve protocol_phase ordinal → canonical name. Out-of-range ordinals
+/// return `"unknown"`.
+pub fn phase_name_for(ordinal: u8) -> &'static str {
+    if (ordinal as usize) < PHASE_NAMES.len() {
+        PHASE_NAMES[ordinal as usize]
+    } else {
+        "unknown"
+    }
 }
 
 // ============================================================================
@@ -686,6 +935,10 @@ impl SiteManifest {
             adjudicator_elapsed_ns: None,
             kcc_metrics: None,
             therm_dossier: None,
+            ghost_phase_lattice: None,
+            phase_manifold: None,
+            therm_ccns_lifecycle: None,
+            so3_manifold: None,
         }
     }
 }
@@ -837,6 +1090,10 @@ mod tests {
             adjudicator_elapsed_ns: None,
             kcc_metrics: None,
             therm_dossier: None,
+            ghost_phase_lattice: None,
+            phase_manifold: None,
+            therm_ccns_lifecycle: None,
+            so3_manifold: None,
         };
         assert_eq!(m.identity.site_id.0, 0);
         assert_eq!(m.identity.cluster_id.0, 7);
