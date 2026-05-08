@@ -451,6 +451,12 @@ extern "C" {
     /// `frame_idx`:     monotonic frame counter (host-supplied per launch)
     /// `n_clusters`:    cluster count
     /// `max_records`:   bounds check — kernel skips writes once counter >= this
+    /// Reconciled with the canonical declaration in
+    /// `captured_pipeline.rs:723` — adds the `firehose_enable: u32` final
+    /// argument that matches the actual CUDA `extern "C"` signature in
+    /// `crates/prism-nhs/src/cuda/ghost_tile_kernel.cu:233`. The previous
+    /// 8-argument declaration triggered `clashing_extern_declarations`
+    /// warnings at every full-tree compile.
     pub fn prism_ghost_pipe_stage_launch(
         ring_base_dev: u64,
         tiles: *const std::ffi::c_void,
@@ -460,6 +466,7 @@ extern "C" {
         n_clusters: u32,
         max_records: u32,
         stream: *mut std::ffi::c_void,
+        firehose_enable: u32,
     ) -> i32;
 
     /// Wave 1 / Q1 — populator for the __constant__ d_cluster_to_repr_residue[64]

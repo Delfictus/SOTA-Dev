@@ -813,6 +813,22 @@ struct Args {
     #[arg(long)]
     path_a_max_wall_seconds: Option<u64>,
 
+    /// **M1.2.23 §4 + §5** — Transparent MAR v2 telemetry opt-in.
+    ///
+    /// When set on a V2-live run (i.e., with `--m1-monolithic-discovery`),
+    /// the captured-graph build wires `prism_ghost_pipe_stage_launch_v2`
+    /// instead of v1 for every Channel-B push. Emitted records carry
+    /// `schema_version = GHOST_FRAME_SCHEMA_V2` and the structured v2
+    /// payload (observation_pass, discovery_pass, gear_id, dt_fs,
+    /// step_idx). Default OFF preserves bit-identical v1 behavior.
+    ///
+    /// Hard invariant (per directive §4): the v2 emission gate widens
+    /// telemetry to include observation_pass (3σ), but does NOT change
+    /// F1/G26 SWITCH selection. F1 lives in `adjudicator.cu`'s predicate
+    /// bridge and is unchanged.
+    #[arg(long, default_value = "false")]
+    mar_v2_telemetry: bool,
+
     /// MD-ONLY EVIDENCE HANDOFF (2026-05-06). Path A evidence-handoff
     /// mode for manual / Path B post-MD aggregation. When set:
     ///   * the per-stream MD/evidence window runs unchanged (all 8
@@ -7283,11 +7299,28 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     // field via cfg.branch_trace_dev = ... before
                                                     // the cfg is moved into ::build().
                                                     branch_trace_dev: 0,
-                                                    // M1.2.23 §4 — Transparent MAR v2 telemetry
-                                                    // opt-in. Default None preserves v1 launcher
-                                                    // behavior bit-identically. Wire-in to v2
-                                                    // launcher is the bounded V2-live smoke step.
-                                                    mar_v2: None,
+                                                    // M1.2.23 §4 — Transparent MAR v2 telemetry.
+                                                    // Default None preserves v1 launcher behavior
+                                                    // bit-identically. When --mar-v2-telemetry is
+                                                    // set, populate with the production-profile
+                                                    // noise floor (B.3.2 lock-in: μ=0.005, σ=0.001
+                                                    // → obs_thr=μ+3σ=0.008, disc_thr=μ+12σ=0.017)
+                                                    // and host-resolved gear_id (Wave A default 0)
+                                                    // / dt_fs (4.0 if --hmr else 2.0).
+                                                    mar_v2: if args.mar_v2_telemetry {
+                                                        Some(prism_nhs::captured_pipeline::MarV2Config {
+                                                            threshold_sigma_observation: 3.0,
+                                                            threshold_sigma_discovery:   12.0,
+                                                            noise_floor_mu:    nf_override
+                                                                .map(|(m, _)| m).unwrap_or(0.005),
+                                                            noise_floor_sigma: nf_override
+                                                                .map(|(_, s)| s).unwrap_or(0.001),
+                                                            gear_id: 0,
+                                                            dt_fs:   if args.hmr { 4.0 } else { 2.0 },
+                                                        })
+                                                    } else {
+                                                        None
+                                                    },
                                                 };
                                                 // CHUNK13_CAPTURED_GRAPH_LAUNCH_HANG diagnostic —
                                                 // per-stream pinned-mapped 64-byte PrismBranchTrace

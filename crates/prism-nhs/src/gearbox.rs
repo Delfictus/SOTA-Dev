@@ -267,12 +267,20 @@ pub mod ffi {
         /// `d_current_temp` and `d_dt` are nullable — pass null to skip
         /// the Berendsen guard in body 0 (e.g., for tests without a
         /// ProtocolState fixture).
+        // Reconciled with captured_pipeline.rs:865 to silence
+        // `clashing_extern_declarations`. The CUgraph alias in cudarc resolves
+        // to `*mut CUgraph_st`, so `*mut CUgraph` is `*mut *mut CUgraph_st`,
+        // ABI-identical to `*mut *mut c_void` but type-distinguishable to the
+        // Rust compiler. Using cudarc's CUgraph here matches the canonical
+        // captured-pipeline declaration verbatim. Same applies to the cruise
+        // pointer: kept `*const c_void` to match captured_pipeline.rs (the
+        // C++ producer takes `void*` and the Rust caller casts on the way in).
         pub fn prism_gearbox_populate_switch_bodies_ffi(
-            body_subgraphs: *mut *mut std::ffi::c_void, // [4]
+            body_subgraphs: *mut cudarc::driver::sys::CUgraph,  // [4]
             adj: *const InterferometricAdjudicatorFfi,
             d_velocities: *mut f32,
             n_floats: u32,
-            cruise: *const ChronometricStateTensor,
+            cruise: *const std::ffi::c_void,                    // ChronometricStateTensor*
             d_current_temp: *const f32,
             d_dt: *const f32,
             target_temp_K: f32,

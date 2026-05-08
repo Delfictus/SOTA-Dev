@@ -3939,29 +3939,77 @@ impl CapturedAdjudicationPipeline {
             } else {
                 std::ptr::null()
             };
-            let rc = unsafe {
-                prism_ghost_pipe_stage_launch(
-                    cfg.ghost_tile_ring_dev,
-                    manifest.tiles_dev_ptr as *const c_void,
-                    adj_dev as *const c_void,
-                    kcc_lead_ptr,
-                    cfg.initial_frame_id as u64,
-                    cfg.n_clusters,
-                    cfg.ghost_tile_max_records,
-                    md_stream.cu_stream() as *mut c_void,
-                    cfg.firehose_enable,
-                )
+            // M1.2.23 §4 + §5 — Transparent MAR v2 launcher selection.
+            // When PipelineConfig.mar_v2 is Some, route through the v2
+            // launcher so emitted records carry schema_version=2 +
+            // observation_pass / discovery_pass / gear_id / dt_fs / step_idx
+            // structured payload. Otherwise the v1 launcher path is
+            // preserved bit-identically.
+            //
+            // Hard invariant (per directive §4): the v2 emission gate widens
+            // telemetry to include observation_pass, but the F1/G26 SWITCH
+            // path in the adjudicator is NOT changed. Discovery semantics
+            // for SWITCH selection remain whatever the adjudicator's own
+            // threshold computes.
+            let rc = if let Some(ref mar) = cfg.mar_v2 {
+                let obs_thr = mar.observation_threshold_kl();
+                let disc_thr = mar.discovery_threshold_kl();
+                log::info!(
+                    "[M1.2.23 v2] ghost launcher: schema_version=2 \
+                     obs_thr={:.6} disc_thr={:.6} gear_id={} dt_fs={:.3}",
+                    obs_thr, disc_thr, mar.gear_id, mar.dt_fs
+                );
+                unsafe {
+                    prism_ghost_pipe_stage_launch_v2(
+                        cfg.ghost_tile_ring_dev,
+                        manifest.tiles_dev_ptr as *const c_void,
+                        adj_dev as *const c_void,
+                        kcc_lead_ptr,
+                        cfg.initial_frame_id as u64,
+                        cfg.n_clusters,
+                        cfg.ghost_tile_max_records,
+                        md_stream.cu_stream() as *mut c_void,
+                        cfg.firehose_enable,
+                        obs_thr,
+                        disc_thr,
+                        mar.gear_id,
+                        mar.dt_fs,
+                        cfg.initial_frame_id as u64, // step_idx ≈ initial_frame_id at capture; refined per-chunk by host re-record
+                    )
+                }
+            } else {
+                unsafe {
+                    prism_ghost_pipe_stage_launch(
+                        cfg.ghost_tile_ring_dev,
+                        manifest.tiles_dev_ptr as *const c_void,
+                        adj_dev as *const c_void,
+                        kcc_lead_ptr,
+                        cfg.initial_frame_id as u64,
+                        cfg.n_clusters,
+                        cfg.ghost_tile_max_records,
+                        md_stream.cu_stream() as *mut c_void,
+                        cfg.firehose_enable,
+                    )
+                }
             };
             if rc != 0 {
                 return Err(BuildError::Cuda {
-                    stage: "M1.2.19.B prism_ghost_pipe_stage_launch",
+                    stage: if cfg.mar_v2.is_some() {
+                        "M1.2.19.B prism_ghost_pipe_stage_launch_v2"
+                    } else {
+                        "M1.2.19.B prism_ghost_pipe_stage_launch"
+                    },
                     rc,
                 });
             }
             // STREAM5_SFA_DIAG — probe capture state after ghost pipe stage.
             diag_capture_invalidation_after(
                 &md_stream,
-                "M1.2.19.B prism_ghost_pipe_stage_launch",
+                if cfg.mar_v2.is_some() {
+                    "M1.2.19.B prism_ghost_pipe_stage_launch_v2"
+                } else {
+                    "M1.2.19.B prism_ghost_pipe_stage_launch"
+                },
                 cfg.diagnostic_stream_id,
                 "parent_owned_g26_child",
             )?;
