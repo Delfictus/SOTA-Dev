@@ -1352,6 +1352,18 @@ pub struct CapturedAdjudicationPipeline {
     /// in-graph cuMemcpyDtoDAsync node refreshes it from `tiles_dev` after
     /// each Adjudicator+ASC retirement.
     tiles_baseline_dev: usize, // *mut ContactShellTile (relaxed/lagged)
+    /// **M1.2.26.RECOUPLE Part 4 — Lagged Reference Manifold (P_frozen).**
+    /// Pointer-stable F2-pool buffer holding the time-anchored reference
+    /// tile array. Populated by host via `freeze_baseline()` after the
+    /// Phase-1 anchor window (steps 0-50). Once populated, host updates
+    /// `adj.relaxed_manifold_ptr` (offset 56) to this address so the
+    /// adjudicator's KL evaluations compare against the frozen reference
+    /// instead of the per-replay-recomputed `tiles_baseline_dev`. Sized
+    /// identically to `tiles_baseline_dev` (n_clusters × ContactShellTile).
+    pub p_frozen_dev: usize,  // *mut ContactShellTile (T29 frozen reference)
+    /// Cached `tiles_bytes` so the host's `freeze_baseline()` knows the
+    /// memcpy size without recomputing from n_clusters.
+    pub tiles_bytes: u64,
     adj_dev: usize,           // *mut InterferometricAdjudicatorFfi
     burst_marker_dev: usize,  // *mut u32 (4 B)
     /// G28 SISR per-cluster prune-bit u64. Zero when SISR disabled.
@@ -1662,6 +1674,25 @@ impl CapturedAdjudicationPipeline {
             let rc = cuMemsetD8_v2(tiles_baseline_dev as CUdeviceptr, 0, tiles_bytes as usize);
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda { stage: "memset tiles_baseline", rc: rc as i32 });
+            }
+        }
+
+        // M1.2.26.RECOUPLE Part 4 — Lagged Reference Manifold (P_frozen).
+        // Allocate a separate buffer holding the time-anchored reference
+        // tile array. Host orchestration (nhs_rt_full chunk loop) snapshots
+        // tiles_baseline_dev into p_frozen_dev at the first chunk boundary
+        // past step 50 (the Phase-1 anchor lock). After the snapshot, the
+        // host updates adj.relaxed_manifold_ptr (offset 56) to point at
+        // p_frozen_dev so subsequent KL evaluations compare against the
+        // frozen reference instead of the per-replay-recomputed baseline.
+        // Pre-snapshot: zero-initialized so any premature read produces
+        // a degenerate (but well-defined) Δ_AB that the SFA can reject.
+        let p_frozen_dev = pool.alloc_async(tiles_bytes, md_raw)
+            .map_err(|s| BuildError::PoolAlloc { what: "p_frozen", reason: s })?;
+        unsafe {
+            let rc = cuMemsetD8_v2(p_frozen_dev as CUdeviceptr, 0, tiles_bytes as usize);
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                return Err(BuildError::Cuda { stage: "memset p_frozen", rc: rc as i32 });
             }
         }
 
@@ -3526,6 +3557,7 @@ impl CapturedAdjudicationPipeline {
         if let Err(e) = begin_capture_result {
             let _ = pool.free_async(tiles_dev, md_raw);
             let _ = pool.free_async(tiles_baseline_dev, md_raw);
+            let _ = pool.free_async(p_frozen_dev, md_raw);
             let _ = pool.free_async(adj_dev, md_raw);
             let _ = pool.free_async(burst_marker_dev, md_raw);
             if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
@@ -4800,6 +4832,8 @@ impl CapturedAdjudicationPipeline {
             telemetry_to_md_event,
             tiles_dev,
             tiles_baseline_dev,
+            p_frozen_dev,
+            tiles_bytes: tiles_bytes as u64,
             adj_dev,
             burst_marker_dev,
             sisr_mask_dev,
@@ -5224,6 +5258,154 @@ impl CapturedAdjudicationPipeline {
         self.tiles_dev % 128 == 0
     }
 
+    /// **M1.2.26.RECOUPLE Part 4 — Lagged Reference Manifold lock.**
+    ///
+    /// Snapshots the current `tiles_baseline_dev` (which the captured
+    /// graph re-computes per replay as `SO(3)(d_spikes_raw)`) into the
+    /// pre-allocated `p_frozen_dev` buffer, then updates
+    /// `adj.relaxed_manifold_ptr` (FFI offset 56) to point at the
+    /// frozen snapshot. After this call, the adjudicator's KL
+    /// evaluation compares `p_frozen` against the per-replay-recomputed
+    /// `tiles_baseline_dev` (i.e., `Δ_AB = KL(P_frozen || Q_current)`),
+    /// providing the absolute interferometric contrast mandated by
+    /// the M1.2.26.RECOUPLE Part 4 directive (target T29).
+    ///
+    /// Caller (host orchestrator in `nhs_rt_full`) must invoke this at
+    /// the chunk boundary closest to step 50 (Phase-1 anchor lock).
+    /// Idempotent if the host gates re-entry — calling it twice would
+    /// overwrite `p_frozen` with whatever `tiles_baseline_dev` looks
+    /// like at that later step.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DriverError::CudaError` on cuMemcpy failures.
+    pub fn freeze_baseline(
+        &self,
+    ) -> Result<(), DriverError> {
+        use cudarc::driver::sys::{cuMemcpyDtoDAsync_v2, cuMemcpyHtoDAsync_v2,
+                                  CUdeviceptr, CUresult};
+        // Step 1: snapshot tiles_baseline_dev → p_frozen_dev (DtoD).
+        unsafe {
+            let rc = cuMemcpyDtoDAsync_v2(
+                self.p_frozen_dev as CUdeviceptr,
+                self.tiles_baseline_dev as CUdeviceptr,
+                self.tiles_bytes as usize,
+                self.md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::error!(
+                    "M1.2.26 freeze_baseline: cuMemcpyDtoD baseline→p_frozen rc={:?}", rc
+                );
+                return Err(DriverError(rc));
+            }
+        }
+        // Step 2: update adj.relaxed_manifold_ptr (offset 56) → p_frozen_dev.
+        unsafe {
+            let relaxed_ptr_field = (self.adj_dev + 56) as CUdeviceptr;
+            let p_frozen_value: u64 = self.p_frozen_dev as u64;
+            let rc = cuMemcpyHtoDAsync_v2(
+                relaxed_ptr_field,
+                &p_frozen_value as *const _ as *const std::ffi::c_void,
+                8,
+                self.md_stream.cu_stream(),
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::error!(
+                    "M1.2.26 freeze_baseline: cuMemcpyHtoD adj.relaxed_manifold_ptr=0x{:x} rc={:?}",
+                    p_frozen_value, rc
+                );
+                return Err(DriverError(rc));
+            }
+        }
+        log::info!(
+            "[M1.2.26.RECOUPLE Part 4] P_frozen locked: \
+             tiles_baseline_dev=0x{:x} → p_frozen_dev=0x{:x} \
+             ({} bytes); adj.relaxed_manifold_ptr redirected.",
+            self.tiles_baseline_dev, self.p_frozen_dev, self.tiles_bytes
+        );
+        Ok(())
+    }
+
+    /// **M1.2.26.RECOUPLE Part 3 — Write KL-native μ/σ to FFI.**
+    ///
+    /// After the host has accumulated KL samples during the Phase-2
+    /// variance window (steps 51-100), it computes mean + stddev and
+    /// calls this method to flush them to `adj.total_kl_mu` (offset
+    /// 148) and `adj.total_kl_sigma` (offset 152). After this write,
+    /// the F1 SWITCH predicate in `adjudicator.cu` switches from the
+    /// legacy SH-coefficient threshold to the dimensionally-
+    /// synchronized KL-native threshold:
+    ///   `threshold = total_kl_mu + 12σ * total_kl_sigma`
+    ///
+    /// # Errors
+    ///
+    /// Returns `DriverError::CudaError` on cuMemcpy failure.
+    pub fn write_kl_native_mu_sigma(
+        &self,
+        total_kl_mu: f32,
+        total_kl_sigma: f32,
+    ) -> Result<(), DriverError> {
+        use cudarc::driver::sys::{cuMemcpyHtoDAsync_v2, CUdeviceptr, CUresult};
+        unsafe {
+            let mu_field = (self.adj_dev + 148) as CUdeviceptr;
+            let rc1 = cuMemcpyHtoDAsync_v2(
+                mu_field,
+                &total_kl_mu as *const f32 as *const std::ffi::c_void,
+                4,
+                self.md_stream.cu_stream(),
+            );
+            let sigma_field = (self.adj_dev + 152) as CUdeviceptr;
+            let rc2 = cuMemcpyHtoDAsync_v2(
+                sigma_field,
+                &total_kl_sigma as *const f32 as *const std::ffi::c_void,
+                4,
+                self.md_stream.cu_stream(),
+            );
+            for (rc, what) in [(rc1, "total_kl_mu"), (rc2, "total_kl_sigma")] {
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    log::error!(
+                        "M1.2.26 write_kl_native_mu_sigma: {} rc={:?}", what, rc
+                    );
+                    return Err(DriverError(rc));
+                }
+            }
+        }
+        log::info!(
+            "[M1.2.26.RECOUPLE Part 3] KL-native threshold engaged: \
+             total_kl_mu={:.4e} total_kl_sigma={:.4e} \
+             discovery_threshold={:.4e} (= μ + 12σ)",
+            total_kl_mu, total_kl_sigma,
+            total_kl_mu + 12.0 * total_kl_sigma
+        );
+        Ok(())
+    }
+
+    /// **M1.2.26.RECOUPLE — Read adj.current_divergence host-side.**
+    ///
+    /// Used by the host's Phase-2 variance accumulation loop. Returns
+    /// the latest scalar `total_kl` written by the captured graph's
+    /// adjudicator kernel (FFI offset 48).
+    pub fn read_current_divergence(
+        &self,
+    ) -> Result<f32, DriverError> {
+        use cudarc::driver::sys::{cuMemcpyDtoH_v2, CUdeviceptr, CUresult};
+        let mut value: f32 = 0.0;
+        unsafe {
+            let rc = cuMemcpyDtoH_v2(
+                &mut value as *mut f32 as *mut std::ffi::c_void,
+                (self.adj_dev + 48) as CUdeviceptr,
+                4,
+            );
+            if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                log::error!(
+                    "M1.2.26 read_current_divergence: cuMemcpyDtoH rc={:?}", rc
+                );
+                return Err(DriverError(rc));
+            }
+        }
+        Ok(value)
+    }
+
     /// Telemetry stream handle. Exposed for the audit gate G20
     /// (`stream_flags(...) & CU_STREAM_NON_BLOCKING == 1`).
     pub fn telemetry_stream(&self) -> CUstream {
@@ -5325,6 +5507,7 @@ impl Drop for CapturedAdjudicationPipeline {
         // Stream-ordered free of pool allocations.
         let _ = self.pool.free_async(self.tiles_dev, md_raw);
         let _ = self.pool.free_async(self.tiles_baseline_dev, md_raw);
+        let _ = self.pool.free_async(self.p_frozen_dev, md_raw);
         let _ = self.pool.free_async(self.adj_dev, md_raw);
         let _ = self.pool.free_async(self.burst_marker_dev, md_raw);
         if self.sisr_mask_dev != 0 {
@@ -5633,6 +5816,7 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            mar_v2: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
@@ -5781,6 +5965,7 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            mar_v2: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
@@ -5876,6 +6061,7 @@ mod tests {
             zstr: None,
             sisr: None,
             noise_floor_override: None,
+            mar_v2: None,
             d_dt: ptr::null_mut(),
             n_spikes: 0, branch_trace_dev: 0,
             d_velocities: ptr::null_mut(),
@@ -5983,6 +6169,7 @@ mod tests {
             d_forces_anchor: 0,
             d_masses: 0,
             noise_floor_override: None,
+            mar_v2: None,
             d_dt: ptr::null_mut(),
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,

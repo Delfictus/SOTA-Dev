@@ -312,20 +312,31 @@ __global__ void prism_interferometric_adjudicator_step_kernel(
         if (any_violation != 0u) {
             code = PRISM_ADJ_VIOLATION;
         } else {
-            // Threshold uses noise_floor_mu[0] / sigma[0] as the
-            // band-0 proxy; substrate-aware T7 writes dynamic μ / σ
-            // here every frame after PRISM_DYNT7_N_MIN samples.
+            // M1.2.26.RECOUPLE Part 3.3 — KL-Native discovery gate.
             //
-            // Wave 1 / Q3 — operator-mandated 12σ "Discovery Gear"
-            // (Augmentation option B, 2026-05-02).  Pre-Wave-1 was
-            // 3σ; the 7C8R Mpro dimer's thermal baseline is volatile
-            // enough that 3σ floods the AMS pipeline with false
-            // positives.  12σ isolates only the most significant
-            // "Cryptic Gasps".  Operates on KL units (Wave 0 fix —
-            // current_divergence is the 4-plane weighted KL Σ).
-            const float threshold =
-                adjudicator->noise_floor_mu[0]
-                + 12.0f * adjudicator->noise_floor_sigma[0];
+            // Pre-RECOUPLE the threshold was computed on the L2-norm
+            // SH-coefficient scale (noise_floor_mu[0] ≈ 0.5,
+            // noise_floor_sigma[0] ≈ 0.1 → threshold ≈ 1.7) but
+            // compared against `total_kl` in log-probability units
+            // (range ~1e-5 in production). The M1.2.26 coupling audit
+            // proved this scale mismatch made the 12σ gate
+            // mathematically unreachable (5+ OOM shortfall regardless
+            // of UV dose).
+            //
+            // Post-RECOUPLE the threshold is dimensionally
+            // synchronized: μ/σ are run-locked statistics of
+            // `total_kl` itself (Phase 2 of the Split T7 Epoch,
+            // steps 51-100, KL(P_frozen || Q_current)). Sentinel
+            // total_kl_sigma == 0.0f means Phase 2 has not converged
+            // yet — fall back to the legacy SH-coefficient threshold
+            // for compatibility with non-KL-calibrated bring-up runs.
+            const bool kl_native_ready =
+                (adjudicator->total_kl_sigma > 0.0f);
+            const float threshold = kl_native_ready
+                ? (adjudicator->total_kl_mu
+                   + 12.0f * adjudicator->total_kl_sigma)
+                : (adjudicator->noise_floor_mu[0]
+                   + 12.0f * adjudicator->noise_floor_sigma[0]);
 
             // ── B.3.2 Total Information Yield (TIY) — operator
             //    addendum 2026-05-02:
@@ -476,14 +487,19 @@ __global__ void prism_interferometric_adjudicator_zero_kernel(
     // at the head of every replay window so each chunk starts with a
     // clean violation state.
     adj->momentum_violation_flag = 0u;
-    // M1.2.20.C-G / T24 — adjudication_reason_flags cleared.  Field
+    // M1.2.26.RECOUPLE Part 2 — KL-native μ/σ start at zero. Phase 2
+    // of the Split T7 Epoch (steps 51-100) writes these. Until then
+    // F1 SWITCH falls back to legacy noise_floor_mu[0] threshold.
+    adj->total_kl_mu    = 0.0f;
+    adj->total_kl_sigma = 0.0f;
+    // M1.2.20.C-G / T24 — adjudication_reason_flags cleared. Field
     // is NOT reset per-replay (it accumulates reasons across the
     // campaign for the teardown forensic readback); the zero kernel
     // runs once at engine init.
     adj->adjudication_reason_flags = 0u;
     #pragma unroll
-    for (int k = 0; k < 104; ++k) {
-        adj->_reserved_m1_2_20[k] = 0u;
+    for (int k = 0; k < 96; ++k) {
+        adj->_reserved_m1_2_26[k] = 0u;
     }
 }
 

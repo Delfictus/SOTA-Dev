@@ -308,6 +308,28 @@ struct Args {
     #[arg(long)]
     force_burst_at_step: Option<u32>,
 
+    /// **M1.2.26 HRDB CLI override — UV burst energy (kcal/mol).**
+    /// When `Some(N)`, every per-stream `CryoUvProtocol.uv_burst_energy`
+    /// is overridden with N before `engine.set_cryo_uv_protocol(...)` is
+    /// called. Use `--uv-burst-energy 0.0` to suppress UV bursts entirely
+    /// (thermal baseline) and any positive value to inject controlled
+    /// bursts. Default `None` preserves the per-protocol multi-differential
+    /// UV settings (ThermalShock 48 / Equilibrium 25 / UvAromatic 60 /
+    /// Hysteresis 35 kcal/mol).
+    #[arg(long)]
+    uv_burst_energy: Option<f32>,
+
+    /// **M1.2.26 HRDB CLI override — UV burst period (steps).**
+    /// When `Some(N)`, every per-stream `CryoUvProtocol.uv_burst_interval`
+    /// is overridden with N. The kernel `protocol_director.cu:124-126`
+    /// fires a burst when `s % interval < duration`, so `--uv-burst-step
+    /// 5000` produces bursts at steps [0, duration), [5000, 5000+duration),
+    /// [10000, 10000+duration), etc. Pair with a wall budget that confines
+    /// integration to the first burst window for a single-burst HRDB run.
+    /// Default `None` preserves per-protocol intervals.
+    #[arg(long)]
+    uv_burst_step: Option<u32>,
+
     /// **Ghost-tile diagnostic firehose (post-audit operator directive
     /// 2026-05-03).**  Default ON.  When enabled, the Channel-B Ghost
     /// stage kernel emits one GhostTileFrame per cluster per replay
@@ -2097,7 +2119,26 @@ fn run_coupled_twin_multi_pipeline(
         if args.ladd {
             engine.set_ladd_enabled(true);
         }
-        engine.set_cryo_uv_protocol(prot.clone())?;
+        // M1.2.26 HRDB CLI overrides — when set, override per-protocol UV
+        // burst tunables before the engine is configured. This produces
+        // controlled-perturbation runs without modifying the protocol
+        // database itself.
+        let mut prot_for_engine = prot.clone();
+        if let Some(e) = args.uv_burst_energy {
+            log::info!(
+                "    [HRDB-CLI] uv_burst_energy override: {:.3} → {:.3} kcal/mol",
+                prot_for_engine.uv_burst_energy, e
+            );
+            prot_for_engine.uv_burst_energy = e;
+        }
+        if let Some(s) = args.uv_burst_step {
+            log::info!(
+                "    [HRDB-CLI] uv_burst_interval override: {} → {} steps",
+                prot_for_engine.uv_burst_interval, s
+            );
+            prot_for_engine.uv_burst_interval = s as i32;
+        }
+        engine.set_cryo_uv_protocol(prot_for_engine)?;
         engine.set_spike_accumulation(true);
 
         // NMA for Group B only
@@ -6084,7 +6125,26 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         }
                     };
                     let _ = auto_nma_loaded; // captured for potential future telemetry
-                    engine.set_cryo_uv_protocol(prot)?;
+                    // M1.2.26 HRDB CLI overrides — multi-differential per-stream
+                    // path. Mirrors the override applied at the legacy single-
+                    // protocol site so --uv-burst-energy / --uv-burst-step are
+                    // honored on every stream regardless of protocol group.
+                    let mut prot_for_engine = prot.clone();
+                    if let Some(e) = args.uv_burst_energy {
+                        log::info!(
+                            "    [HRDB-CLI stream {}] uv_burst_energy override: {:.3} → {:.3} kcal/mol",
+                            i, prot_for_engine.uv_burst_energy, e
+                        );
+                        prot_for_engine.uv_burst_energy = e;
+                    }
+                    if let Some(s) = args.uv_burst_step {
+                        log::info!(
+                            "    [HRDB-CLI stream {}] uv_burst_interval override: {} → {} steps",
+                            i, prot_for_engine.uv_burst_interval, s
+                        );
+                        prot_for_engine.uv_burst_interval = s as i32;
+                    }
+                    engine.set_cryo_uv_protocol(prot_for_engine)?;
                     engine.set_spike_accumulation(true);
 
                     if ultimate {
@@ -7728,6 +7788,20 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                                                     i
                                                                                 );
                                                                                 v2_built_cfg = Some(mono_cfg);
+                                                                                // M1.2.26.RECOUPLE Part 4 — freeze P_frozen
+                                                                                // baseline now, BEFORE the first V2 replay.
+                                                                                // tiles_baseline_dev contains the relaxed
+                                                                                // manifold produced by the pre-V2 captured
+                                                                                // graph; snapshot it to p_frozen_dev and
+                                                                                // redirect adj.relaxed_manifold_ptr so
+                                                                                // every V2 replay computes
+                                                                                // Δ_AB = KL(P_frozen || Q_current).
+                                                                                if let Err(e) = mono_pipeline.freeze_baseline() {
+                                                                                    log::warn!(
+                                                                                        "    [M1.2.26.RECOUPLE Part 4 stream {}] freeze_baseline failed: {} — falling back to per-replay relaxed manifold",
+                                                                                        i, e
+                                                                                    );
+                                                                                }
                                                                                 v2_pipeline = Some(mono_pipeline);
                                                                                 v2_monolithic = Some(exec);
                                                                                 v2_was_live.store(true, std::sync::atomic::Ordering::Release);
