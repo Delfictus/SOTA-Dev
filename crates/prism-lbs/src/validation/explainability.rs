@@ -64,11 +64,7 @@ impl ConfidenceBreakdown {
             self.shape_quality,
         ];
 
-        let weighted_sum: f64 = weights
-            .iter()
-            .zip(values.iter())
-            .map(|(w, v)| w * v)
-            .sum();
+        let weighted_sum: f64 = weights.iter().zip(values.iter()).map(|(w, v)| w * v).sum();
 
         weighted_sum.clamp(0.0, 1.0)
     }
@@ -285,14 +281,16 @@ impl ExplainabilityEngine {
         let detection_signals = self.build_detection_signals(pocket);
 
         // Generate summary
-        let summary = self.generate_summary(pocket, pocket_id, &confidence_breakdown, &druggability_factors);
-
-        // Generate detailed reasoning
-        let reasoning = self.generate_reasoning(
+        let summary = self.generate_summary(
             pocket,
-            &residue_contributions,
+            pocket_id,
+            &confidence_breakdown,
             &druggability_factors,
         );
+
+        // Generate detailed reasoning
+        let reasoning =
+            self.generate_reasoning(pocket, &residue_contributions, &druggability_factors);
 
         PocketExplanation {
             pocket_id,
@@ -319,10 +317,10 @@ impl ExplainabilityEngine {
 
         ConfidenceBreakdown {
             geometric,
-            cryptic: 0.0,     // Would come from softspot detection
-            allosteric: 0.0,  // Would come from allosteric module
+            cryptic: 0.0,      // Would come from softspot detection
+            allosteric: 0.0,   // Would come from allosteric module
             conservation: 0.0, // Would come from MSA
-            centrality: 0.0,  // Would come from network analysis
+            centrality: 0.0,   // Would come from network analysis
             shape_quality,
         }
     }
@@ -432,9 +430,9 @@ impl ExplainabilityEngine {
             hydrophobic,
             h_bond,
             aromatic,
-            flexibility: 0.5, // Would come from B-factors
+            flexibility: 0.5,  // Would come from B-factors
             conservation: 0.5, // Would come from MSA
-            centrality: 0.5, // Would come from network
+            centrality: 0.5,   // Would come from network
         }
     }
 
@@ -636,7 +634,9 @@ impl ExplainabilityEngine {
                 );
             }
             DruggabilityClass::Druggable => {
-                reasoning.push("Good druggability profile suitable for standard drug design.".to_string());
+                reasoning.push(
+                    "Good druggability profile suitable for standard drug design.".to_string(),
+                );
             }
             DruggabilityClass::DifficultTarget => {
                 reasoning.push(
@@ -681,7 +681,12 @@ impl ExplainabilityEngine {
     }
 
     /// Generate JSON-serializable explanation
-    pub fn explain_json(&self, pocket: &Pocket, atoms: &[Atom], pocket_id: usize) -> serde_json::Value {
+    pub fn explain_json(
+        &self,
+        pocket: &Pocket,
+        atoms: &[Atom],
+        pocket_id: usize,
+    ) -> serde_json::Value {
         let explanation = self.explain(pocket, atoms, pocket_id);
         serde_json::to_value(explanation).unwrap_or(serde_json::Value::Null)
     }
@@ -712,13 +717,18 @@ impl ExplainabilityEngine {
         ));
 
         // Summary
-        report.push_str(&format!("║  SUMMARY: {:<52} ║\n", &exp.summary[..exp.summary.len().min(52)]));
+        report.push_str(&format!(
+            "║  SUMMARY: {:<52} ║\n",
+            &exp.summary[..exp.summary.len().min(52)]
+        ));
 
         // Confidence breakdown
         report.push_str(&format!(
             "╠═══════════════════════════════════════════════════════════════╣\n"
         ));
-        report.push_str(&format!("║  CONFIDENCE BREAKDOWN:                                        ║\n"));
+        report.push_str(&format!(
+            "║  CONFIDENCE BREAKDOWN:                                        ║\n"
+        ));
         report.push_str(&format!(
             "║    Geometric: {:>5.1}%   Cryptic: {:>5.1}%   Allosteric: {:>5.1}%    ║\n",
             exp.confidence_breakdown.geometric * 100.0,
@@ -730,7 +740,9 @@ impl ExplainabilityEngine {
         report.push_str(&format!(
             "╠═══════════════════════════════════════════════════════════════╣\n"
         ));
-        report.push_str(&format!("║  DRUGGABILITY FACTORS:                                        ║\n"));
+        report.push_str(&format!(
+            "║  DRUGGABILITY FACTORS:                                        ║\n"
+        ));
         report.push_str(&format!(
             "║    Volume: {:>5.1}%   Hydrophobicity: {:>5.1}%   Enclosure: {:>5.1}%  ║\n",
             exp.druggability_factors.volume * 100.0,
@@ -742,7 +754,9 @@ impl ExplainabilityEngine {
         report.push_str(&format!(
             "╠═══════════════════════════════════════════════════════════════╣\n"
         ));
-        report.push_str(&format!("║  KEY RESIDUES:                                                ║\n"));
+        report.push_str(&format!(
+            "║  KEY RESIDUES:                                                ║\n"
+        ));
         for res in exp.residue_contributions.iter().take(5) {
             let critical_str = if res.is_critical { "*CRITICAL*" } else { "" };
             report.push_str(&format!(
@@ -759,7 +773,9 @@ impl ExplainabilityEngine {
         report.push_str(&format!(
             "╠═══════════════════════════════════════════════════════════════╣\n"
         ));
-        report.push_str(&format!("║  REASONING:                                                   ║\n"));
+        report.push_str(&format!(
+            "║  REASONING:                                                   ║\n"
+        ));
         for reason in &exp.reasoning {
             let truncated = if reason.len() > 58 {
                 format!("{}...", &reason[..55])

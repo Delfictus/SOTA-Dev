@@ -121,8 +121,14 @@ mod tests {
     fn test_confidence_from_score() {
         assert_eq!(CrypticConfidence::from_score(0.8), CrypticConfidence::High);
         assert_eq!(CrypticConfidence::from_score(0.7), CrypticConfidence::High);
-        assert_eq!(CrypticConfidence::from_score(0.6), CrypticConfidence::Medium);
-        assert_eq!(CrypticConfidence::from_score(0.5), CrypticConfidence::Medium);
+        assert_eq!(
+            CrypticConfidence::from_score(0.6),
+            CrypticConfidence::Medium
+        );
+        assert_eq!(
+            CrypticConfidence::from_score(0.5),
+            CrypticConfidence::Medium
+        );
         assert_eq!(CrypticConfidence::from_score(0.4), CrypticConfidence::Low);
         assert_eq!(CrypticConfidence::from_score(0.0), CrypticConfidence::Low);
     }

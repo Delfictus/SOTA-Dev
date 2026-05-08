@@ -160,7 +160,9 @@ impl GpuLanczosEigensolver {
     /// GPU-accelerated Lanczos (stub - uses blocked CPU for now)
     #[cfg(feature = "cuda")]
     fn gpu_lanczos(&self, matrix: &DMatrix<f64>, k: usize) -> Result<GpuEigenResult, String> {
-        let _context = self.context.as_ref()
+        let _context = self
+            .context
+            .as_ref()
             .ok_or_else(|| "CUDA context not initialized".to_string())?;
 
         let n = matrix.nrows();
@@ -279,10 +281,7 @@ mod tests {
             4,
             4,
             &[
-                4.0, 1.0, 0.0, 0.0,
-                1.0, 3.0, 1.0, 0.0,
-                0.0, 1.0, 2.0, 1.0,
-                0.0, 0.0, 1.0, 1.0,
+                4.0, 1.0, 0.0, 0.0, 1.0, 3.0, 1.0, 0.0, 0.0, 1.0, 2.0, 1.0, 0.0, 0.0, 1.0, 1.0,
             ],
         );
 
@@ -295,15 +294,7 @@ mod tests {
 
     #[test]
     fn test_sparse_conversion() {
-        let matrix = DMatrix::from_row_slice(
-            3,
-            3,
-            &[
-                1.0, 0.0, 2.0,
-                0.0, 3.0, 0.0,
-                4.0, 0.0, 5.0,
-            ],
-        );
+        let matrix = DMatrix::from_row_slice(3, 3, &[1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0]);
 
         let (values, row_ptr, col_idx) = to_csr(&matrix, 1e-10);
 

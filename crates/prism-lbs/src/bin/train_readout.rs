@@ -32,15 +32,15 @@ use prism_lbs::ProteinStructure;
 
 #[cfg(feature = "cuda")]
 use prism_gpu::{
-    MegaFusedGpu, MegaFusedConfig,
     readout_training::{ReservoirStateCollector, TrainedReadout},
+    MegaFusedConfig, MegaFusedGpu,
 };
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaContext;
 
 /// Dimension of combined features from inference kernel (SESSION 9 SOTA)
-const INFERENCE_FEATURE_DIM: usize = 70;  // 16 base + 12 reservoir + 12 physics + 30 SOTA
+const INFERENCE_FEATURE_DIM: usize = 70; // 16 base + 12 reservoir + 12 physics + 30 SOTA
 
 /// PRISM-LBS Readout Training Tool for CryptoBench
 #[derive(Parser)]
@@ -102,12 +102,12 @@ struct Cli {
 #[cfg(feature = "cuda")]
 struct TrainingStructure {
     id: String,
-    atoms: Vec<f32>,           // [n_atoms * 3]
-    ca_indices: Vec<i32>,      // [n_residues]
-    conservation: Vec<f32>,    // [n_residues]
-    bfactor: Vec<f32>,         // [n_residues]
-    burial: Vec<f32>,          // [n_residues]
-    gt_mask: Vec<u8>,          // [n_residues] ground truth labels
+    atoms: Vec<f32>,        // [n_atoms * 3]
+    ca_indices: Vec<i32>,   // [n_residues]
+    conservation: Vec<f32>, // [n_residues]
+    bfactor: Vec<f32>,      // [n_residues]
+    burial: Vec<f32>,       // [n_residues]
+    gt_mask: Vec<u8>,       // [n_residues] ground truth labels
 }
 
 /// SESSION 10B: Helper to convert ReservoirStateCollector to flat per-residue arrays
@@ -128,7 +128,8 @@ fn collector_to_flat_arrays(collector: &ReservoirStateCollector) -> (Vec<Vec<f32
         for r in 0..n_residues {
             let offset = r * feature_dim;
             if offset + feature_dim <= features_flat.len() {
-                let residue_features: Vec<f32> = features_flat[offset..offset + feature_dim].to_vec();
+                let residue_features: Vec<f32> =
+                    features_flat[offset..offset + feature_dim].to_vec();
                 all_features.push(residue_features);
                 all_labels.push(labels[r]);
             }
@@ -154,7 +155,11 @@ fn export_features_to_npy(
 
     std::fs::create_dir_all(output_dir)?;
 
-    let n_features = if train_features.is_empty() { 70 } else { train_features[0].len() };
+    let n_features = if train_features.is_empty() {
+        70
+    } else {
+        train_features[0].len()
+    };
 
     log::info!("═══════════════════════════════════════════════════════════════");
     log::info!("EXPORTING FEATURES TO NPY");
@@ -176,9 +181,7 @@ fn export_features_to_npy(
     }
 
     // Convert train labels to f32 for compatibility
-    let train_labels_array = Array1::<f32>::from_iter(
-        train_labels.iter().map(|&l| l as f32)
-    );
+    let train_labels_array = Array1::<f32>::from_iter(train_labels.iter().map(|&l| l as f32));
 
     // Convert test features
     let n_test = test_features.len();
@@ -192,16 +195,19 @@ fn export_features_to_npy(
     }
 
     // Convert test labels
-    let test_labels_array = Array1::<f32>::from_iter(
-        test_labels.iter().map(|&l| l as f32)
-    );
+    let test_labels_array = Array1::<f32>::from_iter(test_labels.iter().map(|&l| l as f32));
 
     // Write train features
     let train_feat_path = output_dir.join("train_features.npy");
     let file = File::create(&train_feat_path)?;
     let mut writer = BufWriter::new(file);
     train_array.write_npy(&mut writer)?;
-    log::info!("✅ Saved: {} ({} x {})", train_feat_path.display(), n_train, n_features);
+    log::info!(
+        "✅ Saved: {} ({} x {})",
+        train_feat_path.display(),
+        n_train,
+        n_features
+    );
 
     // Write train labels
     let train_label_path = output_dir.join("train_labels.npy");
@@ -215,7 +221,12 @@ fn export_features_to_npy(
     let file = File::create(&test_feat_path)?;
     let mut writer = BufWriter::new(file);
     test_array.write_npy(&mut writer)?;
-    log::info!("✅ Saved: {} ({} x {})", test_feat_path.display(), n_test, n_features);
+    log::info!(
+        "✅ Saved: {} ({} x {})",
+        test_feat_path.display(),
+        n_test,
+        n_features
+    );
 
     // Write test labels
     let test_label_path = output_dir.join("test_labels.npy");
@@ -232,10 +243,18 @@ fn export_features_to_npy(
 
     log::info!("");
     log::info!("Class Distribution:");
-    log::info!("  Train: {} positive, {} negative (ratio: {:.1}:1)",
-          train_pos, train_neg, train_neg as f64 / train_pos.max(1) as f64);
-    log::info!("  Test:  {} positive, {} negative (ratio: {:.1}:1)",
-          test_pos, test_neg, test_neg as f64 / test_pos.max(1) as f64);
+    log::info!(
+        "  Train: {} positive, {} negative (ratio: {:.1}:1)",
+        train_pos,
+        train_neg,
+        train_neg as f64 / train_pos.max(1) as f64
+    );
+    log::info!(
+        "  Test:  {} positive, {} negative (ratio: {:.1}:1)",
+        test_pos,
+        test_neg,
+        test_neg as f64 / test_pos.max(1) as f64
+    );
     log::info!("═══════════════════════════════════════════════════════════════");
 
     Ok(())
@@ -250,7 +269,10 @@ fn main() -> anyhow::Result<()> {
     log::info!("  Dataset: {:?}", cli.dataset);
     log::info!("  PDB dir: {:?}", cli.pdb_dir);
     log::info!("  Lambda: {}", cli.lambda);
-    log::info!("  Feature dimension: {} (16 base + 12 reservoir + 12 physics + 30 SOTA)", INFERENCE_FEATURE_DIM);
+    log::info!(
+        "  Feature dimension: {} (16 base + 12 reservoir + 12 physics + 30 SOTA)",
+        INFERENCE_FEATURE_DIM
+    );
     log::info!("  Z-score normalization: {}", !cli.no_normalize);
     if let Some(pw) = cli.pos_weight {
         log::info!("  Pos weight: {} (manual)", pw);
@@ -284,11 +306,14 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
     // 1. Parse folds.json to get train/test split
     let folds: serde_json::Value = serde_json::from_str(&fs::read_to_string(&cli.folds)?)?;
 
-    let test_set: HashSet<String> = folds.get("test")
+    let test_set: HashSet<String> = folds
+        .get("test")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
-            .collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Collect all train PDB IDs (train-0, train-1, train-2, train-3)
@@ -303,7 +328,11 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
         }
     }
 
-    log::info!("Loaded folds: {} train, {} test structures", train_set.len(), test_set.len());
+    log::info!(
+        "Loaded folds: {} train, {} test structures",
+        train_set.len(),
+        test_set.len()
+    );
 
     // 2. Parse dataset.json for ground truth
     let dataset: serde_json::Value = serde_json::from_str(&fs::read_to_string(&cli.dataset)?)?;
@@ -356,7 +385,10 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
 
     log::info!(
         "Loaded {} train structures in {:?} (missing: {} PDB, {} GT)",
-        train_structures.len(), load_start.elapsed(), missing_pdb, missing_gt
+        train_structures.len(),
+        load_start.elapsed(),
+        missing_pdb,
+        missing_gt
     );
 
     if train_structures.is_empty() {
@@ -367,21 +399,29 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
     let gpu_start = Instant::now();
 
     // Get PTX directory from env or CLI
-    let ptx_dir = cli.ptx_dir.clone()
+    let ptx_dir = cli
+        .ptx_dir
+        .clone()
         .or_else(|| std::env::var("PRISM_PTX_DIR").ok().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("target/ptx"));
 
     if !ptx_dir.exists() {
-        anyhow::bail!("PTX directory not found: {:?}. Set PRISM_PTX_DIR or use --ptx-dir", ptx_dir);
+        anyhow::bail!(
+            "PTX directory not found: {:?}. Set PRISM_PTX_DIR or use --ptx-dir",
+            ptx_dir
+        );
     }
 
     // Create CUDA context
-    let context = CudaContext::new(0)
-        .map_err(|e| anyhow::anyhow!("Failed to create CUDA context: {}", e))?;
+    let context =
+        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to create CUDA context: {}", e))?;
 
     // Use INFERENCE kernel (MegaFusedGpu) - NOT batch training kernel!
     let mut gpu = MegaFusedGpu::new(context, &ptx_dir)?;
-    log::info!("GPU initialized with INFERENCE kernel in {:?}", gpu_start.elapsed());
+    log::info!(
+        "GPU initialized with INFERENCE kernel in {:?}",
+        gpu_start.elapsed()
+    );
 
     // 5. Extract 70-dim features using inference kernel for each structure
     let config = MegaFusedConfig::default();
@@ -392,15 +432,17 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
         let structure_start = Instant::now();
 
         // Call INFERENCE kernel (detect_pockets) - same as production inference!
-        let output = gpu.detect_pockets(
-            &ts.atoms,
-            &ts.ca_indices,
-            &ts.conservation,
-            &ts.bfactor,
-            &ts.burial,
-            None,  // No residue types (legacy compatibility)
-            &config,
-        ).map_err(|e| anyhow::anyhow!("GPU inference failed for {}: {}", ts.id, e))?;
+        let output = gpu
+            .detect_pockets(
+                &ts.atoms,
+                &ts.ca_indices,
+                &ts.conservation,
+                &ts.bfactor,
+                &ts.burial,
+                None, // No residue types (legacy compatibility)
+                &config,
+            )
+            .map_err(|e| anyhow::anyhow!("GPU inference failed for {}: {}", ts.id, e))?;
 
         let n_residues = ts.ca_indices.len();
 
@@ -409,8 +451,11 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
         if output.combined_features.len() != expected_features {
             log::warn!(
                 "Feature size mismatch for {}: got {} expected {} ({} residues * {} dim)",
-                ts.id, output.combined_features.len(), expected_features,
-                n_residues, INFERENCE_FEATURE_DIM
+                ts.id,
+                output.combined_features.len(),
+                expected_features,
+                n_residues,
+                INFERENCE_FEATURE_DIM
             );
             continue;
         }
@@ -422,7 +467,11 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
             let (_, n_res, n_pos) = collector.stats();
             log::info!(
                 "Processed {}/{}: {} total residues ({} positive) - {:?}/structure",
-                idx + 1, n_structures, n_res, n_pos, structure_start.elapsed()
+                idx + 1,
+                n_structures,
+                n_res,
+                n_pos,
+                structure_start.elapsed()
             );
         }
     }
@@ -430,12 +479,18 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
     let (n_struct, n_res, n_pos) = collector.stats();
     log::info!(
         "Feature extraction complete: {} structures, {} residues ({} positive, {:.2}% rate)",
-        n_struct, n_res, n_pos, 100.0 * n_pos as f64 / n_res as f64
+        n_struct,
+        n_res,
+        n_pos,
+        100.0 * n_pos as f64 / n_res as f64
     );
 
     // 6. Apply z-score normalization if enabled
     let training_data = if !cli.no_normalize {
-        log::info!("Applying z-score normalization to {} features...", INFERENCE_FEATURE_DIM);
+        log::info!(
+            "Applying z-score normalization to {} features...",
+            INFERENCE_FEATURE_DIM
+        );
         let (normalized, means, stds) = z_score_normalize(&collector.data, INFERENCE_FEATURE_DIM);
 
         // Log normalization stats
@@ -468,11 +523,19 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
     let train_start = Instant::now();
     log::info!(
         "Training readout on {}-dim features: {} structures, {} residues ({} positive)",
-        INFERENCE_FEATURE_DIM, n_struct, n_res, n_pos
+        INFERENCE_FEATURE_DIM,
+        n_struct,
+        n_res,
+        n_pos
     );
 
-    let readout = TrainedReadout::train_with_weight(&training_data, INFERENCE_FEATURE_DIM, cli.lambda, cli.pos_weight)
-        .map_err(|e| anyhow::anyhow!("Training failed: {}", e))?;
+    let readout = TrainedReadout::train_with_weight(
+        &training_data,
+        INFERENCE_FEATURE_DIM,
+        cli.lambda,
+        cli.pos_weight,
+    )
+    .map_err(|e| anyhow::anyhow!("Training failed: {}", e))?;
     log::info!("Training completed in {:?}", train_start.elapsed());
 
     // 8. Save weights
@@ -517,15 +580,17 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
             let mut test_collector = ReservoirStateCollector::new();
 
             for ts in &test_structures {
-                let output = gpu.detect_pockets(
-                    &ts.atoms,
-                    &ts.ca_indices,
-                    &ts.conservation,
-                    &ts.bfactor,
-                    &ts.burial,
-                    None,  // No residue types
-                    &config,
-                ).map_err(|e| anyhow::anyhow!("Test GPU inference failed: {}", e))?;
+                let output = gpu
+                    .detect_pockets(
+                        &ts.atoms,
+                        &ts.ca_indices,
+                        &ts.conservation,
+                        &ts.bfactor,
+                        &ts.burial,
+                        None, // No residue types
+                        &config,
+                    )
+                    .map_err(|e| anyhow::anyhow!("Test GPU inference failed: {}", e))?;
 
                 test_collector.add_structure(&ts.id, output.combined_features, ts.gt_mask.clone());
             }
@@ -533,7 +598,8 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
             // Apply same normalization to test data
             let test_data = if !cli.no_normalize {
                 let norm_path = cli.output.with_extension("norm.json");
-                let norm_json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&norm_path)?)?;
+                let norm_json: serde_json::Value =
+                    serde_json::from_str(&fs::read_to_string(&norm_path)?)?;
                 let means: Vec<f32> = serde_json::from_value(norm_json["means"].clone())?;
                 let stds: Vec<f32> = serde_json::from_value(norm_json["stds"].clone())?;
                 apply_normalization(&test_collector.data, &means, &stds, INFERENCE_FEATURE_DIM)
@@ -568,7 +634,7 @@ fn run_training(cli: &Cli) -> anyhow::Result<()> {
                 )?;
 
                 log::info!("✅ Feature export complete. Ready for Python ensemble training.");
-                return Ok(());  // Exit without normal training
+                return Ok(()); // Exit without normal training
             }
         }
     }
@@ -602,8 +668,16 @@ fn z_score_normalize(
         }
     }
 
-    let means: Vec<f32> = sums.iter().zip(&counts)
-        .map(|(&sum, &count)| if count > 0 { (sum / count as f64) as f32 } else { 0.0 })
+    let means: Vec<f32> = sums
+        .iter()
+        .zip(&counts)
+        .map(|(&sum, &count)| {
+            if count > 0 {
+                (sum / count as f64) as f32
+            } else {
+                0.0
+            }
+        })
         .collect();
 
     // Compute stds
@@ -622,35 +696,40 @@ fn z_score_normalize(
         }
     }
 
-    let stds: Vec<f32> = sq_diffs.iter().zip(&counts)
+    let stds: Vec<f32> = sq_diffs
+        .iter()
+        .zip(&counts)
         .map(|(&sq_diff, &count)| {
             if count > 1 {
                 ((sq_diff / (count - 1) as f64).sqrt()).max(1e-6) as f32
             } else {
-                1.0  // Avoid divide by zero
+                1.0 // Avoid divide by zero
             }
         })
         .collect();
 
     // Normalize
-    let normalized: Vec<(Vec<f32>, Vec<u8>)> = data.iter().map(|(features, labels)| {
-        let n_residues = features.len() / feature_dim;
-        let mut norm_features = vec![0.0f32; features.len()];
+    let normalized: Vec<(Vec<f32>, Vec<u8>)> = data
+        .iter()
+        .map(|(features, labels)| {
+            let n_residues = features.len() / feature_dim;
+            let mut norm_features = vec![0.0f32; features.len()];
 
-        for r in 0..n_residues {
-            for f in 0..feature_dim {
-                let idx = r * feature_dim + f;
-                let val = features[idx];
-                if val.is_finite() {
-                    norm_features[idx] = (val - means[f]) / stds[f];
-                } else {
-                    norm_features[idx] = 0.0;  // Replace NaN/Inf with 0
+            for r in 0..n_residues {
+                for f in 0..feature_dim {
+                    let idx = r * feature_dim + f;
+                    let val = features[idx];
+                    if val.is_finite() {
+                        norm_features[idx] = (val - means[f]) / stds[f];
+                    } else {
+                        norm_features[idx] = 0.0; // Replace NaN/Inf with 0
+                    }
                 }
             }
-        }
 
-        (norm_features, labels.clone())
-    }).collect();
+            (norm_features, labels.clone())
+        })
+        .collect();
 
     (normalized, means, stds)
 }
@@ -663,29 +742,33 @@ fn apply_normalization(
     stds: &[f32],
     feature_dim: usize,
 ) -> Vec<(Vec<f32>, Vec<u8>)> {
-    data.iter().map(|(features, labels)| {
-        let n_residues = features.len() / feature_dim;
-        let mut norm_features = vec![0.0f32; features.len()];
+    data.iter()
+        .map(|(features, labels)| {
+            let n_residues = features.len() / feature_dim;
+            let mut norm_features = vec![0.0f32; features.len()];
 
-        for r in 0..n_residues {
-            for f in 0..feature_dim {
-                let idx = r * feature_dim + f;
-                let val = features[idx];
-                if val.is_finite() && f < means.len() && f < stds.len() {
-                    norm_features[idx] = (val - means[f]) / stds[f];
-                } else {
-                    norm_features[idx] = 0.0;
+            for r in 0..n_residues {
+                for f in 0..feature_dim {
+                    let idx = r * feature_dim + f;
+                    let val = features[idx];
+                    if val.is_finite() && f < means.len() && f < stds.len() {
+                        norm_features[idx] = (val - means[f]) / stds[f];
+                    } else {
+                        norm_features[idx] = 0.0;
+                    }
                 }
             }
-        }
 
-        (norm_features, labels.clone())
-    }).collect()
+            (norm_features, labels.clone())
+        })
+        .collect()
 }
 
 /// Parse ground truth from CryptoBench dataset.json
 /// Format: { "pdb_id": [{ "apo_pocket_selection": ["B_12", "B_14", ...] }] }
-fn parse_ground_truth(dataset: &serde_json::Value) -> anyhow::Result<HashMap<String, Vec<(char, i32)>>> {
+fn parse_ground_truth(
+    dataset: &serde_json::Value,
+) -> anyhow::Result<HashMap<String, Vec<(char, i32)>>> {
     let mut ground_truth: HashMap<String, Vec<(char, i32)>> = HashMap::new();
 
     if let serde_json::Value::Object(map) = dataset {
@@ -730,10 +813,26 @@ fn parse_ground_truth(dataset: &serde_json::Value) -> anyhow::Result<HashMap<Str
 /// Hydrophobicity scale (Kyte-Doolittle) normalized to [0, 1]
 fn residue_hydrophobicity(res_name: &str) -> f32 {
     match res_name.trim() {
-        "ILE" => 1.00, "VAL" => 0.97, "LEU" => 0.93, "PHE" => 0.80, "CYS" => 0.72,
-        "MET" => 0.57, "ALA" => 0.55, "GLY" => 0.21, "THR" => 0.19, "SER" => 0.16,
-        "TRP" => 0.15, "TYR" => 0.08, "PRO" => 0.05, "HIS" => 0.03, "GLU" => 0.01,
-        "GLN" => 0.01, "ASP" => 0.01, "ASN" => 0.00, "LYS" => 0.00, "ARG" => 0.00,
+        "ILE" => 1.00,
+        "VAL" => 0.97,
+        "LEU" => 0.93,
+        "PHE" => 0.80,
+        "CYS" => 0.72,
+        "MET" => 0.57,
+        "ALA" => 0.55,
+        "GLY" => 0.21,
+        "THR" => 0.19,
+        "SER" => 0.16,
+        "TRP" => 0.15,
+        "TYR" => 0.08,
+        "PRO" => 0.05,
+        "HIS" => 0.03,
+        "GLU" => 0.01,
+        "GLN" => 0.01,
+        "ASP" => 0.01,
+        "ASN" => 0.00,
+        "LYS" => 0.00,
+        "ARG" => 0.00,
         _ => 0.5, // Unknown
     }
 }
@@ -743,29 +842,32 @@ fn compute_burial_scores(atoms: &[prism_lbs::Atom], ca_indices: &[i32]) -> Vec<f
     let cutoff_sq = 10.0_f32 * 10.0;
     let max_neighbors = 25.0_f32; // Normalization factor
 
-    ca_indices.iter().map(|&ca_idx| {
-        let ca = &atoms[ca_idx as usize];
-        let ca_x = ca.coord[0] as f32;
-        let ca_y = ca.coord[1] as f32;
-        let ca_z = ca.coord[2] as f32;
+    ca_indices
+        .iter()
+        .map(|&ca_idx| {
+            let ca = &atoms[ca_idx as usize];
+            let ca_x = ca.coord[0] as f32;
+            let ca_y = ca.coord[1] as f32;
+            let ca_z = ca.coord[2] as f32;
 
-        let mut neighbor_count = 0.0_f32;
-        for atom in atoms {
-            // Only count heavy atoms (not hydrogen)
-            if atom.element == "H" {
-                continue;
+            let mut neighbor_count = 0.0_f32;
+            for atom in atoms {
+                // Only count heavy atoms (not hydrogen)
+                if atom.element == "H" {
+                    continue;
+                }
+                let dx = atom.coord[0] as f32 - ca_x;
+                let dy = atom.coord[1] as f32 - ca_y;
+                let dz = atom.coord[2] as f32 - ca_z;
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+                if dist_sq < cutoff_sq && dist_sq > 1.0 {
+                    neighbor_count += 1.0;
+                }
             }
-            let dx = atom.coord[0] as f32 - ca_x;
-            let dy = atom.coord[1] as f32 - ca_y;
-            let dz = atom.coord[2] as f32 - ca_z;
-            let dist_sq = dx*dx + dy*dy + dz*dz;
-            if dist_sq < cutoff_sq && dist_sq > 1.0 {
-                neighbor_count += 1.0;
-            }
-        }
-        // More neighbors = more buried = higher score
-        (neighbor_count / max_neighbors).min(1.0)
-    }).collect()
+            // More neighbors = more buried = higher score
+            (neighbor_count / max_neighbors).min(1.0)
+        })
+        .collect()
 }
 
 /// Create TrainingStructure from protein structure and ground truth
@@ -812,7 +914,8 @@ fn create_training_structure(
 
     // Create ground truth mask
     let gt_set: HashSet<(char, i32)> = gt_residues.iter().cloned().collect();
-    let gt_mask: Vec<u8> = residue_info.iter()
+    let gt_mask: Vec<u8> = residue_info
+        .iter()
         .map(|&(chain, res_num)| {
             if gt_set.contains(&(chain, res_num)) {
                 1u8
@@ -823,7 +926,8 @@ fn create_training_structure(
         .collect();
 
     // Use hydrophobicity as conservation proxy (binding sites often have hydrophobic patches)
-    let conservation: Vec<f32> = ca_indices.iter()
+    let conservation: Vec<f32> = ca_indices
+        .iter()
         .map(|&idx| {
             let atom = &structure.atoms[idx as usize];
             residue_hydrophobicity(&atom.residue_name)

@@ -10,10 +10,10 @@
 //!
 //! Re-runs focused detection with adjusted parameters to fill gaps.
 
-use crate::structure::Atom;
-use super::types::*;
 use super::domain_decomposition::{calculate_residue_centroid, DomainDecomposer};
 use super::msa_conservation::spatial_cluster;
+use super::types::*;
+use crate::structure::Atom;
 use std::collections::{HashMap, HashSet};
 
 /// Backtrack analyzer for coverage gap detection
@@ -373,7 +373,8 @@ impl BacktrackAnalyzer {
             );
 
             // Create pocket from gap region
-            if let Some(pocket) = self.create_pocket_from_gap(atoms, gap, conservation, centrality) {
+            if let Some(pocket) = self.create_pocket_from_gap(atoms, gap, conservation, centrality)
+            {
                 additional_pockets.push(pocket);
             }
         }
@@ -490,7 +491,7 @@ impl BacktrackAnalyzer {
             residue_indices: gap.residues.clone(),
             centroid,
             volume: gap.residues.len() as f64 * 40.0, // Rough estimate
-            druggability: confidence.score * 0.8, // Conservative estimate
+            druggability: confidence.score * 0.8,     // Conservative estimate
             detection_type,
             confidence,
             evidence,
@@ -514,7 +515,12 @@ impl BacktrackAnalyzer {
             gap.gap_type, gap.priority
         ));
 
-        if evidence.conservation.as_ref().map(|c| c.mean_score > 0.7).unwrap_or(false) {
+        if evidence
+            .conservation
+            .as_ref()
+            .map(|c| c.mean_score > 0.7)
+            .unwrap_or(false)
+        {
             supporting.push("Highly conserved region".into());
         }
 
@@ -570,9 +576,7 @@ impl BacktrackAnalyzer {
             .map(|(&res, _)| res)
             .collect();
 
-        let conserved_covered = conserved_residues
-            .intersection(&detected_residues)
-            .count();
+        let conserved_covered = conserved_residues.intersection(&detected_residues).count();
 
         let conserved_coverage = if !conserved_residues.is_empty() {
             conserved_covered as f64 / conserved_residues.len() as f64
@@ -586,9 +590,7 @@ impl BacktrackAnalyzer {
             .flat_map(|i| i.residues.iter().copied())
             .collect();
 
-        let interface_covered = interface_residues
-            .intersection(&detected_residues)
-            .count();
+        let interface_covered = interface_residues.intersection(&detected_residues).count();
 
         let interface_coverage = if !interface_residues.is_empty() {
             interface_covered as f64 / interface_residues.len() as f64

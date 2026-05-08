@@ -32,13 +32,13 @@ pub struct CavityDetectorConfig {
 impl Default for CavityDetectorConfig {
     fn default() -> Self {
         Self {
-            min_alpha_radius: 3.4,   // Typical for small molecule binding (~3.4Å)
-            max_alpha_radius: 8.0,   // Catches drug-sized cavities (not huge voids)
-            cluster_eps: 2.5,        // Tighter clustering for distinct pockets
-            cluster_min_samples: 8,  // Minimum 8 spheres for valid pocket
-            min_volume: 150.0,       // 150 Å³ minimum (drug-like)
-            probe_radius: 1.4,       // Water probe radius
-            grid_resolution: 1.5,    // 1.5 Å grid spacing (faster, less noise)
+            min_alpha_radius: 3.4,  // Typical for small molecule binding (~3.4Å)
+            max_alpha_radius: 8.0,  // Catches drug-sized cavities (not huge voids)
+            cluster_eps: 2.5,       // Tighter clustering for distinct pockets
+            cluster_min_samples: 8, // Minimum 8 spheres for valid pocket
+            min_volume: 150.0,      // 150 Å³ minimum (drug-like)
+            probe_radius: 1.4,      // Water probe radius
+            grid_resolution: 1.5,   // 1.5 Å grid spacing (faster, less noise)
         }
     }
 }
@@ -48,7 +48,7 @@ impl Default for CavityDetectorConfig {
 pub struct AlphaSphere {
     pub center: [f32; 3],
     pub radius: f32,
-    pub contact_atoms: Vec<usize>,  // Atom indices in contact
+    pub contact_atoms: Vec<usize>, // Atom indices in contact
 }
 
 /// Detected cavity/pocket from alpha sphere clustering
@@ -97,8 +97,11 @@ impl CavityDetector {
             .into_iter()
             .filter(|c| c.volume >= self.config.min_volume)
             .collect();
-        log::info!("{} cavities pass volume threshold (>{}Å³)",
-                   filtered.len(), self.config.min_volume);
+        log::info!(
+            "{} cavities pass volume threshold (>{}Å³)",
+            filtered.len(),
+            self.config.min_volume
+        );
 
         // Step 5: Convert to Pocket structs with druggability scoring
         let mut pockets: Vec<Pocket> = filtered
@@ -108,7 +111,8 @@ impl CavityDetector {
 
         // Step 6: Sort by druggability score descending
         pockets.sort_by(|a, b| {
-            b.druggability_score.total
+            b.druggability_score
+                .total
                 .partial_cmp(&a.druggability_score.total)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
@@ -235,9 +239,8 @@ impl CavityDetector {
             let dy = atom.coord[1] as f32 - center[1];
             let dz = atom.coord[2] as f32 - center[2];
 
-            let octant = ((dx >= 0.0) as usize)
-                       + ((dy >= 0.0) as usize) * 2
-                       + ((dz >= 0.0) as usize) * 4;
+            let octant =
+                ((dx >= 0.0) as usize) + ((dy >= 0.0) as usize) * 2 + ((dz >= 0.0) as usize) * 4;
             octants[octant] = true;
         }
 
@@ -271,17 +274,17 @@ impl CavityDetector {
         }
 
         // DBSCAN clustering
-        let mut labels: Vec<i32> = vec![-1; n];  // -1 = unvisited
+        let mut labels: Vec<i32> = vec![-1; n]; // -1 = unvisited
         let mut cluster_id = 0;
 
         for i in 0..n {
             if labels[i] != -1 {
-                continue;  // Already processed
+                continue; // Already processed
             }
 
             // Check if core point
             if neighbors[i].len() < min_pts {
-                labels[i] = -2;  // Noise
+                labels[i] = -2; // Noise
                 continue;
             }
 
@@ -292,11 +295,11 @@ impl CavityDetector {
 
             while let Some(j) = queue.pop() {
                 if labels[j] == -2 {
-                    labels[j] = cluster_id;  // Border point
+                    labels[j] = cluster_id; // Border point
                     cluster.push(j);
                 }
                 if labels[j] != -1 {
-                    continue;  // Already in a cluster
+                    continue; // Already in a cluster
                 }
 
                 labels[j] = cluster_id;
@@ -378,7 +381,7 @@ impl CavityDetector {
             .iter()
             .map(|s| (4.0 / 3.0) * std::f32::consts::PI * s.radius.powi(3))
             .sum::<f32>()
-            * 0.6;  // Overlap factor
+            * 0.6; // Overlap factor
 
         DetectedCavity {
             spheres: cluster_spheres,
@@ -439,12 +442,12 @@ impl CavityDetector {
                 cavity.centroid[2] as f64,
             ],
             volume: cavity.volume as f64,
-            enclosure_ratio: 0.8,  // Alpha sphere method implies good enclosure
+            enclosure_ratio: 0.8, // Alpha sphere method implies good enclosure
             mean_hydrophobicity: (total_hydro / count) as f64,
             mean_sasa: (total_sasa / count) as f64,
             mean_depth: (total_depth / count) as f64,
             mean_flexibility: (total_flex / count) as f64,
-            mean_conservation: 0.0,  // Would need MSA data
+            mean_conservation: 0.0, // Would need MSA data
             persistence_score: 0.0,
             hbond_donors: donors,
             hbond_acceptors: acceptors,
@@ -508,11 +511,11 @@ impl CavityDetector {
 
         // Weighted combination
         let total = 0.25 * vol_score
-                  + 0.20 * hydro_norm
-                  + 0.20 * depth_score
-                  + 0.15 * hbond_score
-                  + 0.10 * size_score
-                  + 0.10;  // Base score
+            + 0.20 * hydro_norm
+            + 0.20 * depth_score
+            + 0.15 * hbond_score
+            + 0.10 * size_score
+            + 0.10; // Base score
 
         let classification = if total > 0.7 {
             DrugabilityClass::HighlyDruggable
@@ -571,13 +574,37 @@ mod tests {
         // Each cluster needs at least min_pts+1 points for DBSCAN to form clusters
         let spheres = vec![
             // First cluster
-            AlphaSphere { center: [0.0, 0.0, 0.0], radius: 1.0, contact_atoms: vec![] },
-            AlphaSphere { center: [1.0, 0.0, 0.0], radius: 1.0, contact_atoms: vec![] },
-            AlphaSphere { center: [0.5, 0.5, 0.0], radius: 1.0, contact_atoms: vec![] },
+            AlphaSphere {
+                center: [0.0, 0.0, 0.0],
+                radius: 1.0,
+                contact_atoms: vec![],
+            },
+            AlphaSphere {
+                center: [1.0, 0.0, 0.0],
+                radius: 1.0,
+                contact_atoms: vec![],
+            },
+            AlphaSphere {
+                center: [0.5, 0.5, 0.0],
+                radius: 1.0,
+                contact_atoms: vec![],
+            },
             // Second cluster far away - needs 3 points for min_pts=2
-            AlphaSphere { center: [10.0, 10.0, 10.0], radius: 1.0, contact_atoms: vec![] },
-            AlphaSphere { center: [11.0, 10.0, 10.0], radius: 1.0, contact_atoms: vec![] },
-            AlphaSphere { center: [10.5, 10.5, 10.0], radius: 1.0, contact_atoms: vec![] },
+            AlphaSphere {
+                center: [10.0, 10.0, 10.0],
+                radius: 1.0,
+                contact_atoms: vec![],
+            },
+            AlphaSphere {
+                center: [11.0, 10.0, 10.0],
+                radius: 1.0,
+                contact_atoms: vec![],
+            },
+            AlphaSphere {
+                center: [10.5, 10.5, 10.0],
+                radius: 1.0,
+                contact_atoms: vec![],
+            },
         ];
 
         let clusters = detector.cluster_spheres(&spheres);

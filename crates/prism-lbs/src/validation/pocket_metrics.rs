@@ -7,7 +7,7 @@ use super::dvo::{calculate_dvo_simple, DVO_SUCCESS};
 use serde::{Deserialize, Serialize};
 
 /// Standard DCC thresholds used in literature
-pub const DCC_STRICT: f64 = 4.0;   // Traditional strict threshold
+pub const DCC_STRICT: f64 = 4.0; // Traditional strict threshold
 pub const DCC_LIGYSIS: f64 = 12.0; // LIGYSIS benchmark threshold
 pub const DCC_RELAXED: f64 = 15.0; // Relaxed threshold for large sites
 
@@ -71,7 +71,12 @@ pub fn calculate_top_n_plus_2_recall(
         return 0.0;
     }
 
-    calculate_recall_at_rank(predicted_centroids, ground_truth_centers, n + 2, dcc_threshold)
+    calculate_recall_at_rank(
+        predicted_centroids,
+        ground_truth_centers,
+        n + 2,
+        dcc_threshold,
+    )
 }
 
 /// Calculate recall at a specific rank threshold
@@ -128,11 +133,36 @@ pub fn calculate_recall_at_ranks(
     let n = ground_truth_centers.len();
 
     RecallAtRanks {
-        top_1: calculate_recall_at_rank(predicted_centroids, ground_truth_centers, 1, dcc_threshold),
-        top_3: calculate_recall_at_rank(predicted_centroids, ground_truth_centers, 3, dcc_threshold),
-        top_5: calculate_recall_at_rank(predicted_centroids, ground_truth_centers, 5, dcc_threshold),
-        top_n: calculate_recall_at_rank(predicted_centroids, ground_truth_centers, n, dcc_threshold),
-        top_n_plus_2: calculate_recall_at_rank(predicted_centroids, ground_truth_centers, n + 2, dcc_threshold),
+        top_1: calculate_recall_at_rank(
+            predicted_centroids,
+            ground_truth_centers,
+            1,
+            dcc_threshold,
+        ),
+        top_3: calculate_recall_at_rank(
+            predicted_centroids,
+            ground_truth_centers,
+            3,
+            dcc_threshold,
+        ),
+        top_5: calculate_recall_at_rank(
+            predicted_centroids,
+            ground_truth_centers,
+            5,
+            dcc_threshold,
+        ),
+        top_n: calculate_recall_at_rank(
+            predicted_centroids,
+            ground_truth_centers,
+            n,
+            dcc_threshold,
+        ),
+        top_n_plus_2: calculate_recall_at_rank(
+            predicted_centroids,
+            ground_truth_centers,
+            n + 2,
+            dcc_threshold,
+        ),
         all: calculate_recall_at_rank(
             predicted_centroids,
             ground_truth_centers,
@@ -187,12 +217,8 @@ pub fn match_predictions_to_ground_truth(
         // Calculate DVO if we have a match
         let dvo = if let Some(pred_idx) = best_pred_idx {
             let pred = &predicted_pockets[pred_idx];
-            let dvo_result = calculate_dvo_simple(
-                &pred.centroid,
-                pred.volume,
-                &gt.center,
-                gt.volume,
-            );
+            let dvo_result =
+                calculate_dvo_simple(&pred.centroid, pred.volume, &gt.center, gt.volume);
             dvo_result.jaccard
         } else {
             0.0
@@ -270,7 +296,8 @@ impl AggregatedPocketMetrics {
         // Calculate aggregated recall
         let all_pred_centroids: Vec<[f64; 3]> = all_predictions.iter().flatten().copied().collect();
         let all_gt_centers: Vec<[f64; 3]> = all_ground_truth.iter().flatten().copied().collect();
-        let recall_at_ranks = calculate_recall_at_ranks(&all_pred_centroids, &all_gt_centers, dcc_threshold);
+        let recall_at_ranks =
+            calculate_recall_at_ranks(&all_pred_centroids, &all_gt_centers, dcc_threshold);
 
         let mean_dcc = if all_dccs.is_empty() {
             f64::INFINITY
@@ -375,10 +402,7 @@ mod tests {
 
     #[test]
     fn test_top_n_perfect() {
-        let predicted = vec![
-            [10.0, 20.0, 30.0],
-            [40.0, 50.0, 60.0],
-        ];
+        let predicted = vec![[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]];
         let ground_truth = vec![
             [10.5, 20.5, 30.5], // Close to first prediction
             [40.5, 50.5, 60.5], // Close to second prediction
@@ -395,7 +419,7 @@ mod tests {
             [10.0, 20.0, 30.0], // Matches first GT
         ];
         let ground_truth = vec![
-            [10.5, 20.5, 30.5], // Close to second prediction
+            [10.5, 20.5, 30.5],    // Close to second prediction
             [100.0, 100.0, 100.0], // No match
         ];
 

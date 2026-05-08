@@ -54,7 +54,7 @@ impl Default for ConservationConfig {
             source: ConservationSource::ConSurf,
             data_dir: None,
             use_database: true,
-            default_score: 0.5,  // Neutral conservation
+            default_score: 0.5, // Neutral conservation
         }
     }
 }
@@ -103,7 +103,12 @@ impl ConservationLoader {
     /// Load conservation data for a structure
     pub fn load_for_structure(&self, structure: &ProteinStructure) -> ConservationData {
         // Try database lookup first
-        let pdb_id = structure.title.chars().take(4).collect::<String>().to_lowercase();
+        let pdb_id = structure
+            .title
+            .chars()
+            .take(4)
+            .collect::<String>()
+            .to_lowercase();
         if let Some(data) = self.database.get(&pdb_id) {
             return self.apply_to_structure(data, structure);
         }
@@ -152,14 +157,16 @@ impl ConservationLoader {
                     let chain = parts[1].chars().next().unwrap_or('A');
 
                     // Grade is typically in column 3 or 4
-                    let grade: f64 = parts.get(3)
+                    let grade: f64 = parts
+                        .get(3)
                         .or(parts.get(2))
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(5.0);
 
                     // Normalize grade 1-9 to 0-1
                     let score = (grade - 1.0) / 8.0;
-                    data.residue_scores.insert((chain, pos), score.clamp(0.0, 1.0));
+                    data.residue_scores
+                        .insert((chain, pos), score.clamp(0.0, 1.0));
                 }
             }
         }
@@ -183,7 +190,7 @@ impl ConservationLoader {
                 if let (Ok(pos), Ok(rate)) = (parts[0].parse::<i32>(), parts[2].parse::<f64>()) {
                     // Rate4Site: negative = conserved, positive = variable
                     // Convert to 0-1 where 1 = conserved
-                    let score = 1.0 / (1.0 + (rate).exp());  // Sigmoid transform
+                    let score = 1.0 / (1.0 + (rate).exp()); // Sigmoid transform
                     data.residue_scores.insert(('A', pos), score);
                 }
             }
@@ -205,8 +212,9 @@ impl ConservationLoader {
             // Simple format: one score per line, or space-separated scores
             for (j, part) in line.split_whitespace().enumerate() {
                 if let Ok(score) = part.parse::<f64>() {
-                    let pos = (i * 20 + j + 1) as i32;  // Approximate position
-                    data.residue_scores.insert(('A', pos), score.clamp(0.0, 1.0));
+                    let pos = (i * 20 + j + 1) as i32; // Approximate position
+                    data.residue_scores
+                        .insert(('A', pos), score.clamp(0.0, 1.0));
                 }
             }
         }
@@ -224,19 +232,18 @@ impl ConservationLoader {
                 continue;
             }
 
-            let parts: Vec<&str> = line.split([',', '\t', ' '])
+            let parts: Vec<&str> = line
+                .split([',', '\t', ' '])
                 .filter(|s| !s.is_empty())
                 .collect();
 
             if parts.len() > score_col {
-                if let (Ok(pos), Ok(score)) = (
-                    parts[0].parse::<i32>(),
-                    parts[score_col].parse::<f64>()
-                ) {
-                    let chain = parts.get(1)
-                        .and_then(|s| s.chars().next())
-                        .unwrap_or('A');
-                    data.residue_scores.insert((chain, pos), score.clamp(0.0, 1.0));
+                if let (Ok(pos), Ok(score)) =
+                    (parts[0].parse::<i32>(), parts[score_col].parse::<f64>())
+                {
+                    let chain = parts.get(1).and_then(|s| s.chars().next()).unwrap_or('A');
+                    data.residue_scores
+                        .insert((chain, pos), score.clamp(0.0, 1.0));
                 }
             }
         }
@@ -245,13 +252,19 @@ impl ConservationLoader {
     }
 
     /// Apply conservation data to structure atoms
-    fn apply_to_structure(&self, data: &ConservationData, structure: &ProteinStructure) -> ConservationData {
+    fn apply_to_structure(
+        &self,
+        data: &ConservationData,
+        structure: &ProteinStructure,
+    ) -> ConservationData {
         let mut result = data.clone();
         result.atom_scores = Vec::with_capacity(structure.atoms.len());
 
         for atom in &structure.atoms {
             let key = (atom.chain_id, atom.residue_seq);
-            let score = data.residue_scores.get(&key)
+            let score = data
+                .residue_scores
+                .get(&key)
                 .copied()
                 .unwrap_or(self.config.default_score);
             result.atom_scores.push(score);
@@ -318,18 +331,24 @@ impl ConservationLoader {
                 continue;
             }
 
-            let entropy: f64 = counts.values()
+            let entropy: f64 = counts
+                .values()
                 .map(|&c| {
                     let p = c as f64 / total as f64;
-                    if p > 0.0 { -p * p.ln() } else { 0.0 }
+                    if p > 0.0 {
+                        -p * p.ln()
+                    } else {
+                        0.0
+                    }
                 })
                 .sum();
 
             // Normalize entropy (max entropy = ln(20) for amino acids)
             let max_entropy = 20.0_f64.ln();
-            let normalized = 1.0 - (entropy / max_entropy);  // 1 = conserved, 0 = variable
+            let normalized = 1.0 - (entropy / max_entropy); // 1 = conserved, 0 = variable
 
-            data.residue_scores.insert(('A', (pos + 1) as i32), normalized);
+            data.residue_scores
+                .insert(('A', (pos + 1) as i32), normalized);
         }
 
         // Compute sequence identity
@@ -337,7 +356,8 @@ impl ConservationLoader {
             let ref_seq = &alignment[0];
             let mut total_identity = 0.0;
             for seq in alignment.iter().skip(1) {
-                let matches: usize = ref_seq.chars()
+                let matches: usize = ref_seq
+                    .chars()
                     .zip(seq.chars())
                     .filter(|(a, b)| a == b && *a != '-')
                     .count();
@@ -367,7 +387,10 @@ mod tests {
 
         // Identical sequences should have high conservation
         for (_, score) in data.residue_scores {
-            assert!(score > 0.9, "Identical positions should be highly conserved");
+            assert!(
+                score > 0.9,
+                "Identical positions should be highly conserved"
+            );
         }
     }
 }

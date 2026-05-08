@@ -19,9 +19,9 @@ pub struct ResiduePrediction {
 /// Confusion matrix counts
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConfusionMatrix {
-    pub tp: usize, // True Positives
-    pub fp: usize, // False Positives
-    pub tn: usize, // True Negatives
+    pub tp: usize,       // True Positives
+    pub fp: usize,       // False Positives
+    pub tn: usize,       // True Negatives
     pub fn_count: usize, // False Negatives (fn_ to avoid keyword)
 }
 

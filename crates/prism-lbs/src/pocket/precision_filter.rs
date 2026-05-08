@@ -117,13 +117,13 @@ impl PrecisionFilterConfig {
     /// Relaxed thresholds to minimize false negatives
     pub fn high_recall() -> Self {
         Self {
-            min_volume: 80.0,           // Lower threshold
-            min_hydrophobicity: -0.5,   // Very relaxed
-            min_burial_score: 0.0,      // Disabled - keep all
-            min_druggability: 0.10,     // Very low - catch borderline cryptic sites
-            min_residues: 3,            // Smaller pockets OK
-            max_pockets: 20,            // Keep more pockets
-            min_alpha_spheres: 2,       // Fewer spheres OK
+            min_volume: 80.0,         // Lower threshold
+            min_hydrophobicity: -0.5, // Very relaxed
+            min_burial_score: 0.0,    // Disabled - keep all
+            min_druggability: 0.10,   // Very low - catch borderline cryptic sites
+            min_residues: 3,          // Smaller pockets OK
+            max_pockets: 20,          // Keep more pockets
+            min_alpha_spheres: 2,     // Fewer spheres OK
             enabled: true,
         }
     }
@@ -137,13 +137,13 @@ impl PrecisionFilterConfig {
     /// Tuned for optimal AUC/AUPRC/MCC/F1 metrics on CryptoBench.
     pub fn balanced() -> Self {
         Self {
-            min_volume: 100.0,          // Allow smaller cryptic sites
-            min_hydrophobicity: -0.5,   // Relaxed - cryptic sites may be polar
-            min_burial_score: 0.01,     // Very relaxed for Voronoi-based detection
-            min_druggability: 0.25,     // Lowered threshold for cryptic sites
-            min_residues: 4,            // Allow smaller pocket residue counts
-            max_pockets: 12,            // More pockets for cryptic site detection
-            min_alpha_spheres: 3,       // Allow smaller alpha sphere clusters
+            min_volume: 100.0,        // Allow smaller cryptic sites
+            min_hydrophobicity: -0.5, // Relaxed - cryptic sites may be polar
+            min_burial_score: 0.01,   // Very relaxed for Voronoi-based detection
+            min_druggability: 0.25,   // Lowered threshold for cryptic sites
+            min_residues: 4,          // Allow smaller pocket residue counts
+            max_pockets: 12,          // More pockets for cryptic site detection
+            min_alpha_spheres: 3,     // Allow smaller alpha sphere clusters
             enabled: true,
         }
     }
@@ -152,13 +152,13 @@ impl PrecisionFilterConfig {
     /// Aggressive filtering to minimize false positives
     pub fn high_precision() -> Self {
         Self {
-            min_volume: 300.0,          // Larger minimum for high-confidence cavities
-            min_hydrophobicity: -0.3,   // More hydrophobic required
-            min_burial_score: 0.05,     // Moderate enclosure (Voronoi values may be low)
-            min_druggability: 0.50,     // Higher threshold - only high-confidence pockets
-            min_residues: 8,            // More residues required
-            max_pockets: 5,             // Only top 5 pockets
-            min_alpha_spheres: 5,       // More alpha spheres
+            min_volume: 300.0,        // Larger minimum for high-confidence cavities
+            min_hydrophobicity: -0.3, // More hydrophobic required
+            min_burial_score: 0.05,   // Moderate enclosure (Voronoi values may be low)
+            min_druggability: 0.50,   // Higher threshold - only high-confidence pockets
+            min_residues: 8,          // More residues required
+            max_pockets: 5,           // Only top 5 pockets
+            min_alpha_spheres: 5,     // More alpha spheres
             enabled: true,
         }
     }
@@ -380,7 +380,7 @@ mod tests {
     use super::*;
 
     fn make_test_pocket(_id: u32, volume: f64, druggability: f64, enclosure: f64) -> Pocket {
-        use crate::scoring::{DrugabilityClass, DruggabilityScore, Components};
+        use crate::scoring::{Components, DrugabilityClass, DruggabilityScore};
         Pocket {
             volume,
             druggability_score: DruggabilityScore {
@@ -429,9 +429,9 @@ mod tests {
     #[test]
     fn test_filter_volume() {
         let pockets = vec![
-            make_test_pocket(1, 50.0, 0.8, 0.5),   // Too small
-            make_test_pocket(2, 200.0, 0.8, 0.5),  // OK
-            make_test_pocket(3, 500.0, 0.8, 0.5),  // OK
+            make_test_pocket(1, 50.0, 0.8, 0.5),  // Too small
+            make_test_pocket(2, 200.0, 0.8, 0.5), // OK
+            make_test_pocket(3, 500.0, 0.8, 0.5), // OK
         ];
 
         let config = PrecisionFilterConfig::balanced();
@@ -444,9 +444,9 @@ mod tests {
     #[test]
     fn test_filter_druggability() {
         let pockets = vec![
-            make_test_pocket(1, 300.0, 0.1, 0.5),  // Low druggability (below 0.25)
+            make_test_pocket(1, 300.0, 0.1, 0.5), // Low druggability (below 0.25)
             make_test_pocket(2, 300.0, 0.35, 0.5), // OK (above 0.25)
-            make_test_pocket(3, 300.0, 0.9, 0.5),  // High druggability
+            make_test_pocket(3, 300.0, 0.9, 0.5), // High druggability
         ];
 
         let config = PrecisionFilterConfig::balanced();
@@ -459,7 +459,7 @@ mod tests {
     #[test]
     fn test_filter_disabled() {
         let pockets = vec![
-            make_test_pocket(1, 10.0, 0.01, 0.01),  // Would fail all checks
+            make_test_pocket(1, 10.0, 0.01, 0.01), // Would fail all checks
         ];
 
         let config = PrecisionFilterConfig::disabled();

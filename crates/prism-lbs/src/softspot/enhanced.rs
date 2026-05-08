@@ -16,8 +16,8 @@
 //! Each signal is independently toggleable via configuration.
 
 use crate::softspot::conservation::{conservation_to_score_map, ConservationAnalyzer};
-use crate::softspot::contact_order::{contact_order_to_score_map, ContactOrderAnalyzer};
 use crate::softspot::constants::*;
+use crate::softspot::contact_order::{contact_order_to_score_map, ContactOrderAnalyzer};
 use crate::softspot::nma::{nma_to_score_map, NmaAnalyzer};
 use crate::softspot::probe_clustering::{probe_clusters_to_score_map, ProbeClusteringAnalyzer};
 use crate::softspot::types::*;
@@ -284,11 +284,8 @@ impl EnhancedSoftSpotDetector {
         }
 
         let mean = bfactors.iter().sum::<f64>() / bfactors.len() as f64;
-        let variance = bfactors
-            .iter()
-            .map(|b| (b - mean).powi(2))
-            .sum::<f64>()
-            / bfactors.len() as f64;
+        let variance =
+            bfactors.iter().map(|b| (b - mean).powi(2)).sum::<f64>() / bfactors.len() as f64;
         let std = variance.sqrt().max(0.1);
 
         let mut residue_bfactors: HashMap<i32, Vec<f64>> = HashMap::new();
@@ -443,8 +440,7 @@ impl EnhancedSoftSpotDetector {
 
             let nma_qualifies = self.config.use_nma && nma > self.config.nma_min_threshold;
 
-            let contact_order_qualifies =
-                self.config.use_contact_order && contact_order > 0.5; // High score = low contact order
+            let contact_order_qualifies = self.config.use_contact_order && contact_order > 0.5; // High score = low contact order
 
             let conservation_qualifies =
                 self.config.use_conservation && conservation > self.config.conservation_threshold;
@@ -460,9 +456,8 @@ impl EnhancedSoftSpotDetector {
 
             // But we need SOME baseline flexibility signal
             // This prevents false positives from conservation alone
-            let has_flexibility_signal = bfactor > BFACTOR_ZSCORE_MINIMUM
-                || nma > 0.3
-                || contact_order > 0.4;
+            let has_flexibility_signal =
+                bfactor > BFACTOR_ZSCORE_MINIMUM || nma > 0.3 || contact_order > 0.4;
 
             if qualifies && has_flexibility_signal {
                 // Calculate combined score using enhanced weights
@@ -675,10 +670,22 @@ impl EnhancedSoftSpotDetector {
             .clamp(0.0, 1.0);
 
         // Count qualification reasons
-        let classic_count = cluster.iter().filter(|r| r.qualification_reason == "classic").count();
-        let nma_count = cluster.iter().filter(|r| r.qualification_reason == "nma").count();
-        let co_count = cluster.iter().filter(|r| r.qualification_reason == "contact_order").count();
-        let enhanced_count = cluster.iter().filter(|r| r.qualification_reason == "enhanced").count();
+        let classic_count = cluster
+            .iter()
+            .filter(|r| r.qualification_reason == "classic")
+            .count();
+        let nma_count = cluster
+            .iter()
+            .filter(|r| r.qualification_reason == "nma")
+            .count();
+        let co_count = cluster
+            .iter()
+            .filter(|r| r.qualification_reason == "contact_order")
+            .count();
+        let enhanced_count = cluster
+            .iter()
+            .filter(|r| r.qualification_reason == "enhanced")
+            .count();
 
         // Generate enhanced rationale
         let avg_zscore = cluster.iter().map(|r| r.base.bfactor_zscore).sum::<f64>() / n;
@@ -798,7 +805,14 @@ mod tests {
         let detector = EnhancedSoftSpotDetector::with_config(config);
 
         let atoms: Vec<Atom> = (0..20)
-            .map(|i| make_test_atom(i as u32, i as i32, [i as f64 * 3.8, 0.0, 0.0], 30.0 + i as f64 * 2.0))
+            .map(|i| {
+                make_test_atom(
+                    i as u32,
+                    i as i32,
+                    [i as f64 * 3.8, 0.0, 0.0],
+                    30.0 + i as f64 * 2.0,
+                )
+            })
             .collect();
 
         // Should still work with classic detection only
@@ -818,6 +832,10 @@ mod tests {
             + config.weight_probe;
 
         // Weights should sum to approximately 1.0
-        assert!((total_weight - 1.0).abs() < 0.01, "Weights sum to {}", total_weight);
+        assert!(
+            (total_weight - 1.0).abs() < 0.01,
+            "Weights sum to {}",
+            total_weight
+        );
     }
 }

@@ -8,16 +8,16 @@
 //!
 //! This is the primary entry point for world-class allosteric site detection.
 
-use crate::structure::Atom;
-use crate::softspot::{SoftSpotDetector, CrypticCandidate};
-use super::types::*;
+use super::allosteric_coupling::{AllostericCouplingAnalyzer, AllostericHotspot};
+use super::backtrack::BacktrackAnalyzer;
+use super::consensus_engine::{AllostericCandidateRegion, HybridConsensusEngine};
 use super::domain_decomposition::DomainDecomposer;
 use super::hinge_detection::HingeDetector;
-use super::msa_conservation::{ConservationAnalyzer, estimate_conservation_from_bfactors};
+use super::msa_conservation::{estimate_conservation_from_bfactors, ConservationAnalyzer};
 use super::residue_network::ResidueNetworkAnalyzer;
-use super::allosteric_coupling::{AllostericCouplingAnalyzer, AllostericHotspot};
-use super::consensus_engine::{HybridConsensusEngine, AllostericCandidateRegion};
-use super::backtrack::BacktrackAnalyzer;
+use super::types::*;
+use crate::softspot::{CrypticCandidate, SoftSpotDetector};
+use crate::structure::Atom;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -60,7 +60,10 @@ impl AllostericDetector {
 
     /// Run full allosteric detection pipeline
     pub fn detect(&self, atoms: &[Atom], structure_name: &str) -> AllostericDetectionOutput {
-        log::info!("[ALLOSTERIC] Starting world-class detection for {}", structure_name);
+        log::info!(
+            "[ALLOSTERIC] Starting world-class detection for {}",
+            structure_name
+        );
 
         // ====================================================================
         // Stage 1: Structural Analysis
@@ -70,7 +73,9 @@ impl AllostericDetector {
         let domains = self.domain_decomposer.decompose(atoms);
         log::info!("  Found {} structural domains", domains.len());
 
-        let interfaces = self.domain_decomposer.find_domain_interfaces(atoms, &domains);
+        let interfaces = self
+            .domain_decomposer
+            .find_domain_interfaces(atoms, &domains);
         log::info!("  Found {} domain interfaces", interfaces.len());
 
         let hinges = self.hinge_detector.detect_with_domains(atoms, &domains);
@@ -83,7 +88,11 @@ impl AllostericDetector {
 
         let conservation = self.get_conservation(atoms);
         let n_conserved = conservation.values().filter(|&&c| c > 0.7).count();
-        log::info!("  {} highly conserved residues (>{:.0}%)", n_conserved, 70.0);
+        log::info!(
+            "  {} highly conserved residues (>{:.0}%)",
+            n_conserved,
+            70.0
+        );
 
         // ====================================================================
         // Stage 3: Network Analysis
@@ -93,18 +102,26 @@ impl AllostericDetector {
         let network = self.network_analyzer.build_network(atoms);
         log::info!("  Network: {} nodes, building centrality...", network.size);
 
-        let centrality = self.coupling_analyzer.calculate_betweenness_centrality(&network);
-        let hotspots = self.coupling_analyzer.find_allosteric_hotspots(&network, 0.3);
+        let centrality = self
+            .coupling_analyzer
+            .calculate_betweenness_centrality(&network);
+        let hotspots = self
+            .coupling_analyzer
+            .find_allosteric_hotspots(&network, 0.3);
         log::info!("  Found {} allosteric hotspots", hotspots.len());
 
         // Find allosteric coupling to active site (if provided)
-        let allosteric_candidates = if let Some(ref active_site) = self.config.active_site_residues {
+        let allosteric_candidates = if let Some(ref active_site) = self.config.active_site_residues
+        {
             self.find_allosteric_candidates(atoms, &network, active_site, &hotspots)
         } else {
             // Auto-detect potential active site (highest conservation cluster)
             let auto_active = self.auto_detect_active_site(atoms, &conservation);
             if !auto_active.is_empty() {
-                log::info!("  Auto-detected active site: {} residues", auto_active.len());
+                log::info!(
+                    "  Auto-detected active site: {} residues",
+                    auto_active.len()
+                );
                 self.find_allosteric_candidates(atoms, &network, &auto_active, &hotspots)
             } else {
                 Vec::new()
@@ -164,12 +181,9 @@ impl AllostericDetector {
 
             // Fill gaps
             if !gaps.is_empty() {
-                let additional = self.backtrack_analyzer.fill_gaps(
-                    atoms,
-                    &gaps,
-                    &conservation,
-                    &centrality,
-                );
+                let additional =
+                    self.backtrack_analyzer
+                        .fill_gaps(atoms, &gaps, &conservation, &centrality);
 
                 gaps_filled = additional.len();
                 log::info!("  Filled {} gaps with additional pockets", gaps_filled);
@@ -213,7 +227,11 @@ impl AllostericDetector {
                     "interface".into(),
                     "conservation".into(),
                 ],
-                msa_source: self.config.msa_path.as_ref().map(|p| p.display().to_string()),
+                msa_source: self
+                    .config
+                    .msa_path
+                    .as_ref()
+                    .map(|p| p.display().to_string()),
                 backtrack_enabled: self.config.enable_backtrack,
                 gaps_found,
                 gaps_filled,
@@ -231,8 +249,11 @@ impl AllostericDetector {
             match self.conservation_analyzer.parse_msa(msa_path) {
                 Ok(msa) => {
                     let scores = self.conservation_analyzer.calculate_conservation(&msa);
-                    let mapping = self.conservation_analyzer.generate_sequence_mapping(&msa, atoms);
-                    self.conservation_analyzer.map_to_structure(&scores, &mapping)
+                    let mapping = self
+                        .conservation_analyzer
+                        .generate_sequence_mapping(&msa, atoms);
+                    self.conservation_analyzer
+                        .map_to_structure(&scores, &mapping)
                 }
                 Err(e) => {
                     log::warn!("Failed to parse MSA: {}, using B-factor proxy", e);
@@ -341,7 +362,8 @@ impl AllostericDetector {
                     .collect();
 
                 if nearby.len() >= 4 {
-                    let centroid = super::domain_decomposition::calculate_residue_centroid(atoms, &nearby);
+                    let centroid =
+                        super::domain_decomposition::calculate_residue_centroid(atoms, &nearby);
 
                     // Distance to active site centroid
                     let active_centroid =

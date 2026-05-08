@@ -34,7 +34,7 @@ impl Default for PdbBindConfig {
             year: Some(2020),
             max_entries: None,
             max_resolution: Some(2.5),
-            min_affinity: Some(4.0),  // pKd >= 4.0
+            min_affinity: Some(4.0), // pKd >= 4.0
         }
     }
 }
@@ -89,7 +89,9 @@ impl PdbBindLoader {
 
     /// Load the PDBBind index file
     fn load_index(&mut self) -> Result<(), LbsError> {
-        let index_path = self.config.root_dir
+        let index_path = self
+            .config
+            .root_dir
             .join(&self.config.subset)
             .join("index")
             .join(format!("{}_INDEX.csv", self.config.subset.to_uppercase()));
@@ -99,28 +101,27 @@ impl PdbBindLoader {
             index_path.clone(),
             self.config.root_dir.join("INDEX_refined_data.csv"),
             self.config.root_dir.join("index.csv"),
-            self.config.root_dir.join(format!("{}_INDEX.csv", self.config.subset)),
+            self.config
+                .root_dir
+                .join(format!("{}_INDEX.csv", self.config.subset)),
         ];
 
         let mut content = None;
         for path in &index_paths {
             if path.exists() {
-                content = Some(fs::read_to_string(path)
-                    .map_err(|e| LbsError::Io(e))?);
+                content = Some(fs::read_to_string(path).map_err(|e| LbsError::Io(e))?);
                 log::info!("Loaded PDBBind index from: {}", path.display());
                 break;
             }
         }
 
         let content = content.ok_or_else(|| {
-            LbsError::Config(format!(
-                "PDBBind index not found. Tried: {:?}",
-                index_paths
-            ))
+            LbsError::Config(format!("PDBBind index not found. Tried: {:?}", index_paths))
         })?;
 
         // Parse index file (CSV format varies by PDBBind version)
-        for line in content.lines().skip(1) {  // Skip header
+        for line in content.lines().skip(1) {
+            // Skip header
             if let Some(entry) = self.parse_index_line(line) {
                 // Apply filters
                 if let Some(max_res) = self.config.max_resolution {
@@ -134,7 +135,8 @@ impl PdbBindLoader {
                     }
                 }
                 if let Some(year) = self.config.year {
-                    if entry.year < year - 5 {  // Allow 5-year window
+                    if entry.year < year - 5 {
+                        // Allow 5-year window
                         continue;
                     }
                 }
@@ -155,7 +157,8 @@ impl PdbBindLoader {
 
     /// Parse a single index line
     fn parse_index_line(&self, line: &str) -> Option<PdbBindIndexEntry> {
-        let parts: Vec<&str> = line.split([',', '\t', ' '])
+        let parts: Vec<&str> = line
+            .split([',', '\t', ' '])
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
@@ -210,7 +213,8 @@ impl PdbBindLoader {
         };
 
         // Extract numeric value
-        let num_str: String = s.chars()
+        let num_str: String = s
+            .chars()
             .filter(|c| c.is_numeric() || *c == '.' || *c == '-' || *c == 'e' || *c == 'E')
             .collect();
 
@@ -226,7 +230,7 @@ impl PdbBindLoader {
         } else if s_lower.contains("mm") {
             1e-3
         } else {
-            1e-9  // Default to nM
+            1e-9 // Default to nM
         };
 
         let molar = value * multiplier;
@@ -237,33 +241,54 @@ impl PdbBindLoader {
 
     /// Load a single entry
     pub fn load_entry(&self, pdb_id: &str) -> Result<PdbBindEntry, LbsError> {
-        let index_entry = self.index.get(pdb_id)
+        let index_entry = self
+            .index
+            .get(pdb_id)
             .ok_or_else(|| LbsError::Config(format!("PDB ID {} not in index", pdb_id)))?;
 
         // Find protein PDB file
         let protein_paths = vec![
-            self.config.root_dir.join(&self.config.subset).join(pdb_id).join(format!("{}_protein.pdb", pdb_id)),
-            self.config.root_dir.join(pdb_id).join(format!("{}_protein.pdb", pdb_id)),
+            self.config
+                .root_dir
+                .join(&self.config.subset)
+                .join(pdb_id)
+                .join(format!("{}_protein.pdb", pdb_id)),
+            self.config
+                .root_dir
+                .join(pdb_id)
+                .join(format!("{}_protein.pdb", pdb_id)),
             self.config.root_dir.join(format!("{}_protein.pdb", pdb_id)),
         ];
 
-        let protein_path = protein_paths.iter()
-            .find(|p| p.exists())
-            .ok_or_else(|| LbsError::Io(std::io::Error::new(
+        let protein_path = protein_paths.iter().find(|p| p.exists()).ok_or_else(|| {
+            LbsError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Protein file not found for {}", pdb_id)
-            )))?;
+                format!("Protein file not found for {}", pdb_id),
+            ))
+        })?;
 
         let structure = ProteinStructure::from_pdb_file(protein_path)?;
 
         // Find ligand file
         let ligand_paths = vec![
-            self.config.root_dir.join(&self.config.subset).join(pdb_id).join(format!("{}_ligand.mol2", pdb_id)),
-            self.config.root_dir.join(&self.config.subset).join(pdb_id).join(format!("{}_ligand.sdf", pdb_id)),
-            self.config.root_dir.join(pdb_id).join(format!("{}_ligand.mol2", pdb_id)),
+            self.config
+                .root_dir
+                .join(&self.config.subset)
+                .join(pdb_id)
+                .join(format!("{}_ligand.mol2", pdb_id)),
+            self.config
+                .root_dir
+                .join(&self.config.subset)
+                .join(pdb_id)
+                .join(format!("{}_ligand.sdf", pdb_id)),
+            self.config
+                .root_dir
+                .join(pdb_id)
+                .join(format!("{}_ligand.mol2", pdb_id)),
         ];
 
-        let ligand_coords = ligand_paths.iter()
+        let ligand_coords = ligand_paths
+            .iter()
             .find(|p| p.exists())
             .and_then(|p| self.parse_ligand_coords(p).ok())
             .unwrap_or_default();
@@ -379,7 +404,10 @@ impl PdbBindLoader {
     }
 
     /// Load entries in batches
-    pub fn batches(&self, batch_size: usize) -> impl Iterator<Item = Vec<Result<PdbBindEntry, LbsError>>> + '_ {
+    pub fn batches(
+        &self,
+        batch_size: usize,
+    ) -> impl Iterator<Item = Vec<Result<PdbBindEntry, LbsError>>> + '_ {
         let ids: Vec<_> = self.index.keys().cloned().collect();
         ids.chunks(batch_size)
             .map(|chunk| chunk.iter().map(|id| self.load_entry(id)).collect())

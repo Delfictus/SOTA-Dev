@@ -107,7 +107,8 @@ impl SoftSpotDetector {
         );
 
         // Step 4: Combine signals into scored residues
-        let scored_residues = self.combine_signals(atoms, &flexibility_map, &packing_map, &hydrophobicity_map);
+        let scored_residues =
+            self.combine_signals(atoms, &flexibility_map, &packing_map, &hydrophobicity_map);
         log::debug!(
             "[SOFTSPOT] {} flexible residues identified",
             scored_residues.len()
@@ -140,7 +141,8 @@ impl SoftSpotDetector {
 
         // Calculate mean and standard deviation
         let mean = bfactors.iter().sum::<f64>() / bfactors.len() as f64;
-        let variance = bfactors.iter().map(|b| (b - mean).powi(2)).sum::<f64>() / bfactors.len() as f64;
+        let variance =
+            bfactors.iter().map(|b| (b - mean).powi(2)).sum::<f64>() / bfactors.len() as f64;
         // Guard against zero variance (NMR structures, uniform B-factors)
         let std = variance.sqrt().max(0.1);
 
@@ -469,11 +471,9 @@ impl SoftSpotDetector {
 
         // Predict druggability
         let volume_factor = (estimated_volume / OPTIMAL_POCKET_VOLUME).clamp(0.0, 1.0);
-        let predicted_druggability = (0.3 * avg_hydro
-            + 0.3 * volume_factor
-            + 0.2 * avg_packing_deficit
-            + 0.2 * coherence)
-            .clamp(0.0, 1.0);
+        let predicted_druggability =
+            (0.3 * avg_hydro + 0.3 * volume_factor + 0.2 * avg_packing_deficit + 0.2 * coherence)
+                .clamp(0.0, 1.0);
 
         // Generate rationale
         let avg_zscore = cluster.iter().map(|r| r.bfactor_zscore).sum::<f64>() / n;

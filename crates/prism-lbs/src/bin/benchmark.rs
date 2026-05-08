@@ -76,7 +76,8 @@ fn main() -> anyhow::Result<()> {
         dcc_successes,
         dca_successes: all_metrics.iter().filter(|m| m.dca_success).count(),
         dcc_success_rate: dcc_successes as f64 / total_cases.max(1) as f64,
-        dca_success_rate: all_metrics.iter().filter(|m| m.dca_success).count() as f64 / total_cases.max(1) as f64,
+        dca_success_rate: all_metrics.iter().filter(|m| m.dca_success).count() as f64
+            / total_cases.max(1) as f64,
         top1_dcc_rate: 0.0,
         top3_dcc_rate: 0.0,
         top5_dcc_rate: 0.0,
@@ -92,11 +93,7 @@ fn main() -> anyhow::Result<()> {
 
     println!(
         "Cases: {} success: {:.2} mean_dist: {:.2}Å coverage: {:.2} precision: {:.2}",
-        total_cases,
-        summary.dcc_success_rate,
-        mean_dcc,
-        mean_coverage,
-        mean_precision
+        total_cases, summary.dcc_success_rate, mean_dcc, mean_coverage, mean_precision
     );
 
     if let Some(out) = cli.summary_out {

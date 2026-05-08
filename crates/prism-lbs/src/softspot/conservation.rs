@@ -183,21 +183,13 @@ impl ConservationAnalyzer {
         // Calculate base conservation for each residue
         let base_scores: Vec<f64> = residues
             .iter()
-            .map(|(_, _, name)| {
-                self.conservation_map
-                    .get(name)
-                    .copied()
-                    .unwrap_or(0.5)
-            })
+            .map(|(_, _, name)| self.conservation_map.get(name).copied().unwrap_or(0.5))
             .collect();
 
         // Calculate statistics
         let mean = base_scores.iter().sum::<f64>() / base_scores.len() as f64;
-        let variance = base_scores
-            .iter()
-            .map(|s| (s - mean).powi(2))
-            .sum::<f64>()
-            / base_scores.len() as f64;
+        let variance =
+            base_scores.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / base_scores.len() as f64;
         let std = variance.sqrt().max(0.01);
 
         // Calculate relative conservation and build metrics
@@ -285,9 +277,10 @@ impl ConservationAnalyzer {
         let scores: Vec<f64> = residues
             .iter()
             .map(|(res_seq, _, res_name)| {
-                external_scores.get(res_seq).copied().unwrap_or_else(|| {
-                    self.conservation_map.get(res_name).copied().unwrap_or(0.5)
-                })
+                external_scores
+                    .get(res_seq)
+                    .copied()
+                    .unwrap_or_else(|| self.conservation_map.get(res_name).copied().unwrap_or(0.5))
             })
             .collect();
 
@@ -298,8 +291,8 @@ impl ConservationAnalyzer {
         let metrics: Vec<ResidueConservation> = residues
             .iter()
             .zip(scores.iter())
-            .map(|((res_seq, chain_id, res_name), &score)| {
-                ResidueConservation {
+            .map(
+                |((res_seq, chain_id, res_name), &score)| ResidueConservation {
                     residue_seq: *res_seq,
                     chain_id: *chain_id,
                     residue_name: res_name.clone(),
@@ -307,8 +300,8 @@ impl ConservationAnalyzer {
                     relative_conservation: score,
                     conservation_score: score,
                     is_anomalous: score > ANOMALOUS_CONSERVATION_THRESHOLD,
-                }
-            })
+                },
+            )
             .collect();
 
         ConservationResult {

@@ -151,11 +151,7 @@ pub fn compute_enclosure_ratio(
     for ray_idx in 0..n_rays {
         let theta = 2.0 * pi * ray_idx as f64 / golden_ratio;
         let phi = (1.0 - 2.0 * (ray_idx as f64 + 0.5) / n_rays as f64).acos();
-        let dir = [
-            phi.sin() * theta.cos(),
-            phi.sin() * theta.sin(),
-            phi.cos(),
-        ];
+        let dir = [phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos()];
 
         // March along ray, check for atom intersection
         let mut hit = false;
@@ -223,10 +219,16 @@ mod tests {
 
         score_pocket_druggability(&mut pocket);
 
-        assert!(pocket.druggability_score.total > 0.0,
-            "Druggability score should be positive, got {}", pocket.druggability_score.total);
-        assert!(pocket.druggability_score.total <= 1.0,
-            "Druggability score should be <= 1.0, got {}", pocket.druggability_score.total);
+        assert!(
+            pocket.druggability_score.total > 0.0,
+            "Druggability score should be positive, got {}",
+            pocket.druggability_score.total
+        );
+        assert!(
+            pocket.druggability_score.total <= 1.0,
+            "Druggability score should be <= 1.0, got {}",
+            pocket.druggability_score.total
+        );
     }
 
     #[test]
@@ -244,7 +246,11 @@ mod tests {
         let vol = compute_pocket_volume(&positions, &indices);
         assert!(vol > 0.0, "Single atom volume should be positive: {}", vol);
         // vdW sphere of C ~ (4/3)π(1.7)³ ≈ 20.6 Å³
-        assert!(vol < 200.0, "Single atom volume should be < 200 Å³: {}", vol);
+        assert!(
+            vol < 200.0,
+            "Single atom volume should be < 200 Å³: {}",
+            vol
+        );
     }
 
     #[test]

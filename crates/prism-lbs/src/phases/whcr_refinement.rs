@@ -251,12 +251,15 @@ impl PocketRefinementPhase {
                 for &neighbor in &graph.adjacency[v] {
                     if conflict_set.contains(&neighbor) && !cavity_vertices.contains(&neighbor) {
                         // Check distance to center via cavity distance matrix
-                        let distance = cavity.distance_matrix.get(cavity_center)
+                        let distance = cavity
+                            .distance_matrix
+                            .get(cavity_center)
                             .and_then(|row| row.get(neighbor))
                             .copied()
                             .unwrap_or(f64::INFINITY);
 
-                        if distance < 10.0 {  // Distance threshold for cavity membership
+                        if distance < 10.0 {
+                            // Distance threshold for cavity membership
                             frontier.push(neighbor);
                         }
                     }
@@ -278,8 +281,9 @@ impl PocketRefinementPhase {
                 })
                 .sum();
 
-            let severity =
-                total_conflicts as f64 / cavity_vertices.len().max(1) as f64 / graph.adjacency.len().max(1) as f64;
+            let severity = total_conflicts as f64
+                / cavity_vertices.len().max(1) as f64
+                / graph.adjacency.len().max(1) as f64;
 
             // Find persistence from topological analysis by checking representative vertices
             let persistence = topology
@@ -287,7 +291,9 @@ impl PocketRefinementPhase {
                 .iter()
                 .filter(|pair| {
                     // Check if any representative vertex is in this cavity
-                    pair.representative_vertices.iter().any(|&v| cavity_vertices.contains(&v))
+                    pair.representative_vertices
+                        .iter()
+                        .any(|&v| cavity_vertices.contains(&v))
                 })
                 .map(|pair| pair.death - pair.birth)
                 .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
@@ -440,8 +446,7 @@ impl PocketRefinementPhase {
             // Find available colors
             let max_color = coloring.iter().max().copied().unwrap_or(0);
             for candidate_color in 0..=max_color + 1 {
-                if !neighbor_colors.contains(&candidate_color) && candidate_color != current_color
-                {
+                if !neighbor_colors.contains(&candidate_color) && candidate_color != current_color {
                     // Apply color change if it reduces conflicts
                     let conflicts_before = self.count_vertex_conflicts(vertex, coloring, graph);
                     coloring[vertex] = candidate_color;
@@ -479,7 +484,12 @@ impl PocketRefinementPhase {
     }
 
     /// Count conflicts for a single vertex
-    fn count_vertex_conflicts(&self, vertex: usize, coloring: &[usize], graph: &ProteinGraph) -> usize {
+    fn count_vertex_conflicts(
+        &self,
+        vertex: usize,
+        coloring: &[usize],
+        graph: &ProteinGraph,
+    ) -> usize {
         graph.adjacency[vertex]
             .iter()
             .filter(|&&n| coloring[n] == coloring[vertex])

@@ -123,7 +123,7 @@ impl LanczosEigensolver {
 
         // Tridiagonal matrix elements
         let mut alpha: Vec<f64> = Vec::with_capacity(m); // Diagonal
-        let mut beta: Vec<f64> = Vec::with_capacity(m);  // Off-diagonal
+        let mut beta: Vec<f64> = Vec::with_capacity(m); // Off-diagonal
 
         // First Lanczos step
         let w = matrix * &v;
@@ -267,9 +267,7 @@ impl LanczosEigensolver {
             .map(|(i, &e)| (e, eig.eigenvectors.column(i).clone_owned()))
             .collect();
 
-        eigen_pairs.sort_by(|a, b| {
-            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        eigen_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         // Only take k smallest
         let k_actual = k.min(eigen_pairs.len());
@@ -295,11 +293,7 @@ impl LanczosEigensolver {
     /// Compute eigenvalues with implicit restart (ARPACK-style)
     ///
     /// More robust for ill-conditioned matrices with clustered eigenvalues.
-    pub fn compute_smallest_restarted(
-        &self,
-        matrix: &DMatrix<f64>,
-        k: usize,
-    ) -> EigenResult {
+    pub fn compute_smallest_restarted(&self, matrix: &DMatrix<f64>, k: usize) -> EigenResult {
         let n = matrix.nrows();
         let m = self.num_lanczos_vectors.min(n);
         let p = if m > k { m - k } else { 0 }; // Number of shifts
@@ -451,8 +445,7 @@ impl LanczosEigensolver {
 
             if b < self.tol {
                 // Generate random orthogonal vector
-                let mut w_new: DVector<f64> =
-                    DVector::from_fn(n, |_, _| rng.gen::<f64>() - 0.5);
+                let mut w_new: DVector<f64> = DVector::from_fn(n, |_, _| rng.gen::<f64>() - 0.5);
                 for i in 0..j {
                     let vi = V.column(i);
                     w_new -= vi.dot(&w_new) * &vi;
@@ -514,10 +507,7 @@ mod tests {
             4,
             4,
             &[
-                4.0, 1.0, 0.0, 0.0,
-                1.0, 3.0, 1.0, 0.0,
-                0.0, 1.0, 2.0, 1.0,
-                0.0, 0.0, 1.0, 1.0,
+                4.0, 1.0, 0.0, 0.0, 1.0, 3.0, 1.0, 0.0, 0.0, 1.0, 2.0, 1.0, 0.0, 0.0, 1.0, 1.0,
             ],
         );
 
@@ -672,11 +662,21 @@ mod tests {
         // Verify eigenvalue equation for the most converged pairs (first few)
         // Later eigenvalues in Lanczos may have higher residuals
         // In production, we'd use implicit restarts for better accuracy
-        for (i, (eval, evec)) in result.eigenvalues.iter().zip(result.eigenvectors.iter()).enumerate() {
+        for (i, (eval, evec)) in result
+            .eigenvalues
+            .iter()
+            .zip(result.eigenvectors.iter())
+            .enumerate()
+        {
             let residual = LanczosEigensolver::verify_eigenpair(&matrix, *eval, evec);
             // First few eigenvalues should converge well
             if i < 5 {
-                assert!(residual < 0.2, "Residual {} for eigenvalue {} should be small", residual, i);
+                assert!(
+                    residual < 0.2,
+                    "Residual {} for eigenvalue {} should be small",
+                    residual,
+                    i
+                );
             }
         }
     }

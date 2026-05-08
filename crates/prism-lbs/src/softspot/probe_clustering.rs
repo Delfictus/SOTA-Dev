@@ -165,7 +165,10 @@ impl ProbeClusteringAnalyzer {
             };
         }
 
-        log::debug!("[PROBE] Analyzing {} atoms for binding hot spots", atoms.len());
+        log::debug!(
+            "[PROBE] Analyzing {} atoms for binding hot spots",
+            atoms.len()
+        );
 
         // Step 1: Generate probe positions
         let probes = self.generate_probes(atoms);
@@ -313,8 +316,8 @@ impl ProbeClusteringAnalyzer {
             if atom.partial_charge.abs() > 0.01 {
                 // Assume probe has small positive charge (like NH3)
                 let probe_charge = 0.1;
-                elec_energy += 332.0 * probe_charge * atom.partial_charge
-                    / (ELECTROSTATIC_SCREENING * dist);
+                elec_energy +=
+                    332.0 * probe_charge * atom.partial_charge / (ELECTROSTATIC_SCREENING * dist);
             }
         }
 

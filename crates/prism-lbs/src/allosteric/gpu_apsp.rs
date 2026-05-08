@@ -285,7 +285,9 @@ impl GpuFloydWarshall {
     /// GPU implementation using CUDA
     #[cfg(feature = "cuda")]
     fn gpu_floyd_warshall(&self, adjacency: &[f32], n: usize) -> Result<Vec<f32>, String> {
-        let _context = self.context.as_ref()
+        let _context = self
+            .context
+            .as_ref()
             .ok_or_else(|| "CUDA context not initialized".to_string())?;
 
         // Pad to block size
@@ -309,14 +311,23 @@ impl GpuFloydWarshall {
 
         // For now, use CPU blocked algorithm
         // Full CUDA kernel implementation would require PTX compilation
-        log::info!("GPU Floyd-Warshall using CPU blocked fallback for {} nodes", n);
+        log::info!(
+            "GPU Floyd-Warshall using CPU blocked fallback for {} nodes",
+            n
+        );
 
         let result = self.cpu_blocked_floyd_warshall(adjacency, n);
         Ok(result)
     }
 
     /// Compute shortest path between two specific nodes
-    pub fn shortest_path(&self, adjacency: &[f32], n: usize, from: usize, to: usize) -> Option<f32> {
+    pub fn shortest_path(
+        &self,
+        adjacency: &[f32],
+        n: usize,
+        from: usize,
+        to: usize,
+    ) -> Option<f32> {
         if from >= n || to >= n {
             return None;
         }
@@ -340,11 +351,7 @@ impl GpuFloydWarshall {
         to: usize,
     ) -> Option<Vec<usize>> {
         if from >= n || to >= n || from == to {
-            return if from == to {
-                Some(vec![from])
-            } else {
-                None
-            };
+            return if from == to { Some(vec![from]) } else { None };
         }
 
         // Build predecessor matrix alongside distances

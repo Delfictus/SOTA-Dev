@@ -9,9 +9,9 @@
 //!
 //! If this test fails, the pocket detection algorithm is BROKEN.
 
-use prism_lbs::structure::ProteinStructure;
-use prism_lbs::graph::{ProteinGraphBuilder, GraphConfig};
+use prism_lbs::graph::{GraphConfig, ProteinGraphBuilder};
 use prism_lbs::pocket::PocketDetector;
+use prism_lbs::structure::ProteinStructure;
 use prism_lbs::LbsConfig;
 use std::path::Path;
 
@@ -19,11 +19,11 @@ use std::path::Path;
 const HIV1_PDB_PATH: &str = "test_protein.pdb";
 
 /// Expected active site volume range (Å³)
-const MIN_ACTIVE_SITE_VOLUME: f64 = 200.0;  // Relaxed for bound inhibitor
+const MIN_ACTIVE_SITE_VOLUME: f64 = 200.0; // Relaxed for bound inhibitor
 const MAX_ACTIVE_SITE_VOLUME: f64 = 2500.0; // Upper bound
 
 /// Expected druggability score for active site
-const MIN_DRUGGABILITY_SCORE: f64 = 0.3;  // Relaxed threshold
+const MIN_DRUGGABILITY_SCORE: f64 = 0.3; // Relaxed threshold
 
 /// Minimum atoms in a valid pocket
 const MIN_POCKET_ATOMS: usize = 5;
@@ -36,14 +36,19 @@ fn test_hiv1_protease_active_site_detection() {
     // Skip if test file doesn't exist
     let pdb_path = Path::new(HIV1_PDB_PATH);
     if !pdb_path.exists() {
-        eprintln!("WARNING: Test PDB file not found at {}. Skipping HIV-1 protease test.", HIV1_PDB_PATH);
-        eprintln!("Download with: curl -o test_protein.pdb 'https://files.rcsb.org/download/1HIV.pdb'");
+        eprintln!(
+            "WARNING: Test PDB file not found at {}. Skipping HIV-1 protease test.",
+            HIV1_PDB_PATH
+        );
+        eprintln!(
+            "Download with: curl -o test_protein.pdb 'https://files.rcsb.org/download/1HIV.pdb'"
+        );
         return;
     }
 
     // Load structure
-    let structure = ProteinStructure::from_pdb_file(pdb_path)
-        .expect("Failed to parse HIV-1 protease PDB");
+    let structure =
+        ProteinStructure::from_pdb_file(pdb_path).expect("Failed to parse HIV-1 protease PDB");
 
     // Verify it's the right protein
     assert!(
@@ -54,17 +59,16 @@ fn test_hiv1_protease_active_site_detection() {
 
     // Build protein graph
     let graph_builder = ProteinGraphBuilder::new(GraphConfig::default());
-    let graph = graph_builder.build(&structure)
+    let graph = graph_builder
+        .build(&structure)
         .expect("Failed to build protein graph");
 
     // Create detector with default config (uses Voronoi detection)
     let config = LbsConfig::default();
-    let detector = PocketDetector::new(config)
-        .expect("Failed to create pocket detector");
+    let detector = PocketDetector::new(config).expect("Failed to create pocket detector");
 
     // Detect pockets
-    let pockets = detector.detect(&graph)
-        .expect("Pocket detection failed");
+    let pockets = detector.detect(&graph).expect("Pocket detection failed");
 
     // CRITICAL: Must find at least one pocket
     assert!(
@@ -131,7 +135,8 @@ fn test_hiv1_protease_active_site_detection() {
     let best_pocket = pockets
         .iter()
         .max_by(|a, b| {
-            a.druggability_score.total
+            a.druggability_score
+                .total
                 .partial_cmp(&b.druggability_score.total)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
@@ -141,21 +146,33 @@ fn test_hiv1_protease_active_site_detection() {
     println!("  Volume: {:.1} Å³", best_pocket.volume);
     println!("  Atoms: {}", best_pocket.atom_indices.len());
     println!("  Residues: {}", best_pocket.residue_indices.len());
-    println!("  Druggability: {:.3}", best_pocket.druggability_score.total);
-    println!("  Classification: {:?}", best_pocket.druggability_score.classification);
+    println!(
+        "  Druggability: {:.3}",
+        best_pocket.druggability_score.total
+    );
+    println!(
+        "  Classification: {:?}",
+        best_pocket.druggability_score.classification
+    );
 
     // Check if we found a druggable pocket
-    let has_druggable_pocket = pockets.iter().any(|p| {
-        p.volume >= MIN_ACTIVE_SITE_VOLUME
-            && p.volume <= MAX_ACTIVE_SITE_VOLUME
-    });
+    let has_druggable_pocket = pockets
+        .iter()
+        .any(|p| p.volume >= MIN_ACTIVE_SITE_VOLUME && p.volume <= MAX_ACTIVE_SITE_VOLUME);
 
     if !has_druggable_pocket {
-        println!("\nWARNING: No pocket in expected volume range ({}-{} Å³)",
-                 MIN_ACTIVE_SITE_VOLUME, MAX_ACTIVE_SITE_VOLUME);
+        println!(
+            "\nWARNING: No pocket in expected volume range ({}-{} Å³)",
+            MIN_ACTIVE_SITE_VOLUME, MAX_ACTIVE_SITE_VOLUME
+        );
         println!("This may indicate the active site is occluded by the bound inhibitor.");
-        println!("Pocket volumes found: {:?}",
-                 pockets.iter().map(|p| format!("{:.0}", p.volume)).collect::<Vec<_>>());
+        println!(
+            "Pocket volumes found: {:?}",
+            pockets
+                .iter()
+                .map(|p| format!("{:.0}", p.volume))
+                .collect::<Vec<_>>()
+        );
     }
 
     // The test passes if we found valid pockets without mega-blobs or single atoms

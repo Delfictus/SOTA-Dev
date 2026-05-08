@@ -7,14 +7,14 @@
 //! - HDBSCAN clustering edge cases
 //! - SASA computation accuracy
 
-use prism_lbs::softspot::lanczos::{LanczosEigensolver, EigenResult};
-use prism_lbs::pocket::delaunay_detector::{DelaunayAlphaSphereDetector, DelaunayAlphaSphere};
-use prism_lbs::pocket::hdbscan::{HDBSCAN, HDBSCANResult};
-use prism_lbs::pocket::sasa::ShrakeRupleySASA;
-use prism_lbs::pocket::voronoi_detector::{VoronoiDetectorConfig, DetectionMethod};
-use prism_lbs::allosteric::gpu_apsp::GpuFloydWarshall;
-use prism_lbs::structure::Atom;
 use nalgebra::DMatrix;
+use prism_lbs::allosteric::gpu_apsp::GpuFloydWarshall;
+use prism_lbs::pocket::delaunay_detector::{DelaunayAlphaSphere, DelaunayAlphaSphereDetector};
+use prism_lbs::pocket::hdbscan::{HDBSCANResult, HDBSCAN};
+use prism_lbs::pocket::sasa::ShrakeRupleySASA;
+use prism_lbs::pocket::voronoi_detector::{DetectionMethod, VoronoiDetectorConfig};
+use prism_lbs::softspot::lanczos::{EigenResult, LanczosEigensolver};
+use prism_lbs::structure::Atom;
 
 // ============================================================================
 // LANCZOS EIGENSOLVER TESTS
@@ -49,7 +49,10 @@ fn test_lanczos_symmetric_matrix() {
     let result = solver.compute_smallest(&matrix, 3);
 
     // Should find 3 eigenvalues
-    assert!(result.eigenvalues.len() >= 3, "Should find at least 3 eigenvalues");
+    assert!(
+        result.eigenvalues.len() >= 3,
+        "Should find at least 3 eigenvalues"
+    );
 
     // Eigenvalues should be positive (positive definite matrix)
     for ev in &result.eigenvalues {
@@ -110,7 +113,10 @@ fn test_lanczos_convergence() {
 
     let result = solver.compute_smallest(&matrix, 5);
 
-    assert!(result.converged, "Lanczos should converge on diagonal matrix");
+    assert!(
+        result.converged,
+        "Lanczos should converge on diagonal matrix"
+    );
 
     // Check smallest eigenvalues
     for (i, ev) in result.eigenvalues.iter().take(5).enumerate() {
@@ -226,9 +232,18 @@ fn test_detection_method_enum() {
         ..Default::default()
     };
 
-    assert!(matches!(grid_config.detection_method, DetectionMethod::Grid));
-    assert!(matches!(delaunay_config.detection_method, DetectionMethod::Delaunay));
-    assert!(matches!(hybrid_config.detection_method, DetectionMethod::Hybrid));
+    assert!(matches!(
+        grid_config.detection_method,
+        DetectionMethod::Grid
+    ));
+    assert!(matches!(
+        delaunay_config.detection_method,
+        DetectionMethod::Delaunay
+    ));
+    assert!(matches!(
+        hybrid_config.detection_method,
+        DetectionMethod::Hybrid
+    ));
 }
 
 // ============================================================================
@@ -284,9 +299,7 @@ fn test_hdbscan_noise_points() {
     let hdbscan = HDBSCAN::new(5, 5);
 
     // Scattered points that should mostly be noise
-    let points: Vec<[f64; 3]> = (0..10)
-        .map(|i| [i as f64 * 10.0, 0.0, 0.0])
-        .collect();
+    let points: Vec<[f64; 3]> = (0..10).map(|i| [i as f64 * 10.0, 0.0, 0.0]).collect();
 
     let result = hdbscan.fit(&points);
 
@@ -306,7 +319,10 @@ fn test_hdbscan_empty_input() {
     let result = hdbscan.fit(&points);
 
     assert_eq!(result.n_clusters, 0, "Empty input should have 0 clusters");
-    assert!(result.labels.is_empty(), "Empty input should have no labels");
+    assert!(
+        result.labels.is_empty(),
+        "Empty input should have no labels"
+    );
 }
 
 // ============================================================================

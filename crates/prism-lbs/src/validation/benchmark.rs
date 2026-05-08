@@ -219,12 +219,9 @@ impl PDBBindBenchmark {
         let mean_dcc = results.iter().map(|r| r.best_dcc).sum::<f64>() / total.max(1) as f64;
         let mean_dca = results.iter().map(|r| r.best_dca).sum::<f64>() / total.max(1) as f64;
 
-        let top1_dcc =
-            results.iter().map(|r| r.top_n.top1_dcc).sum::<f64>() / total.max(1) as f64;
-        let top3_dcc =
-            results.iter().map(|r| r.top_n.top3_dcc).sum::<f64>() / total.max(1) as f64;
-        let top5_dcc =
-            results.iter().map(|r| r.top_n.top5_dcc).sum::<f64>() / total.max(1) as f64;
+        let top1_dcc = results.iter().map(|r| r.top_n.top1_dcc).sum::<f64>() / total.max(1) as f64;
+        let top3_dcc = results.iter().map(|r| r.top_n.top3_dcc).sum::<f64>() / total.max(1) as f64;
+        let top5_dcc = results.iter().map(|r| r.top_n.top5_dcc).sum::<f64>() / total.max(1) as f64;
 
         Ok(BenchmarkReport {
             dataset: "PDBBind".to_string(),
@@ -368,9 +365,9 @@ impl BenchmarkReport {
 
     /// Save report to file
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let json = self.to_json().map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-        })?;
+        let json = self
+            .to_json()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         fs::write(path, json)
     }
 
@@ -473,5 +470,10 @@ pub fn validate_single(
         ));
     }
 
-    Ok(TopNMetrics::compute(pockets, atoms, &ligand_coords, threshold))
+    Ok(TopNMetrics::compute(
+        pockets,
+        atoms,
+        &ligand_coords,
+        threshold,
+    ))
 }

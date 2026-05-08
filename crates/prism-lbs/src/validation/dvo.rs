@@ -76,8 +76,14 @@ pub fn calculate_dvo_from_atoms(
     atom_radius: f64,
     grid_spacing: f64,
 ) -> DvoResult {
-    let pred_spheres: Vec<_> = predicted_atoms.iter().map(|&pos| (pos, atom_radius)).collect();
-    let gt_spheres: Vec<_> = ground_truth_atoms.iter().map(|&pos| (pos, atom_radius)).collect();
+    let pred_spheres: Vec<_> = predicted_atoms
+        .iter()
+        .map(|&pos| (pos, atom_radius))
+        .collect();
+    let gt_spheres: Vec<_> = ground_truth_atoms
+        .iter()
+        .map(|&pos| (pos, atom_radius))
+        .collect();
 
     calculate_dvo(&pred_spheres, &gt_spheres, grid_spacing)
 }
@@ -137,11 +143,7 @@ fn spheres_to_grid(spheres: &[([f64; 3], f64)], spacing: f64) -> HashSet<GridPoi
         for x in min_x..=max_x {
             for y in min_y..=max_y {
                 for z in min_z..=max_z {
-                    let point_center = [
-                        x as f64 * spacing,
-                        y as f64 * spacing,
-                        z as f64 * spacing,
-                    ];
+                    let point_center = [x as f64 * spacing, y as f64 * spacing, z as f64 * spacing];
 
                     let dist = euclidean_distance(&point_center, &center);
                     if dist <= radius {
@@ -222,12 +224,7 @@ mod tests {
 
     #[test]
     fn test_dvo_simple() {
-        let result = calculate_dvo_simple(
-            &[0.0, 0.0, 0.0],
-            500.0,
-            &[2.0, 0.0, 0.0],
-            500.0,
-        );
+        let result = calculate_dvo_simple(&[0.0, 0.0, 0.0], 500.0, &[2.0, 0.0, 0.0], 500.0);
         assert!(result.jaccard > 0.5); // Should have significant overlap
     }
 }

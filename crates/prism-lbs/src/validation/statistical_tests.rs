@@ -194,7 +194,10 @@ pub fn bootstrap_ci_binary(
     confidence: f64,
     seed: u64,
 ) -> ConfidenceInterval {
-    let values: Vec<f64> = successes.iter().map(|&s| if s { 1.0 } else { 0.0 }).collect();
+    let values: Vec<f64> = successes
+        .iter()
+        .map(|&s| if s { 1.0 } else { 0.0 })
+        .collect();
     bootstrap_ci(&values, n_bootstrap, confidence, seed)
 }
 
@@ -301,7 +304,8 @@ pub fn paired_t_test(differences: &[f64]) -> (f64, f64, usize) {
     }
 
     let mean: f64 = differences.iter().sum::<f64>() / n as f64;
-    let variance: f64 = differences.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+    let variance: f64 =
+        differences.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
     let std_error = (variance / n as f64).sqrt();
 
     let t_stat = if std_error > 0.0 {
@@ -511,7 +515,9 @@ mod tests {
         // 3 cases: A right, B wrong
         // 0 cases: A wrong, B right
         let a = vec![true, true, true, true, true, true, true, true, false, false];
-        let b = vec![true, true, true, true, true, false, false, false, false, false];
+        let b = vec![
+            true, true, true, true, true, false, false, false, false, false,
+        ];
 
         let result = mcnemar_test(&a, &b);
         assert_eq!(result.a_better, 3);

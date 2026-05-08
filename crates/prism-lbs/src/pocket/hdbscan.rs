@@ -333,7 +333,11 @@ impl HDBSCAN {
 
         // Process hierarchy bottom-up
         for &(left, right, distance, size) in hierarchy {
-            let lambda = if distance > 0.0 { 1.0 / distance } else { f64::INFINITY };
+            let lambda = if distance > 0.0 {
+                1.0 / distance
+            } else {
+                f64::INFINITY
+            };
 
             let left_cluster = clusters.remove(&left);
             let right_cluster = clusters.remove(&right);
@@ -536,10 +540,7 @@ impl HDBSCAN {
 }
 
 /// Convenience function for clustering alpha spheres
-pub fn cluster_alpha_spheres(
-    centers: &[[f64; 3]],
-    min_cluster_size: usize,
-) -> Vec<Vec<usize>> {
+pub fn cluster_alpha_spheres(centers: &[[f64; 3]], min_cluster_size: usize) -> Vec<Vec<usize>> {
     let hdbscan = HDBSCAN::new(min_cluster_size, min_cluster_size);
     let result = hdbscan.fit(centers);
 
@@ -590,8 +591,15 @@ mod tests {
 
         // Should find at least 1 cluster (HDBSCAN may merge or separate depending on parameters)
         // The key is that it doesn't crash and produces valid output
-        assert!(result.n_clusters >= 0, "Should have non-negative cluster count");
-        assert_eq!(result.labels.len(), points.len(), "Should have label for each point");
+        assert!(
+            result.n_clusters >= 0,
+            "Should have non-negative cluster count"
+        );
+        assert_eq!(
+            result.labels.len(),
+            points.len(),
+            "Should have label for each point"
+        );
     }
 
     #[test]
@@ -646,9 +654,7 @@ mod tests {
         let hdbscan = HDBSCAN::new(2, 2);
 
         // Line of equally spaced points
-        let points: Vec<[f64; 3]> = (0..5)
-            .map(|i| [i as f64, 0.0, 0.0])
-            .collect();
+        let points: Vec<[f64; 3]> = (0..5).map(|i| [i as f64, 0.0, 0.0]).collect();
 
         let core_distances = hdbscan.compute_core_distances(&points);
 
@@ -658,7 +664,11 @@ mod tests {
         // For middle points: they have 2 neighbors at distance 1
         // Core distances should be in [1, 2] range
         for &cd in &core_distances {
-            assert!(cd >= 1.0 && cd <= 3.0, "Core distance should be reasonable: {}", cd);
+            assert!(
+                cd >= 1.0 && cd <= 3.0,
+                "Core distance should be reasonable: {}",
+                cd
+            );
         }
     }
 
@@ -666,11 +676,7 @@ mod tests {
     fn test_mst_construction() {
         let hdbscan = HDBSCAN::default();
 
-        let points = vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.5, 1.0, 0.0],
-        ];
+        let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 1.0, 0.0]];
 
         let core_distances = hdbscan.compute_core_distances(&points);
         let mrd = hdbscan.compute_mutual_reachability(&points, &core_distances);
@@ -704,6 +710,9 @@ mod tests {
 
         // Total points in clusters should be less than or equal to input
         let total_clustered: usize = clusters.iter().map(|c| c.len()).sum();
-        assert!(total_clustered <= centers.len(), "Clustered points should not exceed input");
+        assert!(
+            total_clustered <= centers.len(),
+            "Clustered points should not exceed input"
+        );
     }
 }

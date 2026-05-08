@@ -162,7 +162,13 @@ energy_range = {:.1}
     }
 
     /// Save config file
-    pub fn save_config(&self, path: &Path, receptor: &str, ligand: &str, output: &str) -> std::io::Result<()> {
+    pub fn save_config(
+        &self,
+        path: &Path,
+        receptor: &str,
+        ligand: &str,
+        output: &str,
+    ) -> std::io::Result<()> {
         let config = self.to_config(receptor, ligand, output);
         fs::write(path, config)
     }
@@ -226,35 +232,88 @@ cmd.set("sphere_scale", 0.5, "box_center_{}")
 "#,
             name,
             // Bottom face
-            self.center_x - half_x, self.center_y - half_y, self.center_z - half_z,
-            self.center_x + half_x, self.center_y - half_y, self.center_z - half_z,
-            self.center_x + half_x, self.center_y - half_y, self.center_z - half_z,
-            self.center_x + half_x, self.center_y + half_y, self.center_z - half_z,
-            self.center_x + half_x, self.center_y + half_y, self.center_z - half_z,
-            self.center_x - half_x, self.center_y + half_y, self.center_z - half_z,
-            self.center_x - half_x, self.center_y + half_y, self.center_z - half_z,
-            self.center_x - half_x, self.center_y - half_y, self.center_z - half_z,
+            self.center_x - half_x,
+            self.center_y - half_y,
+            self.center_z - half_z,
+            self.center_x + half_x,
+            self.center_y - half_y,
+            self.center_z - half_z,
+            self.center_x + half_x,
+            self.center_y - half_y,
+            self.center_z - half_z,
+            self.center_x + half_x,
+            self.center_y + half_y,
+            self.center_z - half_z,
+            self.center_x + half_x,
+            self.center_y + half_y,
+            self.center_z - half_z,
+            self.center_x - half_x,
+            self.center_y + half_y,
+            self.center_z - half_z,
+            self.center_x - half_x,
+            self.center_y + half_y,
+            self.center_z - half_z,
+            self.center_x - half_x,
+            self.center_y - half_y,
+            self.center_z - half_z,
             // Top face
-            self.center_x - half_x, self.center_y - half_y, self.center_z + half_z,
-            self.center_x + half_x, self.center_y - half_y, self.center_z + half_z,
-            self.center_x + half_x, self.center_y - half_y, self.center_z + half_z,
-            self.center_x + half_x, self.center_y + half_y, self.center_z + half_z,
-            self.center_x + half_x, self.center_y + half_y, self.center_z + half_z,
-            self.center_x - half_x, self.center_y + half_y, self.center_z + half_z,
-            self.center_x - half_x, self.center_y + half_y, self.center_z + half_z,
-            self.center_x - half_x, self.center_y - half_y, self.center_z + half_z,
+            self.center_x - half_x,
+            self.center_y - half_y,
+            self.center_z + half_z,
+            self.center_x + half_x,
+            self.center_y - half_y,
+            self.center_z + half_z,
+            self.center_x + half_x,
+            self.center_y - half_y,
+            self.center_z + half_z,
+            self.center_x + half_x,
+            self.center_y + half_y,
+            self.center_z + half_z,
+            self.center_x + half_x,
+            self.center_y + half_y,
+            self.center_z + half_z,
+            self.center_x - half_x,
+            self.center_y + half_y,
+            self.center_z + half_z,
+            self.center_x - half_x,
+            self.center_y + half_y,
+            self.center_z + half_z,
+            self.center_x - half_x,
+            self.center_y - half_y,
+            self.center_z + half_z,
             // Vertical edges
-            self.center_x - half_x, self.center_y - half_y, self.center_z - half_z,
-            self.center_x - half_x, self.center_y - half_y, self.center_z + half_z,
-            self.center_x + half_x, self.center_y - half_y, self.center_z - half_z,
-            self.center_x + half_x, self.center_y - half_y, self.center_z + half_z,
-            self.center_x + half_x, self.center_y + half_y, self.center_z - half_z,
-            self.center_x + half_x, self.center_y + half_y, self.center_z + half_z,
-            self.center_x - half_x, self.center_y + half_y, self.center_z - half_z,
-            self.center_x - half_x, self.center_y + half_y, self.center_z + half_z,
-            name, name, name,
-            self.center_x, self.center_y, self.center_z,
-            name, name,
+            self.center_x - half_x,
+            self.center_y - half_y,
+            self.center_z - half_z,
+            self.center_x - half_x,
+            self.center_y - half_y,
+            self.center_z + half_z,
+            self.center_x + half_x,
+            self.center_y - half_y,
+            self.center_z - half_z,
+            self.center_x + half_x,
+            self.center_y - half_y,
+            self.center_z + half_z,
+            self.center_x + half_x,
+            self.center_y + half_y,
+            self.center_z - half_z,
+            self.center_x + half_x,
+            self.center_y + half_y,
+            self.center_z + half_z,
+            self.center_x - half_x,
+            self.center_y + half_y,
+            self.center_z - half_z,
+            self.center_x - half_x,
+            self.center_y + half_y,
+            self.center_z + half_z,
+            name,
+            name,
+            name,
+            self.center_x,
+            self.center_y,
+            self.center_z,
+            name,
+            name,
         )
     }
 }
@@ -293,13 +352,13 @@ impl PharmacophoreType {
 
     pub fn color(&self) -> (f64, f64, f64) {
         match self {
-            PharmacophoreType::HBondDonor => (0.0, 0.5, 1.0),     // Blue
-            PharmacophoreType::HBondAcceptor => (1.0, 0.0, 0.0),  // Red
-            PharmacophoreType::Hydrophobic => (1.0, 1.0, 0.0),    // Yellow
-            PharmacophoreType::Aromatic => (1.0, 0.5, 0.0),       // Orange
+            PharmacophoreType::HBondDonor => (0.0, 0.5, 1.0), // Blue
+            PharmacophoreType::HBondAcceptor => (1.0, 0.0, 0.0), // Red
+            PharmacophoreType::Hydrophobic => (1.0, 1.0, 0.0), // Yellow
+            PharmacophoreType::Aromatic => (1.0, 0.5, 0.0),   // Orange
             PharmacophoreType::PositiveCharge => (0.0, 0.0, 1.0), // Dark blue
             PharmacophoreType::NegativeCharge => (0.5, 0.0, 0.0), // Dark red
-            PharmacophoreType::MetalBinding => (0.5, 0.5, 0.5),   // Gray
+            PharmacophoreType::MetalBinding => (0.5, 0.5, 0.5), // Gray
         }
     }
 }
@@ -362,7 +421,10 @@ impl PharmacophoreModel {
             let res_label = format!("{}{}{}", res_name, res_seq, chain);
 
             // H-bond donors
-            if matches!(res_name, "SER" | "THR" | "TYR" | "ASN" | "GLN" | "TRP" | "HIS" | "LYS" | "ARG") {
+            if matches!(
+                res_name,
+                "SER" | "THR" | "TYR" | "ASN" | "GLN" | "TRP" | "HIS" | "LYS" | "ARG"
+            ) {
                 if let Some(pos) = Self::find_hbd_position(res_atoms, res_name) {
                     features.push(PharmacophoreFeature {
                         feature_type: PharmacophoreType::HBondDonor,
@@ -376,7 +438,10 @@ impl PharmacophoreModel {
             }
 
             // H-bond acceptors
-            if matches!(res_name, "SER" | "THR" | "TYR" | "ASN" | "GLN" | "ASP" | "GLU" | "HIS") {
+            if matches!(
+                res_name,
+                "SER" | "THR" | "TYR" | "ASN" | "GLN" | "ASP" | "GLU" | "HIS"
+            ) {
                 if let Some(pos) = Self::find_hba_position(res_atoms, res_name) {
                     features.push(PharmacophoreFeature {
                         feature_type: PharmacophoreType::HBondAcceptor,
@@ -390,7 +455,10 @@ impl PharmacophoreModel {
             }
 
             // Hydrophobic
-            if matches!(res_name, "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TRP" | "PRO") {
+            if matches!(
+                res_name,
+                "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TRP" | "PRO"
+            ) {
                 let centroid = Self::calculate_centroid(res_atoms);
                 features.push(PharmacophoreFeature {
                     feature_type: PharmacophoreType::Hydrophobic,
@@ -613,7 +681,10 @@ impl PharmacophoreModel {
     pub fn to_ph4(&self) -> String {
         let mut output = String::new();
         output.push_str("#moe:ph4query\n");
-        output.push_str(&format!("# PRISM-LBS Pharmacophore Model - Pocket {}\n", self.pocket_id));
+        output.push_str(&format!(
+            "# PRISM-LBS Pharmacophore Model - Pocket {}\n",
+            self.pocket_id
+        ));
 
         for (i, feature) in self.features.iter().enumerate() {
             output.push_str(&format!(
@@ -744,9 +815,8 @@ impl DockingSiteGenerator {
 
         // Save JSON summary
         let json_path = output_dir.join(format!("{}_docking.json", prefix));
-        let json = serde_json::to_string_pretty(&site).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-        })?;
+        let json = serde_json::to_string_pretty(&site)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         fs::write(&json_path, json)?;
 
         Ok(())

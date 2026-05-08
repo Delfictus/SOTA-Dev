@@ -194,7 +194,10 @@ impl ContactOrderAnalyzer {
 
             // Mean sequence separation of contacts
             let mean_sep = if num_contacts > 0 {
-                residue_contacts[i].iter().map(|(_, sep)| *sep as f64).sum::<f64>()
+                residue_contacts[i]
+                    .iter()
+                    .map(|(_, sep)| *sep as f64)
+                    .sum::<f64>()
                     / num_contacts as f64
             } else {
                 0.0

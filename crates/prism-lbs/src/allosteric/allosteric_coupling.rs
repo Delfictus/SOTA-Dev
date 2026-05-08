@@ -39,10 +39,7 @@ impl AllostericCouplingAnalyzer {
     ///
     /// Betweenness centrality measures how often a node lies on shortest paths
     /// between other nodes. High betweenness = critical communication hub.
-    pub fn calculate_betweenness_centrality(
-        &self,
-        network: &ResidueNetwork,
-    ) -> HashMap<i32, f64> {
+    pub fn calculate_betweenness_centrality(&self, network: &ResidueNetwork) -> HashMap<i32, f64> {
         let n = network.size;
         let mut centrality = vec![0.0; n];
 
@@ -117,10 +114,7 @@ impl AllostericCouplingAnalyzer {
     ///
     /// Closeness = 1 / (sum of shortest paths to all other nodes)
     /// High closeness = information spreads quickly from this node
-    pub fn calculate_closeness_centrality(
-        &self,
-        network: &ResidueNetwork,
-    ) -> HashMap<i32, f64> {
+    pub fn calculate_closeness_centrality(&self, network: &ResidueNetwork) -> HashMap<i32, f64> {
         let n = network.size;
         let mut centrality = vec![0.0; n];
 
@@ -173,23 +167,14 @@ impl AllostericCouplingAnalyzer {
     ///
     /// Degree = number of edges / (n-1)
     /// Simple measure of local connectivity
-    pub fn calculate_degree_centrality(
-        &self,
-        network: &ResidueNetwork,
-    ) -> HashMap<i32, f64> {
+    pub fn calculate_degree_centrality(&self, network: &ResidueNetwork) -> HashMap<i32, f64> {
         let n = network.size;
         let mut centrality = vec![0.0; n];
 
         for i in 0..n {
-            let degree: f64 = (0..n)
-                .filter(|&j| network.get(i, j) > 0.0)
-                .count() as f64;
+            let degree: f64 = (0..n).filter(|&j| network.get(i, j) > 0.0).count() as f64;
 
-            centrality[i] = if n > 1 {
-                degree / (n - 1) as f64
-            } else {
-                0.0
-            };
+            centrality[i] = if n > 1 { degree / (n - 1) as f64 } else { 0.0 };
         }
 
         network
@@ -204,10 +189,7 @@ impl AllostericCouplingAnalyzer {
     ///
     /// Nodes connected to high-centrality nodes get higher scores.
     /// Identifies influential network hubs.
-    pub fn calculate_eigenvector_centrality(
-        &self,
-        network: &ResidueNetwork,
-    ) -> HashMap<i32, f64> {
+    pub fn calculate_eigenvector_centrality(&self, network: &ResidueNetwork) -> HashMap<i32, f64> {
         let n = network.size;
         if n == 0 {
             return HashMap::new();
@@ -397,7 +379,8 @@ impl AllostericCouplingAnalyzer {
         top_k: usize,
     ) -> Vec<CriticalResidue> {
         // Calculate baseline efficiency
-        let baseline = self.calculate_communication_efficiency(network, source_residues, target_residues);
+        let baseline =
+            self.calculate_communication_efficiency(network, source_residues, target_residues);
 
         if baseline <= 0.0 {
             return Vec::new();
@@ -433,7 +416,11 @@ impl AllostericCouplingAnalyzer {
             })
             .collect();
 
-        critical.sort_by(|a, b| b.estimated_disruption.partial_cmp(&a.estimated_disruption).unwrap());
+        critical.sort_by(|a, b| {
+            b.estimated_disruption
+                .partial_cmp(&a.estimated_disruption)
+                .unwrap()
+        });
         critical.truncate(top_k);
 
         critical

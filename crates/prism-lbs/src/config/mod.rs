@@ -10,9 +10,5 @@ pub mod unified_hybrid;
 
 // Re-export main configuration types
 pub use unified_hybrid::{
-    UnifiedHybridConfig,
-    DetectionMode,
-    ProvenanceLevel,
-    DruggabilityWeights,
-    QualityPreset,
+    DetectionMode, DruggabilityWeights, ProvenanceLevel, QualityPreset, UnifiedHybridConfig,
 };

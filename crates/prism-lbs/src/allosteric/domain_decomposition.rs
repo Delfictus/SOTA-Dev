@@ -10,8 +10,8 @@
 //! 4. Eigengap heuristic to determine optimal k
 //! 5. K-means clustering on eigenvector embedding
 
-use crate::structure::Atom;
 use super::types::*;
+use crate::structure::Atom;
 use std::collections::{HashMap, HashSet};
 
 /// Domain decomposer using spectral graph clustering
@@ -171,7 +171,9 @@ impl DomainDecomposer {
 
         for ev_idx in 0..k {
             // Initialize random vector
-            let mut v: Vec<f64> = (0..n).map(|i| ((i * 7 + 13) % 100) as f64 / 100.0).collect();
+            let mut v: Vec<f64> = (0..n)
+                .map(|i| ((i * 7 + 13) % 100) as f64 / 100.0)
+                .collect();
             normalize(&mut v);
 
             // Power iteration
@@ -191,7 +193,11 @@ impl DomainDecomposer {
                 normalize(&mut v_new);
 
                 // Check convergence
-                let diff: f64 = v.iter().zip(v_new.iter()).map(|(a, b)| (a - b).powi(2)).sum();
+                let diff: f64 = v
+                    .iter()
+                    .zip(v_new.iter())
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum();
                 v = v_new;
 
                 if diff < 1e-10 {
@@ -313,8 +319,7 @@ impl DomainDecomposer {
                 let c = assignments[i];
                 counts[c] += 1;
                 for f in 0..n_features {
-                    centroids[c][f] +=
-                        eigenvectors[i * self.n_eigenvectors.min(n - 1).max(2) + f];
+                    centroids[c][f] += eigenvectors[i * self.n_eigenvectors.min(n - 1).max(2) + f];
                 }
             }
 
@@ -402,7 +407,8 @@ impl DomainDecomposer {
 
             // Calculate domain properties
             let centroid = calculate_residue_centroid(atoms, &domain_residues);
-            let radius_of_gyration = calculate_radius_of_gyration(atoms, &domain_residues, &centroid);
+            let radius_of_gyration =
+                calculate_radius_of_gyration(atoms, &domain_residues, &centroid);
             let internal_contacts = self.count_internal_contacts(atoms, &domain_residues);
             let ss_composition = self.calculate_ss_composition(atoms, &domain_residues);
 
@@ -463,7 +469,11 @@ impl DomainDecomposer {
         contacts
     }
 
-    fn calculate_ss_composition(&self, atoms: &[Atom], residues: &[i32]) -> SecondaryStructureComposition {
+    fn calculate_ss_composition(
+        &self,
+        atoms: &[Atom],
+        residues: &[i32],
+    ) -> SecondaryStructureComposition {
         // Simplified: would integrate with actual DSSP in production
         let _residue_set: HashSet<i32> = residues.iter().copied().collect();
 
@@ -511,7 +521,8 @@ impl DomainDecomposer {
 
                     let centroid = calculate_residue_centroid(atoms, &all_interface);
                     let buried_sasa = self.estimate_interface_burial(atoms, &all_interface);
-                    let shape_comp = self.estimate_shape_complementarity(&interface_a, &interface_b);
+                    let shape_comp =
+                        self.estimate_shape_complementarity(&interface_a, &interface_b);
 
                     interfaces.push(DomainInterface {
                         domain_a_id: domain_a.id,

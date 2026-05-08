@@ -25,7 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() < 2 {
         eprintln!("Usage: {} <path/to/protein.pdb>", args[0]);
         eprintln!("\nExample:");
-        eprintln!("  cargo run --release --example fpocket_demo --features fpocket -- data/1hiv.pdb");
+        eprintln!(
+            "  cargo run --release --example fpocket_demo --features fpocket -- data/1hiv.pdb"
+        );
         std::process::exit(1);
     }
 
@@ -63,11 +65,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Display results
     for (i, pocket) in pockets.iter().enumerate() {
         println!("Pocket {} (ID: {})", i + 1, i);
-        println!("  Centroid:       ({:.2}, {:.2}, {:.2}) Å",
-                 pocket.centroid[0], pocket.centroid[1], pocket.centroid[2]);
+        println!(
+            "  Centroid:       ({:.2}, {:.2}, {:.2}) Å",
+            pocket.centroid[0], pocket.centroid[1], pocket.centroid[2]
+        );
         println!("  Volume:         {:.2} ų", pocket.volume);
         println!("  Druggability:   {:.3}", pocket.druggability_score.total);
-        println!("  Classification: {:?}", pocket.druggability_score.classification);
+        println!(
+            "  Classification: {:?}",
+            pocket.druggability_score.classification
+        );
         println!("  Atoms:          {}", pocket.atom_indices.len());
         println!("  Residues:       {}", pocket.residue_indices.len());
         println!("  Mean SASA:      {:.2} ų", pocket.mean_sasa);
@@ -78,7 +85,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Summary statistics
     if !pockets.is_empty() {
         let avg_volume: f64 = pockets.iter().map(|p| p.volume).sum::<f64>() / pockets.len() as f64;
-        let avg_drug: f64 = pockets.iter().map(|p| p.druggability_score.total).sum::<f64>()
+        let avg_drug: f64 = pockets
+            .iter()
+            .map(|p| p.druggability_score.total)
+            .sum::<f64>()
             / pockets.len() as f64;
 
         println!("Summary:");
@@ -88,11 +98,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Best pocket
         let best = pockets
             .iter()
-            .max_by(|a, b| a.druggability_score.total.partial_cmp(&b.druggability_score.total).unwrap())
+            .max_by(|a, b| {
+                a.druggability_score
+                    .total
+                    .partial_cmp(&b.druggability_score.total)
+                    .unwrap()
+            })
             .unwrap();
         println!("\nBest pocket (highest druggability):");
-        println!("  Centroid: ({:.2}, {:.2}, {:.2}) Å",
-                 best.centroid[0], best.centroid[1], best.centroid[2]);
+        println!(
+            "  Centroid: ({:.2}, {:.2}, {:.2}) Å",
+            best.centroid[0], best.centroid[1], best.centroid[2]
+        );
         println!("  Volume:   {:.2} ų", best.volume);
         println!("  Score:    {:.3}", best.druggability_score.total);
     }

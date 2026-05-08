@@ -38,24 +38,20 @@ fn bench_lanczos_eigensolver(c: &mut Criterion) {
     for n in [50, 100, 200, 500].iter() {
         let matrix = create_symmetric_matrix(*n, 42);
 
-        group.bench_with_input(
-            BenchmarkId::new("Lanczos", n),
-            &matrix,
-            |b, matrix| {
-                b.iter(|| {
-                    use prism_lbs::softspot::lanczos::LanczosEigensolver;
+        group.bench_with_input(BenchmarkId::new("Lanczos", n), &matrix, |b, matrix| {
+            b.iter(|| {
+                use prism_lbs::softspot::lanczos::LanczosEigensolver;
 
-                    let solver = LanczosEigensolver {
-                        max_iter: 100,
-                        tol: 1e-8,
-                        num_lanczos_vectors: 30.min(*n),
-                        seed: Some(42),
-                    };
+                let solver = LanczosEigensolver {
+                    max_iter: 100,
+                    tol: 1e-8,
+                    num_lanczos_vectors: 30.min(*n),
+                    seed: Some(42),
+                };
 
-                    black_box(solver.compute_smallest(matrix, 6))
-                });
-            },
-        );
+                black_box(solver.compute_smallest(matrix, 6))
+            });
+        });
     }
 
     group.finish();
@@ -73,7 +69,7 @@ fn bench_detection_methods(c: &mut Criterion) {
 
     group.bench_function("Grid config", |b| {
         b.iter(|| {
-            use prism_lbs::pocket::voronoi_detector::{VoronoiDetectorConfig, DetectionMethod};
+            use prism_lbs::pocket::voronoi_detector::{DetectionMethod, VoronoiDetectorConfig};
             black_box(VoronoiDetectorConfig {
                 detection_method: DetectionMethod::Grid,
                 ..Default::default()
@@ -83,7 +79,7 @@ fn bench_detection_methods(c: &mut Criterion) {
 
     group.bench_function("Delaunay config", |b| {
         b.iter(|| {
-            use prism_lbs::pocket::voronoi_detector::{VoronoiDetectorConfig, DetectionMethod};
+            use prism_lbs::pocket::voronoi_detector::{DetectionMethod, VoronoiDetectorConfig};
             black_box(VoronoiDetectorConfig {
                 detection_method: DetectionMethod::Delaunay,
                 ..Default::default()
@@ -93,7 +89,7 @@ fn bench_detection_methods(c: &mut Criterion) {
 
     group.bench_function("Hybrid config", |b| {
         b.iter(|| {
-            use prism_lbs::pocket::voronoi_detector::{VoronoiDetectorConfig, DetectionMethod};
+            use prism_lbs::pocket::voronoi_detector::{DetectionMethod, VoronoiDetectorConfig};
             black_box(VoronoiDetectorConfig {
                 detection_method: DetectionMethod::Hybrid,
                 ..Default::default()
@@ -190,18 +186,14 @@ fn bench_hdbscan(c: &mut Criterion) {
     for n in [100, 500, 1000].iter() {
         let points = create_point_cloud_3d(*n, 5, 42);
 
-        group.bench_with_input(
-            BenchmarkId::new("HDBSCAN", n),
-            &points,
-            |b, points| {
-                b.iter(|| {
-                    use prism_lbs::pocket::hdbscan::HDBSCAN;
+        group.bench_with_input(BenchmarkId::new("HDBSCAN", n), &points, |b, points| {
+            b.iter(|| {
+                use prism_lbs::pocket::hdbscan::HDBSCAN;
 
-                    let hdbscan = HDBSCAN::new(5, 5);
-                    black_box(hdbscan.fit(points))
-                });
-            },
-        );
+                let hdbscan = HDBSCAN::new(5, 5);
+                black_box(hdbscan.fit(points))
+            });
+        });
     }
 
     group.finish();
@@ -249,10 +241,50 @@ fn bench_delaunay_circumsphere(c: &mut Criterion) {
 
                 // Create atoms at regular tetrahedron vertices
                 let atoms = vec![
-                    Atom::new(1, "C".into(), "ALA".into(), 'A', 1, [1.0, 1.0, 1.0], 1.0, 20.0, "C".into()),
-                    Atom::new(2, "C".into(), "ALA".into(), 'A', 2, [1.0, -1.0, -1.0], 1.0, 20.0, "C".into()),
-                    Atom::new(3, "C".into(), "ALA".into(), 'A', 3, [-1.0, 1.0, -1.0], 1.0, 20.0, "C".into()),
-                    Atom::new(4, "C".into(), "ALA".into(), 'A', 4, [-1.0, -1.0, 1.0], 1.0, 20.0, "C".into()),
+                    Atom::new(
+                        1,
+                        "C".into(),
+                        "ALA".into(),
+                        'A',
+                        1,
+                        [1.0, 1.0, 1.0],
+                        1.0,
+                        20.0,
+                        "C".into(),
+                    ),
+                    Atom::new(
+                        2,
+                        "C".into(),
+                        "ALA".into(),
+                        'A',
+                        2,
+                        [1.0, -1.0, -1.0],
+                        1.0,
+                        20.0,
+                        "C".into(),
+                    ),
+                    Atom::new(
+                        3,
+                        "C".into(),
+                        "ALA".into(),
+                        'A',
+                        3,
+                        [-1.0, 1.0, -1.0],
+                        1.0,
+                        20.0,
+                        "C".into(),
+                    ),
+                    Atom::new(
+                        4,
+                        "C".into(),
+                        "ALA".into(),
+                        'A',
+                        4,
+                        [-1.0, -1.0, 1.0],
+                        1.0,
+                        20.0,
+                        "C".into(),
+                    ),
                 ];
 
                 black_box(detector.detect(&atoms))

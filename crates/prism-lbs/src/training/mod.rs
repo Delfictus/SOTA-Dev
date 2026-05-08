@@ -3,12 +3,12 @@
 //! Includes PDBBind data loading, FluxNet weight optimization,
 //! and ensemble model training.
 
-pub mod pdbbind_loader;
 pub mod conservation;
 pub mod ensemble;
+pub mod pdbbind_loader;
 pub mod trainer;
 
-pub use pdbbind_loader::{PdbBindLoader, PdbBindEntry, PdbBindConfig};
-pub use conservation::{ConservationLoader, ConservationData, ConservationConfig};
-pub use ensemble::{EnsemblePredictor, EnsembleConfig, VotingMethod};
+pub use conservation::{ConservationConfig, ConservationData, ConservationLoader};
+pub use ensemble::{EnsembleConfig, EnsemblePredictor, VotingMethod};
+pub use pdbbind_loader::{PdbBindConfig, PdbBindEntry, PdbBindLoader};
 pub use trainer::{LbsTrainer, TrainingConfig, TrainingMetrics};

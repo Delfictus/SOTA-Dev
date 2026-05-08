@@ -132,7 +132,10 @@ fn run_fpocket_binary(pdb_path: &Path, config: &FpocketConfig) -> Result<Vec<Poc
         .arg(config.min_alpha_radius.to_string())
         .output()
         .map_err(|e| {
-            LbsError::Gpu(format!("Failed to execute fpocket: {}. Ensure fpocket is installed and in PATH.", e))
+            LbsError::Gpu(format!(
+                "Failed to execute fpocket: {}. Ensure fpocket is installed and in PATH.",
+                e
+            ))
         })?;
 
     if !output.status.success() {

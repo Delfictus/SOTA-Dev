@@ -251,8 +251,7 @@ impl DelaunayAlphaSphereDetector {
         let ad = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
 
         // Scalar triple product (volume of parallelepiped)
-        let vol = ab[0] * (ac[1] * ad[2] - ac[2] * ad[1])
-            - ab[1] * (ac[0] * ad[2] - ac[2] * ad[0])
+        let vol = ab[0] * (ac[1] * ad[2] - ac[2] * ad[1]) - ab[1] * (ac[0] * ad[2] - ac[2] * ad[0])
             + ab[2] * (ac[0] * ad[1] - ac[1] * ad[0]);
 
         vol.abs() < self.tolerance
@@ -264,10 +263,26 @@ impl DelaunayAlphaSphereDetector {
         atoms: &[Atom],
         tet: &[usize; 4],
     ) -> Option<DelaunayAlphaSphere> {
-        let p0 = Vector3::new(atoms[tet[0]].coord[0], atoms[tet[0]].coord[1], atoms[tet[0]].coord[2]);
-        let p1 = Vector3::new(atoms[tet[1]].coord[0], atoms[tet[1]].coord[1], atoms[tet[1]].coord[2]);
-        let p2 = Vector3::new(atoms[tet[2]].coord[0], atoms[tet[2]].coord[1], atoms[tet[2]].coord[2]);
-        let p3 = Vector3::new(atoms[tet[3]].coord[0], atoms[tet[3]].coord[1], atoms[tet[3]].coord[2]);
+        let p0 = Vector3::new(
+            atoms[tet[0]].coord[0],
+            atoms[tet[0]].coord[1],
+            atoms[tet[0]].coord[2],
+        );
+        let p1 = Vector3::new(
+            atoms[tet[1]].coord[0],
+            atoms[tet[1]].coord[1],
+            atoms[tet[1]].coord[2],
+        );
+        let p2 = Vector3::new(
+            atoms[tet[2]].coord[0],
+            atoms[tet[2]].coord[1],
+            atoms[tet[2]].coord[2],
+        );
+        let p3 = Vector3::new(
+            atoms[tet[3]].coord[0],
+            atoms[tet[3]].coord[1],
+            atoms[tet[3]].coord[2],
+        );
 
         // Translate to p0 at origin
         let a = p1 - p0;
@@ -338,7 +353,12 @@ impl DelaunayAlphaSphereDetector {
         let elem = if !atom.element.is_empty() {
             atom.element.trim().to_uppercase()
         } else {
-            atom.name.trim().chars().take(1).collect::<String>().to_uppercase()
+            atom.name
+                .trim()
+                .chars()
+                .take(1)
+                .collect::<String>()
+                .to_uppercase()
         };
 
         matches!(elem.as_str(), "N" | "O" | "S")
@@ -520,7 +540,12 @@ impl DelaunayAlphaSphereDetector {
         if ab_len < self.tolerance {
             return self.dist_4d(p, a);
         }
-        let e1 = [ab[0] / ab_len, ab[1] / ab_len, ab[2] / ab_len, ab[3] / ab_len];
+        let e1 = [
+            ab[0] / ab_len,
+            ab[1] / ab_len,
+            ab[2] / ab_len,
+            ab[3] / ab_len,
+        ];
 
         // ac orthogonal to e1
         let ac_dot_e1 = ac[0] * e1[0] + ac[1] * e1[1] + ac[2] * e1[2] + ac[3] * e1[3];
@@ -534,7 +559,7 @@ impl DelaunayAlphaSphereDetector {
             + ac_orth[1] * ac_orth[1]
             + ac_orth[2] * ac_orth[2]
             + ac_orth[3] * ac_orth[3])
-        .sqrt();
+            .sqrt();
         if ac_orth_len < self.tolerance {
             return self.dist_to_line_4d(p, a, b);
         }
@@ -579,7 +604,7 @@ impl DelaunayAlphaSphereDetector {
             + normal[1] * normal[1]
             + normal[2] * normal[2]
             + normal[3] * normal[3])
-        .sqrt();
+            .sqrt();
 
         if norm_len < self.tolerance {
             return 0.0;
@@ -601,16 +626,14 @@ impl DelaunayAlphaSphereDetector {
         let v3 = [d[0] - a[0], d[1] - a[1], d[2] - a[2], d[3] - a[3]];
 
         // 4D cross product using cofactor expansion
-        let n0 = v1[1] * (v2[2] * v3[3] - v2[3] * v3[2])
-            - v1[2] * (v2[1] * v3[3] - v2[3] * v3[1])
+        let n0 = v1[1] * (v2[2] * v3[3] - v2[3] * v3[2]) - v1[2] * (v2[1] * v3[3] - v2[3] * v3[1])
             + v1[3] * (v2[1] * v3[2] - v2[2] * v3[1]);
 
         let n1 = -(v1[0] * (v2[2] * v3[3] - v2[3] * v3[2])
             - v1[2] * (v2[0] * v3[3] - v2[3] * v3[0])
             + v1[3] * (v2[0] * v3[2] - v2[2] * v3[0]));
 
-        let n2 = v1[0] * (v2[1] * v3[3] - v2[3] * v3[1])
-            - v1[1] * (v2[0] * v3[3] - v2[3] * v3[0])
+        let n2 = v1[0] * (v2[1] * v3[3] - v2[3] * v3[1]) - v1[1] * (v2[0] * v3[3] - v2[3] * v3[0])
             + v1[3] * (v2[0] * v3[1] - v2[1] * v3[0]);
 
         let n3 = -(v1[0] * (v2[1] * v3[2] - v2[2] * v3[1])
@@ -663,7 +686,7 @@ impl DelaunayAlphaSphereDetector {
             + normal[1] * normal[1]
             + normal[2] * normal[2]
             + normal[3] * normal[3])
-        .sqrt();
+            .sqrt();
 
         if norm_len < self.tolerance {
             return 0.0;
@@ -738,7 +761,9 @@ mod tests {
             make_atom(-1.0, -1.0, 1.0, "C"),
         ];
 
-        let sphere = detector.compute_circumsphere(&atoms, &[0, 1, 2, 3]).unwrap();
+        let sphere = detector
+            .compute_circumsphere(&atoms, &[0, 1, 2, 3])
+            .unwrap();
 
         // Center should be at origin
         assert!(sphere.center[0].abs() < 0.01, "x = {}", sphere.center[0]);
@@ -766,7 +791,10 @@ mod tests {
         ];
 
         let sphere = detector.compute_circumsphere(&atoms, &[0, 1, 2, 3]);
-        assert!(sphere.is_none(), "Degenerate tetrahedron should return None");
+        assert!(
+            sphere.is_none(),
+            "Degenerate tetrahedron should return None"
+        );
     }
 
     #[test]

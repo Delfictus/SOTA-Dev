@@ -190,13 +190,34 @@ impl DruggabilityScorer {
         let n = pockets.len();
 
         // Prepare component vectors
-        let volume: Vec<f32> = pockets.iter().map(|p| self.score_volume(p.volume) as f32).collect();
-        let hydro: Vec<f32> = pockets.iter().map(|p| self.score_hydrophobicity(p.mean_hydrophobicity) as f32).collect();
-        let enclosure: Vec<f32> = pockets.iter().map(|p| self.score_enclosure(p.enclosure_ratio) as f32).collect();
-        let depth: Vec<f32> = pockets.iter().map(|p| self.score_depth(p.mean_depth) as f32).collect();
-        let hbond: Vec<f32> = pockets.iter().map(|p| self.score_hbond(p.hbond_donors, p.hbond_acceptors) as f32).collect();
-        let flex: Vec<f32> = pockets.iter().map(|p| self.score_flexibility(p.mean_flexibility) as f32).collect();
-        let cons: Vec<f32> = pockets.iter().map(|p| self.score_conservation(p.mean_conservation) as f32).collect();
+        let volume: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_volume(p.volume) as f32)
+            .collect();
+        let hydro: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_hydrophobicity(p.mean_hydrophobicity) as f32)
+            .collect();
+        let enclosure: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_enclosure(p.enclosure_ratio) as f32)
+            .collect();
+        let depth: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_depth(p.mean_depth) as f32)
+            .collect();
+        let hbond: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_hbond(p.hbond_donors, p.hbond_acceptors) as f32)
+            .collect();
+        let flex: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_flexibility(p.mean_flexibility) as f32)
+            .collect();
+        let cons: Vec<f32> = pockets
+            .iter()
+            .map(|p| self.score_conservation(p.mean_conservation) as f32)
+            .collect();
         let topo: Vec<f32> = pockets.iter().map(|p| p.persistence_score as f32).collect();
 
         let weights: [f32; 8] = [
@@ -211,19 +232,23 @@ impl DruggabilityScorer {
         ];
 
         // Try to use pre-loaded LbsGpu from GlobalGpuContext (zero PTX overhead)
-        let gpu_scores = if let Some(lbs_gpu) = GlobalGpuContext::try_get().ok().and_then(|g| g.lbs_locked()) {
+        let gpu_scores = if let Some(lbs_gpu) = GlobalGpuContext::try_get()
+            .ok()
+            .and_then(|g| g.lbs_locked())
+        {
             log::debug!("Using pre-loaded LbsGpu for druggability scoring (zero PTX overhead)");
             lbs_gpu.druggability_score(
-                &volume, &hydro, &enclosure, &depth, &hbond, &flex, &cons, &topo, weights
+                &volume, &hydro, &enclosure, &depth, &hbond, &flex, &cons, &topo, weights,
             )
         } else {
             log::debug!("GlobalGpuContext LbsGpu not available, creating new instance");
             let lbs_gpu = LbsGpu::new(gpu_ctx.device().clone(), &gpu_ctx.ptx_dir())
                 .map_err(|e| crate::LbsError::Gpu(format!("Failed to init LbsGpu: {}", e)))?;
             lbs_gpu.druggability_score(
-                &volume, &hydro, &enclosure, &depth, &hbond, &flex, &cons, &topo, weights
+                &volume, &hydro, &enclosure, &depth, &hbond, &flex, &cons, &topo, weights,
             )
-        }.map_err(|e| crate::LbsError::Gpu(format!("GPU scoring failed: {}", e)))?;
+        }
+        .map_err(|e| crate::LbsError::Gpu(format!("GPU scoring failed: {}", e)))?;
 
         // Assemble results with components
         let mut results = Vec::with_capacity(n);
@@ -273,9 +298,14 @@ impl DruggabilityScorer {
         self.weights.topology = new_weights[7].clamp(0.0, 1.0);
 
         // Normalize to sum to 1.0
-        let sum: f64 = self.weights.volume + self.weights.hydrophobicity +
-            self.weights.enclosure + self.weights.depth + self.weights.hbond_capacity +
-            self.weights.flexibility + self.weights.conservation + self.weights.topology;
+        let sum: f64 = self.weights.volume
+            + self.weights.hydrophobicity
+            + self.weights.enclosure
+            + self.weights.depth
+            + self.weights.hbond_capacity
+            + self.weights.flexibility
+            + self.weights.conservation
+            + self.weights.topology;
 
         if sum > 0.0 {
             self.weights.volume /= sum;

@@ -3,7 +3,7 @@
 //! This module orchestrates both detection methods and produces a single,
 //! merged output with detection type annotations.
 
-use crate::allosteric::{AllostericDetector, AllostericDetectionConfig, AllostericPocket};
+use crate::allosteric::{AllostericDetectionConfig, AllostericDetector, AllostericPocket};
 use crate::graph::ProteinGraph;
 use crate::pocket::{Pocket, PocketDetector, PocketDetectorConfig};
 use crate::softspot::{
@@ -265,7 +265,11 @@ impl UnifiedDetector {
     ///
     /// # Returns
     /// Unified output combining all detected pockets
-    pub fn detect(&self, graph: &ProteinGraph, structure_name: &str) -> Result<UnifiedOutput, LbsError> {
+    pub fn detect(
+        &self,
+        graph: &ProteinGraph,
+        structure_name: &str,
+    ) -> Result<UnifiedOutput, LbsError> {
         log::info!(
             "[UNIFIED] Starting unified detection for {} (enhanced={}, allosteric={})",
             structure_name,
@@ -310,16 +314,23 @@ impl UnifiedDetector {
 
         // Run allosteric detection (world-class 4-stage pipeline)
         if self.config.enable_allosteric {
-            let allosteric_output = self.allosteric_detector.detect(
-                &graph.structure_ref.atoms,
-                structure_name
-            );
+            let allosteric_output = self
+                .allosteric_detector
+                .detect(&graph.structure_ref.atoms, structure_name);
             allosteric_pockets = allosteric_output.pockets;
             log::info!(
                 "[UNIFIED] Allosteric detection: {} pockets ({} high, {} medium confidence)",
                 allosteric_pockets.len(),
-                allosteric_output.summary.by_confidence.get("high").unwrap_or(&0),
-                allosteric_output.summary.by_confidence.get("medium").unwrap_or(&0),
+                allosteric_output
+                    .summary
+                    .by_confidence
+                    .get("high")
+                    .unwrap_or(&0),
+                allosteric_output
+                    .summary
+                    .by_confidence
+                    .get("medium")
+                    .unwrap_or(&0),
             );
         }
 
@@ -328,7 +339,7 @@ impl UnifiedDetector {
             &geometric_pockets,
             &cryptic_candidates,
             &allosteric_pockets,
-            graph
+            graph,
         );
 
         // Build summary
@@ -428,9 +439,7 @@ impl UnifiedDetector {
             let geo_residues: Vec<i32> = gp
                 .residue_indices
                 .iter()
-                .filter_map(|&idx| {
-                    graph.structure_ref.residues.get(idx).map(|r| r.seq_number)
-                })
+                .filter_map(|&idx| graph.structure_ref.residues.get(idx).map(|r| r.seq_number))
                 .collect();
 
             let mut pocket = UnifiedPocket {
@@ -520,9 +529,7 @@ impl UnifiedDetector {
             let geo_residues: Vec<i32> = gp
                 .residue_indices
                 .iter()
-                .filter_map(|&idx| {
-                    graph.structure_ref.residues.get(idx).map(|r| r.seq_number)
-                })
+                .filter_map(|&idx| graph.structure_ref.residues.get(idx).map(|r| r.seq_number))
                 .collect();
 
             let mut pocket = UnifiedPocket {
@@ -678,10 +685,10 @@ impl UnifiedDetector {
                 flexibility_score: Some(cc.flexibility_score),
                 packing_deficit: Some(cc.packing_deficit),
                 hydrophobic_score: Some(cc.hydrophobic_score),
-                nma_mobility: None,     // TODO: Extract from enhanced rationale
-                contact_order: None,    // TODO: Extract from enhanced rationale
-                conservation: None,     // TODO: Extract from enhanced rationale
-                probe_score: None,      // TODO: Extract from enhanced rationale
+                nma_mobility: None,  // TODO: Extract from enhanced rationale
+                contact_order: None, // TODO: Extract from enhanced rationale
+                conservation: None,  // TODO: Extract from enhanced rationale
+                probe_score: None,   // TODO: Extract from enhanced rationale
                 allosteric_coupling: None,
                 betweenness_centrality: None,
                 path_to_active_site: None,

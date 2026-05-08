@@ -15,25 +15,25 @@
 //!
 //! Copyright (c) 2024 PRISM Research Team | Delfictus I/O Inc.
 
-pub mod types;
+pub mod allosteric_coupling;
+pub mod backtrack;
+pub mod consensus_engine;
+pub mod detector;
 pub mod domain_decomposition;
 pub mod gpu_apsp;
 pub mod hinge_detection;
 pub mod msa_conservation;
 pub mod residue_network;
-pub mod allosteric_coupling;
-pub mod consensus_engine;
-pub mod backtrack;
-pub mod detector;
+pub mod types;
 
 // Re-exports
-pub use types::*;
+pub use allosteric_coupling::AllostericCouplingAnalyzer;
+pub use backtrack::BacktrackAnalyzer;
+pub use consensus_engine::HybridConsensusEngine;
+pub use detector::AllostericDetector;
 pub use domain_decomposition::DomainDecomposer;
-pub use gpu_apsp::{GpuFloydWarshall, betweenness_centrality, closeness_centrality};
+pub use gpu_apsp::{betweenness_centrality, closeness_centrality, GpuFloydWarshall};
 pub use hinge_detection::HingeDetector;
 pub use msa_conservation::ConservationAnalyzer;
 pub use residue_network::ResidueNetworkAnalyzer;
-pub use allosteric_coupling::AllostericCouplingAnalyzer;
-pub use consensus_engine::HybridConsensusEngine;
-pub use backtrack::BacktrackAnalyzer;
-pub use detector::AllostericDetector;
+pub use types::*;

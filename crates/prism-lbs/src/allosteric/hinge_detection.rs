@@ -8,9 +8,9 @@
 //! Hinge regions are critical for allosteric communication as they
 //! transmit conformational changes between domains.
 
-use crate::structure::Atom;
-use super::types::*;
 use super::domain_decomposition::euclidean_distance;
+use super::types::*;
+use crate::structure::Atom;
 use std::collections::HashMap;
 
 /// Hinge region detector using B-factor gradients
@@ -64,20 +64,12 @@ impl HingeDetector {
     }
 
     /// Detect hinges with domain context
-    pub fn detect_with_domains(
-        &self,
-        atoms: &[Atom],
-        domains: &[Domain],
-    ) -> Vec<HingeRegion> {
+    pub fn detect_with_domains(&self, atoms: &[Atom], domains: &[Domain]) -> Vec<HingeRegion> {
         let mut hinges = self.detect(atoms);
 
         // Annotate hinges with connected domains
         for hinge in &mut hinges {
-            hinge.connected_domains = self.find_connected_domains(
-                atoms,
-                &hinge.residues,
-                domains,
-            );
+            hinge.connected_domains = self.find_connected_domains(atoms, &hinge.residues, domains);
         }
 
         hinges
@@ -91,9 +83,7 @@ impl HingeDetector {
             let name = atom.name.trim();
             // Backbone atoms: N, CA, C, O
             if name == "N" || name == "CA" || name == "C" || name == "O" {
-                let entry = residue_bfactors
-                    .entry(atom.residue_seq)
-                    .or_insert((0.0, 0));
+                let entry = residue_bfactors.entry(atom.residue_seq).or_insert((0.0, 0));
                 entry.0 += atom.b_factor;
                 entry.1 += 1;
             }
@@ -111,10 +101,7 @@ impl HingeDetector {
             .collect()
     }
 
-    fn calculate_bfactor_gradients(
-        &self,
-        bfactors: &HashMap<i32, f64>,
-    ) -> HashMap<i32, f64> {
+    fn calculate_bfactor_gradients(&self, bfactors: &HashMap<i32, f64>) -> HashMap<i32, f64> {
         let mut sorted_residues: Vec<i32> = bfactors.keys().copied().collect();
         sorted_residues.sort();
 
@@ -161,10 +148,7 @@ impl HingeDetector {
         // Simplified DSSP-like assignment based on backbone geometry
         // For production, integrate actual DSSP or STRIDE
 
-        let ca_atoms: Vec<&Atom> = atoms
-            .iter()
-            .filter(|a| a.name.trim() == "CA")
-            .collect();
+        let ca_atoms: Vec<&Atom> = atoms.iter().filter(|a| a.name.trim() == "CA").collect();
 
         let mut ss_assignment = HashMap::new();
 
@@ -276,10 +260,7 @@ impl HingeDetector {
                     .unwrap_or(SecondaryStructure::Coil);
 
                 // Hinges are typically in loops/coils/turns
-                if matches!(
-                    ss,
-                    SecondaryStructure::Coil | SecondaryStructure::Turn
-                ) {
+                if matches!(ss, SecondaryStructure::Coil | SecondaryStructure::Turn) {
                     candidates.push(HingeCandidate {
                         residue_seq: residue,
                         gradient,
@@ -292,11 +273,7 @@ impl HingeDetector {
         candidates
     }
 
-    fn cluster_hinges(
-        &self,
-        atoms: &[Atom],
-        candidates: Vec<HingeCandidate>,
-    ) -> Vec<HingeRegion> {
+    fn cluster_hinges(&self, atoms: &[Atom], candidates: Vec<HingeCandidate>) -> Vec<HingeRegion> {
         if candidates.is_empty() {
             return Vec::new();
         }

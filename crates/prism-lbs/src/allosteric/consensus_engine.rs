@@ -8,10 +8,10 @@
 //!
 //! The key innovation: evidence-based confidence with transparent rationale.
 
-use crate::structure::Atom;
-use super::types::*;
 use super::domain_decomposition::{calculate_residue_centroid, DomainDecomposer};
 use super::msa_conservation::spatial_cluster;
+use super::types::*;
+use crate::structure::Atom;
 use std::collections::{HashMap, HashSet};
 
 /// Hybrid consensus engine for multi-module pocket detection
@@ -131,7 +131,10 @@ impl HybridConsensusEngine {
                         residue_indices: candidate.residues.clone(),
                         centroid: candidate.centroid,
                         volume: self.estimate_volume(atoms, &candidate.residues),
-                        druggability: candidate.evidence.geometric.as_ref()
+                        druggability: candidate
+                            .evidence
+                            .geometric
+                            .as_ref()
                             .map(|g| g.druggability)
                             .unwrap_or(0.5),
                         detection_type: candidate.detection_type,
@@ -280,7 +283,11 @@ impl HybridConsensusEngine {
             if let Some(allo) = evidence.allosteric_coupling {
                 if merged.allosteric_coupling.is_none()
                     || allo.coupling_strength
-                        > merged.allosteric_coupling.as_ref().unwrap().coupling_strength
+                        > merged
+                            .allosteric_coupling
+                            .as_ref()
+                            .unwrap()
+                            .coupling_strength
                 {
                     merged.allosteric_coupling = Some(allo);
                 }
@@ -320,12 +327,9 @@ impl HybridConsensusEngine {
                         .collect();
 
                     if !residue_conservation.is_empty() {
-                        let mean_score =
-                            residue_conservation.iter().sum::<f64>() / residue_conservation.len() as f64;
-                        let n_conserved = residue_conservation
-                            .iter()
-                            .filter(|&&c| c > 0.7)
-                            .count();
+                        let mean_score = residue_conservation.iter().sum::<f64>()
+                            / residue_conservation.len() as f64;
+                        let n_conserved = residue_conservation.iter().filter(|&&c| c > 0.7).count();
 
                         candidate.evidence.conservation = Some(ConservationEvidence {
                             mean_score,
@@ -333,8 +337,15 @@ impl HybridConsensusEngine {
                             entropy_score: 1.0 - mean_score, // Inverse
                         });
 
-                        if !candidate.evidence.detected_by.contains(&"conservation".to_string()) {
-                            candidate.evidence.detected_by.push("conservation".to_string());
+                        if !candidate
+                            .evidence
+                            .detected_by
+                            .contains(&"conservation".to_string())
+                        {
+                            candidate
+                                .evidence
+                                .detected_by
+                                .push("conservation".to_string());
                         }
                     }
                 }
@@ -348,19 +359,27 @@ impl HybridConsensusEngine {
                         .collect();
 
                     if !residue_centrality.is_empty() {
-                        let mean_centrality =
-                            residue_centrality.iter().sum::<f64>() / residue_centrality.len() as f64;
+                        let mean_centrality = residue_centrality.iter().sum::<f64>()
+                            / residue_centrality.len() as f64;
 
                         if mean_centrality > 0.3 {
-                            candidate.evidence.allosteric_coupling = Some(AllostericCouplingEvidence {
-                                coupling_strength: mean_centrality,
-                                shortest_path_length: 0.0,
-                                distance_to_active: 0.0,
-                                betweenness_centrality: mean_centrality,
-                            });
+                            candidate.evidence.allosteric_coupling =
+                                Some(AllostericCouplingEvidence {
+                                    coupling_strength: mean_centrality,
+                                    shortest_path_length: 0.0,
+                                    distance_to_active: 0.0,
+                                    betweenness_centrality: mean_centrality,
+                                });
 
-                            if !candidate.evidence.detected_by.contains(&"centrality".to_string()) {
-                                candidate.evidence.detected_by.push("centrality".to_string());
+                            if !candidate
+                                .evidence
+                                .detected_by
+                                .contains(&"centrality".to_string())
+                            {
+                                candidate
+                                    .evidence
+                                    .detected_by
+                                    .push("centrality".to_string());
                             }
                         }
                     }
@@ -417,7 +436,10 @@ impl HybridConsensusEngine {
                 ));
             } else if cons.mean_score > 0.5 {
                 score += 0.1;
-                supporting.push(format!("Moderately conserved: {:.0}%", cons.mean_score * 100.0));
+                supporting.push(format!(
+                    "Moderately conserved: {:.0}%",
+                    cons.mean_score * 100.0
+                ));
             } else {
                 concerning.push(format!("Low conservation: {:.0}%", cons.mean_score * 100.0));
             }

@@ -3,8 +3,8 @@
 //! Combines predictions from multiple pocket detection approaches
 //! using configurable voting strategies.
 
-use crate::{LbsConfig, LbsError, Pocket, PrismLbs, ProteinStructure};
 use crate::scoring::{DruggabilityScore, ScoringWeights};
+use crate::{LbsConfig, LbsError, Pocket, PrismLbs, ProteinStructure};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -158,7 +158,9 @@ impl EnsemblePredictor {
         }
 
         if predictors.is_empty() {
-            return Err(LbsError::Config("No enabled methods in ensemble".to_string()));
+            return Err(LbsError::Config(
+                "No enabled methods in ensemble".to_string(),
+            ));
         }
 
         Ok(Self { config, predictors })
@@ -225,7 +227,7 @@ impl EnsemblePredictor {
         pocket_clusters
             .into_iter()
             .map(|(centroid, pockets)| self.merge_pocket_cluster(&centroid, &pockets, predictions))
-            .filter(|ep| ep.confidence > 0.3)  // Minimum confidence threshold
+            .filter(|ep| ep.confidence > 0.3) // Minimum confidence threshold
             .collect()
     }
 
@@ -248,10 +250,8 @@ impl EnsemblePredictor {
             .into_iter()
             .filter(|(_, pockets)| {
                 // Check if all methods contributed
-                let methods: std::collections::HashSet<&str> = pockets
-                    .iter()
-                    .map(|(m, _)| m.as_str())
-                    .collect();
+                let methods: std::collections::HashSet<&str> =
+                    pockets.iter().map(|(m, _)| m.as_str()).collect();
                 methods.len() >= num_methods
             })
             .map(|(centroid, pockets)| self.merge_pocket_cluster(&centroid, &pockets, predictions))
@@ -289,7 +289,10 @@ impl EnsemblePredictor {
     }
 
     /// Cluster nearby pockets from different methods
-    fn cluster_pockets(&self, predictions: &[(String, Vec<Pocket>)]) -> Vec<([f64; 3], Vec<(String, Pocket)>)> {
+    fn cluster_pockets(
+        &self,
+        predictions: &[(String, Vec<Pocket>)],
+    ) -> Vec<([f64; 3], Vec<(String, Pocket)>)> {
         let mut clusters: HashMap<[i64; 3], Vec<(String, Pocket)>> = HashMap::new();
 
         for (method_name, pockets) in predictions {
@@ -300,7 +303,9 @@ impl EnsemblePredictor {
                 let mut found_cluster = None;
                 for existing_key in clusters.keys() {
                     let existing_centroid = self.key_to_centroid(existing_key);
-                    if self.distance(&pocket.centroid, &existing_centroid) < self.config.match_distance {
+                    if self.distance(&pocket.centroid, &existing_centroid)
+                        < self.config.match_distance
+                    {
                         found_cluster = Some(*existing_key);
                         break;
                     }
@@ -353,7 +358,10 @@ impl EnsemblePredictor {
 
         for (method_name, pocket) in pockets {
             let weight = self.get_method_weight(method_name);
-            votes.insert(method_name.clone(), pocket.druggability_score.total * weight);
+            votes.insert(
+                method_name.clone(),
+                pocket.druggability_score.total * weight,
+            );
 
             sum_volume += pocket.volume * weight;
             sum_hydro += pocket.mean_hydrophobicity * weight;
@@ -392,16 +400,49 @@ impl EnsemblePredictor {
             atom_indices: all_atoms,
             residue_indices: all_residues,
             centroid,
-            volume: if total_weight > 0.0 { sum_volume / total_weight } else { 0.0 },
-            enclosure_ratio: if total_weight > 0.0 { sum_enclosure / total_weight } else { 0.0 },
-            mean_hydrophobicity: if total_weight > 0.0 { sum_hydro / total_weight } else { 0.0 },
-            mean_depth: if total_weight > 0.0 { sum_depth / total_weight } else { 0.0 },
+            volume: if total_weight > 0.0 {
+                sum_volume / total_weight
+            } else {
+                0.0
+            },
+            enclosure_ratio: if total_weight > 0.0 {
+                sum_enclosure / total_weight
+            } else {
+                0.0
+            },
+            mean_hydrophobicity: if total_weight > 0.0 {
+                sum_hydro / total_weight
+            } else {
+                0.0
+            },
+            mean_depth: if total_weight > 0.0 {
+                sum_depth / total_weight
+            } else {
+                0.0
+            },
             mean_sasa: pockets.first().map(|(_, p)| p.mean_sasa).unwrap_or(0.0),
-            mean_flexibility: pockets.first().map(|(_, p)| p.mean_flexibility).unwrap_or(0.0),
-            mean_conservation: pockets.first().map(|(_, p)| p.mean_conservation).unwrap_or(0.0),
-            persistence_score: pockets.first().map(|(_, p)| p.persistence_score).unwrap_or(0.0),
-            hbond_donors: pockets.iter().map(|(_, p)| p.hbond_donors).max().unwrap_or(0),
-            hbond_acceptors: pockets.iter().map(|(_, p)| p.hbond_acceptors).max().unwrap_or(0),
+            mean_flexibility: pockets
+                .first()
+                .map(|(_, p)| p.mean_flexibility)
+                .unwrap_or(0.0),
+            mean_conservation: pockets
+                .first()
+                .map(|(_, p)| p.mean_conservation)
+                .unwrap_or(0.0),
+            persistence_score: pockets
+                .first()
+                .map(|(_, p)| p.persistence_score)
+                .unwrap_or(0.0),
+            hbond_donors: pockets
+                .iter()
+                .map(|(_, p)| p.hbond_donors)
+                .max()
+                .unwrap_or(0),
+            hbond_acceptors: pockets
+                .iter()
+                .map(|(_, p)| p.hbond_acceptors)
+                .max()
+                .unwrap_or(0),
             druggability_score: DruggabilityScore::default(),
             boundary_atoms: Vec::new(),
             mean_electrostatic: 0.0,
@@ -426,7 +467,8 @@ impl EnsemblePredictor {
 
     /// Get method weight from config
     fn get_method_weight(&self, method_name: &str) -> f64 {
-        self.config.methods
+        self.config
+            .methods
             .iter()
             .find(|m| m.name == method_name)
             .map(|m| m.weight)

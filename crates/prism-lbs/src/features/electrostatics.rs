@@ -76,7 +76,8 @@ pub fn electrostatic_polarity(atom_indices: &[usize], structure: &ProteinStructu
     }
 
     let mean: f64 = charges.iter().sum::<f64>() / charges.len() as f64;
-    let variance: f64 = charges.iter().map(|&c| (c - mean).powi(2)).sum::<f64>() / charges.len() as f64;
+    let variance: f64 =
+        charges.iter().map(|&c| (c - mean).powi(2)).sum::<f64>() / charges.len() as f64;
 
     // Normalize variance to [0, 1] range (typical charge variance is 0.0-0.5)
     (variance * 4.0).min(1.0)

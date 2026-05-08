@@ -7,13 +7,15 @@ use crate::phases::{
     SurfaceReservoirConfig, SurfaceReservoirPhase, TopologicalPocketConfig, TopologicalPocketPhase,
 };
 use crate::pocket::cavity_detector::{CavityDetector, CavityDetectorConfig};
-use crate::pocket::voronoi_detector::{VoronoiDetector, VoronoiDetectorConfig};
 use crate::pocket::geometry::{
     alpha_shape_volume, boundary_enclosure, bounding_box_volume, convex_hull_volume,
     enclosure_ratio, voxel_volume,
 };
-use crate::pocket::precision_filter::{filter_pockets_for_precision, PrecisionFilterConfig, PrecisionMode};
+use crate::pocket::precision_filter::{
+    filter_pockets_for_precision, PrecisionFilterConfig, PrecisionMode,
+};
 use crate::pocket::properties::Pocket;
+use crate::pocket::voronoi_detector::{VoronoiDetector, VoronoiDetectorConfig};
 use crate::scoring::DruggabilityScore;
 use crate::structure::ProteinStructure;
 use crate::LbsError;
@@ -21,11 +23,11 @@ use crate::LbsError;
 #[cfg(feature = "cuda")]
 use prism_gpu::context::GpuContext;
 #[cfg(feature = "cuda")]
-use prism_gpu::LbsGpu;
-#[cfg(feature = "cuda")]
-use prism_gpu::mega_fused::{MegaFusedGpu, MegaFusedConfig, MegaFusedOutput};
-#[cfg(feature = "cuda")]
 use prism_gpu::global_context::GlobalGpuContext;
+#[cfg(feature = "cuda")]
+use prism_gpu::mega_fused::{MegaFusedConfig, MegaFusedGpu, MegaFusedOutput};
+#[cfg(feature = "cuda")]
+use prism_gpu::LbsGpu;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 
@@ -75,18 +77,18 @@ impl Default for PocketDetectorConfig {
             topology: TopologicalPocketConfig::default(),
             refinement: PocketRefinementConfig::default(),
             geometry: crate::pocket::GeometryConfig::default(),
-            use_fpocket: false,  // Disabled by default (requires fpocket installation)
+            use_fpocket: false, // Disabled by default (requires fpocket installation)
             fpocket: crate::pocket::fpocket_ffi::FpocketConfig::default(),
-            use_voronoi_detection: true,  // RECOMMENDED: proper Delaunay-based detection
+            use_voronoi_detection: true, // RECOMMENDED: proper Delaunay-based detection
             voronoi_detector: VoronoiDetectorConfig::default(),
-            use_cavity_detection: false,  // Legacy grid-based method
+            use_cavity_detection: false, // Legacy grid-based method
             cavity_detector: CavityDetectorConfig::default(),
-            precision_mode: PrecisionMode::Balanced,  // Default to balanced precision/recall
+            precision_mode: PrecisionMode::Balanced, // Default to balanced precision/recall
             precision_filter: PrecisionFilterConfig::balanced(),
             #[cfg(feature = "cuda")]
-            use_mega_fused: true,  // Enable mega-fused by default when GPU available
+            use_mega_fused: true, // Enable mega-fused by default when GPU available
             #[cfg(feature = "cuda")]
-            mega_fused_config: MegaFusedConfig::screening(),  // Use screening mode for fast batch processing
+            mega_fused_config: MegaFusedConfig::screening(), // Use screening mode for fast batch processing
         }
     }
 }
@@ -108,16 +110,16 @@ impl PocketDetector {
                 topology: config.phase6.clone(),
                 refinement: PocketRefinementConfig::default(),
                 geometry: config.geometry.clone(),
-                use_fpocket: false,  // Disabled by default (requires fpocket installation)
+                use_fpocket: false, // Disabled by default (requires fpocket installation)
                 fpocket: crate::pocket::fpocket_ffi::FpocketConfig::default(),
-                use_voronoi_detection: true,  // RECOMMENDED: proper Delaunay-based detection
+                use_voronoi_detection: true, // RECOMMENDED: proper Delaunay-based detection
                 voronoi_detector: VoronoiDetectorConfig::default(),
-                use_cavity_detection: false,  // Legacy grid-based method
+                use_cavity_detection: false, // Legacy grid-based method
                 cavity_detector: CavityDetectorConfig::default(),
                 precision_mode: PrecisionMode::Balanced,
                 precision_filter: PrecisionFilterConfig::balanced(),
                 #[cfg(feature = "cuda")]
-                use_mega_fused: true,  // Enable mega-fused by default when GPU available
+                use_mega_fused: true, // Enable mega-fused by default when GPU available
                 #[cfg(feature = "cuda")]
                 mega_fused_config: if config.pure_gpu_mode {
                     MegaFusedConfig::screening_pure()
@@ -130,7 +132,8 @@ impl PocketDetector {
 
     /// Apply precision filtering to reduce false positives
     fn apply_precision_filter(&self, pockets: Vec<Pocket>) -> Vec<Pocket> {
-        let (filtered, stats) = filter_pockets_for_precision(pockets, &self.config.precision_filter);
+        let (filtered, stats) =
+            filter_pockets_for_precision(pockets, &self.config.precision_filter);
 
         if stats.total_removed() > 0 {
             log::info!(
@@ -162,7 +165,11 @@ impl PocketDetector {
 
     /// Detect pockets using GPU acceleration when available
     #[cfg(feature = "cuda")]
-    pub fn detect_with_gpu(&self, graph: &ProteinGraph, gpu_ctx: Option<&Arc<GpuContext>>) -> Result<Vec<Pocket>, LbsError> {
+    pub fn detect_with_gpu(
+        &self,
+        graph: &ProteinGraph,
+        gpu_ctx: Option<&Arc<GpuContext>>,
+    ) -> Result<Vec<Pocket>, LbsError> {
         self.detect_internal(graph, gpu_ctx)
     }
 
@@ -170,7 +177,10 @@ impl PocketDetector {
     /// Builds 5 flat arrays directly from ProteinStructure and runs mega-fused kernel.
     /// This is the fastest possible path for high-throughput screening.
     #[cfg(feature = "cuda")]
-    pub fn detect_pure_gpu_direct(&self, structure: &ProteinStructure) -> Result<Vec<Pocket>, LbsError> {
+    pub fn detect_pure_gpu_direct(
+        &self,
+        structure: &ProteinStructure,
+    ) -> Result<Vec<Pocket>, LbsError> {
         use prism_gpu::mega_fused::signals;
         use std::collections::HashMap;
 
@@ -182,7 +192,9 @@ impl PocketDetector {
         }
 
         // Build 5 flat arrays directly from structure (NO ProteinGraph)
-        let atoms: Vec<f32> = structure.atoms.iter()
+        let atoms: Vec<f32> = structure
+            .atoms
+            .iter()
             .flat_map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
             .collect();
 
@@ -196,44 +208,88 @@ impl PocketDetector {
         }
 
         // CA indices
-        let ca_indices: Vec<i32> = structure.residues.iter()
+        let ca_indices: Vec<i32> = structure
+            .residues
+            .iter()
             .map(|res| {
-                structure.atoms.iter().position(|a| {
-                    a.residue_seq == res.seq_number
-                        && a.chain_id == res.chain_id
-                        && a.name == "CA"
-                })
-                .map(|i| i as i32)
-                .unwrap_or(-1)
+                structure
+                    .atoms
+                    .iter()
+                    .position(|a| {
+                        a.residue_seq == res.seq_number
+                            && a.chain_id == res.chain_id
+                            && a.name == "CA"
+                    })
+                    .map(|i| i as i32)
+                    .unwrap_or(-1)
             })
             .collect();
 
         // PARSE RESIDUE TYPES from residue names (FIX FOR DEAD PHYSICS FEATURES!)
-        let residue_types: Vec<i32> = structure.residues.iter()
+        let residue_types: Vec<i32> = structure
+            .residues
+            .iter()
             .map(|res| {
                 // Parse 3-letter code to 1-letter, then to index (0-19)
                 let aa_1letter = match res.name.as_str() {
-                    "ALA" => 'A', "ARG" => 'R', "ASN" => 'N', "ASP" => 'D', "CYS" => 'C',
-                    "GLN" => 'Q', "GLU" => 'E', "GLY" => 'G', "HIS" => 'H', "ILE" => 'I',
-                    "LEU" => 'L', "LYS" => 'K', "MET" => 'M', "PHE" => 'F', "PRO" => 'P',
-                    "SER" => 'S', "THR" => 'T', "TRP" => 'W', "TYR" => 'Y', "VAL" => 'V',
-                    _ => 'A',  // Default to Alanine for unknown
+                    "ALA" => 'A',
+                    "ARG" => 'R',
+                    "ASN" => 'N',
+                    "ASP" => 'D',
+                    "CYS" => 'C',
+                    "GLN" => 'Q',
+                    "GLU" => 'E',
+                    "GLY" => 'G',
+                    "HIS" => 'H',
+                    "ILE" => 'I',
+                    "LEU" => 'L',
+                    "LYS" => 'K',
+                    "MET" => 'M',
+                    "PHE" => 'F',
+                    "PRO" => 'P',
+                    "SER" => 'S',
+                    "THR" => 'T',
+                    "TRP" => 'W',
+                    "TYR" => 'Y',
+                    "VAL" => 'V',
+                    _ => 'A', // Default to Alanine for unknown
                 };
                 // Convert to index: A=0, R=1, N=2, ..., V=19
                 (match aa_1letter {
-                    'A' => 0,  'R' => 1,  'N' => 2,  'D' => 3,  'C' => 4,
-                    'Q' => 5,  'E' => 6,  'G' => 7,  'H' => 8,  'I' => 9,
-                    'L' => 10, 'K' => 11, 'M' => 12, 'F' => 13, 'P' => 14,
-                    'S' => 15, 'T' => 16, 'W' => 17, 'Y' => 18, 'V' => 19,
+                    'A' => 0,
+                    'R' => 1,
+                    'N' => 2,
+                    'D' => 3,
+                    'C' => 4,
+                    'Q' => 5,
+                    'E' => 6,
+                    'G' => 7,
+                    'H' => 8,
+                    'I' => 9,
+                    'L' => 10,
+                    'K' => 11,
+                    'M' => 12,
+                    'F' => 13,
+                    'P' => 14,
+                    'S' => 15,
+                    'T' => 16,
+                    'W' => 17,
+                    'Y' => 18,
+                    'V' => 19,
                     _ => 0,
                 }) as i32
             })
             .collect();
 
-        log::info!("Parsed {} residue types (will enable hydrophobicity features)", residue_types.len());
+        log::info!(
+            "Parsed {} residue types (will enable hydrophobicity features)",
+            residue_types.len()
+        );
 
         // Conservation
-        let conservation: Vec<f32> = structure.residues.iter()
+        let conservation: Vec<f32> = structure
+            .residues
+            .iter()
             .map(|r| r.conservation_score as f32)
             .collect();
 
@@ -247,14 +303,18 @@ impl PocketDetector {
                     bfactor.push(0.5);
                     burial.push(0.5);
                 } else {
-                    let avg_bfactor: f64 = res_atom_indices.iter()
+                    let avg_bfactor: f64 = res_atom_indices
+                        .iter()
                         .map(|&i| structure.atoms[i].b_factor)
-                        .sum::<f64>() / res_atom_indices.len() as f64;
+                        .sum::<f64>()
+                        / res_atom_indices.len() as f64;
                     bfactor.push((avg_bfactor / 100.0).clamp(0.0, 1.0) as f32);
 
-                    let avg_sasa: f64 = res_atom_indices.iter()
+                    let avg_sasa: f64 = res_atom_indices
+                        .iter()
                         .map(|&i| structure.atoms[i].sasa)
-                        .sum::<f64>() / res_atom_indices.len() as f64;
+                        .sum::<f64>()
+                        / res_atom_indices.len() as f64;
                     burial.push((1.0 - (avg_sasa / 150.0).clamp(0.0, 1.0)) as f32);
                 }
             } else {
@@ -264,29 +324,39 @@ impl PocketDetector {
         }
 
         // Get mega-fused kernel from GlobalGpuContext
-        let global_gpu = GlobalGpuContext::try_get()
-            .map_err(|e| LbsError::Gpu(format!("Pure GPU direct requires GlobalGpuContext: {}", e)))?;
-        let mut mega_fused = global_gpu.mega_fused_locked()
-            .ok_or_else(|| LbsError::Gpu("Mega-fused kernel not loaded in GlobalGpuContext".to_string()))?;
+        let global_gpu = GlobalGpuContext::try_get().map_err(|e| {
+            LbsError::Gpu(format!("Pure GPU direct requires GlobalGpuContext: {}", e))
+        })?;
+        let mut mega_fused = global_gpu.mega_fused_locked().ok_or_else(|| {
+            LbsError::Gpu("Mega-fused kernel not loaded in GlobalGpuContext".to_string())
+        })?;
 
         // Run kernel with residue types (enables hydrophobicity physics features!)
-        let output = mega_fused.detect_pockets(
-            &atoms,
-            &ca_indices,
-            &conservation,
-            &bfactor,
-            &burial,
-            Some(&residue_types),  // NEW: Pass residue types for physics!
-            &self.config.mega_fused_config,
-        ).map_err(|e| LbsError::Gpu(format!("Mega-fused kernel failed: {}", e)))?;
+        let output = mega_fused
+            .detect_pockets(
+                &atoms,
+                &ca_indices,
+                &conservation,
+                &bfactor,
+                &burial,
+                Some(&residue_types), // NEW: Pass residue types for physics!
+                &self.config.mega_fused_config,
+            )
+            .map_err(|e| LbsError::Gpu(format!("Mega-fused kernel failed: {}", e)))?;
 
-        log::info!("GPU kernel complete: {} residues, {} combined features",
-                   output.consensus_scores.len(), output.combined_features.len());
+        log::info!(
+            "GPU kernel complete: {} residues, {} combined features",
+            output.consensus_scores.len(),
+            output.combined_features.len()
+        );
 
         // Convert output to Pockets
         let mut pocket_residues: HashMap<i32, Vec<usize>> = HashMap::new();
         for (res_idx, &pocket_id) in output.pocket_assignment.iter().enumerate() {
-            if pocket_id >= 0 && output.consensus_scores[res_idx] > self.config.mega_fused_config.consensus_threshold {
+            if pocket_id >= 0
+                && output.consensus_scores[res_idx]
+                    > self.config.mega_fused_config.consensus_threshold
+            {
                 pocket_residues.entry(pocket_id).or_default().push(res_idx);
             }
         }
@@ -309,7 +379,9 @@ impl PocketDetector {
 
             for &res_idx in &residue_indices {
                 let res = &structure.residues[res_idx];
-                if let Some(res_atom_indices) = residue_atom_map.get(&(res.seq_number, res.chain_id)) {
+                if let Some(res_atom_indices) =
+                    residue_atom_map.get(&(res.seq_number, res.chain_id))
+                {
                     for &atom_idx in res_atom_indices {
                         let atom = &structure.atoms[atom_idx];
                         atom_indices.push(atom_idx);
@@ -341,19 +413,28 @@ impl PocketDetector {
             let volume = bounding_box_volume(structure, &atom_indices);
             let enc = enclosure_ratio(structure, &atom_indices);
 
-            let avg_consensus = residue_indices.iter()
+            let avg_consensus = residue_indices
+                .iter()
                 .map(|&i| output.consensus_scores[i])
-                .sum::<f32>() / residue_indices.len() as f32;
+                .sum::<f32>()
+                / residue_indices.len() as f32;
 
-            let avg_confidence = residue_indices.iter()
+            let avg_confidence = residue_indices
+                .iter()
                 .map(|&i| output.confidence[i] as f32)
-                .sum::<f32>() / residue_indices.len() as f32;
+                .sum::<f32>()
+                / residue_indices.len() as f32;
 
-            let avg_centrality = residue_indices.iter()
+            let avg_centrality = residue_indices
+                .iter()
                 .map(|&i| output.centrality[i])
-                .sum::<f32>() / residue_indices.len() as f32;
+                .sum::<f32>()
+                / residue_indices.len() as f32;
 
-            let drugg_total = (avg_consensus as f64 * 0.4 + avg_confidence as f64 / 2.0 * 0.3 + avg_centrality as f64 * 0.3).clamp(0.0, 1.0);
+            let drugg_total = (avg_consensus as f64 * 0.4
+                + avg_confidence as f64 / 2.0 * 0.3
+                + avg_centrality as f64 * 0.3)
+                .clamp(0.0, 1.0);
             let classification = if drugg_total >= 0.7 {
                 crate::scoring::DrugabilityClass::HighlyDruggable
             } else if drugg_total >= 0.5 {
@@ -403,7 +484,12 @@ impl PocketDetector {
             }
         }
 
-        pockets.sort_by(|a, b| b.druggability_score.total.partial_cmp(&a.druggability_score.total).unwrap_or(std::cmp::Ordering::Equal));
+        pockets.sort_by(|a, b| {
+            b.druggability_score
+                .total
+                .partial_cmp(&a.druggability_score.total)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         pockets.truncate(self.config.max_pockets);
 
         let filtered = self.apply_precision_filter(pockets);
@@ -412,11 +498,17 @@ impl PocketDetector {
 
     /// Extract raw 92-dim features (for ML training, viral escape, etc.)
     #[cfg(feature = "cuda")]
-    pub fn extract_features_pure_gpu(&self, structure: &ProteinStructure) -> Result<Vec<f32>, LbsError> {
+    pub fn extract_features_pure_gpu(
+        &self,
+        structure: &ProteinStructure,
+    ) -> Result<Vec<f32>, LbsError> {
         use prism_gpu::mega_fused::signals;
         use std::collections::HashMap;
 
-        log::info!("FEATURE EXTRACTION MODE: Extracting 92-dim features for {}", structure.title);
+        log::info!(
+            "FEATURE EXTRACTION MODE: Extracting 92-dim features for {}",
+            structure.title
+        );
 
         let n_residues = structure.residues.len();
         if n_residues == 0 {
@@ -424,7 +516,9 @@ impl PocketDetector {
         }
 
         // Build arrays (same as detect_pure_gpu_direct)
-        let atoms: Vec<f32> = structure.atoms.iter()
+        let atoms: Vec<f32> = structure
+            .atoms
+            .iter()
             .flat_map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
             .collect();
 
@@ -436,19 +530,26 @@ impl PocketDetector {
                 .push(atom_idx);
         }
 
-        let ca_indices: Vec<i32> = structure.residues.iter()
+        let ca_indices: Vec<i32> = structure
+            .residues
+            .iter()
             .map(|res| {
-                structure.atoms.iter().position(|a| {
-                    a.residue_seq == res.seq_number
-                        && a.chain_id == res.chain_id
-                        && a.name == "CA"
-                })
-                .map(|i| i as i32)
-                .unwrap_or(-1)
+                structure
+                    .atoms
+                    .iter()
+                    .position(|a| {
+                        a.residue_seq == res.seq_number
+                            && a.chain_id == res.chain_id
+                            && a.name == "CA"
+                    })
+                    .map(|i| i as i32)
+                    .unwrap_or(-1)
             })
             .collect();
 
-        let conservation: Vec<f32> = structure.residues.iter()
+        let conservation: Vec<f32> = structure
+            .residues
+            .iter()
             .map(|r| r.conservation_score as f32)
             .collect();
 
@@ -461,14 +562,18 @@ impl PocketDetector {
                     bfactor.push(0.5);
                     burial.push(0.5);
                 } else {
-                    let avg_bfactor: f64 = res_atom_indices.iter()
+                    let avg_bfactor: f64 = res_atom_indices
+                        .iter()
                         .map(|&i| structure.atoms[i].b_factor)
-                        .sum::<f64>() / res_atom_indices.len() as f64;
+                        .sum::<f64>()
+                        / res_atom_indices.len() as f64;
                     bfactor.push((avg_bfactor / 100.0).clamp(0.0, 1.0) as f32);
 
-                    let avg_sasa: f64 = res_atom_indices.iter()
+                    let avg_sasa: f64 = res_atom_indices
+                        .iter()
                         .map(|&i| structure.atoms[i].sasa)
-                        .sum::<f64>() / res_atom_indices.len() as f64;
+                        .sum::<f64>()
+                        / res_atom_indices.len() as f64;
                     burial.push(1.0 - (avg_sasa / 200.0).clamp(0.0, 1.0) as f32);
                 }
             } else {
@@ -478,31 +583,46 @@ impl PocketDetector {
         }
 
         // PARSE RESIDUE TYPES (enable physics features!)
-        let residue_types: Vec<i32> = structure.residues.iter()
+        let residue_types: Vec<i32> = structure
+            .residues
+            .iter()
             .map(|res| Self::parse_residue_type(&res.name))
             .collect();
 
-        log::info!("Parsed {} residue types for physics features", residue_types.len());
+        log::info!(
+            "Parsed {} residue types for physics features",
+            residue_types.len()
+        );
 
         // Get GPU kernel
-        let global_gpu = GlobalGpuContext::try_get()
-            .map_err(|e| LbsError::Gpu(format!("Feature extraction requires GlobalGpuContext: {}", e)))?;
-        let mut mega_fused = global_gpu.mega_fused_locked()
+        let global_gpu = GlobalGpuContext::try_get().map_err(|e| {
+            LbsError::Gpu(format!(
+                "Feature extraction requires GlobalGpuContext: {}",
+                e
+            ))
+        })?;
+        let mut mega_fused = global_gpu
+            .mega_fused_locked()
             .ok_or_else(|| LbsError::Gpu("Mega-fused kernel not loaded".to_string()))?;
 
         // Run kernel with residue types
-        let output = mega_fused.detect_pockets(
-            &atoms,
-            &ca_indices,
-            &conservation,
-            &bfactor,
-            &burial,
-            Some(&residue_types),  // Enable physics features!
-            &self.config.mega_fused_config,
-        ).map_err(|e| LbsError::Gpu(format!("Mega-fused kernel failed: {}", e)))?;
+        let output = mega_fused
+            .detect_pockets(
+                &atoms,
+                &ca_indices,
+                &conservation,
+                &bfactor,
+                &burial,
+                Some(&residue_types), // Enable physics features!
+                &self.config.mega_fused_config,
+            )
+            .map_err(|e| LbsError::Gpu(format!("Mega-fused kernel failed: {}", e)))?;
 
-        log::info!("Feature extraction complete: {} residues × 92 dims = {} features",
-                   n_residues, output.combined_features.len());
+        log::info!(
+            "Feature extraction complete: {} residues × 92 dims = {} features",
+            n_residues,
+            output.combined_features.len()
+        );
 
         // Return raw combined_features vector [n_residues × 92]
         Ok(output.combined_features)
@@ -511,23 +631,59 @@ impl PocketDetector {
     // Helper function to parse residue 3-letter code to index (0-19)
     fn parse_residue_type(res_name: &str) -> i32 {
         let aa = match res_name {
-            "ALA" => 'A', "ARG" => 'R', "ASN" => 'N', "ASP" => 'D', "CYS" => 'C',
-            "GLN" => 'Q', "GLU" => 'E', "GLY" => 'G', "HIS" => 'H', "ILE" => 'I',
-            "LEU" => 'L', "LYS" => 'K', "MET" => 'M', "PHE" => 'F', "PRO" => 'P',
-            "SER" => 'S', "THR" => 'T', "TRP" => 'W', "TYR" => 'Y', "VAL" => 'V',
+            "ALA" => 'A',
+            "ARG" => 'R',
+            "ASN" => 'N',
+            "ASP" => 'D',
+            "CYS" => 'C',
+            "GLN" => 'Q',
+            "GLU" => 'E',
+            "GLY" => 'G',
+            "HIS" => 'H',
+            "ILE" => 'I',
+            "LEU" => 'L',
+            "LYS" => 'K',
+            "MET" => 'M',
+            "PHE" => 'F',
+            "PRO" => 'P',
+            "SER" => 'S',
+            "THR" => 'T',
+            "TRP" => 'W',
+            "TYR" => 'Y',
+            "VAL" => 'V',
             _ => 'A',
         };
         match aa {
-            'A' => 0,  'R' => 1,  'N' => 2,  'D' => 3,  'C' => 4,
-            'Q' => 5,  'E' => 6,  'G' => 7,  'H' => 8,  'I' => 9,
-            'L' => 10, 'K' => 11, 'M' => 12, 'F' => 13, 'P' => 14,
-            'S' => 15, 'T' => 16, 'W' => 17, 'Y' => 18, 'V' => 19,
+            'A' => 0,
+            'R' => 1,
+            'N' => 2,
+            'D' => 3,
+            'C' => 4,
+            'Q' => 5,
+            'E' => 6,
+            'G' => 7,
+            'H' => 8,
+            'I' => 9,
+            'L' => 10,
+            'K' => 11,
+            'M' => 12,
+            'F' => 13,
+            'P' => 14,
+            'S' => 15,
+            'T' => 16,
+            'W' => 17,
+            'Y' => 18,
+            'V' => 19,
             _ => 0,
         }
     }
 
     #[cfg(feature = "cuda")]
-    fn detect_internal(&self, graph: &ProteinGraph, gpu_ctx: Option<&Arc<GpuContext>>) -> Result<Vec<Pocket>, LbsError> {
+    fn detect_internal(
+        &self,
+        graph: &ProteinGraph,
+        gpu_ctx: Option<&Arc<GpuContext>>,
+    ) -> Result<Vec<Pocket>, LbsError> {
         // ULTRA-FAST PURE GPU DIRECT MODE — first check, no graph needed in caller for pure_gpu_mode
         if self.config.use_mega_fused && self.config.mega_fused_config.pure_gpu_mode {
             log::info!("ULTRA-FAST PURE GPU DIRECT MODE: No graph construction, no CPU geometry");
@@ -547,12 +703,18 @@ impl PocketDetector {
                         // Try mega-fused detection with pre-loaded kernel
                         match self.run_mega_fused_detection(graph, &mut mega_fused) {
                             Ok(pockets) => {
-                                log::info!("Mega-fused detection found {} pockets (pre-filter)", pockets.len());
+                                log::info!(
+                                    "Mega-fused detection found {} pockets (pre-filter)",
+                                    pockets.len()
+                                );
                                 let filtered = self.apply_precision_filter(pockets);
                                 return Ok(filtered);
                             }
                             Err(e) => {
-                                log::warn!("Mega-fused kernel failed: {}. Falling back to other methods.", e);
+                                log::warn!(
+                                    "Mega-fused kernel failed: {}. Falling back to other methods.",
+                                    e
+                                );
                             }
                         }
                     } else {
@@ -566,28 +728,40 @@ impl PocketDetector {
 
             // Legacy fallback: create MegaFusedGpu per-call (slow, for backwards compatibility)
             if let Some(ctx) = gpu_ctx {
-                let ptx_dir = std::env::var("PRISM_PTX_DIR").unwrap_or_else(|_| "target/ptx".to_string());
+                let ptx_dir =
+                    std::env::var("PRISM_PTX_DIR").unwrap_or_else(|_| "target/ptx".to_string());
                 match MegaFusedGpu::new(ctx.device().clone(), std::path::Path::new(&ptx_dir)) {
                     Ok(mut mega_fused) => {
                         log::info!("Using legacy per-call mega-fused GPU kernel (consider using GlobalGpuContext)");
 
                         match self.run_mega_fused_detection(graph, &mut mega_fused) {
                             Ok(pockets) => {
-                                log::info!("Mega-fused detection found {} pockets (pre-filter)", pockets.len());
+                                log::info!(
+                                    "Mega-fused detection found {} pockets (pre-filter)",
+                                    pockets.len()
+                                );
                                 let filtered = self.apply_precision_filter(pockets);
                                 return Ok(filtered);
                             }
                             Err(e) => {
-                                log::warn!("Mega-fused kernel failed: {}. Falling back to other methods.", e);
+                                log::warn!(
+                                    "Mega-fused kernel failed: {}. Falling back to other methods.",
+                                    e
+                                );
                             }
                         }
                     }
                     Err(e) => {
-                        log::warn!("Failed to initialize mega-fused GPU kernel: {}. Falling back.", e);
+                        log::warn!(
+                            "Failed to initialize mega-fused GPU kernel: {}. Falling back.",
+                            e
+                        );
                     }
                 }
             } else {
-                log::debug!("Mega-fused enabled but no GPU context available. Using fallback detection.");
+                log::debug!(
+                    "Mega-fused enabled but no GPU context available. Using fallback detection."
+                );
             }
         }
 
@@ -606,7 +780,10 @@ impl PocketDetector {
                             return Ok(filtered);
                         }
                         Err(e) => {
-                            log::warn!("fpocket execution failed: {}. Falling back to internal detection.", e);
+                            log::warn!(
+                                "fpocket execution failed: {}. Falling back to internal detection.",
+                                e
+                            );
                         }
                     }
                 } else {
@@ -626,14 +803,18 @@ impl PocketDetector {
 
             // Wire GPU acceleration if context is available
             let voronoi_detector = if let Some(ctx) = gpu_ctx {
-                let ptx_dir = std::env::var("PRISM_PTX_DIR").unwrap_or_else(|_| "target/ptx".to_string());
+                let ptx_dir =
+                    std::env::var("PRISM_PTX_DIR").unwrap_or_else(|_| "target/ptx".to_string());
                 match LbsGpu::new(ctx.device().clone(), std::path::Path::new(&ptx_dir)) {
                     Ok(lbs_gpu) => {
                         log::info!("GPU acceleration enabled for pocket detection");
                         voronoi_detector.with_gpu(Arc::new(lbs_gpu))
                     }
                     Err(e) => {
-                        log::warn!("Failed to initialize LbsGpu for pocket detection: {}. Using CPU.", e);
+                        log::warn!(
+                            "Failed to initialize LbsGpu for pocket detection: {}. Using CPU.",
+                            e
+                        );
                         voronoi_detector
                     }
                 }
@@ -642,7 +823,10 @@ impl PocketDetector {
             };
 
             let pockets = voronoi_detector.detect(graph);
-            log::info!("Voronoi detection found {} pockets (pre-filter)", pockets.len());
+            log::info!(
+                "Voronoi detection found {} pockets (pre-filter)",
+                pockets.len()
+            );
 
             // Apply precision filtering to reduce false positives
             let filtered = self.apply_precision_filter(pockets);
@@ -654,7 +838,10 @@ impl PocketDetector {
             log::info!("Using grid-based alpha sphere cavity detection (legacy method)");
             let cavity_detector = CavityDetector::new(self.config.cavity_detector.clone());
             let pockets = cavity_detector.detect(graph);
-            log::info!("Grid-based cavity detection found {} pockets (pre-filter)", pockets.len());
+            log::info!(
+                "Grid-based cavity detection found {} pockets (pre-filter)",
+                pockets.len()
+            );
 
             // Apply precision filtering
             let filtered = self.apply_precision_filter(pockets);
@@ -723,7 +910,10 @@ impl PocketDetector {
                             return Ok(filtered);
                         }
                         Err(e) => {
-                            log::warn!("fpocket execution failed: {}. Falling back to internal detection.", e);
+                            log::warn!(
+                                "fpocket execution failed: {}. Falling back to internal detection.",
+                                e
+                            );
                         }
                     }
                 } else {
@@ -739,7 +929,10 @@ impl PocketDetector {
             log::info!("Using Voronoi-based pocket detection (alpha sphere method)");
             let voronoi_detector = VoronoiDetector::new(self.config.voronoi_detector.clone());
             let pockets = voronoi_detector.detect(graph);
-            log::info!("Voronoi detection found {} pockets (pre-filter)", pockets.len());
+            log::info!(
+                "Voronoi detection found {} pockets (pre-filter)",
+                pockets.len()
+            );
 
             // Apply precision filtering to reduce false positives
             let filtered = self.apply_precision_filter(pockets);
@@ -751,7 +944,10 @@ impl PocketDetector {
             log::info!("Using grid-based alpha sphere cavity detection (legacy method)");
             let cavity_detector = CavityDetector::new(self.config.cavity_detector.clone());
             let pockets = cavity_detector.detect(graph);
-            log::info!("Grid-based cavity detection found {} pockets (pre-filter)", pockets.len());
+            log::info!(
+                "Grid-based cavity detection found {} pockets (pre-filter)",
+                pockets.len()
+            );
 
             // Apply precision filtering
             let filtered = self.apply_precision_filter(pockets);
@@ -821,7 +1017,9 @@ impl PocketDetector {
         }
 
         // Extract all atom coordinates as flat array [x0, y0, z0, x1, y1, z1, ...]
-        let atoms: Vec<f32> = structure.atoms.iter()
+        let atoms: Vec<f32> = structure
+            .atoms
+            .iter()
             .flat_map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
             .collect();
 
@@ -836,20 +1034,27 @@ impl PocketDetector {
         }
 
         // Find CA atom indices for each residue
-        let ca_indices: Vec<i32> = structure.residues.iter()
+        let ca_indices: Vec<i32> = structure
+            .residues
+            .iter()
             .map(|res| {
-                structure.atoms.iter().position(|a| {
-                    a.residue_seq == res.seq_number
-                        && a.chain_id == res.chain_id
-                        && a.name == "CA"
-                })
-                .map(|i| i as i32)
-                .unwrap_or(-1) // Mark missing CAs as -1
+                structure
+                    .atoms
+                    .iter()
+                    .position(|a| {
+                        a.residue_seq == res.seq_number
+                            && a.chain_id == res.chain_id
+                            && a.name == "CA"
+                    })
+                    .map(|i| i as i32)
+                    .unwrap_or(-1) // Mark missing CAs as -1
             })
             .collect();
 
         // Extract per-residue features
-        let conservation: Vec<f32> = structure.residues.iter()
+        let conservation: Vec<f32> = structure
+            .residues
+            .iter()
             .map(|r| r.conservation_score as f32)
             .collect();
 
@@ -858,7 +1063,9 @@ impl PocketDetector {
         let mut burial: Vec<f32> = Vec::with_capacity(n_residues);
 
         for res in &structure.residues {
-            let res_atoms: Vec<_> = structure.atoms.iter()
+            let res_atoms: Vec<_> = structure
+                .atoms
+                .iter()
                 .filter(|a| a.residue_seq == res.seq_number && a.chain_id == res.chain_id)
                 .collect();
 
@@ -867,36 +1074,46 @@ impl PocketDetector {
                 burial.push(0.5); // Default burial
             } else {
                 // Average B-factor (normalized to 0-1)
-                let avg_bfactor = res_atoms.iter().map(|a| a.b_factor).sum::<f64>() / res_atoms.len() as f64;
+                let avg_bfactor =
+                    res_atoms.iter().map(|a| a.b_factor).sum::<f64>() / res_atoms.len() as f64;
                 bfactor.push((avg_bfactor / 100.0).clamp(0.0, 1.0) as f32);
 
                 // Average SASA-based burial (inverse SASA = burial)
-                let avg_sasa = res_atoms.iter().map(|a| a.sasa).sum::<f64>() / res_atoms.len() as f64;
+                let avg_sasa =
+                    res_atoms.iter().map(|a| a.sasa).sum::<f64>() / res_atoms.len() as f64;
                 burial.push((1.0 - (avg_sasa / 150.0).clamp(0.0, 1.0)) as f32);
             }
         }
 
         // Parse residue types (enable physics features)
-        let residue_types: Vec<i32> = graph.structure_ref.residues.iter()
+        let residue_types: Vec<i32> = graph
+            .structure_ref
+            .residues
+            .iter()
             .map(|res| Self::parse_residue_type(&res.name))
             .collect();
 
         // Run mega-fused kernel
-        let output = mega_fused.detect_pockets(
-            &atoms,
-            &ca_indices,
-            &conservation,
-            &bfactor,
-            &burial,
-            Some(&residue_types),  // Enable physics!
-            &self.config.mega_fused_config,
-        ).map_err(|e| LbsError::Gpu(format!("Mega-fused kernel failed: {}", e)))?;
+        let output = mega_fused
+            .detect_pockets(
+                &atoms,
+                &ca_indices,
+                &conservation,
+                &bfactor,
+                &burial,
+                Some(&residue_types), // Enable physics!
+                &self.config.mega_fused_config,
+            )
+            .map_err(|e| LbsError::Gpu(format!("Mega-fused kernel failed: {}", e)))?;
 
         // Convert kernel output to Pockets
         // Group residues by pocket assignment
         let mut pocket_residues: HashMap<i32, Vec<usize>> = HashMap::new();
         for (res_idx, &pocket_id) in output.pocket_assignment.iter().enumerate() {
-            if pocket_id >= 0 && output.consensus_scores[res_idx] > self.config.mega_fused_config.consensus_threshold {
+            if pocket_id >= 0
+                && output.consensus_scores[res_idx]
+                    > self.config.mega_fused_config.consensus_threshold
+            {
                 pocket_residues.entry(pocket_id).or_default().push(res_idx);
             }
         }
@@ -922,7 +1139,9 @@ impl PocketDetector {
             // OPTIMIZED: Use precomputed residue→atom map for O(1) lookup instead of O(A) scan
             for &res_idx in &residue_indices {
                 let res = &structure.residues[res_idx];
-                if let Some(res_atom_indices) = residue_atom_map.get(&(res.seq_number, res.chain_id)) {
+                if let Some(res_atom_indices) =
+                    residue_atom_map.get(&(res.seq_number, res.chain_id))
+                {
                     for &atom_idx in res_atom_indices {
                         let atom = &structure.atoms[atom_idx];
                         atom_indices.push(atom_idx);
@@ -973,27 +1192,37 @@ impl PocketDetector {
             let enc = enclosure_ratio(structure, &atom_indices);
 
             // Calculate average consensus score for this pocket
-            let avg_consensus = residue_indices.iter()
+            let avg_consensus = residue_indices
+                .iter()
                 .map(|&i| output.consensus_scores[i])
-                .sum::<f32>() / residue_indices.len() as f32;
+                .sum::<f32>()
+                / residue_indices.len() as f32;
 
             // Calculate average confidence
-            let avg_confidence = residue_indices.iter()
+            let avg_confidence = residue_indices
+                .iter()
                 .map(|&i| output.confidence[i] as f32)
-                .sum::<f32>() / residue_indices.len() as f32;
+                .sum::<f32>()
+                / residue_indices.len() as f32;
 
             // Count signals
-            let signal_count: i32 = residue_indices.iter()
+            let signal_count: i32 = residue_indices
+                .iter()
                 .map(|&i| signals::count(output.signal_mask[i]))
                 .sum();
 
             // Average centrality
-            let avg_centrality = residue_indices.iter()
+            let avg_centrality = residue_indices
+                .iter()
                 .map(|&i| output.centrality[i])
-                .sum::<f32>() / residue_indices.len() as f32;
+                .sum::<f32>()
+                / residue_indices.len() as f32;
 
             // Compute druggability score
-            let drugg_total = (avg_consensus as f64 * 0.4 + avg_confidence as f64 / 2.0 * 0.3 + avg_centrality as f64 * 0.3).clamp(0.0, 1.0);
+            let drugg_total = (avg_consensus as f64 * 0.4
+                + avg_confidence as f64 / 2.0 * 0.3
+                + avg_centrality as f64 * 0.3)
+                .clamp(0.0, 1.0);
             let classification = if drugg_total >= 0.7 {
                 crate::scoring::DrugabilityClass::HighlyDruggable
             } else if drugg_total >= 0.5 {
@@ -1045,7 +1274,12 @@ impl PocketDetector {
         }
 
         // Sort by druggability score descending
-        pockets.sort_by(|a, b| b.druggability_score.total.partial_cmp(&a.druggability_score.total).unwrap_or(std::cmp::Ordering::Equal));
+        pockets.sort_by(|a, b| {
+            b.druggability_score
+                .total
+                .partial_cmp(&a.druggability_score.total)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit to max_pockets
         pockets.truncate(self.config.max_pockets);

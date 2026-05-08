@@ -169,8 +169,10 @@ impl SequenceMapping {
     }
 
     pub fn add_mapping(&mut self, alignment_pos: usize, residue_seq: i32) {
-        self.alignment_to_structure.insert(alignment_pos, residue_seq);
-        self.structure_to_alignment.insert(residue_seq, alignment_pos);
+        self.alignment_to_structure
+            .insert(alignment_pos, residue_seq);
+        self.structure_to_alignment
+            .insert(residue_seq, alignment_pos);
     }
 
     pub fn alignment_to_structure(&self, pos: usize) -> Option<i32> {

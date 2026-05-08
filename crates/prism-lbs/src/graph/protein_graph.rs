@@ -26,7 +26,7 @@ impl Default for GraphConfig {
             surface_only: true,
             min_sasa: 0.5,
             weighted_edges: true,
-            use_gpu: true,  // GPU-first: always prefer GPU acceleration
+            use_gpu: true, // GPU-first: always prefer GPU acceleration
         }
     }
 }
@@ -114,14 +114,17 @@ impl ProteinGraphBuilder {
                     .map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
                     .collect();
                 // Try pre-loaded LbsGpu from GlobalGpuContext first (zero PTX overhead)
-                let gpu_result = if let Some(gpu) = GlobalGpuContext::try_get().ok().and_then(|g| g.lbs_locked()) {
+                let gpu_result = if let Some(gpu) = GlobalGpuContext::try_get()
+                    .ok()
+                    .and_then(|g| g.lbs_locked())
+                {
                     log::debug!("Using pre-loaded LbsGpu for distance matrix (zero PTX overhead)");
                     gpu.distance_matrix(&coords)
                 } else {
                     log::debug!("GlobalGpuContext LbsGpu not available, creating new instance");
                     match LbsGpu::new(ctx.device().clone(), &ctx.ptx_dir()) {
                         Ok(gpu) => gpu.distance_matrix(&coords),
-                        Err(e) => Err(e)
+                        Err(e) => Err(e),
                     }
                 };
                 match gpu_result {

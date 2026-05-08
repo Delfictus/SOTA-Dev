@@ -103,13 +103,18 @@ fn main() -> anyhow::Result<()> {
     // Build configuration
     let mut config = TrainingConfig {
         pdbbind: PdbBindConfig {
-            root_dir: cli.pdbbind_dir.clone().unwrap_or_else(|| PathBuf::from("data/pdbbind")),
+            root_dir: cli
+                .pdbbind_dir
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("data/pdbbind")),
             subset: cli.subset.clone(),
             max_entries: cli.max_entries,
             ..Default::default()
         },
         conservation: ConservationConfig {
-            data_dir: cli.conservation_dir.map(|p| p.to_string_lossy().to_string()),
+            data_dir: cli
+                .conservation_dir
+                .map(|p| p.to_string_lossy().to_string()),
             ..Default::default()
         },
         epochs: cli.epochs,

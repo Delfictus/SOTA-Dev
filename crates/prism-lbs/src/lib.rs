@@ -31,9 +31,9 @@ pub mod validation;
 //     GpuTelemetryData, write_publication_json, write_publication_json_with_telemetry,
 // };
 pub use allosteric::{
-    AllostericDetectionConfig, AllostericDetectionOutput, AllostericDetector, AllostericPocket,
-    AllostericDetectionType, ConfidenceAssessment, CoverageGap, Domain, DomainInterface,
-    HingeRegion, MultiModuleEvidence,
+    AllostericDetectionConfig, AllostericDetectionOutput, AllostericDetectionType,
+    AllostericDetector, AllostericPocket, ConfidenceAssessment, CoverageGap, Domain,
+    DomainInterface, HingeRegion, MultiModuleEvidence,
 };
 pub use config::{
     DetectionMode, DruggabilityWeights, ProvenanceLevel, QualityPreset, UnifiedHybridConfig,
@@ -103,7 +103,7 @@ impl Default for LbsConfig {
             phase6: phases::TopologicalPocketConfig::default(),
             scoring: scoring::ScoringWeights::default(),
             output: OutputConfig::default(),
-            top_n: 20,  // Increased from 10 to catch more binding sites
+            top_n: 20, // Increased from 10 to catch more binding sites
             #[cfg(feature = "cuda")]
             pure_gpu_mode: false,
         }
@@ -206,11 +206,19 @@ impl PrismLbs {
                 // GlobalGpuContext is initialized; detector will use it directly.
                 // Don't create a separate context to avoid duplicate PTX loading.
                 // Surface/graph ops will use CPU fallback (minimal perf impact).
-                Err(LbsError::Gpu("Using GlobalGpuContext directly (no separate Arc<GpuContext>)".to_string()))
+                Err(LbsError::Gpu(
+                    "Using GlobalGpuContext directly (no separate Arc<GpuContext>)".to_string(),
+                ))
             }
             Err(e) => {
-                log::warn!("GlobalGpuContext initialization failed: {}. GPU disabled.", e);
-                Err(LbsError::Gpu(format!("GlobalGpuContext init failed: {}", e)))
+                log::warn!(
+                    "GlobalGpuContext initialization failed: {}. GPU disabled.",
+                    e
+                );
+                Err(LbsError::Gpu(format!(
+                    "GlobalGpuContext init failed: {}",
+                    e
+                )))
             }
         }
     }
@@ -269,7 +277,9 @@ impl PrismLbs {
 
         // 3. Run pocket detection through phases (with GPU when available)
         #[cfg(feature = "cuda")]
-        let mut pockets = self.detector.detect_with_gpu(&graph, self.gpu_ctx.as_ref())?;
+        let mut pockets = self
+            .detector
+            .detect_with_gpu(&graph, self.gpu_ctx.as_ref())?;
         #[cfg(not(feature = "cuda"))]
         let mut pockets = self.detector.detect(&graph)?;
 
@@ -368,7 +378,10 @@ impl PrismLbs {
     /// Target: 219 structures in under 3 seconds
     #[cfg(feature = "cuda")]
     pub fn predict_pure_gpu(&self, structure: &ProteinStructure) -> Result<Vec<Pocket>> {
-        log::info!("PURE GPU DIRECT: Bypassing graph construction for {}", structure.title);
+        log::info!(
+            "PURE GPU DIRECT: Bypassing graph construction for {}",
+            structure.title
+        );
 
         // Call detector's pure GPU direct method - NO graph construction
         let pockets = self.detector.detect_pure_gpu_direct(structure)?;
@@ -379,7 +392,8 @@ impl PrismLbs {
     /// Extract 92-dim features using pure GPU (for ML/viral escape)
     #[cfg(feature = "cuda")]
     pub fn extract_features_pure_gpu(&self, structure: &ProteinStructure) -> Result<Vec<f32>> {
-        self.detector.extract_features_pure_gpu(structure)
+        self.detector
+            .extract_features_pure_gpu(structure)
             .map_err(|e| anyhow::anyhow!("Feature extraction failed: {}", e))
     }
 
@@ -396,10 +410,10 @@ impl PrismLbs {
     pub fn predict_batch_true_gpu(
         structures: &[ProteinStructure],
     ) -> Result<Vec<(String, Vec<Pocket>)>> {
-        use prism_gpu::mega_fused_batch::{
-            MegaFusedBatchGpu, StructureInput, PackedBatch, MegaFusedConfig,
-        };
         use prism_gpu::global_context::GlobalGpuContext;
+        use prism_gpu::mega_fused_batch::{
+            MegaFusedBatchGpu, MegaFusedConfig, PackedBatch, StructureInput,
+        };
         use std::collections::HashMap;
         use std::time::Instant;
 
@@ -414,8 +428,12 @@ impl PrismLbs {
         // 220 structures with 1.4M atoms is too large for a single kernel launch
         const MAX_CHUNK_SIZE: usize = 32;
         let n_chunks = (n_structures + MAX_CHUNK_SIZE - 1) / MAX_CHUNK_SIZE;
-        log::info!("MEGA-BATCH GPU: Processing {} structures in {} chunks of {} max",
-                   n_structures, n_chunks, MAX_CHUNK_SIZE);
+        log::info!(
+            "MEGA-BATCH GPU: Processing {} structures in {} chunks of {} max",
+            n_structures,
+            n_chunks,
+            MAX_CHUNK_SIZE
+        );
 
         // 1. Convert all structures to StructureInput format
         let convert_start = Instant::now();
@@ -426,7 +444,9 @@ impl PrismLbs {
             let n_residues = structure.residues.len();
 
             // Flatten atoms to [x0, y0, z0, x1, y1, z1, ...]
-            let atoms: Vec<f32> = structure.atoms.iter()
+            let atoms: Vec<f32> = structure
+                .atoms
+                .iter()
                 .flat_map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
                 .collect();
 
@@ -440,20 +460,27 @@ impl PrismLbs {
             }
 
             // CA atom indices for each residue
-            let ca_indices: Vec<i32> = structure.residues.iter()
+            let ca_indices: Vec<i32> = structure
+                .residues
+                .iter()
                 .map(|res| {
-                    structure.atoms.iter().position(|a| {
-                        a.residue_seq == res.seq_number
-                            && a.chain_id == res.chain_id
-                            && a.name == "CA"
-                    })
-                    .map(|i| i as i32)
-                    .unwrap_or(-1)
+                    structure
+                        .atoms
+                        .iter()
+                        .position(|a| {
+                            a.residue_seq == res.seq_number
+                                && a.chain_id == res.chain_id
+                                && a.name == "CA"
+                        })
+                        .map(|i| i as i32)
+                        .unwrap_or(-1)
                 })
                 .collect();
 
             // Per-residue features
-            let conservation: Vec<f32> = structure.residues.iter()
+            let conservation: Vec<f32> = structure
+                .residues
+                .iter()
                 .map(|r| r.conservation_score as f32)
                 .collect();
 
@@ -461,19 +488,25 @@ impl PrismLbs {
             let mut burial: Vec<f32> = Vec::with_capacity(n_residues);
 
             for res in &structure.residues {
-                if let Some(res_atom_indices) = residue_atom_map.get(&(res.seq_number, res.chain_id)) {
+                if let Some(res_atom_indices) =
+                    residue_atom_map.get(&(res.seq_number, res.chain_id))
+                {
                     if res_atom_indices.is_empty() {
                         bfactor.push(0.5);
                         burial.push(0.5);
                     } else {
-                        let avg_bfactor: f64 = res_atom_indices.iter()
+                        let avg_bfactor: f64 = res_atom_indices
+                            .iter()
                             .map(|&i| structure.atoms[i].b_factor)
-                            .sum::<f64>() / res_atom_indices.len() as f64;
+                            .sum::<f64>()
+                            / res_atom_indices.len() as f64;
                         bfactor.push((avg_bfactor / 100.0).clamp(0.0, 1.0) as f32);
 
-                        let avg_sasa: f64 = res_atom_indices.iter()
+                        let avg_sasa: f64 = res_atom_indices
+                            .iter()
                             .map(|&i| structure.atoms[i].sasa)
-                            .sum::<f64>() / res_atom_indices.len() as f64;
+                            .sum::<f64>()
+                            / res_atom_indices.len() as f64;
                         burial.push((1.0 - (avg_sasa / 150.0).clamp(0.0, 1.0)) as f32);
                     }
                 } else {
@@ -498,8 +531,11 @@ impl PrismLbs {
             .map_err(|e| anyhow::anyhow!("Batch GPU requires GlobalGpuContext: {}", e))?;
 
         let ptx_dir = std::env::var("PRISM_PTX_DIR").unwrap_or_else(|_| "target/ptx".to_string());
-        let mut batch_gpu = MegaFusedBatchGpu::new(global_gpu.context().device().clone(), std::path::Path::new(&ptx_dir))
-            .map_err(|e| anyhow::anyhow!("Failed to load batch kernel: {}", e))?;
+        let mut batch_gpu = MegaFusedBatchGpu::new(
+            global_gpu.context().device().clone(),
+            std::path::Path::new(&ptx_dir),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to load batch kernel: {}", e))?;
 
         let config = MegaFusedConfig::screening();
 
@@ -516,7 +552,8 @@ impl PrismLbs {
                 .map_err(|e| anyhow::anyhow!("Failed to pack chunk {}: {}", chunk_idx, e))?;
 
             // Run kernel on this chunk
-            let batch_output = batch_gpu.detect_pockets_batch(&packed, &config)
+            let batch_output = batch_gpu
+                .detect_pockets_batch(&packed, &config)
                 .map_err(|e| anyhow::anyhow!("Chunk {} kernel failed: {}", chunk_idx, e))?;
 
             total_kernel_time_us += batch_output.kernel_time_us;
@@ -524,17 +561,25 @@ impl PrismLbs {
             // Collect outputs
             all_chunk_outputs.extend(batch_output.structures);
 
-            log::info!("Chunk {}/{}: {} structures in {:?} ({}µs kernel)",
-                chunk_idx + 1, n_chunks, chunk_inputs.len(),
-                chunk_start.elapsed(), batch_output.kernel_time_us);
+            log::info!(
+                "Chunk {}/{}: {} structures in {:?} ({}µs kernel)",
+                chunk_idx + 1,
+                n_chunks,
+                chunk_inputs.len(),
+                chunk_start.elapsed(),
+                batch_output.kernel_time_us
+            );
 
             // WSL2 dxg driver stability: small delay between chunks to prevent driver overload
             // This adds ~15 seconds total for 155 chunks but prevents hangs
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
-        log::info!("All chunks complete: {} structures, total kernel time {}µs",
-            n_structures, total_kernel_time_us);
+        log::info!(
+            "All chunks complete: {} structures, total kernel time {}µs",
+            n_structures,
+            total_kernel_time_us
+        );
 
         // 4. Convert batch output to per-structure Pockets
         let convert_back_start = Instant::now();
@@ -558,7 +603,9 @@ impl PrismLbs {
             // Note: Mega-pocket prevention is handled in post-processing (MAX_BATCH_POCKET_RESIDUES=60)
             let mut pocket_id_to_residues: HashMap<i32, Vec<usize>> = HashMap::new();
             for (res_idx, &pocket_id) in struct_output.pocket_assignment.iter().enumerate() {
-                if pocket_id > 0 && struct_output.consensus_scores[res_idx] > config.consensus_threshold {
+                if pocket_id > 0
+                    && struct_output.consensus_scores[res_idx] > config.consensus_threshold
+                {
                     pocket_id_to_residues
                         .entry(pocket_id)
                         .or_insert_with(Vec::new)
@@ -599,7 +646,9 @@ impl PrismLbs {
 
                 for &res_idx in &residue_indices {
                     let res = &structure.residues[res_idx];
-                    if let Some(res_atom_indices) = residue_atom_map.get(&(res.seq_number, res.chain_id)) {
+                    if let Some(res_atom_indices) =
+                        residue_atom_map.get(&(res.seq_number, res.chain_id))
+                    {
                         for &atom_idx in res_atom_indices {
                             let atom = &structure.atoms[atom_idx];
                             atom_indices.push(atom_idx);
@@ -631,17 +680,26 @@ impl PrismLbs {
                 let volume = pocket::geometry::bounding_box_volume(structure, &atom_indices);
                 let enc = pocket::geometry::enclosure_ratio(structure, &atom_indices);
 
-                let avg_consensus = residue_indices.iter()
+                let avg_consensus = residue_indices
+                    .iter()
                     .map(|&i| struct_output.consensus_scores[i])
-                    .sum::<f32>() / residue_indices.len() as f32;
-                let avg_confidence = residue_indices.iter()
+                    .sum::<f32>()
+                    / residue_indices.len() as f32;
+                let avg_confidence = residue_indices
+                    .iter()
                     .map(|&i| struct_output.confidence[i] as f32)
-                    .sum::<f32>() / residue_indices.len() as f32;
-                let avg_centrality = residue_indices.iter()
+                    .sum::<f32>()
+                    / residue_indices.len() as f32;
+                let avg_centrality = residue_indices
+                    .iter()
                     .map(|&i| struct_output.centrality[i])
-                    .sum::<f32>() / residue_indices.len() as f32;
+                    .sum::<f32>()
+                    / residue_indices.len() as f32;
 
-                let drugg_total = (avg_consensus as f64 * 0.4 + avg_confidence as f64 / 2.0 * 0.3 + avg_centrality as f64 * 0.3).clamp(0.0, 1.0);
+                let drugg_total = (avg_consensus as f64 * 0.4
+                    + avg_confidence as f64 / 2.0 * 0.3
+                    + avg_centrality as f64 * 0.3)
+                    .clamp(0.0, 1.0);
                 let classification = if drugg_total >= 0.7 {
                     scoring::DrugabilityClass::HighlyDruggable
                 } else if drugg_total >= 0.5 {
@@ -692,7 +750,12 @@ impl PrismLbs {
             }
 
             // Sort by druggability
-            pockets.sort_by(|a, b| b.druggability_score.total.partial_cmp(&a.druggability_score.total).unwrap_or(std::cmp::Ordering::Equal));
+            pockets.sort_by(|a, b| {
+                b.druggability_score
+                    .total
+                    .partial_cmp(&a.druggability_score.total)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             pockets.truncate(20);
 
             results.push((struct_output.id.clone(), pockets));
@@ -702,7 +765,10 @@ impl PrismLbs {
         let (allocs, reuses) = batch_gpu.buffer_pool_stats();
         log::info!(
             "MEGA-BATCH COMPLETE: {} structures in {:?} (buffer allocs: {}, reuses: {})",
-            n_structures, total_start.elapsed(), allocs, reuses
+            n_structures,
+            total_start.elapsed(),
+            allocs,
+            reuses
         );
 
         Ok(results)
@@ -715,11 +781,11 @@ impl PrismLbs {
         structures: &[ProteinStructure],
         ground_truth: &std::collections::HashMap<String, Vec<usize>>,
     ) -> Result<BatchValidationResult> {
-        use prism_gpu::mega_fused_batch::{
-            MegaFusedBatchGpu, StructureInput, StructureInputWithGT, PackedBatchWithGT,
-            MegaFusedConfig, BatchMetricsOutput, AggregateMetrics,
-        };
         use prism_gpu::global_context::GlobalGpuContext;
+        use prism_gpu::mega_fused_batch::{
+            AggregateMetrics, BatchMetricsOutput, MegaFusedBatchGpu, MegaFusedConfig,
+            PackedBatchWithGT, StructureInput, StructureInputWithGT,
+        };
         use std::collections::HashMap;
         use std::time::Instant;
 
@@ -746,20 +812,33 @@ impl PrismLbs {
 
         for structure in structures {
             // Use pdb_id if available, otherwise extract from title/filename
-            let pdb_id = structure.pdb_id.clone()
+            let pdb_id = structure
+                .pdb_id
+                .clone()
                 .map(|id| id.to_lowercase())
                 .unwrap_or_else(|| {
                     // Fallback: try to extract 4-letter PDB ID from title
-                    structure.title.split_whitespace()
+                    structure
+                        .title
+                        .split_whitespace()
                         .find(|s| s.len() == 4 && s.chars().all(|c| c.is_alphanumeric()))
                         .map(|s| s.to_lowercase())
-                        .unwrap_or_else(|| structure.title.split_whitespace().next().unwrap_or("unknown").to_lowercase())
+                        .unwrap_or_else(|| {
+                            structure
+                                .title
+                                .split_whitespace()
+                                .next()
+                                .unwrap_or("unknown")
+                                .to_lowercase()
+                        })
                 });
             let n_residues = structure.residues.len();
             log::debug!("Structure PDB ID: {} ({} residues)", pdb_id, n_residues);
 
             // Flatten atoms
-            let atoms: Vec<f32> = structure.atoms.iter()
+            let atoms: Vec<f32> = structure
+                .atoms
+                .iter()
                 .flat_map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
                 .collect();
 
@@ -773,20 +852,27 @@ impl PrismLbs {
             }
 
             // CA indices
-            let ca_indices: Vec<i32> = structure.residues.iter()
+            let ca_indices: Vec<i32> = structure
+                .residues
+                .iter()
                 .map(|res| {
-                    structure.atoms.iter().position(|a| {
-                        a.residue_seq == res.seq_number
-                            && a.chain_id == res.chain_id
-                            && a.name == "CA"
-                    })
-                    .map(|i| i as i32)
-                    .unwrap_or(-1)
+                    structure
+                        .atoms
+                        .iter()
+                        .position(|a| {
+                            a.residue_seq == res.seq_number
+                                && a.chain_id == res.chain_id
+                                && a.name == "CA"
+                        })
+                        .map(|i| i as i32)
+                        .unwrap_or(-1)
                 })
                 .collect();
 
             // Per-residue features
-            let conservation: Vec<f32> = structure.residues.iter()
+            let conservation: Vec<f32> = structure
+                .residues
+                .iter()
                 .map(|r| r.conservation_score as f32)
                 .collect();
 
@@ -794,19 +880,25 @@ impl PrismLbs {
             let mut burial: Vec<f32> = Vec::with_capacity(n_residues);
 
             for res in &structure.residues {
-                if let Some(res_atom_indices) = residue_atom_map.get(&(res.seq_number, res.chain_id)) {
+                if let Some(res_atom_indices) =
+                    residue_atom_map.get(&(res.seq_number, res.chain_id))
+                {
                     if res_atom_indices.is_empty() {
                         bfactor.push(0.5);
                         burial.push(0.5);
                     } else {
-                        let avg_bfactor: f64 = res_atom_indices.iter()
+                        let avg_bfactor: f64 = res_atom_indices
+                            .iter()
                             .map(|&i| structure.atoms[i].b_factor)
-                            .sum::<f64>() / res_atom_indices.len() as f64;
+                            .sum::<f64>()
+                            / res_atom_indices.len() as f64;
                         bfactor.push((avg_bfactor / 100.0).clamp(0.0, 1.0) as f32);
 
-                        let avg_sasa: f64 = res_atom_indices.iter()
+                        let avg_sasa: f64 = res_atom_indices
+                            .iter()
                             .map(|&i| structure.atoms[i].sasa)
-                            .sum::<f64>() / res_atom_indices.len() as f64;
+                            .sum::<f64>()
+                            / res_atom_indices.len() as f64;
                         burial.push((1.0 - (avg_sasa / 150.0).clamp(0.0, 1.0)) as f32);
                     }
                 } else {
@@ -819,7 +911,9 @@ impl PrismLbs {
             let gt_residue_seq_nums = ground_truth.get(&pdb_id);
 
             // Create a mapping from PDB residue sequence number to 0-indexed position
-            let seq_num_to_idx: HashMap<i32, usize> = structure.residues.iter()
+            let seq_num_to_idx: HashMap<i32, usize> = structure
+                .residues
+                .iter()
                 .enumerate()
                 .map(|(idx, res)| (res.seq_number, idx))
                 .collect();
@@ -827,7 +921,8 @@ impl PrismLbs {
             // Convert GT sequence numbers to 0-indexed positions
             let gt_indices: std::collections::HashSet<usize> = gt_residue_seq_nums
                 .map(|seq_nums| {
-                    seq_nums.iter()
+                    seq_nums
+                        .iter()
                         .filter_map(|&seq_num| seq_num_to_idx.get(&(seq_num as i32)).copied())
                         .collect()
                 })
@@ -839,12 +934,19 @@ impl PrismLbs {
 
             let gt_count = gt_indices.len();
             if gt_count > 0 {
-                log::debug!("Structure {}: {} GT residues out of {} (mapped from {} sequence numbers)",
-                    pdb_id, gt_count, n_residues,
-                    gt_residue_seq_nums.map(|v| v.len()).unwrap_or(0));
+                log::debug!(
+                    "Structure {}: {} GT residues out of {} (mapped from {} sequence numbers)",
+                    pdb_id,
+                    gt_count,
+                    n_residues,
+                    gt_residue_seq_nums.map(|v| v.len()).unwrap_or(0)
+                );
             } else if gt_residue_seq_nums.is_some() {
-                log::warn!("Structure {}: GT has {} sequence numbers but none mapped to residue positions",
-                    pdb_id, gt_residue_seq_nums.map(|v| v.len()).unwrap_or(0));
+                log::warn!(
+                    "Structure {}: GT has {} sequence numbers but none mapped to residue positions",
+                    pdb_id,
+                    gt_residue_seq_nums.map(|v| v.len()).unwrap_or(0)
+                );
             }
 
             let base = StructureInput {
@@ -867,8 +969,11 @@ impl PrismLbs {
             .map_err(|e| anyhow::anyhow!("Batch GPU requires GlobalGpuContext: {}", e))?;
 
         let ptx_dir = std::env::var("PRISM_PTX_DIR").unwrap_or_else(|_| "target/ptx".to_string());
-        let mut batch_gpu = MegaFusedBatchGpu::new(global_gpu.context().device().clone(), std::path::Path::new(&ptx_dir))
-            .map_err(|e| anyhow::anyhow!("Failed to load batch kernel: {}", e))?;
+        let mut batch_gpu = MegaFusedBatchGpu::new(
+            global_gpu.context().device().clone(),
+            std::path::Path::new(&ptx_dir),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to load batch kernel: {}", e))?;
 
         if !batch_gpu.is_metrics_available() {
             anyhow::bail!("v2.0 metrics kernel not loaded - ensure mega_fused_batch.ptx contains mega_fused_pocket_detection_batch_with_metrics");
@@ -891,15 +996,22 @@ impl PrismLbs {
                 .map_err(|e| anyhow::anyhow!("Failed to pack chunk {}: {}", chunk_idx, e))?;
 
             // Run v2.0 metrics kernel
-            let output = batch_gpu.detect_pockets_batch_with_metrics(&packed, &config)
+            let output = batch_gpu
+                .detect_pockets_batch_with_metrics(&packed, &config)
                 .map_err(|e| anyhow::anyhow!("Chunk {} metrics kernel failed: {}", chunk_idx, e))?;
 
             total_kernel_time_us += output.kernel_time_us;
             all_metrics.extend(output.metrics);
 
-            log::info!("Chunk {}/{}: {} structures in {:?} | F1={:.4} MCC={:.4}",
-                chunk_idx + 1, n_chunks, chunk_inputs.len(),
-                chunk_start.elapsed(), output.aggregate.mean_f1, output.aggregate.mean_mcc);
+            log::info!(
+                "Chunk {}/{}: {} structures in {:?} | F1={:.4} MCC={:.4}",
+                chunk_idx + 1,
+                n_chunks,
+                chunk_inputs.len(),
+                chunk_start.elapsed(),
+                output.aggregate.mean_f1,
+                output.aggregate.mean_mcc
+            );
 
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
@@ -1003,7 +1115,7 @@ fn merge_adjacent_pockets_with_seq(
     }
 
     let mut current_pockets = pockets;
-    let max_iterations = 5;  // Prevent infinite loops
+    let max_iterations = 5; // Prevent infinite loops
 
     for iteration in 0..max_iterations {
         let start_count = current_pockets.len();
@@ -1042,8 +1154,10 @@ fn merge_adjacent_pockets_with_seq(
                 });
 
                 // Max pocket size limit (prevent mega-pockets)
-                let combined_residues = current.residue_indices.len() + current_pockets[j].residue_indices.len() - shared;
-                const MAX_POCKET_RESIDUES: usize = 80;  // Allow larger pockets (max_pockets=4 controls count)
+                let combined_residues = current.residue_indices.len()
+                    + current_pockets[j].residue_indices.len()
+                    - shared;
+                const MAX_POCKET_RESIDUES: usize = 80; // Allow larger pockets (max_pockets=4 controls count)
 
                 // Merge if: close distance AND (sharing residues OR sequential neighbors)
                 // Also enforce max size limit
@@ -1067,7 +1181,10 @@ fn merge_adjacent_pockets_with_seq(
         if end_count == start_count {
             log::debug!(
                 "Pocket merging (dist={}, seq={}) converged after {} iterations: {} pockets",
-                merge_distance, seq_range, iteration + 1, end_count
+                merge_distance,
+                seq_range,
+                iteration + 1,
+                end_count
             );
             break;
         }
@@ -1146,7 +1263,12 @@ fn merge_two_pockets(mut a: Pocket, b: Pocket) -> Pocket {
 /// Parameters:
 /// - `expansion_radius`: Maximum distance (Å) to expand from pocket atoms
 /// - `max_residues`: Cap on total residues to prevent mega-pockets
-fn expand_pocket_residues(pocket: &mut Pocket, atoms: &[Atom], expansion_radius: f64, max_residues: usize) {
+fn expand_pocket_residues(
+    pocket: &mut Pocket,
+    atoms: &[Atom],
+    expansion_radius: f64,
+    max_residues: usize,
+) {
     use std::collections::HashSet;
 
     // MEGA-POCKET PREVENTION: Trim oversized pockets BEFORE expansion
@@ -1161,10 +1283,13 @@ fn expand_pocket_residues(pocket: &mut Pocket, atoms: &[Atom], expansion_radius:
 
         // Calculate distance to centroid for each residue and keep closest ones
         let centroid = pocket.centroid;
-        let mut residue_distances: Vec<(usize, f64)> = pocket.residue_indices.iter()
+        let mut residue_distances: Vec<(usize, f64)> = pocket
+            .residue_indices
+            .iter()
             .map(|&res_idx| {
                 // Find minimum distance from any atom in this residue to centroid
-                let min_dist = atoms.iter()
+                let min_dist = atoms
+                    .iter()
                     .filter(|a| a.residue_seq as usize == res_idx)
                     .map(|a| {
                         let dx = a.coord[0] - centroid[0];
@@ -1178,8 +1303,10 @@ fn expand_pocket_residues(pocket: &mut Pocket, atoms: &[Atom], expansion_radius:
             .collect();
 
         // Sort by distance (closest first) and keep top max_residues
-        residue_distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        pocket.residue_indices = residue_distances.into_iter()
+        residue_distances
+            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        pocket.residue_indices = residue_distances
+            .into_iter()
             .take(max_residues)
             .map(|(idx, _)| idx)
             .collect();
@@ -1188,7 +1315,8 @@ fn expand_pocket_residues(pocket: &mut Pocket, atoms: &[Atom], expansion_radius:
         // Recalculate atom_indices for the trimmed pocket
         let residue_set: HashSet<usize> = pocket.residue_indices.iter().copied().collect();
         pocket.atom_indices.retain(|&atom_idx| {
-            atoms.get(atom_idx)
+            atoms
+                .get(atom_idx)
                 .map(|a| residue_set.contains(&(a.residue_seq as usize)))
                 .unwrap_or(false)
         });
@@ -1272,6 +1400,6 @@ mod tests {
     fn test_default_config() {
         let config = LbsConfig::default();
         assert!(config.use_gpu);
-        assert_eq!(config.top_n, 20);  // Updated from 10 to 20
+        assert_eq!(config.top_n, 20); // Updated from 10 to 20
     }
 }

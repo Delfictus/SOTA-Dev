@@ -105,7 +105,11 @@ mod tests {
     fn test_weight_sum() {
         // Weights should sum to approximately 1.0
         let total = FLEXIBILITY_WEIGHT + PACKING_WEIGHT + HYDROPHOBICITY_WEIGHT + COHERENCE_WEIGHT;
-        assert!((total - 1.0).abs() < 0.01, "Weights sum to {}, expected ~1.0", total);
+        assert!(
+            (total - 1.0).abs() < 0.01,
+            "Weights sum to {}, expected ~1.0",
+            total
+        );
     }
 
     #[test]

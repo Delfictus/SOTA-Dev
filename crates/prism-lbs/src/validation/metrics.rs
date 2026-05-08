@@ -51,18 +51,18 @@ impl ValidationMetrics {
     /// Backwards compatibility: returns 1.0 if dcc_success, 0.0 otherwise
     #[inline]
     pub fn success_rate(&self) -> f64 {
-        if self.dcc_success { 1.0 } else { 0.0 }
+        if self.dcc_success {
+            1.0
+        } else {
+            0.0
+        }
     }
 
     /// Compute aggregated metrics for multiple pockets (backwards compatibility)
     ///
     /// Returns metrics for the best pocket (lowest DCC) from the list.
     /// This is the old API preserved for FluxNet training.
-    pub fn compute_batch(
-        pockets: &[Pocket],
-        ligand_coords: &[[f64; 3]],
-        threshold: f64,
-    ) -> Self {
+    pub fn compute_batch(pockets: &[Pocket], ligand_coords: &[[f64; 3]], threshold: f64) -> Self {
         if pockets.is_empty() || ligand_coords.is_empty() {
             return Self::default();
         }
@@ -79,18 +79,30 @@ impl ValidationMetrics {
                 .map(|_| pocket.centroid) // Simplified: use centroid as representative
                 .collect();
 
-            let dcc = Self::compute_dcc_from_coords(&pocket_coords, ligand_coords, &pocket.centroid);
+            let dcc =
+                Self::compute_dcc_from_coords(&pocket_coords, ligand_coords, &pocket.centroid);
 
             if dcc < best_dcc {
                 best_dcc = dcc;
                 best_metrics = Self {
                     dcc,
-                    dca: Self::point_distance(&pocket.centroid, &Self::compute_centroid(ligand_coords)),
-                    ligand_coverage: Self::compute_coverage_simple(&pocket.centroid, pocket.volume, ligand_coords, threshold),
+                    dca: Self::point_distance(
+                        &pocket.centroid,
+                        &Self::compute_centroid(ligand_coords),
+                    ),
+                    ligand_coverage: Self::compute_coverage_simple(
+                        &pocket.centroid,
+                        pocket.volume,
+                        ligand_coords,
+                        threshold,
+                    ),
                     pocket_precision: 0.5, // Estimated for batch
                     volume_overlap: 0.0,
                     dcc_success: dcc < threshold,
-                    dca_success: Self::point_distance(&pocket.centroid, &Self::compute_centroid(ligand_coords)) < threshold,
+                    dca_success: Self::point_distance(
+                        &pocket.centroid,
+                        &Self::compute_centroid(ligand_coords),
+                    ) < threshold,
                     pocket_rank: i + 1,
                 };
             }
@@ -100,7 +112,11 @@ impl ValidationMetrics {
     }
 
     /// Simplified DCC computation using pocket centroid
-    fn compute_dcc_from_coords(pocket_coords: &[[f64; 3]], ligand_coords: &[[f64; 3]], pocket_center: &[f64; 3]) -> f64 {
+    fn compute_dcc_from_coords(
+        pocket_coords: &[[f64; 3]],
+        ligand_coords: &[[f64; 3]],
+        pocket_center: &[f64; 3],
+    ) -> f64 {
         if ligand_coords.is_empty() {
             return f64::INFINITY;
         }
@@ -112,7 +128,12 @@ impl ValidationMetrics {
     }
 
     /// Simplified coverage for batch mode
-    fn compute_coverage_simple(pocket_center: &[f64; 3], pocket_volume: f64, ligand_coords: &[[f64; 3]], threshold: f64) -> f64 {
+    fn compute_coverage_simple(
+        pocket_center: &[f64; 3],
+        pocket_volume: f64,
+        ligand_coords: &[[f64; 3]],
+        threshold: f64,
+    ) -> f64 {
         if ligand_coords.is_empty() {
             return 0.0;
         }
@@ -348,10 +369,7 @@ impl TopNMetrics {
 
         let n = metrics.len();
         let best_dcc = metrics.first().map(|m| m.dcc).unwrap_or(f64::INFINITY);
-        let best_dca = metrics
-            .iter()
-            .map(|m| m.dca)
-            .fold(f64::INFINITY, f64::min);
+        let best_dca = metrics.iter().map(|m| m.dca).fold(f64::INFINITY, f64::min);
 
         let mean_dcc = metrics.iter().map(|m| m.dcc).sum::<f64>() / n as f64;
         let mean_dca = metrics.iter().map(|m| m.dca).sum::<f64>() / n as f64;
@@ -489,10 +507,7 @@ impl BenchmarkCase {
                         .to_lowercase();
 
                     if ext == "xyz" {
-                        let name = path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("case");
+                        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("case");
                         cases.push(Self::from_xyz(name.to_string(), &path, threshold)?);
                     }
                 }
@@ -574,8 +589,7 @@ impl BenchmarkSummary {
         for case in cases {
             let (pockets, atoms) = predict_fn(&case.name);
 
-            let top_n =
-                TopNMetrics::compute(&pockets, &atoms, &case.ligand_coords, case.threshold);
+            let top_n = TopNMetrics::compute(&pockets, &atoms, &case.ligand_coords, case.threshold);
 
             dcc_values.push(top_n.best_dcc);
             dca_values.push(top_n.best_dca);
@@ -605,8 +619,18 @@ impl BenchmarkSummary {
         let mean_dcc = dcc_values.iter().sum::<f64>() / n;
         let mean_dca = dca_values.iter().sum::<f64>() / n;
 
-        let std_dcc = (dcc_values.iter().map(|&x| (x - mean_dcc).powi(2)).sum::<f64>() / n).sqrt();
-        let std_dca = (dca_values.iter().map(|&x| (x - mean_dca).powi(2)).sum::<f64>() / n).sqrt();
+        let std_dcc = (dcc_values
+            .iter()
+            .map(|&x| (x - mean_dcc).powi(2))
+            .sum::<f64>()
+            / n)
+            .sqrt();
+        let std_dca = (dca_values
+            .iter()
+            .map(|&x| (x - mean_dca).powi(2))
+            .sum::<f64>()
+            / n)
+            .sqrt();
 
         Self {
             total_cases: cases.len(),

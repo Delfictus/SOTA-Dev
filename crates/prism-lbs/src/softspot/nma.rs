@@ -16,8 +16,8 @@
 //! - Atilgan et al. (2001) - Anisotropic Network Model
 //! - Tobi & Bahar (2005) - Functional motions and binding sites
 
-use crate::structure::Atom;
 use super::lanczos::LanczosEigensolver;
+use crate::structure::Atom;
 use nalgebra::DMatrix;
 use std::collections::HashMap;
 
@@ -106,7 +106,10 @@ impl NmaAnalyzer {
             .collect();
 
         if ca_atoms.len() < 10 {
-            log::warn!("[NMA] Too few CA atoms ({}) for reliable analysis", ca_atoms.len());
+            log::warn!(
+                "[NMA] Too few CA atoms ({}) for reliable analysis",
+                ca_atoms.len()
+            );
             return NmaResult {
                 residue_mobilities: Vec::new(),
                 num_modes_computed: 0,
@@ -178,7 +181,11 @@ impl NmaAnalyzer {
     ///
     /// Uses the robust Lanczos eigensolver with full reorthogonalization
     /// for accurate computation of low-frequency modes.
-    fn compute_eigenmodes(&self, hessian: &[Vec<f64>], n_residues: usize) -> (Vec<f64>, Vec<Vec<f64>>) {
+    fn compute_eigenmodes(
+        &self,
+        hessian: &[Vec<f64>],
+        n_residues: usize,
+    ) -> (Vec<f64>, Vec<Vec<f64>>) {
         let dim = 3 * n_residues;
 
         // Convert Vec<Vec<f64>> to nalgebra DMatrix
@@ -219,8 +226,11 @@ impl NmaAnalyzer {
             }
         }
 
-        log::debug!("[NMA] Lanczos found {} non-trivial modes (converged: {})",
-                   eigenvalues.len(), result.converged);
+        log::debug!(
+            "[NMA] Lanczos found {} non-trivial modes (converged: {})",
+            eigenvalues.len(),
+            result.converged
+        );
 
         (eigenvalues, eigenvectors)
     }
@@ -240,7 +250,9 @@ impl NmaAnalyzer {
             let mut total_mobility = 0.0;
             let mut mode_contributions = Vec::new();
 
-            for (mode_idx, (eigenvalue, eigenvector)) in eigenvalues.iter().zip(eigenvectors.iter()).enumerate() {
+            for (mode_idx, (eigenvalue, eigenvector)) in
+                eigenvalues.iter().zip(eigenvectors.iter()).enumerate()
+            {
                 if *eigenvalue <= 0.0 {
                     continue;
                 }

@@ -9,9 +9,9 @@
 //! - Clustal format MSA files
 //! - Position-to-structure residue mapping
 
-use crate::structure::Atom;
-use super::types::*;
 use super::domain_decomposition::{calculate_residue_centroid, euclidean_distance};
+use super::types::*;
+use crate::structure::Atom;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -76,7 +76,11 @@ impl ConservationAnalyzer {
                     sequence_ids.push(current_id.clone());
                 }
                 // Parse new header
-                current_id = line[1..].split_whitespace().next().unwrap_or("").to_string();
+                current_id = line[1..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 current_seq.clear();
             } else if !line.is_empty() && !line.starts_with(';') {
                 current_seq.push_str(line);
@@ -163,7 +167,9 @@ impl ConservationAnalyzer {
             // Skip header and conservation lines
             if line.is_empty()
                 || line.starts_with("CLUSTAL")
-                || line.chars().all(|c| c == '*' || c == ':' || c == '.' || c == ' ')
+                || line
+                    .chars()
+                    .all(|c| c == '*' || c == ':' || c == '.' || c == ' ')
             {
                 continue;
             }
@@ -264,11 +270,7 @@ impl ConservationAnalyzer {
     }
 
     /// Generate sequence mapping from alignment to structure
-    pub fn generate_sequence_mapping(
-        &self,
-        msa: &MSA,
-        atoms: &[Atom],
-    ) -> SequenceMapping {
+    pub fn generate_sequence_mapping(&self, msa: &MSA, atoms: &[Atom]) -> SequenceMapping {
         let mut mapping = SequenceMapping::new();
 
         // Get reference sequence (first in alignment)
@@ -502,9 +504,7 @@ pub fn estimate_conservation_from_bfactors(atoms: &[Atom]) -> HashMap<i32, f64> 
 
     for atom in atoms {
         if atom.name.trim() == "CA" {
-            let entry = residue_bfactors
-                .entry(atom.residue_seq)
-                .or_insert((0.0, 0));
+            let entry = residue_bfactors.entry(atom.residue_seq).or_insert((0.0, 0));
             entry.0 += atom.b_factor;
             entry.1 += 1;
         }

@@ -4,11 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use prism_lbs::{
-    LbsConfig, OutputConfig, OutputFormat, PrecisionMode, PrismLbs, ProteinStructure,
-    UnifiedDetector, GpuTelemetryData,
-    graph::ProteinGraphBuilder,
-    output::write_publication_json_with_telemetry,
-    pocket::filter_by_mode,
+    graph::ProteinGraphBuilder, output::write_publication_json_with_telemetry,
+    pocket::filter_by_mode, GpuTelemetryData, LbsConfig, OutputConfig, OutputFormat, PrecisionMode,
+    PrismLbs, ProteinStructure, UnifiedDetector,
 };
 
 #[cfg(feature = "cuda")]
@@ -168,7 +166,9 @@ fn main() -> anyhow::Result<()> {
 
     match &cli.command {
         Some(Commands::Batch { parallel }) => run_batch(&cli, config, *parallel),
-        Some(Commands::ExtractFeatures { output_npy }) => run_extract_features(&cli, config, output_npy),
+        Some(Commands::ExtractFeatures { output_npy }) => {
+            run_extract_features(&cli, config, output_npy)
+        }
         None => run_single(&cli, config),
     }
 }
@@ -181,20 +181,21 @@ fn run_single(cli: &Cli, config: LbsConfig) -> anyhow::Result<()> {
     // Choose detection mode
     if cli.unified || cli.softspot_only {
         // Unified or softspot-only mode
-        let structure_name = cli.input.file_stem()
+        let structure_name = cli
+            .input
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("structure");
 
         let unified_output = if cli.softspot_only {
             // Softspot-only: run directly on atoms
-            let detector = UnifiedDetector::with_config(
-                prism_lbs::unified::UnifiedDetectorConfig {
+            let detector =
+                UnifiedDetector::with_config(prism_lbs::unified::UnifiedDetectorConfig {
                     enable_geometric: false,
                     enable_softspot: true,
                     max_pockets: config.top_n,
                     ..Default::default()
-                }
-            );
+                });
             detector.detect_from_atoms(&structure.atoms, structure_name)
         } else {
             // Unified: build graph and run both detectors
@@ -202,14 +203,13 @@ fn run_single(cli: &Cli, config: LbsConfig) -> anyhow::Result<()> {
             let graph_builder = ProteinGraphBuilder::new(config.graph.clone());
             let graph = graph_builder.build(&structure)?;
 
-            let detector = UnifiedDetector::with_config(
-                prism_lbs::unified::UnifiedDetectorConfig {
+            let detector =
+                UnifiedDetector::with_config(prism_lbs::unified::UnifiedDetectorConfig {
                     enable_geometric: true,
                     enable_softspot: true,
                     max_pockets: config.top_n,
                     ..Default::default()
-                }
-            );
+                });
             detector.detect(&graph, structure_name)?
         };
 
@@ -231,7 +231,10 @@ fn run_single(cli: &Cli, config: LbsConfig) -> anyhow::Result<()> {
             log::info!("DEBUG: Prediction complete, got {} pockets", pockets.len());
             let processing_time_ms = start_time.elapsed().as_millis() as u64;
 
-            log::info!("DEBUG: Starting output writing for {} formats...", config.output.formats.len());
+            log::info!(
+                "DEBUG: Starting output writing for {} formats...",
+                config.output.formats.len()
+            );
             for fmt in &config.output.formats {
                 log::info!("DEBUG: Writing format: {:?}", fmt);
                 let mut out_path = base.clone();
@@ -257,7 +260,8 @@ fn run_single(cli: &Cli, config: LbsConfig) -> anyhow::Result<()> {
                         if cli.publication {
                             log::info!("DEBUG: Collecting GPU telemetry...");
                             // Publication-ready format with all required fields + GPU telemetry
-                            let (gpu_name, driver_version, telemetry_data) = collect_gpu_telemetry();
+                            let (gpu_name, driver_version, telemetry_data) =
+                                collect_gpu_telemetry();
                             log::info!("DEBUG: GPU telemetry collected");
                             write_publication_json_with_telemetry(
                                 &out_path,
@@ -307,11 +311,15 @@ fn run_single(cli: &Cli, config: LbsConfig) -> anyhow::Result<()> {
         let processing_time_ms = start_time.elapsed().as_millis() as u64;
 
         // Apply precision filtering based on CLI flag
-        let precision_mode = PrecisionMode::from_str(&cli.precision)
-            .unwrap_or(PrecisionMode::Balanced);
+        let precision_mode =
+            PrecisionMode::from_str(&cli.precision).unwrap_or(PrecisionMode::Balanced);
         let (pockets, filter_stats) = filter_by_mode(raw_pockets, precision_mode);
-        log::info!("Precision filter ({}): {} -> {} pockets",
-            precision_mode, filter_stats.input_count, filter_stats.output_count);
+        log::info!(
+            "Precision filter ({}): {} -> {} pockets",
+            precision_mode,
+            filter_stats.input_count,
+            filter_stats.output_count
+        );
 
         for fmt in &config.output.formats {
             let mut out_path = base.clone();
@@ -397,8 +405,7 @@ fn run_batch(cli: &Cli, config: LbsConfig, parallel: usize) -> anyhow::Result<()
     let use_publication = cli.publication;
     let use_gpu = config.use_gpu;
     let use_pure_gpu = cli.pure_gpu;
-    let precision_mode = PrecisionMode::from_str(&cli.precision)
-        .unwrap_or(PrecisionMode::Balanced);
+    let precision_mode = PrecisionMode::from_str(&cli.precision).unwrap_or(PrecisionMode::Balanced);
 
     let predictor = PrismLbs::new(config.clone())?;
     let total = pdb_files.len();
@@ -415,11 +422,13 @@ fn run_batch(cli: &Cli, config: LbsConfig, parallel: usize) -> anyhow::Result<()
                     predictor.predict_pure_gpu(&structure).map_err(|e| e.into())
                 } else {
                     // Standard mode with graph construction
-                    predictor.predict(&structure)
+                    predictor
+                        .predict(&structure)
                         .map(|raw| filter_by_mode(raw, precision_mode).0)
                 };
                 #[cfg(not(feature = "cuda"))]
-                let pockets_result: Result<Vec<_>, _> = predictor.predict(&structure)
+                let pockets_result: Result<Vec<_>, _> = predictor
+                    .predict(&structure)
                     .map(|raw| filter_by_mode(raw, precision_mode).0);
 
                 if let Ok(pockets) = pockets_result {
@@ -449,7 +458,8 @@ fn run_batch(cli: &Cli, config: LbsConfig, parallel: usize) -> anyhow::Result<()
                                 OutputFormat::Json => {
                                     if use_publication {
                                         // Publication-ready format with all required fields + GPU telemetry
-                                        let (gpu_name, driver_version, telemetry_data) = collect_gpu_telemetry();
+                                        let (gpu_name, driver_version, telemetry_data) =
+                                            collect_gpu_telemetry();
                                         let _ = write_publication_json_with_telemetry(
                                             &out_path,
                                             &pockets,
@@ -475,7 +485,8 @@ fn run_batch(cli: &Cli, config: LbsConfig, parallel: usize) -> anyhow::Result<()
                         let mut pymol_path = base.clone();
                         pymol_path.set_extension("pml");
                         if ensure_parent_dir(&pymol_path).is_ok() {
-                            let _ = prism_lbs::output::write_pymol_script(&pymol_path, pockets.len());
+                            let _ =
+                                prism_lbs::output::write_pymol_script(&pymol_path, pockets.len());
                         }
                     }
 
@@ -488,12 +499,17 @@ fn run_batch(cli: &Cli, config: LbsConfig, parallel: usize) -> anyhow::Result<()
         }
     });
 
-    log::info!("Batch processing complete: {} structures processed", processed);
+    log::info!(
+        "Batch processing complete: {} structures processed",
+        processed
+    );
     Ok(())
 }
 
 /// Parse ground truth from file (auto-detects CSV vs JSON format)
-fn parse_ground_truth(path: &Path) -> anyhow::Result<std::collections::HashMap<String, Vec<usize>>> {
+fn parse_ground_truth(
+    path: &Path,
+) -> anyhow::Result<std::collections::HashMap<String, Vec<usize>>> {
     if path.extension().map(|e| e == "json").unwrap_or(false) {
         parse_ground_truth_json(path)
     } else {
@@ -503,7 +519,9 @@ fn parse_ground_truth(path: &Path) -> anyhow::Result<std::collections::HashMap<S
 
 /// Parse CryptoBench JSON format
 /// Format: { "pdb_id": [{ "apo_pocket_selection": ["B_12", "B_14", ...], ... }], ... }
-fn parse_ground_truth_json(path: &Path) -> anyhow::Result<std::collections::HashMap<String, Vec<usize>>> {
+fn parse_ground_truth_json(
+    path: &Path,
+) -> anyhow::Result<std::collections::HashMap<String, Vec<usize>>> {
     use std::collections::HashMap;
 
     let content = fs::read_to_string(path)?;
@@ -545,13 +563,19 @@ fn parse_ground_truth_json(path: &Path) -> anyhow::Result<std::collections::Hash
         }
     }
 
-    log::info!("Parsed {} CryptoBench ground truth entries from {:?}", ground_truth.len(), path);
+    log::info!(
+        "Parsed {} CryptoBench ground truth entries from {:?}",
+        ground_truth.len(),
+        path
+    );
     Ok(ground_truth)
 }
 
 /// Parse ground truth CSV file
 /// Format: apo_pdb,holo_pdb,protein_name,cryptic_residues,site_description,difficulty
-fn parse_ground_truth_csv(path: &Path) -> anyhow::Result<std::collections::HashMap<String, Vec<usize>>> {
+fn parse_ground_truth_csv(
+    path: &Path,
+) -> anyhow::Result<std::collections::HashMap<String, Vec<usize>>> {
     use std::collections::HashMap;
     use std::io::{BufRead, BufReader};
 
@@ -584,7 +608,11 @@ fn parse_ground_truth_csv(path: &Path) -> anyhow::Result<std::collections::HashM
         }
     }
 
-    log::info!("Parsed {} ground truth entries from {:?}", ground_truth.len(), path);
+    log::info!(
+        "Parsed {} ground truth entries from {:?}",
+        ground_truth.len(),
+        path
+    );
     Ok(ground_truth)
 }
 
@@ -608,8 +636,7 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
     log::info!("═══════════════════════════════════════════════════════════════════");
 
     // Parse precision mode from CLI
-    let precision_mode = PrecisionMode::from_str(&cli.precision)
-        .unwrap_or(PrecisionMode::Balanced);
+    let precision_mode = PrecisionMode::from_str(&cli.precision).unwrap_or(PrecisionMode::Balanced);
 
     // 1. Load ALL structures into memory
     let load_start = Instant::now();
@@ -627,7 +654,11 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
             }
         }
     }
-    log::info!("Loaded {} structures in {:?}", structures.len(), load_start.elapsed());
+    log::info!(
+        "Loaded {} structures in {:?}",
+        structures.len(),
+        load_start.elapsed()
+    );
 
     if structures.is_empty() {
         anyhow::bail!("No valid structures to process");
@@ -638,7 +669,10 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
     let results = PrismLbs::predict_batch_true_gpu(&structures)?;
     let gpu_time = gpu_start.elapsed();
     log::info!("GPU batch processing complete in {:?}", gpu_time);
-    log::info!("  Throughput: {:.1} structures/second", structures.len() as f64 / gpu_time.as_secs_f64());
+    log::info!(
+        "  Throughput: {:.1} structures/second",
+        structures.len() as f64 / gpu_time.as_secs_f64()
+    );
 
     // 3. Write output for each structure (with druggability filtering)
     let write_start = Instant::now();
@@ -662,11 +696,14 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
             if ensure_parent_dir(&out_path).is_ok() {
                 match fmt {
                     OutputFormat::Pdb => {
-                        let _ = prism_lbs::output::write_pdb_with_pockets(&out_path, structure, &pockets);
+                        let _ = prism_lbs::output::write_pdb_with_pockets(
+                            &out_path, structure, &pockets,
+                        );
                     }
                     OutputFormat::Json => {
                         if use_publication {
-                            let (gpu_name, driver_version, telemetry_data) = collect_gpu_telemetry();
+                            let (gpu_name, driver_version, telemetry_data) =
+                                collect_gpu_telemetry();
                             let _ = write_publication_json_with_telemetry(
                                 &out_path,
                                 &pockets,
@@ -678,7 +715,9 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
                                 telemetry_data,
                             );
                         } else {
-                            let _ = prism_lbs::output::write_json_results(&out_path, structure, &pockets);
+                            let _ = prism_lbs::output::write_json_results(
+                                &out_path, structure, &pockets,
+                            );
                         }
                     }
                     OutputFormat::Csv => {}
@@ -693,7 +732,11 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
             }
         }
     }
-    log::info!("Wrote {} output files in {:?}", results.len(), write_start.elapsed());
+    log::info!(
+        "Wrote {} output files in {:?}",
+        results.len(),
+        write_start.elapsed()
+    );
 
     let total_time = total_start.elapsed();
     log::info!("═══════════════════════════════════════════════════════════════════");
@@ -701,7 +744,10 @@ fn run_mega_batch(cli: &Cli, config: &LbsConfig, pdb_files: &[PathBuf]) -> anyho
     log::info!("  Total time: {:?}", total_time);
     log::info!("  GPU kernel time: {:?}", gpu_time);
     log::info!("  Structures processed: {}", results.len());
-    log::info!("  Effective throughput: {:.1} structures/second", results.len() as f64 / total_time.as_secs_f64());
+    log::info!(
+        "  Effective throughput: {:.1} structures/second",
+        results.len() as f64 / total_time.as_secs_f64()
+    );
     log::info!("═══════════════════════════════════════════════════════════════════");
 
     Ok(())
@@ -716,8 +762,8 @@ fn run_mega_batch_with_validation(
     pdb_files: &[PathBuf],
     gt_path: &Path,
 ) -> anyhow::Result<()> {
-    use std::time::Instant;
     use prism_lbs::PrismLbs;
+    use std::time::Instant;
 
     let total_start = Instant::now();
     log::info!("═══════════════════════════════════════════════════════════════════");
@@ -745,7 +791,11 @@ fn run_mega_batch_with_validation(
             }
         }
     }
-    log::info!("Loaded {} structures in {:?}", structures.len(), load_start.elapsed());
+    log::info!(
+        "Loaded {} structures in {:?}",
+        structures.len(),
+        load_start.elapsed()
+    );
 
     if structures.is_empty() {
         anyhow::bail!("No valid structures to process");
@@ -805,12 +855,30 @@ fn run_mega_batch_with_validation(
     log::info!("  GPU kernel time: {}µs", validation_result.kernel_time_us);
     log::info!("  Structures processed: {}", structures.len());
     log::info!("  ────────────────────────────────────────────────────────────────");
-    log::info!("  MEAN F1:        {:.4}", validation_result.aggregate.mean_f1);
-    log::info!("  MEAN MCC:       {:.4}", validation_result.aggregate.mean_mcc);
-    log::info!("  MEAN AUC-ROC:   {:.4}", validation_result.aggregate.mean_auc_roc);
-    log::info!("  MEAN AUPRC:     {:.4}", validation_result.aggregate.mean_auprc);
-    log::info!("  MEAN PRECISION: {:.4}", validation_result.aggregate.mean_precision);
-    log::info!("  MEAN RECALL:    {:.4}", validation_result.aggregate.mean_recall);
+    log::info!(
+        "  MEAN F1:        {:.4}",
+        validation_result.aggregate.mean_f1
+    );
+    log::info!(
+        "  MEAN MCC:       {:.4}",
+        validation_result.aggregate.mean_mcc
+    );
+    log::info!(
+        "  MEAN AUC-ROC:   {:.4}",
+        validation_result.aggregate.mean_auc_roc
+    );
+    log::info!(
+        "  MEAN AUPRC:     {:.4}",
+        validation_result.aggregate.mean_auprc
+    );
+    log::info!(
+        "  MEAN PRECISION: {:.4}",
+        validation_result.aggregate.mean_precision
+    );
+    log::info!(
+        "  MEAN RECALL:    {:.4}",
+        validation_result.aggregate.mean_recall
+    );
     log::info!("═══════════════════════════════════════════════════════════════════");
 
     Ok(())
@@ -886,7 +954,11 @@ fn run_extract_features(cli: &Cli, config: LbsConfig, output_npy: &PathBuf) -> a
     let predictor = PrismLbs::new(config)?;
     let features = predictor.extract_features_pure_gpu(&structure)?;
 
-    log::info!("Extracted {} features ({} residues × 92 dims)", features.len(), n_residues);
+    log::info!(
+        "Extracted {} features ({} residues × 92 dims)",
+        features.len(),
+        n_residues
+    );
 
     // Reshape to [n_residues, 92]
     let feature_dim = 92;
@@ -898,7 +970,7 @@ fn run_extract_features(cli: &Cli, config: LbsConfig, output_npy: &PathBuf) -> a
 
     // NPY magic + version
     file.write_all(b"\x93NUMPY")?;
-    file.write_all(&[0x01, 0x00])?;  // Version 1.0
+    file.write_all(&[0x01, 0x00])?; // Version 1.0
 
     // Header describing shape and dtype
     let header = format!(
@@ -922,7 +994,7 @@ fn run_extract_features(cli: &Cli, config: LbsConfig, output_npy: &PathBuf) -> a
     let bytes: &[u8] = unsafe {
         std::slice::from_raw_parts(
             features.as_ptr() as *const u8,
-            features.len() * std::mem::size_of::<f32>()
+            features.len() * std::mem::size_of::<f32>(),
         )
     };
     file.write_all(bytes)?;
@@ -932,13 +1004,22 @@ fn run_extract_features(cli: &Cli, config: LbsConfig, output_npy: &PathBuf) -> a
     log::info!("   Size: {} bytes", bytes.len() + padded_header.len() + 10);
 
     println!("✅ Feature extraction complete:");
-    println!("   {} residues × {} features = {} total", n_residues, feature_dim, features.len());
+    println!(
+        "   {} residues × {} features = {} total",
+        n_residues,
+        feature_dim,
+        features.len()
+    );
     println!("   Output: {:?}", output_npy);
 
     Ok(())
 }
 
 #[cfg(not(feature = "cuda"))]
-fn run_extract_features(_cli: &Cli, _config: LbsConfig, _output_npy: &PathBuf) -> anyhow::Result<()> {
+fn run_extract_features(
+    _cli: &Cli,
+    _config: LbsConfig,
+    _output_npy: &PathBuf,
+) -> anyhow::Result<()> {
     anyhow::bail!("Feature extraction requires CUDA")
 }

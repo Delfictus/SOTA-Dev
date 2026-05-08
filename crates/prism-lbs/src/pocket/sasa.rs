@@ -381,10 +381,7 @@ pub fn calculate_burial_fraction(atoms: &[Atom], residues: &[i32]) -> f64 {
     let sasa_calc = ShrakeRupleySASA::default();
     let relative_sasa = sasa_calc.calculate_relative_sasa(atoms);
 
-    let total: f64 = residues
-        .iter()
-        .filter_map(|r| relative_sasa.get(r))
-        .sum();
+    let total: f64 = residues.iter().filter_map(|r| relative_sasa.get(r)).sum();
 
     let count = residues
         .iter()
@@ -473,14 +470,18 @@ mod tests {
         let r = 1.7 + 1.4; // vdW + probe
         let atoms = vec![
             make_atom(0.0, 0.0, 0.0, "C"),
-            make_atom(r * 1.5, 0.0, 0.0, "C"),  // Closer than 2r so probes overlap
+            make_atom(r * 1.5, 0.0, 0.0, "C"), // Closer than 2r so probes overlap
         ];
 
         let result = sasa_calc.calculate(&atoms);
 
         // Both should have similar SASA (symmetric)
         let diff = (result.atom_sasa[0] - result.atom_sasa[1]).abs();
-        assert!(diff < 5.0, "Symmetric atoms should have similar SASA, diff={}", diff);
+        assert!(
+            diff < 5.0,
+            "Symmetric atoms should have similar SASA, diff={}",
+            diff
+        );
 
         // Both should have some SASA
         assert!(result.atom_sasa[0] > 0.0, "Atom 0 should have SASA");
@@ -527,7 +528,10 @@ mod tests {
 
         // Check roughly uniform distribution: z values should span [-1, 1]
         let z_min = points.iter().map(|p| p[2]).fold(f64::INFINITY, f64::min);
-        let z_max = points.iter().map(|p| p[2]).fold(f64::NEG_INFINITY, f64::max);
+        let z_max = points
+            .iter()
+            .map(|p| p[2])
+            .fold(f64::NEG_INFINITY, f64::max);
 
         assert!(z_min < -0.95, "Points should cover south pole");
         assert!(z_max > 0.95, "Points should cover north pole");
@@ -548,7 +552,10 @@ mod tests {
         // With 4Å spacing and ~11.6Å cutoff, each atom has ~2-3 neighbors on each side
         // End atoms should have some neighbors
         assert!(!neighbors[0].is_empty(), "End atoms should have neighbors");
-        assert!(neighbors[50].len() >= 1, "Middle atoms should have neighbors");
+        assert!(
+            neighbors[50].len() >= 1,
+            "Middle atoms should have neighbors"
+        );
     }
 
     #[test]
@@ -566,9 +573,6 @@ mod tests {
             result.surface_atoms.contains(&0),
             "Isolated atom should be classified as surface"
         );
-        assert!(
-            result.buried_atoms.is_empty(),
-            "No atoms should be buried"
-        );
+        assert!(result.buried_atoms.is_empty(), "No atoms should be buried");
     }
 }

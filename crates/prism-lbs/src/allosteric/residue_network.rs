@@ -7,9 +7,9 @@
 //! Edge weights represent interaction strength (Gaussian decay or inverse distance).
 //! Paths through the network model signal propagation during allosteric transitions.
 
-use crate::structure::Atom;
 use super::gpu_apsp::GpuFloydWarshall;
 use super::types::*;
+use crate::structure::Atom;
 use std::collections::{HashMap, HashSet};
 
 /// Residue network analyzer for allosteric coupling
@@ -369,7 +369,8 @@ impl ResidueNetworkAnalyzer {
 
         // Reconstruct best path
         if min_path_length < f64::INFINITY {
-            best_path = self.reconstruct_path(&next, n, best_from, best_to, &network.idx_to_residue);
+            best_path =
+                self.reconstruct_path(&next, n, best_from, best_to, &network.idx_to_residue);
         }
 
         let avg_coupling = if path_count > 0 {
@@ -432,7 +433,8 @@ impl ResidueNetworkAnalyzer {
                 let src_idx = network.residue_to_idx[&source];
                 let tgt_idx = network.residue_to_idx[&target];
 
-                let path = self.reconstruct_path(&next, n, src_idx, tgt_idx, &network.idx_to_residue);
+                let path =
+                    self.reconstruct_path(&next, n, src_idx, tgt_idx, &network.idx_to_residue);
 
                 CommunicationPathway {
                     source,

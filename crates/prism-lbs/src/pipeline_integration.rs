@@ -6,9 +6,9 @@
 //! FluxNet RL integration enables learning optimal druggability scoring weights
 //! from validation feedback using adaptive weight optimization.
 
-use crate::{LbsConfig, Pocket, PrismLbs, ProteinStructure};
 use crate::scoring::{DruggabilityScorer, ScoringWeights};
 use crate::validation::ValidationMetrics;
+use crate::{LbsConfig, Pocket, PrismLbs, ProteinStructure};
 use anyhow::Result;
 #[cfg(feature = "cuda")]
 use prism_gpu::context::GpuContext;
@@ -108,10 +108,9 @@ impl FluxNetWeightOptimizer {
     /// Higher is better: success_rate + coverage - (distance penalty)
     pub fn compute_reward(&self, metrics: &ValidationMetrics) -> f64 {
         let distance_penalty = (metrics.center_distance() / 4.0).min(2.0);
-        let reward = metrics.success_rate()
-            + 0.5 * metrics.ligand_coverage
-            + 0.3 * metrics.pocket_precision
-            - 0.4 * distance_penalty;
+        let reward =
+            metrics.success_rate() + 0.5 * metrics.ligand_coverage + 0.3 * metrics.pocket_precision
+                - 0.4 * distance_penalty;
         reward.clamp(-1.0, 2.0)
     }
 
@@ -236,7 +235,7 @@ impl Default for FluxNetTrainingConfig {
             epochs: 100,
             batch_size: 8,
             learning_rate: 0.01,
-            validation_threshold: 4.0,  // 4Å DCC threshold (PDBBind standard)
+            validation_threshold: 4.0, // 4Å DCC threshold (PDBBind standard)
             early_stop_patience: 10,
         }
     }

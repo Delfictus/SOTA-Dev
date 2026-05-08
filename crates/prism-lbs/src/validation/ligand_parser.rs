@@ -80,7 +80,11 @@ impl Ligand {
         }
         let n = atoms.len() as f64;
         let sum = atoms.iter().fold([0.0, 0.0, 0.0], |acc, a| {
-            [acc[0] + a.coord[0], acc[1] + a.coord[1], acc[2] + a.coord[2]]
+            [
+                acc[0] + a.coord[0],
+                acc[1] + a.coord[1],
+                acc[2] + a.coord[2],
+            ]
         });
         [sum[0] / n, sum[1] / n, sum[2] / n]
     }
@@ -150,11 +154,7 @@ impl LigandParser {
                 line[76..78].trim().to_string()
             } else {
                 // Infer from atom name
-                atom_name
-                    .chars()
-                    .take(1)
-                    .collect::<String>()
-                    .to_uppercase()
+                atom_name.chars().take(1).collect::<String>().to_uppercase()
             };
 
             let atom = LigandAtom {
@@ -334,11 +334,7 @@ impl LigandParser {
                     let atom_type = parts[5].to_string();
 
                     // Extract element from atom type (e.g., "C.3" -> "C")
-                    let element = atom_type
-                        .split('.')
-                        .next()
-                        .unwrap_or("C")
-                        .to_uppercase();
+                    let element = atom_type.split('.').next().unwrap_or("C").to_uppercase();
 
                     let charge = if parts.len() >= 9 {
                         parts[8].parse().ok()

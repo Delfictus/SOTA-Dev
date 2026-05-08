@@ -3,13 +3,13 @@
 //! Integrates PDBBind data loading, FluxNet RL weight optimization,
 //! conservation data, and ensemble training.
 
+use super::conservation::{ConservationConfig, ConservationLoader};
+use super::ensemble::{EnsembleConfig, EnsemblePredictor};
+use super::pdbbind_loader::{PdbBindConfig, PdbBindEntry, PdbBindLoader};
 use crate::pipeline_integration::FluxNetWeightOptimizer;
 use crate::scoring::ScoringWeights;
 use crate::validation::{BenchmarkSummary, ValidationMetrics};
 use crate::{LbsConfig, LbsError, PrismLbs};
-use super::pdbbind_loader::{PdbBindConfig, PdbBindEntry, PdbBindLoader};
-use super::conservation::{ConservationConfig, ConservationLoader};
-use super::ensemble::{EnsembleConfig, EnsemblePredictor};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -49,7 +49,7 @@ impl Default for TrainingConfig {
             batch_size: 16,
             learning_rate: 0.01,
             validation_split: 0.2,
-            success_threshold: 4.0,  // 4Å DCC
+            success_threshold: 4.0, // 4Å DCC
             patience: 10,
             checkpoint_dir: Some("checkpoints".to_string()),
             train_ensemble: true,
@@ -100,7 +100,10 @@ impl LbsTrainer {
                 Some(loader)
             }
             Err(e) => {
-                log::warn!("Could not load PDBBind: {}. Training will use synthetic data.", e);
+                log::warn!(
+                    "Could not load PDBBind: {}. Training will use synthetic data.",
+                    e
+                );
                 None
             }
         };
@@ -121,7 +124,10 @@ impl LbsTrainer {
 
     /// Run full training loop
     pub fn train(&mut self) -> Result<Vec<TrainingMetrics>, LbsError> {
-        log::info!("Starting PRISM-LBS training for {} epochs", self.config.epochs);
+        log::info!(
+            "Starting PRISM-LBS training for {} epochs",
+            self.config.epochs
+        );
 
         let mut all_metrics = Vec::new();
 
@@ -146,7 +152,11 @@ impl LbsTrainer {
                 self.best_weights = self.optimizer.get_weights();
                 self.epochs_without_improvement = 0;
                 self.save_checkpoint(epoch)?;
-                log::info!("New best model at epoch {}: {:.3} success rate", epoch, val_success);
+                log::info!(
+                    "New best model at epoch {}: {:.3} success rate",
+                    epoch,
+                    val_success
+                );
             } else {
                 self.epochs_without_improvement += 1;
             }
@@ -352,9 +362,12 @@ impl LbsTrainer {
 
             // Also save as "best" checkpoint
             let best_path = Path::new(dir).join("best_checkpoint.json");
-            std::fs::write(&best_path, serde_json::to_string_pretty(&checkpoint)
-                .map_err(|e| LbsError::Config(e.to_string()))?)
-                .map_err(LbsError::Io)?;
+            std::fs::write(
+                &best_path,
+                serde_json::to_string_pretty(&checkpoint)
+                    .map_err(|e| LbsError::Config(e.to_string()))?,
+            )
+            .map_err(LbsError::Io)?;
         }
 
         Ok(())
@@ -363,8 +376,8 @@ impl LbsTrainer {
     /// Load checkpoint
     pub fn load_checkpoint(&mut self, path: &Path) -> Result<(), LbsError> {
         let content = std::fs::read_to_string(path).map_err(LbsError::Io)?;
-        let checkpoint: CheckpointData = serde_json::from_str(&content)
-            .map_err(|e| LbsError::Config(e.to_string()))?;
+        let checkpoint: CheckpointData =
+            serde_json::from_str(&content).map_err(|e| LbsError::Config(e.to_string()))?;
 
         self.best_weights = checkpoint.weights;
         self.best_score = checkpoint.best_score;
